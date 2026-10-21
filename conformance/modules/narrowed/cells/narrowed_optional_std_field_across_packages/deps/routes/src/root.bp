@@ -1,0 +1,3 @@
+//// The package root: one module whose record names a std type.
+
+pub mod found;

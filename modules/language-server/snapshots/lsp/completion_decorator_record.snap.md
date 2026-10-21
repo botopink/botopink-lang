@@ -1,16 +1,18 @@
 ----- SOURCE
 ```botopink
-fn service(comptime decl: @Decl) {
+fn service(syntax decl: unknown) -> void {
     @emit("val __wired = unresolvedRuntimeSymbol();");
 }
 
 #[service]
-record PostService { name: string, count: i32 }
+type PostService(name: string, count: i32)
 
+val other = 1;
 val usePost = PostService;
               ↑
 ```
 
------ COMPLETION at (line 7, char 14)
-service  [Function]  detail: fn(Decl) -> void
-PostService  [Struct]  detail: record { name: string, count: i32 }
+----- COMPLETION at (line 8, char 14)
+service  [Function]  detail: fn(__Decl) -> void
+PostService  [Struct]  detail: type PostService(name: string, count: i32)
+other  [Variable]  detail: i32

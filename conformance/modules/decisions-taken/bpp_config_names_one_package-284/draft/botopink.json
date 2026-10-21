@@ -1,0 +1,5 @@
+{
+  "name": "bpp_config_names_one_package-284",
+  "dependencies": { "markup": { "path": "deps/markup" } },
+  "bpp": "markup"
+}

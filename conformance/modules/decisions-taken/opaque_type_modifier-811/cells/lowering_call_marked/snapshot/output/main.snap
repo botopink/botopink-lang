@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: reserved-name: `__bp_load_module` is reserved for the compiler (a name starting with `__bp_` is the compiler's)
+at src/main.bp:8:13

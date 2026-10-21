@@ -1,0 +1,24 @@
+//// Decision 216 (1) — a type's members are closed: a call through the type
+//// names an associated fn it declares, by hand or through a decorator's
+//// `decl.addMember`. `City.revisions()` is refused where it is written: the
+//// decorator added `fromName` only.
+
+import {compiler, io.terminal.print} from "std";
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.addMember(
+        "pub fn fromName(n: string) -> "
+            + compiler.name(decl)!
+            + " { return "
+            + compiler.name(decl)!
+            + "(name: n); }",
+    );
+}
+
+#[entity]
+type City(name: string)
+
+pub fn main() -> void {
+    print(City.fromName("Recife").name);
+    print(City.revisions().length);
+}

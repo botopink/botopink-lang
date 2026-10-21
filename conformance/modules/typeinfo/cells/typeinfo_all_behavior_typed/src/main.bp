@@ -1,0 +1,58 @@
+//// Decision 564 — `#[module]`'s `@Decl<Module>` names the behavior its
+//// declarations implement, so `@TypeInfo.all(with: module)` answers
+//// `Declared<Module>[]` with no `member:`: the answer is bound and handed on
+//// at that type, each entry's `name`, `module` and `meta` read as for any
+//// catalogue.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Module {
+    fn make() -> Self;
+    fn start(self: Self) -> string;
+}
+
+pub fn module(syntax decl: Module, comptime order: i32) -> void {
+    compiler.setMeta(ModuleOrder(order: order));
+}
+
+#[module(2)]
+pub type Users(n: i32) implement Module {
+    fn make() -> Self {
+        return Users(n: 0);
+    }
+
+    fn start(self: Self) -> string {
+        return "users up";
+    }
+}
+
+#[module(1)]
+pub type Db(url: string) implement Module {
+    fn make() -> Self {
+        return Db(url: "mem");
+    }
+
+    fn start(self: Self) -> string {
+        return "db up";
+    }
+}
+
+fn describe(ds: Declared<Module>[]) -> string {
+    var parts: string[] = [];
+    for (ds) { d ->
+        for (d.metaAll(ModuleOrder)) { m ->
+            parts.push(d.name + "#" + m.order.toString());
+        }
+    }
+    return parts.join(" ");
+}
+
+pub fn main() -> void {
+    val all: Declared<Module>[] = @TypeInfo.all(with: module);
+    print(all.length);
+    print(describe(all));
+    print(Db.make().start());
+}
+
+// What `#[module]` records: where the module starts.
+pub type ModuleOrder(order: i32)

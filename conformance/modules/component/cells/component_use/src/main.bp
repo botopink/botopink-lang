@@ -1,0 +1,34 @@
+import {context.RenderScope, io.terminal.print} from "std";
+
+type Element(count: i32) implement Renderable
+
+type State(value: i32, name: string)
+
+// Read with `use`: the noun, the yield.
+component fn state(initial: i32) -> Component<State> {
+    return State(value: initial, name: "state");
+}
+
+// One read with `use` composes others.
+component fn counter(start: i32) -> Component<State> {
+    val s = use state(start * 2);
+    return s;
+}
+
+// A component: its `R` implements `@Renderable`, and it may `await` too.
+component fn Widget(n: i32) -> Component<Element> {
+    val c = use state(n);
+    val { value, name } = use counter(n);
+    return Element(count: c.value + value);
+}
+
+// A plain return: an ordinary function, which activates nothing.
+fn Loading() -> Element {
+    return Element(count: 0);
+}
+
+pub async fn main() -> Async<void> {
+    val w = (await Widget(2).run(RenderScope.root())).value;
+    print(w.count); // 6: state(2) is 2, counter(2) reads state(4)
+    print(Loading().count); // 0
+}

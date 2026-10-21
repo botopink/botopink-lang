@@ -1,0 +1,9 @@
+//// Decision 330 (2) — `a ?? b` with an `a` that is never null: the default
+//// can never be taken, so the `??` is refused at the operator.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val s = "abc";
+    print(s ?? "fallback");
+}

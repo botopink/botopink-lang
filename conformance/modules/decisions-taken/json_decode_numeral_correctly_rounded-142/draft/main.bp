@@ -1,0 +1,28 @@
+//// Decision 142 — `json.decode` converts a numeral exactly, in botopink
+
+import {io.terminal} from "std";
+import {Json, decode} from "json";
+
+// The `f64` nearest to the numeral's exact decimal value, ties to even.
+fn nearest(numeral: string) -> string {
+    return case decode(numeral) {
+        Ok(doc) -> doc.f64()?.toString() ?? "not a number";
+        Error(message) -> "refused: " + message;
+    };
+}
+
+pub fn main() -> void {
+    // Clinger's fast path: 15 digits or fewer, a power of ten in -22…22.
+    terminal.print(nearest("0.1"));
+    terminal.print(nearest("123456789012345e-22"));
+    // Past the fast path: the exact fraction of big integers decides.
+    terminal.print(nearest("1e23"));
+    terminal.print(nearest("9007199254740993"));
+    terminal.print(nearest("2.2250738585072014e-308"));
+    terminal.print(nearest("1.7976931348623157e308"));
+    // The subnormal grid: the least subnormal, and half of it vanishing to 0.0.
+    terminal.print(nearest("5e-324"));
+    terminal.print(nearest("2e-324"));
+    // An overflow keeps the refusal.
+    terminal.print(nearest("1.8e308"));
+}

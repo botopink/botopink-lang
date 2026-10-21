@@ -1,0 +1,21 @@
+//// Decision 416 (1) — a field `inject` cannot fill — no context of its type
+//// declared, no default of its own — is refused at build, at the `inject`,
+//// naming the field.
+
+import {context.RenderScope, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Clock(now: string)
+
+type Deps(clock: Clock)
+
+component fn Page() -> Component<View> {
+    val deps = use inject(Deps);
+    return View(text: deps.clock.now);
+}
+
+pub async fn main() -> Async<void> {
+    val p = (await Page().run(RenderScope.root())).value;
+    print(p.text);
+}

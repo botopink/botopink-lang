@@ -1,0 +1,31 @@
+//// Decisions 379, 416 (1), question B-17-g's reading — an `inject` field
+//// finds its type's declared default in the type's own module: `Deps.clock`
+//// is `Clock`, whose default `clock` declares, read outside every provider
+//// and below `Root`'s.
+
+pub mod clock;
+
+import {clock.Clock};
+import {context.RenderScope, context.createContext, context.provide, context.inject, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Deps(clock: Clock)
+
+component fn Page() -> Component<View> {
+    val deps = use inject(Deps);
+    return View(text: deps.clock.now);
+}
+
+component fn Root() -> Component<View> {
+    use provide(createContext(Clock(now: "noon")));
+    val p = use Page();
+    return View(text: p.text);
+}
+
+pub async fn main() -> Async<void> {
+    val outside = (await Page().run(RenderScope.root())).value;
+    print(outside.text);
+    val inside = (await Root().run(RenderScope.root())).value;
+    print(inside.text);
+}

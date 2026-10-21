@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Canvas",
         "id": 1,
         "isPub": false,
@@ -27,12 +27,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,
@@ -50,7 +51,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               },
@@ -61,7 +61,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               },
@@ -72,12 +71,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,
@@ -95,7 +95,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               },
@@ -106,7 +105,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               },
@@ -117,7 +115,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               },
@@ -128,12 +125,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,

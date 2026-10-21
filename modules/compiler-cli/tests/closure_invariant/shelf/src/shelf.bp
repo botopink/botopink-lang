@@ -1,0 +1,14 @@
+//// The package's template: its expansion is the consumer's code, the function
+//// its built code calls is the library's.
+
+import {compiler} from "std";
+
+pub type Label(text: string, size: i32)
+
+pub fn makeLabel(text: string) -> Label {
+    return Label(text: text, size: text.length);
+}
+
+pub default fn label(syntax t: string) -> Label {
+    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
+}

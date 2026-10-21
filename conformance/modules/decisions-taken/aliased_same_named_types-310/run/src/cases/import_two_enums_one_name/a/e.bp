@@ -1,0 +1,8 @@
+pub type Signal {
+    Red,
+    Blink(times: i32),
+}
+
+pub fn stop() -> Signal {
+    return Signal.Red;
+}

@@ -1,0 +1,10 @@
+//// Decision 805 (6) — a type whose name starts with `Bp__` is the
+//// compiler's, refused at the name, `reserved-name`.
+
+import {io.terminal.print} from "std";
+
+type Bp__point(x: i32, y: i32)
+
+pub fn main() -> void {
+    print(Bp__point(x: 1, y: 2).x);
+}

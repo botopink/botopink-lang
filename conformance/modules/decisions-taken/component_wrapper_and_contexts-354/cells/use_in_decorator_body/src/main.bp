@@ -1,0 +1,24 @@
+//// Decision 354 (3) — a decorator's body runs at compile time over the
+//// declaration it annotates, with no render tree: `use` there is refused;
+//// what a decorator needs comes from the catalogue (353).
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+fn themed(syntax decl: unknown) -> void {
+    val t = use context(themeContext);
+}
+
+#[themed]
+component fn Label() -> Component<Element> {
+    return Element(text: "");
+}
+
+pub fn main() -> void {
+    Label();
+}

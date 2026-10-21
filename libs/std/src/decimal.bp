@@ -1,0 +1,262 @@
+//// std/decimal — the exact decimal (decision 332 (2)): Java's `BigDecimal`,
+//// an unscaled `bigint` and a `scale`, the value `unscaled × 10^-scale`
+//// (`Decimal(unscaled: 150n, scale: 2)` is `1.50`; a negative scale counts
+//// trailing zeros, `Decimal(unscaled: 1n, scale: -2)` is `100`).
+////
+//// `add`, `sub` and `mul` are exact; `div` takes the scale of its answer and
+//// a `Rounding` and has no form without them; `compare` orders by numeric
+//// value (`1.0` and `1.00` compare equal); `toString()` writes the plain text
+//// with the scale kept (`"1.00"`, never `1E+2`); `Decimal.parse(text)` reads a
+//// numeral. Pure botopink over `bigint`, so every target answers alike.
+
+import {failure.panic};
+
+// How `div` rounds a quotient its scale cannot hold — Java's `RoundingMode`.
+// `Up` rounds away from zero, `Down` toward zero, `Ceiling` toward +∞,
+// `Floor` toward −∞; the three `Half` modes round to the nearest and break a
+// tie away from zero (`HalfUp`), toward zero (`HalfDown`) or to the even
+// neighbour (`HalfEven`); `Unnecessary` asserts the quotient is exact and
+// aborts when it is not.
+pub type Rounding {
+    Up,
+    Down,
+    Ceiling,
+    Floor,
+    HalfUp,
+    HalfDown,
+    HalfEven,
+    Unnecessary,
+}
+
+pub type Decimal(
+    unscaled: bigint,
+    scale: i32,
+) {
+    // The exact sum; its scale is the larger of the two.
+    pub fn add(self: Self, other: Decimal) -> Decimal {
+        val s = larger(self.scale, other.scale);
+        return Decimal(
+            unscaled: rescaled(self, s) + rescaled(other, s),
+            scale: s,
+        );
+    }
+
+    // The exact difference; its scale is the larger of the two.
+    pub fn sub(self: Self, other: Decimal) -> Decimal {
+        val s = larger(self.scale, other.scale);
+        return Decimal(
+            unscaled: rescaled(self, s) - rescaled(other, s),
+            scale: s,
+        );
+    }
+
+    // The exact product; its scale is the sum of the two.
+    pub fn mul(self: Self, other: Decimal) -> Decimal {
+        return Decimal(
+            unscaled: self.unscaled * other.unscaled,
+            scale: self.scale + other.scale,
+        );
+    }
+
+    // The quotient at `scale`, rounded by `rounding`. A zero divisor aborts
+    // (`Decimal.div: division by zero`), and so does `Unnecessary` when the
+    // quotient does not fit `scale` (`Decimal.div: rounding necessary`).
+    pub fn div(
+        self: Self,
+        other: Decimal,
+        scale: i32,
+        rounding: Rounding,
+    ) -> Decimal {
+        if (other.unscaled == 0n) panic("Decimal.div: division by zero");
+        // unscaled = self.unscaled × 10^shift / other.unscaled
+        val shift = scale - self.scale + other.scale;
+        val num = if (shift >= 0)
+            self.unscaled * pow10(shift)
+        else
+            self.unscaled;
+        val den = if (shift >= 0)
+            other.unscaled
+        else
+            other.unscaled * pow10(0 - shift);
+        return Decimal(
+            unscaled: roundedQuotient(num, den, rounding),
+            scale: scale,
+        );
+    }
+
+    // `-1`, `0` or `1` as the value is below, equal to or above `other`'s,
+    // whatever their scales (`1.0` and `1.00` compare `0`).
+    pub fn compare(self: Self, other: Decimal) -> i32 {
+        val s = larger(self.scale, other.scale);
+        return order(rescaled(self, s), rescaled(other, s));
+    }
+
+    // The plain text: the digits, a `.` before the last `scale` of them, a
+    // `-` before a negative value; a negative scale writes its zeros
+    // (`"100"`), never an exponent.
+    pub fn toString(self: Self) -> string {
+        val digits = magnitude(self.unscaled).toString();
+        val body = if (self.scale <= 0)
+            wholeText(self.unscaled, digits, self.scale)
+        else
+            fractionText(digits, self.scale);
+        return if (self.unscaled < 0n) ["-", body].join("") else body;
+    }
+
+    // The decimal a numeral spells: an optional `+` or `-`, digits, an
+    // optional `.` followed by digits, an optional exponent `e` / `E` with an
+    // optional sign and digits — the whole text. Its scale is the count of
+    // fraction digits less the exponent (`"1.50"` is scale 2, `"1E+2"` is
+    // scale -2). Anything else is an `Error` naming the text.
+    pub fn parse(text: string) -> Result<Decimal, string> {
+        val e = exponentAt(text);
+        val mantissa = if (e < 0) text else text.slice(0, e);
+        val exponent = if (e < 0) "0" else text.slice(e + 1);
+        val sign = if (mantissa.startsWith("-")) "-" else "";
+        val unsigned = if (mantissa.startsWith("-") || mantissa.startsWith("+"))
+            mantissa.slice(1)
+        else
+            mantissa;
+        val dot = unsigned.indexOf(".");
+        val whole = if (dot < 0) unsigned else unsigned.slice(0, dot);
+        val fraction = if (dot < 0) "" else unsigned.slice(dot + 1);
+        val wellFormed = allDigits(whole)
+            && (dot < 0 || allDigits(fraction))
+            && (e < 0 || exponentWellFormed(exponent));
+        if (!wellFormed) throw parseProblem(text, "is not a decimal");
+        val power = exponentValue(exponent);
+        if (power == 1000000000 || power == 0 - 1000000000)
+            throw parseProblem(text, "has an exponent out of range");
+        return Decimal(
+            unscaled: bigint
+                .parse([sign, whole, fraction].join(""))
+                .unwrapOr(0n),
+            scale: fraction.length() - power,
+        );
+    }
+}
+
+// ── internal ─────────────────────────────────────────────────────────────────
+
+fn larger(a: i32, b: i32) -> i32 {
+    return if (a > b) a else b;
+}
+
+// 10^n for n ≥ 0.
+fn pow10(n: i32) -> bigint {
+    var p = 1n;
+    var i = 0;
+    while (i < n) {
+        p = p * 10n;
+        i = i + 1;
+    }
+    return p;
+}
+
+// `d`'s unscaled value at the scale `s` ≥ `d.scale` — exact.
+fn rescaled(d: Decimal, s: i32) -> bigint {
+    return d.unscaled * pow10(s - d.scale);
+}
+
+fn magnitude(n: bigint) -> bigint {
+    return if (n < 0n) 0n - n else n;
+}
+
+fn order(a: bigint, b: bigint) -> i32 {
+    return if (a < b) 0 - 1 else if (a > b) 1 else 0;
+}
+
+// The quotient `num / den` rounded to an integer by `mode`.
+fn roundedQuotient(num: bigint, den: bigint, mode: Rounding) -> bigint {
+    val q = num / den;
+    val r = num % den;
+    if (r == 0n) return q;
+    if (isUnnecessary(mode)) panic("Decimal.div: rounding necessary");
+    val positive = (num < 0n) == (den < 0n);
+    val half = order(magnitude(r) * 2n, magnitude(den));
+    val away = case mode {
+        Up -> true;
+        Down -> false;
+        Ceiling -> positive;
+        Floor -> !positive;
+        HalfUp -> half >= 0;
+        HalfDown -> half > 0;
+        HalfEven -> half > 0 || (half == 0 && q % 2n != 0n);
+        _ -> false;
+    };
+    if (!away) return q;
+    return if (positive) q + 1n else q - 1n;
+}
+
+fn isUnnecessary(mode: Rounding) -> bool {
+    return case mode {
+        Unnecessary -> true;
+        _ -> false;
+    };
+}
+
+// The text of a value whose scale is 0 or below: the digits and `-scale`
+// zeros (`0` alone for zero).
+fn wholeText(unscaled: bigint, digits: string, scale: i32) -> string {
+    return if (unscaled == 0n)
+        "0"
+    else
+        [digits, "0".repeat(0 - scale)].join("");
+}
+
+// The text of a value whose scale is above 0: the digits padded with leading
+// zeros to one more than the scale, a `.` before the last `scale`.
+fn fractionText(digits: string, scale: i32) -> string {
+    val missing = scale + 1 - digits.length();
+    val padded = if (missing > 0)
+        ["0".repeat(missing), digits].join("")
+    else
+        digits;
+    val cut = padded.length() - scale;
+    return [padded.slice(0, cut), ".", padded.slice(cut)].join("");
+}
+
+// The index of the exponent marker `e` or `E`, `-1` when there is none.
+fn exponentAt(text: string) -> i32 {
+    val lower = text.indexOf("e");
+    return if (lower >= 0) lower else text.indexOf("E");
+}
+
+// True when `s` is one or more of the digits `0`–`9` and nothing else.
+fn allDigits(s: string) -> bool {
+    if (s.length() == 0) return false;
+    var ok = true;
+    for (s.chars()) { c ->
+        if ("0123456789".indexOf(c) < 0) ok = false;
+    }
+    return ok;
+}
+
+fn exponentWellFormed(exponent: string) -> bool {
+    val digits = if (exponent.startsWith("-") || exponent.startsWith("+"))
+        exponent.slice(1)
+    else
+        exponent;
+    return allDigits(digits);
+}
+
+// The exponent's value; ±1000000000 when it has more than nine digits, which
+// `parse` refuses (a scale is an `i32`).
+fn exponentValue(exponent: string) -> i32 {
+    val negative = exponent.startsWith("-");
+    val digits = if (negative || exponent.startsWith("+"))
+        exponent.slice(1)
+    else
+        exponent;
+    if (digits.length() > 9)
+        return if (negative) 0 - 1000000000 else 1000000000;
+    var n = 0;
+    for (digits.chars()) { c ->
+        n = n * 10 + "0123456789".indexOf(c);
+    }
+    return if (negative) 0 - n else n;
+}
+
+fn parseProblem(text: string, what: string) -> string {
+    return ["Decimal.parse: \"", text, "\" ", what].join("");
+}

@@ -1,0 +1,16 @@
+//// A record imported from a package (`import {items.Queue} from "shelf"`)
+//// beside a std module that declares a type of the same name
+//// (`import {collections} from "std"`, whose `Queue<T>` is std's). `Queue(…)`
+//// in this module is the imported one: the value is `shelf`'s record, its
+//// fields print as written, and `shelf`'s own function accepts it.
+
+import {collections, io.terminal.print} from "std";
+import {items.Queue, items.describe} from "shelf";
+
+pub fn main() -> void {
+    val q = Queue(label: "crowded", size: 2);
+    print(q.label);
+    print(q.size);
+    print(describe(q));
+    print(collections.toInt(collections.lt()));
+}

@@ -1,0 +1,33 @@
+//// Decision 787 — a `Module` that compiled is run by `m.run()` in a `compiler.init` body:
+//// the loaded package joins the program and its `main` runs at that point of the init
+//// body, which runs when the program runs. `run` answers `Ok` when `main` returns and
+//// `Error(Failure)` when it crashes — or, decision 792 (1), when it answers `Error(e)` —,
+//// read with `try … catch` as every `Result`.
+
+import {compiler, io.terminal.print} from "std";
+
+// Expanded where the block calls it (decision 788): its load and its `compiler.init`
+// are the block's.
+fn runCase(comptime name: string) -> void {
+    val loaded = comptime compiler.load("src/cases/" + name + "/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            print("== " + name);
+            try m.run() catch { f ->
+                print("abort " + f.message)
+            }
+            print("end " + name);
+        });
+        Error(r) -> compiler.init({ -> print("refused " + r.module.path()) });
+    }
+}
+
+comptime {
+    runCase("fine");
+    runCase("crash");
+    runCase("err");
+}
+
+pub fn main() -> void {
+    print("main");
+}

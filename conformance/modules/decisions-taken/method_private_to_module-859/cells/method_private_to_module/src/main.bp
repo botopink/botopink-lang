@@ -1,0 +1,13 @@
+//// Decision 859 (1) — a method written without `pub` is private to its module for every type, not only
+//// an opaque one: called from another module it is `method-not-pub`, at the call, naming the type and
+//// the method.
+
+import {io.terminal.print} from "std";
+mod box;
+import {box.Box};
+
+pub fn main() -> void {
+    val b = Box(n: 2);
+    print(b.shown());
+    print(b.label());
+}

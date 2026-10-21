@@ -1,0 +1,10 @@
+//// Decision 270 — The package `"bpp"` names (361) may have a prelude module: the one declaring a `#[bpp.htmlPrelude]` marker `val` (`#[bpp
+
+import {io.terminal} from "std";
+import {Card};
+import {Badge};
+
+pub fn main() -> void {
+    terminal.print(Card());
+    terminal.print(Badge());
+}

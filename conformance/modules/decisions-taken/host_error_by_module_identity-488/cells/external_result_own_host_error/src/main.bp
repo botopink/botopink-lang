@@ -1,0 +1,15 @@
+//// Decision 488 — the `HostError` of a `result: true` binding is std's
+//// `failure.HostError`, by module identity: a type the module declares under
+//// the same name is not it, so the binding is refused at the annotation,
+//// naming std's type.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type HostError(message: string)
+
+#[compiler.external(.JavaScript("JSON.parse($0)", result: true), .Erlang("json:decode($0)", result: true))]
+declare fn jsParse(s: string) -> Result<i32, HostError>;
+
+pub fn main() -> void {
+    print(jsParse("1").isOk());
+}

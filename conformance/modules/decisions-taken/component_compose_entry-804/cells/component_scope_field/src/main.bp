@@ -1,0 +1,18 @@
+//// Decisions 804 (1), 388 (5) — a component holds no scope: the renderer
+//// hands it to `compose` at each run. A type component's field typed
+//// `RenderScope` is refused at the field.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Card(title: string, scope: RenderScope) implement Component<View> {
+    fn compose(self: Self) -> Component<View> {
+        return View(text: self.title);
+    }
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Card(title: "x", scope: RenderScope.root()).run(RenderScope.root());
+    print(r.value.text);
+}

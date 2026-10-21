@@ -1,0 +1,11 @@
+//// Decision 136 — A primitive receiver answers only the methods it declares
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val word = "abc";
+    val xs = [1, 2, 3];
+    print(word.toUpper());
+    print(xs.length());
+    print(word.toUpperCase());
+}

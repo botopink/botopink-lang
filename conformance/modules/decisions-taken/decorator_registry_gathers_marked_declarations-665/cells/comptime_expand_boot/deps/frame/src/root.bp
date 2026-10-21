@@ -1,0 +1,38 @@
+//// A framework whose `boot` starts every `#[module]` of the program that
+//// calls it, in the order their `meta` gives (decisions 551, 562). Every
+//// parameter of `boot` is `comptime`, so the call is expanded where it is
+//// written: the loops and the condition run at build, over the catalogue's
+//// `name` and `meta`; each `say` and `start`, which reach a run-time value
+//// (a host function, an entry's `value`), is emitted at the call, in order.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
+declare fn say(line: string) -> void;
+
+fn sayBody(line: string) -> void {
+    print(line);
+}
+
+pub fn module(syntax decl: unknown, comptime order: i32) -> void {
+    decl.setMeta("order", order.toString());
+}
+
+fn start(m: unknown) -> void {
+    if (m is fn() -> string) say(m());
+}
+
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: module)) -> void {
+    for (1...modules.length) { rank ->
+        for (modules) { d ->
+            if (d.meta.any({ m -> m.key == "order" && m.value == rank.toString() })) {
+                say("starting " + d.name);
+                start(d.value);
+            }
+        }
+    }
+}

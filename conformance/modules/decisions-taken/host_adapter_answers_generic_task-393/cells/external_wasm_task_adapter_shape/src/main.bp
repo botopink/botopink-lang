@@ -1,0 +1,22 @@
+//// Decision 393 — an adapter answering `Async<T>` is checked by shape at the
+//// annotation: `wasi: .Delay` is `(i32, T) -> Async<T>` over one type parameter,
+//// and a declaration of another shape is refused there on every target
+//// (decision 238: the binding is read whatever the build's target), though
+//// the other targets bind their own templates.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)"""),
+    .Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
+    .Wasm(wasi: .Delay),
+)]
+declare fn later(millis: i32, value: string) -> Async<string>;
+
+async fn run() -> Async<void> {
+    print(await later(1, "done"));
+}
+
+pub fn main() -> void {
+    run();
+}

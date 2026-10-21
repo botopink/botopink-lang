@@ -1,0 +1,17 @@
+//// Decision 738 — neither `Pair<A, B>` nor `Function` exists: a pair is the tuple `#(A, B)`, and the function combinators are plain functions of std's `functions` module.
+
+import {io.terminal} from "std";
+import {functions.compose} from "std";
+
+pub fn main() -> void {
+    // A pair is the tuple: built with `#(…)`, read by `._1` or a pattern.
+    val p = #(1, "x");
+    val #(n, _) = p;
+    terminal.print(p._1);
+    // A combinator is a plain function of std's `functions`.
+    val f = compose({ a -> a + 1 }, { b -> b * 2 });
+    terminal.print(f(n));
+    // `Pair` names nothing: refused at `Pair`, naming the tuple.
+    val q = Pair.of(1, "x");
+    terminal.print(q._0);
+}

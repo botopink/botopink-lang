@@ -1,0 +1,15 @@
+//// conformance/docs.md § Imports — `import kit;` and `import {kit} from "kit"`
+//// are one form (decision 582 (3)): the namespace of the package's module `kit`
+//// (`src/kit.bp`), its items reached through it, the namespace called as that
+//// module's `pub default`.
+
+import {kit} from "kit";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val t = kit("hi");
+    print(kit.shout(t));
+    print(kit.shout(kit.Tag(label: "direct")));
+    val make = kit;
+    print(make("bound").label);
+}

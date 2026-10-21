@@ -1,0 +1,13 @@
+//// Decision 444 — `NaN`, `Infinity` and `-Infinity` print as those words on wasm
+
+import {io.terminal} from "std";
+
+pub fn main() -> void {
+    val zero = 0.0;
+    // On wasm, as on commonJS, the three special floats print as words.
+    val up = 1.0 / zero;
+    terminal.print(up);
+    terminal.print(0.0 - up);
+    terminal.print(zero / zero);
+    terminal.print("${up} and ${zero / zero}");
+}

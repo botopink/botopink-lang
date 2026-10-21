@@ -1,0 +1,29 @@
+//// Decision 830 (811-c) — a `default fn` body adopted into an implementing type is no
+//// lowering: building an opaque type there is `opaque-construction`, as in any program.
+
+import {io.terminal.print} from "std";
+
+pub opaque type Token(value: string) {
+    pub fn of(value: string) -> Token {
+        return Token(value: value);
+    }
+}
+
+behavior Makes {
+    fn tag(self: Self) -> string;
+
+    default fn make(self: Self) -> Token {
+        return Token(value: "x");
+    }
+}
+
+type Maker() implement Makes {
+    fn tag(self: Self) -> string {
+        return "m";
+    }
+}
+
+pub fn main() -> void {
+    val t = Maker().make();
+    print("done");
+}

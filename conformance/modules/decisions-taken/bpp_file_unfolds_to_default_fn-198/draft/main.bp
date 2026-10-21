@@ -1,0 +1,8 @@
+//// Decision 198 — A `.bpp` file is another spelling of a `.bp` module, unfolded by the toolchain onto a library's default function.
+
+import {components.Card};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Card(title: "ab"));
+}

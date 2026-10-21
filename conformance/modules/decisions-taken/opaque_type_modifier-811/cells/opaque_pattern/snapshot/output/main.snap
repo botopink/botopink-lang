@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: opaque-field: `Token` is an opaque type — a pattern of its fields opens it, and only its own methods do (decisions 811, 814)
+at src/main.bp:33:9

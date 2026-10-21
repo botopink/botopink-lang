@@ -1,0 +1,47 @@
+botopink-cell 1
+out 8080
+out 42
+out no port
+out port 80
+out 443
+out 15000000012
+out 2500000002
+out true
+out 5000000004
+out 0
+out -1
+out ok abc
+out error empty
+out error long
+out ok ab!
+out error empty
+out ok ab
+out error too long
+out true
+out false
+out true
+out error negative
+out ok loaded
+out statement negative
+out negative
+out level error
+out status ok
+out ana 7
+out 404 no user -1
+out box bia
+out no envelope
+out x+y
+out negative -5
+out error negative -6
+out 1
+out negative -7
+out build 2
+out test: negative -8
+out build 2
+out attempt: negative -8
+out port 81
+out zero
+out too big: 70000
+out 3
+out 5
+out -1

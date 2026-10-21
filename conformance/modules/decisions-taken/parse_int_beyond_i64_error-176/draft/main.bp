@@ -1,0 +1,20 @@
+//// Decision 176 — † `string.parseInt()` of an integer beyond the `i64` range (−2^63 … 2^63 − 1, 319) is `Error` on every target
+
+import {io.terminal.print} from "std";
+
+fn parsed(s: string) -> string {
+    return case s.parseInt() {
+        Ok(n) -> "Ok " + n.toString();
+        Error(reason) -> "Error " + reason;
+    };
+}
+
+pub fn main() -> void {
+    print(parsed("9223372036854775807"));
+    print(parsed("-9223372036854775808"));
+    print(parsed("9223372036854775808"));
+    print(parsed("-9223372036854775809"));
+    print(parsed("123456789012345678901234567890"));
+    val top = "9223372036854775807".parseInt().unwrapOr(0l);
+    print(top - 1l);
+}

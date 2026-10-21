@@ -1,0 +1,10 @@
+pub type Shop(name: string) {
+    pub fn num(self: Self) -> Result<string, string> {
+        return self.name;
+    }
+
+    pub fn code(self: Self) -> Result<i32, string> {
+        if (self.name == "") throw "no name";
+        return self.name.length();
+    }
+}

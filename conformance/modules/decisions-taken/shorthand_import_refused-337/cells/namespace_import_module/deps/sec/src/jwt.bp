@@ -1,0 +1,9 @@
+//// A module of a dependency, imported by its consumer as a namespace.
+
+pub fn sign(payload: string) -> string {
+    return "signed(" + payload + ")";
+}
+
+pub fn verify(token: string) -> bool {
+    return token.startsWith("signed(");
+}

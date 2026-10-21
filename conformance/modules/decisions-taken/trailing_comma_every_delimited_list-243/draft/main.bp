@@ -1,0 +1,49 @@
+//// Decision 243 — 166 reaches every delimited list — generics, parameters, patterns, imports, types, arrays, record fields, enum bodies, c
+
+import {io.terminal.print} from "std";
+
+type Palette {
+    Red,
+    Green,
+}
+
+type Point(
+    x: i32,
+    y: i32,
+)
+
+type Pair<K, V>(key: K, value: V)
+
+fn describe(
+    color: Palette,
+    pair: Pair<i32, string>,
+    point: Point,
+) -> string {
+    val name = case color {
+        Red -> "red";
+        Green -> "green";
+    };
+    return name
+        + " "
+        + pair.key.toString()
+        + ":"
+        + pair.value
+        + " "
+        + point.x.toString()
+        + " "
+        + point.y.toString();
+}
+
+pub fn main() -> void {
+    val labels = [
+        "one",
+        "two",
+    ];
+    val t = #(1, labels[0]!);
+    val #(n, word) = t;
+    print(describe(
+        Palette.Red,
+        Pair(key: n, value: word),
+        Point(x: 3, y: 4),
+    ));
+}

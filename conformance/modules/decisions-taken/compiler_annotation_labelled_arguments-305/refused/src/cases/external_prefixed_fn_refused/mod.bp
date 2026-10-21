@@ -1,0 +1,17 @@
+//// Decision 305 — on every target a binding cell is a labelled argument: the
+//// prefixed string `"fn:mixBody"` binds nothing on `compiler.external(.JavaScript)` or
+//// `compiler.external(.Erlang)` either. It is refused at the argument, naming the
+//// labelled form; an unlabelled string is host code.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("fn:mixBody"), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+pub declare fn mix(x: f64, y: f64) -> f64;
+
+fn mixBody(a: f64, b: f64) -> f64 {
+    return a * 2.0 + b;
+}
+
+pub fn main() -> void {
+    print(mix(1.5, 2.0));
+}

@@ -1,0 +1,42 @@
+//// Decision 553 (1), (4) — `{ iter n -> … }` is a lambda whose body may
+//// `yield`, answering an `Iter`, and `{ async iter n -> … }` one whose
+//// body may `yield` and `await`, answering a `AsyncIter`; each is typed by the
+//// function type it is written for (147).
+
+import {io.terminal.print} from "std";
+
+async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+fn sum(f: fn(n: i32) -> Iter<i32>, n: i32) -> i32 {
+    var acc = 0;
+    for (f(n)) { x ->
+        acc = acc + x;
+    }
+    return acc;
+}
+
+pub async fn main() -> Async<void> {
+    val upTo: fn(n: i32) -> Iter<i32> = { iter n ->
+        var i = 0;
+        while (i < n) {
+            yield i;
+            i = i + 1;
+        }
+    };
+    for (upTo(3)) { x ->
+        print(x);
+    }
+    print(sum({ iter n ->
+        yield n;
+        yield n * 10;
+    }, 2));
+    val ticks: fn(n: i32) -> AsyncIter<i32> = { async iter n ->
+        yield await double(n);
+        yield await double(n + 1);
+    };
+    for await (ticks(1)) { x ->
+        print(x);
+    }
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: after `catch` the value is not a Result — a `val assert` over a `Result` takes no `catch`
+at src/cases/val_assert_after_catch/mod.bp:12:33

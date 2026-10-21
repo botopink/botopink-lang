@@ -1,0 +1,7 @@
+//// Decision 8 §9 — `throw` outside a fallible fn is an error.
+
+import {io.terminal.print} from "std";
+
+fn parse(s: string) -> i32 { throw "boom"; }
+
+pub fn main() -> void { print(parse("a")); }

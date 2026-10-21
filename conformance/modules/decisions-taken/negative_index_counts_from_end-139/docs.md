@@ -1,0 +1,17 @@
+# Decision 139 — A negative index counts from the end, on every backend
+
+[refused/src/cases/ambient_index_implement_missing_method/mod.bp](refused/src/cases/ambient_index_implement_missing_method/mod.bp)
+[cells/ambient_index_parameter/src/main.bp](cells/ambient_index_parameter/src/main.bp)
+[refused/src/cases/generic_index_answers_optional/mod.bp](refused/src/cases/generic_index_answers_optional/mod.bp)
+[cells/generic_index_optional_return/src/main.bp](cells/generic_index_optional_return/src/main.bp)
+[refused/src/cases/index_answer_is_optional/mod.bp](refused/src/cases/index_answer_is_optional/mod.bp)
+[run/src/cases/index_answer_typed_optional/mod.bp](run/src/cases/index_answer_typed_optional/mod.bp)
+[run/src/cases/index_at_optional/mod.bp](run/src/cases/index_at_optional/mod.bp)
+[run/src/cases/index_dict/mod.bp](run/src/cases/index_dict/mod.bp)
+[run/src/cases/index_negative_from_end/mod.bp](run/src/cases/index_negative_from_end/mod.bp)
+[run/src/cases/index_past_the_end_is_null/mod.bp](run/src/cases/index_past_the_end_is_null/mod.bp)
+[run/src/cases/index_tuple/mod.bp](run/src/cases/index_tuple/mod.bp)
+[refused/src/cases/index_tuple_computed/mod.bp](refused/src/cases/index_tuple_computed/mod.bp)
+[refused/src/cases/index_tuple_out_of_range/mod.bp](refused/src/cases/index_tuple_out_of_range/mod.bp)
+[run/src/cases/index_user_type/mod.bp](run/src/cases/index_user_type/mod.bp)
+[run/src/cases/string_at/mod.bp](run/src/cases/string_at/mod.bp)

@@ -1,0 +1,23 @@
+//// Decisions 577, 578 — a template is a function whose first parameter is
+//// its text, `syntax q: string`, called `` name @`…` ``: the text arrives raw
+//// (no escape but `` \` ``, no hole) and `compiler.text(q)` reads it. The
+//// call becomes the template's return: a value computed at build is spliced
+//// as a literal (`shout`), and `compiler.build(source)` answers the code
+//// built from text, typed where the call stands (`-> anyvalue`, `twice`).
+
+import {compiler, io.terminal.print} from "std";
+
+fn shout(syntax q: string) -> string {
+    val loud = compiler.text(q).toUpper() + "!";
+    return loud;
+}
+
+fn twice(syntax q: string) -> anyvalue {
+    return compiler.build(compiler.text(q) + " * 2");
+}
+
+pub fn runCase() -> void {
+    print(shout @`hello`);
+    print(twice @`21`);
+    print(shout @`a\n "b" ${c} \``);
+}

@@ -1,0 +1,3 @@
+> Decision 579 (2) — without the import `compiler` is an ordinary name: a
+> field, a parameter of another function and a local, each read as any
+> other.

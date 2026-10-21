@@ -1,0 +1,56 @@
+//// Decision 541 (2) — a `case` arm's block is no function: the task scope of the enclosing
+//// function is its own, so an `await` in a `pat { … }` arm is accepted in a function that
+//// returns `Async`, as it is in an expression arm.
+
+import {io.terminal.print} from "std";
+
+async fn make(n: i32) -> Async<i32> {
+    return n * 10;
+}
+
+async fn statement(k: i32) -> Async<void> {
+    case k {
+        1 {
+            val t = await make(2);
+            print(t);
+        }
+        _ {
+            print(0);
+        }
+    }
+}
+
+async fn value(k: i32) -> Async<void> {
+    val v = case k {
+        1 {
+            val t = await make(3);
+            t + 1
+        }
+        _ {
+            0
+        }
+    };
+    print(v);
+}
+
+async fn returned(k: i32) -> Async<i32> {
+    case k {
+        1 {
+            val v = await make(4);
+            return v + 1;
+        }
+        _ {
+            return 0 - 1;
+        }
+    }
+}
+
+async fn run() -> Async<void> {
+    statement(1);
+    value(1);
+    print(await returned(1));
+}
+
+pub fn main() -> void {
+    run();
+}

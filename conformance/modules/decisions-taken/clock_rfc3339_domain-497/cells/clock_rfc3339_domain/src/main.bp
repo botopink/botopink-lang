@@ -1,0 +1,40 @@
+//// 144 B-24, decision 497 — `io/clock`'s `formatIso8601`, `toCivil` and `offsetMinutes` answer
+//// on every epoch RFC 3339 writes, 0000-01-01T00:00:00Z (-62167219200000) …
+//// 9999-12-31T23:59:59.999Z (253402300799999), its two ends included, alike on every target.
+//// Narrowed to the targets with a clock host binding.
+
+import {io.clock, io.terminal.print} from "std";
+
+fn printCivil(c: clock.Civil) -> void {
+    print(
+        [
+            c.year.toString(),
+            "-",
+            c.month.toString(),
+            "-",
+            c.day.toString(),
+            " ",
+            c.hour.toString(),
+            ":",
+            c.minute.toString(),
+            ":",
+            c.second.toString(),
+            " weekday ",
+            c.weekday.toString(),
+        ].join(""),
+    );
+}
+
+pub fn main() -> void {
+    val first = -62167219200000l;
+    val last = 253402300799999l;
+    print(clock.formatIso8601(first).startsWith("0000-01-01T00:00:00"));
+    print(clock.formatIso8601(last).startsWith("9999-12-31T23:59:59"));
+    printCivil(clock.toCivil(first));
+    printCivil(clock.toCivil(last));
+    printCivil(clock.toCivil(0l));
+    val early = clock.offsetMinutes(first);
+    val late = clock.offsetMinutes(last);
+    print(early >= -1440 && early <= 1440);
+    print(late >= -1440 && late <= 1440);
+}

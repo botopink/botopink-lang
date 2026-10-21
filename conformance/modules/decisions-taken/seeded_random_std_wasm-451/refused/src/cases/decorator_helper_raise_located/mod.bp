@@ -1,0 +1,24 @@
+//// Decision 451 (3), 144 B-48 — a decorator body that calls a function of
+//// its own module, which raises, is refused at the call that raised: the
+//// `panic` inside `requireShort`, the innermost of this module's calls the
+//// raise leaves — not the helper's call in the body, not the annotation
+//// `#[short]` that ran the body.
+
+import {compiler, failure.panic, io.terminal.print} from "std";
+
+fn requireShort(name: string) -> string {
+    if (name.length() > 3) panic("too long: " + name);
+    return name;
+}
+
+fn short(syntax decl: unknown) -> void {
+    val n = requireShort(compiler.name(decl)!);
+    @emit("pub fn tag() -> string { return \"" + n + "\"; }");
+}
+
+#[short]
+type Point(x: i32, y: i32)
+
+pub fn main() -> void {
+    print(tag());
+}

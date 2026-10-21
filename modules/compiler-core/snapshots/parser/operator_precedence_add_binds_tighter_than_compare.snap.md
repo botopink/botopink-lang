@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Test",
         "id": 1,
         "isPub": false,
@@ -20,7 +20,9 @@
             "annotations": [],
             "genericParams": [],
             "params": [],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": [
               {
                 "expr": {

@@ -1,0 +1,21 @@
+//// Decision 519 — `@embed("path")` reads a file of the package at build, relative to its
+//// `botopink.json`, as an `Asset`: the path as written, the bytes, their number and their
+//// SHA-256. A `Build` builtin, computed where it is written — a module-level `val` needs no
+//// `comptime`, and a `comptime` written stays legal. `text()` is the bytes as UTF-8 text,
+//// computed at build. The artifact carries the bytes; nothing reads the file at run time.
+//// The parent binary knew no `@embed`.
+
+import {io.terminal.print} from "std";
+
+val greeting = @embed("assets/greeting.txt");
+
+pub fn main() -> void {
+    print(greeting.path);
+    print(greeting.size);
+    print(greeting.bytes.length());
+    print(greeting.hash);
+    print(greeting.text());
+    val again = comptime @embed("assets/greeting.txt");
+    print(again.hash == greeting.hash);
+    print(again.text().length());
+}

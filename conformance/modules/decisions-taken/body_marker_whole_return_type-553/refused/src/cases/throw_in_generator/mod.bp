@@ -1,0 +1,12 @@
+//// Decision 103 of 1.0.10-beta — `Iter<T>` has no error channel, so
+//// `throw` in a `#[@generator]` body is refused, naming the generator that
+//// has one (`Iter<Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
+
+import {io.terminal.print} from "std";
+
+iter fn counted(n: i32) -> Iter<i32> {
+    yield n;
+    throw "stop";
+}
+
+pub fn main() -> void { print(1); }

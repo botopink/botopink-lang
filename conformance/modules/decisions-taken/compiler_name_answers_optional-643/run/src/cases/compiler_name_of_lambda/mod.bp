@@ -1,0 +1,21 @@
+//// Decision 643 — `compiler.name(e)` answers a `?string`: the name the
+//// expression is written as, `null` when it has none. A lambda has none, so
+//// naming the annotation's argument `{ x -> x }` answers `null`, and the
+//// decorator decides what that means.
+
+import {compiler, io.terminal.print} from "std";
+
+fn named(syntax decl: unknown, syntax rule: fn(x: i32) -> i32) -> void {
+    val n = compiler.name(rule);
+    val k = compiler.name(rule) ?? "anonymous";
+    compiler.init({ -> print(n, k) });
+}
+
+#[named({ x -> x })]
+pub fn home() -> i32 {
+    return 1;
+}
+
+pub fn runCase() -> void {
+    print(home());
+}

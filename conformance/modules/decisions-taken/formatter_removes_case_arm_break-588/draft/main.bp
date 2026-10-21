@@ -1,0 +1,29 @@
+//// Decision 588 — 525 and 525-a (3): the formatter removes, once, the last `;` of a `case` arm used as a value and the arm's `break <value
+
+import {io.terminal} from "std";
+
+type Shape {
+    Circle(radius: i32),
+    Square(side: i32),
+    Dot,
+}
+
+fn area(s: Shape) -> i32 {
+    val a = case s {
+        Circle(radius: r) {
+            val squared = r * r;
+            squared * 3
+        }
+        Square(side: n) {
+            n * n
+        }
+        Dot {
+            0
+        }
+    };
+    return a;
+}
+
+pub fn main() -> void {
+    terminal.print(area(Shape.Circle(radius: 2)), area(Shape.Square(side: 3)), area(Shape.Dot));
+}

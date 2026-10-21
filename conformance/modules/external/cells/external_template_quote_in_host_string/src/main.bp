@@ -1,0 +1,18 @@
+//// A host string literal that holds an escaped quote, inside a triple-quoted
+//// `@External` template: the template is the host's text as written, so
+//// `\\"` is the host's own `\"` (a quote inside its string). The erlang
+//// emitter resolved the backslash twice and wrote `"q="([^"]+)""`, which erlc
+//// refuses. Not scheduled on wasm: no host binding there.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""((s) => (s.match(new RegExp("q=\\"([^\\"]+)\\"", "g")) || []).length)($0)"""),
+    .Erlang("""(fun(__B) -> case re:run(__B, "q=\\"([^\\"]+)\\"", [{capture, all_but_first, binary}, global]) of {match, __Ms} -> length(__Ms); _ -> 0 end end)($0)"""),
+)]
+declare fn quoted(text: string) -> i32;
+
+pub fn main() -> void {
+    print(quoted("a q=\"x\" b q=\"y\"").toString());
+    print(quoted("none").toString());
+}

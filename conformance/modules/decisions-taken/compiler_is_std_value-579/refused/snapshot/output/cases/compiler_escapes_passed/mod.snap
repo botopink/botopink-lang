@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: compiler-escapes: `compiler` is the compiler at this point, read through its members: it is never passed nor stored
+at src/cases/compiler_escapes_passed/mod.bp:10:12

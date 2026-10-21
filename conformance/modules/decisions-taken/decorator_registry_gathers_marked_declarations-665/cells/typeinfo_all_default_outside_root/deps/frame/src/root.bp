@@ -1,0 +1,16 @@
+//// A library whose `boot` reads the catalogue of the program that calls it
+//// (decision 551): its `comptime` parameter defaults to
+//// `@TypeInfo.all(with: m)`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn m(syntax decl: unknown) -> void {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
+}
+
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
+    print(modules.length.toString());
+}
+
+// What `#[m]` records.
+pub type Role(role: string)

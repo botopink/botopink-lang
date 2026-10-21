@@ -1,0 +1,6 @@
+botopink-cell 1
+out City type main name:string size:i32
+out User type models id:i32 email:string
+out Named behavior main
+out helper fn main
+out Nobody: not in scope

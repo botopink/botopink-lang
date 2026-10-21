@@ -1,0 +1,22 @@
+//// Decision 585 — s3 P2: logic in botopink, a leaf only for the atom botopink cannot write, and what the prelude already has is named, never duplicated.
+
+import {encoding, hash, io.random, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val xs = [1, 2, 2, 3];
+    print(xs.slice(1, 3));
+    print(xs.append([4, 5]));
+    print(xs.unique());
+
+    random.seed(7);
+    val a = random.seededFloat();
+    val b = random.seededFloat();
+    random.seed(7);
+    print(a == random.seededFloat() && b == random.seededFloat());
+
+    val raw = bytes.fromUtf8("hi!");
+    print(encoding.hexEncodeBytes(raw));
+    print(encoding.base64EncodeBytes(raw));
+
+    print(hash.contentHash("🎉"));
+}

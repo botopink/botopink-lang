@@ -1,0 +1,16 @@
+//// A cell whose own tree holds a workspace manifest listing a literal entry
+//// that is no directory (`deps/botopink.json`, the shape of rakun's service
+//// cells) and a symlinked package. The wasm build the manifest's `"targets"`
+//// leaves out is read in place, so it refuses the cell on its host binding,
+//// not on the entry the scratch copy lacks.
+
+import {word} from "shared";
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("'host'"), .Erlang("<<\"host\">>"))]
+declare fn host() -> string;
+
+pub fn main() -> void {
+    print(word());
+    print(host());
+}

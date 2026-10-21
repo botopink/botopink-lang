@@ -1,0 +1,2 @@
+// A hook marker: the hook runs only on the server, at request time.
+pub fn serverOnly(syntax decl: unknown) -> void {}

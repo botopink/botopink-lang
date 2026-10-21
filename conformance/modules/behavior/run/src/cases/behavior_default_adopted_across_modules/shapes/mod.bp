@@ -1,0 +1,27 @@
+//// The behaviors, and a type of their own module adopting the default.
+
+pub behavior Named {
+    fn label(self: Self) -> string;
+
+    default fn shout(self: Self) -> string {
+        return self.label() + "!";
+    }
+}
+
+pub behavior Shape extends Named {
+    fn area(self: Self) -> i32;
+
+    default fn twice(self: Self) -> i32 {
+        return self.area() * 2;
+    }
+}
+
+pub type Dot(n: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.n;
+    }
+
+    fn label(self: Self) -> string {
+        return "dot";
+    }
+}

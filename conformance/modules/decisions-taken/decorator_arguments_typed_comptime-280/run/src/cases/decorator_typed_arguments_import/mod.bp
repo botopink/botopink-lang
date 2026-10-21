@@ -1,0 +1,19 @@
+//// Decision 280 — an imported decorator checks its arguments where it is applied: `.name`
+//// against `Type.Field<T>` with `T` the annotated type, a variant of an enum the
+//// decorator's module declares (it came with the signature), labelled; the
+//// importer imports neither `Type` nor `Order`.
+
+pub mod orm;
+
+import {cases.decorator_typed_arguments_import.orm.index, cases.decorator_typed_arguments_import.orm.sorted, cases.decorator_typed_arguments_import.orm.Index, cases.decorator_typed_arguments_import.orm.Sorted};
+import {compiler, io.terminal.print} from "std";
+
+#[index(.state, .name)]
+#[sorted(.name, order: .Desc)]
+type City(code: string, name: string, state: string)
+
+pub fn runCase() -> void {
+    val columns: string[] = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
+    print(columns.join(","));
+    print(comptime compiler.typeInfo(City).meta(Sorted)?.sort ?? "none");
+}

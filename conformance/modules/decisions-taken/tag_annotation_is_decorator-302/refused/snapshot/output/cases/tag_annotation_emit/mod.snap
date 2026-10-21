@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: tag-annotation-output: `#[withEmit]` on the tag `div` calls `@emit`, and an annotation on a tag records typed meta only
+at src/cases/tag_annotation_emit/mod.bp:10:27

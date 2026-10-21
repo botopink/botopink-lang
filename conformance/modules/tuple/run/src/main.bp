@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.tuple_label_from_variable.runCase();
+    cases.tuple_optional_element.runCase();
+    cases.tuple_print.runCase();
+    cases.tuple_to_string.runCase();
+}

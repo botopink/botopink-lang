@@ -1,0 +1,19 @@
+//// `String.length` counts code points, and `String.charCodeAt(i)` answers the
+//// code point at code-point index `i` (`-1` outside the string), over code
+//// points of one, two, three and four UTF-8 bytes.
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() -> void {
+    val s = "aé日😀z";
+    print(s.length());
+    print(s.charCodeAt(0));
+    print(s.charCodeAt(1));
+    print(s.charCodeAt(2));
+    print(s.charCodeAt(3));
+    print(s.charCodeAt(4));
+    print(s.charCodeAt(5));
+    print(s.charCodeAt(-1));
+    print("".length());
+    print("".charCodeAt(0));
+}

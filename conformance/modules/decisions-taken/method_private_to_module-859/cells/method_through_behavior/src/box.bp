@@ -1,0 +1,23 @@
+pub behavior Labelled {
+    fn label(self: Self) -> string;
+}
+
+pub type Box(n: i32) implement Labelled {
+    // Without `pub`: it implements `Labelled`'s member, reached through it from anywhere.
+    fn label(self: Self) -> string {
+        return "box " + self.n.toString();
+    }
+
+    // Without `pub`: called only in this module.
+    fn grown(self: Self) -> Box {
+        return Box(n: self.n * 2);
+    }
+
+    pub fn doubled(self: Self) -> Box {
+        return self.grown();
+    }
+}
+
+pub fn twice(b: Box) -> Box {
+    return b.grown().grown();
+}

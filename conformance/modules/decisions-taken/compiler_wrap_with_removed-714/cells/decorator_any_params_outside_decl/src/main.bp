@@ -1,0 +1,13 @@
+//// Decision 316 — `fn(..) -> R`, a function of any parameters, is the shape a
+//// decorator's `@Decl<…>` names; written as any other type it is refused at
+//// the `..`.
+
+import {io.terminal.print} from "std";
+
+fn apply(f: fn(..) -> i32) -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(apply({ -> 2 }));
+}

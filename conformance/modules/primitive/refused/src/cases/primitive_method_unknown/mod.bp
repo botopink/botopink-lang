@@ -1,0 +1,9 @@
+//// Pending 0203-a, answered (b): a name no primitive interface declares is
+//// refused at the call — it used to type as a fresh variable and reach the
+//// host, where `fooBar` does not exist either.
+
+import {io.terminal.print} from "std";
+
+fn main() -> void {
+    print("x".fooBar());
+}

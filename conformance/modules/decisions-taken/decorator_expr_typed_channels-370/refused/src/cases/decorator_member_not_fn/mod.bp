@@ -1,0 +1,26 @@
+//// Decision 370 (2) — `decl.addMember(name, f)` takes the member as a function
+//// expression written at the call: its body is where the decorator's
+//// parameters are spliced. A function named elsewhere is refused at it.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Violation(field: string, message: string)
+
+fn none(s: Signup) -> Violation[] {
+    return [];
+}
+
+fn check<T>(syntax decl: T, comptime rule: fn(v: T) -> bool) -> void {
+    compiler.addMember("validate", none);
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() -> void {
+    print("unreached");
+}

@@ -1,0 +1,15 @@
+//// Front 116 — a `.bpp` file whose header declares `type Props` is the
+//// module's anonymous `pub default fn (props: Props)`: the header's
+//// declarations at module level (`Props`, `twice`), its statements in the
+//// function's body in order, reading `props`, and the markup the literal of
+//// the package's `#[bpp.html]` function — here one that answers the
+//// literal's length, the bytes after the separator line.
+
+pub mod components;
+import {components.Card, components.Card.Props as CardProps, components.Card.twice};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Card(CardProps(title: "ab")));
+    print(twice(21));
+}

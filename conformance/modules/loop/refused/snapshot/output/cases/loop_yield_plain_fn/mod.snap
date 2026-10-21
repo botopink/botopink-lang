@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body carries no marker
+at src/cases/loop_yield_plain_fn/mod.bp:9:9

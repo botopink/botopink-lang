@@ -1,0 +1,10 @@
+pub type Box(n: i32) {
+    // Without `pub`: called only in this module (decision 859).
+    fn label(self: Self) -> string {
+        return "box " + self.n.toString();
+    }
+
+    pub fn shown(self: Self) -> string {
+        return self.label();
+    }
+}

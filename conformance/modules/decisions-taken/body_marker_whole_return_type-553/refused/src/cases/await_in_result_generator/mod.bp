@@ -1,0 +1,19 @@
+//// Decision 95 — the chain grants downwards, never upwards. `@ResultGenerator`
+//// implements `Result`, so a `#[@resultGenerator]` body answers `try`; it does not
+//// implement `@Future`, so `await` is one level above it and is refused,
+//// located, naming the level it would need (decision 67 — no flag).
+
+import {io.terminal.print} from "std";
+
+async fn fetch(n: i32) -> Async<i32> {
+    return n;
+}
+
+iter fn bad(n: i32) -> Iter<i32> {
+    val w = await fetch(n);
+    yield w;
+}
+
+pub fn main() -> void {
+    print(1);
+}

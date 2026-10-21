@@ -1,0 +1,21 @@
+//// Decisions 170, 578, 719 — the code a template or a `syntax` function builds
+//// names what its module imports, and those names resolve there: `kit` imports
+//// `unit`, the namespace `units`, std's `pow` and the namespace `math`; this
+//// module imports none of them. Its own `unit` captures nothing in the tree, and
+//// the hole `n + 1` is this module's code.
+
+import {kit.sized, kit.tagged, kit.squared, kit.named} from "kit";
+import {io.terminal.print} from "std";
+
+fn unit() -> string {
+    return "mine";
+}
+
+pub fn main() -> void {
+    val n = 2;
+    print(sized(n + 1));
+    print(tagged(n + 1));
+    print(squared(2.0).toString());
+    print(named @`abcd`);
+    print(unit());
+}

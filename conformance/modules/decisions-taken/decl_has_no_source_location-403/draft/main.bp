@@ -1,0 +1,15 @@
+//// Decision 403 — `@Decl` carries no source location: a decorator's output never depends on where its file sits.
+
+import {compiler, io.terminal} from "std";
+import {comptime.pages.page, comptime.pages.PageMeta};
+
+#[page("blog/[slug]")]
+pub fn blogPost() -> string {
+    return "a post";
+}
+
+pub fn main() -> void {
+    val m = comptime compiler.meta(blogPost, PageMeta)!;
+    terminal.print(m.route);
+    terminal.print(m.file, m.line);
+}

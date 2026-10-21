@@ -1,0 +1,12 @@
+//// Reads what `#[graph]` recorded on `Page` of `pages` (a decorator that reads
+//// `.hooks` runs after its module's bodies, so its meta is read from another
+//// module): see `pages` for the cell's subject.
+
+pub mod pages;
+
+import {pages.Page, pages.Graph};
+import {io.terminal.print, compiler} from "std";
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(Page).meta(Graph)?.nodes ?? "none");
+}

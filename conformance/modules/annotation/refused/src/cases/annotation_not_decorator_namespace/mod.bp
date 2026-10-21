@@ -1,0 +1,16 @@
+//// An annotation `#[name]` whose `name` resolves to a namespace — a module of
+//// the package — used to be dropped without a word. `check` is a module: the
+//// annotation is refused where it is written, naming that it is a namespace.
+
+import {io.terminal.print} from "std";
+
+pub mod check;
+
+#[check]
+pub fn run() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(run());
+}

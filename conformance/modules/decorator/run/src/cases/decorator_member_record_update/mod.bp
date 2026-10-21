@@ -1,0 +1,33 @@
+//// A member a decorator adds is written as if by hand, so a record update in
+//// its body — `Point(..self, y: 0)`,
+//// `Point(..v, z: z)` — copies every field it does not name, on
+//// every target (144 B-10, decision 430).
+
+import {compiler, io.terminal.print} from "std";
+
+fn flatten(syntax decl: unknown) -> void {
+    compiler.addMember(
+        "pub fn flat(self: Self) -> "
+            + compiler.name(decl)!
+            + " { return "
+            + compiler.name(decl)!
+            + "(..self, y: 0); }",
+    );
+    compiler.addMember(
+        "pub fn rebuilt(v: "
+            + compiler.name(decl)!
+            + ", z: i32) -> "
+            + compiler.name(decl)!
+            + " { val __w = "
+            + compiler.name(decl)!
+            + "(..v, z: z); return __w; }",
+    );
+}
+
+#[flatten]
+type Point(x: i32, y: i32, z: i32)
+
+pub fn runCase() -> void {
+    print(Point(x: 1, y: 2, z: 3).flat());
+    print(Point.rebuilt(Point(x: 1, y: 2, z: 3), 9));
+}

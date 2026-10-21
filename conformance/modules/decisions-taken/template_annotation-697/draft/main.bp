@@ -1,0 +1,25 @@
+//// Decision 697 — A type's or a behavior's methods' decorators run before the owner's; a method's `compiler.setMeta` / `addMeta` is kept for its owner (one value per type and method, `decorator-meta-twice`), and the owner's body reads it through `compiler.methods(decl)` — `compiler.meta<Query>(m)` / `compiler.metaAll<Query>(m)` (576 (8), 313, 298).
+
+import {io.terminal.print} from "std";
+import {comptime.repository.repository, comptime.repository.query};
+
+#[repository]
+type Users(table: string) {
+    #[query("select * from users where id = ?")]
+    pub fn byId(self: Self, id: i32) -> string {
+        return self.table;
+    }
+
+    #[query("select count(*) from users")]
+    pub fn count(self: Self) -> string {
+        return self.table;
+    }
+
+    pub fn plain(self: Self) -> string {
+        return self.table;
+    }
+}
+
+pub fn main() -> void {
+    print(Users.queries());
+}

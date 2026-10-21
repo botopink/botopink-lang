@@ -1,0 +1,18 @@
+//// Decision 808 (2) — the executor's body is written where the call is:
+//// under an `if` it runs only when the branch does — the branch not taken
+//// prints nothing, the one taken prints its case.
+
+import {compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> void {
+    compiler.init({ -> print("case " + name) });
+}
+
+fn branch(taken: bool) -> void {
+    if (taken) check("taken") else print("not taken");
+}
+
+pub fn runCase() -> void {
+    branch(false);
+    branch(true);
+}

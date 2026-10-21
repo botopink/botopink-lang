@@ -1,0 +1,14 @@
+import {compiler} from "std";
+import {comptime.registry};
+
+// The name read in the decorator's body enters the executor as a literal.
+pub fn service(syntax decl: fn() -> string) -> void {
+    val declName = compiler.name(decl)!;
+    compiler.init({ -> registry.add(declName, decl); });
+}
+
+// The same read written inside the executor: `compiler.*` there is evaluated
+// at build, so both compile to the same registration.
+pub fn job(syntax decl: fn() -> string) -> void {
+    compiler.init({ -> registry.add(compiler.name(decl)!, decl); });
+}

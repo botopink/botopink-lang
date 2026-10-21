@@ -1,0 +1,24 @@
+//// Decisions 613, 716 — inside an executor `decl` is the annotated
+//// declaration spliced as code, typed by `syntax decl: Service`, a behavior:
+//// `decl.make()` is typed by `Service.make` at the decorator, and on the type
+//// `Users` it is `Users.make()`, called when the init list runs.
+
+pub mod marks;
+pub mod registry;
+import {cases.init_executor_handle_on_type.marks.service};
+import {cases.init_executor_handle_on_type.marks.Service};
+import {cases.init_executor_handle_on_type.registry.all};
+import {io.terminal.print} from "std";
+
+#[service]
+pub type Users() implement Service {
+    fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn runCase() -> void {
+    for (all()) { e ->
+        print(e);
+    }
+}

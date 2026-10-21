@@ -1,0 +1,11 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.comptime_block_with_loop.runCase();
+    cases.comptime_enum_section_value.runCase();
+    cases.comptime_function_reference.runCase();
+    cases.comptime_imported_section_path.runCase();
+    cases.comptime_record_pattern.runCase();
+    cases.comptime_val_after_import.runCase();
+    cases.comptime_wide_literal.runCase();
+}

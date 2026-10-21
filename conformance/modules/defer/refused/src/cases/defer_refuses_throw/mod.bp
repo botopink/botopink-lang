@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+pub fn f() -> Result<i32, string> {
+    defer {
+        throw "bad";
+    }
+    return 2;
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

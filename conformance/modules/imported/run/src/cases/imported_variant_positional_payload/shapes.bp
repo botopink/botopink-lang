@@ -1,0 +1,17 @@
+//// The enum the consumer matches, declared in a sibling module. A positional
+//// payload pattern (`Circle(r)`) binds the field at its position — `radius`
+//// — whichever module the `case` is in.
+
+pub type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+    Dot,
+}
+
+pub fn unit() -> Shape {
+    return Shape.Rect(2, 3);
+}
+
+pub type Pair {
+    Two(left: Shape, right: Shape),
+}

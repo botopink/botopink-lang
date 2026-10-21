@@ -1,0 +1,27 @@
+//// Decision 280 (4) — `.Name` resolves the name exactly as declared, case
+//// included: `.custom` against `Custom` is the missing-name error, at the
+//// argument.
+
+import {types.Type, compiler, io.terminal.print} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    syntax decl: T,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
+) -> void {
+    compiler.setMeta(Check(message: message));
+}
+
+#[check("taken", code: .custom)]
+type Account(password: string, confirm: string)
+
+pub fn main() -> void {
+    print("unreached");
+}
+
+// What `#[check]` records.
+type Check(message: string)

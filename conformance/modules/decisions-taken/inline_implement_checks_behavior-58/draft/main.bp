@@ -1,0 +1,22 @@
+//// Decision 58 — The inline `implement <Behavior> { }` check is `01-checker`'s row
+
+import {io.terminal.print} from "std";
+
+pub behavior Labelled {
+    fn label(self: Self) -> string;
+}
+
+// The inline clause, kept: `Euro` declares the member it promises.
+type Euro(cents: i32) implement Labelled {
+    pub fn label(self: Self) -> string {
+        return "EUR " + self.cents.toString();
+    }
+}
+
+// The inline clause, broken: `Money` promises `Labelled` and declares no `label`.
+type Money(cents: i32) implement Labelled
+
+pub fn main() -> void {
+    print(Euro(cents: 250).label());
+    print(Money(cents: 100).cents);
+}

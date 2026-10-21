@@ -1,0 +1,5 @@
+botopink-cell 1
+refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `a / b` (division by zero)
+at src/cases/comptime_division_by_zero_in_helper/mod.bp:8:14
+from src/cases/comptime_division_by_zero_in_helper/mod.bp:12:28
+from src/cases/comptime_division_by_zero_in_helper/mod.bp:12:19

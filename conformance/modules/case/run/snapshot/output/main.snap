@@ -1,0 +1,76 @@
+botopink-cell 1
+out true
+out false
+out empty
+out one
+out many
+out 2
+out 11
+out 20
+out 30
+out 41
+out [1, 2, -1]
+out ["one", "1", "2"]
+out ["3"]
+out ["other"]
+out a?
+out b
+out display:block
+out display:inline
+out font-size:large
+out font-weight:bold
+out vec
+out other
+out yes
+out no
+out on
+out off
+out many
+out one
+out none
+out box
+out three
+out box!
+out 6
+out pt
+out 3
+out 5
+out run fast
+out run slow
+out stop
+out a
+out b!
+out 5
+out -1
+out false
+out false
+out true
+out true
+out early
+out early
+out c
+out d
+out small
+out teen or hundred
+out teen or hundred
+out other
+out greeting
+out greeting
+out farewell
+out unknown
+out round
+out round
+out unit
+out unit
+out angular
+out angular
+out LOUD
+out LOUD
+out quiet
+out hidden
+out zero
+out zero
+out nonzero
+out zero or seven: 0
+out zero or seven: 7
+out else

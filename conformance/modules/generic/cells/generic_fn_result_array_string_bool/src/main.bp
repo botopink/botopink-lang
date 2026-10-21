@@ -1,0 +1,24 @@
+//// A generic function answering `R[]`, where `R` is what its function
+//// argument returns, keeps the element type of that answer: strings print as
+//// strings and bools as bools on every target (wasm printed addresses and `0` / `1`).
+
+import {io.terminal.print} from "std";
+
+fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
+    var out: R[] = [];
+    for (items) { it ->
+        out.push(f(it));
+    }
+    return out;
+}
+
+pub fn main() -> void {
+    val words = mapAll([1, 2], { x -> x.toString() });
+    print(words);
+    val flags = mapAll([1, 2], { x -> x > 1 });
+    print(flags);
+    val shout = mapAll(["a", "b"], { s -> s + "!" });
+    print(shout);
+    val doubled = mapAll([1, 2], { x -> x * 2 });
+    print(doubled);
+}

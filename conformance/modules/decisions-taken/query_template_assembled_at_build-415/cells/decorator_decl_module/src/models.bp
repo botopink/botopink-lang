@@ -1,0 +1,6 @@
+//// A declaration of another module, annotated there.
+
+import {marks.located};
+
+#[located]
+pub type User(id: i32)

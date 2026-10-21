@@ -1,0 +1,14 @@
+//// `lib` — an enum and a function taking it; an importer names the function
+//// alone.
+
+pub type Mode {
+    Top,
+    Two(s: string),
+}
+
+pub fn label(m: Mode) -> string {
+    return case m {
+        Top -> "top";
+        Two(s: x) -> "two:" + x;
+    };
+}

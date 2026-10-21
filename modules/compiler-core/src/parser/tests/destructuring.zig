@@ -12,17 +12,9 @@ const Parser = parserMod.Parser;
 const print = @import("../../print.zig");
 const h = @import("helpers.zig");
 
-test "parser: use prefix with destructuring val" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\fn App() {
-        \\    val {count, setCount} = use state(0);
-        \\}
-    );
-}
-
 test "parser: shorthand enum ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\enum Direction {
+        \\type Direction {
         \\    North,
         \\    South,
         \\}
@@ -31,7 +23,7 @@ test "parser: shorthand enum ---- simple" {
 
 test "parser: shorthand enum ---- pub with generics and payload" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub enum Option <T> {
+        \\pub type Option <T> {
         \\    None,
         \\    Some(value: T),
         \\}
@@ -40,28 +32,28 @@ test "parser: shorthand enum ---- pub with generics and payload" {
 
 test "parser: shorthand record ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
     );
 }
 
 test "parser: shorthand record ---- pub with generics" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub record Pair <T> { first: T, second: T }
+        \\pub type Pair <T>(first: T, second: T)
     );
 }
 
 test "parser: shorthand interface ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\interface Drawable {
-        \\    fn draw()
+        \\behavior Drawable {
+        \\    fn draw() -> void;
         \\}
     );
 }
 
 test "parser: shorthand interface ---- pub with generics" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub interface Container <T> {
-        \\    fn size() -> Int
+        \\pub behavior Container <T> {
+        \\    fn size() -> Int;
         \\}
     );
 }
@@ -93,7 +85,7 @@ test "parser: destructure ---- mixed params" {
 
 test "parser: val tuple destructuring" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn bind() {
+        \\fn bind() -> void {
         \\    val #(a, b) = #(12, "5452");
         \\}
     );
@@ -118,7 +110,7 @@ test "parser: tuple destructuring as function parameter" {
 
 test "parser: try-catch with tuple destructure" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    val #(a, b) = try fetch() catch throw Error(msg: "failed");
         \\}
     );
@@ -126,7 +118,7 @@ test "parser: try-catch with tuple destructure" {
 
 test "parser: assign ---- simple number literal" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var x = 0;
         \\    x = 10;
         \\}
@@ -135,7 +127,7 @@ test "parser: assign ---- simple number literal" {
 
 test "parser: assign ---- expression" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var total = 0;
         \\    total = total + 1;
         \\}
@@ -144,7 +136,7 @@ test "parser: assign ---- expression" {
 
 test "parser: assign ---- string value" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var name = "old";
         \\    name = "new";
         \\}

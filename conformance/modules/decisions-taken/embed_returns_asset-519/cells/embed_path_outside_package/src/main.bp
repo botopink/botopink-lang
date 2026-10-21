@@ -1,0 +1,9 @@
+//// Decision 519 — a path of `@embed` names a file of the package that writes it: a `..`
+//// segment leaves the package and is refused at the argument, wherever it stands.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val a = @embed("assets/../../embed_text_file/assets/greeting.txt");
+    print(a.size);
+}

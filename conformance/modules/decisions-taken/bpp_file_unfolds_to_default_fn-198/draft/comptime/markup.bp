@@ -1,0 +1,7 @@
+import {bpp, code, compiler} from "std";
+
+#[bpp.html]
+pub default fn markup(syntax t: string) -> string {
+    val text = compiler.text(t).trim();
+    return code @`${text}`;
+}

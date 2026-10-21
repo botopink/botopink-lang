@@ -1,0 +1,19 @@
+//// Decision 354 (2) — `use provide(…)` is a statement of a component's body
+//// of its own: it yields nothing, so binding it is refused at the `use`.
+
+import {context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+component fn App() -> Component<Element> {
+    val nothing = use provide(createContext(Theme(mode: "dark")));
+    return Element(text: "");
+}
+
+pub fn main() -> void {
+    App();
+}

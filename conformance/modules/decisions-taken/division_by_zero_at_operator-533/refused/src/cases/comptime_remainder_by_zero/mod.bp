@@ -1,0 +1,10 @@
+//// Decision 533 — a remainder by zero at build is `comptime-badarith` too:
+//// `(division by zero)`, located at the `%` that divides, the same on every
+//// target.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val atBuild = comptime 7 % 0;
+    print(atBuild);
+}

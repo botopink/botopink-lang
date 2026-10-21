@@ -1,0 +1,13 @@
+//// Decision 858 — a union's exhaustiveness refusal opens with `non-exhaustive`.
+
+type Box<T>(item: T)
+
+type Pair<T>(left: T, right: T)
+
+pub fn first<T>(v: Box<T> | Pair<T>) -> T {
+    return case v {
+        Box<T> { b ->
+            b.item
+        }
+    };
+}

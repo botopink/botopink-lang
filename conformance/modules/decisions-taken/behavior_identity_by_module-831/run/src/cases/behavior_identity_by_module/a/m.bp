@@ -1,0 +1,13 @@
+pub behavior Shown {
+    fn shown(self: Self) -> string;
+}
+
+pub behavior Loud extends Shown {
+    fn loud(self: Self) -> string;
+}
+
+pub type Ping(n: i32) implement Shown {
+    fn shown(self: Self) -> string {
+        return "ping";
+    }
+}

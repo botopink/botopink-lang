@@ -1,0 +1,3 @@
+//// The package root: the handle `import shelf from "shelf"` binds.
+
+pub default mod shelf;

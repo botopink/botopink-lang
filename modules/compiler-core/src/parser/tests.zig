@@ -4,9 +4,27 @@
 
 test {
     _ = @import("tests/imports.zig");
+    _ = @import("../parser.zig");
+    _ = @import("template_markers.zig");
+    _ = @import("implementations.zig");
     _ = @import("tests/declarations.zig");
     _ = @import("tests/expressions.zig");
     _ = @import("tests/destructuring.zig");
     _ = @import("tests/errors.zig");
     _ = @import("tests/effect_rejections.zig");
+    _ = @import("tests/surface.zig");
+    _ = @import("tests/decision8.zig");
+    _ = @import("tests/language_surface.zig");
+    _ = @import("tests/type_alias.zig");
+    _ = @import("tests/decision255.zig");
+    _ = @import("tests/decision247.zig");
+    _ = @import("tests/decision280.zig");
+    _ = @import("tests/decision311.zig");
+    _ = @import("tests/decision529.zig");
+    _ = @import("tests/decision579.zig");
+    _ = @import("tests/decision539.zig");
+    _ = @import("tests/decision956.zig");
+    _ = @import("syntax_params.zig");
+    _ = @import("syntax_use.zig");
+    _ = @import("compiler_surface.zig");
 }

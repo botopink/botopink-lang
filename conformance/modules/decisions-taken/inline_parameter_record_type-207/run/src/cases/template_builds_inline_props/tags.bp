@@ -1,0 +1,21 @@
+//// A template function that builds a call of the function its literal
+//// names, each `key=value` pair a labelled argument — the shape a markup
+//// template's `<Greeting name="Partner" />` lowers to.
+
+import {compiler} from "std";
+
+pub fn tag(syntax q: string) -> string {
+    val words = compiler.text(q).split(" ");
+    var args: string[] = [];
+    for (words.slice(1, words.length)) { w ->
+        val kv = w.split("=");
+        args.push(kv.slice(0, 1).join("")
+            + ": \""
+            + kv.slice(1, 2).join("")
+            + "\"");
+    }
+    return compiler.build(words.slice(0, 1).join("")
+        + "("
+        + args.join(", ")
+        + ")");
+}

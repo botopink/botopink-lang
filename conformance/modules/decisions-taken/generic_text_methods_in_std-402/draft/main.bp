@@ -1,0 +1,20 @@
+//// Decision 402 — The three generic text methods are `String` methods named `normalizeNewlines()`, `trimTrailingNewlines()` and `firstDifferingLine(other)`, and `io/fs` gains `mkdirRecursive(path)`.
+
+import {io.fs, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val windows = "one\r\ntwo\r\nlone\rcr\r\n";
+    val unix = windows.normalizeNewlines();
+    print(unix == "one\ntwo\nlone\rcr\n");
+    print("text\n\n\n".trimTrailingNewlines() == "text");
+    print("  text \n".trimTrailingNewlines() == "  text ");
+    print("a\nb\nc".firstDifferingLine("a\nb\nc"));
+    print("a\nb\nc".firstDifferingLine("a\nB\nc"));
+    print("a\nb".firstDifferingLine("a\nb\nc"));
+
+    print(fs.mkdirRecursive("made/one/two").isOk());
+    print(fs.mkdirRecursive("made/one/two").isOk());
+    print(fs.writeText("made/file", "x").isOk());
+    print(fs.mkdirRecursive("made/file/below").isOk());
+    print(fs.removeTree("made").isOk());
+}

@@ -1,0 +1,11 @@
+//// Decision 481 — a wasm binding is one cell, `fn:`, `op:`, `wasi:` or `std:`,
+//// beside `host:`: any other label is refused at the argument, on every target.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(js: "Math.floor"))]
+pub declare fn floorOf(x: f64) -> f64;
+
+pub fn main() -> void {
+    print(floorOf(2.7));
+}

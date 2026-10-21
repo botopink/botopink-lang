@@ -1,0 +1,10 @@
+//// Decision 353 — the program declares no `#[theme]`, and the template
+//// reading the catalogue sees none: its own refusal (`e.fail`, decision 358)
+//// is located at the literal it expands.
+
+import looks from "looks";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(looks @`page`);
+}

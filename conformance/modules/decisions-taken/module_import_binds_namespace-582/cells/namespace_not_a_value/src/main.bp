@@ -1,0 +1,11 @@
+//// conformance/docs.md § Imports — a namespace of a module with no `pub default`
+//// written as a value is refused, located (decision 582).
+
+pub mod geo;
+import {geo.shapes};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(shapes.area(2));
+    val f = shapes;
+}

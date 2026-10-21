@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.lambda_binds_name_of_enclosing_fn.runCase();
+    cases.sibling_blocks_bind_one_name.runCase();
+}

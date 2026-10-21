@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: inject-not-record: `inject(Repository)` builds a record from the contexts of its fields' types, and `Repository` is no record type (decision 416 (1))
+at src/cases/inject_behavior/mod.bp:13:24

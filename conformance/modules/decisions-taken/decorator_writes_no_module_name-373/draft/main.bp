@@ -1,0 +1,15 @@
+//// Decision 373 — No new `@emit` site.
+
+import {compiler, io.terminal.print} from "std";
+import {comptime.model.entity, comptime.model.Entity, comptime.model.recorded};
+
+#[entity("cities")]
+type City(id: string, name: string)
+
+pub fn main() -> void {
+    print(City.table());
+    val c = City.Columns(id: "1", name: "Lisbon");
+    print(c.name);
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+    print(recorded().join(","));
+}

@@ -14,25 +14,18 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Node",
+            "name": "external",
             "args": [
-              "\"reverse\""
+              ".JavaScript(\"reverse\")",
+              ".Erlang(\"lists:reverse($0)\")"
             ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Erlang",
-            "args": [
-              "\"lists\"",
-              "\"reverse\""
-            ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",
@@ -46,7 +39,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
@@ -64,6 +56,27 @@
         },
         "typeGuardParam": null,
         "body": []
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

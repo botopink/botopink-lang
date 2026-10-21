@@ -1,0 +1,20 @@
+//// Decisions 105, 125 — `take(n)` reaching its count closes its source, as
+//// `toArray()` closes its handle at the end: the defer pending in the
+//// generator runs once, whether the count ends a `toArray()` or a `for`.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iter<i32> {
+    defer print("closed");
+    yield 1;
+    yield 2;
+    yield 3;
+}
+
+pub fn runCase() -> void {
+    print(counted().take(1).toArray());
+    for (counted().take(2)) { x ->
+        print(x);
+    }
+    print("end");
+}

@@ -1,0 +1,14 @@
+//// Decision 336 — `json.parse` and `json.stringify` go; `json.decode` / `json.encode` are the one way, on every target and both wasm hosts
+
+import {io.terminal.print} from "std";
+import {Json, decode, encode} from "json";
+
+pub fn main() -> void {
+    val doc = try decode("{\"b\": 1, \"a\": [true, null]}") catch Json.Null;
+    print(encode(doc));
+    val twice = case decode("{\"a\": 1, \"a\": 2}") {
+        Ok(_) -> "accepted";
+        Error(_) -> "rejected";
+    };
+    print(twice);
+}

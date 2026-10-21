@@ -1,0 +1,22 @@
+import {collections.Dict, io.terminal.print} from "std";
+
+fn marcar(n: i32) -> i32 {
+    print("[pt]");
+    return n;
+}
+
+#[compiler.beamMemory(.PersistentTerm)]
+var versao: i32 = marcar(101);
+
+#[compiler.beamMemory(.Ets)]
+var hits: i32 = 0;
+
+var counts: Dict<string, i32> = Dict.empty();
+
+pub fn main() -> void {
+    hits = hits + 1;
+    print(hits);
+    print(counts.at("a") ?? 0);
+    counts = counts.insert("a", 5);
+    print(versao);
+}

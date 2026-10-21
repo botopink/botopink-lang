@@ -1,0 +1,21 @@
+//// Decision 732 — (a): `Async<T>` is the one name of an `async` body's return type; `Task` is no name of the prelude.
+
+import {io.terminal} from "std";
+
+async fn load(id: i32) -> Async<string> {
+    return "user " + id.toString();
+}
+
+fn cached(id: i32) -> Async<string> {
+    return Async.resolve("cached " + id.toString());
+}
+
+fn both(id: i32) -> Async<string> {
+    return async { await load(id) + ", " + await cached(id) };
+}
+
+pub async fn main() -> Async<void> {
+    terminal.print(await load(1));
+    terminal.print(await cached(2));
+    terminal.print(await both(3));
+}

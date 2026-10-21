@@ -1,0 +1,9 @@
+# bpp_not_found_aliased
+
+The reference text this cell shows (from `conformance/docs.md`, § A `.bpp` file):
+
+> A file whose name is no identifier is imported
+> by it between backticks (decision 561, § Bindings): `` import {pages.`not-found` as
+> NotFound}; `` resolves `not-found.bpp` and binds its default function as `NotFound`, and without an alias
+> (`` import {pages.`not-found`}; ``) the bound name is `` `not-found` `` — an
+> alias is optional.

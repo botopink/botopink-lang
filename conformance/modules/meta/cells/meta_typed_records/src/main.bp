@@ -1,0 +1,27 @@
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string, audited: bool)
+
+type Index(column: string)
+
+fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.setMeta(Entity(table: table, audited: compiler.name(decl)!
+        == "City"));
+}
+
+fn index(syntax decl: unknown, comptime column: string) -> void {
+    compiler.addMeta(Index(column: column));
+}
+
+#[entity("cities")]
+#[index("name")]
+#[index("state")]
+type City(name: string, state: string)
+
+fn main() -> void {
+    print(comptime compiler
+        .typeInfo(City)
+        .meta(Entity)?.table ?? "none"); // cities
+    print(comptime compiler.typeInfo(City).metaAll(Index).length); // 2
+    print(comptime compiler.typeInfo(City).metaAll(Entity).length); // 1
+}

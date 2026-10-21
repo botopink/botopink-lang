@@ -1,0 +1,17 @@
+//// A type's associated fn called with more arguments than it declares is the
+//// arity error, at the call. `associatedCallReturnType` left a count that
+//// differs to a fallback that checked nothing, and `Bag.of("p", "q")`
+//// compiled against one parameter.
+
+import {io.terminal.print} from "std";
+
+type Bag(items: string[]) {
+    fn of(x: string) -> Bag {
+        return Bag(items: [x]);
+    }
+}
+
+pub fn main() -> void {
+    val b = Bag.of("p", "q");
+    print(b.items.length);
+}

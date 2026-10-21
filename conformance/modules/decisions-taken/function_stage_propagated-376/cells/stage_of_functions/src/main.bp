@@ -1,0 +1,31 @@
+//// Reads what `#[stage]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
+
+pub mod pages;
+
+import {pages.padAll, pages.agora, pages.campos, pages.titulo, pages.cabecalho, pages.twice, pages.nomes, pages.raiz, pages.depois, pages.Staged};
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    show(comptime compiler.typeInfo(padAll).meta(Staged));
+    show(comptime compiler.typeInfo(agora).meta(Staged));
+    show(comptime compiler.typeInfo(campos).meta(Staged));
+    show(comptime compiler.typeInfo(titulo).meta(Staged));
+    show(comptime compiler.typeInfo(cabecalho).meta(Staged));
+    show(comptime compiler.typeInfo(twice).meta(Staged));
+    show(comptime compiler.typeInfo(nomes).meta(Staged));
+    show(comptime compiler.typeInfo(raiz).meta(Staged));
+    show(comptime compiler.typeInfo(depois).meta(Staged));
+    print(nomes());
+    print(titulo("oi"));
+    print(twice(2));
+    print(raiz());
+}
+
+fn show(staged: ?Staged) -> void {
+    if (staged) {
+        s ->
+        print(s.name + ": " + s.stages.join(" "));
+    }
+}

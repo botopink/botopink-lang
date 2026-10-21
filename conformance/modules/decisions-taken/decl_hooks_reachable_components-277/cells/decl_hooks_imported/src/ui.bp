@@ -1,0 +1,23 @@
+//// The library half of `decl_hooks_imported`: a marker decorator, a hook it
+//// annotates and a component that reads the hook. Its nodes are published
+//// when this module's analysis ends and read by the importer's decorator.
+
+import {compiler} from "std";
+
+pub type Element(text: string) implement Renderable
+
+// A marker: it reads nothing, and a decorator that reads `decl.hooks` finds
+// it among a hook's annotations.
+pub fn tracked(syntax decl: unknown) -> void {
+    val _n = compiler.name(decl)!;
+}
+
+#[tracked]
+pub component fn session() -> Component<string> {
+    return "alice";
+}
+
+pub component fn Avatar() -> Component<Element> {
+    val s = use session();
+    return Element(text: "avatar " + s);
+}

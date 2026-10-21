@@ -1,0 +1,1 @@
+{ "name": "comptime_reaches_package_template", "dependencies": { "badges": { "path": "deps/badges" } } }

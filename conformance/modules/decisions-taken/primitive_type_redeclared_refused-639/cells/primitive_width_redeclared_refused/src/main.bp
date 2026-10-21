@@ -1,0 +1,18 @@
+//// Decision 617 (1), 639 — a width is std's prelude's type: a module writing `type i32 implement Signed { … }` is refused at the name, `primitive-type-redeclared`.
+
+import {io.terminal} from "std";
+
+behavior Signed2 {
+    fn abs(self: Self) -> Self;
+}
+
+// The prelude's form of a width, written in a module: refused at `i32`.
+type i32 implement Signed2 {
+    fn abs(self: Self) -> Self {
+        return self;
+    }
+}
+
+pub fn main() -> void {
+    terminal.print(1);
+}

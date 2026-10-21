@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: src/components/Card.bpp is a .bpp file, and botopink.json has no "bpp" — name the package whose #[bpp.html] function its markup unfolds onto ("bpp": "<package>")
+at src/components/Card.bpp:1:1

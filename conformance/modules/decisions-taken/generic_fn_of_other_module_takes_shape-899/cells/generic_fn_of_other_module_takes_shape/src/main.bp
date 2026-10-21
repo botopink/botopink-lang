@@ -1,0 +1,12 @@
+//// Decision 899 — On commonJS a call into a bodied, non-host generic fn of another module hands it the print shape of each type parameter, judged by the callee's declared signature alone; settles B-115 box 2 under 673.
+
+mod lib;
+
+import {lib.both};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(lib.show(2.0));
+    print(lib.show(2));
+    print(both(1.5, 2.0));
+}

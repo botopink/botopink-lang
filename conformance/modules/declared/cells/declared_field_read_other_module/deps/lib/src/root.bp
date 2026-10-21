@@ -1,0 +1,23 @@
+//// A package that does not declare `Declared` — the compiler's record — reads its fields off the
+//// entries the program hands it: directly, through a function, inside `map` and inside `for`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn mark(syntax decl: unknown) -> void {
+    compiler.setMeta(Mark(k: compiler.name(decl)!));
+}
+
+fn nameOf(d: Declared<unknown>) -> string {
+    return d.name;
+}
+
+pub fn show(all: Declared<unknown>[]) -> void {
+    print(all.map({ d -> d.name }).join(","));
+    print(all.map({ d -> nameOf(d) }).join(","));
+    for (all) { d ->
+        print(d.module + " " + d.name);
+    }
+}
+
+// What `#[mark]` records.
+pub type Mark(k: string)

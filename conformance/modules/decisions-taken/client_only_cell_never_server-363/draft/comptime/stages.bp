@@ -1,0 +1,21 @@
+//// The markers and a page decorator that refuses a browser-only hook outside an island.
+
+import {compiler} from "std";
+
+pub fn clientOnly(syntax decl: unknown) -> void {}
+
+pub fn client(syntax decl: unknown) -> void {}
+
+fn marked(annotations: compiler.DeclAnnotation[], syntax marker: unknown) -> bool {
+    return annotations.some({ a -> compiler.same(a.decorator, marker) });
+}
+
+pub fn page(syntax decl: unknown) -> void {
+    for (compiler.hooks(decl)) { n ->
+        val island = marked(compiler.annotations(n.function), client);
+        for (n.uses) { u ->
+            if (!island && marked(u.annotations, clientOnly))
+                compiler.fail("a #[clientOnly] hook is read only inside a #[client] component", span: u.at);
+        }
+    }
+}

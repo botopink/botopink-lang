@@ -1,0 +1,25 @@
+----- SOURCE CODE -- main.bp
+```botopink
+#[compiler.external(
+    .Erlang("""(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
+    .JavaScript("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()"""),
+)]
+pub declare fn parseInt(s: string) -> Result<i32, string>;
+
+fn main() -> void {
+    val r = parseInt("42");
+    print(r.unwrapOr(-1));
+}
+
+import {io.terminal.print, compiler} from "std";
+```
+
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: `parseInt` has no implementation for the wasm backend
+  ┌─ :8:13
+  │
+8 │     val r = parseInt("42");
+  │             ^
+```
+

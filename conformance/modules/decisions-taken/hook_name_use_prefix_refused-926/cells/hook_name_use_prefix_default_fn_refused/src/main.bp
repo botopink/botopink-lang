@@ -1,0 +1,15 @@
+//// Decision 926 — a `default fn` answering `Component<R>` named `use` followed by
+//// an upper-case letter is refused at its name, `hook-name-use-prefix`, as a `fn`
+//// is.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+behavior Counting {
+    default component fn useCounter(self: Self) -> Component<i32> {
+        return 1;
+    }
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

@@ -1,0 +1,14 @@
+//// Decision 926 — a hook is a `Component<R>` read with `use h(…)`, so a declaration
+//// answering `Component<R>` named `use` followed by an upper-case letter spells the
+//// verb twice: it is refused at its name, `hook-name-use-prefix`. Name the hook for
+//// what it yields: `use actionState(…)`.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+component fn useCounter(start: i32) -> Component<i32> {
+    return start;
+}
+
+pub async fn main() -> Async<void> {
+    print("unreachable");
+}

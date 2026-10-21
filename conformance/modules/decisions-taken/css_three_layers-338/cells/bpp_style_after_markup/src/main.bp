@@ -1,0 +1,6 @@
+//// Front 116 — a `--- style ---` line after the markup is refused at its line
+//// (decision 338: the style section comes before the markup).
+
+mod Card;
+
+pub fn main() -> void {}

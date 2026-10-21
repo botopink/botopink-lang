@@ -1,0 +1,6 @@
+//// `testing` is a folder of std, not a module: refused, naming its leaves
+//// (decision 919).
+
+import {testing} from "std";
+
+pub fn main() -> void {}

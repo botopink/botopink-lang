@@ -1,0 +1,16 @@
+botopink-cell 1
+out Color Red Green
+out Counter of(start:i32,step:i32)->Counter
+out scale x:i32 factor:f64
+out users rows=3 cached=no size=large tags=a,b index=email index=id
+out true
+out false
+out users
+out users
+out HELLO, Ana
+out multi, Ana
+out WELCOME, Bia
+out [guest] Ana
+out m:a
+out m:title
+out none

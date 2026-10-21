@@ -22,14 +22,22 @@ test "infer: integer and float literals" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val x = 42;
         \\val y = 3.14;
-        \\@print(x, y);
+        \\fn main() -> void {
+        \\    print(x, y);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val greeting = "hello";
-        \\@print(greeting);
+        \\fn main() -> void {
+        \\    print(greeting);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -38,19 +46,23 @@ test "infer: binary operators" {
         \\val sum = 1 + 2;
         \\val product = 3.0 * 2.0;
         \\val joined = "a" + "b";
-        \\@print(sum, product, joined);
+        \\fn main() -> void {
+        \\    print(sum, product, joined);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: local binding inside comptime" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val hash = comptime { break 6364 + 11; };
+        \\val hash = comptime { 6364 + 11 };
     );
 }
 
 test "infer: case on enum variants ---- all arms return string" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -71,7 +83,11 @@ test "infer: case on integer with wildcard" {
         \\    0 -> "zero";
         \\    _ -> "nonzero";
         \\};
-        \\@print(desc);
+        \\fn main() -> void {
+        \\    print(desc);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -81,13 +97,17 @@ test "infer: case with OR patterns" {
         \\    0 | 2 | 4 -> "even";
         \\    _ -> "odd";
         \\};
-        \\@print(parity);
+        \\fn main() -> void {
+        \\    print(parity);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: case with variant field bindings ---- body does not use bound vars" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\    Point,
@@ -198,8 +218,10 @@ test "infer: optional annotation ---- ?i32 val with null" {
     );
 }
 
+// Decision 2 (01 R7): an `if` without `else` has no value on its false side,
+// so binding it is refused at the `if`.
 test "infer: if expression ---- result type from then branch" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
         \\    val r = if (n > 0) { "positive"; };
         \\    return r;
@@ -231,36 +253,41 @@ test "infer: null-check binding ---- if (x) { e -> } body ignores binding" {
 }
 
 test "infer: try expression ---- result type unified with return" {
+    // `try` unwraps `@Result<i32, string>` to `i32`, and propagates the error
+    // out of `process`, which therefore carries the channel it propagates into
+    // (decision 95 — a plain `fn -> i32` is refused here).
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
-        \\    @todo();
+        \\fn fetch() -> Result<i32, string> {
+        \\    panic("not implemented");
         \\}
-        \\fn process() -> i32 {
+        \\fn process() -> Result<i32, string> {
         \\    val r = try fetch();
         \\    return r;
         \\}
         \\val x = process();
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "infer: try-catch ---- handler provides fallback" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
-        \\    @todo();
+        \\fn fetch() -> Result<i32, string> {
+        \\    panic("not implemented");
         \\}
         \\fn safe() -> i32 {
         \\    val r = try fetch() catch 0;
         \\    return r;
         \\}
         \\val x = safe();
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
 test "infer: assign ---- number literal to var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var x = 0;
         \\    x = 10;
         \\}
@@ -270,7 +297,7 @@ test "infer: assign ---- number literal to var" {
 
 test "infer: assign ---- string to var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var name = "old";
         \\    name = "new";
         \\}
@@ -280,7 +307,7 @@ test "infer: assign ---- string to var" {
 
 test "infer: assign ---- type mismatch error" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    var x = 0;
         \\    x = "oops";
         \\}
@@ -289,8 +316,8 @@ test "infer: assign ---- type mismatch error" {
 
 test "infer: stdlib array method dispatch ---- xs.isEmpty() sugar" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
-        \\    val xs: Array<i32> = [1, 2];
+        \\fn main() -> void {
+        \\    val xs: array<i32> = [1, 2];
         \\    val empty = xs.isEmpty();
         \\}
     );
@@ -298,9 +325,26 @@ test "infer: stdlib array method dispatch ---- xs.isEmpty() sugar" {
 
 test "infer: stdlib array method dispatch ---- ys.contains() with arg" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn main() {
+        \\fn main() -> void {
         \\    val ys = [1, 2, 3];
         \\    val found = ys.contains(2);
         \\}
+    );
+}
+
+test "infer: src types as SourceLocation" {
+    // 1.0.10-beta decision 73 — `@src()` is rewritten at inference into the
+    // `SourceLocation(file: …, line: …, column: …, fnName: …)` constructor
+    // call, so the typed AST carries the record type and the four literals.
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn locate() -> SourceLocation {
+        \\    return comptime compiler.src();
+        \\}
+        \\val loc = comptime compiler.src();
+        \\test "src: in a test" {
+        \\    val here = comptime compiler.src();
+        \\}
+        \\
+        \\import {compiler} from "std";
     );
 }

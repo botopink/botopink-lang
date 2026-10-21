@@ -1,0 +1,15 @@
+//// Decision 675 — a float `/` by zero on erlang and beam is the integer one's
+//// `panic`, `panic: division by zero: / on f64 at <file>:<line>:<col>`, never
+//// the raw `badarith`. commonJS and wasm keep answering `Infinity` (444).
+
+import {io.terminal.print} from "std";
+
+fn div(a: f64, b: f64) -> f64 {
+    return a / b;
+}
+
+pub fn main() -> void {
+    print(div(7.0, 2.0));
+    print(div(7.0, 0.0));
+    print("after");
+}

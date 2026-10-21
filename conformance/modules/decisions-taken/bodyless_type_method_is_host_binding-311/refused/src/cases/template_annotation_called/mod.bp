@@ -1,0 +1,17 @@
+//// Decision 311, question s29-a — a template function that takes the
+//// annotated declaration (`comptime decl: @Decl` beside its literal) is
+//// written only as an annotation; a call `f "…"` is refused at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+type Query(sql: string)
+
+fn sql(syntax q: string, syntax decl: unknown) -> string {
+    compiler.setMeta(Query(sql: compiler.text(q)));
+    return compiler.build("\"\"");
+}
+
+pub fn main() -> void {
+    val s = sql @`select 1`;
+    print(s);
+}

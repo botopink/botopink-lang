@@ -1,0 +1,13 @@
+//// A variant written with the leading dot, passed to a function of a std
+//// module reached through its namespace (`unicode.normalize(s, .NFC)`,
+//// `process.onSignal(.Term, h)`), is resolved by that function's parameter
+//// type, as through a program module's namespace or a leaf import. Before,
+//// the argument was read with no expectation: `unbound variable 'NFC'`.
+
+import {unicode, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val composed = unicode.normalize("e\u{0301}", .NFC);
+    print(composed.length());
+    print(unicode.normalize("\u{00e9}", .NFD).length());
+}

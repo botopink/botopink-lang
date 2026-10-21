@@ -1,0 +1,16 @@
+//// Decision 553 (4), 147 — a marked lambda takes its type from where it is
+//// written. `f` is bound with no type and the lambda writes none, so it is
+//// refused at its marker, `marker-lambda-without-expected-type`.
+
+import {io.terminal.print} from "std";
+
+async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+pub async fn main() -> Async<void> {
+    val f = { async x ->
+        await double(x)
+    };
+    print(await f(2));
+}

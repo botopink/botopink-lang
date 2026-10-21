@@ -1,0 +1,4 @@
+pub mod associated_fn_missing_argument;
+pub mod associated_fn_missing_required;
+pub mod associated_fn_too_many_arguments;
+pub mod associated_fn_unknown;

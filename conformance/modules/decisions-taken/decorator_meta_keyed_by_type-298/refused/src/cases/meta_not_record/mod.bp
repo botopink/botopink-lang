@@ -1,0 +1,22 @@
+//// Decision 298 — the type is the meta's key: `decl.setMeta(v)` takes a
+//// record type's constructor written at the call, read where the decorator is
+//// declared. A value built elsewhere is refused at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn make(t: string) -> Entity {
+    return Entity(table: t);
+}
+
+fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.setMeta(make(table));
+}
+
+#[entity("cities")]
+type City(name: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+}

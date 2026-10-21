@@ -1,0 +1,3 @@
+pub fn splitPath(p: string) -> string {
+    return p.replace("/", " ");
+}

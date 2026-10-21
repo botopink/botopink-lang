@@ -1,0 +1,17 @@
+//// Decision 864 (4) — a record parameter takes no default (`R`'s field
+//// defaults are the defaults): `record-param-default`, on a method as on a
+//// function; at the `=`.
+
+import {io.terminal.print} from "std";
+
+type CardProps(title: string)
+
+pub type Shelf(name: string) {
+    pub fn add(self: Self, ..props: CardProps = CardProps(title: "a")) -> string {
+        return props.title;
+    }
+}
+
+pub fn main() -> void {
+    print(Shelf(name: "s").add());
+}

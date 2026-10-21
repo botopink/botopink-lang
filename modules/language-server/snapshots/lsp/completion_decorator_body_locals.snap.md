@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub fn component(comptime decl: @Decl) {
+pub fn component(syntax decl: unknown) -> void {
     var args = "";
     items.forEach({ f ->
         log(args);
@@ -13,3 +13,4 @@ pub fn component(comptime decl: @Decl) {
 f  [Variable]  detail: binder
 args  [Variable]  detail: local
 decl  [Variable]  detail: parameter
+component  [Function]  detail: fn

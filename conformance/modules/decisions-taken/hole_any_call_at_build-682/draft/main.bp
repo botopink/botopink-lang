@@ -1,0 +1,25 @@
+//// Decision 682 — 380 folds at build an `Any` function that writes no `panic` / `throw`, no `print`, no module `var`, no function-value call and no method of a declared type; its calls through other such functions fold too.
+
+import {io.terminal} from "std";
+
+val SPACING = 4;
+
+fn pad(n: i32) -> i32 {
+    return n * SPACING + 2;
+}
+
+fn twice(n: i32) -> i32 {
+    return pad(pad(n));
+}
+
+fn loud(n: i32) -> i32 {
+    terminal.print("computing", n);
+    return n;
+}
+
+pub fn main() -> void {
+    val folded = twice(3);
+    terminal.print(folded);
+    val counted = loud(5) + 1;
+    terminal.print(counted);
+}

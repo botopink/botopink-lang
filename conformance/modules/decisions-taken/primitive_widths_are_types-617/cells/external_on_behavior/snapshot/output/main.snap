@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: external-on-behavior: `Measured.size` is a behavior's member, and a behavior carries no host code — `.Erlang(…)` belongs on the type that implements `Measured`
+at src/main.bp:8:7

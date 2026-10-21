@@ -1,0 +1,8 @@
+import {io.terminal.print} from "std";
+
+mod other;
+
+pub fn main() -> void {
+    print("package main");
+    other.main();
+}

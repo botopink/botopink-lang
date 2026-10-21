@@ -1,0 +1,10 @@
+//// Decision 547 (iii) — a module `var` whose type is an `Async` is refused at its type, on every
+//// target: a task never crosses heaps, and a module `var` is one value for the whole program.
+
+var pending: Async<i32> = async {
+    return 1;
+};
+
+pub fn read() -> i32 {
+    return 0;
+}

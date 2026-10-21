@@ -1,0 +1,1 @@
+{ "name": "cells", "workspaces": ["*"], "dependencies": { "lib": { "path": "vendor/lib" } } }

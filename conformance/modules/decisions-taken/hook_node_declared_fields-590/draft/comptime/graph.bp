@@ -1,0 +1,16 @@
+import {compiler} from "std";
+
+pub type Graph(lines: string[])
+
+pub fn graph(syntax decl: unknown) -> void {
+    var lines: string[] = [];
+    for (compiler.hooks(decl)) { n ->
+        val owner = compiler.name(n.function)!;
+        for (n.uses) { u ->
+            val ctx = u.context;
+            val read = if (ctx == null) "-" else compiler.name(ctx)!;
+            lines.push(owner + " uses " + read);
+        }
+    }
+    compiler.setMeta(Graph(lines: lines));
+}

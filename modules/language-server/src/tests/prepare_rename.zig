@@ -35,7 +35,7 @@ test "prepareRename: keyword is not renameable" {
 test "prepareRename: fn keyword rejected" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn hello() { return 1; }
+        \\fn hello() -> i32 { return 1; }
     ;
 
     const cursor = h.pos(0, 1);
@@ -61,7 +61,7 @@ test "prepareRename: null literal rejected" {
 test "prepareRename: Self rejected" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn method(self: Self) { return 0; }
+        \\fn method(self: Self) -> i32 { return 0; }
     ;
 
     const cursor = h.pos(0, 17);
@@ -83,4 +83,39 @@ test "prepareRename: fn name is renameable" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("double", result.?.placeholder);
     try snap.assertPrepareRename(gpa, "prepare_rename_fn_name", source, cursor, result);
+}
+
+// ── PR-14 — the keyword list is the lexer's ────────────────────────────────────
+
+// `record`, `enum`, `interface`, `new`, `delegate`, `struct`, `const` and the
+// seven dead keywords left `keywordOrIdent`; a binding may be named after any
+// of them, and a rename must be offered. The four words the LSP list was
+// missing must be refused.
+
+test "prepareRename: a binding named after a removed keyword is renameable" {
+    const removed = [_][]const u8{
+        "record", "enum",   "interface", "new",    "delegate",
+        "struct", "const",  "auto",      "derive", "get",
+        "macro",  "opaque", "private",   "set",    "echo",
+        "todo",
+    };
+    var buf: [64]u8 = undefined;
+    for (removed) |word| {
+        const source = try std.fmt.bufPrint(&buf, "val {s} = 1;\n", .{word});
+        // Cursor one char into the name.
+        const result = engine.prepareRename(source, h.pos(0, 5));
+        try std.testing.expect(result != null);
+        try std.testing.expectEqualStrings(word, result.?.placeholder);
+    }
+}
+
+test "prepareRename: a lexer keyword the list used to miss is refused" {
+    // `behavior`, `extend`, `is` and `mod` are keyword tokens; renaming one is
+    // never a rename of a binding.
+    const keywords = [_][]const u8{ "behavior", "extend", "is", "mod" };
+    var buf: [64]u8 = undefined;
+    for (keywords) |word| {
+        const source = try std.fmt.bufPrint(&buf, "{s} Thing;\n", .{word});
+        try std.testing.expect(engine.prepareRename(source, h.pos(0, 1)) == null);
+    }
 }

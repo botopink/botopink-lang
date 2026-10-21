@@ -1,0 +1,13 @@
+//// Decision 529 (2) — a record parameter declared in one module is called from
+//// another by label and by a spread of the imported record, the defaults
+//// from the record's fields.
+
+pub mod card;
+import {cases.record_param_across_modules.card.Card, cases.record_param_across_modules.card.CardProps};
+import {io.terminal.print} from "std";
+
+pub fn runCase() -> void {
+    print(Card(title: "a", suffix: "!"));
+    val p = CardProps(title: "z");
+    print(Card(..p, size: 4, suffix: "?"));
+}

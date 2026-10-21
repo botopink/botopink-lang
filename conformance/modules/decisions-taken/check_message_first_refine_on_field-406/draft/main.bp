@@ -1,0 +1,40 @@
+//// Decision 406 — 244 holds for decorators: `#[check]`'s `message` comes first and is required; on a field the rule is `#[refine(rule)]`, a field marker like the others.
+
+import {comptime.checks.check, comptime.checks.refine, comptime.checks.Check, comptime.checks.Code};
+import {compiler, io.terminal.print} from "std";
+
+fn passwordsMatch(a: Account) -> bool {
+    return a.password == a.confirm;
+}
+
+fn handleFree(a: Account) -> bool {
+    return a.handle != "admin";
+}
+
+fn isEven(n: i32) -> bool {
+    return n % 2 == 0;
+}
+
+#[
+    check("The passwords differ", passwordsMatch, at: .confirm),
+    check("That handle is taken", handleFree, at: .handle, code: .Mismatch),
+    check("Reviewed by hand"),
+]
+pub type Account(handle: string, password: string, confirm: string, #[refine(isEven)] seats: i32)
+
+fn violations(a: Account) -> string[] {
+    val checks: Check<Account>[] = comptime compiler.typeInfo(Account).metaAll(Check);
+    var out: string[] = [];
+    for (checks) { c ->
+        val rule = c.rule;
+        if (rule != null && !rule!(a)) {
+            out.push(c.field + ": " + c.message);
+        }
+    }
+    return out;
+}
+
+pub fn main() -> void {
+    print(violations(Account(handle: "ana", password: "x", confirm: "x", seats: 2)));
+    print(violations(Account(handle: "admin", password: "x", confirm: "y", seats: 2)));
+}

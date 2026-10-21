@@ -1,0 +1,19 @@
+//// Decision 631 — a field crosses to run time as `Field(Book, "pages")`,
+//// its owner and its name; `typeName` and `annotations` are build members,
+//// read in a decorator's body and refused in a run-time body, at the read.
+
+import {types.Type, compiler, io.terminal.print} from "std";
+
+type Sort<T>(by: Type.Field<T>)
+
+fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) -> void {
+    compiler.setMeta(Sort(by: by));
+}
+
+#[sort(.pages)]
+type Book(title: string, pages: i32)
+
+pub fn main() -> void {
+    val o = comptime compiler.typeInfo(Book).meta(Sort);
+    print(o?.by.annotations.length ?? 0);
+}

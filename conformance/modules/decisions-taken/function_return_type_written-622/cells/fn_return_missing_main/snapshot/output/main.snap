@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: fn-return-missing: `main` writes no return type — write -> void, or the type it answers
+at src/main.bp:7:8

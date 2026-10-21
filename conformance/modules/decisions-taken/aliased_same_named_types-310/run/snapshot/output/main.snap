@@ -1,0 +1,32 @@
+botopink-cell 1
+out 1
+out 5
+out 9
+out Dict(initialMs: 2)
+out kit
+out other
+out 103
+out 1
+out 70
+out 0
+out Signal.Red
+out Signal.High(db: 2)
+out light
+out sound
+out Policy(ms: 5)
+out Policy(name: "n")
+out 5
+out n
+out 10
+out n!
+out a:5
+out b:n
+out a
+out b
+out 100
+out n
+out 100
+out b!
+out 3
+out 200
+out 14

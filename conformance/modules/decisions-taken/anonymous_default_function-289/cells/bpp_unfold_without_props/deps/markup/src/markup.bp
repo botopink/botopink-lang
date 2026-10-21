@@ -1,0 +1,22 @@
+//// The markup's unfold target: answers the literal's length, and refuses a
+//// `!` in it at the `!`.
+
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
+
+#[bpp.html]
+pub default fn markup(syntax t: string) -> i32 {
+    val text = compiler.text(t);
+    val at = text.indexOf("!");
+    if (at >= 0)
+        compiler.fail("markup: `!` is not markup", at: t, span: Span(at, at
+            + 1, 1));
+    val root = CustomNode(
+        kind: "markup",
+        span: Span(0, 0, 1),
+        label: "",
+        ref: null,
+        children: [],
+    );
+    compiler.custom(root);
+    return compiler.build(text.length().toString());
+}

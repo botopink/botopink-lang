@@ -1,0 +1,16 @@
+//// A local named `print` shadows the imported function inside its scope and reads as the local;
+//// the import still binds `print` for the calls outside it, so std's `io/terminal` module is
+//// linked into the build (commonJS did not emit it: `Cannot find module './std/io/terminal.js'`).
+
+import {io.terminal.print} from "std";
+
+fn widths() -> i32[] {
+    val print: i32[] = [1, 2, 3];
+    val out: i32[] = [0, print.length];
+    return out;
+}
+
+pub fn runCase() -> void {
+    print("widths", widths());
+    print("done");
+}

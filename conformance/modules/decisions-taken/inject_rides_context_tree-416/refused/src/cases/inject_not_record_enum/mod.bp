@@ -1,0 +1,22 @@
+//// Decision 416 (1) — `inject` builds a record, and any type that is no
+//// record is refused at the argument: `inject(Mode)`, `Mode` an enum, is
+//// `inject-not-record`, as a behavior is.
+
+import {context.inject, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+type Mode {
+    Light,
+    Dark,
+}
+
+component fn Page() -> Component<View> {
+    val m = use inject(Mode);
+    return View(text: "x");
+}
+
+pub async fn main() -> Async<void> {
+    val p = await Page();
+    print(p.text);
+}

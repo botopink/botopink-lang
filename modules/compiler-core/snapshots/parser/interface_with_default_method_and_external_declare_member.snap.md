@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "List",
         "id": 1,
         "isPub": true,
@@ -32,7 +32,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
@@ -108,21 +107,12 @@
             "name": "reverse",
             "annotations": [
               {
-                "name": "External.Erlang",
-                "args": [
-                  "\"lists\"",
-                  "\"reverse\""
-                ],
-                "is_builtin": true
-              },
-              {
                 "name": "external",
                 "args": [
-                  "node",
-                  "\"./bp_stdlib.mjs\"",
-                  "\"list_reverse\""
+                  ".Erlang(\"lists:reverse($0)\")",
+                  ".JavaScript(\"./bp_stdlib.mjs\", \"list_reverse\")"
                 ],
-                "is_builtin": true
+                "is_builtin": false
               }
             ],
             "genericParams": [],
@@ -134,7 +124,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
@@ -156,6 +145,27 @@
             "isPub": false
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

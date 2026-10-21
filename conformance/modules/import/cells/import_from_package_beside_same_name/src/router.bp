@@ -1,0 +1,7 @@
+//// Imports the PACKAGE's `attempt` through a qualified item.
+
+import {match.attempt} from "pkg";
+
+pub fn route(p: string) -> string {
+    return attempt(p);
+}

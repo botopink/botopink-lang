@@ -1,0 +1,26 @@
+//// Decisions 432, 583 — a lambda answering an `async { }` block that throws is
+//// typed where it is written like any other: bound to a `val` with no
+//// annotation it is typed by nothing, and refused `lambda-untyped` at the
+//// lambda (the annotated binding is `task_async_block_in_lambda`'s).
+
+import {io.terminal.print} from "std";
+
+fn show(r: Result<i32, string>) -> void {
+    case r {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
+    }
+}
+
+async fn run() -> Async<void> {
+    val failing = { n ->
+        async {
+            throw "inner";
+        }
+    };
+    show(await failing(1));
+}
+
+pub fn main() -> void {
+    run();
+}

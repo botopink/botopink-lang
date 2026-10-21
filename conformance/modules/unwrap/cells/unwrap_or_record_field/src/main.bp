@@ -1,0 +1,40 @@
+//// `r.unwrapOr(d)` answers the payload or `d`, one record type: a field read
+//// off the answer is that record's field even when another record declares a
+//// field of the same name as a float. wasm read `p.value` by the name alone
+//// and refused it, "a record declares it a float or an `i64`" (`std/json`'s
+//// reader).
+
+import {io.terminal.print} from "std";
+
+type Kind {
+    Null,
+    Num(value: f64),
+    Str(value: string),
+}
+
+type Parsed(value: Kind, next: i32)
+
+type Conv(value: f64, ok: bool)
+
+fn scan(i: i32) -> Result<Parsed, string> {
+    if (i < 0) throw "negative";
+    return Parsed(value: Kind.Str(value: "x"), next: i + 1);
+}
+
+fn run(start: i32) -> i32 {
+    var value = Kind.Null;
+    var i = start;
+    val s = scan(i);
+    if (s.isError()) i = 0 else {
+        val p = s.unwrapOr(Parsed(value: Kind.Null, next: 0));
+        value = p.value;
+        i = p.next;
+    }
+    return i;
+}
+
+pub fn main() -> void {
+    print(run(3));
+    print(run(-1));
+    print(Conv(value: 1.5, ok: true).value);
+}

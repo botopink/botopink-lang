@@ -14,18 +14,12 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"erlang:error({todo, $0})\""
+              ".Erlang(\"erlang:error({todo, $0})\")",
+              ".JavaScript(\"(() => { throw new Error($0) })()\")"
             ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"(() => { throw new Error($0) })()\""
-            ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
@@ -37,12 +31,11 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": {
               "literal": {
                 "loc": {
-                  "line": 3,
+                  "line": 2,
                   "col": 27
                 },
                 "kind": {
@@ -61,14 +54,14 @@
             "expr": {
               "jump": {
                 "loc": {
-                  "line": 4,
+                  "line": 3,
                   "col": 5
                 },
                 "kind": {
                   "return": {
                     "identifier": {
                       "loc": {
-                        "line": 4,
+                        "line": 3,
                         "col": 12
                       },
                       "kind": {
@@ -82,6 +75,27 @@
             "emptyLinesBefore": 0
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

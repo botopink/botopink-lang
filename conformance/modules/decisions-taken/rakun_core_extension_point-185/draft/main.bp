@@ -1,0 +1,11 @@
+//// Decision 185 — When one rakun member has to tell or ask another and an edge between them would be a cycle or drag a member into consume
+
+import {io.terminal.print} from "std";
+import {cache.revalidateTag, client.get};
+
+pub fn main() -> void {
+    print(get("/posts", ["posts"]));
+    print(get("/posts", ["posts"]));
+    revalidateTag("posts");
+    print(get("/posts", ["posts"]));
+}

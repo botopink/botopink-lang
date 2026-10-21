@@ -1,0 +1,10 @@
+botopink-cell 1
+out s/a:1!
+out s/b*:3?
+out s/c:7.
+out s/d:1#
+out p:a:1
+out q:c:7
+out r:z:2
+out v=3
+out s=4

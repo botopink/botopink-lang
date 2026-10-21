@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "GPSCoordinates",
         "id": 1,
         "isPub": false,
@@ -12,24 +12,27 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "lat",
-            "typeRef": {
-              "named": "number"
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "lat",
+              "typeRef": {
+                "named": "number"
+              },
+              "default": null,
+              "annotations": []
             },
-            "default": null,
-            "annotations": []
-          },
-          {
-            "name": "lon",
-            "typeRef": {
-              "named": "number"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+            {
+              "name": "lon",
+              "typeRef": {
+                "named": "number"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": [
           {
@@ -44,7 +47,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }

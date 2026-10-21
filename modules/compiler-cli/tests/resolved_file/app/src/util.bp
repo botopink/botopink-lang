@@ -1,0 +1,8 @@
+import {tools.entity, tools.boxed} from "lib";
+
+#[entity("towns")]
+pub type Town(name: string)
+
+pub fn greet() -> string {
+    return boxed @`hi` + Town.table();
+}

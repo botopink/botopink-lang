@@ -1,0 +1,9 @@
+//// Decision 278 — Template directives are **annotations written inside the tag**, in the attribute zone: `<Carousel #[clientVisible("200px
+
+import {io.terminal} from "std";
+import html, {renderToString} from "rakun-bpp";
+import {page as Page};
+
+pub async fn main() -> Async<void> {
+    terminal.print(await renderToString(html @`<Page/>`));
+}

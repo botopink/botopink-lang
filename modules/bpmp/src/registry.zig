@@ -34,8 +34,7 @@ pub const RepoSpec = struct {
         for (protos) |p| {
             if (std.mem.startsWith(u8, rest, p)) rest = rest[p.len..];
         }
-        if (std.mem.startsWith(u8, rest, "github.com/")) rest = rest["github.com/".len..]
-        else if (std.mem.startsWith(u8, rest, "github.com:")) rest = rest["github.com:".len..];
+        if (std.mem.startsWith(u8, rest, "github.com/")) rest = rest["github.com/".len..] else if (std.mem.startsWith(u8, rest, "github.com:")) rest = rest["github.com:".len..];
 
         const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return error.BadRepoSpec;
         const owner = rest[0..slash];

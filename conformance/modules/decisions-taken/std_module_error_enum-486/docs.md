@@ -1,0 +1,5 @@
+# Decision 486 — Every std module that can fail answers its own error enum; a binding's `HostError` is mapped into it in std.
+
+[cells/std_host_error_variants/src/main.bp](cells/std_host_error_variants/src/main.bp)
+
+Proved also by [bytes_encoding_bridges](../bytes_primitive-346/cells/bytes_encoding_bridges/src/main.bp)

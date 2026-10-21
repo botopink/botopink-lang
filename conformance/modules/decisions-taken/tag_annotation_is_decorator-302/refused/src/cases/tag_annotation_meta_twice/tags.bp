@@ -1,0 +1,23 @@
+//// A template function that runs two annotations over one tag (decision 302).
+
+import {compiler.DeclKind, compiler.Span, compiler} from "std";
+
+pub type Hydrate(level: i32)
+
+pub fn hydrate(syntax decl: unknown, comptime level: i32) -> void {
+    compiler.setMeta(Hydrate(level: level));
+}
+
+// `<div #[first] #[second]>`: both annotations over the one tag, in order.
+pub fn markup(syntax q: string) -> string {
+    val text = compiler.text(q);
+    val firstStart = text.indexOf("#[") + 2;
+    val firstEnd = text.indexOf("]");
+    val rest = text.slice(firstEnd + 1, text.length);
+    val secondStart = firstEnd + 1 + rest.indexOf("#[") + 2;
+    val secondEnd = firstEnd + 1 + rest.indexOf("]");
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val once = compiler.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
+    val twice = compiler.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
+    return compiler.meta(twice, Hydrate)?.level ?? 0;
+}

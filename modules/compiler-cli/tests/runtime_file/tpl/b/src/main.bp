@@ -1,0 +1,6 @@
+import {theme} from "looks";
+import {card.card} from "mid";
+import {io.terminal.print} from "std";
+#[theme]
+pub fn btheme() -> string { return "x"; }
+pub fn main() -> void { print(card()); }

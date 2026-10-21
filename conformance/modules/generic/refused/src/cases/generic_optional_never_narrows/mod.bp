@@ -1,0 +1,16 @@
+//// The widening is one way: a `?T` is never its `T` — returning it where the
+//// signature says `T` is the mismatch naming both, located at the value.
+
+import {io.terminal.print} from "std";
+
+fn unwrap<T>(v: ?T) -> T {
+    return v;
+}
+
+pub fn main() -> void {
+    print(unwrap(some(1)));
+}
+
+fn some<T>(v: T) -> ?T {
+    return v;
+}

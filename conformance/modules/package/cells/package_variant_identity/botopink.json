@@ -1,0 +1,1 @@
+{ "name": "package_variant_identity", "dependencies": { "tokenlib": { "path": "deps/tokenlib" } } }

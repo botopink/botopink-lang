@@ -1,0 +1,10 @@
+import {compiler} from "std";
+
+// What `#[sql @`…`]` records.
+pub type Query(sql: string)
+
+// A template that takes the annotated declaration as its second parameter:
+// it is written only as an annotation.
+pub fn sql(syntax q: string, syntax decl: unknown) -> void {
+    compiler.setMeta(Query(sql: compiler.text(q)));
+}

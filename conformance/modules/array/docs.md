@@ -1,0 +1,15 @@
+# array
+
+[run/src/cases/array_fill/mod.bp](run/src/cases/array_fill/mod.bp)
+[run/src/cases/array_fill_large/mod.bp](run/src/cases/array_fill_large/mod.bp)
+[run/src/cases/array_flat_forms/mod.bp](run/src/cases/array_flat_forms/mod.bp)
+[run/src/cases/array_last_index_of/mod.bp](run/src/cases/array_last_index_of/mod.bp)
+[run/src/cases/array_map_component_imported/mod.bp](run/src/cases/array_map_component_imported/mod.bp)
+[run/src/cases/array_pop_rebinds_var/mod.bp](run/src/cases/array_pop_rebinds_var/mod.bp)
+[run/src/cases/array_pop_removes/mod.bp](run/src/cases/array_pop_removes/mod.bp)
+[run/src/cases/array_push_rebinds_var/mod.bp](run/src/cases/array_push_rebinds_var/mod.bp)
+[run/src/cases/array_range_and_repeat/mod.bp](run/src/cases/array_range_and_repeat/mod.bp)
+[run/src/cases/array_reverse_answers_a_new_array/mod.bp](run/src/cases/array_reverse_answers_a_new_array/mod.bp)
+[run/src/cases/array_slice_reverse/mod.bp](run/src/cases/array_slice_reverse/mod.bp)
+[run/src/cases/array_spread_literal/mod.bp](run/src/cases/array_spread_literal/mod.bp)
+[run/src/cases/array_windows/mod.bp](run/src/cases/array_windows/mod.bp)

@@ -1,0 +1,21 @@
+//// The scope rule for a function with `comptime` parameters: the nearest
+//// binding wins, so a parameter or a local named like it is the value called
+//// there — every argument is that value's, none of them taken as comptime —
+//// and the module function stays the name's everywhere else.
+
+import {io.terminal.print} from "std";
+
+fn scale(comptime n: i32, x: i32) -> i32 {
+    return n * x;
+}
+
+fn run(scale: fn(i32, i32) -> i32) -> i32 {
+    return scale(3, 4);
+}
+
+pub fn main() -> void {
+    print(scale(2, 5));
+    print(run({ a, b -> a - b }));
+    val scale: fn(i32, i32) -> i32 = { a, b -> a + b };
+    print(scale(2, 5));
+}

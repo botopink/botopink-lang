@@ -1,0 +1,364 @@
+//// std/io/process — host process introspection, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/process.html
+////              (`process.exit`, `process.cwd`, `process.platform`,
+////               `process.pid`)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/erlang.html#halt-1
+////              (`erlang:halt/1`, `file:get_cwd/0`, `os:type/0`,
+////               `os:getpid/0`)
+////
+//// Most calls are method-on-class chains (`process.cwd()`, `os.getpid()`)
+//// or property reads (`process.platform`). The §A2 commonJS template
+//// dispatch (`a7c6d07`) + erlang twin (`52d6101`) make both shapes
+//// feasible without the legacy alias path that strips the receiver.
+////
+//// The 0-arg fns use the `when(argc == 0): "<tmpl>"` arity-branched
+//// shape rather than a bare template string —
+//// `primOpTemplate.looksLikeTemplate` reads the `$` discriminator, and
+//// a 0-arg lowering has no `$N` to embed, so the arity branch keeps
+//// the template-path dispatch.
+
+import {failure, failure.HostError, compiler};
+
+// Exit the current process with the given status code.
+// Node: `process.exit(code)` (chained method — §A2 template).
+// Erlang: `erlang:halt(code)` (bare BIF).
+#[compiler.external(.JavaScript("process.exit($0)"), .Erlang("erlang:halt($0)"))]
+pub declare fn exit(code: i32) -> void;
+
+// Current working directory of the host process.
+// Node: `process.cwd()` (method on `process` — §A2 template).
+// Erlang: `file:get_cwd()` returns `{ok, Path}` (charlist); the
+// template extracts and stringifies it.
+#[compiler.external(
+    .JavaScript("process.cwd()"),
+    .Erlang("""(fun() -> {ok, __P} = file:get_cwd(), list_to_binary(__P) end)()"""),
+)]
+pub declare fn cwd() -> string;
+
+// Host platform string — `'linux'`, `'darwin'`, `'win32'`, etc.
+// Node: bare `process.platform` (property access).
+// Erlang: `os:type()` returns `{unix, linux}` / `{win32, nt}` /
+// `{unix, darwin}`; the template extracts the SECOND element (the
+// flavor, matching the Node `process.platform` shape) and stringifies
+// it. Read-time match — the first element is the family (unix/win32).
+#[compiler.external(
+    .JavaScript("process.platform"),
+    .Erlang("""(fun() -> {_, __Flavor} = os:type(), atom_to_binary(__Flavor, utf8) end)()"""),
+)]
+pub declare fn platform() -> string;
+
+// Host process id.
+// Node: `process.pid` (property — i32 in JS, stored as Number).
+// Erlang: `os:getpid()` returns a string list; the template parses
+// it to an integer.
+#[compiler.external(.JavaScript("process.pid"), .Erlang("list_to_integer(os:getpid())"))]
+pub declare fn pid() -> i32;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+//
+// Child processes. The five introspections above are not edited. Signals
+// (`onSignal`) are not here: a closure handed to a host cell is unverified on
+// the Erlang target (`language-gaps.md`).
+
+// What a child process left behind. `stderr` is split out on Node; on Erlang
+// the port folds it into `stdout` (`stderr_to_stdout`) and `stderr` is `""`
+// — a caller that needs the two apart on both targets redirects through a
+// file and says so.
+pub type Exit(
+    status: i32,
+    stdout: string,
+    stderr: string,
+)
+
+// Run the executable `cmd` (looked up on `PATH` when it has no `/`) with
+// `args`, no shell, and wait for it. A process that RAN is `Ok` whatever its
+// status — a non-zero exit is an `Exit` carrying that status. `Error` means
+// it could not be started (not found, not executable).
+// Node: `child_process.spawnSync`; a start failure is `r.error`, which the
+// template throws.
+// Erlang: `open_port({spawn_executable, Path}, [exit_status, …])`, the path
+// from `os:find_executable/1`, the output gathered until `exit_status`; a
+// missing executable is `{error, enoent}`, a port that cannot open raises.
+// Both run under `result: true` (decisions 431, 490); the answer is the host's
+// `HostError`, not a `ProcessError` of std's own: a public function over the
+// cell would be a body calling a cell with no wasm binding, which wasm refuses
+// for the whole module — `import {io.process}` would stop compiling there.
+#[compiler.external(
+    .JavaScript("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); if (__r.error) throw __r.error; return { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } })()""", result: true),
+    .Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, enoent}; _ -> __P = open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]), __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} end end)($0, $1)""", result: true),
+)]
+pub declare fn run(cmd: string, args: string[]) -> Result<Exit, HostError>;
+
+// Run `cmd` through `/bin/sh -c` and answer its output, stdout and stderr
+// together. STATUS-LOSING on both targets: the answer is text only, so a
+// failing command is indistinguishable from a quiet one — `os:cmd/1` answers
+// output only on Erlang, and the Node cell matches it. Use `run` when the
+// status matters.
+// Node: `spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + cmd])`.
+// Erlang: `os:cmd/1` (which runs `/bin/sh -c` and folds stderr in).
+#[compiler.external(
+    .JavaScript("""(require('child_process').spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + $0], { encoding: 'utf8' }).stdout ?? '')"""),
+    .Erlang("""unicode:characters_to_binary(os:cmd(binary_to_list($0)))"""),
+)]
+pub declare fn runShell(cmd: string) -> string;
+
+// ── signals and spawned children (decision 506 (1)) ────────────────────────────
+//
+// `onSignal` runs a handler when the process receives a signal; `spawn` starts a child
+// that shares the parent's terminal and answers a `Child` the program waits for, signals
+// or asks to carry the parent's own signals over (`forwardSignals`). Every failure is a
+// `ProcessError` of this module (decision 431-a). There is no wasm binding: a call is
+// refused at the call (`std-unsupported-on-target`, decision 518 (4)).
+
+// The signals a program can ask to hear about, and send a child.
+pub type Signal {
+    Int,
+    Term,
+    Hup,
+    Winch,
+}
+
+// The error of `onSignal`, `spawn` and `Child.kill`.
+pub type ProcessError {
+    // `spawn`: no executable `command` (not on `PATH`, or no such file).
+    NotFound(command: string),
+    // `spawn`: `command` is there and is not executable.
+    PermissionDenied(command: string),
+    // `Child.kill`: the child has already exited.
+    NoSuchProcess(pid: i32),
+    // `onSignal`: this target cannot catch the signal.
+    Unsupported(message: string),
+    // Any other host failure; `message` is the host's text.
+    Other(message: string),
+}
+
+fn signalName(s: Signal) -> string {
+    return case s {
+        Int -> "SIGINT";
+        Term -> "SIGTERM";
+        Hup -> "SIGHUP";
+        Winch -> "SIGWINCH";
+    };
+}
+
+// The host cells answer `<kind>|<host text>` as their error, `kind` one of `notfound`,
+// `denied`, `gone`, `unsupported`, `other`.
+fn processError(subject: string, pid: i32, raw: string) -> ProcessError {
+    val bar = raw.indexOf("|");
+    val kind = raw.slice(0, bar);
+    val message = raw.slice(bar + 1);
+    if (kind == "notfound") return ProcessError.NotFound(command: subject);
+    if (kind == "denied")
+        return ProcessError.PermissionDenied(command: subject);
+    if (kind == "gone") return ProcessError.NoSuchProcess(pid: pid);
+    if (kind == "unsupported")
+        return ProcessError.Unsupported(message: message);
+    return ProcessError.Other(message: message);
+}
+
+// Run `handler` each time the process receives `name`.
+// Node: `process.on(name, handler)`; a signal listener does not keep the process alive, and
+// it replaces the default action (the process no longer exits on `SIGTERM`).
+// Erlang: `os:set_signal(Signal, handle)` sends the event to `erl_signal_server`, whose
+// default handler stops the node on `sigterm`; the cell removes that handler and adds one of its
+// own, a module (`bp_signal_handler`) compiled and loaded on first use that calls, in order, the
+// funs kept for the signal in `persistent_term`. `SIGINT` is not an `os:set_signal` signal: the VM keeps it for its
+// break handler, so it is `unsupported|…` there. `SIGWINCH` needs OTP 28.
+#[compiler.external(
+    .JavaScript("""(() => { try { process.on($0, $1); return { ok: 0 } } catch (__e) { return { error: 'other|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""(fun(__Name, __F) -> __Sig = if __Name =:= <<"SIGTERM">> -> sigterm; __Name =:= <<"SIGHUP">> -> sighup; __Name =:= <<"SIGWINCH">> -> sigwinch; true -> unsupported end, case __Sig of unsupported -> {error, iolist_to_binary([<<"unsupported|">>, __Name, <<" cannot be caught on the Erlang VM">>])}; _ -> try case code:is_loaded(bp_signal_handler) of false -> __Src = "-module(bp_signal_handler). -behaviour(gen_event). -export([init/1, handle_event/2, handle_call/2]). init(S) -> {ok, S}. handle_event(E, S) -> [F() || F <- persistent_term:get({bp_signal, E}, [])], {ok, S}. handle_call(_, S) -> {ok, ok, S}.", {ok, __Toks, _} = erl_scan:string(__Src), __Split = fun __Sp([], []) -> []; __Sp([], __A) -> [lists:reverse(__A)]; __Sp([{dot, _} = __D | __T], __A) -> [lists:reverse([__D | __A]) | __Sp(__T, [])]; __Sp([__X | __T], __A) -> __Sp(__T, [__X | __A]) end, __Forms = [begin {ok, __Fm} = erl_parse:parse_form(__Ts), __Fm end || __Ts <- __Split(__Toks, [])], {ok, __M, __B} = compile:forms(__Forms, [binary]), {module, _} = code:load_binary(__M, "bp_signal_handler.erl", __B); _ -> ok end, case lists:member(bp_signal_handler, gen_event:which_handlers(erl_signal_server)) of true -> ok; false -> _ = (catch gen_event:delete_handler(erl_signal_server, erl_signal_handler, [])), ok = gen_event:add_handler(erl_signal_server, bp_signal_handler, []) end, persistent_term:put({bp_signal, __Sig}, persistent_term:get({bp_signal, __Sig}, []) ++ [__F]), ok = os:set_signal(__Sig, handle), {ok, 0} catch _:__E -> {error, iolist_to_binary([<<"other|">>, io_lib:format("~tp", [__E])])} end end end)($0, $1)"""),
+)]
+declare fn rawOnSignal(name: string, handler: fn()) -> Result<i32, string>;
+
+// Run `handler` when the process receives `s`. A handler stays for the life of the process,
+// and several for one signal all run, in the order they were added. While one is installed the
+// signal no longer ends the process: ending it is the handler's business (`exit`). `Int` is
+// `Unsupported` on erlang and beam, where the VM keeps `SIGINT` for itself.
+pub fn onSignal(s: Signal, handler: fn()) -> Result<void, ProcessError> {
+    case rawOnSignal(signalName(s), handler) {
+        Ok(_) -> return;
+        Error(m) -> throw processError("", 0, m);
+    }
+}
+
+// A child process handle: the OS process id and the host's own handle, opaque.
+pub type Child(pid: i32, handle: unknown) {
+    // Wait for the child to end and answer its exit status; a child ended by signal `n` answers
+    // `128 + n`, as a shell reports it. The child's output is the parent's: written as the child
+    // produces it (inherited on Node; on Erlang the port carries stdout and stderr, written to
+    // stdout while `wait` runs). A second `wait` answers the same status.
+    pub async fn wait(self: Self) -> Async<i32> {
+        return await rawWait(self.handle);
+    }
+
+    // Send the child `s`. `NoSuchProcess` once it has ended.
+    pub fn kill(self: Self, s: Signal) -> Result<void, ProcessError> {
+        case rawKill(self.handle, signalName(s)) {
+            Ok(_) -> return;
+            Error(m) -> throw processError("", self.pid, m);
+        }
+    }
+
+    // Carry the parent's signals to the child: each of `Term`, `Hup` and `Winch` the parent
+    // receives is sent on, and so is `Int` where the target can catch it. The parent no longer
+    // ends on them; it ends when the child does (`wait`).
+    pub fn forwardSignals(self: Self) -> Result<void, ProcessError> {
+        val h = self.handle;
+        for ([Signal.Int, Signal.Term, Signal.Hup, Signal.Winch]) { s ->
+            val name = signalName(s);
+            case rawOnSignal(name, { -> rawKill(h, name); }) {
+                Ok(_) {}
+                Error(m) {
+                    val e = processError("", self.pid, m);
+                    case e {
+                        ProcessError.Unsupported(_) {}
+                        _ -> throw e;
+                    }
+                }
+            }
+        }
+        return;
+    }
+}
+
+// The handle of `cmd` started with `args`, no shell, sharing the parent's standard streams.
+// `cmd` is looked up on `PATH` when it has no `/`. Failure kinds are told before anything starts.
+// Node: `child_process.spawn(file, args, { stdio: 'inherit' })`, the exit read from its `exit`
+// event.
+// Erlang: `open_port({spawn_executable, File}, [binary, exit_status, stderr_to_stdout, …])`.
+#[compiler.external(
+    .JavaScript("""(() => { const __fs = require('fs'); const __cp = require('child_process'); const __c = $0; let __f = null; if (__c.includes('/')) { __f = __c; } else { for (const __d of (process.env.PATH ?? '').split(':')) { if (!__d) continue; const __p = __d + '/' + __c; try { __fs.accessSync(__p, __fs.constants.X_OK); if (__fs.statSync(__p).isFile()) { __f = __p; break; } } catch (__e) {} } } if (__f === null) return { error: 'notfound|' + __c }; try { __fs.accessSync(__f, __fs.constants.F_OK); } catch (__e) { return { error: 'notfound|' + __c }; } try { if (__fs.statSync(__f).isDirectory()) return { error: 'denied|' + __c }; __fs.accessSync(__f, __fs.constants.X_OK); } catch (__e) { return { error: 'denied|' + __c }; } try { const __h = __cp.spawn(__f, $1, { stdio: 'inherit' }); __h.bpDone = new Promise((__r) => { __h.on('exit', (__code, __sig) => __r(__code ?? (128 + (require('os').constants.signals[__sig] ?? 0)))); __h.on('error', () => __r(-1)); }); return { ok: __h }; } catch (__e) { return { error: 'other|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> case filelib:is_file(binary_to_list(__C)) of true -> binary_to_list(__C); false -> false end end, case __X of false -> {error, iolist_to_binary([<<"notfound|">>, __C])}; _ -> case file:read_file_info(__X) of {ok, __I} when element(3, __I) =:= regular, (element(8, __I) band 8#111) =/= 0 -> try open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]) of __P -> {ok, __P} catch _:__E -> {error, iolist_to_binary([<<"other|">>, io_lib:format("~tp", [__E])])} end; {ok, _} -> {error, iolist_to_binary([<<"denied|">>, __C])}; {error, enoent} -> {error, iolist_to_binary([<<"notfound|">>, __C])}; {error, _} -> {error, iolist_to_binary([<<"denied|">>, __C])} end end end)($0, $1)"""),
+)]
+declare fn rawSpawn(cmd: string, args: string[]) -> Result<unknown, string>;
+
+#[compiler.external(.JavaScript("""$0.pid"""), .Erlang("""proplists:get_value(os_pid, erlang:port_info($0))"""))]
+declare fn rawPid(handle: unknown) -> i32;
+
+#[compiler.external(
+    .JavaScript("""$0.bpDone"""),
+    .Erlang("""(fun(__P) -> case get({bp_child_status, __P}) of undefined -> __L = fun __F() -> receive {__Q, {data, __D}} when __Q =:= __P -> case unicode:characters_to_binary(__D) of __U when is_binary(__U) -> io:put_chars(__U); _ -> io:put_chars(unicode:characters_to_binary(__D, latin1)) end, __F(); {__Q, {exit_status, __S}} when __Q =:= __P -> put({bp_child_status, __P}, __S), __S end end, __L(); __S -> __S end end)($0)"""),
+)]
+declare fn rawWait(handle: unknown) -> Async<i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; if (__h.exitCode !== null || __h.signalCode !== null) return { error: 'gone|' + __h.pid }; try { process.kill(__h.pid, $1); return { ok: 0 }; } catch (__e) { return { error: (__e && __e.code === 'ESRCH' ? 'gone' : 'other') + '|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""(fun(__P, __Name) -> case erlang:port_info(__P, os_pid) of {os_pid, __Os} -> __Out = os:cmd("kill -" ++ binary_to_list(binary:part(__Name, 3, byte_size(__Name) - 3)) ++ " " ++ integer_to_list(__Os) ++ " 2>&1"), case string:find(__Out, "No such process") of nomatch -> case __Out of [] -> {ok, 0}; _ -> {error, unicode:characters_to_binary([<<"other|">>, __Out])} end; _ -> {error, <<"gone|">>} end; undefined -> {error, <<"gone|">>} end end)($0, $1)"""),
+)]
+declare fn rawKill(handle: unknown, name: string) -> Result<i32, string>;
+
+// Start `cmd` with `args` (no shell) and answer its `Child` without waiting for it. The child
+// shares the parent's terminal; `Child.wait` waits for it, `Child.kill` signals it and
+// `Child.forwardSignals` carries the parent's signals to it. `NotFound` / `PermissionDenied`
+// say why nothing started. `run` is the one that waits and captures the output.
+pub fn spawn(cmd: string, args: string[]) -> Result<Child, ProcessError> {
+    case rawSpawn(cmd, args) {
+        Ok(h) -> return Child(pid: rawPid(h), handle: h);
+        Error(m) -> throw processError(cmd, 0, m);
+    }
+}
+
+// ── captured children (decision 790, 798 (6)) ───────────────────────────────────
+//
+// `start` is `spawn` with the child's output captured apart: stdout and stderr each into a
+// string, the answer of `Captured.wait` an `Exit`. Several started children run at once, and
+// their `wait`s may be awaited together (`async.runAll`). It works on commonJS alone: an erlang port
+// folds stderr into stdout, and `Captured` keeps the two apart, so on erlang and beam `start` answers
+// `Error(Unsupported)` (a method body over a cell with no erlang binding would stop the whole module
+// compiling there, as `run`'s note says), and on wasm a call is refused at the call
+// (`std-unsupported-on-target`, decision 518 (4)). The programs that need the two apart (`cell
+// check`'s, decision 790) run on commonJS.
+
+// Start `cmd` with `args` (no shell), in `cwd` (the parent's when absent), with the parent's environment
+// plus `env` (each entry `NAME=value`, the first `=` ends the name). `cmd` is looked up on `PATH` when it has no `/`;
+// a `/` path is read from `cwd`. Failure kinds are told before anything starts, as in `spawn`.
+// Node: `child_process.spawn(file, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })`, the
+// exit read from its `close` event.
+#[compiler.external(
+    .JavaScript("""(() => { const __fs = require('fs'); const __cp = require('child_process'); const __pa = require('path'); const __c = $0; const __cwd = $2 ?? undefined; let __f = null; if (__c.includes('/')) { __f = __pa.resolve(__cwd ?? process.cwd(), __c); } else { for (const __d of (process.env.PATH ?? '').split(':')) { if (!__d) continue; const __p = __d + '/' + __c; try { __fs.accessSync(__p, __fs.constants.X_OK); if (__fs.statSync(__p).isFile()) { __f = __p; break; } } catch (__e) {} } } if (__f === null) return { error: 'notfound|' + __c }; try { __fs.accessSync(__f, __fs.constants.F_OK); } catch (__e) { return { error: 'notfound|' + __c }; } try { if (__fs.statSync(__f).isDirectory()) return { error: 'denied|' + __c }; __fs.accessSync(__f, __fs.constants.X_OK); } catch (__e) { return { error: 'denied|' + __c }; } const __env = Object.assign({}, process.env); for (const __kv of $3) { const __i = __kv.indexOf('='); if (__i < 0) { __env[__kv] = ''; } else { __env[__kv.slice(0, __i)] = __kv.slice(__i + 1); } } try { const __h = __cp.spawn(__f, $1, { cwd: __cwd, env: __env, stdio: ['ignore', 'pipe', 'pipe'] }); let __o = ''; let __e = ''; __h.stdout.setEncoding('utf8'); __h.stderr.setEncoding('utf8'); __h.stdout.on('data', (__d) => { __o += __d; }); __h.stderr.on('data', (__d) => { __e += __d; }); __h.bpDone = new Promise((__r) => { __h.on('close', (__code, __sig) => __r({ status: __code ?? (128 + (require('os').constants.signals[__sig] ?? 0)), stdout: __o, stderr: __e })); __h.on('error', (__x) => __r({ status: -1, stdout: __o, stderr: __e + String(__x && __x.message ? __x.message : __x) })); }); return { ok: __h }; } catch (__e) { return { error: 'other|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""(fun(_, _, _, _) -> {error, <<"unsupported|io.process.start works on commonJS alone">>} end)($0, $1, $2, $3)"""),
+)]
+declare fn rawStart(cmd: string, args: string[], cwd: ?string, env: string[]) -> Result<unknown, string>;
+
+#[compiler.external(.JavaScript("""$0.bpDone"""), .Erlang("""erlang:error(unsupported)"""))]
+declare fn rawWaitCaptured(handle: unknown) -> Async<Exit>;
+
+#[compiler.external(.JavaScript("""$0.pid"""), .Erlang("""0"""))]
+declare fn rawStartedPid(handle: unknown) -> i32;
+
+// `kill` of a started child: the host cell of `Child.kill` (`rawKill`) reads only the handle.
+#[compiler.external(
+    .JavaScript("""(() => { const __h = $0; if (__h.exitCode !== null || __h.signalCode !== null) return { error: 'gone|' + __h.pid }; try { process.kill(__h.pid, $1); return { ok: 0 }; } catch (__e) { return { error: (__e && __e.code === 'ESRCH' ? 'gone' : 'other') + '|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""{error, <<"unsupported|io.process.start works on commonJS alone">>}"""),
+)]
+declare fn rawKillStarted(handle: unknown, name: string) -> Result<i32, string>;
+
+// A started child whose output is captured: the OS process id and the host's own handle, opaque.
+pub type Captured(pid: i32, handle: unknown) {
+    // Wait for the child to end and answer its `Exit`: the status (`128 + n` for a child ended by
+    // signal `n`), and its stdout and stderr, each whole and apart. A second `wait` answers the same `Exit`.
+    pub async fn wait(self: Self) -> Async<Exit> {
+        return await rawWaitCaptured(self.handle);
+    }
+
+    // Send the child `s`. `NoSuchProcess` once it has ended.
+    pub fn kill(self: Self, s: Signal) -> Result<void, ProcessError> {
+        case rawKillStarted(self.handle, signalName(s)) {
+            Ok(_) -> return;
+            Error(m) -> throw processError("", self.pid, m);
+        }
+    }
+}
+
+// Start `cmd` with `args` (no shell) in `cwd` with `env` added to the parent's environment, and answer its
+// `Captured` without waiting for it. `NotFound` / `PermissionDenied` say why nothing started.
+// commonJS only (see above).
+pub fn start(cmd: string, args: string[], cwd: ?string, env: string[]) -> Result<Captured, ProcessError> {
+    case rawStart(cmd, args, cwd, env) {
+        Ok(h) -> return Captured(pid: rawStartedPid(h), handle: h);
+        Error(m) -> throw processError(cmd, 0, m);
+    }
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "process.cwd is non-empty" {
+    val w = cwd();
+    assert w.length > 0;
+}
+
+test "process.platform is one of the known host families" {
+    val p = platform();
+    val knownLinux = p == "linux";
+    val knownDarwin = p == "darwin";
+    val knownWin = p == "win32";
+    assert knownLinux || knownDarwin || knownWin;
+}
+
+test "process.pid is positive" {
+    val p = pid();
+    assert p > 0;
+}
+
+test "process.run answers the child's status and stdout" {
+    val r = run("echo", ["hi"]);
+    assert r.isOk();
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 0;
+    assert r.map({ e -> e.stdout }).unwrapOr("").startsWith("hi");
+}
+
+test "process.run of a missing binary is an Error, not a crash" {
+    assert run("definitely-not-a-binary-bp-std", []).isError();
+}
+
+test "process.run of a failing child is Ok carrying its status" {
+    val r = run("sh", ["-c", "exit 3"]);
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 3;
+}
+
+test "process.runShell answers output and loses the status" {
+    assert runShell("echo hi").startsWith("hi");
+    assert runShell("exit 3") == "";
+}

@@ -1,0 +1,5 @@
+val size = 1;
+---
+<p>card</p>
+--- style ---
+.card {}

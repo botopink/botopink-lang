@@ -1,0 +1,26 @@
+//// Decision 372 — a decorator that reads `decl.hooks` runs after the
+//// module's bodies; a catalogue of it read in the same module is spliced while
+//// those bodies are inferred and could not carry the meta it sets, so the
+//// query is refused at the decorator's name (the parent binary answered it
+//// with the meta; a run after the bodies would have answered without it).
+
+import {compiler, io.terminal.print} from "std";
+
+type Element(text: string) implement Renderable
+
+fn graph(syntax decl: unknown) -> void {
+    compiler.setMeta(Graph(count: compiler.hooks(decl).length));
+}
+
+#[graph]
+pub component fn Page() -> Component<Element> {
+    return Element(text: "x");
+}
+
+pub fn main() -> void {
+    val all = @TypeInfo.all(with: graph);
+    all.forEach({ d -> print(d.name) });
+}
+
+// What `#[graph]` records: how many nodes `decl.hooks` lists.
+type Graph(count: i32)

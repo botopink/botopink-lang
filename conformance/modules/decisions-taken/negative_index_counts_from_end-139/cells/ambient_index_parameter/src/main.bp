@@ -1,0 +1,35 @@
+//// Decision 539 (6), decision 63 — `Index<K, V>` and `Slice<V>` are ambient behaviors of
+//// `primitives.bp`, as `Display` and `Closeable` are: a program names them as a parameter's
+//// type, with their arguments and no import, and a call on such a value dispatches to the
+//// implementer's method.
+
+import {io.terminal.print} from "std";
+
+type Registry(names: string[]) implement Index<string, i32> {
+    pub fn at(self: Self, key: string) -> ?i32 {
+        val found = self.names.indexOf(key);
+        if (found < 0) return null;
+        return found;
+    }
+}
+
+type Window(items: i32[]) implement Slice<i32[]> {
+    pub fn slice(self: Self, start: i32, end: ?i32) -> i32[] {
+        return self.items.slice(start, end);
+    }
+}
+
+fn lookup(m: Index<string, i32>, key: string) -> i32 {
+    return m.at(key) ?? -1;
+}
+
+fn firstTwo(s: Slice<i32[]>) -> i32[] {
+    return s.slice(0, 2);
+}
+
+pub fn main() -> void {
+    val r = Registry(names: ["ana", "bo"]);
+    print(lookup(r, "bo"));
+    print(lookup(r, "zz"));
+    print(firstTwo(Window(items: [7, 8, 9])));
+}

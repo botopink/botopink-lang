@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: run-outside-init: `run()` is called outside a `compiler.init` body
+at src/main.bp:7:11

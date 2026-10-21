@@ -1,0 +1,18 @@
+//// Decision 551 — `boot()` leaves out its `comptime` parameter, whose default
+//// is `@TypeInfo.all(with: m)`: the query is answered for this program, from
+//// its root, so the answer lists every `#[m]` declaration of every package —
+//// `frame`'s own, the program's (`main`, `pages`, which imports `m` as
+//// `mark`) and `plugin`'s, which no module here imports — by module path,
+//// each `value` the function itself.
+
+pub mod pages;
+import {boot, m as mark} from "frame";
+
+#[mark]
+pub fn local() -> string {
+    return "main local";
+}
+
+pub fn main() -> void {
+    boot();
+}

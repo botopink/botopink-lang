@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: "files" lists p.bp and p.bp, one module (`p`) written twice — keep one of the two files
+at deps/p/botopink.json:1:100

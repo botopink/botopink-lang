@@ -1,0 +1,16 @@
+//// Decision 216 (3) — `decl.addType(name, source)` takes the shape of one
+//// type, as it follows the name in a declaration (`(id: string)`,
+//// `{ A, B }`): anything else is refused at the annotation, the source quoted.
+
+import {compiler, io.terminal.print} from "std";
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.addType("Columns", compiler.buildType("(id: string) fn extra() -> void {}"));
+}
+
+#[entity]
+type City(id: i32)
+
+pub fn main() -> void {
+    print(City(id: 1).id);
+}

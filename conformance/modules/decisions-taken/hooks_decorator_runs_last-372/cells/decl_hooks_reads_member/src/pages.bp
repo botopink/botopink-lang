@@ -1,0 +1,50 @@
+//// Decision 372 — a decorator that reads `decl.hooks` runs after the
+//// module's bodies, so a body it reads may call a member another decorator of
+//// the module adds: `Page` calls `Account.validate`, which `#[check]` gives
+//// `Account` below it. The decorators that read no `.hooks` run first,
+//// the bodies are inferred, then `#[graph]` runs over them and records meta.
+
+import {compiler} from "std";
+
+type Element(text: string) implement Renderable
+
+// Reads `decl.hooks`: each node as `fn(uses: […])`.
+fn graph(syntax decl: unknown) -> void {
+    var nodes: string[] = [];
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            var uses: string[] = [];
+            n.uses.forEach({ u ->
+                val h = u.hook;
+                uses.push(if (h == null) "null" else h.name)
+            });
+            nodes.push(n.function.name + "(uses: [" + uses.join(", ") + "])")
+        });
+    compiler.setMeta(Graph(nodes: nodes));
+}
+
+// Reads no `.hooks`: gives the type it annotates a `validate` method.
+fn check(syntax decl: unknown) -> void {
+    compiler.addMember(
+        "pub fn validate(self: Self) -> string { return \""
+            + compiler.name(decl)!
+            + " \" + self.name + \" ok\"; }",
+    );
+}
+
+component fn user() -> Component<string> {
+    return "alice";
+}
+
+#[graph]
+pub component fn Page() -> Component<Element> {
+    val u = use user();
+    return Element(text: Account(name: u).validate());
+}
+
+#[check]
+pub type Account(name: string)
+
+// What `#[graph]` records: one rendered node per entry of `decl.hooks`.
+pub type Graph(nodes: string[])

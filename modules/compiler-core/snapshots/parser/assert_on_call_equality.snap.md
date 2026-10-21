@@ -22,7 +22,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -33,7 +32,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
@@ -104,7 +102,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {

@@ -1,0 +1,13 @@
+//// Decision 207 — the call's labelled arguments build the inline type, so a
+//// field with no default left out is refused at the call, naming the type by
+//// its owner (`the props of `link``).
+
+import {io.terminal.print} from "std";
+
+fn link(props: type(href: string, label: string)) -> string {
+    return props.href;
+}
+
+pub fn main() -> void {
+    print(link(href: "/a"));
+}

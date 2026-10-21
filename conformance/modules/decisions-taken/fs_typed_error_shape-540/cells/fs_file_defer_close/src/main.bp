@@ -1,0 +1,49 @@
+//// Decisions 539, 540 (3) — a `File` is a `Closeable` the writer closes with `defer`, and nothing
+//// checks that it is: `defer f.close();` right after the `try fs.open(…)` closes it on every exit
+//// of the block — its end, and a `try` that propagates an error — and a type of the program
+//// writes `implement Closeable` as `File` does. A closed file refuses a read, and closing it
+//// again is harmless.
+
+import {io.fs, io.terminal.print} from "std";
+
+fn firstLine(path: string) -> Result<string, fs.FsError> {
+    val f = try fs.open(path);
+    defer f.close();
+    val head = try f.read(5);
+    return head.toUtf8().unwrapOr("?");
+}
+
+fn failsAfterOpen(path: string) -> Result<string, fs.FsError> {
+    val f = try fs.open(path);
+    defer f.close();
+    val whole = try fs.readText("closing/missing.txt");
+    return whole;
+}
+
+// `Closeable` is std's, ambient as `Display` is: a type of the program writes
+// `implement Closeable`, and its `defer t.close()` runs when the block ends.
+type Tally(name: string) implement Closeable {
+    pub fn close(self: Self) -> void {
+        print("closed " + self.name);
+    }
+}
+
+fn scoped() -> void {
+    val t = Tally(name: "tally");
+    defer t.close();
+    print("working");
+}
+
+pub fn main() -> void {
+    fs.removeTree("closing");
+    fs.mkdirRecursive("closing");
+    fs.writeText("closing/file.txt", "hello world");
+    print(try firstLine("closing/file.txt") catch "failed");
+    print(try failsAfterOpen("closing/file.txt") catch "failed");
+    val f = try fs.open("closing/file.txt") catch fs.openAsset(@embed("assets/empty.txt"));
+    f.close();
+    f.close();
+    print(f.read(1).isError());
+    scoped();
+    fs.removeTree("closing");
+}

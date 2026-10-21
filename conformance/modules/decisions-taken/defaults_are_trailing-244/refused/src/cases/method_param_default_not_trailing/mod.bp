@@ -1,0 +1,13 @@
+//// Decision 244 — the same rule on a method's parameters.
+
+import {io.terminal.print} from "std";
+
+type Box(n: i32) {
+    fn add(self: Self, a: i32 = 1, b: i32) -> i32 {
+        return self.n + a + b;
+    }
+}
+
+pub fn main() -> void {
+    print(Box(n: 1).add(b: 2));
+}

@@ -1,0 +1,20 @@
+//// `String.fromCodepoint(cp)` (decision 262): the one-character string of a
+//// Unicode scalar value, on every target — one, two, three and four UTF-8
+//// bytes, the edges of each width, and text built from code points.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(string.fromCodepoint(65));
+    print(string.fromCodepoint(0) == string.fromCodepoint(0));
+    print(string.fromCodepoint(127) + string.fromCodepoint(128));
+    print(string.fromCodepoint(233) + string.fromCodepoint(8364));
+    print(string.fromCodepoint(2047) + string.fromCodepoint(2048));
+    print(string.fromCodepoint(55295) + string.fromCodepoint(57344));
+    print(string.fromCodepoint(65535) + string.fromCodepoint(65536));
+    print(string.fromCodepoint(127881));
+    print(string.fromCodepoint(1114111).charCodeAt(0));
+    val word = [104, 233, 108, 108, 111].map({ c -> string.fromCodepoint(c) });
+    print(word.join(""));
+    print(string.fromCodepoint("é".charCodeAt(0)));
+}

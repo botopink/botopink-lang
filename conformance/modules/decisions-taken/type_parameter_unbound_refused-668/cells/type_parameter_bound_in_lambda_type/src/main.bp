@@ -1,0 +1,20 @@
+//// Decision 668 — a type parameter that occurs inside a parameter's function
+//// type is bound by it: `make`'s `R` is only the return of `build`'s type,
+//// and `mapAll`'s `R` only the return of `f`'s; each call's lambda fixes it.
+
+import {io.terminal.print} from "std";
+
+fn make<R>(build: fn() -> R) -> R {
+    return build();
+}
+
+fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
+    return items.map(f);
+}
+
+pub fn main() -> void {
+    val n = make({ -> 41 }) + 1;
+    print(n);
+    val lengths = mapAll(["a", "bc"], { s -> s.length });
+    print(lengths);
+}

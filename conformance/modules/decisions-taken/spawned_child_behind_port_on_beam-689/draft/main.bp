@@ -1,0 +1,18 @@
+//// Decision 689 — On erlang and beam a spawned child runs behind a port: its stdin is a pipe, not the parent's, and its stderr is merged into stdout; kept and documented in `libs/std/AGENTS.md` and the function's doc.
+
+import {io.process, io.terminal.print} from "std";
+
+async fn scenario() -> Async<void> {
+    val started = process.spawn("sh", ["-c", "echo to stdout; echo to stderr 1>&2; test -t 0 || echo stdin is no terminal"]);
+    case started {
+        Ok(child) {
+            val code = await child.wait();
+            print("exit " + code.toString());
+        }
+        Error(e) -> print("not started");
+    }
+}
+
+pub fn main() -> void {
+    scenario();
+}

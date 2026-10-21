@@ -1,0 +1,11 @@
+import {compiler} from "std";
+
+type Text(text: string, size: i32)
+
+fn label(syntax q: string) -> anyvalue {
+    return compiler.ast(Text(text: compiler.text(q), size: 1));
+}
+
+pub fn whole() -> string {
+    return label @`x`;
+}

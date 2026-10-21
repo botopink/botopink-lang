@@ -1,0 +1,10 @@
+//// Decision 248 — the one reflection builtin is `compiler.typeInfo`; the lowercase
+//// `@typeinfo` is refused where it is written, naming `compiler.typeInfo`.
+
+import {io.terminal.print} from "std";
+
+type City(name: string)
+
+pub fn main() -> void {
+    print(@typeinfo(City).name);
+}

@@ -1,0 +1,10 @@
+//// Decision 346 — `Bytes` has no order: `<`, `<=`, `>` and `>=` are refused at the operand; `==`
+//// and `!=` compare the bytes.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val a = bytes.fromUtf8("a");
+    val b = bytes.fromUtf8("b");
+    print(a < b);
+}

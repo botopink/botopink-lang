@@ -1,0 +1,12 @@
+//// Decision 305 — an annotation's labelled argument is written `label: value`,
+//// as a call's is. `label = value` is a located parse error at the label,
+//// naming the form to write.
+
+import {io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("erlang:abs($0)", inline = true))]
+declare fn magnitude(n: i32) -> i32;
+
+pub fn main() -> void {
+    print(magnitude(-3));
+}

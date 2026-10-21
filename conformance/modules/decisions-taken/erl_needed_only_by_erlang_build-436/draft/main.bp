@@ -1,0 +1,16 @@
+//// Decision 436 — `botopink build --target erlang|beam` keeps needing `erl`; only comptime stops needing it.
+
+import {io.terminal} from "std";
+
+fn squares(n: i32) -> i32[] {
+    return array.range(1, n + 1).map({ k -> k * k });
+}
+
+// Computed by the comptime runtime while the program compiles, whatever the
+// target: no `erl` takes part in it.
+val table = comptime squares(5);
+
+pub fn main() -> void {
+    terminal.print(table.map({ k -> k.toString() }).join(" "));
+    terminal.print(comptime "build".toUpper(), "run".toUpper());
+}

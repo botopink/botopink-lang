@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `Implementation.Wasm` has no parameter named `js`
+at src/cases/external_wasm_unknown_label/mod.bp:6:84

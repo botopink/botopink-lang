@@ -1,0 +1,26 @@
+//// Decision 525 — `async { … }` is a block: its task's value is its last
+//// expression written without `;`, as `return` gives it. On commonJS the
+//// tail was dropped (`await` yielded `undefined`, printed `null`).
+
+import {io.terminal.print} from "std";
+
+async fn load(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative " + n.toString();
+    return n;
+}
+
+async fn run() -> Async<void> {
+    val safe = async { try await load(-1) catch 0 };
+    print(await safe);
+    val good = async { try await load(7) catch 0 };
+    print(await good);
+    val doubled = async {
+        val v = try await load(5) catch 0;
+        v * 2
+    };
+    print(await doubled);
+}
+
+pub fn main() -> void {
+    run();
+}

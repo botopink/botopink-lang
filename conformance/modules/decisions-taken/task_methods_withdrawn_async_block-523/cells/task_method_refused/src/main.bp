@@ -1,0 +1,16 @@
+//// Decision 523 — a `Async` has no methods: `map`, `then`, `mapError` and
+//// `catch` are withdrawn, so a call to one is the ordinary unknown-member
+//// error. A task's value is read by `await`; every composition of a task is an
+//// `async { … }` block (`task_compose_by_async_block`).
+
+import {io.terminal.print} from "std";
+
+async fn load() -> Async<i32> {
+    return 4;
+}
+
+pub fn main() -> void {
+    val t = load();
+    val doubled = t.map({ n -> n * 2 });
+    print(doubled);
+}

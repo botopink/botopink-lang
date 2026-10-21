@@ -1,0 +1,12 @@
+//// Decision 259 — wasm's `std/math` agrees with commonJS bit for bit, `pow` included: std ports glibc's `pow` (the algorithm since glibc 2
+
+import {math, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val p = math.pow(158.42161580281933, 2.853827476501465);
+    print(p == 1896229.4525711867);
+    print(math.pow(1.5, 7.3) == 19.295951155032366);
+    print(math.pow(2.0, 0.5) == math.sqrt(2.0));
+    print(math.pow(-8.0, 3.0) == -512.0);
+    print(math.pow(0.0, 0.0) == 1.0);
+}

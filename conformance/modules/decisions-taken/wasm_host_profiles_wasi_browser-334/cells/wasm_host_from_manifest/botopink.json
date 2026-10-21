@@ -1,0 +1,1 @@
+{ "name": "wasm_host_from_manifest", "wasm": { "host": "browser" } }

@@ -1,0 +1,3 @@
+val title = "botopink";
+---
+<Card title={title}><Badge text="new" /></Card>

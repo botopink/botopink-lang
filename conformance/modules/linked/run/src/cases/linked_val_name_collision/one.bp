@@ -1,0 +1,14 @@
+pub val limit = 3;
+
+pub val doubled = limit * 2;
+
+pub fn viaOne() -> i32 {
+    return limit + 10;
+}
+
+var hits = 100;
+
+pub fn hitOne() -> i32 {
+    hits = hits + 1;
+    return hits;
+}

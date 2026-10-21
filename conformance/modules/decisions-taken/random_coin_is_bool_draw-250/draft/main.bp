@@ -1,0 +1,15 @@
+//// Decision 250 — † std's `io.random.bool()` is dropped, not renamed; `coin()` is the boolean draw
+
+import {io.terminal, io.random} from "std";
+
+pub fn main() -> void {
+    // `coin()` is the boolean draw: a `bool`, either side.
+    var heads = 0;
+    var i = 0;
+    while (i < 100) {
+        val side: bool = random.coin();
+        if (side) heads = heads + 1;
+        i = i + 1;
+    }
+    terminal.print(heads >= 0 && heads <= 100);
+}

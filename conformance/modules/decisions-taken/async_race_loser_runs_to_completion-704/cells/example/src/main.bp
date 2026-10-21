@@ -1,0 +1,22 @@
+//// Decision 704 — No cancellation in std's async: a losing racer and an expired timeout run to completion and their results are dropped; `raceOf` / `timeout` document it.
+
+import {async, io.terminal} from "std";
+
+var finished = 0;
+
+async fn racer(name: string, millis: i32) -> Async<string> {
+    val v = await async.delay(millis, name);
+    finished = finished + 1;
+    return v;
+}
+
+pub async fn main() -> Async<void> {
+    val winner = await async.raceOf([{ -> racer("fast", 10) }, { -> racer("slow", 40) }]);
+    terminal.print(winner);
+    await async.delay(80, 0);
+    terminal.print(finished);
+    val late = await async.timeout({ -> racer("late", 40) }, 10);
+    terminal.print(late.isError());
+    await async.delay(80, 0);
+    terminal.print(finished);
+}

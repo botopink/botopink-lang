@@ -1,0 +1,18 @@
+//// An IMPORTED decorator whose body calls functions of its own module: they
+//// travel with it — this module neither imports nor declares them. Before,
+//// the decorator module held the decorator alone and did not compile
+//// (`call to undefined function describe/1`).
+
+pub mod sched;
+import {cases.decorator_imported_calls_module_function.sched.scheduled};
+import {io.terminal.print} from "std";
+
+#[scheduled("* * * * *")]
+fn tick() -> i32 {
+    return 1;
+}
+
+pub fn runCase() -> void {
+    print(schedule());
+    print(tick());
+}

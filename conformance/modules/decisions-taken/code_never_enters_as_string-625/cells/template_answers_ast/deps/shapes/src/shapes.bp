@@ -1,0 +1,14 @@
+//// A library template that answers code built as a tree: `double` is the
+//// library's private function, and the `Name` that calls it resolves in
+//// this module wherever the template is expanded (decision 112).
+
+import {compiler, compiler.Call, compiler.Lit, compiler.Name} from "std";
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub default fn shapes(syntax q: string) -> anyvalue {
+    val n = compiler.text(q).length();
+    return compiler.ast(Call(callee: Name("double"), args: [Lit(n)]));
+}

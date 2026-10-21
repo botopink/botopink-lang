@@ -1,0 +1,19 @@
+//// Decision 311, question s29-a — written as an annotation, a template
+//// function receives the annotated declaration beside its literal
+//// (`syntax decl: unknown`); a template that takes none has nowhere to put
+//// what it builds and is refused at the annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+fn shout(syntax q: string) -> string {
+    return compiler.build("\"" + compiler.text(q).toUpper() + "\"");
+}
+
+#[shout @`hello`]
+fn one() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(one().toString());
+}

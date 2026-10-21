@@ -1,0 +1,7 @@
+import {compiler} from "std";
+
+pub type Mark(label: string)
+
+pub fn mark(syntax decl: unknown, comptime label: string) -> void {
+    compiler.addMeta(Mark(label: label));
+}

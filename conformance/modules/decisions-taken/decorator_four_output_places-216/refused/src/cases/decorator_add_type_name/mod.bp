@@ -1,0 +1,16 @@
+//// Decision 216 (3) — an associated type is named like a type: one
+//// identifier starting with an upper-case letter (`City.Columns`), refused
+//// at the annotation otherwise.
+
+import {compiler, io.terminal.print} from "std";
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.addType("columns", compiler.buildType("(id: string)"));
+}
+
+#[entity]
+type City(id: i32)
+
+pub fn main() -> void {
+    print(City(id: 1).id);
+}

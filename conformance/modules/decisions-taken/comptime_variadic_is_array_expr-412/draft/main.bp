@@ -1,0 +1,12 @@
+//// Decision 412 — A `comptime` variadic is one expression of the array — `comptime ..xs: @Expr<T[]>`.
+
+import {compiler, io.terminal.print} from "std";
+import {comptime.index.index, comptime.index.Index};
+
+#[index(.name, .state)]
+type City(name: string, state: string, population: i32)
+
+pub fn main() -> void {
+    val columns = comptime compiler.typeInfo(City).meta(Index)?.columns ?? [];
+    print(columns.join(","));
+}

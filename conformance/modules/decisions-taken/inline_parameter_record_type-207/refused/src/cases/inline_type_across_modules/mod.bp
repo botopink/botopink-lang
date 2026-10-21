@@ -1,0 +1,12 @@
+//// Decision 207 — an inline parameter type is not exported: the module that
+//// declares `link` builds it from a call's labels (`home()`), and a call from
+//// another module that writes the fields is refused by name, at the call.
+
+pub mod ui;
+import {cases.inline_type_across_modules.ui.link, cases.inline_type_across_modules.ui.home};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(home());
+    print(link(href: "/a", label: "A"));
+}

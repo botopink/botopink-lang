@@ -1,0 +1,61 @@
+//// Decisions 352, 354 — the mechanism `styled` registers through (front 119
+//// step 1). A context's value is a record holding a writer function,
+//// provided at the render's root; a component computed at render reads it
+//// with `use context(…)` at the top of its body and hands the writer its
+//// rule every time it runs (`badge` twice: two lines).
+//// A part run through a function value under a provider that keeps nothing
+//// (`quiet`, `styled`'s `splice`) registers nothing; a component that reads
+//// no context (`constant`) registers nothing; one standing on its own
+//// (`alone`) registers itself.
+
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type Rule(name: string, text: string) implement Renderable
+
+type SheetWriter(layer: string, add: fn(layer: string, rule: Rule))
+
+pub val sheetContext = createContext(SheetWriter(layer: "", add: discard));
+
+fn printed(layer: string, rule: Rule) -> void {
+    print("registered " + layer + " " + rule.name + " " + rule.text);
+}
+
+fn discard(layer: string, rule: Rule) -> void {}
+
+component fn computed(name: string, parts: Rule[]) -> Component<Rule> {
+    val sheet = use context(sheetContext);
+    var text = name;
+    for (parts) { r ->
+        text = text + "+" + r.text;
+    }
+    val out = Rule(name: name, text: text);
+    sheet.add(sheet.layer, out);
+    return out;
+}
+
+component fn quiet(view: fn() -> Component<Rule>) -> Component<Rule> {
+    use provide(createContext(SheetWriter(layer: "", add: discard)));
+    val r = use view();
+    return r;
+}
+
+component fn constant(name: string) -> Component<Rule> {
+    return Rule(name: name, text: name);
+}
+
+component fn Root() -> Component<Rule> {
+    use provide(createContext(SheetWriter(layer: "components", add: printed)));
+    val qa = use quiet({ -> computed("pad", []) });
+    val a = use computed("badge", [qa]);
+    val qb = use quiet({ -> computed("pad", []) });
+    val b = use computed("badge", [qb]);
+    val c = use constant("tab");
+    val d = use computed("alone", []);
+    print(a.text + " " + b.text + " " + c.text + " " + d.text);
+    return a;
+}
+
+pub async fn main() -> Async<void> {
+    val r = (await Root().run(RenderScope.root())).value;
+    print("root " + r.name);
+}

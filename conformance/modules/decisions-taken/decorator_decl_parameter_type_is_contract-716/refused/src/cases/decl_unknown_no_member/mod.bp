@@ -1,0 +1,21 @@
+//// Decision 716 (1) — `syntax decl: unknown` admits any declaration and
+//// gives `decl` no member: `decl.make()` in an executor is the checker's own
+//// refusal at the decorator, as any `unknown` value's would be — never an
+//// error per annotated declaration.
+
+import {compiler, io.terminal.print} from "std";
+
+fn service(syntax decl: unknown) -> void {
+    compiler.init({ -> print(decl.make()) });
+}
+
+#[service]
+pub type Users() {
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

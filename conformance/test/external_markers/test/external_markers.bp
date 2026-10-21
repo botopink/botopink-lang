@@ -1,0 +1,21 @@
+//// Decision 8 §8 / decision 5 — the marker forms of a host template: `$args`
+//// expands to the whole declared parameter list, and the keyword form
+//// (`module:` / `method:`) carries a template instead of a bare symbol.
+
+import {compiler} from "std";
+
+// wasm refuses this suite on a host binding: `biggest` has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+
+#[compiler.external(.JavaScript("Math.max($args)"), .Erlang("erlang:max($args)"))]
+declare fn biggest(a: i32, b: i32) -> i32;
+
+#[compiler.external(.JavaScript("Math.min($0, $1)"), .Erlang("erlang:min($0, $1)"))]
+declare fn smallest(a: i32, b: i32) -> i32;
+
+test "§8 $args expands to the declared parameter list" {
+    assert biggest(1, 2) == 2;
+}
+
+test "§8 the keyword form carries a template" {
+    assert smallest(9, 4) == 4;
+}

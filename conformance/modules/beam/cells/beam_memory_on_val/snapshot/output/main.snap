@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `hits` is a `val`
+at src/main.bp:7:3

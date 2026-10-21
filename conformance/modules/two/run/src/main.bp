@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.two_modules.runCase();
+    cases.two_modules_one_type_name.runCase();
+}

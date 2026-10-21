@@ -1,0 +1,16 @@
+// The project's own `io/random` — a module of this package, not of std,
+// whatever its first folder is called.
+pub type Die(sides: i32) {
+    pub fn roll(self: Self, seed: i32) -> i32 {
+        return seed % self.sides + 1;
+    }
+}
+
+pub fn d6() -> Die {
+    return Die(sides: 6);
+}
+
+test "a d6 rolls between one and six" {
+    assert d6().roll(17) == 6;
+    assert d6().roll(18) == 1;
+}

@@ -1,0 +1,13 @@
+//// Decision 41 — `#[compiler.beamMemory(.<member>)]` is validated in the commit the
+//// annotation was born in: a misread memory annotation does not fail, it moves
+//// how the BEAM holds the state. The member is `Ets` or `PersistentTerm`
+//// (decision 547); anything else is a located error naming the two.
+
+import {io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Etz)]
+var hits: i32 = 0;
+
+pub fn main() -> void {
+    print(hits);
+}

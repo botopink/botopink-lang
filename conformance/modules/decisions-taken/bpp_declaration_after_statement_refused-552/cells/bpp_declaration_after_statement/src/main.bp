@@ -1,0 +1,6 @@
+//// Decision 552 — a header declaration written after a statement is refused
+//// at the declaration, naming the statement before it.
+
+mod Card;
+
+pub fn main() -> void {}

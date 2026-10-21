@@ -10,5 +10,6 @@ fn make(r: Response) -> Response {
 ----- DEFINITION at (line 2, char 21)
 uri: file:///libs/rakun/http.bp
 range: (1,7) → (1,14)
-  fn make(r: Response) -> Response {
+in file:///libs/rakun/http.bp:
+  pub fn created(r: Response, body: string) -> Response {
          ^^^^^^^

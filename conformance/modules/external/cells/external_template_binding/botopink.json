@@ -1,0 +1,1 @@
+{ "name": "external_template_binding", "targets": ["commonJS", "erlang", "beam"] }

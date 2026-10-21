@@ -1,0 +1,36 @@
+//// Decision 506 (1) — `io.process.onSignal(s, f)`: `f` runs each time the process receives `s`,
+//// and while a handler is installed the signal no longer ends the process. The program sends
+//// itself `SIGTERM`, `SIGHUP` and `SIGWINCH` (with `kill`, through `process.run`) and waits for the
+//// handlers; two handlers on one signal both run, in the order they were added. The same on
+//// commonJS, erlang and beam. (`Int` is told apart by the target's host: see `docs.md`.)
+
+import {io.process, async, io.terminal.print} from "std";
+
+fn send(name: string) -> void {
+    process.run("kill", ["-" + name, process.pid().toString()]);
+}
+
+fn installed(r: Result<void, process.ProcessError>) -> string {
+    return case r {
+        Ok(_) -> "installed";
+        Error(e) -> "refused";
+    };
+}
+
+async fn scenario() -> Async<void> {
+    print(installed(process.onSignal(process.Signal.Term, { -> print("Term handler one"); })));
+    print(installed(process.onSignal(process.Signal.Term, { -> print("Term handler two"); })));
+    print(installed(process.onSignal(process.Signal.Hup, { -> print("Hup handler"); })));
+    print(installed(process.onSignal(process.Signal.Winch, { -> print("Winch handler"); })));
+    send("TERM");
+    await async.delay(300, 0);
+    send("HUP");
+    await async.delay(300, 0);
+    send("WINCH");
+    await async.delay(300, 0);
+    print("still running");
+}
+
+pub fn main() -> void {
+    scenario();
+}

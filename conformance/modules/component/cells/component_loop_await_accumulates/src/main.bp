@@ -1,0 +1,34 @@
+//// A component body that loops over a list, awaits a task per item and
+//// accumulates into a `var` declared before the loop — the shape of styled's
+//// `spliced`. The `for` body is a lambda that closes over `out` and `k`; every
+//// target answers the joined text. A component per item would be resolved by
+//// `use`, which a loop cannot hold (357), and `await` takes an `Async` alone
+//// (decision 791 (4)), so the item is a task.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+pub type Piece(text: string) implement Renderable
+
+fn piece(s: string) -> Piece {
+    return Piece(text: s);
+}
+
+pub async fn item(s: string) -> Async<Piece> {
+    return piece(s);
+}
+
+component fn joined(texts: string[], parts: string[]) -> Component<string> {
+    var out = texts.at(0) ?? "";
+    var k = 0;
+    for (parts) { s ->
+        val p = await item(s);
+        out = out + p.text + texts.at(k + 1) ?? "";
+        k = k + 1;
+    }
+    return out;
+}
+
+pub async fn main() -> Async<void> {
+    val s = (await joined(["<", "|", "|", ">"], ["a", "b", "c"]).run(RenderScope.root())).value;
+    print(s);
+}

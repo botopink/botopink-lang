@@ -1,0 +1,12 @@
+//// Decision 873 — A primitive type's body declares a property as `val length: i32;`, a form of `primitives.bp` alone; a local shadows a primitive type's statics in its body; a module-level `fn` / `val` named like any lowercase type — `array` included — is `primitive-type-name-taken`; a failed `toUtf8` names `bytes.toUtf8`.
+
+import {io.terminal.print} from "std";
+
+// `array` is a lowercase type: a module-level function cannot take its name.
+pub fn array(items: i32[]) -> i32[] {
+    return items;
+}
+
+pub fn main() -> void {
+    print(array([1]));
+}

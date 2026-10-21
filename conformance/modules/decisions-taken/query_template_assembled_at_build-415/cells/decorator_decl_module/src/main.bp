@@ -1,0 +1,18 @@
+//// Decision 415 (2) — every `@Decl` carries `module`, the path of the module
+//// that declares it (question B-18-b, as built), not only a looked-up one: a
+//// decorator reads it on the declaration it annotates, here and in another
+//// module.
+
+pub mod models;
+pub mod marks;
+import {models.User};
+import {marks.located, marks.Origin};
+import {io.terminal.print, compiler} from "std";
+
+#[located]
+type City(name: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).meta(Origin)?.module ?? "none");
+    print(comptime compiler.typeInfo(User).meta(Origin)?.module ?? "none");
+}

@@ -1,0 +1,10 @@
+//// Decision 562 — `shout(7)` is expanded in `main`, and the code it emits
+//// calls `toUpper` on an `i32`: the refusal is located where that call is
+//// written, in the library, with the call it was expanded at as the
+//// `called from` line.
+
+import {shout} from "greeter";
+
+pub fn main() -> void {
+    shout(7);
+}

@@ -1,0 +1,11 @@
+//// Decision 481 — a `wasi:` cell names an adapter that exists: `.RandomF46`
+//// names none, refused at the annotation on every target.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(wasi: .RandomF46))]
+pub declare fn draw() -> f64;
+
+pub fn main() -> void {
+    print(draw() < 1.0);
+}

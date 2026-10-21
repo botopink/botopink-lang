@@ -1,0 +1,1 @@
+{ "name": "import_same_enum_name_from_two_packages", "dependencies": { "traffic": { "path": "deps/traffic" }, "audio": { "path": "deps/audio" } } }

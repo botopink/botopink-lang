@@ -1,0 +1,10 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.ambient_behavior_parameter.runCase();
+    cases.defer_in_value_branch.runCase();
+    cases.defer_inner_panic_runs_once.runCase();
+    cases.defer_panic_in_arm.runCase();
+    cases.defer_reads_binding_at_defer.runCase();
+    cases.defer_reads_var_set_in_arm.runCase();
+}

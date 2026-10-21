@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Test",
         "id": 1,
         "isPub": false,
@@ -20,14 +20,16 @@
             "annotations": [],
             "genericParams": [],
             "params": [],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": [
               {
                 "expr": {
                   "call": {
                     "loc": {
                       "line": 3,
-                      "col": 9
+                      "col": 18
                     },
                     "kind": {
                       "call": {
@@ -50,6 +52,27 @@
             "isPub": false
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

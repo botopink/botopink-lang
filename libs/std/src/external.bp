@@ -1,0 +1,101 @@
+//// A `declare fn`'s host sources (decision 575 (6)).
+////
+//// A bodyless `declare fn` — top-level or a type's, static included — names
+//// the code each target runs in its place with `external`, one std function:
+////
+////     #[external(.Erlang("lists:member($1, $0)"), .JavaScript("$0.includes($1)"))]
+////     declare fn contains(self: Self<T>, x: T) -> bool;
+////
+//// Outside std the annotation is written `#[@external(…)]`. Each source is an
+//// `Implementation`, checked as the enum's constructor is: its shape — a
+//// label the variant does not declare, a value of another type, a missing
+//// template — is the constructor's refusal, at the argument. `external`
+//// hands each one to `compiler.implement`, and the compiler reads a
+//// declaration's `Implementation`s alone: one per target
+//// (`implementation-twice`), never on a declaration with a body
+//// (`implement-with-body`). A bodyless `declare fn` that no annotation gave
+//// an implementation is refused at the declaration
+//// (`declare-without-implementation`); a target without one is refused at the
+//// call (`std-unsupported-on-target`, `… has no implementation for the <t>
+//// backend`). A library writes its own source annotation the same way: a
+//// decorator that calls `compiler.implement`.
+////
+//// Until `#[builtin]` (decision 575 (2)) marks it, `external` is one of the
+//// prelude's declarations: every module — std's own included — names it with
+//// no import, and its body is the compiler's to run where it annotates
+//// (`comptime/implementations.zig`).
+
+import {compiler};
+
+// The host features a wasm binding needs (decision 518). The compiler gathers
+// the needs of every binding a program reaches into the `.wasm`'s
+// `botopink.needs` custom section, and the runner hands the host only the
+// matching flags (wasmtime's `-W exceptions=y` for `Exceptions`, `-S http` for
+// `Http`, `-W gc=y` for `Gc`); `Gc` is also every program's that emits WasmGC
+// types (decision 544). The compiler's copy is `ast.WasmNeed`, kept in step by
+// a test.
+pub type WasmNeed {
+    Exceptions,
+    Http,
+    Gc,
+}
+
+// The runtime a wasm binding serves (decision 334): a binding written without
+// `host:` serves every host; one per host otherwise.
+pub type WasmHost {
+    Wasi,
+    Browser,
+}
+
+// The compiler's adapters over the host a `wasi:` cell names (decisions 394,
+// 481): each has an implementation per host — WASI preview 2 through the
+// `wasi` component, JavaScript in the `browser` loader. The compiler's table is
+// `codegen/wat/host_binding.zig` `adapters`, kept in step by a test.
+pub type WasiAdapter {
+    RandomF64,
+    Delay,
+    Race,
+    RaceOf,
+    SpawnAll,
+    GateNew,
+    GateOpen,
+    GateAwait,
+    CellNew,
+    CellFilled,
+    CellGet,
+    CellSet,
+    Attempt,
+}
+
+// One target's code for a `declare fn`: the variant names the language the
+// template is written in (decision 618), `JavaScript` the one commonJS runs.
+//
+// - `template`: the host's code. With `$0`, `$1`, … it is a template over the
+//   declared parameters — on a method `$0` is `self` (decision 5); `$args` is
+//   every parameter. Without a marker it is a bare host symbol (`"mod:sym"`
+//   on erlang, `"propertyName"` on a method in JavaScript).
+// - `body`: a private bodied `fn` of the same module, with the declaration's
+//   parameter and return types — the algorithm written in botopink
+//   (decisions 238, 305).
+// - `inline` (`Erlang` alone): the erlang and beam emitters keep their
+//   hand-coded shape for the declaration instead of the template.
+// - `result` (decisions 431, 490): the host call can fail; every way it fails
+//   is answered as `Error(HostError(…))`, so the return is
+//   `Result<…, HostError>` or a `Async` of one.
+// - `Wasm`: one cell (decision 481) — `op:` a numeric wasm instruction,
+//   `std:` a function std-wasm implements (std's alone, decision 445),
+//   `wasi:` a compiler adapter, `body:` a botopink function, or a
+//   `template` —, beside `host:` and `needs:`.
+pub type Implementation {
+    Erlang(template: ?string = null, body: ?unknown = null, inline: bool = false, result: bool = false),
+    JavaScript(template: ?string = null, body: ?unknown = null, result: bool = false),
+    Wasm(template: ?string = null, op: ?string = null, std: ?string = null, wasi: ?WasiAdapter = null, body: ?unknown = null, host: ?WasmHost = null, needs: WasmNeed[] = [], result: bool = false),
+}
+
+// The host sources of the annotated `declare fn`, one `Implementation` per
+// target.
+pub fn external(syntax decl: unknown, comptime ..sources: Implementation[]) -> void {
+    for (sources) { s ->
+        compiler.implement(s);
+    }
+}

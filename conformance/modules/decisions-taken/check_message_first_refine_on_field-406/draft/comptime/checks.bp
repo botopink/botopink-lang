@@ -1,0 +1,24 @@
+import {compiler} from "std";
+
+pub type Code {
+    Custom,
+    Mismatch,
+}
+
+pub type Check<T>(message: string, rule: ?fn(v: T) -> bool, field: string, code: Code)
+
+pub type Refine<T>(rule: fn(v: T) -> bool)
+
+pub fn check<T>(
+    syntax decl: T,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?compiler.Field<T> = null,
+    comptime code: Code = .Custom,
+) -> void {
+    compiler.addMeta(Check<T>(message: message, rule: rule, field: at?.name ?? "", code: code));
+}
+
+pub fn refine<T>(syntax decl: T, comptime rule: fn(v: T) -> bool) -> void {
+    compiler.setMeta(Refine<T>(rule: rule));
+}

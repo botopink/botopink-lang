@@ -1,0 +1,15 @@
+//// 144 B-23 — a decorator declared in another module whose body raises is
+//// refused at the annotation that ran it, and the message names the call
+//// that raised in the body's own file (`src/deco.bp:3:5`). The parent
+//// binary named no file: the location sat in another module's source.
+
+pub mod deco;
+import {cases.decorator_raise_names_body_file.deco.check};
+import {io.terminal.print} from "std";
+
+#[check]
+type A(x: i32)
+
+pub fn main() -> void {
+    print(A(x: 1).x);
+}

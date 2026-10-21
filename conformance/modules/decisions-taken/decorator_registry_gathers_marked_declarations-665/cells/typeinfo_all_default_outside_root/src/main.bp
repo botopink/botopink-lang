@@ -1,0 +1,11 @@
+//// Decision 551 — a call that leaves out a `comptime` parameter whose default
+//// is `@TypeInfo.all(…)` answers for the whole program, so it is written only
+//// in the package's root (`src/main.bp`, s23-i (d) (1)): `setup`'s `boot()`
+//// is refused at the call, naming the root.
+
+pub mod setup;
+import {setup.start};
+
+pub fn main() -> void {
+    start();
+}

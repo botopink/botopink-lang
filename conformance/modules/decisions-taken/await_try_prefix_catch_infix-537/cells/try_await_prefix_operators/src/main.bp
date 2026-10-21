@@ -1,0 +1,52 @@
+//// Decision 537 — `try` and `await` are prefix operators, binding as the unary
+//// `-` does: `total + try parse(n)`, `-try parse(n)` and `(try parse(n)).toString()`
+//// are one reading each, `try parse(n) + 1` is `(try parse(n)) + 1`, and
+//// `await t * 2` is `(await t) * 2`. Decision 137's `try-await-operand` refusal
+//// is gone.
+
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+async fn load(n: i32) -> Async<i32> {
+    return n;
+}
+
+async fn ready() -> Async<bool> {
+    return true;
+}
+
+fn sum(total: i32, n: i32) -> Result<i32, string> {
+    return total + try parse(n);
+}
+
+fn plus(n: i32) -> Result<i32, string> {
+    return try parse(n) + 1;
+}
+
+fn negated(n: i32) -> Result<i32, string> {
+    return -try parse(n);
+}
+
+fn shown(n: i32) -> Result<string, string> {
+    return (try parse(n)).toString();
+}
+
+async fn run() -> Async<void> {
+    val t = load(21);
+    print(await t * 2);
+    print(await load(2) + await load(3));
+    print(!await ready());
+}
+
+pub fn main() -> void {
+    print(sum(1, 2).unwrapOr(-1));
+    print(sum(1, -2).unwrapOr(-1));
+    print(plus(4).unwrapOr(-1));
+    print(negated(3).unwrapOr(0));
+    print(shown(7).unwrapOr(""));
+    run();
+}

@@ -1,0 +1,30 @@
+//// Decision 376 (2) — a `comptime` inside a `Run` function is computed at
+//// build into a constant, so the build-only call under it and the clock
+//// read beside it are legal together: `cabecalho` is `Run`.
+
+import {io.clock, io.terminal.print} from "std";
+
+fn campos(comptime names: string) -> string {
+    return "[" + names + "]";
+}
+
+fn cabecalho() -> string {
+    val n = comptime campos("title,body");
+    val agora = clock.nowMillis();
+    val suffix = if (agora > 0) " (now)" else " (never)";
+    return n + suffix;
+}
+
+fn campos2() -> string {
+    val n = comptime {
+        val fs = campos("x,y,z");
+        fs + "|"
+    };
+    val ok = if (clock.nowMillis() > 0) "ok" else "no";
+    return n + " " + ok;
+}
+
+pub fn main() -> void {
+    print(cabecalho());
+    print(campos2());
+}

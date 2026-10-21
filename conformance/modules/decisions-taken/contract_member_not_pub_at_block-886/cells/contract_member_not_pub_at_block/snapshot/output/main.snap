@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: method-not-pub: `Box.label` is private to module `box` — `BoxShout implement Shout for Box` is written in another module and cannot meet `Shout.label` with it
+at src/main.bp:12:10

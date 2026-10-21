@@ -1,0 +1,31 @@
+//// The decorators and the meta records they write.
+
+import {compiler} from "std";
+
+pub type Entity(table: string)
+
+pub type Index(column: string)
+
+pub behavior Model {
+    fn make() -> Self;
+}
+
+pub fn entity(syntax decl: Model, comptime table: string) -> void {
+    compiler.setMeta(Entity(table: table));
+}
+
+pub fn index(syntax decl: unknown, comptime column: string) -> void {
+    compiler.addMeta(Index(column: column));
+}
+
+pub fn describe(ds: Declared<Model>[]) -> string {
+    var parts: string[] = [];
+    for (ds) { d ->
+        var columns: string[] = [];
+        for (d.metaAll(Index)) { i ->
+            columns.push(i.column);
+        }
+        parts.push(d.name + "(" + columns.join(",") + ")");
+    }
+    return parts.join(" ");
+}

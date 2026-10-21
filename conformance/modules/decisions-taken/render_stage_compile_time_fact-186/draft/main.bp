@@ -1,0 +1,10 @@
+//// Decision 186 — The stage a page renders in is a compile-time fact.
+
+import {compiler, io.terminal.print} from "std";
+import {pages.Home, pages.Search};
+import {comptime.stages.Stage};
+
+pub fn main() -> void {
+    print(comptime compiler.meta(Home, Stage)?.kind ?? "?");
+    print(comptime compiler.meta(Search, Stage)?.kind ?? "?");
+}

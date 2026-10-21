@@ -1,0 +1,16 @@
+//// Decision 509 — One code cache, the CLI's, for every target; what a test exercises never comes from it.
+
+import {io.terminal, path} from "std";
+import {collections.Dict} from "std";
+
+fn countWords(text: string) -> Dict<string, i32> {
+    return text
+        .split(" ")
+        .fold(Dict<string, i32>.empty(), { counts, w -> counts.bump(w, 1) });
+}
+
+pub fn main() -> void {
+    val counts = countWords("to be or not to be");
+    terminal.print(counts.at("to") ?? 0, counts.at("be") ?? 0, counts.at("or") ?? 0);
+    terminal.print(path.join(["src", "main.bp"]));
+}

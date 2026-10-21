@@ -1,0 +1,13 @@
+//// Decision 267 — a variadic's type is written as an array `T[]`: each
+//// argument is a `T`, the body reads a `T[]`. `..value: i32` is refused at the
+//// type.
+
+import {io.terminal.print} from "std";
+
+fn one(..value: i32) -> i32 {
+    return value;
+}
+
+pub fn main() -> void {
+    print(one(1));
+}

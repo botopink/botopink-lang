@@ -1,0 +1,32 @@
+//// A `\"` written inside an `compiler.external(.JavaScript)` template is a quote of the
+//// JavaScript it carries, as it is of the Erlang an `compiler.external(.Erlang)` template
+//// carries: a free host function, one bound to a type, and one called with an
+//// argument that holds a quote itself. commonJS wrote the template's raw lexeme
+//// into the `.js`, backslash and all — `SyntaxError: Invalid or unexpected
+//// token` before anything ran. Not scheduled on wasm: no host binding there.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("(\"say \" + $0)"), .Erlang("<<\"say \", $0/binary>>"))]
+declare fn say(s: string) -> string;
+
+#[compiler.external(
+    .JavaScript("JSON.stringify({ k: $0 })"),
+    .Erlang("<<\"{\", 34, \"k\", 34, \":\", 34, $0/binary, 34, \"}\">>"),
+)]
+declare fn enc(s: string) -> string;
+
+type Box(label: string) {
+    #[compiler.external(
+        .JavaScript("(\"[\" + $0.label + \"]\")"),
+        .Erlang("<<\"[\", (element(2, $0))/binary, \"]\">>"),
+    )]
+    declare fn framed(self: Self) -> string;
+}
+
+pub fn main() -> void {
+    print(say("hi"));
+    print(enc("v"));
+    print(say("a \"quoted\" word"));
+    print(Box(label: "b").framed());
+}

@@ -1,0 +1,9 @@
+botopink-cell 1
+out Ok
+out asserts.throws: body did not raise
+out Ok
+out Ok
+out asserts.throwsWith: message does not contain needle
+out Ok
+out asserts.throwsWith: message does not contain needle
+out asserts.throwsWith: body did not raise

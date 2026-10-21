@@ -1,0 +1,29 @@
+//// Decision 625 (2) — a tree handed to `compiler.ast` that is no code is
+//// refused at the `ast` call, naming the node: an `Arg` is an argument, and
+//// outside a `Call` it is no expression (`main`); a `Name` that nothing binds
+//// where the tree is spliced names nothing (`unbound`). A type node is no
+//// expression (`types`), and an `FnParam` is a parameter only of a `Fn`
+//// (`params`, decision 753). A `Lit` holding a `syntax` value — a caller's
+//// hole — names `Syntax(e)` (`literal`, decision 637).
+
+mod literal;
+mod params;
+mod types;
+mod unbound;
+import {literal.wrapped};
+import {params.param};
+import {types.typeNode};
+import {unbound.missing};
+import {compiler, compiler.Arg, compiler.List, compiler.Lit, io.terminal.print} from "std";
+
+fn loose(syntax q: string) -> anyvalue {
+    return compiler.ast(List([Arg(name: "tag", value: Lit(compiler.text(q)))]));
+}
+
+pub fn main() -> void {
+    print(loose @`div`);
+    print(missing());
+    print(typeNode());
+    print(param());
+    print(wrapped());
+}

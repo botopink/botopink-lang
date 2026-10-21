@@ -1,0 +1,14 @@
+//// Decision 415 (3) — the looked-up declaration's decorators run before the
+//// template body: a declaration of another module carries the meta its
+//// module's decorators recorded when that module was analysed, read here by
+//// a template of a third module.
+
+mod orm;
+mod models;
+mod query;
+import {models.User, query.tableOf};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(tableOf @`User`);
+}

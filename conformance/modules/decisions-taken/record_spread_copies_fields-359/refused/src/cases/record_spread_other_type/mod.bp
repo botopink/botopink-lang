@@ -1,0 +1,15 @@
+//// Decision 359 (2) — a spread's source is the record's own type or a type
+//// derived from it by `Type.pick`, `Type.omit` or `Type.merge`: a record of
+//// the same fields is still another type, refused at the `...`, naming both.
+
+import {io.terminal.print} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+type Animal(nome: string, idade: i32)
+
+pub fn main() -> void {
+    val rex = Animal(nome: "Rex", idade: 3);
+    val p = Pessoa(..rex, nome: "Ana");
+    print(p.nome);
+}

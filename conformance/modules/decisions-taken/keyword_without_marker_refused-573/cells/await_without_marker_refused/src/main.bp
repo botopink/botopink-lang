@@ -1,0 +1,19 @@
+//// Decisions 553 (4), 573 — `await` is admitted by a body's marker, never by
+//// its return type: `total` returns `Async<i32>` and carries no marker, so
+//// its `await` is `await-without-async`, at the `await`, the hint naming
+//// `async fn`.
+
+import {io.terminal.print} from "std";
+
+async fn fetchCount() -> Async<i32> {
+    return 3;
+}
+
+fn total() -> Async<i32> {
+    val n = await fetchCount();
+    return Async.resolve(n + 1);
+}
+
+pub async fn main() -> Async<void> {
+    print(await total());
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the path ".Color.Red.500" is carried by more than one enum — "Border" and "Token" — and nothing here says which (ES5 — enum-sections path ambiguity)
+at src/cases/enum_section_ambiguous_path/mod.bp:21:13

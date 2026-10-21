@@ -1,0 +1,1 @@
+| two `files` entries of the resolved dependency naming one module (one file listed twice, or `p.bp` beside `p.bpp`) | `"files" lists p.bp and p.bp, one module (` p `) written twice — keep one of the two files` (located on the dependency's manifest, at the second entry; a package's own manifest is refused the same way) |

@@ -1,0 +1,21 @@
+//// An unmarked lambda whose tail expression is an `iter loop { … }` answers
+//// that generator, as a function whose last statement is the block does.
+
+import {io.terminal.print} from "std";
+
+fn walk(f: fn() -> Iter<i32>) -> void {
+    for (f()) { x ->
+        print(x);
+    }
+}
+
+pub fn runCase() -> void {
+    walk({ ->
+        iter loop {
+            yield 1;
+            yield 2;
+            yield 3;
+            break;
+        }
+    });
+}

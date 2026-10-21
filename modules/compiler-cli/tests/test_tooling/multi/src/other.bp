@@ -1,0 +1,5 @@
+// The second module of the two-module fixture — one test of its own.
+
+test "other one" {
+    assert 3 * 3 == 9;
+}

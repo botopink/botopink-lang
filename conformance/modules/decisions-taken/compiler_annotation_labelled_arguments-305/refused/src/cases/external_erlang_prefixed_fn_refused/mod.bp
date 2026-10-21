@@ -1,0 +1,17 @@
+//// Decision 305 — `compiler.external(.Erlang)`, which the erlang and beam targets read,
+//// binds a private fn by the labelled cell `fn: <name>`: the prefixed string
+//// `"fn:mixBody"` binds nothing. It is refused at the argument on every
+//// target, naming the labelled form.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript(body: mixBody), .Erlang("fn:mixBody"), .Wasm(body: mixBody))]
+pub declare fn mix(x: f64, y: f64) -> f64;
+
+fn mixBody(a: f64, b: f64) -> f64 {
+    return a * 2.0 + b;
+}
+
+pub fn main() -> void {
+    print(mix(1.5, 2.0));
+}

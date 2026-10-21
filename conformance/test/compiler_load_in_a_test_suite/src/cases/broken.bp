@@ -1,0 +1,3 @@
+pub fn main() -> void {
+    val flag: bool = 1;
+}

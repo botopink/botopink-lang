@@ -1,0 +1,20 @@
+//// Decision 129 — Type aliases: four restrictions stand, `as` reaches an imported alias
+
+import {io.terminal} from "std";
+import {shapes.Pair as P};
+
+type Id = i32;
+
+fn swap(p: P<Id, string>) -> P<string, Id> {
+    return #(p._1, p._0);
+}
+
+fn left(p: P) -> Id {
+    return 0;
+}
+
+pub fn main() -> void {
+    val s = swap(#(7, "seven"));
+    terminal.print(s._0, s._1);
+    terminal.print(left(#(1, 2)));
+}

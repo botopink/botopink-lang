@@ -1,0 +1,16 @@
+//// The twin of `a_test.bp`: one type name, another module, other members.
+
+pub type Order(id: i32) {
+    fn label(self: Self) -> string {
+        return "b-${self.id}";
+    }
+
+    fn make(id: i32) -> Order {
+        return Order(id: id + 100);
+    }
+}
+
+test "the other test module's type answers its own members" {
+    assert Order(id: 1).label() == "b-1";
+    assert Order.make(2).id == 102;
+}

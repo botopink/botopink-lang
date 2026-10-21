@@ -1,0 +1,5 @@
+pub type Dict(initialMs: i32)
+
+pub fn fresh() -> Dict {
+    return Dict(initialMs: 9);
+}

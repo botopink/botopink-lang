@@ -1,0 +1,788 @@
+//! Decision 370 (2) — a decorator hands a parameter's `@Expr` on to the program
+//! through a typed member:
+//!
+//!     decl.addMember("validate", fn(self: T) -> Violation[] {
+//!         if (rule(self)) return [];
+//!         return [Violation(field: "confirm", message: message)];
+//!     });
+//!
+//! The second argument is a function expression written at the call, typed
+//! (`parser/exprs.zig`). The checker types it in the decorator's module with
+//! each `comptime x: @Expr<T>` parameter read as a `T` (`infer.zig`
+//! `inferMemberFnCall`); the decorator body runs on the comptime runtime with
+//! the function replaced by its index here (`syntax_param.zig` `eraseFn`), the
+//! prelude's `addMember/3` hands the name and the index back
+//! (`decorator_eval.Contribution.memberFn`), and `infer.zig`
+//! `runDeclDecorators` renders the member the type receives — `pub fn
+//! <name>(…) -> R { … }`, each parameter's argument spliced where the body
+//! uses it, written as the annotation wrote it, and the decorator's type
+//! parameters spelled as the annotation bound them (`render`). The member then
+//! joins the type exactly as a `decl.addMember(source)` one does
+//! (`comptime.zig` `mergeMembers`).
+const std = @import("std");
+const ast = @import("../ast.zig");
+const format = @import("../format.zig");
+const Lexer = @import("../lexer.zig").Lexer;
+const Parser = @import("../parser.zig").Parser;
+
+/// The name a decorator body's `addMember` is written with.
+pub const add_member = "addMember";
+
+/// One `<decl>.addMember(<name>, <fn expression>)` call.
+pub const Call = struct {
+    name: *ast.Expr,
+    func: ast.FunctionExpr,
+    /// The function expression's own location.
+    loc: ast.Loc,
+};
+
+/// `e` as `<declName>.addMember(<name>, <fn expression>)`; null for any other
+/// node (a one-argument `addMember(source)` included).
+pub fn asCall(e: ast.Expr, declName: []const u8) ?Call {
+    if (e != .call or e.call.kind != .call) return null;
+    const c = e.call.kind.call;
+    if (!isAddMemberOn(c, declName) or c.args.len != 2) return null;
+    const f = c.args[1].value.*;
+    if (f != .function or f.function.kind.syntax != .fnExpr) return null;
+    return .{ .name = c.args[0].value, .func = f.function, .loc = f.function.loc };
+}
+
+/// Whether `c` is `<declName>.addMember(…)`.
+pub fn isAddMemberOn(c: anytype, declName: []const u8) bool {
+    const r = c.receiver orelse return false;
+    if (r.* != .identifier or r.identifier.kind != .ident) return false;
+    return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, add_member) and !c.is_builtin;
+}
+
+/// Decision 575 (3) — the name a decorator body's `compile` is written with
+/// (`compiler.init(f)`, read onto the handle).
+pub const compile_name = "compile";
+
+/// `e` as `<declName>.compile(<function>)` — the executor written at the
+/// call (a lambda); null for any other node.
+pub fn asCompileCall(e: ast.Expr, declName: []const u8) ?ast.FunctionExpr {
+    if (e != .call or e.call.kind != .call) return null;
+    const c = e.call.kind.call;
+    if (!isCompileOn(c, declName)) return null;
+    return c.args[0].value.function;
+}
+
+/// Whether `c` is `<declName>.compile(<function>)`.
+pub fn isCompileOn(c: anytype, declName: []const u8) bool {
+    const r = c.receiver orelse return false;
+    if (r.* != .identifier or r.identifier.kind != .ident) return false;
+    if (!std.mem.eql(u8, r.identifier.kind.ident, declName) or !std.mem.eql(u8, c.callee, compile_name) or c.is_builtin) return false;
+    return c.args.len == 1 and c.trailing.len == 0 and c.args[0].value.* == .function;
+}
+
+/// The `@Decl` parameter's name of a decorator or a template annotation
+/// function (`declParamIndex`), null for any other function.
+pub fn declParamName(f: ast.FnDecl) ?[]const u8 {
+    const i = declParamIndex(f) orelse return null;
+    return f.params[i].name;
+}
+
+/// Where the `@Decl` handle is in `f`'s parameters: first in a decorator
+/// (`comptime decl: @Decl<…>`), second in a template annotation function
+/// (decision 311, `isTemplateAnnotation`); null for any other function.
+pub fn declParamIndex(f: ast.FnDecl) ?usize {
+    if (f.params.len == 0) return null;
+    if (isDeclParam(f.params[0])) return 0;
+    if (isTemplateAnnotation(f)) return 1;
+    return null;
+}
+
+fn isDeclParam(p: ast.Param) bool {
+    return p.modifier == .@"comptime" and p.typeRef.isDeclType();
+}
+
+/// Decision 311 — a template function written as an annotation, `#[f "…"]`:
+/// a template function (`-> @Expr<…>` / `-> @ExprCustom<…>`) whose first
+/// parameter is the literal, `comptime q: @Expr<…>`, and whose second is the
+/// annotated declaration's handle, `comptime decl: @Decl<…>` (question s29-a:
+/// the handle is declared beside `q`, and such a function is called only as an
+/// annotation).
+pub fn isTemplateAnnotation(f: ast.FnDecl) bool {
+    const rt = f.returnType orelse return false;
+    if (!rt.isTemplateReturnType()) return false;
+    return isTemplateAnnotationParams(f.params);
+}
+
+/// The parameter shape of `isTemplateAnnotation`: `comptime q: @Expr<…>`, then
+/// `comptime decl: @Decl<…>`.
+pub fn isTemplateAnnotationParams(params: []const ast.Param) bool {
+    if (params.len < 2) return false;
+    const q = params[0];
+    return q.modifier == .@"comptime" and q.typeRef.isExprType() and isDeclParam(params[1]);
+}
+
+// ── the member functions of a body, in order ────────────────────────────────
+
+/// Every member function `f`'s body hands to `decl.addMember`, in the order
+/// `syntax_param.eraseFn` numbers them: a pre-order walk, the name argument
+/// before the function.
+pub fn collect(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
+    var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
+    var c: Collector = .{ .arena = arena, .declName = declName, .out = &out };
+    try c.walk([]ast.Stmt, f.body);
+    return out.items;
+}
+
+/// Decision 575 (3) — every executor `f`'s body hands to `decl.compile`, in
+/// the order `syntax_param.eraseFn` numbers them (a pre-order walk).
+pub fn collectExecutors(arena: std.mem.Allocator, f: ast.FnDecl, declName: []const u8) ![]const ast.FunctionExpr {
+    var out: std.ArrayListUnmanaged(ast.FunctionExpr) = .empty;
+    var c: Collector = .{ .arena = arena, .declName = declName, .out = &out, .executors = true };
+    try c.walk([]ast.Stmt, f.body);
+    return out.items;
+}
+
+const Collector = struct {
+    arena: std.mem.Allocator,
+    declName: []const u8,
+    out: *std.ArrayListUnmanaged(ast.FunctionExpr),
+    /// Collect `decl.compile(f)`'s functions in place of `addMember`'s.
+    executors: bool = false,
+
+    fn walk(self: *Collector, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == ast.Expr) if (self.executors) {
+            if (asCompileCall(v, self.declName)) |func| {
+                try self.out.append(self.arena, func);
+                return;
+            }
+        } else if (asCall(v, self.declName)) |mc| {
+            try self.walk(ast.Expr, mc.name.*);
+            try self.out.append(self.arena, mc.func);
+            return;
+        };
+        if (comptime !mayHoldExpr(T)) return;
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (!fl.is_comptime) try self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// Whether a value of `T` can reach an `ast.Expr` — prunes strings,
+/// locations and type references.
+fn mayHoldExpr(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct", .@"union" => T != ast.Loc and T != ast.TypeRef,
+        .optional => |o| mayHoldExpr(o.child),
+        .pointer => |pi| pi.child != u8 and mayHoldExpr(pi.child),
+        else => false,
+    };
+}
+
+// ── the names a function binds and reads ────────────────────────────────────
+
+/// A name a member function reads, where it reads it.
+pub const Name = struct { name: []const u8, loc: ast.Loc };
+
+/// Every name `body` (with `params`) binds: the parameters, each `val` /
+/// `var`, the parameters of every lambda, loop and trailing block, each
+/// destructured and each pattern-bound name.
+pub fn boundNames(arena: std.mem.Allocator, params: []const []const u8, body: []const ast.Stmt) !std.StringHashMapUnmanaged(void) {
+    var set: std.StringHashMapUnmanaged(void) = .empty;
+    for (params) |p| try set.put(arena, p, {});
+    var b: Binder = .{ .arena = arena, .set = &set };
+    try b.walk([]const ast.Stmt, body);
+    return set;
+}
+
+const Binder = struct {
+    arena: std.mem.Allocator,
+    set: *std.StringHashMapUnmanaged(void),
+
+    fn add(self: *Binder, n: []const u8) !void {
+        if (n.len == 0 or std.mem.indexOfScalar(u8, n, '.') != null) return;
+        try self.set.put(self.arena, n, {});
+    }
+
+    fn walk(self: *Binder, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == ast.Expr) if (v == .binding and v.binding.kind == .localBind) try self.add(v.binding.kind.localBind.name);
+        if (T == ast.FieldDestruct) return self.add(v.bind_name);
+        if (T == ast.ParamDestruct) if (v == .tuple_) for (v.tuple_) |n| try self.add(n);
+        if (T == ast.Pattern) switch (v) {
+            .ident => |n| try self.add(n),
+            .variant => |vr| switch (vr.payload) {
+                .binding => |n| try self.add(n),
+                .fields => |fs| for (fs) |n| try self.add(n),
+                .literals => {},
+            },
+            .list => |l| if (l.spread) |s| try self.add(s),
+            else => {},
+        };
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => if (ptr.child != u8) for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                // `params` of a lambda, a fn expression, a loop, a trailing block.
+                if (comptime std.mem.eql(u8, fl.name, "params") and fl.type == []const []const u8) {
+                    for (@field(v, fl.name)) |n| try self.add(n);
+                } else if (comptime (std.mem.eql(u8, fl.name, "binder") or std.mem.eql(u8, fl.name, "binding")) and fl.type == ?[]const u8) {
+                    // A `catch { e -> … }` binder (decision 595 (3)), an
+                    // `if (x) { b -> … }` binding: a name the node binds.
+                    if (@field(v, fl.name)) |n| try self.add(n);
+                } else if (comptime T != ast.Loc and T != ast.TypeRef) {
+                    try self.walk(fl.type, @field(v, fl.name));
+                }
+            },
+            .@"union" => |un| if (un.tag_type != null and T != ast.TypeRef) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// The names `func` reads without binding them itself: each identifier and
+/// each callee written without a receiver, in source order (duplicates kept).
+/// Decision 575 (4), the tree rule — the names of the decorator `dfn`'s body
+/// that the tree `func` (a member, a wrapper) reads: each a local the body
+/// binds (a `val`, a loop's or a pattern's name), none of `dfn`'s parameters.
+/// The body hands their values with the tree (`syntax_param.zig`), and the
+/// member spells each as a literal (`literalSource`). First read first, each
+/// once.
+pub fn capturedLocals(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.FunctionExpr) ![]const []const u8 {
+    const locals = try boundNames(arena, &.{}, dfn.body);
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (try freeNames(arena, func)) |n| {
+        if (!locals.contains(n.name)) continue;
+        const isParam = for (dfn.params) |p| {
+            if (std.mem.eql(u8, p.name, n.name)) break true;
+        } else false;
+        if (isParam) continue;
+        const seen = for (out.items) |x| {
+            if (std.mem.eql(u8, x, n.name)) break true;
+        } else false;
+        if (!seen) try out.append(arena, n.name);
+    }
+    return out.items;
+}
+
+/// Decision 614 — the prefix of the `val`s `compiler_surface.zig` hoists a
+/// tree's `compiler.*` reads into (`__bp_build_<k>`).
+pub const build_read_prefix = "__bp_build_";
+
+/// Decision 642 — of `capturedLocals`, the ones that are a hoisted
+/// `compiler.*` read: the only locals a wrapper holds as literals.
+pub fn capturedBuildReads(arena: std.mem.Allocator, dfn: ast.FnDecl, func: ast.FunctionExpr) ![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (try capturedLocals(arena, dfn, func)) |n| if (std.mem.startsWith(u8, n, build_read_prefix)) try out.append(arena, n);
+    return out.items;
+}
+
+/// A value the decorator body computed, as the botopink literal a member
+/// spells it with (the tree rule): a string, a number, a `bool`, `null`, an
+/// array of those. Null for any other value (a record, a function).
+pub fn literalSource(arena: std.mem.Allocator, v: std.json.Value) !?[]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (!try writeLiteral(arena, &out, v)) return null;
+    return out.items;
+}
+
+fn writeLiteral(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), v: std.json.Value) !bool {
+    switch (v) {
+        .null => try out.appendSlice(arena, "null"),
+        .bool => |b| try out.appendSlice(arena, if (b) "true" else "false"),
+        .integer => |i| try out.print(arena, "{d}", .{i}),
+        .float => |f| {
+            const t = try std.fmt.allocPrint(arena, "{d}", .{f});
+            try out.appendSlice(arena, t);
+            if (std.mem.indexOfAny(u8, t, ".eE") == null) try out.appendSlice(arena, ".0");
+        },
+        .number_string => |t| try out.appendSlice(arena, t),
+        .string => |str| {
+            try out.append(arena, '"');
+            var i: usize = 0;
+            while (i < str.len) : (i += 1) switch (str[i]) {
+                '"' => try out.appendSlice(arena, "\\\""),
+                '\\' => try out.appendSlice(arena, "\\\\"),
+                '\n' => try out.appendSlice(arena, "\\n"),
+                '\t' => try out.appendSlice(arena, "\\t"),
+                '\r' => try out.appendSlice(arena, "\\r"),
+                '$' => try out.appendSlice(arena, if (i + 1 < str.len and str[i + 1] == '{') "\\$" else "$"),
+                else => |ch| try out.append(arena, ch),
+            };
+            try out.append(arena, '"');
+        },
+        .array => |items| {
+            try out.append(arena, '[');
+            for (items.items, 0..) |x, i| {
+                if (i > 0) try out.appendSlice(arena, ", ");
+                if (!try writeLiteral(arena, out, x)) return false;
+            }
+            try out.append(arena, ']');
+        },
+        .object => return false,
+    }
+    return true;
+}
+
+pub fn freeNames(arena: std.mem.Allocator, func: ast.FunctionExpr) ![]const Name {
+    const bound = try boundNames(arena, func.kind.params, func.kind.body);
+    var out: std.ArrayListUnmanaged(Name) = .empty;
+    var r: Reader = .{ .arena = arena, .bound = &bound, .out = &out };
+    try r.walk([]const ast.Stmt, func.kind.body);
+    return out.items;
+}
+
+const Reader = struct {
+    arena: std.mem.Allocator,
+    bound: *const std.StringHashMapUnmanaged(void),
+    out: *std.ArrayListUnmanaged(Name),
+
+    fn note(self: *Reader, n: []const u8, loc: ast.Loc) !void {
+        if (self.bound.contains(n)) return;
+        try self.out.append(self.arena, .{ .name = n, .loc = loc });
+    }
+
+    fn walk(self: *Reader, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == ast.Expr) switch (v) {
+            .identifier => |id| if (id.kind == .ident) try self.note(id.kind.ident, id.loc),
+            .call => |c| if (c.kind == .call) {
+                const cc = c.kind.call;
+                if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin and cc.callee.len > 0) try self.note(cc.callee, c.loc);
+            },
+            else => {},
+        };
+        if (comptime !mayHoldExpr(T)) return;
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (!fl.is_comptime) try self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// Every type name `func` writes — its parameters', its return's and the
+/// annotations of its body (`val x: T`, `x is T`) — each a `TypeRef.named`
+/// or a generic's head.
+pub fn typeNames(arena: std.mem.Allocator, func: ast.FunctionExpr) ![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (func.kind.paramTypes) |t| try typeRefNames(arena, t, &out);
+    if (func.kind.returnType) |t| try typeRefNames(arena, t, &out);
+    var w: TypeWalker = .{ .arena = arena, .out = &out };
+    try w.walk([]const ast.Stmt, func.kind.body);
+    return out.items;
+}
+
+fn typeRefNames(arena: std.mem.Allocator, t: ast.TypeRef, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    switch (t) {
+        .named => |n| try out.append(arena, n),
+        .array => |a| try typeRefNames(arena, a.*, out),
+        .optional => |o| try typeRefNames(arena, o.*, out),
+        .tuple_ => |ts| for (ts) |x| try typeRefNames(arena, x, out),
+        .labeledTuple => |lt| for (lt.elems) |x| try typeRefNames(arena, x, out),
+        .function => |f| {
+            for (f.params) |x| try typeRefNames(arena, x, out);
+            try typeRefNames(arena, f.returnType.*, out);
+        },
+        .generic => |g| {
+            if (!g.is_builtin) try out.append(arena, g.name);
+            for (g.args) |x| try typeRefNames(arena, x, out);
+        },
+        .typeparam => |ts| for (ts) |x| try typeRefNames(arena, x, out),
+    }
+}
+
+const TypeWalker = struct {
+    arena: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged([]const u8),
+
+    fn walk(self: *TypeWalker, comptime T: type, v: T) std.mem.Allocator.Error!void {
+        if (T == ast.TypeRef) return typeRefNames(self.arena, v, self.out);
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") try self.walk(ptr.child, v.*),
+                .slice => if (ptr.child != u8) for (v) |item| try self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| try self.walk(o.child, x),
+            .@"struct" => |st| if (T != ast.Loc) inline for (st.fields) |fl| {
+                if (!fl.is_comptime) try self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| try self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+// ── the member the type receives ─────────────────────────────────────────────
+
+/// A decorator parameter the member reads, and the expression its argument is
+/// as the annotation wrote it (a default as the decorator declared it).
+pub const Splice = struct { param: []const u8, lexeme: []const u8 };
+
+/// A decorator type parameter and its spelling at this annotation.
+pub const TypeArg = struct { name: []const u8, spelled: []const u8 };
+
+const placeholder_prefix = "__bp_member_arg_";
+
+/// Decision 384 — a name the decorator's module wrote, renamed in the member
+/// to the alias it is bound under where the member joins its type.
+pub const Rename = struct { from: []const u8, to: []const u8 };
+
+/// The member `func` becomes on the type: `pub fn <name>(<params>) -> R { … }`,
+/// each read of a spliced parameter replaced by its argument — bare when the
+/// argument is one name, parenthesised otherwise —, each type parameter by its
+/// spelling (`Self` when a type names the owner itself; the owner's name where
+/// an expression reads the parameter, `@typeInfo(T)` — decision 395), and each
+/// name of `renames` by its alias (decision 384).
+pub fn render(
+    arena: std.mem.Allocator,
+    name: []const u8,
+    func: ast.FunctionExpr,
+    splices: []const Splice,
+    typeArgs: []const TypeArg,
+    owner: []const u8,
+    renames: []const Rename,
+) ![]const u8 {
+    const bound = try boundNames(arena, func.kind.params, func.kind.body);
+    var sub: Substitution = .{ .arena = arena, .splices = splices, .typeArgs = typeArgs, .owner = owner, .bound = &bound, .renames = renames };
+    var f = func;
+    f.kind.body = try sub.clone([]ast.Stmt, func.kind.body);
+    const pts = try arena.alloc(ast.TypeRef, func.kind.paramTypes.len);
+    for (func.kind.paramTypes, 0..) |t, i| pts[i] = try sub.typeRef(t);
+    f.kind.paramTypes = pts;
+    f.kind.returnType = if (func.kind.returnType) |t| try sub.typeRef(t) else null;
+
+    var fm = format.Formatter.init(arena);
+    const text = try format.render(arena, try fm.fmtExpr(.{ .function = f }), std.math.maxInt(u16));
+    if (!std.mem.startsWith(u8, text, "fn(")) return error.OutOfMemory;
+    return std.fmt.allocPrint(arena, "pub fn {s}{s}", .{ name, try spliceLexemes(arena, text[2..], splices) });
+}
+
+// ── decision 669 — a member written as text ────────────────────────────────
+
+/// Decision 669 — the member a decorator hands `decl.addMember(source)` as
+/// text, parsed as `comptime.zig` `mergeMembers` parses it: the one `fn` of a
+/// type body. Null when the text is not one `fn` — `mergeMembers` refuses it.
+pub fn parseSourceMember(arena: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!?ast.BehaviorMethod {
+    const text = try std.fmt.allocPrint(arena, "type __bp_member() {{\n{s}\n}}", .{source});
+    var lx = Lexer.init(text);
+    const tokens = lx.scanAll(arena) catch return null;
+    var p = Parser.init(tokens);
+    const program = p.parse(arena) catch return null;
+    if (program.decls.len != 1 or program.decls[0] != .type_) return null;
+    const t = program.decls[0].type_;
+    if (t.methods.len != 1 or t.recordFields().len != 0) return null;
+    return t.methods[0];
+}
+
+/// Decision 669 — `m` read as the function expression whose names
+/// `freeNames` and `typeNames` collect.
+pub fn methodAsFunction(arena: std.mem.Allocator, m: ast.BehaviorMethod) std.mem.Allocator.Error!ast.FunctionExpr {
+    const names = try arena.alloc([]const u8, m.params.len);
+    const types = try arena.alloc(ast.TypeRef, m.params.len);
+    for (m.params, 0..) |p, i| {
+        names[i] = p.name;
+        types[i] = p.typeRef;
+    }
+    return .{ .loc = m.nameLoc, .kind = .{ .syntax = .fnExpr, .params = names, .body = m.body orelse &.{}, .paramTypes = types, .returnType = m.returnType } };
+}
+
+/// Decision 669 — `m` with each name of `renames` written by its alias, in
+/// its body, its parameters' types and its return type: what the member reads
+/// resolves in the module that wrote it. A name the member binds itself (a
+/// parameter, a local) is left alone.
+pub fn renameMethod(arena: std.mem.Allocator, m: ast.BehaviorMethod, renames: []const Rename) std.mem.Allocator.Error!ast.BehaviorMethod {
+    if (renames.len == 0) return m;
+    const names = try arena.alloc([]const u8, m.params.len);
+    for (m.params, 0..) |p, i| names[i] = p.name;
+    const bound = try boundNames(arena, names, m.body orelse &.{});
+    var sub: Substitution = .{ .arena = arena, .splices = &.{}, .typeArgs = &.{}, .owner = "", .bound = &bound, .renames = renames };
+    var out = m;
+    if (m.body) |b| out.body = try sub.clone([]ast.Stmt, b);
+    const params = try arena.dupe(ast.Param, m.params);
+    for (params) |*p| p.typeRef = try sub.typeRef(p.typeRef);
+    out.params = params;
+    out.returnType = if (m.returnType) |t| try sub.typeRef(t) else null;
+    return out;
+}
+
+/// Decision 669 — whether `f`'s body hands a member on as text,
+/// `compiler.addMember(source)`: its module then shares its private functions
+/// and values with the modules the member joins (`written_names.sharesPrivates`).
+pub fn writesSourceMember(f: ast.FnDecl) bool {
+    for (f.body) |*s| if (findSourceMember(ast.Stmt, s)) return true;
+    return false;
+}
+
+fn findSourceMember(comptime X: type, ptr: *const X) bool {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call) {
+            const c = ptr.call.kind.call;
+            if (!c.is_builtin and c.receiver != null and c.args.len == 1 and std.mem.eql(u8, c.callee, add_member)) return true;
+        }
+    }
+    if (comptime !mayHoldExpr(X)) return false;
+    switch (@typeInfo(X)) {
+        .@"struct" => |s| inline for (s.fields) |fl| {
+            if (fl.is_comptime) continue;
+            if (findSourceMember(fl.type, &@field(ptr.*, fl.name))) return true;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (findSourceMember(@TypeOf(payload.*), payload)) return true,
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| return findSourceMember(o.child, inner),
+        .pointer => |p| switch (p.size) {
+            .one => if (@typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque") return findSourceMember(p.child, ptr.*),
+            .slice => for (ptr.*) |*e| if (findSourceMember(p.child, e)) return true,
+            else => {},
+        },
+        else => {},
+    }
+    return false;
+}
+
+/// `text` with every splice placeholder replaced by its argument's lexeme —
+/// bare when it is one name, parenthesised otherwise.
+fn spliceLexemes(arena: std.mem.Allocator, text: []const u8, splices: []const Splice) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var rest = text;
+    while (std.mem.indexOf(u8, rest, placeholder_prefix)) |at| {
+        try out.appendSlice(arena, rest[0..at]);
+        const tail = rest[at + placeholder_prefix.len ..];
+        const end = std.mem.indexOf(u8, tail, "__") orelse return error.OutOfMemory;
+        const j = std.fmt.parseInt(usize, tail[0..end], 10) catch return error.OutOfMemory;
+        const lexeme = std.mem.trim(u8, splices[j].lexeme, " \t\r\n");
+        if (isOneName(lexeme)) {
+            try out.appendSlice(arena, lexeme);
+        } else {
+            try out.append(arena, '(');
+            try out.appendSlice(arena, lexeme);
+            try out.append(arena, ')');
+        }
+        rest = tail[end + 2 ..];
+    }
+    try out.appendSlice(arena, rest);
+    return out.items;
+}
+
+fn isOneName(s: []const u8) bool {
+    if (s.len == 0 or !(std.ascii.isAlphabetic(s[0]) or s[0] == '_')) return false;
+    for (s) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
+    return true;
+}
+
+const Substitution = struct {
+    arena: std.mem.Allocator,
+    splices: []const Splice,
+    typeArgs: []const TypeArg,
+    owner: []const u8,
+    bound: *const std.StringHashMapUnmanaged(void),
+    renames: []const Rename = &.{},
+
+    fn spliceIndex(self: *const Substitution, n: []const u8) ?usize {
+        if (self.bound.contains(n)) return null;
+        for (self.splices, 0..) |s, i| if (std.mem.eql(u8, s.param, n)) return i;
+        return null;
+    }
+
+    /// What a free name the member reads becomes: a type parameter its
+    /// binding's spelling, a name of `renames` its alias; null otherwise.
+    fn renamed(self: *const Substitution, n: []const u8) ?[]const u8 {
+        if (self.bound.contains(n)) return null;
+        for (self.typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) return ta.spelled;
+        for (self.renames) |r| if (std.mem.eql(u8, r.from, n)) return r.to;
+        return null;
+    }
+
+    fn renamedType(self: *const Substitution, n: []const u8) []const u8 {
+        for (self.renames) |r| if (std.mem.eql(u8, r.from, n)) return r.to;
+        return n;
+    }
+
+    fn placeholder(self: *const Substitution, j: usize) ![]const u8 {
+        return std.fmt.allocPrint(self.arena, placeholder_prefix ++ "{d}__", .{j});
+    }
+
+    fn typeRef(self: *Substitution, t: ast.TypeRef) error{OutOfMemory}!ast.TypeRef {
+        switch (t) {
+            .named => |n| {
+                for (self.typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) {
+                    return .{ .named = if (std.mem.eql(u8, ta.spelled, self.owner)) "Self" else ta.spelled };
+                };
+                return .{ .named = self.renamedType(n) };
+            },
+            .array => |a| {
+                const p = try self.arena.create(ast.TypeRef);
+                p.* = try self.typeRef(a.*);
+                return .{ .array = p };
+            },
+            .optional => |o| {
+                const p = try self.arena.create(ast.TypeRef);
+                p.* = try self.typeRef(o.*);
+                return .{ .optional = p };
+            },
+            .tuple_ => |ts| return .{ .tuple_ = try self.typeRefs(ts) },
+            .labeledTuple => |lt| return .{ .labeledTuple = .{ .elems = try self.typeRefs(lt.elems), .labels = lt.labels } },
+            .function => |f| {
+                const r = try self.arena.create(ast.TypeRef);
+                r.* = try self.typeRef(f.returnType.*);
+                return .{ .function = .{ .params = try self.typeRefs(f.params), .returnType = r, .paramNames = f.paramNames } };
+            },
+            .generic => |g| return .{ .generic = .{ .name = if (g.is_builtin) g.name else self.renamedType(g.name), .args = try self.typeRefs(g.args), .is_builtin = g.is_builtin } },
+            .typeparam => return t,
+        }
+    }
+
+    fn typeRefs(self: *Substitution, ts: []ast.TypeRef) error{OutOfMemory}![]ast.TypeRef {
+        const out = try self.arena.alloc(ast.TypeRef, ts.len);
+        for (ts, 0..) |x, i| out[i] = try self.typeRef(x);
+        return out;
+    }
+
+    /// A deep copy of `v`, each spliced read and each type parameter replaced.
+    fn clone(self: *Substitution, comptime T: type, v: T) error{OutOfMemory}!T {
+        if (T == ast.TypeRef) return self.typeRef(v);
+        if (T == ast.Expr) switch (v) {
+            .identifier => |id| if (id.kind == .ident) {
+                if (self.spliceIndex(id.kind.ident)) |j| {
+                    var out = v;
+                    out.identifier.kind = .{ .ident = try self.placeholder(j) };
+                    return out;
+                }
+                if (self.renamed(id.kind.ident)) |to| {
+                    var out = v;
+                    out.identifier.kind = .{ .ident = to };
+                    return out;
+                }
+            },
+            .call => |c| if (c.kind == .call) {
+                const cc = c.kind.call;
+                if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
+                    const callee: ?[]const u8 = if (self.spliceIndex(cc.callee)) |j| try self.placeholder(j) else self.renamed(cc.callee);
+                    if (callee) |to| {
+                        var out = v;
+                        out.call.kind.call.callee = to;
+                        out.call.kind.call.args = try self.clone(@TypeOf(cc.args), cc.args);
+                        out.call.kind.call.trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing);
+                        return out;
+                    }
+                }
+            },
+            else => {},
+        };
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => {
+                    if (@typeInfo(ptr.child) == .@"fn" or @typeInfo(ptr.child) == .@"opaque") return v;
+                    const p = try self.arena.create(ptr.child);
+                    p.* = try self.clone(ptr.child, v.*);
+                    return p;
+                },
+                .slice => {
+                    if (ptr.child == u8) return v;
+                    const out = try self.arena.alloc(ptr.child, v.len);
+                    for (v, 0..) |item, i| out[i] = try self.clone(ptr.child, item);
+                    return out;
+                },
+                else => return v,
+            },
+            .optional => |o| return if (v) |x| try self.clone(o.child, x) else null,
+            .@"struct" => |s| {
+                if (T == ast.Loc) return v;
+                var out = v;
+                inline for (s.fields) |fl| {
+                    if (fl.is_comptime) continue;
+                    @field(out, fl.name) = try self.clone(fl.type, @field(v, fl.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null) return v;
+                switch (v) {
+                    inline else => |payload, tag| return @unionInit(T, @tagName(tag), try self.clone(@TypeOf(payload), payload)),
+                }
+            },
+            else => return v,
+        }
+    }
+};
+
+test "a member function: collected in order, its free names, rendered with each argument spliced" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\fn check<T>(syntax decl: T, syntax message: string, syntax rule: fn(v: T) -> bool) -> void {
+        \\    val unused = 1;
+        \\    compiler.addMember("validate", fn(self: T) -> Violation[] {
+        \\        if (rule(self)) return [];
+        \\        val m = message;
+        \\        return [Violation(field: "confirm", message: m)];
+        \\    });
+        \\}
+        \\import {compiler} from "std";
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const f = (try p.parse(arena)).decls[0].@"fn";
+    try std.testing.expectEqualStrings("decl", declParamName(f).?);
+    const found = try collect(arena, f, "decl");
+    try std.testing.expectEqual(@as(usize, 1), found.len);
+
+    const free = try freeNames(arena, found[0]);
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (free) |n| try names.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("rule message Violation ", names.items);
+
+    const text = try render(arena, "validate", found[0], &.{
+        .{ .param = "message", .lexeme = "t(\"signup.mismatch\")" },
+        .{ .param = "rule", .lexeme = "passwordsMatch" },
+    }, &.{.{ .name = "T", .spelled = "Signup" }}, "Signup", &.{.{ .from = "Violation", .to = "__bp_tpl_rules__Violation" }});
+    try std.testing.expect(std.mem.startsWith(u8, text, "pub fn validate(self: Self) -> __bp_tpl_rules__Violation[] {"));
+    try std.testing.expect(std.mem.indexOf(u8, text, "return [__bp_tpl_rules__Violation(field: \"confirm\", message: m)];") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "if (passwordsMatch(self))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "val m = (t(\"signup.mismatch\"));") != null);
+}
+
+test "decision 669 — a member written as text: its free names renamed, its own bindings left alone" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const m = (try parseSourceMember(arena, "pub fn make(self: Self, n: i32) -> Row { val helper = n; return Row(size: helper + width()); }")).?;
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (try freeNames(arena, try methodAsFunction(arena, m))) |n| try names.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("Row width ", names.items);
+    const renamed = try renameMethod(arena, m, &.{ .{ .from = "Row", .to = "Bp__bp_tpl_rows__Row" }, .{ .from = "width", .to = "__bp_tpl_rows__width" }, .{ .from = "helper", .to = "nope" } });
+    try std.testing.expectEqualStrings("Bp__bp_tpl_rows__Row", renamed.returnType.?.named);
+    var again: std.ArrayListUnmanaged(u8) = .empty;
+    for (try freeNames(arena, try methodAsFunction(arena, renamed))) |n| try again.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("Bp__bp_tpl_rows__Row __bp_tpl_rows__width ", again.items);
+    try std.testing.expect(try parseSourceMember(arena, "pub fn a() -> void {} pub fn b() -> void {}") == null);
+}

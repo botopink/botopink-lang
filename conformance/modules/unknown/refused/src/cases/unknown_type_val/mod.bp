@@ -1,0 +1,8 @@
+//// B-111 — an unknown bare type name in a `val` annotation is `unknown type`, at the name.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val m: Bogus = 1;
+    print(1);
+}

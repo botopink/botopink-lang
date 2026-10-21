@@ -1,0 +1,12 @@
+//// Front 116 — a decorator written on the header's last line, before the
+//// separator line, annotates the function the file unfolds to (decision
+//// 221 (1)), whose `decl.name` is the file's name (289): the fixture's
+//// `named` refuses it, naming it and its kind.
+
+pub mod components;
+import {components.Card};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Card());
+}

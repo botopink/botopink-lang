@@ -1,0 +1,14 @@
+//// Decision 417 — A `comptime` argument of an ordinary function is known at build.
+
+import {io.terminal} from "std";
+
+fn tag(comptime n: i32, x: i32) -> i32 {
+    return x;
+}
+
+pub fn main() -> void {
+    terminal.print(tag(2, 1));
+    var k = 3;
+    k = k + 1;
+    terminal.print(tag(k, 1));
+}

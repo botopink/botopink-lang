@@ -1,0 +1,11 @@
+//// Decision 887 — a member `compiler.addMember` adds is `pub`: `Users.spell(…)`, added in `users`,
+//// is called from `main`; a primitive's property is `pub val length: i32;`, read from every module.
+
+import {io.terminal.print} from "std";
+mod users;
+import {users.Users};
+
+pub fn main() -> void {
+    print(Users.spell("ana"));
+    print([1, 2, 3].length);
+}

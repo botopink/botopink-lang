@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.return_in_case_arm_statement.runCase();
+    cases.return_nested_in_if_block.runCase();
+}

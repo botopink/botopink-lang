@@ -1,0 +1,23 @@
+//// Decision 602 — a name alone is not a pattern in a multi-subject arm either:
+//// `Shape.Square(side), m -> …` is refused `case-bare-name-arm` at `m`, in the arrow
+//// and the braced form alike. The payload `side` binds; the second subject is already
+//// in scope as `k`, so the arm writes `_` for it.
+
+import {io.terminal.print} from "std";
+
+type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+}
+
+fn area(s: Shape, k: i32) -> i32 {
+    return case s, k {
+        Shape.Circle(r), 1 -> r * 100;
+        Shape.Square(side), m -> side * m;
+        _, _ -> 0;
+    };
+}
+
+pub fn main() -> void {
+    print(area(Shape.Square(side: 3), 4));
+}

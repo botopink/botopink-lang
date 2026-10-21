@@ -1,0 +1,17 @@
+//// Decision 426 (4) — `q.note(message)` attaches the template's reason to an
+//// error reported at its call: the template never reads the type expected
+//// there, so it builds by its text and says why.
+
+import {compiler, io.terminal.print} from "std";
+
+fn rows(syntax q: string) -> unknown {
+    if (compiler.text(q).contains("limit 1"))
+        return compiler.build("\"one row\"");
+    compiler.note("rows answers a list — add limit 1 for one row");
+    return compiler.build("[\"a\", \"b\"]");
+}
+
+pub fn main() -> void {
+    val one: string = rows @`select name`;
+    print(one);
+}

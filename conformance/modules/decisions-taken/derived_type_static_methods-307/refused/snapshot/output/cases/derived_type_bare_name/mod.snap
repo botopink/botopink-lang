@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: unbound variable 'partial'
+at src/cases/derived_type_bare_name/mod.bp:6:17

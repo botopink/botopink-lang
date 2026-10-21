@@ -1,0 +1,1 @@
+{ "name": "import_bundled_package_beside_own_module", "dependencies": { "log": { "path": "deps/log" } } }

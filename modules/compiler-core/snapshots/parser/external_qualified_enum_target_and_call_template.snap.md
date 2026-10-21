@@ -14,26 +14,18 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"lists\"",
-              "\"zip(other, self)\""
+              ".Erlang(\"lists:zip($1, $0)\")",
+              ".JavaScript(\"./gleam_stdlib.mjs\", \"zip\")"
             ],
-            "is_builtin": true
-          },
-          {
-            "name": "External.Node",
-            "args": [
-              "\"./gleam_stdlib.mjs\"",
-              "\"zip\""
-            ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",
@@ -47,7 +39,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -66,7 +57,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
@@ -84,6 +74,27 @@
         },
         "typeGuardParam": null,
         "body": []
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

@@ -1,0 +1,6 @@
+//// A second declaration of `Theme`'s default.
+
+import {theme.Theme};
+import {context.createContext} from "std";
+
+pub val darkContext = comptime createContext(Theme(mode: "dark"));

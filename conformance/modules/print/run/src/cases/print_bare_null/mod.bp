@@ -1,0 +1,10 @@
+//// A bare `null` prints `null`, the same word a `?string` holding `null`
+//// prints, on every target.
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() -> void {
+    print(null);
+    val x: ?string = null;
+    print(x);
+}

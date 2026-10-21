@@ -1,0 +1,10 @@
+//// Decision 409 — a tail is checked against `-> R` at the expression: a
+//// `string` where `-> i32` is declared is refused at the `"a"`.
+
+import {io.terminal.print} from "std";
+
+fn bad(x: i32) -> i32 { "a" }
+
+pub fn main() -> void {
+    print(bad(1));
+}

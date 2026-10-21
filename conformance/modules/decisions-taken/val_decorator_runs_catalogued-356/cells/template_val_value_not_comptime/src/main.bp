@@ -1,0 +1,11 @@
+//// Decision 356 — a catalogued `val` whose initializer is not `comptime`
+//// has no build value a template reads: the read of its `value` is refused
+//// (`typeinfo-all-template-value`), at the expansion that answers it.
+
+pub mod skin;
+import looks from "looks";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(looks @`page`);
+}

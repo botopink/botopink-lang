@@ -1,0 +1,24 @@
+//// Decision 166 — A trailing comma decides: a list written with a comma after its last element prints one element per line and keeps the c
+
+import {io.terminal} from "std";
+
+type Color(name: string, hex: string)
+
+fn swatch(c: Color, size: i32) -> string {
+    return [c.name, c.hex, size.toString()].join(" ");
+}
+
+pub fn main() -> void {
+    val palette = [
+        Color(name: "rose", hex: "#e11d48"),
+        Color(name: "sky", hex: "#0ea5e9"),
+        Color(name: "lime", hex: "#84cc16"),
+    ];
+    val notes = ["a list written without a comma after its last element", "stays on one line", "whatever its width"];
+    terminal.print(palette.map({ c -> c.name }).join(", "));
+    terminal.print(swatch(
+        palette.at(0)!,
+        16,
+    ));
+    terminal.print(notes.length);
+}

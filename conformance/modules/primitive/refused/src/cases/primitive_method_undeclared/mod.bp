@@ -1,0 +1,10 @@
+//// Pending 0203-a, answered (b): a primitive receiver answers only the methods
+//// its interface declares. `toUpperCase` is the host's spelling of `String`'s
+//// `toUpper`, and the refusal names it.
+
+import {io.terminal.print} from "std";
+
+fn main() -> void {
+    val s = "abc";
+    print(s.toUpperCase());
+}

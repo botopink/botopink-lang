@@ -1,0 +1,15 @@
+//// Decision 216 (4) — the query is written with its labels:
+//// `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: d, member: "m")`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn tagged(syntax decl: unknown) -> void {
+    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
+}
+
+pub fn main() -> void {
+    print(@TypeInfo.all(tagged).length);
+}
+
+// What `#[tagged]` records.
+type Tagged(tag: string)

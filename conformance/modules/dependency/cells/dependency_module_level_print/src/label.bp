@@ -1,0 +1,7 @@
+//// The second consumer: it imports `Tag` and nothing else from `boot/shape`.
+
+import {Tag} from "boot/shape";
+
+pub fn describe() -> string {
+    return Tag(name: "t").name;
+}

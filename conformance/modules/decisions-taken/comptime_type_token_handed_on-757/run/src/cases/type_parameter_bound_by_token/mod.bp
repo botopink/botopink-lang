@@ -1,0 +1,18 @@
+//// Decision 668 — a caller that names the type passes it as the type token
+//// `comptime t: type<T>` (667): `failed(i32, "down")` binds `T` to `i32`,
+//// and the answer is a `Result<i32, string>` on every target.
+
+import {io.terminal.print} from "std";
+
+fn failed<T>(comptime t: type<T>, message: string) -> Result<T, string> {
+    throw message;
+}
+
+pub fn runCase() -> void {
+    val r = failed(i32, "down");
+    val n = r.unwrapOr(41) + 1;
+    print(n);
+    print(r.isError());
+    val s = failed(string, "gone");
+    print(s.unwrapOr("fallback").length);
+}

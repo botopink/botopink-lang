@@ -1,0 +1,1 @@
+{ "name": "embed_through_comptime_param", "dependencies": { "loader": { "path": "deps/loader" } } }

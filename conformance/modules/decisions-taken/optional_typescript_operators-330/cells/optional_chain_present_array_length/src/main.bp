@@ -1,0 +1,25 @@
+//// Decision 330 — `?.length()` over an optional array that is present: a
+//// chain through an optional record's optional array answers the array's
+//// length, and so does a parameter typed `?Holder[]` given a present array;
+//// absent, the chain is absent and `?? 0` answers `0`, on every target.
+
+import {io.terminal.print} from "std";
+
+type Field(name: string)
+
+type Form(fields: ?Field[])
+
+type Holder(name: string)
+
+pub fn main() -> void {
+    val f: ?Form = Form(fields: [Field(name: "a"), Field(name: "b")]);
+    print(f?.fields?.length() ?? 0);
+    val g: ?Form = Form(fields: null);
+    print(g?.fields?.length() ?? 0);
+    val h: ?Form = null;
+    print(h?.fields?.length() ?? 0);
+    val count = fn(hs: ?Holder[]) -> i32 {
+        return hs?.length() ?? 0;
+    };
+    print(count([Holder(name: "x"), Holder(name: "y"), Holder(name: "z")]));
+}

@@ -1,0 +1,12 @@
+//// A dependency `p` with a module `p` (`src/p.bp`) is one module, `p/p`: a
+//// program using it that is refused for an unrelated reason answers that
+//// reason alone — no module of `p` reports `Module` declared `pub` twice.
+
+import {p} from "p";
+import {other.other} from "p";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val n: i32 = "not a number";
+    print(p.greet() + other().name);
+}

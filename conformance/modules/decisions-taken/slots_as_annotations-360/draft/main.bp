@@ -1,0 +1,24 @@
+//// Decision 360 — Slots work as Astro's, in botopink's annotation form — never props.
+
+import {io.terminal} from "std";
+import html, {renderToString} from "rakun-bpp";
+import {panel as Panel, frame as Frame};
+
+pub async fn main() -> Async<void> {
+    // An unannotated child fills the default slot; `#[slot("footer")]` the footer.
+    terminal.print(await renderToString(
+        html @`<Panel>
+            <p>body</p>
+            <small #[slot("footer")]>by Ana</small>
+        </Panel>`,
+    ));
+    // Nothing fills the footer: its fallback is shown.
+    terminal.print(await renderToString(html @`<Panel><p>only body</p></Panel>`));
+    // Several nodes for one slot, through another component that passes it on.
+    terminal.print(await renderToString(
+        html @`<Frame>
+            <p>framed</p>
+            <Fragment #[slot("footer")]><b>one</b><i>two</i></Fragment>
+        </Frame>`,
+    ));
+}

@@ -1,0 +1,48 @@
+//// `std/io/random` on all four targets (decision 238, `01-compiler/05-wasm`
+//// step 5): on wasm `float` is `std: "random.float"`, `seed` / `seededFloat`
+//// std-wasm's seeded stream, bound by `std:` cells (decision 451: the
+//// commonJS sidecar's Mulberry32 — the same draws after the same `seed`;
+//// erlang's `exsplus` draws others), and `shuffle`, `secureToken`, `uuidV4` and `randomBytes`
+//// private `fn:` bodies — a selection shuffle over one-element slices, bytes
+//// drawn from `random_get`. Each line prints what every target agrees on.
+
+import {io.terminal.print, io.random} from "std";
+
+pub fn main() -> void {
+    val r = random.float();
+    print(r >= 0.0 && r < 1.0);
+    val unseeded = random.seededFloat();
+    print(unseeded >= 0.0 && unseeded < 1.0);
+    random.seed(42);
+    val a = random.seededFloat();
+    val a2 = random.seededFloat();
+    random.seed(42);
+    print(a == random.seededFloat());
+    print(a != a2);
+    print(a >= 0.0 && a < 1.0);
+    val ys = random.shuffle([1, 2, 3, 4, 5]);
+    print(ys.length);
+    print(ys.fold(0, { acc, y -> acc + y }));
+    print([1, 2, 3, 4, 5].all({ x -> ys.contains(x) }));
+    val empty: array<i32> = [];
+    print(random.shuffle(empty).length);
+    val words = random.shuffle(["a", "b", "c"]);
+    print(words.contains("a") && words.contains("b") && words.contains("c"));
+    val t = random.secureToken(32);
+    print(t.length);
+    print(t.contains("+") || t.contains("/") || t.contains("="));
+    print(random.secureToken(0) == "");
+    print(random.secureToken(16) != random.secureToken(16));
+    val u = random.uuidV4();
+    print(u.length);
+    print(u.split("-").map({ g -> g.length }));
+    print((u.split("-").at(2) ?? "").startsWith("4"));
+    print("89ab".contains((u.split("-").at(3) ?? "").slice(0, 1)));
+    print(u.split("").all({ c -> "0123456789abcdef-".contains(c) }));
+    val h = random.randomBytes(16);
+    print(h.length);
+    print(h.split("").all({ c -> "0123456789abcdef".contains(c) }));
+    print(random.randomBytes(0) == "");
+    val n = random.intInRange(1, 6);
+    print(n >= 1 && n <= 6);
+}

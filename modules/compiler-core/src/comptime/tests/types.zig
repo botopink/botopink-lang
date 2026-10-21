@@ -26,7 +26,7 @@ test "types: array literal infers element type" {
 
 test "types: val with array type annotation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val array: string[] = ["65454"];
+        \\val items: string[] = ["65454"];
     );
 }
 
@@ -50,7 +50,7 @@ test "types: array ---- prepend with multiple elements array" {
 
 test "types: assert ---- simple assertion" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert true;
         \\}
     );
@@ -58,7 +58,7 @@ test "types: assert ---- simple assertion" {
 
 test "types: assert ---- with arithmetic comparison" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert 1.0 + 2.0 == 3.0;
         \\}
     );
@@ -66,7 +66,7 @@ test "types: assert ---- with arithmetic comparison" {
 
 test "types: assert ---- with message" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert false, "error message";
         \\}
     );
@@ -74,7 +74,7 @@ test "types: assert ---- with message" {
 
 test "types: assert ---- array equality" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
         \\    assert [] == [];
         \\}
     );
@@ -82,15 +82,20 @@ test "types: assert ---- array equality" {
 
 test "types: assert pattern ---- with catch throw" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert Person(name, age) = r catch throw Error("is not person");
+        \\type Person(name: string, age: i32)
+        \\fn f() -> Result<void, string> {
+        \\    val r = Person(name: "ann", age: 30);
+        \\    val assert Person(name, age) = r catch throw "is not person";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with catch default value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\type Person(name: string, age: i32)
+        \\fn f() -> void {
+        \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch Person(name: "bob", age: 12);
         \\}
     );
@@ -98,47 +103,63 @@ test "types: assert pattern ---- with catch default value" {
 
 test "types: assert pattern ---- with string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert "hello" = greeting catch throw Error("not hello");
+        \\fn f() -> Result<void, string> {
+        \\    val greeting = "hello";
+        \\    val assert "hello" = greeting catch throw "not hello";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with number literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert 42 = answer catch throw Error("not 42");
+        \\fn f() -> Result<void, string> {
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch throw "not 42";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with enum variant" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert Ok(value) = result catch throw Error("not ok");
+        \\fn parse() -> Result<i32, string> {
+        \\    return 42;
         \\}
+        \\fn main() -> void {
+        \\    val result = parse();
+        \\    val assert Ok(value) = result;
+        \\    print(value);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "types: assert pattern ---- with empty list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert [] = list catch throw Error("not empty");
+        \\fn f() -> Result<void, string> {
+        \\    val list: i32[] = [];
+        \\    val assert [] = list catch throw "not empty";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with multiple element list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+        \\fn f() -> Result<void, string> {
+        \\    val numbers = [1, 2, 3];
+        \\    val assert [1, 2, 3] = numbers catch throw "not matching";
+        \\    return;
         \\}
     );
 }
 
 test "types: assert pattern ---- with list and rest" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
+        \\fn f() -> void {
+        \\    val items = [1, 2, 3, 4];
         \\    val assert [first, second, ..rest] = items catch [];
         \\}
     );
@@ -152,7 +173,7 @@ test "types: tuple literal infers element types" {
 
 test "types: tuple destructuring binds variables" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn extract() {
+        \\fn extract() -> void {
         \\    val #(first, second) = #(1, "hello");
         \\}
     );
@@ -174,7 +195,7 @@ test "types: pipeline ---- simple chain" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn double(x: i32) -> i32 { return x * 2; }
         \\fn inc(x: i32) -> i32 { return x + 1; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val result = 1 |> double |> inc;
         \\}
     );
@@ -185,7 +206,7 @@ test "types: pipeline ---- multiple parameters" {
         \\fn add(a: i32, b: i32) -> i32 { return a + b; }
         \\fn multiply(a: i32, b: i32) -> i32 { return a * b; }
         \\fn format(value: i32, prefix: string, suffix: string) -> string { return prefix + value + suffix; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val result = 5 |> add(3) |> multiply(2) |> format("Result: ", " !");
         \\}
     );
@@ -194,7 +215,7 @@ test "types: pipeline ---- multiple parameters" {
 test "types: comment ---- single line" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\// This is a comment
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -213,7 +234,7 @@ test "types: module comment ---- top of file" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\//// This module provides utilities
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    null;
         \\}
     );
@@ -229,28 +250,40 @@ test "types: negation ---- unary minus" {
 
 test "types: range ---- iterate 0 to n" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) {
-        \\    loop (0..n) { i ->
-        \\        yield i;
+        \\fn sumTo(n: i32) -> i32 {
+        \\    var sum = 0;
+        \\    for (0..n) { i ->
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
 
-test "types: loop ---- break with value" {
+test "types: generator loop ---- worth the annotation's wrapper, its break v an item" {
+    // Decision 105 — `iter loop { … }` types as `@Iter<T>` with
+    // `T` the type of its `yield` / `break v`; the loop that consumes it binds
+    // `T`.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32 {
-        \\    return loop (arr) { x ->
-        \\        if (x > 10) { break x; };
+        \\fn firstOver(arr: i32[], limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    val found = iter loop {
+        \\        if (i >= arr.length) { break 0; };
+        \\        val x = arr[i] ?? 0;
+        \\        i = i + 1;
+        \\        if (x > limit) { break x; };
         \\    };
+        \\    var out = 0;
+        \\    for (found) { v -> out = v; };
+        \\    return out;
         \\}
     );
 }
 
-test "types: loop ---- yield accumulation" {
+test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn doubles(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\iter fn doubles(arr: i32[]) -> Iter<i32> {
+        \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };
         \\}
@@ -259,7 +292,7 @@ test "types: loop ---- yield accumulation" {
 
 test "types: assign ---- plusEq on var" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn increment() {
+        \\fn increment() -> void {
         \\    var count = 0;
         \\    count += 1;
         \\}
@@ -268,13 +301,18 @@ test "types: assign ---- plusEq on var" {
 
 test "types: self ---- field access in method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = struct {
+        \\type Point(
         \\    x: i32,
-        \\    y: i32,
-        \\    fn sum() -> i32 {
+        \\    y: i32) {
+        \\    fn sum(self: Self) -> i32 {
         \\        return self.x + self.y;
-        \\    },
-        \\};
+        \\    }
+        \\}
+        \\fn main() -> void {
+        \\    print(Point(x: 1, y: 2).sum());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 

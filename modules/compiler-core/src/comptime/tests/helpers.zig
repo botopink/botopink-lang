@@ -2,6 +2,7 @@
 //! Pure harness module: imports + `pub fn`/data helpers, no test blocks.
 
 const std = @import("std");
+const test_scratch = @import("test_scratch");
 const lexerMod = @import("../../lexer.zig");
 const parserMod = @import("../../parser.zig");
 const snapMod = @import("../../utils/snap.zig");
@@ -12,6 +13,7 @@ const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
+const replyOrder = @import("../runtime/reply_order.zig");
 const Module = @import("../../module.zig").Module;
 const format = @import("../../format.zig");
 const Lexer = lexerMod.Lexer;
@@ -75,31 +77,79 @@ pub fn slugFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
     return slugify(desc);
 }
 
-pub fn buildRootPathFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
-    const slug = comptime slugFromSrc(loc);
-    return comptime std.fmt.comptimePrint(".botopinkbuild/comptime/{s}", .{slug});
+/// The build root of the test at `loc`: `comptime/<slug>` under this
+/// process's `test_scratch` root, so two processes running the suite over one
+/// checkout never share it (`scripts/check-test-scratch.sh`).
+pub fn buildRootPathFromSrc(io: std.Io, comptime loc: std.builtin.SourceLocation) []const u8 {
+    return test_scratch.path(io, "comptime/" ++ comptime slugFromSrc(loc));
 }
+
+/// This process's resident set in bytes (`/proc/self/statm`); null where the
+/// file is not there.
+pub fn residentBytes() ?usize {
+    if (@import("builtin").os.tag != .linux) return null;
+    const linux = std.os.linux;
+    const rc = linux.open("/proc/self/statm", .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: i32 = @intCast(rc);
+    defer _ = linux.close(fd);
+    var buf: [128]u8 = undefined;
+    const n = linux.read(fd, &buf, buf.len);
+    if (linux.errno(n) != .SUCCESS) return null;
+    var it = std.mem.tokenizeAny(u8, buf[0..n], " \n");
+    _ = it.next() orelse return null;
+    const pages = std.fmt.parseInt(usize, it.next() orelse return null, 10) catch return null;
+    return pages * std.heap.pageSize();
+}
+
+/// Whether a comptime snapshot test tolerates a module that does not compile.
+pub const CompileExpectation = enum {
+    /// Default: a parse / type / validation error fails the test (spec 06, H3+H9).
+    must_compile,
+    /// The test is *about* a program that does not compile; the recorded
+    /// `COMPILE DIAGNOSTIC` section is the assertion. Used for documented
+    /// skips — always with a comment naming the missing feature.
+    expect_compile_error,
+};
 
 pub fn assertComptimeAst(
     allocator: std.mem.Allocator,
     comptime loc: std.builtin.SourceLocation,
     modules: []const Module,
 ) !void {
+    return assertComptimeAstExpecting(allocator, loc, modules, .must_compile);
+}
+
+/// `assertComptimeAst` for a source that is known not to compile: the snapshot
+/// records the diagnostic and the test passes only while the program *keeps*
+/// failing that way. Document the missing feature at the call site.
+pub fn assertComptimeCompileError(
+    allocator: std.mem.Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    src: []const u8,
+) !void {
+    return assertComptimeAstExpecting(
+        allocator,
+        loc,
+        &.{.{ .path = "", .source = src }},
+        .expect_compile_error,
+    );
+}
+
+pub fn assertComptimeAstExpecting(
+    allocator: std.mem.Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    modules: []const Module,
+    expectation: CompileExpectation,
+) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     const io = std.testing.io;
     const base_slug = comptime slugFromSrc(loc);
 
-    // The four-runtime architecture collapsed in v0.beta.21
-    // (`wasm3-unified-runtime`). The AST snapshots were always byte-identical
-    // across the runtimes (the per-runtime loop only changed `RunResult.script`,
-    // which the AST snapshot does NOT include) — so we keep the on-disk
-    // `comptime/{node,erlang,wasm,beam}/…` layout to avoid 4 × N stale-file
-    // churn, but the single compile run feeds all four copies.
-    const runtime_dirs = [_][]const u8{ "node", "erlang", "wasm", "beam" };
+    const build_root_path = buildRootPathFromSrc(io, loc);
 
-    var build_root_buf: [512]u8 = undefined;
-    const build_root_path = try std.fmt.bufPrint(&build_root_buf, ".botopinkbuild/comptime/{s}", .{base_slug});
-
-    var session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
+    var session = try comptimeMod.compile(allocator, modules, io, build_root_path);
     defer session.deinit(allocator);
 
     var outputs = std.ArrayList(comptimeMod.ComptimeOutput).empty;
@@ -108,18 +158,51 @@ pub fn assertComptimeAst(
         try outputs.append(allocator, output);
     }
 
-    // The four legacy paths are byte-identical (same `outputs` written to each).
-    // Run them all even if one mismatches — the failed call already wrote a
-    // `.new` sibling, and we want every sibling to land at once so a one-shot
-    // promote (`for f in *.new; mv $f ${f%.new}; done`) clears the whole batch.
+    // One snapshot per test, under `comptime/ast/`. The AST snapshot never
+    // included the per-runtime script, so the four `comptime/{node,erlang,wasm,
+    // beam}/…` copies this used to write were byte-identical by construction.
+    // Record the mismatch instead of returning it: the `.new` sibling is already
+    // on disk and the compile-expectation checks below have their own say.
     var first_err: ?anyerror = null;
-    for (runtime_dirs) |rt| {
-        var snap_buf: [512]u8 = undefined;
-        const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/{s}/{s}", .{ rt, base_slug });
-        snapshot.assertComptimeAstWithPath(allocator, snap_slug, outputs.items) catch |err| {
-            if (first_err == null) first_err = err;
-        };
+    snapshot.assertComptimeAst(allocator, base_slug, outputs.items) catch |err| {
+        first_err = err;
+    };
+    snapshot.assertComptimeExchange(allocator, base_slug, outputs.items) catch |err| {
+        if (first_err == null) first_err = err;
+    };
+    // H3/H9 — the snapshot above now carries a `COMPILE DIAGNOSTIC` section for
+    // every module that did not compile. Report it as a failure too, so a test
+    // whose source stopped compiling cannot keep passing on a recorded error.
+    var failed = false;
+    for (outputs.items) |output| {
+        if (output.outcome != .ok) {
+            failed = true;
+            // C-21 — a type error the checker raises carries a location.
+            if (output.outcome == .typeError and output.outcome.typeError.loc == null) {
+                std.debug.print("\n{s}: module '{s}' raised an unlocated type error\n", .{ base_slug, output.name });
+                if (first_err == null) first_err = error.UnlocatedTypeError;
+            }
+            if (expectation == .must_compile) {
+                const file = try snapshot.moduleFile(allocator, output.name);
+                defer allocator.free(file);
+                const body = (try snapshot.renderOutcomeDiagnostic(allocator, output.src, output.outcome, file)).?;
+                defer allocator.free(body);
+                std.debug.print(
+                    "\n{s}: module '{s}' did not compile:\n{s}\n" ++
+                        "(use `assertComptimeCompileError` if the failure is the point of the test)\n",
+                    .{ base_slug, output.name, body },
+                );
+            }
+        }
     }
+    if (failed and expectation == .must_compile) {
+        if (first_err == null) first_err = error.ModuleDidNotCompile;
+    }
+    if (!failed and expectation == .expect_compile_error) {
+        std.debug.print("\n{s}: expected a compile error, but every module compiled\n", .{base_slug});
+        if (first_err == null) first_err = error.ExpectedCompileError;
+    }
+
     if (first_err) |err| return err;
 }
 
@@ -131,34 +214,17 @@ pub fn assertComptimeAstSingle(
     return assertComptimeAst(allocator, loc, &.{.{ .path = "", .source = src }});
 }
 
-pub fn getSourceLine(src: []const u8, line: usize) []const u8 {
-    var currentLine: usize = 1;
-    var start: usize = 0;
-    var i: usize = 0;
-    while (i < src.len) : (i += 1) {
-        if (currentLine == line) {
-            var end = i;
-            while (end < src.len and src[end] != '\n') end += 1;
-            return src[start..end];
-        }
-        if (src[i] == '\n') {
-            currentLine += 1;
-            start = i + 1;
-        }
-    }
-    return src[start..];
-}
+/// Shared with `comptime/snapshot.zig` (the compile-diagnostic sections use the
+/// same line lookup).
+pub const getSourceLine = snapshot.getSourceLine;
 
+/// `----- SOURCE CODE` + `----- ERROR` wrapper around the shared diagnostic
+/// body. The 106 `comptime/*/errors/` snapshots are recorded from this text.
 pub fn renderTypeError(
     allocator: std.mem.Allocator,
     src: []const u8,
     err: errorMod.TypeError,
 ) ![]u8 {
-    // Use an arena so intermediate allocPrint strings are freed together.
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const tmp = arena.allocator();
-
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
@@ -168,255 +234,11 @@ pub fn renderTypeError(
     if (src.len > 0 and src[src.len - 1] != '\n') try out.append(allocator, '\n');
     try out.appendSlice(allocator, "\n----- ERROR\n");
 
-    // Error title
-    const title = switch (err.kind) {
-        .typeMismatch => "type mismatch",
-        .unboundVariable => "unbound variable",
-        .arityMismatch => "arity mismatch",
-        .unknownField => "unknown field",
-        .notARecord => "not a record type",
-        .recursiveType => "recursive type",
-        .unknownTypeName => "unknown type",
-        .missingField => "missing field",
-        .methodNotActive => "method not active",
-        .ambiguousExtension => "ambiguous extension method",
-        .notAnExtension => "not an extension symbol",
-        .extendRequiresInterface => "extend requires an interface",
-        .redundantActivation => "redundant activation",
-        .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
-        .useNotContext => "use-of-non-context-fn: `use` requires @Context",
-        .contextMismatch => "context-anchor-violation: ContextBase mismatch",
-        .throwWithoutResult => "throw outside @Result",
-        .missingMethod => "missing interface method",
-        .unknownMethod => "unknown method",
-        .unknownInterface => "unknown interface",
-        .ambiguousMethod => "ambiguous method",
-        .typeparamConstraint => "type constraint not satisfied",
-        .tryOnNonResult => "try on non-Result",
-        .nonExhaustive => "non-exhaustive case",
-        .redundantPattern => "unreachable case arm",
-        .custom => |c| c.message,
-    };
-    try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "error: {s}\n", .{title}));
-
-    // Location box if available
-    if (err.loc) |errLoc| {
-        const lineText = getSourceLine(src, errLoc.line);
-        const col0 = if (errLoc.col > 0) errLoc.col - 1 else 0;
-        // ┌─ :line:col
-        try out.appendSlice(allocator, try std.fmt.allocPrint(
-            tmp,
-            "  \u{250c}\u{2500} :{d}:{d}\n",
-            .{ errLoc.line, errLoc.col },
-        ));
-        // │
-        try out.appendSlice(allocator, "  \u{2502}\n");
-        // N │ source line
-        try out.appendSlice(allocator, try std.fmt.allocPrint(
-            tmp,
-            "{d} \u{2502} {s}\n",
-            .{ errLoc.line, lineText },
-        ));
-        // │ spaces^
-        try out.appendSlice(allocator, "  \u{2502} ");
-        for (0..col0) |_| try out.append(allocator, ' ');
-        try out.appendSlice(allocator, "^\n");
-    }
-
-    // Error details
-    switch (err.kind) {
-        .typeMismatch => |m| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  expected: {s}\n  found:    {s}\n",
-                .{ try snapshot.typeNameOf(tmp, m.expected), try snapshot.typeNameOf(tmp, m.got) },
-            ));
-        },
-        .unboundVariable => |name| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' is not in scope\n",
-                .{name},
-            ));
-        },
-        .arityMismatch => |a| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' expected {d} argument(s), got {d}\n",
-                .{ a.name, a.expected, a.got },
-            ));
-        },
-        .unknownField => |f| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' has no field '{s}'\n",
-                .{ f.typeName, f.field },
-            ));
-        },
-        .notARecord => |name| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' is not a record or struct type\n",
-                .{name},
-            ));
-        },
-        .recursiveType => {
-            try out.appendSlice(allocator, "\n  type variable would reference itself (infinite type)\n");
-        },
-        .unknownTypeName => |name| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  the type '{s}' is not defined in this scope\n",
-                .{name},
-            ));
-        },
-        .missingField => |f| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' requires field '{s}'\n",
-                .{ f.typeName, f.field },
-            ));
-        },
-        .methodNotActive => |m| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' has no active method '{s}'\n  hint: activate the extension with `{s}*`\n",
-                .{ m.typeName, m.method, m.hintSym },
-            ));
-        },
-        .ambiguousExtension => |a| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}.{s}' is provided by both '{s}' and '{s}'\n  hint: qualify the call, e.g. `{s}.{s}(obj)`\n",
-                .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method },
-            ));
-        },
-        .notAnExtension => |name| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' does not name an implement/extend symbol\n",
-                .{name},
-            ));
-        },
-        .extendRequiresInterface => |t| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  `extend {s}` adds methods without a contract\n  hint: use `implement <Interface> for {s}` so the methods satisfy an interface\n",
-                .{ t, t },
-            ));
-        },
-        .redundantActivation => |name| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  `{s}*` is redundant: a local extension is auto-applied\n  hint: drop it — `*` is only for imports\n",
-                .{name},
-            ));
-        },
-        .useNotAllowed => |returnType| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  function returns `{s}` which does not implement @Context\n",
-                .{returnType},
-            ));
-        },
-        .useNotContext => |exprType| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  `{s}` does not implement @Context — `use` requires @Context<_, _>\n",
-                .{exprType},
-            ));
-        },
-        .contextMismatch => |m| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  function returns @Context<{s}, _>\n  but the `use` expression returns @Context<{s}, _>\n",
-                .{ m.fnBase, m.useBase },
-            ));
-        },
-        .throwWithoutResult => {
-            try out.appendSlice(allocator, "\n  'throw' requires the enclosing fn to return '@Result<D, E>'\n");
-        },
-        .missingMethod => |m| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' does not implement '{s}' required by interface '{s}'\n",
-                .{ m.typeName, m.method, m.interfaceName },
-            ));
-        },
-        .unknownMethod => |m| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' is not declared in any interface implemented for '{s}'\n",
-                .{ m.method, m.typeName },
-            ));
-        },
-        .unknownInterface => |u| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' is not an interface implemented here (method '{s}')\n",
-                .{ u.qualifier, u.method },
-            ));
-        },
-        .ambiguousMethod => |a| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' is declared by both '{s}' and '{s}' — qualify it\n",
-                .{ a.method, a.interfaceA, a.interfaceB },
-            ));
-        },
-        .typeparamConstraint => |c| {
-            const gotName = try snapshot.typeNameOf(tmp, c.got);
-            var list: std.ArrayList(u8) = .empty;
-            for (c.constraints, 0..) |name, i| {
-                if (i > 0) try list.appendSlice(tmp, ", ");
-                try list.appendSlice(tmp, name);
-            }
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  '{s}' has type '{s}', which does not satisfy 'type {s}'\n",
-                .{ c.paramName, gotName, list.items },
-            ));
-        },
-        .tryOnNonResult => |ty| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  `try` requires a @Result<D, E> value, found '{s}'\n",
-                .{try snapshot.typeNameOf(tmp, ty)},
-            ));
-        },
-        .nonExhaustive => |n| {
-            if (n.missing.len == 0) {
-                try out.appendSlice(allocator, try std.fmt.allocPrint(
-                    tmp,
-                    "\n  `{s}` has no wildcard `_` arm; it cannot be matched exhaustively\n",
-                    .{n.typeName},
-                ));
-            } else {
-                var list: std.ArrayList(u8) = .empty;
-                for (n.missing, 0..) |name, i| {
-                    if (i > 0) try list.appendSlice(tmp, ", ");
-                    try list.appendSlice(tmp, name);
-                }
-                try out.appendSlice(allocator, try std.fmt.allocPrint(
-                    tmp,
-                    "\n  '{s}' is missing variant(s): {s}\n",
-                    .{ n.typeName, list.items },
-                ));
-            }
-        },
-        .redundantPattern => |r| {
-            try out.appendSlice(allocator, try std.fmt.allocPrint(
-                tmp,
-                "\n  {s} is already covered by an earlier arm ('{s}')\n",
-                .{ r.description, r.typeName },
-            ));
-        },
-        .custom => |c| {
-            if (c.hint) |h| {
-                try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "\n  hint: {s}\n", .{h}));
-            }
-        },
-    }
+    // A single-source test compiles module `main` (path ""), as every
+    // `----- SOURCE CODE -- main.bp` header says.
+    const body = try snapshot.renderTypeErrorBody(allocator, src, err, "main.bp");
+    defer allocator.free(body);
+    try out.appendSlice(allocator, body);
 
     return try out.toOwnedSlice(allocator);
 }
@@ -426,6 +248,8 @@ pub fn assertTypeErrorSnap(
     comptime loc: std.builtin.SourceLocation,
     src: []const u8,
 ) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -434,7 +258,7 @@ pub fn assertTypeErrorSnap(
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var env = try inferMod.freshEnv(alloc, allocator);
@@ -443,20 +267,21 @@ pub fn assertTypeErrorSnap(
     const result = inferMod.inferProgram(&env, program);
     try std.testing.expectError(error.TypeError, result);
     const err = env.lastError orelse return error.TestExpectedEqual;
+    // C-21 — every type error carries a location; the snapshot's box is it.
+    try std.testing.expect(err.loc != null);
 
     const desc = try renderTypeError(allocator, src, err);
     defer allocator.free(desc);
 
     const base_slug = comptime slugFromSrc(loc);
 
-    // Save the same error snapshot in both node/errors/ and erlang/errors/
-    // Error messages are runtime-agnostic (type inference happens before codegen)
-    const runtimes = [_][]const u8{ "node", "erlang" };
-    for (runtimes) |runtime| {
-        var snap_buf: [512]u8 = undefined;
-        const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/{s}/errors/{s}", .{ runtime, base_slug });
-        try snapMod.checkText(allocator, snap_slug, desc);
-    }
+    // One snapshot per test, under `comptime/errors/`. Error messages are
+    // runtime-agnostic (type inference happens before codegen), so the
+    // `node/errors/` and `erlang/errors/` copies this used to write were
+    // byte-identical by construction.
+    var snap_buf: [512]u8 = undefined;
+    const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/errors/{s}", .{base_slug});
+    try snapMod.checkText(allocator, snap_slug, desc);
 }
 
 pub fn assertInfersOk(
@@ -471,7 +296,7 @@ pub fn assertInfersOk(
     const tokens = try lx.scanAll(alloc);
     defer lx.deinit(alloc);
     var p = Parser.init(tokens);
-    var program = try p.parse(alloc);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
     defer program.deinit(alloc);
 
     var env = try inferMod.freshEnv(alloc, allocator);
@@ -485,4 +310,69 @@ pub fn assertInfersOk(
         }
         return err;
     };
+}
+
+/// How many `return` / `throw` sites inference recorded with the lowering
+/// `kind` (`Env.result_jump_lowerings`) — `src` must type-check. A checker
+/// test reads off it which jumps it made the enclosing function's.
+pub fn resultJumpLoweringCount(
+    allocator: std.mem.Allocator,
+    src: []const u8,
+    kind: envMod.ResultJumpLowering,
+) !usize {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
+    defer program.deinit(alloc);
+
+    var env = try inferMod.freshEnv(alloc, allocator);
+    defer env.deinit();
+    _ = try inferMod.inferProgram(&env, program);
+
+    var n: usize = 0;
+    var it = env.result_jump_lowerings.valueIterator();
+    while (it.next()) |v| {
+        if (v.* == kind) n += 1;
+    }
+    return n;
+}
+
+/// Front 14 step 3 — the term round trip, read off the replies: `modules` is
+/// compiled (the capture or the `@Decl` handle reaches the wasm comptime
+/// runtime as external-term bytes in its linear memory, `runtime/etf.zig`),
+/// every module must compile, at least one evaluation must run, and each
+/// evaluation's reply — the `COMPTIME REPLY` section, keys sorted — is
+/// returned in evaluation order (owned by `arena`), for the caller's own
+/// assertions on what the body read back.
+pub fn canonicalReplies(
+    allocator: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    modules: []const Module,
+) ![]const []const u8 {
+    const io = std.testing.io;
+    const build_root = buildRootPathFromSrc(io, loc);
+    var session = try comptimeMod.compile(allocator, modules, io, build_root);
+    defer session.deinit(allocator);
+
+    var replies: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (session.outputs.items) |o| {
+        if (o.outcome != .ok) {
+            std.debug.print("\nmodule '{s}' did not compile ({s})\n", .{ o.name, @tagName(o.outcome) });
+            return error.ModuleDidNotCompile;
+        }
+        for (o.outcome.ok.comptime_traces) |e| {
+            // The section a snapshot records: the reply read with sorted keys
+            // (`runtime/reply_order.zig`); a non-JSON reply as is.
+            try replies.append(arena, (try replyOrder.canonical(arena, e.reply)) orelse e.reply);
+        }
+    }
+    try std.testing.expect(replies.items.len > 0);
+    return replies.items;
 }

@@ -1,0 +1,20 @@
+//// An entity whose meta record is private to this module.
+
+import {compiler} from "std";
+
+type Entity(table: string)
+
+pub behavior Model {
+    fn make() -> Self;
+}
+
+pub fn entity(syntax decl: Model, comptime table: string) -> void {
+    compiler.setMeta(Entity(table: table));
+}
+
+#[entity("cities")]
+pub type City(name: string) implement Model {
+    fn make() -> Self {
+        return City(name: "city");
+    }
+}

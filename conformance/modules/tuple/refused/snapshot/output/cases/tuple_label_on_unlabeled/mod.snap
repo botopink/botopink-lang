@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: this tuple has no element labeled `pop`
+at src/cases/tuple_label_on_unlabeled/mod.bp:10:18

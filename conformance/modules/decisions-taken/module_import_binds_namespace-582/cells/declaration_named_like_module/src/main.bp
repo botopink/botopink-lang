@@ -1,0 +1,15 @@
+//// Decision 337 (2) — `mod config;` binds `config` in this module, so a
+//// top-level declaration of that name is `module-item-collision` at its name
+//// (decision 582 (4): `config` would name both the item and the module).
+
+import {io.terminal.print} from "std";
+
+pub mod config;
+
+fn config() -> string {
+    return "local";
+}
+
+pub fn main() -> void {
+    print(config());
+}

@@ -1,0 +1,17 @@
+# Decision 332 — Big numbers, and `Json` read like Jackson's strict configuration.
+
+[cells/bigint_across_modules/src/main.bp](cells/bigint_across_modules/src/main.bp)
+[run/src/cases/bigint_arithmetic/mod.bp](run/src/cases/bigint_arithmetic/mod.bp)
+[refused/src/cases/bigint_comptime/mod.bp](refused/src/cases/bigint_comptime/mod.bp)
+[cells/bigint_division_by_zero/src/main.bp](cells/bigint_division_by_zero/src/main.bp)
+[run/src/cases/bigint_in_containers/mod.bp](run/src/cases/bigint_in_containers/mod.bp)
+[refused/src/cases/bigint_into_i64/mod.bp](refused/src/cases/bigint_into_i64/mod.bp)
+[refused/src/cases/bigint_into_unknown/mod.bp](refused/src/cases/bigint_into_unknown/mod.bp)
+[refused/src/cases/bigint_literal_fraction/mod.bp](refused/src/cases/bigint_literal_fraction/mod.bp)
+[refused/src/cases/bigint_plus_int_literal/mod.bp](refused/src/cases/bigint_plus_int_literal/mod.bp)
+[cells/bigint_to_i64_aborts/src/main.bp](cells/bigint_to_i64_aborts/src/main.bp)
+[refused/src/cases/bigint_type_test/mod.bp](refused/src/cases/bigint_type_test/mod.bp)
+[refused/src/cases/bigint_unsuffixed_literal/mod.bp](refused/src/cases/bigint_unsuffixed_literal/mod.bp)
+[cells/decimal_div_by_zero_aborts/src/main.bp](cells/decimal_div_by_zero_aborts/src/main.bp)
+[cells/decimal_div_rounding_necessary_aborts/src/main.bp](cells/decimal_div_rounding_necessary_aborts/src/main.bp)
+[cells/decimal_exact_arithmetic/src/main.bp](cells/decimal_exact_arithmetic/src/main.bp)

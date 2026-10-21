@@ -1,0 +1,49 @@
+//// A component whose `use` names a type argument, and a decorator that reads
+//// that type's whole declaration from the hooks list.
+
+import {compiler} from "std";
+
+type Element(text: string) implement Renderable
+
+// A marker: a decorator with an empty body.
+pub fn trimmed(syntax decl: unknown) -> void {}
+
+type BlogParams(#[trimmed] slug: string, id: i32) {
+    fn label(self: Self) -> string {
+        return self.slug + "#" + self.id.toString();
+    }
+}
+
+// What `#[args]` records: per field of each type argument, its annotations,
+// then the number of the type's methods.
+pub type HookArgs(uses: string[])
+
+fn args(syntax decl: unknown) -> void {
+    var out: string[] = [];
+    compiler
+        .hooks(decl)
+        .forEach({ n ->
+            n.uses.forEach({ u ->
+                u.typeArgs.forEach({ t ->
+                    compiler
+                        .fields(t)
+                        .forEach({ f ->
+                            val marks = f.annotations.map({ a -> compiler.name(a.decorator) ?? "?" });
+                            out.push(f.name + "[" + marks.join(",") + "]")
+                        });
+                    out.push("methods:" + compiler.methods(t).length.toString())
+                })
+            })
+        });
+    compiler.setMeta(HookArgs(uses: out));
+}
+
+component fn params<P>(fallback: P) -> Component<P> {
+    return fallback;
+}
+
+#[args]
+pub component fn Post() -> Component<Element> {
+    val p = use params<BlogParams>(BlogParams(slug: "hello", id: 1));
+    return Element(text: p.label());
+}

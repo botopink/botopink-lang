@@ -1,0 +1,28 @@
+//// Decisions 378, 722 — a read names the context value it imports:
+//// `Label` reads `themeContext`, which `theme` declares beside `Theme`, so
+//// its default is found through the import, nothing searched.
+
+pub mod theme;
+
+import {theme.Theme, theme.themeContext};
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type Element(text: string) implement Renderable
+
+component fn Label() -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: t.mode);
+}
+
+component fn Dark() -> Component<Element> {
+    use provide(createContext(Theme(mode: "dark")));
+    val l = use Label();
+    return Element(text: l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val l = (await Label().run(RenderScope.root())).value;
+    print(l.text);
+    val d = (await Dark().run(RenderScope.root())).value;
+    print(d.text);
+}

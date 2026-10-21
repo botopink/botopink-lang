@@ -1,0 +1,10 @@
+//// A cell under the workspace's second entry (`second/group/*`): its copy
+//// holds only itself, the first entry's directory absent there, and it still
+//// inherits the workspace's dependency.
+
+import {greeting} from "greeter";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(greeting() + " (second entry)");
+}

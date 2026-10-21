@@ -1,0 +1,26 @@
+//// Decision 719 — `compiler.text(value)` is the expression written between
+//// the parentheses of the call, as written: `expect(a == b)` prints
+//// `a == b` beside the value the expression has where the call stands.
+
+import {compiler} from "std";
+import {io.terminal.print} from "std";
+
+pub fn report(ok: bool, text: string) -> void {
+    if (ok) print("ok: " + text) else print("failed: " + text);
+}
+
+pub fn expect(syntax condition: bool) -> anyvalue {
+    return compiler.build("report("
+        + compiler.text(condition)
+        + ", \""
+        + compiler.text(condition)
+        + "\")");
+}
+
+pub fn main() -> void {
+    val a = 1;
+    val b = 1;
+    val c = 2;
+    expect(a == b);
+    expect(a == c);
+}

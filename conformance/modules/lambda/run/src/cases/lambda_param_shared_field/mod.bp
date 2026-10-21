@@ -1,0 +1,22 @@
+//// An untyped lambda parameter is typed by the function type the position
+//// expects: `{ p -> … }` passed for `fn(Pessoa) -> Pessoa` reads `p` as a
+//// `Pessoa`, so a field another record also declares (`nome`) is `Pessoa`'s,
+//// read or spread.
+
+import {io.terminal.print} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+type Cidade(nome: string, uf: string)
+
+fn aplicar(p: Pessoa, f: fn(Pessoa) -> Pessoa) -> Pessoa {
+    return f(p);
+}
+
+pub fn runCase() -> void {
+    val ana = Pessoa(nome: "Ana", idade: 30);
+    val sp = Cidade(nome: "Sao Paulo", uf: "SP");
+    print(aplicar(ana, { p -> Pessoa(nome: p.nome + "!", idade: p.idade) }));
+    print(aplicar(ana, { p -> Pessoa(..p, idade: 31) }));
+    print(sp.nome);
+}

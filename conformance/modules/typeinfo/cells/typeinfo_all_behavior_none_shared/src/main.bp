@@ -1,0 +1,44 @@
+//// Decision 564 — a query over decorators naming different behaviors shares
+//// none: `@TypeInfo.all(with: [service, job])` answers
+//// `Declared<unknown>[]`, so binding it as `Declared<Bean>[]` is the
+//// ordinary mismatch.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Bean {
+    fn make() -> Self;
+}
+
+pub behavior Job {
+    fn run(self: Self) -> string;
+}
+
+pub fn service(syntax decl: Bean) -> void {
+    compiler.setMeta(Role(role: "service"));
+}
+
+pub fn job(syntax decl: Job) -> void {
+    compiler.setMeta(Role(role: "job"));
+}
+
+#[service]
+pub type Mailer(host: string) implement Bean {
+    fn make() -> Self {
+        return Mailer(host: "smtp");
+    }
+}
+
+#[job]
+pub type Cleanup(days: i32) implement Job {
+    fn run(self: Self) -> string {
+        return "cleaned";
+    }
+}
+
+pub fn main() -> void {
+    val all: Declared<Bean>[] = @TypeInfo.all(with: [service, job]);
+    print(all.length);
+}
+
+// What `#[service]` and `#[job]` record.
+pub type Role(role: string)

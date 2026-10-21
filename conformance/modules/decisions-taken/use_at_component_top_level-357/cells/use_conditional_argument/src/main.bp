@@ -1,0 +1,36 @@
+//// Decision 357 (2) — once declared, always fed: a condition goes inside a
+//// `use`'s argument, never around the `use`. `use
+//// provide(createContext(if (dark) … else …))` is at the top level of the body and runs on every call;
+//// an `if` that does not return before a `use` leaves it at the top level
+//// too.
+
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+component fn Label() -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: t.mode);
+}
+
+component fn App(dark: bool) -> Component<Element> {
+    var note = "";
+    if (dark) note = "!";
+    use provide(createContext(if (dark)
+        Theme(mode: "dark")
+    else
+        Theme(mode: "light")));
+    val l = use Label();
+    return Element(text: l.text + note);
+}
+
+pub async fn main() -> Async<void> {
+    val a = (await App(true).run(RenderScope.root())).value;
+    print(a.text);
+    val b = (await App(false).run(RenderScope.root())).value;
+    print(b.text);
+}

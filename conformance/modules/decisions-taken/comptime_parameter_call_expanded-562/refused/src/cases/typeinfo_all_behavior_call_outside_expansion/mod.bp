@@ -1,0 +1,35 @@
+//// Decision 564 — an entry of `Declared<Module>[]` is the type seen through
+//// the behavior, and calling a function of `Module` on its `value` is legal
+//// only inside a function expanded at its call site (decision 562): in
+//// `main`, which runs, it is refused at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Module {
+    fn make() -> Self;
+    fn start(self: Self) -> string;
+}
+
+pub fn module(syntax decl: Module) -> void {
+    compiler.setMeta(ModuleRole(role: "module"));
+}
+
+#[module]
+pub type Users(n: i32) implement Module {
+    fn make() -> Self {
+        return Users(n: 0);
+    }
+
+    fn start(self: Self) -> string {
+        return "users up";
+    }
+}
+
+pub fn main() -> void {
+    for (@TypeInfo.all(with: module)) { d ->
+        print(d.value.make().start());
+    }
+}
+
+// What `#[module]` records.
+pub type ModuleRole(role: string)

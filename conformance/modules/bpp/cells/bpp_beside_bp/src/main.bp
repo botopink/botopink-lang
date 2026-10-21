@@ -1,0 +1,6 @@
+//// Front 116 — `Card.bp` beside `Card.bpp` is one module written twice:
+//// refused at the `.bpp` file, naming both.
+
+mod Card;
+
+pub fn main() -> void {}

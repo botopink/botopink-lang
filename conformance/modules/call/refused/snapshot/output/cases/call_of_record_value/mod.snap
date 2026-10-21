@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: callee-not-a-function: `g` is a value of type `G`, not a function — it cannot be called
+at src/cases/call_of_record_value/mod.bp:17:11

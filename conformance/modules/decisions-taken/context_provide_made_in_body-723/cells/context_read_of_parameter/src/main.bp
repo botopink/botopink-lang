@@ -1,0 +1,18 @@
+//// Decisions 722, 723 — `use context(ctx)` reads through a context value
+//// the module declares or imports; a parameter holding a context is none.
+
+import {context.Context, context.createContext, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+component fn read(ctx: Context<Theme>) -> Component<Theme> {
+    return use context(ctx);
+}
+
+pub fn main() -> void {
+    read(themeContext);
+}

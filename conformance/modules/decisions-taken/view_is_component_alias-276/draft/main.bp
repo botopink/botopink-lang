@@ -1,0 +1,30 @@
+//// Decision 276 — jhonstart declares `pub type View = @Component<Element>;` (354) in `element.bp` — a type alias (decision 110), the same
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+pub type Element(text: string) implement Renderable
+
+pub type View = Component<Element>;
+
+component fn Card(title: string) -> View {
+    return Element(text: "card " + title);
+}
+
+component fn Badge(label: string) -> Component<Element> {
+    return Element(text: "badge " + label);
+}
+
+fn both(first: View, second: Component<Element>) -> View[] {
+    return [first, second];
+}
+
+async fn run() -> Async<void> {
+    for (both(Badge("new"), Card("home"))) { c ->
+        val tree = await c.run(RenderScope.root());
+        print(tree.value.text);
+    }
+}
+
+pub fn main() -> void {
+    run();
+}

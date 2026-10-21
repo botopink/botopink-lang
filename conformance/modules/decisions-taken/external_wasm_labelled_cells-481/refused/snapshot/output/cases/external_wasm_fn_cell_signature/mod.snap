@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: external-body-not-a-fn: `.Wasm(body: tanBody)` on `tanOf`: `tanBody` must take the same parameter types in the same order and answer the same type
+at src/cases/external_wasm_fn_cell_signature/mod.bp:7:81

@@ -1,0 +1,34 @@
+//// Decision 736 — a `comptime` parameter takes a value or a type:
+//// `comptime source: Atom<T> | type<T>`, the body testing `source is type<T>`.
+//// One function, one name, two forms: an `Atom<T>` value (`T` inferred from
+//// it, or written) or a type naming its implicit atom (`T` bound to the type).
+
+import {io.terminal.print} from "std";
+
+type Atom<T>(key: string, initial: T)
+
+type User(name: string)
+
+fn atomKey<T>(comptime source: Atom<T> | type<T>) -> string {
+    if (source is type<T>) return "implicit";
+    return source.key;
+}
+
+fn atomState<T>(comptime source: Atom<T> | type<T>, fallback: T) -> T {
+    if (source is type<T>) return fallback;
+    return source.initial;
+}
+
+val currentUser = Atom(key: "currentUser", initial: User(name: "ana"));
+
+pub fn main() -> void {
+    print(atomKey(currentUser));
+    print(atomKey(User));
+    print(atomKey<User>(currentUser));
+    val a: User = atomState(currentUser, User(name: "none"));
+    val b: User = atomState(User, User(name: "bo"));
+    val n: i32 = atomState(i32, 7);
+    print(a.name);
+    print(b.name);
+    print(n);
+}

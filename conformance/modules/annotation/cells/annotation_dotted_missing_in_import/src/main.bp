@@ -1,0 +1,14 @@
+//// A dotted annotation path through an imported module namespace whose module
+//// declares no such name is refused at the annotation.
+
+import {jwt} from "sec";
+import {io.terminal.print} from "std";
+
+#[jwt.missing]
+fn Signed() -> string {
+    return "a";
+}
+
+pub fn main() -> void {
+    print(Signed());
+}

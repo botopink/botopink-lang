@@ -1,0 +1,6 @@
+//// A user type named like the reflection model's `Param`, and one named like
+//// its `Field`.
+
+pub type Param(key: string, weight: i32)
+
+pub type Field(label: string)

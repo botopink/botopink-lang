@@ -1,0 +1,11 @@
+import {compiler} from "std";
+
+pub fn pin(syntax decl: unknown, comptime at: i32 = 7) -> void {
+    @emit(
+        "pub fn "
+            + compiler.name(decl)!
+            + "Pin() -> string { return \"pin"
+            + at.toString()
+            + "\"; }",
+    );
+}

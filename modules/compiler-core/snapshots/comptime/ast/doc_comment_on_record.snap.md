@@ -1,0 +1,22 @@
+----- SOURCE CODE -- main.bp
+```botopink
+//// A point in 2D space
+val Point = type(x: i32, y: i32);
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "Point",
+      "fields": {
+        "x": "i32",
+        "y": "i32"
+      }
+    }
+  ]
+}
+```
+

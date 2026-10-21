@@ -1,0 +1,10 @@
+//// Decision 799, 872 — an extension block's own method on a primitive answers on every target, and a `default fn` calling it reads the same method.
+
+import {shouts.Shout, shouts.local, shouts.StringShout*};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(local());
+    print("d".label());
+    print("c".shout());
+}

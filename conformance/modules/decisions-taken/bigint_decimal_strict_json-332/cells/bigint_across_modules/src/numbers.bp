@@ -1,0 +1,19 @@
+//// Decision 332 — a module whose `pub` surface holds `bigint`s.
+
+pub type Tally(count: i32, sum: bigint)
+
+pub val googolish = 10000000000000000000000000000000000000000n;
+
+pub fn factorial(n: i64) -> bigint {
+    var acc = 1n;
+    var i = 2l;
+    while (i <= n) {
+        acc = acc * bigint.of(i);
+        i += 1l;
+    }
+    return acc;
+}
+
+pub fn add(t: Tally, by: bigint) -> Tally {
+    return Tally(count: t.count + 1, sum: t.sum + by);
+}

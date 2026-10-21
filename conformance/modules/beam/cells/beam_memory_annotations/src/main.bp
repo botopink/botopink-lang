@@ -1,0 +1,24 @@
+import {collections.Dict, io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Ets)]
+var explicit: i32 = 0; // the default, said out loud
+var hits: i32 = 0;
+
+#[compiler.beamMemory(.PersistentTerm)]
+var buildVersion: i32 = 101;
+
+var counts: Dict<string, i32> = Dict.empty();
+
+// #[compiler.beamMemory(.Etz)] var x: i32 = 0;
+//   error: unknown member `Etz` in `BeamMemory` — expected `Ets` or `PersistentTerm`
+// #[compiler.beamMemory(.Ets(keyed: true))] var x: i32 = 0;
+//   error: unknown argument `keyed` — `.Ets` takes none
+// #[compiler.beamMemory(.Ets)] val x: i32 = 0;
+//   error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `x` is a `val`
+
+pub fn main() -> void {
+    hits = hits + 1;
+    print(hits); // 1
+    print(buildVersion); // 101
+    print(explicit); // 0
+}

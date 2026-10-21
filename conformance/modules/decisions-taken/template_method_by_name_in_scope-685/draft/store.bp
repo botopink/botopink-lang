@@ -1,0 +1,13 @@
+//// A type and a template method over it, declared side by side.
+
+import {code, compiler} from "std";
+
+pub type Memory(prefix: string) {
+    pub fn fetch(self: Self, key: string) -> string {
+        return self.prefix + key;
+    }
+}
+
+pub fn read(syntax self: Memory, syntax q: string) -> string {
+    return code @`${self}.fetch(${compiler.text(q)})`;
+}

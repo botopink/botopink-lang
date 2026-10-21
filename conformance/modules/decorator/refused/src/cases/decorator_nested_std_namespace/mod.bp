@@ -1,0 +1,23 @@
+//// 144 B-46 — a decorator body reaches a function of a nested std
+//// namespace (`io.random.seed`, through the folder `io`). The module's own
+//// decorators run before its bodies are inferred; when a body's run fails it
+//// is checked then, and the std namespaces its imports name are bound for
+//// that check as for any body: the answer is the body's own type error,
+//// located at the field — never the namespace read as unbound
+//// (`unbound variable '__bp_ns_io_random'`).
+
+import {io.terminal.print, io.random} from "std";
+
+fn tagged(syntax decl: unknown) -> void {
+    random.seed(7);
+    val n = decl.nope;
+}
+
+#[tagged]
+fn work() -> i32 {
+    return 2;
+}
+
+pub fn main() -> void {
+    print(work());
+}

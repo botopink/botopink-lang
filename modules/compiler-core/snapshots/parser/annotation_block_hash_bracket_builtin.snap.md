@@ -14,21 +14,12 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
-            "args": [
-              "\"string\"",
-              "\"length\""
-            ],
-            "is_builtin": true
-          },
-          {
             "name": "external",
             "args": [
-              "node",
-              "\"./gleam_stdlib.mjs\"",
-              "\"string_length\""
+              ".Erlang(\"string:length($0)\")",
+              ".JavaScript(\"./gleam_stdlib.mjs\", \"string_length\")"
             ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
@@ -40,7 +31,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
@@ -50,6 +40,27 @@
         },
         "typeGuardParam": null,
         "body": []
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

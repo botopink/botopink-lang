@@ -1,0 +1,23 @@
+//// Decision 792 (2) — the loaded package's module body and its `compiler.init`s run at
+//// `run()`, just before its `main`, not at program start with the program's own: the
+//// loaded file's init prints after the caller's init has begun, and before its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/counted/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            print("before run");
+            try m.run() catch { f ->
+                print("abort " + f.message)
+            }
+            print("after run");
+        });
+        Error(r) -> print("refused");
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

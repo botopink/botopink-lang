@@ -1,0 +1,11 @@
+//// Decision 561 — a backtick identifier holds no line break: one that the
+//// line ends before its closing backtick is refused at the lexer, at its
+//// opening backtick.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val `two
+    lines` = 1;
+    print(1);
+}

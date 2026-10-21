@@ -1,0 +1,10 @@
+//// Decision 565 — A `String` method takes its botopink body on wasm through a `#[@External.Wasm(fn: …)]` cell, wasm alone
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("7".padStart(3, "-"));
+    print("ab".repeat(3));
+    print("a b c".replaceAll(" ", "-"));
+    print("x,y,z".split(",").join("|"));
+}

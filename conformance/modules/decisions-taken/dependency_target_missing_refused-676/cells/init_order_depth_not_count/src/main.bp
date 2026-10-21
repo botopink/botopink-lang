@@ -1,0 +1,12 @@
+//// Decision 676 (2) — "most dependencies last" is the deepest chain, not
+//// the count: `wide` depends on three packages, one level down; `deep`
+//// depends on `mid`, which depends on `base`, two levels down. `deep`'s
+//// executors run last, after `wide`'s, though `wide` has more
+//// dependencies; `mid` runs after `wide`, both one level up, in the
+//// depth-first order the manifests give.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("main");
+}

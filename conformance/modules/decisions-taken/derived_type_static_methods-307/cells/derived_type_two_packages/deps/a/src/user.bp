@@ -1,0 +1,13 @@
+//// Decision 307 over two packages' same-named modules (170, 337): `a`
+//// imports its own `shape` by its path, so `Box` is `a/shape`'s and the
+//// derived type picks `a`'s fields, never `b/shape`'s.
+
+import {shape.Box};
+import {types.Type} from "std";
+
+pub val Flat = Type.pick(Box, .width, .label);
+
+pub fn describeA() -> string {
+    val f = Flat(width: 3, label: "a");
+    return f.label + ":" + f.width.toString();
+}

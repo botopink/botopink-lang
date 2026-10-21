@@ -1,0 +1,10 @@
+//// The dependency's `app/page` — `site/app/page` in the consumer's build. It
+//// declares `title` too.
+
+pub fn title() -> string {
+    return "site";
+}
+
+pub fn other() -> string {
+    return "other";
+}

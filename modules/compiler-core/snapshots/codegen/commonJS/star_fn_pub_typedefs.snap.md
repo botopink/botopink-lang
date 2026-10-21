@@ -1,0 +1,48 @@
+----- SOURCE CODE -- main.bp
+```botopink
+pub async fn loadOne(x: i32) -> Async<i32> {
+    return x;
+}
+pub iter fn count() -> Iter<i32> {
+    yield 1;
+}
+pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
+    yield 1;
+}
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+async function loadOne(x) {
+    return x;
+}
+exports.loadOne = loadOne;
+
+function* count() {
+    yield 1;
+}
+exports.count = count;
+
+async function* pulses() {
+    yield ({ ok: 1 });
+}
+exports.pulses = pulses;
+
+Object.defineProperty(exports, "__bp_priv__", { value: { loadOne, count, pulses } });
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+export declare function loadOne(x: number): Promise<number>;
+
+
+export declare function count(): IterableIterator<number>;
+
+
+export declare function pulses(): AsyncGenerator<{ ok: number } | { error: string }>;
+
+```
+
+----- RUN LOG -----
+```logs
+```

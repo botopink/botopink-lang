@@ -1,0 +1,22 @@
+//// Decisions 613, 716 — on a method `decl` is the method by its owner's
+//// path: the executor registers `Users.make`, a static method's function
+//// value meeting `syntax decl: fn() -> string`, called when `main` runs.
+
+pub mod marks;
+pub mod registry;
+import {marks.registered};
+import {registry.all};
+import {io.terminal.print} from "std";
+
+pub type Users() {
+    #[registered]
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() -> void {
+    for (all()) { e ->
+        print(e.name + " " + e.make());
+    }
+}

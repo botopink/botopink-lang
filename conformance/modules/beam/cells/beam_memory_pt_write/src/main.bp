@@ -1,0 +1,14 @@
+//// Decision 547 — a `PersistentTerm` var may be written at run time: every
+//// `persistent_term:put` scans every process heap, a cost the writer weighs and
+//// no check refuses. The write is read back: `102`. It used to be refused at the
+//// assignment.
+
+import {io.terminal.print} from "std";
+
+#[compiler.beamMemory(.PersistentTerm)]
+var version: i32 = 101;
+
+pub fn main() -> void {
+    version = 102;
+    print(version);
+}

@@ -1,0 +1,23 @@
+//// A library's template function reading the program's catalogue and the
+//// build value of its one `#[theme]` `val` (decisions 353, 356).
+
+import {compiler.DeclKind, compiler} from "std";
+
+pub fn theme(syntax decl: unknown) -> void {
+    if (compiler.kind(decl) != DeclKind.Val)
+        compiler.fail("#[theme] annotates a val", at: decl);
+}
+
+pub default fn looks(syntax e: string) -> string {
+    val themes = @TypeInfo.all(with: theme);
+    if (themes.length != 1)
+        compiler.fail("looks: one #[theme] declaration, and the program has "
+            + themes.length.toString(), at: e);
+    val shown = themes
+        .map({ t ->
+            val v = t.value;
+            if (v is string) v else "?"
+        })
+        .join("");
+    return compiler.text(e) + ": " + shown;
+}

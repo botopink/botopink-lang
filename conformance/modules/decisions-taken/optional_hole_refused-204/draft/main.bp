@@ -1,0 +1,10 @@
+//// Decision 204 — A hole of type `?T` is a comptime error at the hole (`error: a hole of type ?string — write {subtitle ??
+
+import {io.terminal.print} from "std";
+import {comptime.markup.card};
+
+pub fn main() -> void {
+    val title = "Hi";
+    val subtitle: ?string = null;
+    print(card @`<h1>${title}</h1><p>${subtitle}</p>`);
+}

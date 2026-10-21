@@ -1,0 +1,14 @@
+//// Each element of a tuple of function values keeps its own function type:
+//// the one answering a string prints the string.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val g: fn(s: string) -> i32 = { s -> s.length };
+    val h: fn(n: i32) -> string = { n -> "n=" + n.toString() };
+    val q = #(g, h);
+    print(q.0("hello"));
+    print(q.1(7));
+    val r = q.1(q.0("abcd"));
+    print(r);
+}

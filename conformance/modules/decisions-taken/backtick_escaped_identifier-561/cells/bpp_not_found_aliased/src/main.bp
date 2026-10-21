@@ -1,0 +1,11 @@
+//// Decision 561 — `not-found.bpp`, whose name is no identifier, is imported
+//// by its backtick name under an alias: `` import {pages.`not-found` as
+//// NotFound}; `` binds the file's default function as `NotFound`.
+
+pub mod pages;
+import {pages.`not-found` as NotFound, pages.`not-found`.Props};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(NotFound(Props(path: "/missing")));
+}

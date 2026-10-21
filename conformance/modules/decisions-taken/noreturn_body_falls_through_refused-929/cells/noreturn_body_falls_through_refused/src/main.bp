@@ -1,0 +1,13 @@
+//// Decision 929 — `noreturn` is the bottom type, and a function declared `-> noreturn`
+//// whose body can complete is refused at its name, `noreturn-falls-through`: the
+//// `if` below has no `else`, so the path where `c` is false runs off the end.
+
+import {failure.panic, io.terminal.print} from "std";
+
+fn bad(c: bool) -> noreturn {
+    if (c) panic("x");
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

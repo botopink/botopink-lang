@@ -1,0 +1,13 @@
+//// Decision 679 — A handle `compiler.bindings(e)` answers has no read of the decorator that annotated it; a template body tells annotations apart by the meta they recorded, read by type (`compiler.meta<RawBody>(d)`, 302, 576 (11)).
+
+import {io.terminal.print} from "std";
+import {comptime.marks.raw, comptime.marks.kinds};
+
+#[raw("trusted")]
+type Users(id: i32)
+
+type Orders(id: i32)
+
+pub fn main() -> void {
+    print(kinds @`Users Orders`);
+}

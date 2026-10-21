@@ -1,0 +1,7 @@
+//// Decisions 853, 890 — `pages/not_found` (`not_found.bp`) and `pages/not-found`
+//// (`not-found.bpp`) fold to one module atom, `module_atom_pair_refused@pages@not_found`;
+//// the pair is refused on every target, naming both modules and the fold.
+
+pub mod pages;
+
+pub fn main() -> void {}

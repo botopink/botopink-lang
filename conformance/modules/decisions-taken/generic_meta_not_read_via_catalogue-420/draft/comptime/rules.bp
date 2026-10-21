@@ -1,0 +1,7 @@
+import {compiler} from "std";
+
+pub type Rule<T>(name: string, holds: fn(v: T) -> bool)
+
+pub fn rule<T>(syntax decl: T, comptime name: string, syntax holds: fn(v: T) -> bool) -> void {
+    compiler.addMeta(Rule<T>(name: name, holds: holds));
+}

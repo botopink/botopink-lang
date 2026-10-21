@@ -1,0 +1,29 @@
+//// Decision 587 — a variant constructor called with labels and with its
+//// defaulted fields left out answers one value on every target: the fields
+//// written keep their labels' values and the others take their defaults.
+
+import {io.terminal.print} from "std";
+
+pub type Shape {
+    Circle(radius: i32, filled: bool = false, name: string = "circle"),
+    Square(side: i32 = 1, name: string = "square"),
+}
+
+fn describe(s: Shape) -> string {
+    return case s {
+        Circle(radius, filled, name) -> name
+            + " "
+            + radius.toString()
+            + " "
+            + filled.toString();
+        Square(side, name) -> name + " " + side.toString();
+    };
+}
+
+pub fn runCase() -> void {
+    print(describe(Shape.Circle(radius: 3)));
+    print(describe(Shape.Circle(radius: 3, filled: true)));
+    print(describe(Shape.Circle(radius: 3, name: "disc")));
+    print(describe(Shape.Square()));
+    print(describe(Shape.Square(name: "box")));
+}

@@ -1,0 +1,6 @@
+botopink-cell 1
+out == fine
+out fine main
+out == broken
+out refused error: type mismatch: expected i32, got string
+out at src/cases/broken/mod.bp:2:18

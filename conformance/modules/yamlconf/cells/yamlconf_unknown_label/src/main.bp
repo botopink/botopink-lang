@@ -1,0 +1,16 @@
+// yamlconf — a label the lifted tuple does not have is a compile error,
+// located: `cfg.server.prot` (botopink-lang's `examples/yamlconf` held it as a
+// commented-out line until 144 B-29 step H made it a cell; `modules/yamlconf`
+// is the program that runs).
+
+mod yamlconf;
+import {yamlconf.conf};
+import {io.terminal.print} from "std";
+
+val cfg = conf @`server:
+  host: "0.0.0.0"
+debug: true`;
+
+fn main() -> void {
+    print(cfg.server.prot);
+}

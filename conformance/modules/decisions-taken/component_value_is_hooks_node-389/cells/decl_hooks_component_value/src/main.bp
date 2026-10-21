@@ -1,0 +1,13 @@
+//// Reads what `#[graph]` recorded on the declarations of `pages`, the cell's
+//// subject: a decorator that reads `.hooks` runs after its module's bodies,
+//// so its typed meta is read from another module (`typeinfo-meta-hooks-pending`).
+
+pub mod pages;
+
+import {pages.Lista, pages.Graph};
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val listaNodes: string[] = comptime compiler.typeInfo(Lista).meta(Graph)?.nodes ?? [];
+    print(listaNodes.join(" "));
+}

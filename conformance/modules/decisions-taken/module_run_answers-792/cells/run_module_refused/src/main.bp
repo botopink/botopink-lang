@@ -1,0 +1,18 @@
+//// Decision 792 (4) — a `Refused`'s `module` names a file that did not compile: `run()` on it
+//// is refused `run-module-refused`, located at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/broken/mod.bp");
+    case loaded {
+        Ok(m) -> print("never");
+        Error(r) -> compiler.init({ ->
+            try r.module.run() catch { f ->
+                print("abort " + f.message)
+            }
+        });
+    }
+}
+
+pub fn main() -> void {}

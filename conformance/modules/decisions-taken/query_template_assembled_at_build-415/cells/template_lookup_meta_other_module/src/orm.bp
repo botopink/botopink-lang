@@ -1,0 +1,9 @@
+//// The meta record and the decorator that records it.
+
+import {compiler} from "std";
+
+pub type Table(name: string, schema: string = "public")
+
+pub fn entity(syntax decl: unknown, comptime name: string) -> void {
+    compiler.setMeta(Table(name: name));
+}

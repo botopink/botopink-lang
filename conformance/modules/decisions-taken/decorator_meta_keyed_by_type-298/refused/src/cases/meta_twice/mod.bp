@@ -1,0 +1,19 @@
+//// Decision 298 — `decl.setMeta(v)` stores one value of its type per
+//// declaration: a second `Entity` on `City` is refused at the annotation
+//// whose decorator recorded it.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.setMeta(Entity(table: table));
+}
+
+#[entity("cities")]
+#[entity("towns")]
+type City(name: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none");
+}

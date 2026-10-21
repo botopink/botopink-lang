@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+async fn work() -> Async<i32> {
+    defer print("done");
+    val v = await (async { 20 });
+    print("got " + v.toString());
+    return v + 1;
+}
+
+pub async fn main() -> Async<void> {
+    print(await work());
+}

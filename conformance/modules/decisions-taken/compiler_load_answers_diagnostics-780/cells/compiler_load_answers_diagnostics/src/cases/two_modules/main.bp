@@ -1,0 +1,8 @@
+mod helper;
+
+import {helper.twice};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(twice(2));
+}

@@ -1,0 +1,7 @@
+pub mod method_behavior_parameter_implementer;
+pub mod method_default_argument;
+pub mod method_name_collision;
+pub mod method_named_like_module_fn;
+pub mod method_on_number_literal;
+pub mod method_on_static_result;
+pub mod method_on_unimported_type;

@@ -1,0 +1,39 @@
+//// The checks are written here, beside the private rule and hint they name.
+
+import {compiler} from "std";
+
+pub type Check<T>(message: string, rule: fn(v: T) -> bool)
+
+pub type Note(text: string)
+
+pub fn check<T>(
+    syntax decl: T,
+    syntax message: string,
+    syntax rule: fn(v: T) -> bool,
+) -> void {
+    compiler.addMeta(Check(message: message, rule: rule));
+}
+
+pub behavior Noted {
+    fn make() -> Self;
+}
+
+pub fn note(syntax decl: Noted, syntax text: string) -> void {
+    compiler.addMeta(Note(text: text));
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+fn hint() -> string {
+    return "signup's hint";
+}
+
+#[check("the passwords differ", passwordsMatch)]
+#[note(hint())]
+pub type Signup(password: string, confirm: string) implement Noted {
+    fn make() -> Self {
+        return Signup(password: "", confirm: "");
+    }
+}

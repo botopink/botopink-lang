@@ -1,0 +1,11 @@
+//// A library whose `shout` takes only `comptime` parameters, so each call is
+//// expanded where it is written (decision 562). Its body is generic over the
+//// argument: `count.toUpper()` checks for a `T` of no known type, and fails
+//// only once a call makes `T` an `i32`.
+
+import {io.terminal.print} from "std";
+
+pub fn shout<T>(comptime value: T) -> void {
+    var count = value;
+    print(count.toUpper());
+}

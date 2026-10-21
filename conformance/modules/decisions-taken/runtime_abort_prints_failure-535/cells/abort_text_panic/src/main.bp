@@ -1,0 +1,13 @@
+//// Decision 535 — an uncaught `panic` writes `panic: <message>` to stderr on
+//// every target: the `Failure` an `attempt` would have answered, `<kind>:
+//// <message>`, never the runtime's own report (node's stack trace, erlang's
+//// raw term). What was printed before stays printed; nothing after it runs.
+
+import {io.terminal.print, failure.panic} from "std";
+
+pub fn main() -> void {
+    val text = "boom";
+    print("before");
+    panic(text);
+    print("after");
+}

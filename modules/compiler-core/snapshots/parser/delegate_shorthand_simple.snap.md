@@ -2,26 +2,35 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "log",
+      "fn": {
         "isPub": false,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "log",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "message",
             "typeRef": {
-              "named": "Self"
+              "named": "string"
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
         ],
-        "returnType": null
+        "returnType": {
+          "named": "void"
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

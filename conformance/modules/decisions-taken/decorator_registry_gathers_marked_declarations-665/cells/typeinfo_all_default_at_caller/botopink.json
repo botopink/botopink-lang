@@ -1,0 +1,1 @@
+{ "name": "typeinfo_all_default_at_caller", "targets": ["commonJS", "erlang", "beam"], "dependencies": { "frame": { "path": "deps/frame" }, "plugin": { "path": "deps/plugin" } } }

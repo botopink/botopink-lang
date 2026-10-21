@@ -1,0 +1,15 @@
+//// Decision 584 (2) — a marked lambda's body is a function body, and no
+//// `break <value>` ends it: `last` is refused at the `break`,
+//// `marker-lambda-break-value`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val last: fn() -> Iter<i32> = { iter ->
+        yield 1;
+        break 2;
+    };
+    for (last()) { x ->
+        print(x);
+    }
+}

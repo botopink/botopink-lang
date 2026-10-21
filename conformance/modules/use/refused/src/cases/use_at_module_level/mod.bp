@@ -1,0 +1,12 @@
+//// Decision 87 — `use` never leaves a function body: there is no module-level
+//// activation and no `use client;` directive; the boundary markers are library
+//// decorators.
+
+import {io.terminal.print} from "std";
+
+type Element(count: i32) implement Renderable
+component fn state(initial: i32) -> Component<i32> { return initial; }
+
+val c = use state(0);
+
+pub fn main() -> void { print(c); }

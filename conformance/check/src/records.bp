@@ -1,0 +1,345 @@
+//// The `.snap` text of a language cell (decisions 457, 475, 485, 789, 868): the
+//// records a cell's `main.snap` holds, read and written in one place — the port of
+//// `modules/compiler-cli/src/cli/cell_snap.zig`, plus decision 789's `build` record.
+////
+//// A `.snap` is one module's answer on one or every target, a record per line:
+////
+////     botopink-cell 1                 the format and its version, always line 1
+////     refused <message line>          the compiler refuses the module: its
+////     at <file>:<line>:<col>            `error…` line, and where (when located)
+////     label <text>                    the label printed beside the caret (485)
+////     from <file>:<line>:<col>        one `called from` line of a raise at build,
+////                                       innermost first (868)
+////     build <text>                    one line a build body printed (789; `build`
+////                                       alone for an empty line)
+////     out <text>                      one line the program printed (`out` alone
+////                                       for an empty line)
+////     no-final-newline                the last `out` line ended without `\n`
+////     abort                           the program exits non-zero
+////     stderr <text>                   with `abort`: the program's stderr contains
+////                                       this text
+////
+//// The records come in that order — refusals (`refused`, `at`, `label`, `from`),
+//// then `build`, then the output, then `abort`, then the `stderr` claims — and a
+//// file has exactly one spelling: it parses only when rendering what it parsed
+//// gives back its text. A refusal and an output never share a file. The header
+//// alone is the empty answer.
+////
+//// Everything but `stderr` is compared exactly; a `stderr` line is a claim the
+//// abort's stderr contains.
+////
+//// Text, not bytes: the program runs on commonJS, where a string is UTF-16. Every
+//// cut here is at an ASCII `\n` or ` `, which no UTF-8 multi-byte sequence holds,
+//// so each piece is the same text `cell_snap.zig` cuts from the file's bytes.
+
+/// Line 1 of every `.snap`: the format and its version.
+pub val HEADER: string = "botopink-cell 1";
+
+/// A candidate's suffix, beside the accepted file it would replace.
+pub val NEW_SUFFIX: string = ".new";
+
+/// One refusal of a module: the compiler's `error…` line, its location when the
+/// diagnostic carries one, the label beside the caret, and the `called from`
+/// frames (`from` records; `from` is a reserved word, so the field is `frames`).
+pub type Refusal(
+    message: string,
+    at: ?string = null,
+    label: ?string = null,
+    frames: string[] = [],
+)
+
+/// One module's answer.
+pub type Snap(
+    refusals: Refusal[] = [],
+    // The lines the build bodies printed (789), each without its newline.
+    build: string[] = [],
+    // What the program printed, exactly.
+    stdout: string = "",
+    abort: bool = false,
+    // Texts the program's stderr must contain (only with `abort`).
+    stderr: string[] = [],
+) {
+    pub fn isEmpty(self: Self) -> bool {
+        return self.refusals.length == 0
+            && self.build.length == 0
+            && self.stdout == ""
+            && !self.abort
+            && self.stderr.length == 0;
+    }
+}
+
+/// Why a `.snap` did not parse: its 1-based line and the reason.
+pub type Malformed(line: i32, reason: string)
+
+fn fail(line: i32, reason: string) -> Result<Snap, Malformed> {
+    throw Malformed(line: line, reason: reason);
+}
+
+fn withAt(r: Refusal, at: string) -> Refusal {
+    return Refusal(message: r.message, at: at, label: r.label, frames: r.frames);
+}
+
+fn withLabel(r: Refusal, label: string) -> Refusal {
+    return Refusal(message: r.message, at: r.at, label: label, frames: r.frames);
+}
+
+fn withFrame(r: Refusal, frame: string) -> Refusal {
+    return Refusal(message: r.message, at: r.at, label: r.label, frames: r.frames.append([frame]));
+}
+
+/// Parse a `.snap`; a malformed one answers its line and the reason.
+pub fn parse(text: string) -> Result<Snap, Malformed> {
+    if (text == "" || !text.endsWith("\n"))
+        return fail(text.split("\n").length, "every record ends with a newline");
+    val lines = text.slice(0, text.length - 1).split("\n");
+    var refusals: Refusal[] = [];
+    var build: string[] = [];
+    var stdout = "";
+    var stderr: string[] = [];
+    var abort = false;
+    // 0 refusals · 1 build · 2 output · 3 after `no-final-newline` · 4 after `abort` · 5 stderr
+    var phase = 0;
+    var lastOutEmpty = false;
+    var n = 0;
+    while (n < lines.length) {
+        val line = lines.at(n) ?? "";
+        n = n + 1;
+        if (n == 1) {
+            if (line != HEADER)
+                return fail(n, "line 1 must be `botopink-cell 1`");
+            continue;
+        }
+        val space = line.indexOf(" ");
+        val word = if (space < 0) line else line.slice(0, space);
+        val hasRest = space >= 0;
+        val rest = if (space < 0) "" else line.slice(space + 1);
+        if (hasRest && rest == "")
+            return fail(n, "a record's text is never empty (an empty output line is `out` alone)");
+        val count = refusals.length;
+        val last: ?Refusal = refusals.at(count - 1);
+
+        if (word == "refused") {
+            if (phase == 1) return fail(n, "`refused` comes before `build`");
+            if (phase != 0) return fail(n, "`refused` comes before any output");
+            if (!hasRest)
+                return fail(n, "`refused` names the compiler's message");
+            refusals = refusals.append([Refusal(message: rest)]);
+        } else if (word == "at") {
+            if (!hasRest) return fail(n, "`at` names `<file>:<line>:<col>`");
+            if (phase != 0 || count == 0 || last?.at != null)
+                return fail(n, "`at` follows its `refused` line");
+            refusals = refusals
+                .slice(0, count - 1)
+                .append([withAt(last ?? Refusal(message: ""), rest)]);
+        } else if (word == "label") {
+            if (!hasRest)
+                return fail(n, "`label` names the text printed beside the caret");
+            if (phase != 0
+                || count == 0
+                || last?.at == null
+                || last?.label != null)
+                return fail(n, "`label` follows its `at` line");
+            refusals = refusals
+                .slice(0, count - 1)
+                .append([withLabel(last ?? Refusal(message: ""), rest)]);
+        } else if (word == "from") {
+            if (!hasRest) return fail(n, "`from` names `<file>:<line>:<col>`");
+            if (phase != 0 || count == 0 || last?.at == null)
+                return fail(n, "`from` follows its `at` line");
+            refusals = refusals
+                .slice(0, count - 1)
+                .append([withFrame(last ?? Refusal(message: ""), rest)]);
+        } else if (word == "build") {
+            if (phase > 1)
+                return fail(n, "`build` comes before `out`, `no-final-newline`, `abort` and `stderr`");
+            phase = 1;
+            build = build.append([rest]);
+        } else if (word == "out") {
+            if (count > 0) return fail(n, "a refused module prints nothing");
+            if (phase > 2)
+                return fail(n, "`out` comes before `no-final-newline`, `abort` and `stderr`");
+            phase = 2;
+            stdout = stdout + rest + "\n";
+            lastOutEmpty = !hasRest;
+        } else if (word == "no-final-newline") {
+            if (hasRest) return fail(n, "`no-final-newline` takes no text");
+            if (phase != 2)
+                return fail(n, "`no-final-newline` follows the last `out` line");
+            if (lastOutEmpty)
+                return fail(n, "`no-final-newline` after an empty `out` line has one spelling: drop both");
+            stdout = stdout.slice(0, stdout.length - 1);
+            phase = 3;
+        } else if (word == "abort") {
+            if (hasRest)
+                return fail(n, "`abort` takes no text — the exit status is never pinned");
+            if (count > 0) return fail(n, "a refused module does not run");
+            if (phase > 3)
+                return fail(n, "`abort` is written once, after the output");
+            abort = true;
+            phase = 4;
+        } else if (word == "stderr") {
+            if (!hasRest)
+                return fail(n, "`stderr` names the text the abort's stderr contains");
+            if (!abort)
+                return fail(n, "`stderr` names an abort: it follows `abort`");
+            phase = 5;
+            stderr = stderr.append([rest]);
+        } else return fail(n, "unknown record (refused, at, label, from, build, out, no-final-newline, abort, stderr)");
+    }
+    val snap = Snap(refusals: refusals, build: build, stdout: stdout, abort: abort, stderr: stderr);
+    // One spelling: whatever the rules above let through must render back.
+    if (render(snap) != text)
+        return fail(n, "not the canonical spelling of its records");
+    return snap;
+}
+
+fn record(word: string, text: string) -> string {
+    return if (text == "") word + "\n" else word + " " + text + "\n";
+}
+
+/// The one spelling of `snap`.
+pub fn render(snap: Snap) -> string {
+    var out = HEADER + "\n";
+    for (snap.refusals) { r ->
+        out = out + "refused " + r.message + "\n";
+        if (r.at) {
+            at ->
+            out = out + "at " + at + "\n";
+        }
+        if (r.label) {
+            l ->
+            out = out + "label " + l + "\n";
+        }
+        for (r.frames) { f ->
+            out = out + "from " + f + "\n";
+        }
+    }
+    for (snap.build) { b ->
+        out = out + record("build", b);
+    }
+    if (snap.stdout != "") {
+        val ends = snap.stdout.endsWith("\n");
+        val body = if (ends)
+            snap.stdout.slice(0, snap.stdout.length - 1)
+        else
+            snap.stdout;
+        for (body.split("\n")) { line ->
+            out = out + record("out", line);
+        }
+        if (!ends) out = out + "no-final-newline\n";
+    }
+    if (snap.abort) out = out + "abort\n";
+    for (snap.stderr) { s ->
+        out = out + "stderr " + s + "\n";
+    }
+    return out;
+}
+
+fn sameLines(a: string[], b: string[]) -> bool {
+    if (a.length != b.length) return false;
+    var i = 0;
+    while (i < a.length) {
+        if ((a.at(i) ?? "") != (b.at(i) ?? "")) return false;
+        i = i + 1;
+    }
+    return true;
+}
+
+fn sameRefusal(e: Refusal, o: Refusal) -> bool {
+    return e.message == o.message
+        && e.at == o.at
+        && e.label == o.label
+        && sameLines(e.frames, o.frames);
+}
+
+/// Whether the observed answer is the accepted one: the refusals, the build
+/// lines, the output and the abort equal, and every `stderr` claim contained in
+/// `observedStderr`.
+pub fn matches(expected: Snap, observed: Snap, observedStderr: string) -> bool {
+    if (expected.refusals.length != observed.refusals.length) return false;
+    var i = 0;
+    while (i < expected.refusals.length) {
+        val e = expected.refusals.at(i) ?? Refusal(message: "");
+        val o = observed.refusals.at(i) ?? Refusal(message: "");
+        if (!sameRefusal(e, o)) return false;
+        i = i + 1;
+    }
+    if (!sameLines(expected.build, observed.build)) return false;
+    if (expected.stdout != observed.stdout) return false;
+    if (expected.abort != observed.abort) return false;
+    return expected.stderr.all({ s -> observedStderr.contains(s) });
+}
+
+/// The candidate for an observed answer: what it was, plus the accepted file's
+/// `stderr` claims that still hold (a candidate never invents one).
+pub fn candidate(expected: ?Snap, observed: Snap, observedStderr: string) -> Snap {
+    var kept: string[] = [];
+    if (observed.abort)
+        if (expected) {
+            e ->
+            kept = e.stderr.filter({ s -> observedStderr.contains(s) });
+        }
+    return Snap(refusals: observed.refusals, build: observed.build, stdout: observed.stdout, abort: observed.abort, stderr: kept);
+}
+
+fn splitLines(text: string) -> string[] {
+    if (text == "") return [];
+    val body = if (text.endsWith("\n"))
+        text.slice(0, text.length - 1)
+    else
+        text;
+    return body.split("\n");
+}
+
+/// A line diff of `before` against `after`: `- ` a line only `before` has, `+ `
+/// a line only `after` has, `  ` a line both keep (longest common subsequence).
+pub fn diff(before: string, after: string) -> string {
+    val a = splitLines(before);
+    val b = splitLines(after);
+    // rows[i][j]: the common length of a[i..] and b[j..], built from the last row up.
+    var below: i32[] = array.repeat(0, b.length + 1);
+    var rows: i32[][] = [below];
+    var i = a.length;
+    while (i > 0) {
+        i = i - 1;
+        var row: i32[] = [0];
+        var j = b.length;
+        while (j > 0) {
+            j = j - 1;
+            // `row` holds, reversed, the cells j+1 … b.length of this row.
+            val right = row.at(0) ?? 0;
+            val cell = if ((a.at(i) ?? "") == (b.at(j) ?? ""))
+                (below.at(j + 1) ?? 0) + 1
+            else if ((below.at(j) ?? 0) > right) {
+                below.at(j) ?? 0;
+            } else right;
+            row = row.prepend(cell);
+        }
+        below = row;
+        rows = rows.prepend(row);
+    }
+    var out = "";
+    i = 0;
+    var j = 0;
+    while (i < a.length || j < b.length) {
+        val ai = a.at(i) ?? "";
+        val bj = b.at(j) ?? "";
+        if (i < a.length && j < b.length && ai == bj) {
+            out = out + "  " + ai + "\n";
+            i = i + 1;
+            j = j + 1;
+        } else if (i < a.length
+            && (j == b.length || lcs(rows, i + 1, j) >= lcs(rows, i, j + 1))) {
+            out = out + "- " + ai + "\n";
+            i = i + 1;
+        } else {
+            out = out + "+ " + bj + "\n";
+            j = j + 1;
+        }
+    }
+    return out;
+}
+
+fn lcs(rows: i32[][], i: i32, j: i32) -> i32 {
+    return (rows.at(i) ?? []).at(j) ?? 0;
+}

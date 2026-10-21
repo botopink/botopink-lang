@@ -1,0 +1,5 @@
+//// The package the workspace hands to its members.
+
+pub fn greeting() -> string {
+    return "hello from the workspace";
+}

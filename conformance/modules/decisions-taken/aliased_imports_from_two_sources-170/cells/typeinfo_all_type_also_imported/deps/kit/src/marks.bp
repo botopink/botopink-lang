@@ -1,0 +1,13 @@
+//// `#[service]` gives a type the member its catalogue calls.
+
+import {compiler} from "std";
+
+pub fn service(syntax decl: unknown) -> void {
+    compiler.addMember(
+        "pub fn make() -> "
+            + compiler.name(decl)!
+            + " { return "
+            + compiler.name(decl)!
+            + "(tag: \"made\"); }",
+    );
+}

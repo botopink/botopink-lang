@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+pub iter fn nums() -> Iter<i32> {
+    defer {
+        yield 9;
+    }
+    yield 1;
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

@@ -1,0 +1,6 @@
+val hasFooter = use hasSlot("footer");
+---
+<section data-footer={hasFooter}>
+  <Slot />
+  <Slot name="footer">no footer</Slot>
+</section>

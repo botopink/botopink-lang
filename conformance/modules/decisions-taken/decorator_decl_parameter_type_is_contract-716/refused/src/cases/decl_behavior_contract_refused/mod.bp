@@ -1,0 +1,22 @@
+//// Decision 716 (1) — `syntax decl: Module`, a behavior, admits a type that
+//// implements it: `City` does not `implement Module`, so the annotation is
+//// refused, located, naming the type and the behavior; the executor typed by
+//// `Module` is never checked against `City`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Module {
+    fn make() -> Self;
+    fn start(self: Self) -> string;
+}
+
+pub fn module(syntax decl: Module) -> void {
+    compiler.init({ -> print(decl.make().start()) });
+}
+
+#[module]
+pub type City(name: string)
+
+pub fn main() -> void {
+    print(City(name: "Recife").name);
+}

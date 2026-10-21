@@ -1,0 +1,13 @@
+//// Decisions 170, 578, 719, 859 — a `syntax` expression function's code is a call chain
+//// over the library's own type (`Seq<T>`, which this module never imports), ending in
+//// `toArray()`: the answer is an array, so the array methods `join` and `length` run on
+//// it here, not on a `Seq`.
+
+import {kit.evensTimesTen} from "kit";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val xs = evensTimesTen([1, 2, 3, 4, 5, 6]);
+    print(xs.join(","));
+    print(xs.length.toString());
+}

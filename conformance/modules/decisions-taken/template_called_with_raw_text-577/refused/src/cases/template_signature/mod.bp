@@ -1,0 +1,14 @@
+//// Decision 577 (4) — a template takes its text (`syntax q: string`) and
+//// nothing else: a second parameter is refused at the parameter
+//// (`template-signature`); such a function is an ordinary function, or
+//// reads its input from the text.
+
+import {compiler, io.terminal.print} from "std";
+
+fn repeat(syntax q: string, times: i32) -> string {
+    return compiler.text(q);
+}
+
+pub fn main() -> void {
+    print(repeat @`x`);
+}

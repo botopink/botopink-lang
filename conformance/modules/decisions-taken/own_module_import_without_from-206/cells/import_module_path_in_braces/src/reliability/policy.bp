@@ -1,0 +1,7 @@
+pub fn nextDelay(attempt: i32) -> i32 {
+    return attempt * 100;
+}
+
+pub fn maxAttempts() -> i32 {
+    return 3;
+}

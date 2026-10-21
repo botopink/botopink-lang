@@ -1,0 +1,3 @@
+iter fn h() -> Iter<i32> {
+    yield await count();        // iter-await: no `await` in an Iter — use AsyncIter
+}

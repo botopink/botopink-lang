@@ -1,0 +1,52 @@
+import {types.Type} from "std";
+
+pub type Target {
+    Blank,
+    Parent,
+}
+
+type AnchorAttrs(href: string, target: ?Target = null)
+
+type GlobalAttrs(id: ?string = null, class: ?string = null, children: string[] = [])
+
+// One props record per native tag, layered from the shared attribute sets.
+pub val AnchorProps = Type.merge(AnchorAttrs, GlobalAttrs);
+
+pub type Element(tag: string, attrs: string[], children: string[]) {
+    pub fn render(self: Self) -> string {
+        val open = [self.tag].append(self.attrs).join(" ");
+        return "<"
+            + open
+            + ">"
+            + self.children.join("")
+            + "</"
+            + self.tag
+            + ">";
+    }
+}
+
+fn attr(name: string, value: ?string) -> string[] {
+    if (value == null) return [];
+    return [name + "=\"" + value! + "\""];
+}
+
+fn targetName(t: ?Target) -> ?string {
+    if (t == null) return null;
+    return case t! {
+        Blank {
+            "_blank"
+        }
+        Parent {
+            "_parent"
+        }
+    };
+}
+
+// The one builder of `<a>`: its props record, nothing else.
+pub fn a(props: AnchorProps) -> Element {
+    val attrs = attr("href", props.href)
+        .append(attr("target", targetName(props.target)))
+        .append(attr("id", props.id))
+        .append(attr("class", props.class));
+    return Element(tag: "a", attrs: attrs, children: props.children);
+}

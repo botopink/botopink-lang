@@ -1,0 +1,14 @@
+import {compiler} from "std";
+
+pub fn describe<T>(syntax decl: T, comptime prefix: string) -> void {
+    val sep = ": ";
+    compiler.addMember("describe", fn(self: T) -> string {
+        val info = comptime compiler.typeInfo(T);
+        return prefix
+            + sep
+            + compiler.name(decl)!
+            + " with "
+            + info.fields.length.toString()
+            + " fields";
+    });
+}

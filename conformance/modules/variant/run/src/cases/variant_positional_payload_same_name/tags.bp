@@ -1,0 +1,8 @@
+//// One of two enums of the program declaring a variant named `Item`, each
+//// with its own field: the bare name alone does not say which field
+//// position 0 is.
+
+pub type Tag {
+    Item(label: string),
+    Blank,
+}

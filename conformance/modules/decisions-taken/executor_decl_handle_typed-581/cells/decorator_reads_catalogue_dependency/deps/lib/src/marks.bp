@@ -1,0 +1,16 @@
+//// A decorator whose body reads the catalogue of its own build (decision 551).
+
+import {compiler} from "std";
+
+pub fn seen(syntax decl: unknown) -> void {
+    compiler.setMeta(Seen(named: compiler.name(decl)!));
+}
+
+pub fn counted(syntax decl: unknown) -> void {
+    val n = @TypeInfo.all(with: seen).length;
+    compiler.setMeta(Counted(named: compiler.name(decl)!, seen: n));
+}
+
+pub type Seen(named: string)
+
+pub type Counted(named: string, seen: i32)

@@ -1,0 +1,24 @@
+//// Decisions 370 (2) and 372 — the typed member `decl.addMember(name, fn…)`
+//// is code given to the program like `decl.addMember(source)`: a decorator
+//// that reads `decl.hooks` runs after the module's bodies, so the member
+//// would come too late for them, and the call is refused where it is written.
+
+import {compiler, io.terminal.print} from "std";
+
+fn graph<T>(syntax decl: T) -> void {
+    val count = compiler.hooks(decl).length;
+    compiler.setMeta(Graph(count: count));
+    compiler.addMember("extra", fn(self: T) -> i32 {
+        return 1;
+    });
+}
+
+#[graph]
+pub type Account(name: string)
+
+pub fn main() -> void {
+    print(Account(name: "a").name);
+}
+
+// What `#[graph]` records: how many nodes `decl.hooks` lists.
+type Graph(count: i32)

@@ -1,0 +1,15 @@
+//// Decisions 578 (1), 719 — a `syntax q: string` parameter takes a template
+//// text only: `markup("…")` with ordinary parentheses is refused at the
+//// call (`syntax-call-outside-syntax`); only a `syntax` parameter of
+//// another type takes the expression written between the parentheses.
+
+import {compiler} from "std";
+import {io.terminal.print} from "std";
+
+pub fn markup(syntax q: string) -> string {
+    return compiler.build("\"" + compiler.text(q) + "\"");
+}
+
+pub fn main() -> void {
+    print(markup("<p>hi</p>"));
+}

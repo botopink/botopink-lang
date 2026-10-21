@@ -1,0 +1,19 @@
+//// 144 B-155 — a function of a dependency's module called module-qualified inside a `comptime` block
+//// (`jwt.sign(x)` after `import {jwt} from "sec"`) is the function the block carries, as `sign(x)`
+//// imported by name is. The parent refused it (`the comptime block calls `.sign(…)` with 1
+//// argument(s) …, which no primitive type and no type the block reaches provides`) and, with a
+//// statement in the block, aborted the compiler.
+
+import {jwt} from "sec";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val once = comptime jwt.sign("a");
+    print(once);
+    val twice = comptime {
+        val inner = jwt.sign("a");
+        jwt.sign(inner)
+    };
+    print(twice);
+    print(comptime jwt.verify("signed(x)"));
+}

@@ -1,0 +1,18 @@
+//// Decision 951 — a `?T` is matched by `null` and `_`, the value read `x!` (330): the
+//// binder arm of decision 54 (`case x { null { … } v { … } }`) is refused
+//// `case-bare-name-arm` at `v`, like a name alone in any other arm.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val x: ?i32 = 5;
+    val a = case x {
+        null {
+            "absent"
+        }
+        v {
+            "present " + v.toString()
+        }
+    };
+    print(a);
+}

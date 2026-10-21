@@ -1,0 +1,12 @@
+//// Decision 408 — where the position has a type, a typed function
+//// expression's written types are checked against it: a `string` parameter
+//// where `fn(x: i32) -> i32` is expected is refused at the expression.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val f: fn(x: i32) -> i32 = fn(x: string) -> i32 {
+        return 1;
+    };
+    print(f(1));
+}

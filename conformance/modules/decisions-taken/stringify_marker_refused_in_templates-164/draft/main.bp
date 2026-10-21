@@ -1,0 +1,20 @@
+//// Decision 164 — `$stringify` is refused in every user template, located, naming the marker; the documented markers are `$self`, `$N`, `$
+
+import {compiler, io.terminal.print} from "std";
+
+// The documented markers: `$0`, `$1`, … over the declared parameters, `$args` for all of them.
+#[compiler.external(.JavaScript("Math.max($0, $1)"), .Erlang("erlang:max($0, $1)"))]
+declare fn larger(a: i32, b: i32) -> i32;
+
+#[compiler.external(.JavaScript("Math.min($args)"), .Erlang("lists:min([$args])"))]
+declare fn smallest(a: i32, b: i32, c: i32) -> i32;
+
+// `$stringify` is no marker: the host's own conversion is written instead.
+#[compiler.external(.JavaScript("JSON.stringify($stringify($0))"), .Erlang("iolist_to_binary($stringify($0))"))]
+declare fn shown(x: i32) -> string;
+
+pub fn main() -> void {
+    print(larger(2, 7));
+    print(smallest(4, 1, 9));
+    print(shown(42));
+}

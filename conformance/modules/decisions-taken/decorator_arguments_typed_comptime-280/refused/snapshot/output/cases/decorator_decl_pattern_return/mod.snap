@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[page]` expects a declaration of type `fn(Route<P>) -> View`, and `blog` is `fn(Route<string>) -> string`
+at src/cases/decorator_decl_pattern_return/mod.bp:18:3

@@ -1,0 +1,11 @@
+//// Three names `std/collections` declares too: a type and two functions.
+
+pub type Queue(label: string, size: i32)
+
+pub fn lt(a: i32, b: i32) -> bool {
+    return a < b;
+}
+
+pub fn reverse(a: i32, b: i32, c: i32) -> i32 {
+    return c * 100 + b * 10 + a;
+}

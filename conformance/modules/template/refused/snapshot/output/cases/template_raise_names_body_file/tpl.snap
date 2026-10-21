@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error: {error,{panic,<<"boom hi">>}}
+at src/cases/template_raise_names_body_file/tpl.bp:5:5
+from src/cases/template_raise_names_body_file/mod.bp:12:11

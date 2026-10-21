@@ -1,0 +1,41 @@
+//// Decision 723 — `use provide(ctx)` takes a context value alone: a
+//// component that provides another value makes a context of the same type
+//// in its body, `val c = comptime createContext(Theme(…));`, then `use
+//// provide(c)`. `Label` reads `use context(themeContext)`: under `Dark` the
+//// context `Dark` made, under `Again` the declared default provided again,
+//// with no provider the handle's default.
+
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Label() -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: t.mode);
+}
+
+component fn Dark() -> Component<Element> {
+    val c = comptime createContext(Theme(mode: "dark"));
+    use provide(c);
+    val l = use Label();
+    return Element(text: l.text);
+}
+
+component fn Again() -> Component<Element> {
+    use provide(themeContext);
+    val l = use Label();
+    return Element(text: l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val l = (await Label().run(RenderScope.root())).value;
+    print(l.text);
+    val d = (await Dark().run(RenderScope.root())).value;
+    print(d.text);
+    val a = (await Again().run(RenderScope.root())).value;
+    print(a.text);
+}

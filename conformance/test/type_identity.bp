@@ -1,0 +1,23 @@
+//// Decision 8 §4 — a value knows its own type. Two declarations with the same
+//// fields are two types, so their values are never equal, however alike the
+//// fields are.
+////
+//// This is the botopink-level statement of `13-module-identity`: the atom goes
+//// inside the value. Nothing else in the suite asserts it. The cell needs no
+//// union and no `unknown`, so what it fails on is identity and nothing else —
+//// its siblings `type_identity_unknown`, `_union` and `_case` carry the rest.
+
+type Person(name: string, age: i32)
+
+type Vec(name: string, age: i32)
+
+test "§4 two types with the same fields are different values" {
+    val p = Person(name: "Ana", age: 30);
+    val v = Vec(name: "Ana", age: 30);
+    assert (p == v) == false;
+}
+
+//// Two values of the SAME type with equal fields are equal on every target
+//// (decision 210, structural equality); `run/record_structural_equality.bp`
+//// pins that half on all four backends, since `botopink test` does not reach
+//// wasm.

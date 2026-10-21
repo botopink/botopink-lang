@@ -1,0 +1,30 @@
+//// Decision 562 — `boot()` takes only `comptime` parameters and reads one's
+//// `.value`, so the call is replaced by the code its body emits, here in
+//// `main`: the catalogue's three modules are ordered at build by their
+//// `order` meta, and each one's `say` and `start` are written in that order —
+//// nothing iterates the catalogue when the program runs, and no entry's
+//// `value` is called at build.
+
+import {boot, module} from "frame";
+import {io.terminal.print} from "std";
+
+#[module(2)]
+pub fn cache() -> string {
+    return "cache up";
+}
+
+#[module(3)]
+pub fn http() -> string {
+    return "http up";
+}
+
+#[module(1)]
+pub fn db() -> string {
+    return "db up";
+}
+
+pub fn main() -> void {
+    print("boot");
+    boot();
+    print("done");
+}

@@ -1,0 +1,14 @@
+//// A second package declaring a `Lifecycle` of its own.
+
+pub type Lifecycle {
+    Eager,
+    Slow,
+}
+
+pub fn describe() -> string {
+    val l: Lifecycle = Lifecycle.Slow;
+    return case l {
+        Eager -> "other eager";
+        Slow -> "other slow";
+    };
+}

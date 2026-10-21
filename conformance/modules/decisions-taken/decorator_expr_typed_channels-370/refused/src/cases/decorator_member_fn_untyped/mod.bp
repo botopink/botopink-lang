@@ -1,0 +1,23 @@
+//// Decision 370 (2) — a member is written as in the type's body: every
+//// parameter of the function handed to `decl.addMember(name, fn…)` is typed.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) -> void {
+    compiler.addMember("validate", fn(self) {
+        rule(self);
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() -> void {
+    print("unreached");
+}

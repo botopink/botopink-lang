@@ -1,0 +1,1 @@
+{ "name": "import_record_beside_std_record_of_same_name", "dependencies": { "shelf": { "path": "deps/shelf" } } }

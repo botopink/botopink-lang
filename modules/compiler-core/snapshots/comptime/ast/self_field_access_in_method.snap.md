@@ -1,0 +1,56 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type Point(
+    x: i32,
+    y: i32) {
+    fn sum(self: Self) -> i32 {
+        return self.x + self.y;
+    }
+}
+fn main() -> void {
+    print(Point(x: 1, y: 2).sum());
+}
+
+import {io.terminal.print} from "std";
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "Point",
+      "fields": {
+        "x": "i32",
+        "y": "i32"
+      },
+      "methods": [
+        {
+          "name": "sum",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "i32"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "main",
+      "is_pub": false,
+      "params": [],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "print(Point(x: 1, y: 2).sum());"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -1,10 +1,10 @@
 ----- SOURCE
 ```botopink
-fn greet() { return 42; }
+fn greet() -> i32 { return 42; }
 val r = greet(
               ↑
 ```
 
 ----- SIGNATURE HELP at (line 1, char 14)
-► greet() -> void
+► greet() -> i32
 activeSignature: 0  activeParameter: 0

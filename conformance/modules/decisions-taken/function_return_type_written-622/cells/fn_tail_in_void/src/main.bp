@@ -1,0 +1,9 @@
+//// Decision 409 — in a body answering nothing, a tail of another type is
+//// refused at it: `noRet` answers nothing (`-> void`), and its last expression written
+//// without `;` is an `i32`. With `;` it is a statement and discarded.
+
+fn noRet(x: i32) -> void { x + 1 }
+
+pub fn main() -> void {
+    noRet(1);
+}

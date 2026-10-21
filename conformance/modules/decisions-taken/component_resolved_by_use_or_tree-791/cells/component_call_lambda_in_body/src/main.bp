@@ -1,0 +1,25 @@
+//// Decision 791 (1) — a call of a component only makes its lambda, in a
+//// component body too: `mk(2)` in `Sheet`, a body written
+//// `-> Component<string>`, answers `Component<Prop>`, so it binds to a `val`
+//// written with that type and sits in a list of them; nothing runs (`ran`
+//// never prints). The root is run by `Sheet().run(RenderScope.root())`.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type Prop(d: string) implement Renderable
+
+component fn mk(n: i32) -> Component<Prop> {
+    print("ran " + n.toString());
+    return Prop(d: n.toString());
+}
+
+component fn Sheet() -> Component<string> {
+    val x: Component<Prop> = mk(2);
+    val xs: Component<Prop>[] = [x, mk(3)];
+    return "made " + xs.length.toString();
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Sheet().run(RenderScope.root());
+    print(r.value);
+}

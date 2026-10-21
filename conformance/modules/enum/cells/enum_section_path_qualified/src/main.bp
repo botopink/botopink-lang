@@ -1,0 +1,26 @@
+import {io.terminal.print} from "std";
+
+type Token {
+    Color {
+        Red {
+            100,
+            500,
+        }
+    }
+}
+
+type Border {
+    Color {
+        Red {
+            100,
+            500,
+        }
+    }
+}
+
+fn main() -> void {
+    val a = Token.Color.Red.500; // Token
+    val b = Border.Color.Red.500; // Border
+    print(a == Token.Color.Red.500); // true
+    print(b == Border.Color.Red.500); // true
+}

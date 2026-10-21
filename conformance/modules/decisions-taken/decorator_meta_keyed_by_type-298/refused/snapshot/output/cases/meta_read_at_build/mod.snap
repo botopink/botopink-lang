@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: typeinfo-meta-at-build: `meta(T)` on a catalogue entry reads run-time data, and this body runs while the program compiles
+at src/cases/meta_read_at_build/mod.bp:15:24

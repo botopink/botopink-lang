@@ -1,0 +1,8 @@
+//// A prelude item, found by `#[bpp.htmlPrelude]`: a `.bpp` sees it by its plain name.
+
+import {bpp} from "std";
+
+#[bpp.htmlPrelude]
+pub fn shout(s: string) -> string {
+    return s.toUpper() + "!";
+}

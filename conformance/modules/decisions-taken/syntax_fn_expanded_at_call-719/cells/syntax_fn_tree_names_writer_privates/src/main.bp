@@ -1,0 +1,22 @@
+//// Decisions 170, 578, 719, 859 — every name of the code a template or a `syntax`
+//// function builds resolves in the module that wrote it: `kit`'s private function
+//// `boxOf`, its private value `factor` and `Box`'s private method `scaled` are
+//// reached from this package, and this module's own `factor` and `boxOf` capture
+//// none of them. The `${…}` holes are this module's code.
+
+import {kit.measure, kit.measured} from "kit";
+import {io.terminal.print} from "std";
+
+val factor = 1;
+
+fn boxOf(n: i32) -> i32 {
+    return n;
+}
+
+pub fn main() -> void {
+    val m = measure @`abc`;
+    print(m.toString());
+    val x = 2;
+    print(measured(x + factor).toString());
+    print(boxOf(factor).toString());
+}

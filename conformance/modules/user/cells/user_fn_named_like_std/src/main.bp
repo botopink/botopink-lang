@@ -1,0 +1,21 @@
+//// A program's own function named like a std binding (`run`, `size`) is the
+//// program's: a call resolves to the user's declaration on every target, even
+//// where the program imports the std namespaces that declare `run`
+//// (`io.process`) and `size` (`io.terminal`).
+
+import {io.process, io.terminal.print} from "std";
+import {io.terminal} from "std";
+
+fn run(cmd: string) -> string {
+    return "ran " + cmd;
+}
+
+fn size(n: i32) -> i32 {
+    return n + 1;
+}
+
+pub fn main() -> void {
+    print(run("a"));
+    print(size(7));
+    print(terminal.size());
+}

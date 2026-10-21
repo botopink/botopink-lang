@@ -1,0 +1,15 @@
+//// Decision 529 (2) — a name present both as a parameter and as a field of the
+//// record parameter's type is refused at the declaration: a call passes both
+//// by label, so the name would stand for two.
+
+import {io.terminal.print} from "std";
+
+type CardProps(title: string, size: i32 = 1)
+
+fn Card(..props: CardProps, size: i32) -> string {
+    return props.title;
+}
+
+pub fn main() -> void {
+    print(Card(title: "a", size: 2));
+}

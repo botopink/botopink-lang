@@ -1,0 +1,22 @@
+botopink-cell 1
+out 2 8 2,4,6 8
+out true
+out -1 6 2,4,6 8
+out true
+out 1000 9007199254740993 9007199254740992 1000 9007199254740993 9223372036854775807
+out true
+out true
+out HÉLLO, WORLD|héllo, world|16|Héllo+World|éll|9|true|HéLlo, World
+out true
+out 1.75 0.3333333333333333 0.30000000000000004 2.0e-7
+out true
+out 6,2,4 2,1,3 3 3,2 6 true
+out true
+out 3 -3 1 -1
+out true
+out 7
+out 0
+out true false 8 2
+out true
+out false true 0 -1
+out true

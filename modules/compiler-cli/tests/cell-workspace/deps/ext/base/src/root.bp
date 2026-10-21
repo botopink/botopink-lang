@@ -1,0 +1,5 @@
+//// The package its sibling `shared` depends on as a workspace member.
+
+pub fn base() -> string {
+    return "base";
+}

@@ -1,0 +1,6 @@
+//// The second enum declaring `Item` (see `tags.bp`).
+
+pub type Count {
+    Item(count: i32),
+    Zero,
+}

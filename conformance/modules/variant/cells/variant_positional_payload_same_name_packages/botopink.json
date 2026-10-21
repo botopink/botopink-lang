@@ -1,0 +1,1 @@
+{ "name": "variant_positional_payload_same_name_packages", "dependencies": { "labelled": { "path": "deps/labelled" }, "unlabelled": { "path": "deps/unlabelled" } } }

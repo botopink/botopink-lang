@@ -1,0 +1,3 @@
+pub fn label(n: i32) -> string {
+    return "magnitude " + n.toString();
+}

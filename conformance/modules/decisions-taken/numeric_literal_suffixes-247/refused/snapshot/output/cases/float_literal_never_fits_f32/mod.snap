@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `1.5` is an `f64` where an `f32` is expected — write `1.5f`
+at src/cases/float_literal_never_fits_f32/mod.bp:11:17

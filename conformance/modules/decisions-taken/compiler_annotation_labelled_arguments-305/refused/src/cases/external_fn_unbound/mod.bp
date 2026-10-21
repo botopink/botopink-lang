@@ -1,0 +1,16 @@
+//// Decision 305 — `fn: <name>` names a botopink function by its identifier,
+//// resolved in the module like any other name: a misspelt one is the ordinary
+//// unbound-name error, at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript(body: tanBdy), .Erlang(body: tanBdy), .Wasm(body: tanBdy))]
+pub declare fn tanOf(x: f64) -> f64;
+
+fn tanBody(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() -> void {
+    print(tanOf(0.0));
+}

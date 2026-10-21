@@ -1,0 +1,10 @@
+//// Decision 533 — a division by zero inside a larger expression at build reads
+//// `(division by zero)` as a lone one does, located at the operator that
+//// divides — the `/` — never at the whole expression.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val atBuild = comptime 1 + 6 / (3 - 3) * 2;
+    print(atBuild);
+}

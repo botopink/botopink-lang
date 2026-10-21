@@ -1,0 +1,11 @@
+//// B-110 — an unknown generic type name in a return type is `unknown type`.
+
+import {io.terminal.print} from "std";
+
+fn make(x: i32) -> Bogus<i32, i32> {
+    return make(x);
+}
+
+pub fn main() -> void {
+    print(1);
+}

@@ -1,0 +1,13 @@
+//// Decision 547 (ii) — `+=` on an `f64` `#[compiler.beamMemory(.Ets)]` var reads the `var` it
+//// writes, so on the BEAM it is the compare-and-swap like any `x = f(x)`, whatever the type:
+//// `1.5`. It used to be refused, as the host's atomic counter counts integers alone.
+
+import {io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Ets)]
+var total: f64 = 0.0;
+
+pub fn main() -> void {
+    total += 1.5;
+    print(total);
+}

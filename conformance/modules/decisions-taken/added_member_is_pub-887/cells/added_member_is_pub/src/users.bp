@@ -1,0 +1,10 @@
+import {compiler} from "std";
+
+fn spelled(syntax decl: unknown) -> void {
+    compiler.addMember("spell", fn(x: string) -> string {
+        return "spelled " + x;
+    });
+}
+
+#[spelled]
+pub type Users(id: i32)

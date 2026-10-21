@@ -1,0 +1,44 @@
+//// Decision 575 (4) — an executor is a tree: the body's locals it reads are spliced as literals, and a name the
+//// executor binds itself is its own. A `catch { r -> … }` binder in the executor is a fresh binding even where the
+//// body binds `r` too — a `val r` of the body, or a `case` arm's `Error(r)` —, so it is never the body's `r` and
+//// never a local the executor captures.
+
+import {compiler, io.terminal.print} from "std";
+
+fn checar(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negativo";
+    return n;
+}
+
+comptime {
+    val r = "construção";
+    compiler.init({ ->
+        val n = try checar(-1) catch { r ->
+            print("catch " + r);
+            return;
+        };
+        print(n);
+    });
+}
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/fine/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            try m.run() catch { r ->
+                print("abort " + r.message)
+            }
+        });
+        Error(r) -> compiler.init({ ->
+            val n = try checar(-2) catch { r ->
+                print("refused " + r);
+                return;
+            };
+            print(n);
+        });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

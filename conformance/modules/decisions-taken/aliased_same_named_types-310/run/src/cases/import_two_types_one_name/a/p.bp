@@ -1,0 +1,13 @@
+pub type Policy(ms: i32) {
+    pub fn describe(self: Self) -> string {
+        return "a:" + self.ms.toString();
+    }
+}
+
+pub fn defaultPolicy() -> Policy {
+    return Policy(ms: 100);
+}
+
+pub fn msOf(p: Policy) -> i32 {
+    return p.ms;
+}

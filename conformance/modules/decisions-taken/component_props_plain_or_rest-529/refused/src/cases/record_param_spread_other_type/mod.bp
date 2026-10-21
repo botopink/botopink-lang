@@ -1,0 +1,18 @@
+//// Decisions 529 (2) and 359 (2) — a spread into a record parameter is a value
+//// of the record's own type or of a type derived from it: another record of the
+//// same fields is refused at the `..`, naming both types.
+
+import {io.terminal.print} from "std";
+
+type CardProps(title: string)
+
+type NoteProps(title: string)
+
+fn Card(..props: CardProps, suffix: string) -> string {
+    return "${props.title}${suffix}";
+}
+
+pub fn main() -> void {
+    val note = NoteProps(title: "a");
+    print(Card(..note, suffix: "!"));
+}

@@ -1,0 +1,12 @@
+//// A module that fails to check reports its own error, and a module that
+//// imports a name from it is refused once, at the import item, naming that
+//// module (`import-of-failed-module`) — never `unbound variable` at each use,
+//// which buried the one real error under one per importer, transitively.
+
+pub mod shapes;
+import {shapes.area};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(area(3));
+}

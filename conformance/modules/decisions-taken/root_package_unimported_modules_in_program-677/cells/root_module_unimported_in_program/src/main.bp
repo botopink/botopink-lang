@@ -1,0 +1,13 @@
+//// Decision 677 — the root package is a package like any other: every
+//// module under `src/` is in the program, imported or not. `jobs.bp` is
+//// named by no `mod` and imported by no module, and its annotated
+//// declaration still registers before `main`.
+
+pub mod marks;
+pub mod registry;
+import {registry.names};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(names());
+}

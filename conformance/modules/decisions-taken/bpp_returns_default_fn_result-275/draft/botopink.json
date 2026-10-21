@@ -1,0 +1,5 @@
+{
+  "name": "bpp_returns_default_fn_result-275",
+  "dependencies": { "markup": { "path": "deps/markup" } },
+  "bpp": "markup"
+}

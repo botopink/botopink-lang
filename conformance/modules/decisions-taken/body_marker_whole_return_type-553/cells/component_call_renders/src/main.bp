@@ -1,0 +1,37 @@
+//// Decision 791 (1), (2), (6) — a call of a component only makes its lambda,
+//// in a component body too: `div([text("title"), Counter()])` holds a node
+//// already made and `Counter()`'s lambda, the children typed as a node or a
+//// component (`Kid`). Nothing runs `Counter` (`counter ran` never prints):
+//// the tree holds it, and the renderer runs it from its place.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+pub type Element(tag: string, kids: Kid[]) implement Renderable
+
+pub type Kid = Element | Component<Element>;
+
+fn div(children: Kid[]) -> Element {
+    return Element(tag: "div", kids: children);
+}
+
+fn text(s: string) -> Element {
+    return Element(tag: s, kids: []);
+}
+
+pub component fn Counter() -> Component<Element> {
+    print("counter ran");
+    return text("counter");
+}
+
+pub component fn Page() -> Component<Element> {
+    return div([text("title"), Counter()]);
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Page().run(RenderScope.root());
+    val page = r.value;
+    print(page.tag);
+    for (page.kids) { k ->
+        if (k is Element) print("node") else print("component");
+    }
+}

@@ -1,0 +1,6 @@
+//// One of the two modules declaring `pub fn parse`. Its arity is 1 and its
+//// answer is 1, so which module a call reached is visible in the VALUE.
+
+pub fn parse(s: string) -> i32 {
+    return 1;
+}

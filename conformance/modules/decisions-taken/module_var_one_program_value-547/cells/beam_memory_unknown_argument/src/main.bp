@@ -1,0 +1,11 @@
+//// Decisions 41, 547 — a `beamMemory` member takes no argument; an argument
+//// under a known member is a located error naming it.
+
+import {io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Ets(keyd: true))]
+var hits: i32 = 0;
+
+pub fn main() -> void {
+    print(hits);
+}

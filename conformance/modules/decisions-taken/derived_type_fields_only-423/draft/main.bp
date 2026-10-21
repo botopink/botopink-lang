@@ -1,0 +1,33 @@
+//// Decision 423 — A derived type carries the fields and their annotations only.
+
+import {compiler, io.terminal} from "std";
+import {types.Type} from "std";
+import {comptime.labels.label};
+
+behavior Titled {
+    fn heading(self: Self) -> string;
+}
+
+type Recipe(
+    #[label("Título")]
+    title: string,
+    servings: i32 = 2,
+) implement Titled {
+    pub fn heading(self: Self) -> string {
+        return self.title.toUpper();
+    }
+}
+
+pub val RecipeTitle = Type.pick(Recipe, .title);
+
+fn heading(r: RecipeTitle) -> string {
+    return "title: " + r.title;
+}
+
+pub fn main() -> void {
+    val fields = comptime compiler.fields(RecipeTitle).map({ f -> f.name + " " + f.annotations.length.toString() });
+    terminal.print(fields.join(","));
+    val r = RecipeTitle(title: "Moqueca");
+    terminal.print(heading(r));
+    terminal.print(Recipe(title: "Moqueca").heading());
+}

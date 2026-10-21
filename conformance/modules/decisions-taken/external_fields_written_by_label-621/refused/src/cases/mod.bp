@@ -1,0 +1,2 @@
+pub mod external_flag_bare_bool_refused;
+pub mod external_flag_bare_fn_refused;

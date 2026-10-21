@@ -1,0 +1,1 @@
+{ "name": "declared_field_read_other_module", "dependencies": { "lib": { "path": "deps/lib" } } }

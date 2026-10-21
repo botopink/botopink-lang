@@ -1,0 +1,14 @@
+//// Decision 810 (2) — a member forgotten in the flow is caught where the rest
+//// is used: past `if (s is Dot) return 0;` the name is a `Circle | Square`,
+//// and reading `side` off it is refused at the read.
+
+type Dot(label: string)
+
+type Circle(r: i32)
+
+type Square(side: i32)
+
+pub fn area(s: Dot | Circle | Square) -> i32 {
+    if (s is Dot) return 0;
+    return s.side;
+}

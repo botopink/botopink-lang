@@ -1,0 +1,29 @@
+//// `o ?? d` over an optional array answers the array, or the default when
+//// the optional is absent: printed, it is the array's text; an empty `[]`
+//// default and a `[]` in a returned tuple take the declared element type.
+
+import {io.terminal.print} from "std";
+
+fn found(k: i32) -> ?i32[] {
+    if (k < 0) return null;
+    return [k, k + 1];
+}
+
+fn names(k: i32) -> ?string[] {
+    if (k < 0) return null;
+    return ["a", "b"];
+}
+
+fn split(s: string) -> #(i32[], string) {
+    return #([], s);
+}
+
+pub fn main() -> void {
+    print(found(2) ?? []);
+    print(found(-1) ?? []);
+    print((found(-1) ?? []).length);
+    print(names(1) ?? []);
+    print((names(-1) ?? ["none"]).join(","));
+    print(split("x")._1);
+    print(split("x")._0.length);
+}

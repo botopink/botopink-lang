@@ -1,0 +1,24 @@
+//// Decisions 311 (3), 397 (3) — a template method is a name of the call
+//// site's scope; a method of the receiver's own type of that name is the
+//// type's. `g.greet "…"` with `greet` a method of `Greeter` calls the method;
+//// on a type without one, the template method runs.
+
+import {code, compiler, io.terminal.print} from "std";
+
+type Greeter(who: string) {
+    pub fn greet(self: Self, word: string) -> string {
+        return "method " + word + ", " + self.who;
+    }
+}
+
+type Visitor(who: string)
+
+fn greet(syntax self: Visitor, syntax q: string) -> string {
+    val said = "template " + compiler.text(q) + ", ";
+    return code @`${said} + ${self}.who`;
+}
+
+pub fn runCase() -> void {
+    print(Greeter(who: "Ana").greet "hello");
+    print(Visitor(who: "Bia").greet "hello");
+}

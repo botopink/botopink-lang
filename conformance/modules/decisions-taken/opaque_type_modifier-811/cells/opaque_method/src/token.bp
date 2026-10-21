@@ -1,0 +1,23 @@
+pub opaque type Token(value: string, uses: i32) {
+    pub fn of(value: string) -> Token {
+        return Token(value: value, uses: 0);
+    }
+
+    // Without `pub`: called only in this module (decision 814 (2)).
+    fn bumped(t: Token) -> Token {
+        return Token(value: t.value, uses: t.uses + 1);
+    }
+
+    pub fn used(self: Self) -> Token {
+        return Token.bumped(self);
+    }
+
+    // A method may share a field's name: outside, `t.value()` is the method.
+    pub fn value(self: Self) -> string {
+        return self.value;
+    }
+
+    pub fn uses(self: Self) -> i32 {
+        return self.uses;
+    }
+}

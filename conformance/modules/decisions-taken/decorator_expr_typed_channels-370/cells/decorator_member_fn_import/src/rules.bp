@@ -1,0 +1,16 @@
+//// The decorator lives in a library module of its own. Its member reads the
+//// decorator's parameters and its own locals only, so it means the same in
+//// the module of every type it annotates (decision 370 (2); `s35-g`).
+
+import {compiler} from "std";
+
+pub fn rule<T>(
+    syntax decl: T,
+    syntax holds: fn(v: T) -> bool,
+    syntax label: string,
+) -> void {
+    compiler.addMember("check", fn(self: T) -> string {
+        val ok = holds(self);
+        return if (ok) "ok" else label;
+    });
+}

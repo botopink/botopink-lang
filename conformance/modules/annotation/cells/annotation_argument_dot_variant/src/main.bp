@@ -1,0 +1,23 @@
+//// An annotation argument whose parameter is an enum may be written with the
+//// leading dot, as a call's argument may: `#[kit.m(lifecycle: .Manual)]` is
+//// `#[kit.m(lifecycle: Lifecycle.Manual)]`. The enum is the one the
+//// decorator's own module declares, though this module imports none.
+
+import {kit} from "lib";
+import {kit.Mark} from "lib";
+import {io.terminal.print, compiler} from "std";
+
+#[kit.m(lifecycle: .Manual)]
+pub fn first() -> i32 {
+    return 1;
+}
+
+#[kit.m]
+pub fn third() -> i32 {
+    return 3;
+}
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(first).meta(Mark)?.lifecycle ?? "none");
+    print(comptime compiler.typeInfo(third).meta(Mark)?.lifecycle ?? "none");
+}

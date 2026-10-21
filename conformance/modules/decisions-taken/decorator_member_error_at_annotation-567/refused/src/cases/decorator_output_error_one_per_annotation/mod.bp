@@ -1,0 +1,26 @@
+//// Decision 567 — one decorator on two declarations where only one of its
+//// members fails to type-check: one error, at the annotation of the one that
+//// failed.
+
+import {compiler, io.terminal.print} from "std";
+
+fn maker<T>(syntax decl: T) -> void {
+    if (compiler.name(decl)! == "Town")
+        compiler.addMember("code", fn(self: T) -> i32 {
+            return self.nope;
+        })
+    else
+        compiler.addMember("code", fn(self: T) -> i32 {
+            return 1;
+        });
+}
+
+#[maker]
+pub type City(name: string)
+
+#[maker]
+pub type Town(name: string)
+
+pub fn main() -> void {
+    print(City(name: "a").code());
+}

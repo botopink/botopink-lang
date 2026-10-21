@@ -1,0 +1,28 @@
+//// Decision 286 — Both annotation forms are valid and printed as written:
+
+import {comptime.marks.mark, comptime.marks.Mark};
+import {compiler, io.terminal.print} from "std";
+
+#[mark("first")]
+// a comment between the two blocks stays here
+#[mark("second")]
+pub type Blocks()
+
+#[mark("first"), mark("second")]
+pub type Listed()
+
+#[
+    mark("first"),
+    mark("second"),
+]
+pub type Open()
+
+fn labels(marks: Mark[]) -> string {
+    return marks.map({ m -> m.label }).join(" ");
+}
+
+pub fn main() -> void {
+    print(labels(comptime compiler.typeInfo(Blocks).metaAll(Mark)));
+    print(labels(comptime compiler.typeInfo(Listed).metaAll(Mark)));
+    print(labels(comptime compiler.typeInfo(Open).metaAll(Mark)));
+}

@@ -1,0 +1,7 @@
+//// `p/p` — the module named like its package `p` (rakun's `rakun` module).
+
+pub type Module(name: string)
+
+pub fn greet() -> string {
+    return "p";
+}

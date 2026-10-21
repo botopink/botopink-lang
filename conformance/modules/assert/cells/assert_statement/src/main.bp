@@ -1,0 +1,8 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val x = 1;
+    assert x > 0;
+    assert x > 0, "x must be positive";
+    print("both hold");
+}

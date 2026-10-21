@@ -1,0 +1,18 @@
+//// Decision 110 rule 2, amended by 919 — a folder of std is no module and is
+//// not importable (`import {io} from "std"` is refused, see
+//// `folder_import_refused-919`); its leaves are: `import {io.clock as clock}`
+//// reaches `io/clock`, beside the leaf form `import {io.clock}` of decision
+//// 107. wasm refuses the program at its first
+//// call: `nowMillis` reaches `io/clock`'s host cell `systemTimeWithUnit`,
+//// which has no wasm binding — STD-001 refuses the call, never the import
+//// (decision 518 (4)).
+
+import {io.terminal.print} from "std";
+import {io.clock as clock} from "std";
+
+pub fn main() -> void {
+    val t = clock.nowMillis();
+    print(t > 0);
+    print(clock.toMillis(clock.seconds(2)));
+    print(clock.nowMillis() >= t);
+}

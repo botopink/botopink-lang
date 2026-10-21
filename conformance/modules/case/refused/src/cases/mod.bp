@@ -1,0 +1,10 @@
+pub mod case_arity_without_rest;
+pub mod case_bare_name_arrow_arm;
+pub mod case_constant_pattern;
+pub mod case_function_arms_arity;
+pub mod case_literals_only;
+pub mod case_missing_variant;
+pub mod case_only_guarded_arms;
+pub mod case_shorthand_on_unknown;
+pub mod case_tuple_label;
+pub mod case_unknown_without_wildcard;

@@ -1,0 +1,21 @@
+import {compiler, io.terminal.print} from "std";
+
+fn route(syntax decl: unknown, comptime path: string) -> void {
+    compiler.setMeta(Route(path: path));
+}
+
+#[route("/about")]
+pub fn about() -> string {
+    return "about us";
+}
+
+fn main() -> void {
+    for (@TypeInfo.all(with: route)) { r ->
+        for (r.metaAll(Route)) { m ->
+            print(r.name + " " + m.path); // about /about
+        }
+    }
+}
+
+// What `#[route]` records.
+type Route(path: string)

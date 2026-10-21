@@ -1,0 +1,10 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.enum_implements_behavior.runCase();
+    cases.enum_payload_value_prints.runCase();
+    cases.enum_section_expected_type.runCase();
+    cases.enum_section_leaf_beside_variant.runCase();
+    cases.enum_section_qualified_path.runCase();
+    cases.enum_value_template_hole.runCase();
+}

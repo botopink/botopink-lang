@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: method-not-pub: `Token.bumped` of module `token` is written without `pub` — a method without `pub` is called only in its own module (decision 859)
+at src/main.bp:9:19

@@ -1,7 +1,7 @@
 {
   "name": "numeric",
   "version": "0.0.1",
-  "description": "Backend-execution fixture: a pure-arithmetic program that runs and returns the SAME number on every backend (node, erlang, beam, wasm). Front-C C2.",
+  "description": "The wasm core module's --invoke main fixture of backend_exec.sh: main() returns 55. What the program answers on every target is conformance/modules/tail/run/src/cases/tail_recursive_sum.",
   "target": "commonJS",
   "src": "src/"
 }

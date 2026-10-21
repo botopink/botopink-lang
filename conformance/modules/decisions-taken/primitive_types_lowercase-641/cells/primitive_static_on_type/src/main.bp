@@ -1,0 +1,12 @@
+//// Decision 641 — (b) for the names, and no contract with one implementor: every primitive type is written lowercase — `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bool`, `string`, `bigint`, `bytes`, `array<T>` — and a capitalised name is a contract shared by several types (`Number`, `Integer`, `Signed`, `Float`); `String`, `Bool`, `BigInt`, `Bytes` and `Array` dissolve into their types, which hold their methods and statics.
+
+import {io.terminal.print} from "std";
+
+// Each static is its type's own, called through the type's lowercase name.
+pub fn main() -> void {
+    print(string.fromCodepoint(65));
+    print(array.range(0, 3));
+    print(array.repeat("ab", 2).join(","));
+    print(bytes.fromUtf8("hi").length());
+    print(bigint.of(5) * bigint.of(7));
+}

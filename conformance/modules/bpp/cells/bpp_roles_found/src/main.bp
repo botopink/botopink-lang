@@ -1,0 +1,6 @@
+import markup from "markup";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(markup @`abcd`);
+}

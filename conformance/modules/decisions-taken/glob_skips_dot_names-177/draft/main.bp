@@ -1,0 +1,22 @@
+//// Decision 177 — † `fs.glob`, one rule on both targets: `*` and `**` do not match a name that starts with `.` unless the pattern writes t
+
+import {io.fs, io.terminal} from "std";
+
+fn found(pattern: string) -> string {
+    return fs.glob(pattern, "globbed").unwrapOr([]).join(",");
+}
+
+pub fn main() -> void {
+    fs.removeTree("globbed");
+    fs.mkdirRecursive("globbed/sub");
+    fs.mkdirRecursive("globbed/.cache");
+    fs.writeText("globbed/a.txt", "a");
+    fs.writeText("globbed/.hidden.txt", "h");
+    fs.writeText("globbed/sub/b.txt", "b");
+    fs.writeText("globbed/.cache/c.txt", "c");
+    terminal.print(found("*.txt"));
+    terminal.print(found(".*.txt"));
+    terminal.print(found("**/*.txt"));
+    terminal.print(found(".cache/*.txt"));
+    fs.removeTree("globbed");
+}

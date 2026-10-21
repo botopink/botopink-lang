@@ -1,0 +1,17 @@
+//// Decision 584 (3) — every function is typed (583), and a marker names its
+//// return type: `async fn total()` writes none, so it is refused at the
+//// marker, `marker-type-mismatch`, the caption naming the type to write.
+
+import {io.terminal.print} from "std";
+
+async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+async fn total() {
+    return await double(2);
+}
+
+pub async fn main() -> Async<void> {
+    print(await total());
+}

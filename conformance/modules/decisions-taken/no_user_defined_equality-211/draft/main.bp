@@ -1,0 +1,29 @@
+//// Decision 211 — A type cannot define its own equality: `==` is always field by field (210); a method named `equals` has no special role
+
+import {io.terminal.print} from "std";
+
+type Address(street: string, number: i32, note: string) {
+    // A method named `equals` is an ordinary method: `==` never calls it.
+    pub fn equals(self: Self, other: Address) -> bool {
+        return true;
+    }
+
+    // Another sameness has a name of its own.
+    pub fn sameAddress(self: Self, other: Address) -> bool {
+        return self.street == other.street && self.number == other.number;
+    }
+}
+
+pub fn main() -> void {
+    val home = Address(street: "Rua A", number: 10, note: "front door");
+    val again = Address(street: "Rua A", number: 10, note: "front door");
+    val side = Address(street: "Rua A", number: 10, note: "side door");
+    val far = Address(street: "Rua B", number: 99, note: "");
+    print(home == again);
+    print(home == side);
+    print(home != side);
+    print(home.equals(far));
+    print(home == far);
+    print(home.sameAddress(side));
+    print([home, side] == [again, side]);
+}

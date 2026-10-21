@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: defer-yield: `yield` inside a `defer` leaves the path the deferred code runs on
+at src/cases/defer_refuses_yield/mod.bp:5:9

@@ -1,0 +1,1 @@
+{ "name": "typeinfo_all_imported_package_default", "dependencies": { "cat": { "path": "deps/cat" } } }

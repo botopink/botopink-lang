@@ -1,0 +1,16 @@
+//// Decision 553 (4), 147 — a marked lambda agrees with the function type it
+//// is written for: `{ iter … }` answers an `Iter`, and `apply` wants a
+//// function returning a `Async`, so the lambda is refused at its marker,
+//// `marker-type-mismatch`.
+
+import {io.terminal.print} from "std";
+
+async fn apply(f: fn(x: i32) -> Async<i32>, v: i32) -> Async<i32> {
+    return await f(v);
+}
+
+pub async fn main() -> Async<void> {
+    print(await apply({ iter x ->
+        yield x;
+    }, 1));
+}

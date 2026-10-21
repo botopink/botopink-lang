@@ -1,0 +1,11 @@
+//// The package that declares the decorator: `#[m]` records the role its
+//// declaration plays. It annotates nothing of its own.
+
+import {compiler} from "std";
+
+pub fn m(syntax decl: unknown) -> void {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
+}
+
+// What `#[m]` records: the role its declaration plays.
+pub type Role(role: string)

@@ -1,0 +1,59 @@
+//// A template function that builds a tag's `@Decl`, runs the tag's
+//// annotation over it and reads back what it recorded (decision 302).
+
+import {compiler.DeclKind, compiler.Span, compiler} from "std";
+
+pub type ClassName(names: string[])
+
+// One annotation for a tag and a declaration: it records a `ClassName`
+// through `decl` — on an element with the tag's `id` attribute, on a
+// component with the component function's name.
+pub fn cls(syntax decl: unknown, comptime name: string) -> void {
+    if (compiler.kind(decl) == DeclKind.Element)
+        compiler.addMeta(ClassName(names: [name, compiler.attr(decl, "id") ?? "none"]))
+    else if (compiler.kind(decl) == DeclKind.Component)
+        compiler.addMeta(ClassName(names: [name, compiler.component(decl)?.name ?? "none"]))
+    else
+        compiler.addMeta(ClassName(names: [name]));
+}
+
+// `markup """<div id="x" #[cls("a")]>hi</div>"""`: one tag, an optional `id`,
+// one annotation; the class names the annotation recorded become `class`. A
+// tag whose name starts upper-case is a component.
+pub fn markup(syntax q: string) -> string {
+    val text = compiler.text(q);
+    val name = text.slice(1, text.indexOf(" "));
+    val kind = if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(name.slice(0, 1)))
+        DeclKind.Component
+    else
+        DeclKind.Element;
+    var attrs: array<#(string, string)> = [];
+    if (text.contains("id=\"")) {
+        val rest = text.slice(text.indexOf("id=\"") + 4, text.length);
+        attrs = [#("id", rest.slice(0, rest.indexOf("\"")))];
+    }
+    val annStart = text.indexOf("#[") + 2;
+    val annEnd = text.indexOf("]>");
+    val body = text.slice(annEnd + 2, text.indexOf("</"));
+    val tag = compiler.tagDecl(kind, name, attrs);
+    val d = compiler.annotate(tag, Span(start: annStart, end: annEnd, line: 1));
+    val classes = d
+        .metaAll(ClassName)
+        .map({ c -> c.names.join(" ") })
+        .join(" ");
+    val shown = if (compiler.kind(d) == DeclKind.Element)
+        "element"
+    else
+        "component";
+    return "<"
+        + compiler.name(d)!
+        + " class=\""
+        + classes
+        + "\">"
+        + body
+        + "</"
+        + compiler.name(d)!
+        + "> ("
+        + shown
+        + ")";
+}

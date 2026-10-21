@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "Person",
         "id": 1,
         "isPub": false,
@@ -20,16 +20,19 @@
         ],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "name",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "name",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }

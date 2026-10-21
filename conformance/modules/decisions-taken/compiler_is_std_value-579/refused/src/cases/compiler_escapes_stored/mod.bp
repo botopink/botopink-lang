@@ -1,0 +1,16 @@
+//// Decision 579 (3) — `compiler` is never stored: bound to a `val` in a
+//// decorator's body it is refused at the name (`compiler-escapes`).
+
+import {compiler, io.terminal.print} from "std";
+
+fn mark(syntax decl: unknown) -> void {
+    val kept = compiler;
+    kept.fail("marked", at: decl);
+}
+
+#[mark]
+pub type City(name: string)
+
+pub fn main() -> void {
+    print(City(name: "a").name);
+}

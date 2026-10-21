@@ -1,0 +1,48 @@
+//// Decision 119 of 1.0.10-beta (front 24, § Cells "Return and effect mode",
+//// second line) — with `-> Async<Result<U, E>>` both layers wrap: `return v`
+//// with `v: U` is a Async holding `Ok(v)`, `return r` with `r: Result<U, E>` is
+//// a Async holding `r`, and `return t` with `t` already of the whole type passes
+//// as is. Each Async is awaited and its `Result` read with `case`, so a layer
+//// wrapped twice (or not at all) would print differently or not type.
+////
+//// Every line is printed from inside `run`, the one `Async` body `main` calls:
+//// commonJS lowers a `Async` return to an `async function` (decision 120) and
+//// hands a plain caller a Promise, while erlang, beam and wasm run the Async
+//// eagerly; inside one body the order is the same everywhere.
+
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+async fn layerValue(n: i32) -> Async<Result<i32, string>> {
+    return n;
+}
+
+async fn layerResult(r: Result<i32, string>) -> Async<Result<i32, string>> {
+    return r;
+}
+
+fn layerTask(t: Async<Result<i32, string>>) -> Async<Result<i32, string>> {
+    return t;
+}
+
+fn show(label: string, r: Result<i32, string>) -> void {
+    case r {
+        Ok(v) -> print(label + " ok " + v.toString());
+        Error(e) -> print(label + " error " + e);
+    }
+}
+
+async fn run() -> Async<void> {
+    show("value", await layerValue(1));
+    show("result", await layerResult(check(2)));
+    show("result", await layerResult(check(-1)));
+    show("task", await layerTask(layerValue(3)));
+}
+
+pub fn main() -> void {
+    run();
+}

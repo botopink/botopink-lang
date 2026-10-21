@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `hits` is a `val` and cannot be assigned
+at src/cases/val_assign_module/mod.bp:11:25

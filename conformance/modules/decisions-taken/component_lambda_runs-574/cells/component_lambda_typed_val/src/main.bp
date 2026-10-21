@@ -1,0 +1,35 @@
+//// Decision 574 — a lambda marked `component`, bound to a `val` typed by
+//// the function type it is written for (147), is a `component fn`: calling
+//// it only makes the component (`made` prints before any `ran`), and the
+//// component runs where it is rendered — outside every body with
+//// `RenderScope.root()` (`a` reads the declared default), and with the scope
+//// `Shell`'s run answered (`b` reads `Shell`'s `#`). Its parameter and the
+//// `suffix` it captures reach the body. The body answers its last
+//// expression.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+pub val prefixContext = comptime createContext("");
+
+component fn Shell() -> Component<View> {
+    use provide(createContext("#"));
+    return View(text: "shell");
+}
+
+pub async fn main() -> Async<void> {
+    val suffix = "!";
+    val Card: fn(name: string) -> Component<View> = { component name ->
+        val p = use context(prefixContext);
+        print("ran " + name);
+        View(text: p + name + suffix)
+    };
+    val c = Card("a");
+    print("made");
+    val v = (await c.run(RenderScope.root())).value;
+    print(v.text);
+    val r = await Shell().run(RenderScope.root());
+    val m = await Card("b").run(r.scope);
+    print(m.value.text);
+}

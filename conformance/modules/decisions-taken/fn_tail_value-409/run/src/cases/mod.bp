@@ -1,0 +1,9 @@
+pub mod decorator_member_fn_tail;
+pub mod fn_expr_tail_value;
+pub mod fn_tail_after_loop_return;
+pub mod fn_tail_case_arm_block;
+pub mod fn_tail_comptime;
+pub mod fn_tail_if_else_chain;
+pub mod fn_tail_result;
+pub mod fn_tail_void_call;
+pub mod method_tail_value;

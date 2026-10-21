@@ -1,0 +1,15 @@
+//// Decisions 354 (2), 379 — `@getContext(T)` (decision 269) is gone: a
+//// context is read through a context value, `use context(ctx)`, under a `use
+//// provide(…)`.
+//// The builtin is unknown, located at the `@`, naming the hook to write.
+
+type Element(total: i32) implement Renderable
+
+component fn total() -> Component<i32> {
+    val ctx = use @getContext(Element);
+    return ctx.total;
+}
+
+pub fn main() -> void {
+    total();
+}

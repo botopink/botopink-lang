@@ -1,0 +1,28 @@
+//// A library's template function reading the program's catalogue
+//// (decision 353): the program declares its theme, exactly one — none is
+//// refused at the literal that reads it (decision 358).
+
+import {compiler} from "std";
+
+pub fn theme(syntax decl: unknown) -> void {
+    compiler.setMeta(Theme(named: compiler.name(decl)!));
+}
+
+pub default fn looks(syntax e: string) -> string {
+    val themes = @TypeInfo.all(with: theme);
+    if (themes.length == 0)
+        compiler.fail(
+            "looks: no #[theme] declaration — declare one: `#[theme] pub fn brand() -> string`",
+            at: e,
+        );
+    if (themes.length > 1)
+        compiler.fail(
+            "looks: two #[theme] declarations: "
+                + themes.map({ t -> t.module + "." + t.name }).join(", "),
+            at: e,
+        );
+    return compiler.text(e) + ": " + themes.map({ t -> t.name }).join("");
+}
+
+// What `#[theme]` records.
+pub type Theme(named: string)

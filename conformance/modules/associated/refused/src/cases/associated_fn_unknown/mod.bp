@@ -1,0 +1,7 @@
+import {io.terminal.print} from "std";
+
+type City(name: string)
+
+fn main() -> void {
+    print(City.table());
+}

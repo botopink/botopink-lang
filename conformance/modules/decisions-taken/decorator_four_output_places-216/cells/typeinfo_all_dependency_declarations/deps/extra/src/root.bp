@@ -1,0 +1,9 @@
+//// A dependency of `plugin`, not of the program: its `#[m]` declaration is
+//// a module of the build all the same.
+
+import {m} from "core";
+
+#[m]
+pub fn helper() -> string {
+    return "extra helper";
+}

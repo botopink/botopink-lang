@@ -1,0 +1,8 @@
+//// Decision 858 — an open domain's exhaustiveness refusal opens with `non-exhaustive`.
+
+pub fn name(x: i32) -> string {
+    return case x {
+        0 { "zero" }
+        1 { "one" }
+    };
+}

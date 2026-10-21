@@ -1,0 +1,84 @@
+//// Decision 625 (2) — code enters the compiler written or as the typed AST,
+//// never as a string: a template answers `compiler.ast(node)`, the code a
+//// tree of `compiler.Node` records builds, typed where the call stands. A
+//// `Name` the library writes resolves in the library's module (`shapes` calls
+//// the library's private `double`, not this module's); a `Lit` is a value
+//// known at build, spliced as its literal; each other node is the
+//// expression it names.
+
+import {
+    compiler,
+    compiler.Arg,
+    compiler.Binary,
+    compiler.Call,
+    compiler.If,
+    compiler.Lambda,
+    compiler.List,
+    compiler.Lit,
+    compiler.Member,
+    compiler.Name,
+    compiler.Tuple,
+    compiler.Unary,
+    io.terminal.print,
+} from "std";
+import shapes from "shapes";
+
+fn double(n: i32) -> i32 {
+    return n * 100;
+}
+
+fn label(tag: string, size: i32) -> string {
+    return tag + ":" + size.toString();
+}
+
+// A call with a labelled argument, a method call through `Member`.
+fn tagged(syntax q: string) -> anyvalue {
+    val text = compiler.text(q);
+    val call = Call(callee: Name("label"), args: [
+        Arg(name: "tag", value: Lit(text)),
+        Arg(name: "size", value: Lit(text.length())),
+    ]);
+    return compiler.ast(Call(callee: Member(target: call, member: "toUpper"), args: []));
+}
+
+// A list of literals, an operator, a unary minus.
+fn sums(syntax q: string) -> anyvalue {
+    val parts = compiler.text(q).split(",");
+    var items: Binary[] = [];
+    for (parts) { p ->
+        items.push(Binary(op: "+", lhs: Lit(p.length()), rhs: Unary(op: "-", operand: Lit(1))));
+    }
+    return compiler.ast(List(items));
+}
+
+// An `if` over a value known at build.
+fn pick(syntax q: string) -> anyvalue {
+    val long = compiler.text(q).length() > 3;
+    return compiler.ast(If(cond: Lit(long), then: Lit("long"), otherwise: Lit("short")));
+}
+
+// A lambda handed to a method of the list the tree builds.
+fn doubled(syntax q: string) -> anyvalue {
+    val items = compiler.text(q).split(",").map({ p -> Lit(p.length()) });
+    return compiler.ast(Call(
+        callee: Member(target: List(items), member: "map"),
+        args: [Lambda(params: ["x"], body: Binary(op: "*", lhs: Name("x"), rhs: Lit(2)))],
+    ));
+}
+
+// A tuple, destructured where the call stands.
+fn pair(syntax q: string) -> anyvalue {
+    val text = compiler.text(q);
+    return compiler.ast(Tuple([Lit(text), Lit(text.length())]));
+}
+
+pub fn main() -> void {
+    print(tagged @`box`);
+    print(sums @`a,bb,ccc`);
+    print(pick @`hello`);
+    print(pick @`hi`);
+    print(doubled @`a,bb`);
+    val #(word, size) = pair @`four`;
+    print(word + " " + size.toString());
+    print(shapes @`abc`);
+}

@@ -1,0 +1,3 @@
+//// A fixture library the program declares and never imports.
+
+pub mod web;

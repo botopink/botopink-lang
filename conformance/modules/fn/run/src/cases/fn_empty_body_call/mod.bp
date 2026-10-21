@@ -1,0 +1,15 @@
+//// A `fn` whose body is empty is called like any other and does nothing:
+//// the call runs, and the statements around it run in order.
+
+import {io.terminal.print} from "std";
+
+fn nothing() -> void {}
+
+fn ignore(n: i32) -> void {}
+
+pub fn runCase() -> void {
+    print("before");
+    nothing();
+    ignore(7);
+    print("after");
+}

@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Drawable",
         "id": 1,
         "isPub": false,
@@ -15,7 +15,9 @@
         "fields": [
           {
             "name": "color",
-            "typeName": "string"
+            "typeRef": {
+              "named": "string"
+            }
           }
         ],
         "trailingComma": false,
@@ -32,12 +34,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": false,
@@ -55,12 +58,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": [
               {
                 "expr": {

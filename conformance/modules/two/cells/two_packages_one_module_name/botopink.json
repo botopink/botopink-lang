@@ -1,0 +1,1 @@
+{ "name": "two_packages_one_module_name", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

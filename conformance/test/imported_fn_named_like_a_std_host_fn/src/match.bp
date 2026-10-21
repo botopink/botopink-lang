@@ -1,0 +1,9 @@
+pub type Attempt(ok: bool)
+
+pub fn attempt(pattern: string, pathname: string) -> Attempt {
+    return Attempt(ok: pattern == pathname);
+}
+
+pub fn panic(s: string) -> string {
+    return "mine: " + s;
+}

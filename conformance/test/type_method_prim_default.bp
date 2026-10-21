@@ -1,0 +1,33 @@
+//// A `type`'s method calls a primitive `default fn` whose body calls a
+//// method on `self` — `String.parseInt` reads `self.startsWith("-")`. On
+//// erlang the default is emitted into the type's own module, and its `self`
+//// was taken for the type: `startsWith(Self, <<"-">>)`, undefined, so erlc
+//// refused the module. A free function calling the same default was right
+//// all along. A `test/` cell: wasm has no `String.parseInt` yet (its
+//// `stringSlice0/2` is `05-wasm`'s row).
+
+type Cell(text: string) {
+    fn number(self: Self) -> string {
+        return case self.text.parseInt() {
+            Ok(n) -> n.toString();
+            Error(_) -> "none";
+        };
+    }
+}
+
+fn numberOf(text: string) -> string {
+    return case text.parseInt() {
+        Ok(n) -> n.toString();
+        Error(_) -> "none";
+    };
+}
+
+test "a type's method calls String.parseInt" {
+    assert Cell(text: "42").number() == "42";
+    assert Cell(text: "-7").number() == "-7";
+    assert Cell(text: "x").number() == "none";
+}
+
+test "a free function calls String.parseInt" {
+    assert numberOf("+5") == "5";
+}

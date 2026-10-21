@@ -1,0 +1,12 @@
+botopink-cell 1
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out app/blog/page.bp,app/layout.bp,root.bp
+out blog/page.bp,layout.bp
+out error fs.walk: dangling link "app/gone.bp"
+out error fs.walk: dangling link "gone.bp"

@@ -1,0 +1,21 @@
+//// Decision 624 — (d): `compiler.bp` incorporates `types.bp` whole — `Type`, with `Field<T>`, `Info<T>` and the five utilities (`partial`, `pick`, `omit`, `merge`, `required`), is declared inside `compiler.bp`, and `types.bp` goes.
+
+import {compiler, io.terminal} from "std";
+import {types.Type} from "std";
+import {comptime.fields.fieldList, comptime.fields.label, comptime.fields.FieldList};
+
+#[fieldList]
+type Pessoa(
+    #[label("Nome")]
+    nome: string,
+    idade: i32,
+)
+
+pub val Patch = Type.partial(Pessoa);
+
+pub fn main() -> void {
+    val lines = comptime compiler.typeInfo(Pessoa).meta(FieldList)!.lines;
+    terminal.print(lines.join("; "));
+    val p = Patch(nome: "Ana", idade: null);
+    terminal.print(p.nome ?? "-", p.idade ?? 0);
+}

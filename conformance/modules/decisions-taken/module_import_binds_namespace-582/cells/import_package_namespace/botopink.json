@@ -1,0 +1,1 @@
+{ "name": "import_package_namespace", "dependencies": { "kit": { "path": "deps/kit" } } }

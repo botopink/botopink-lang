@@ -1,0 +1,15 @@
+import {io.terminal.print} from "std";
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+type Tree<T> {
+    Leaf(value: T),
+    Node(left: Tree<T>, right: Tree<T>),
+}
+
+pub fn runCase() -> void {
+    print(identity(3)); // 3
+    print(Tree.Leaf(value: "a")); // Tree.Leaf(value: "a")
+}

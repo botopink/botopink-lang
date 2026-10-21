@@ -1,0 +1,20 @@
+//// Decision 587 — `compiler.implement` takes `Implementation`, so its argument
+//// may be the dot shorthand `.Erlang(…)`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn bif(syntax decl: unknown, comptime module: string) -> void {
+    compiler.implement(.Erlang(module + ":reverse($0)"));
+}
+
+#[bif("lists")]
+#[compiler.external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+pub fn runCase() -> void {
+    print(backwards([1, 2, 3]));
+}

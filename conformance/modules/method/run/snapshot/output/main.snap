@@ -1,0 +1,22 @@
+botopink-cell 1
+out gap:1rem | c {color: red} | u m:0
+out x=dflt
+out y=dflt
+out z=v
+out 3
+out 2
+out 4
+out true
+out false
+out true
+out false
+out 3
+out 42
+out 2
+out 1.5
+out card/card
+out 2
+out 1
+out false
+out true
+out true

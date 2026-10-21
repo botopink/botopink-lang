@@ -1,0 +1,3 @@
+botopink-cell 1
+out check=check srv=web
+out check=check local.serverOnly=other

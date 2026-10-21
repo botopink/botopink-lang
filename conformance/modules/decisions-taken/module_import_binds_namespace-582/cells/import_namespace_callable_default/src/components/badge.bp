@@ -1,0 +1,6 @@
+fn Badge(n: i32) -> string {
+    if (n == 0) return "badge";
+    return "*" + Badge(n - 1);
+}
+
+pub default Badge;

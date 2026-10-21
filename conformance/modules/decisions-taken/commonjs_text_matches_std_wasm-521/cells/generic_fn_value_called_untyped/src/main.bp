@@ -1,0 +1,21 @@
+//// A generic function that writes its `T` as text, bound to a `val` with no
+//// written type and called through it, answers what the direct call does on
+//// every target (decision 521): the call binds `T` from its argument, so a
+//// float keeps its decimal part, a string its text and a tuple its `#(…)`.
+//// On wasm the call went through the function value's one body, which read
+//// the argument as a boxed `i32` and aborted.
+
+import {io.terminal.print} from "std";
+
+fn show<T>(x: T) -> string {
+    return "${x}";
+}
+
+pub fn main() -> void {
+    val f = show;
+    print(f(3.0));
+    val g = show;
+    print(g("s"));
+    val h = show;
+    print(h(#(1, 2)));
+}

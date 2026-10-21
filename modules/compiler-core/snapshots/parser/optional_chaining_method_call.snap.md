@@ -15,7 +15,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -80,7 +82,7 @@
                                 }
                               }
                             },
-                            "callee": "to_upper",
+                            "callee": "toUpper",
                             "is_builtin": false,
                             "is_tagged": false,
                             "optional": true,

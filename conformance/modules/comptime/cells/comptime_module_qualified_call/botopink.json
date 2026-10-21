@@ -1,0 +1,1 @@
+{ "name": "comptime_module_qualified_call", "dependencies": { "sec": { "path": "deps/sec" } } }

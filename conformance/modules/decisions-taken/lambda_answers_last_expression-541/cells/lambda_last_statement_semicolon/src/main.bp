@@ -1,0 +1,30 @@
+//// Decision 541 (1) — a lambda answers its last expression written without
+//// `;`: `{ x -> x + 1 }` answers `x + 1`. With `;` the expression is a
+//// statement and the lambda answers nothing, so it stands where a function
+//// returning `void` is expected even though its last call answers a value.
+//// (A function expression `fn(x) { … }` keeps its last statement's value,
+//// decision 409.)
+
+import {io.terminal.print} from "std";
+
+fn bump(n: i32) -> i32 {
+    print(n);
+    return n + 1;
+}
+
+fn each(xs: i32[], f: fn(i32)) -> void {
+    for (xs) { x ->
+        f(x);
+    }
+}
+
+pub fn main() -> void {
+    val inc: fn(i32) -> i32 = { x -> x + 1 };
+    print(inc(1));
+    print([1, 2].map({ n -> n * 3 }));
+    each([7, 8], { x -> bump(x); });
+    val dbl: fn(i32) -> i32 = fn(x) {
+        x * 2;
+    };
+    print(dbl(4));
+}

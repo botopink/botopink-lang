@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-path-outside-package: `compiler.load("src/../../elsewhere/main.bp")` leaves the package
+at src/cases/load_path_outside_package/mod.bp:7:32

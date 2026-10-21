@@ -1,0 +1,32 @@
+//// Decision 595 (3) — `catch { e -> … }`: `e` is the region's error, a `case`
+//// arm's binder typed by the region (656), matched with `case`. The block's
+//// value is the fallback.
+
+import {io.terminal.print} from "std";
+
+type HalfError { Odd(value: i32), Negative }
+
+fn half(n: i32) -> Result<i32, HalfError> {
+    if (n < 0) throw HalfError.Negative;
+    if (n % 2 != 0) throw HalfError.Odd(value: n);
+    return n / 2;
+}
+
+fn describe(n: i32) -> string {
+    return try {
+        val h = try half(n);
+        val q = try half(h);
+        "quarter " + q.toString()
+    } catch { e ->
+        case e {
+            Odd(value) -> "odd " + value.toString();
+            Negative -> "negative";
+        }
+    };
+}
+
+pub fn main() -> void {
+    print(describe(12));
+    print(describe(6));
+    print(describe(-4));
+}

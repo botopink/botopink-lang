@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.decorator_argument_values.runCase();
+    cases.decorator_function_arguments.runCase();
+    cases.decorator_record_argument.runCase();
+    cases.decorator_type_argument.runCase();
+    cases.decorator_typed_arguments_import.runCase();
+}

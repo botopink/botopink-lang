@@ -1,0 +1,14 @@
+//// Decision 644 — A mock is a std function over the behavior, `val g = mock(Greeter);`, not a decorator on it: `#[mockable]`, the associated `Mock` type and the `mock()` member go; the built type gains its methods through `compiler.addMember` on that type — b149-b's (b).
+
+import {testing.mocks.mock, testing.mocks.when, io.terminal.print} from "std";
+
+pub behavior Greeter {
+    fn greet(self: Self, name: string) -> string;
+}
+
+pub fn main() -> void {
+    val g = mock(Greeter);
+    print(when(g.greet("ana")).thenReturn("hi ana"));
+    print(g.greet("ana"));
+    print(g.greet("bob") == "");
+}

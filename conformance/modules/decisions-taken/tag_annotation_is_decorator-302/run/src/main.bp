@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.tag_decl_meta.runCase();
+    cases.tag_decl_meta_read.runCase();
+}

@@ -1,0 +1,10 @@
+pub type Rect(w: i32, h: i32)
+
+pub type Kind {
+    Square,
+    Circle,
+}
+
+pub fn square() -> Kind {
+    return Kind.Square;
+}

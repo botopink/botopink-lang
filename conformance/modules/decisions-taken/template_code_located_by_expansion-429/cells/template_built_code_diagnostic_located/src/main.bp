@@ -1,0 +1,23 @@
+//// Decision 429 — template-built code is located by its expansion, and a
+//// diagnostic in it maps to the caller's text (decision 577 (1)): the code
+//// is the text itself, so the unknown field `d` is refused where the text
+//// writes it, 19 bytes after the two-byte opening `` @` ``, as a written
+//// `r.d` is refused at `d`. A first expansion whose code sits at the same
+//// offsets reads `r.w` and is accepted.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Box(w: i32, h: i32)
+
+// The built code is the literal's own text.
+pub fn code(syntax q: string) -> anyvalue {
+    return compiler.build(compiler.text(q));
+}
+
+pub fn main() -> void {
+    val boxes = [Box(w: 2, h: 3)];
+    val widths = code @`boxes.map({ r -> r.w })`;
+    val depths = code @`boxes.map({ r -> r.d })`;
+    print(widths);
+    print(depths);
+}

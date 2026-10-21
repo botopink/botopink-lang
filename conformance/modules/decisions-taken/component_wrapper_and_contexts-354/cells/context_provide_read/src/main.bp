@@ -1,0 +1,48 @@
+//// Decision 354 (2), (8) — a context provided by a component reaches every
+//// component it renders below it, through the hidden context map every
+//// `Component` function takes: `App` provides `ThemeContext`, `Page` (a
+//// component `App` renders) renders `Label`, and `Label` reads the value.
+//// A `Component` read with `use` (`themeName`) reads the map its caller
+//// received. `App` itself does not see its own provide — `Root` provides the
+//// one `App` reads.
+
+import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "default"));
+
+component fn themeName() -> Component<string> {
+    val t = use context(themeContext);
+    return t.mode;
+}
+
+component fn Label(prefix: string) -> Component<Element> {
+    val name = use themeName();
+    return Element(text: prefix + name);
+}
+
+component fn Page() -> Component<Element> {
+    val l = use Label("label:");
+    return Element(text: "page[" + l.text + "]");
+}
+
+component fn App() -> Component<Element> {
+    val outer = use context(themeContext);
+    use provide(createContext(Theme(mode: "dark")));
+    val p = use Page();
+    return Element(text: outer.mode + " " + p.text);
+}
+
+component fn Root() -> Component<Element> {
+    use provide(createContext(Theme(mode: "light")));
+    val a = use App();
+    return Element(text: a.text);
+}
+
+pub async fn main() -> Async<void> {
+    val r = (await Root().run(RenderScope.root())).value;
+    print(r.text);
+}

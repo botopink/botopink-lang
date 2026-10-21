@@ -1,0 +1,20 @@
+//// A sidecar file named like a module atom the build emits —
+//// `src/sidecars/sidecar_named_like_emitted_atom@text.erl`, the atom `src/text.bp` compiles
+//// to (decision 109) — is a located build error on erlang and beam, naming
+//// both (C-25). Every call to `sidecar_named_like_emitted_atom@text:…` is the emitted
+//// module's, so the sidecar was never consulted, and on the code path the
+//// two would be one module.
+////
+//// commonJS and wasm refuse an `compiler.external(.Erlang)`-only function
+//// (`commonJS.expect`, `wasm.expect`).
+
+pub mod text;
+import {text.greet};
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang("sidecar_named_like_emitted_atom@text:shout($0)"))]
+declare fn shout(s: string) -> string;
+
+pub fn main() -> void {
+    print(shout(greet("sidecar")));
+}

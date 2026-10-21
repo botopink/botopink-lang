@@ -1,0 +1,5 @@
+pub type Box(n: i32) {
+    fn label(self: Self) -> string {
+        return "box " + self.n.toString();
+    }
+}

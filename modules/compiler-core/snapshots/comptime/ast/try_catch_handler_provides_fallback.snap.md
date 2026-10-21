@@ -1,0 +1,59 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn fetch() -> Result<i32, string> {
+    panic("not implemented");
+}
+fn safe() -> i32 {
+    val r = try fetch() catch 0;
+    return r;
+}
+val x = safe();
+
+import {failure.panic} from "std";
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "fn_def",
+      "name": "fetch",
+      "is_pub": false,
+      "params": [],
+      "return_type": "Result<i32,string>",
+      "body": [
+        {
+          "source": "panic(\"not implemented\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "safe",
+      "is_pub": false,
+      "params": [],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "val r = try fetch() catch 0;"
+        },
+        {
+          "source": "return r;"
+        }
+      ]
+    },
+    {
+      "ast": "val",
+      "ident": "x",
+      "return_type": "i32",
+      "expr": {
+        "ast": "call",
+        "params": [],
+        "return_type": "i32"
+      }
+    }
+  ]
+}
+```
+

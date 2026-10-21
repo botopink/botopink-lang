@@ -1,0 +1,19 @@
+//// Decision 587 — a unit variant written bare in expression position is
+//// refused as a payload one is (`enum_variant_bare_call_refused`), even where
+//// the position expects the enum: `val k: Kind = Element;` is `Kind.Element`
+//// or `.Element`, never the bare name. `Element` is also the prelude's
+//// `DeclKind.Element`; the refusal names both enums' spellings instead of
+//// calling the use ambiguous, and `.Element` is `Kind`'s where a `Kind` is
+//// expected.
+
+import {io.terminal.print} from "std";
+
+pub type Kind {
+    Element,
+    Other,
+}
+
+pub fn main() -> void {
+    val k: Kind = Element;
+    print(0);
+}

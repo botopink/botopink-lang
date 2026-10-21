@@ -1,0 +1,8 @@
+//// Decision 557 — A refusal prints `error[<code>]: <message>`
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val word = "abc";
+    print(word.fooBar());
+}

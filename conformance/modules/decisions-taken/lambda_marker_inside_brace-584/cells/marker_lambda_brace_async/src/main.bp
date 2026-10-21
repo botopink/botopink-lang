@@ -1,0 +1,34 @@
+//// Decision 584 (1) — a lambda's marker is written inside the brace, before
+//// the parameters: `{ async x -> … }` is a lambda whose body may `await`,
+//// typed by the function type it is written for (147) — an annotated `val`,
+//// an argument, and the trailing form, `apply(6) { async x -> … }`; with no
+//// parameter it is `{ async -> … }`. The body answers its last expression.
+
+import {io.terminal.print} from "std";
+
+async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+async fn apply(v: i32, f: fn(x: i32) -> Async<i32>) -> Async<i32> {
+    return await f(v);
+}
+
+async fn later(f: fn() -> Async<string>) -> Async<string> {
+    return await f();
+}
+
+pub async fn main() -> Async<void> {
+    val g: fn(x: i32) -> Async<i32> = { async x -> await double(x) + 1 };
+    print(await g(4));
+    print(await apply(5, { async x ->
+        await double(x)
+    }));
+    val r = apply(6) { async x ->
+        val d = await double(x);
+        d + 100
+    };
+    print(await r);
+    val s = later { async -> "no parameter" };
+    print(await s);
+}

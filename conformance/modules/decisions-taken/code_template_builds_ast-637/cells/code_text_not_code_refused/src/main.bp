@@ -1,0 +1,14 @@
+//// Decision 637 — `code` reads its text as one expression of `Node`'s
+//// vocabulary; a text that is none (an index, which `Node` has no kind for)
+//// is refused at the template's call, naming what was met.
+
+import {code, compiler, io.terminal.print} from "std";
+
+fn first(syntax q: string) -> anyvalue {
+    val name = compiler.text(q);
+    return code @`${name}[0]`;
+}
+
+pub fn main() -> void {
+    print(first @`word`);
+}

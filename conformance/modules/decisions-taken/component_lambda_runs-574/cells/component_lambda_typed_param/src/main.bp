@@ -1,0 +1,38 @@
+//// Decision 574 — a lambda marked `component` passed where a parameter
+//// expects `fn(name: string) -> Component<View>` (147) is a `component fn`:
+//// `List` makes one component per name and places them in its tree, and the
+//// renderer runs each with the scope `List`'s run answered — the one its
+//// `use provide` made — so every item reads `List`'s `>`. The `mark` the
+//// lambda captures reaches its body, and a `return` leaves it with its value.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string, kids: Component<View>[]) implement Renderable
+
+pub val prefixContext = comptime createContext("");
+
+component fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
+    use provide(createContext(">"));
+    return View(text: "list", kids: names.map(item));
+}
+
+// Run `c` with `scope`, then each child with the scope `c`'s run answered.
+async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
+    val r = await c.run(scope);
+    var out = r.value.text;
+    for (r.value.kids) { k ->
+        val inner = await render(k, r.scope);
+        out = out + " " + inner;
+    }
+    return out;
+}
+
+pub async fn main() -> Async<void> {
+    val mark = "*";
+    val page = List(["a", "", "b"], { component name ->
+        val p = use context(prefixContext);
+        if (name == "") return View(text: p + "empty", kids: []);
+        View(text: p + name + mark, kids: [])
+    });
+    print(await render(page, RenderScope.root()));
+}

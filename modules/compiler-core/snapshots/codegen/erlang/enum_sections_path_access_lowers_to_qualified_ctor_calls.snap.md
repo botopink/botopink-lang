@@ -1,0 +1,103 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type Token {
+    Color {
+        Red { 100, 500 }
+    }
+}
+fn red500() -> Token {
+    return .Color.Red.500;
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['__bp_priv__red500'/0]).
+
+%% type __Token__Color
+%%   Red(_inner)
+
+%% type __Token__Color__Red
+%%   __100
+%%   __500
+
+%% type Token
+%%   Color(_inner)
+
+red500() ->
+    {test@main@@Token__v__color, {test@main@@__Token__Color__v__red, test@main@@__Token__Color__Red__v__500}}.
+
+'__bp_priv__red500'() -> red500().
+```
+
+----- ERLANG -- test@main@@__Token__Color.erl
+```erlang
+-module(test@main@@__Token__Color).
+-export(['__bp_format'/1]).
+
+'__bp_format'({test@main@@__Token__Color__v__red, F0}) ->
+    [_, Rest] = string:split('__bp_show'(F0, false), "."),
+    {text, ["__Token__Color.Red", ".", Rest]}.
+
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
+'__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
+```
+
+----- ERLANG -- test@main@@__Token__Color__Red.erl
+```erlang
+-module(test@main@@__Token__Color__Red).
+-export(['__bp_format'/1]).
+
+'__bp_format'(test@main@@__Token__Color__Red__v__100) -> {variant, "__Token__Color__Red.__100", []};
+'__bp_format'(test@main@@__Token__Color__Red__v__500) -> {variant, "__Token__Color__Red.__500", []}.
+```
+
+----- ERLANG -- test@main@@Token.erl
+```erlang
+-module(test@main@@Token).
+-export(['__bp_format'/1]).
+
+'__bp_format'({test@main@@Token__v__color, F0}) ->
+    [_, Rest] = string:split('__bp_show'(F0, false), "."),
+    {text, ["Token.Color", ".", Rest]}.
+
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
+'__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
+```
+
+----- RUN LOG -----
+```logs
+```

@@ -1,0 +1,28 @@
+//// Decision 298 — a catalogue entry's typed meta is run-time data of the
+//// program: `d.meta(T)` in a decorator's body, which runs while the program
+//// compiles, is refused at the read.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.setMeta(Entity(table: "cities"));
+}
+
+fn audit(syntax decl: unknown) -> void {
+    for (compiler.hooks(decl)) { h ->
+        if (h.function.meta(Entity) == null)
+            compiler.fail("no entity", at: decl);
+    }
+}
+
+#[entity]
+#[audit]
+fn home() -> string {
+    return "home";
+}
+
+pub fn main() -> void {
+    print(home());
+}

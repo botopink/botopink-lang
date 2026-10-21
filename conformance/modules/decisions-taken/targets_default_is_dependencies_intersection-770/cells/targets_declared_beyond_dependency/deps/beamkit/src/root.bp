@@ -1,0 +1,11 @@
+//// A fixture library that declares `erlang` alone: `magnitude` is bound for
+//// the BEAM and nowhere else.
+
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("erlang:abs($0)"))]
+declare fn magnitude(n: i32) -> i32;
+
+pub fn distance(a: i32, b: i32) -> i32 {
+    return magnitude(a - b);
+}

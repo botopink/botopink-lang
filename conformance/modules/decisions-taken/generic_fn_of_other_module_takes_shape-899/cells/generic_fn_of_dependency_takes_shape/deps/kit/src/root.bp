@@ -1,0 +1,5 @@
+//// Decision 899 — a dependency's bodied generic function, whose body writes its `T` as text.
+
+pub fn show<T>(v: T) -> string {
+    return "${v}";
+}

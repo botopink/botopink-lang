@@ -1,0 +1,15 @@
+//// 144 B-24, decision 497 — `clock.formatIso8601` past RFC 3339's epochs aborts, naming the
+//// value, on every target. 9007199254740993 is past 2^53 (a `BigInt` on commonJS, where the
+//// parent's `new Date(…)` threw a `TypeError`; erlang answered a year past 9999).
+
+import {io.clock, io.terminal.print} from "std";
+
+fn grow(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+pub fn main() -> void {
+    print("before");
+    print(clock.formatIso8601(grow(9007199254740991l, 2l)));
+    print("after");
+}

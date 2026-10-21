@@ -1,0 +1,11 @@
+//// Decision 349 — `log` owns the sinks; rakun and onze only integrate.
+
+import {logging.ConsoleSink, logging.Level, logging.Logger, logging.install};
+
+pub fn main() -> void {
+    install(ConsoleSink(minimum: Level.Info));
+    val log = Logger(name: "app.request");
+    log.log(Level.Debug, "not shown");
+    log.log(Level.Info, "started");
+    log.log(Level.Error, "failed", correlationId: "req-7");
+}

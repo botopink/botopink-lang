@@ -1,0 +1,57 @@
+//// Decision 351 — A native tag's attributes are typed the way React types its intrinsic elements, in botopink's own shapes, and `prelude.bp` is the intrinsic table.
+
+import {types.Type, io.terminal.print} from "std";
+
+pub type Target {
+    Top,
+    Blank,
+}
+
+pub type GlobalAttrs(
+    id: ?string = null,
+    class: ?string = null,
+    hidden: bool = false,
+    tabIndex: ?i32 = null,
+)
+
+pub type AriaAttrs(ariaLabel: ?string = null)
+
+pub type AnchorAttrs(href: ?string = null, target: ?Target = null)
+
+pub val AnchorProps = Type.merge(Type.merge(GlobalAttrs, AriaAttrs), AnchorAttrs);
+
+fn attr(name: string, value: ?string) -> string {
+    return if (value == null) "" else " " + name + "=\"" + value + "\"";
+}
+
+fn targetName(t: ?Target) -> ?string {
+    if (t == null) return null;
+    return case t! {
+        Target.Top -> "_top";
+        Target.Blank -> "_blank";
+    };
+}
+
+// The native `<a>`'s builder: its props first, its content after.
+fn a(props: AnchorProps, children: string) -> string {
+    val flags = if (props.hidden) " hidden" else "";
+    return "<a"
+        + attr("id", props.id)
+        + attr("class", props.class)
+        + attr("href", props.href)
+        + attr("target", targetName(props.target))
+        + attr("tabindex", props.tabIndex?.toString())
+        + attr("aria-label", props.ariaLabel)
+        + flags
+        + ">"
+        + children
+        + "</a>";
+}
+
+pub fn main() -> void {
+    print(a(
+        AnchorProps(href: "/docs", target: .Blank, tabIndex: 2, ariaLabel: "Docs", hidden: true),
+        "Read",
+    ));
+    print(a(AnchorProps(href: "/"), "Home"));
+}

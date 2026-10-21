@@ -1,0 +1,31 @@
+//// Decision 791 (3) — inside a component body `use c` resolves the
+//// component `c`: it runs `c` with the body's children scope and answers its
+//// `R`. `Page` provides `dark`, so the `Label` it `use`s reads `dark`; the
+//// `Label("lazy:")` it only calls makes a lambda that nothing runs, so
+//// `label ran` prints once.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type View(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Label(prefix: string) -> Component<View> {
+    val t = use context(themeContext);
+    print("label ran");
+    return View(text: prefix + t.mode);
+}
+
+component fn Page() -> Component<View> {
+    use provide(createContext(Theme(mode: "dark")));
+    val made = Label("lazy:");
+    val l = use Label("used:");
+    return View(text: "page " + l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Page().run(RenderScope.root());
+    print(r.value.text);
+}

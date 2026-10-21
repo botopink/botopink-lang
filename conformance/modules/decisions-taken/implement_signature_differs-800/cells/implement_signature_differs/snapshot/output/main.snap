@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: implement-signature-differs: `Tag.label` does not match the contract `Labelled` — contract: fn label(self: Tag) -> string · written: fn label(self: Tag, extra: i32) -> i32
+at src/main.bp:14:8

@@ -1,0 +1,12 @@
+import {failure.panic, io.terminal.print} from "std";
+
+fn explodir() -> string {
+    panic("in body");
+}
+
+// The module body: its `val` panics before `main` runs.
+val corpo = explodir();
+
+pub fn main() -> void {
+    print("boom main");
+}

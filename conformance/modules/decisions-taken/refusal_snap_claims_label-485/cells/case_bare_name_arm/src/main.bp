@@ -1,0 +1,12 @@
+//// Decision 8 §5.2 — a lower-case name alone as an arm is an error: use `_ { n -> … }`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val x = 3;
+    val y = case x {
+        0 { "zero" }
+        n { "other" }
+    };
+    print(y);
+}

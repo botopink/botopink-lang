@@ -1,0 +1,13 @@
+//// A package `log` named like the consumer's own module `log`.
+
+pub type Level {
+    Info,
+    Warn,
+}
+
+pub fn levelName(level: Level) -> string {
+    return case level {
+        Level.Info -> "info";
+        Level.Warn -> "warn";
+    };
+}

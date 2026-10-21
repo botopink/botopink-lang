@@ -1,0 +1,1 @@
+{ "name": "external_host_record", "targets": ["commonJS", "erlang", "beam"] }

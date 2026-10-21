@@ -1,0 +1,30 @@
+//// Decision 298 — a catalogue entry's typed meta is read through a function
+//// of the reading module typed for the record (`declared__metaAll__<T>`); a
+//// generic record's type arguments are not written at the read, so
+//// `d.metaAll(Check)` is refused at the argument (question `130-s8-d`);
+//// `compiler.typeInfo(X).metaAll(Check)` reads it.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Check<T>(note: string)
+
+fn check<T>(syntax decl: T, comptime note: string) -> void {
+    compiler.addMeta(Check(note: note));
+}
+
+fn mark(syntax decl: unknown) -> void {
+    if (compiler.name(decl)! == "")
+        compiler.fail("a declaration has a name", at: decl);
+}
+
+#[mark]
+#[check("first")]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() -> void {
+    for (@TypeInfo.all(with: mark)) { d ->
+        print(d.metaAll(Check).length);
+    }
+}

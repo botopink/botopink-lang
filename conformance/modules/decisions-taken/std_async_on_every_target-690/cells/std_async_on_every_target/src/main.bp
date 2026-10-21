@@ -1,0 +1,92 @@
+//// 144 B-25 (`02/97` step 17; decisions 334, 335 (2), 392) — std's `async` on
+//// every target: `delay`, `all`, `allOf`, `race`, `runAll`, `raceOf`,
+//// `timeout`, the gates and `nextDelay` answer alike on commonJS, erlang, beam and
+//// wasm (under wasmtime and under node). The results and the order of the
+//// answers are the contract — `all`, `allOf` and `runAll` answer in input
+//// order, `raceOf` the first thunk to settle —, never the order of effects
+//// between concurrent tasks: every line is printed from one task chain.
+//// `race` over started tasks answers element zero on erlang (its tasks ran
+//// before the call), so its fastest task is element zero here.
+
+import {async, io.terminal.print} from "std";
+
+async fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
+    val v = await async.delay(millis, value);
+    return v;
+}
+
+// `value` once `gate` opens, a value naming the failure when it never does.
+async fn gated(gate: async.Gate, value: string) -> Async<string> {
+    val opened = await async.awaitGate(gate, 10000);
+    return if (opened) value else "never opened: " + value;
+}
+
+// Open `mine`, then answer `value` once `theirs` is open.
+async fn handshake(mine: async.Gate, theirs: async.Gate, value: string) -> Async<string> {
+    async.openGate(mine);
+    return await gated(theirs, value);
+}
+
+fn pauseText(policy: async.RetryPolicy, attempt: i32) -> string {
+    val pause = async.nextDelay(policy, attempt);
+    return if (pause != null) pause.toString() else "none";
+}
+
+fn show(label: string, r: Result<array<string>, string>) -> void {
+    case r {
+        Ok(xs) -> print(label + " ok " + xs.join(","));
+        Error(e) -> print(label + " error " + e);
+    }
+}
+
+async fn run() -> Async<void> {
+    val d = await async.delay(5, "delayed");
+    print("delay " + d);
+    val all = await async.all([async.delay(20, "a"), async.delay(1, "b")]);
+    print("all " + all.join(","));
+    show("allOf", await async.allOf([slow(20, "x"), slow(1, "y")]));
+    show("allOf", await async.allOf([slow(1, "x"), async.failed(string, "down"), async.failed(string, "later")]));
+    val first = await async.race([async.delay(1, "first"), async.delay(60, "second")]);
+    print("race " + first);
+    val ran = await async.runAll(
+        [
+            { -> async.delay(20, "one") },
+            { -> async.delay(5, "two") },
+            { -> async.delay(1, "three") },
+        ],
+    );
+    print("runAll " + ran.join(","));
+    val won = await async.raceOf(
+        [
+            { -> async.delay(40, "slow") },
+            { -> async.delay(1, "fast") },
+        ],
+    );
+    print("raceOf " + won);
+    val inTime = await async.timeout({ -> async.delay(1, "in time") }, 1000);
+    print("timeout " + inTime.unwrapOr("-") + "/" + async.errorText(inTime));
+    val gate = async.newGate();
+    val late = await async.timeout({ -> gated(gate, "too late") }, 20);
+    async.openGate(gate);
+    print("timeout " + late.unwrapOr("-") + "/" + async.errorText(late));
+    val shared = async.newGate();
+    val values = await async.runAll(
+        [
+            { -> gated(shared, "waited") },
+            { -> handshake(shared, shared, "opened") },
+        ],
+    );
+    print("gate " + values.join(","));
+    val open = await async.awaitGate(shared, 10000);
+    val closed = await async.awaitGate(async.newGate(), 10);
+    print("awaitGate " + open.toString() + " " + closed.toString());
+    val policy = async.RetryPolicy(4, 100, 1.5, 300);
+    val delays = array
+        .range(1, 6)
+        .map({ attempt -> pauseText(policy, attempt) });
+    print("nextDelay " + delays.join(","));
+}
+
+pub fn main() -> void {
+    run();
+}

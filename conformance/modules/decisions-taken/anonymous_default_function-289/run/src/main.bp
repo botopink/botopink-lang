@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.default_anonymous.runCase();
+    cases.default_named_later.runCase();
+}

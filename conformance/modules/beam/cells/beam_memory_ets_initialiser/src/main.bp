@@ -1,0 +1,18 @@
+//// Decision 547 (i) — an `Ets` var's initialiser is any expression, run once: at
+//// boot on the BEAM, at module load on commonJS and wasm. `registry()` prints, so
+//// `side effect` is printed once, before `main` prints the value. It used to be
+//// refused: the seed had to be a literal or a `comptime` expression.
+
+import {io.terminal.print} from "std";
+
+fn registry() -> i32 {
+    print("side effect");
+    return 7;
+}
+
+#[compiler.beamMemory(.Ets)]
+var seeded: i32 = registry();
+
+pub fn main() -> void {
+    print(seeded);
+}

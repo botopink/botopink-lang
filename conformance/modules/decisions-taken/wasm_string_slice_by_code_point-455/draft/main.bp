@@ -1,0 +1,14 @@
+//// Decision 455 — `str_slice` and `mem_eq` are deleted from `wat_prelude`: nothing calls them.
+
+import {io.terminal} from "std";
+
+pub fn main() -> void {
+    // Indexing and slicing count code points, on wasm as on every target:
+    // `ñ` is two bytes and `😀` four, each one code point.
+    val s = "añb😀c";
+    terminal.print(s.length());
+    terminal.print(s[1]);
+    terminal.print(s[3]);
+    terminal.print(s[1..4]);
+    terminal.print(s[3..5]);
+}

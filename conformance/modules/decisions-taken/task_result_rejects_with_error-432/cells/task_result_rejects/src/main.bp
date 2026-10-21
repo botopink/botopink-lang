@@ -1,0 +1,95 @@
+//// Decision 432 — a `Async<Result<T, E>>` is the task that fails with `E`,
+//// and botopink code reads it as before on every target: `await` answers the
+//// `Result`, `try await` propagates the error, `try await … catch` handles
+//// it. commonJS rejects the task's Promise with `E` and resolves it with the
+//// bare `T`; erlang and beam run the task eagerly and its value is
+//// `{error, E}`; wasm's scheduler settles the task with the error. Every way
+//// a failing task reaches an `await` is here: a function and a method that
+//// throw, a record's function field that answers one, a task handed over
+//// whole (`return check(n)`, `return self.load(n)`), a propagating `try`,
+//// generic code awaiting a `Async<T>`, two tasks started before either is
+//// awaited, an `async { }` block that throws, and a `void` success.
+
+import {io.terminal.print} from "std";
+
+type Account(id: i32) {
+    async fn load(self: Self, n: i32) -> Async<Result<i32, string>> {
+        if (n < 0) throw "no account " + n.toString();
+        return self.id + n;
+    }
+
+    fn relayLoad(self: Self, n: i32) -> Async<Result<i32, string>> {
+        return self.load(n);
+    }
+}
+
+type Loader(load: fn(n: i32) -> Async<Result<i32, string>>)
+
+async fn check(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative " + n.toString();
+    return n * 2;
+}
+
+fn relay(n: i32) -> Async<Result<i32, string>> {
+    return check(n);
+}
+
+async fn propagate(n: i32) -> Async<Result<i32, string>> {
+    val v = try await check(n);
+    return v + 1;
+}
+
+async fn wait<T>(t: Async<T>) -> Async<T> {
+    return await t;
+}
+
+async fn save(n: i32) -> Async<Result<void, string>> {
+    if (n < 0) throw "refused " + n.toString();
+    return;
+}
+
+fn show(r: Result<i32, string>) -> void {
+    case r {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e);
+    }
+}
+
+async fn run() -> Async<void> {
+    show(await check(1));
+    show(await check(-1));
+    show(await relay(2));
+    show(await relay(-2));
+    show(await propagate(3));
+    show(await propagate(-3));
+    val handled = try await check(-4) catch 0;
+    print("handled", handled);
+    show(await wait(check(-5)));
+    val acc = Account(id: 10);
+    show(await acc.load(6));
+    show(await acc.load(-6));
+    show(await acc.relayLoad(-7));
+    val loader = Loader(load: check);
+    show(await loader.load(9));
+    show(await loader.load(-9));
+    val first = check(7);
+    val second = check(-8);
+    show(await first);
+    show(await second);
+    val blk: Async<Result<i32, string>> = async {
+        if (handled == 0) throw "block";
+        return 9;
+    };
+    show(await blk);
+    val saved = await save(1);
+    print("saved", saved.isOk());
+    val refused = await save(-1);
+    case refused {
+        Ok(_v) -> print("saved");
+        Error(e) -> print("error", e);
+    }
+}
+
+pub fn main() -> void {
+    run();
+}

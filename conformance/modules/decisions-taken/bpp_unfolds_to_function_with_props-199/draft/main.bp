@@ -1,0 +1,16 @@
+//// Decision 199 — `type Props(…)` in the header is the convention (Astro's `interface Props`).
+
+import {io.terminal} from "std";
+import html, {renderToString} from "rakun-bpp";
+import {card as Card, footer as Footer};
+
+pub async fn main() -> Async<void> {
+    // The attributes are the fields of `Card`'s `Props`; the content fills its slot.
+    terminal.print(await renderToString(
+        html @`<Card title="botopink" tags={["lang", "beam"]}><em>new</em></Card>`,
+    ));
+    // A file whose header declares no `Props` takes no argument.
+    terminal.print(await renderToString(html @`<Footer/>`));
+    // The header's declarations stay at module level.
+    terminal.print(Card.initial("botopink"));
+}

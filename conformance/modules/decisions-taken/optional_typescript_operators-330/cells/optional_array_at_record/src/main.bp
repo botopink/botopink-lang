@@ -1,0 +1,25 @@
+//// Decision 330 — a `?.` call over an optional array answers the element
+//// as the `?T` it is: an array of records answers the record itself, so a
+//// `?.` read of its field, and a default, work on every target.
+
+import {io.terminal.print} from "std";
+
+type Post(title: string)
+
+type Holder(posts: ?Post[])
+
+fn holder(k: i32) -> Holder {
+    if (k == 0) return Holder(posts: null);
+    return Holder(posts: [Post(title: "tick")]);
+}
+
+pub fn main() -> void {
+    val ps: ?Post[] = holder(1).posts;
+    val p = ps?.at(0);
+    print(p?.title ?? "none");
+    val absent: ?Post[] = holder(0).posts;
+    val q = absent?.at(0);
+    print(q?.title ?? "none");
+    print(ps?.at(0)?.title ?? "none");
+    print(ps?.at(5)?.title ?? "none");
+}

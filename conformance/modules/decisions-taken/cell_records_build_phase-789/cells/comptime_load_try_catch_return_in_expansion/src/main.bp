@@ -1,0 +1,40 @@
+//// Decision 789 (4) — the conformance module's `runCase(comptime name)`, expanded where it is
+//// called: the case's load is answered at build, so its `try … catch` takes a branch at build —
+//// on `Error` the handler's statements run and the `return` ends the expansion; on `Ok` the
+//// `Module` is bound and the expansion goes on to the init that runs it.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("src/cases/"
+        + name
+        + "/mod.bp") catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                print("refused error: " + d.message);
+                print("at "
+                    + d.file
+                    + ":"
+                    + d.line.toString()
+                    + ":"
+                    + d.column.toString());
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f ->
+            print("abort " + f.message)
+        }
+    });
+}
+
+comptime {
+    runCase("fine");
+    runCase("broken");
+}
+
+pub fn main() -> void {}

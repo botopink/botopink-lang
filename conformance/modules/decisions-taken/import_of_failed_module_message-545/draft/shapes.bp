@@ -1,0 +1,7 @@
+//// Imports the module that fails to check.
+
+import {geometry.side};
+
+pub fn area(n: i32) -> i32 {
+    return side(n) * side(n);
+}

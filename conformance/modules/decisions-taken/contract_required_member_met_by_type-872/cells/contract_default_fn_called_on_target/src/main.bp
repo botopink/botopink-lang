@@ -1,0 +1,10 @@
+//// Decision 872 — 799 (4) refuses a bodied `default fn` the type already has; a required member the type has is met by the type's own method and compared with the contract's signature.
+
+import {loud.Shout, loud.Tag, loud.local, loud.TagShout*, loud.StringShout*};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(local());
+    print(Tag(name: "b").shout());
+    print("d".shout());
+}

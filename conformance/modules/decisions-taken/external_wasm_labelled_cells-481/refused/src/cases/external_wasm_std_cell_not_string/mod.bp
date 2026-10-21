@@ -1,0 +1,12 @@
+//// Decision 481 — `std:` names a std-wasm function as a string, never a
+//// botopink name: `std: hash.contentHash` is refused at the argument, on every
+//// target, naming the string form.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("x.y($0)"), .Erlang("x:y($0)"), .Wasm(std: hash.contentHash))]
+pub declare fn digest(s: string) -> string;
+
+pub fn main() -> void {
+    print(digest("a"));
+}

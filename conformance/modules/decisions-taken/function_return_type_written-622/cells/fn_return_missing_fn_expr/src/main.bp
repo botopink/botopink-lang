@@ -1,0 +1,12 @@
+//// Decision 622 — a typed `fn` expression writes its return type as a
+//// declaration does (408): `fn(n: i32) { … }` writes no `->` and is refused at
+//// its `fn`, `fn-return-missing`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val show: fn(n: i32) = fn(n: i32) {
+        print(n);
+    };
+    show(1);
+}

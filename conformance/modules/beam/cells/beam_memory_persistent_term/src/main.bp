@@ -1,0 +1,18 @@
+//// Front 17 step 4 — `#[compiler.beamMemory(.PersistentTerm)]` is put once, when the
+//// module loads (`-on_load`), and read from anywhere on the node: a process
+//// spawned afterwards reads `101`.
+
+import {async, io.terminal.print} from "std";
+
+#[compiler.beamMemory(.PersistentTerm)]
+var version: i32 = 101;
+
+async fn read() -> Async<i32> {
+    return version;
+}
+
+pub async fn main() -> Async<void> {
+    val seen = await async.runAll([{ -> read() }]);
+    print(seen);
+    print(version);
+}

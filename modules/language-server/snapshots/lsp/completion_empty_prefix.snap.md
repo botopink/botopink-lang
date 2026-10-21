@@ -8,3 +8,5 @@ val y = 2;
 ----- COMPLETION at (line 1, char 10)
 x  [Variable]  detail: i32
 y  [Variable]  detail: i32
+behavior  [Keyword]  detail: declaration
+type  [Keyword]  detail: declaration

@@ -1,0 +1,8 @@
+//// The minimal consumer: one function of `shelf`, nothing else in the program.
+
+import {items.Queue, items.describe} from "shelf";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(describe(Queue(label: "plain", size: 1)));
+}

@@ -1,0 +1,20 @@
+//// Decision 738 — a pair is the tuple `#(A, B)`, read by `p._0` / `p._1` or
+//// by `val #(a, _) = p`: a `_` member reads nothing and binds nothing, in a
+//// `val` and in a parameter alike, as often as it is written.
+
+import {io.terminal.print} from "std";
+
+fn second(#(_, s): #(i32, string)) -> string {
+    return s;
+}
+
+pub fn main() -> void {
+    val p = #(1, "x");
+    val #(n, _) = p;
+    print(n);
+    val #(_, m, _) = #(true, 7, "y");
+    print(m);
+    val #(_, k) = #(2, 3);
+    print(k);
+    print(second(p));
+}

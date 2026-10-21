@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "X",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,19 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "value",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "value",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": [
           {
@@ -36,12 +39,13 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
             ],
-            "returnType": null,
+            "returnType": {
+              "named": "void"
+            },
             "body": null,
             "is_default": false,
             "is_declare": true,

@@ -1,0 +1,22 @@
+//// 144 B-22 row "a module-level `val` initialised by a call" — a module-level
+//// `val` built by a call (`"a b".split(" ")`) beside a function calling
+//// `floor`: the parent row failed a commonJS build with a bare `TypeError`.
+//// A pin: the row no longer reproduces, the cell guards it on every target.
+
+import {io.terminal.print} from "std";
+
+val t = "a b".split(" ");
+
+fn half(x: f64) -> f64 {
+    return x.floor();
+}
+
+fn count() -> i32 {
+    return t.length;
+}
+
+pub fn main() -> void {
+    print(count());
+    print(t.at(1) ?? "?");
+    print(half(3.7));
+}

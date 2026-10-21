@@ -1,0 +1,13 @@
+//// Decisions 305, 481 — `op:` is `compiler.external(.Wasm)`'s cell alone. The prefixed
+//// string `"op:f64.floor"` on `compiler.external(.JavaScript)` is no binding and no host code
+//// the compiler passes through: it is refused at the argument on every
+//// target, naming the wasm cell to write.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("op:f64.floor"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
+pub declare fn floorOf(x: f64) -> f64;
+
+pub fn main() -> void {
+    print(floorOf(2.5));
+}

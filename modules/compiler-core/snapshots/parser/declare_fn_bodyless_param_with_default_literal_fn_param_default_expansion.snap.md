@@ -2,12 +2,18 @@
 {
   "decls": [
     {
-      "delegate": {
-        "name": "slice",
+      "fn": {
         "isPub": true,
+        "effect": null,
+        "isDeclare": true,
+        "isDefault": false,
+        "label": null,
+        "name": "slice",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
+        "annotations": [],
+        "genericParams": [],
         "params": [
           {
             "name": "s",
@@ -16,7 +22,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -27,7 +32,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           },
@@ -38,7 +42,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": {
               "unaryOp": {
@@ -62,7 +65,11 @@
             }
           }
         ],
-        "returnType": "string"
+        "returnType": {
+          "named": "string"
+        },
+        "typeGuardParam": null,
+        "body": []
       }
     }
   ]

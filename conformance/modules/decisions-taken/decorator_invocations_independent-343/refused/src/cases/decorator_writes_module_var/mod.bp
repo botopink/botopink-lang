@@ -1,0 +1,28 @@
+//// Decision 343 — each decorator invocation is independent: a decorator's
+//// answer depends on the declaration it annotates alone, so a body writing a
+//// module-level `var` — here through a function of the module it calls — is
+//// refused at the write, pointing at `@TypeInfo.all(with: …)` at the entry
+//// point (`reject/typeinfo_all_duplicate_at_entry`). It used to be `unbound
+//// variable 'seen'` at the `var`'s read.
+
+import {compiler, io.terminal.print} from "std";
+
+var seen = 0;
+
+fn bump() -> void {
+    seen = seen + 1;
+}
+
+fn counted(syntax decl: unknown) -> void {
+    bump();
+    @emit("pub fn summary() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
+}
+
+#[counted]
+type Point(x: i32, y: i32)
+
+pub fn main() -> void {
+    print(summary());
+}

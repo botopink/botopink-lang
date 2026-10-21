@@ -1,0 +1,11 @@
+//// Decision 512 — A workspace declares what its members share; a member declares only its own.
+
+import {io.terminal} from "std";
+import {greet.hello} from "greeter";
+
+// A member of a workspace: `greeter` is the workspace's dependency, inherited
+// here without being declared again; the member's manifest writes its `name`
+// alone, and `src`, `entry` and `version` are the workspace's.
+pub fn main() -> void {
+    terminal.print(hello("ana"));
+}

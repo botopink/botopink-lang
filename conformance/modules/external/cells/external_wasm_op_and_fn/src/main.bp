@@ -1,0 +1,22 @@
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.floor($0)"), .Erlang("math:floor($0)"), .Wasm(op: "f64.floor"))]
+pub declare fn floorOf(x: f64) -> f64;
+
+#[compiler.external(
+    .JavaScript("Math.round($0)"),
+    .Erlang("""float(floor($0 + 0.5))"""),
+    .Wasm(body: roundHalfUp),
+)]
+pub declare fn roundOf(x: f64) -> f64;
+
+fn roundHalfUp(x: f64) -> f64 {
+    val up = -1.0 * floorOf(-1.0 * x);
+    return if (up - 0.5 > x) up - 1.0 else up;
+}
+
+pub fn main() -> void {
+    print(floorOf(2.7)); // 2.0
+    print(roundOf(2.5)); // 3.0
+    print(roundOf(-2.5)); // -2.0
+}

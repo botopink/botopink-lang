@@ -1,0 +1,2 @@
+botopink-cell 1
+out pages.Page(uses: [ui.session#[tracked]], calls: [ui.Avatar@pages:48:16]) ui.session(uses: [], calls: []) ui.Avatar(uses: [ui.session#[tracked]], calls: [])

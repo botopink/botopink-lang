@@ -1,0 +1,20 @@
+//// A decorator module that imports the user's `Param` and `Field`: the
+//// `@Decl` it reads still hands out the reflection model's `Method` and
+//// `Param` (`m.params`, `p.name`), never the imported types.
+
+import {model.Param, model.Field};
+import {compiler} from "std";
+
+pub fn described(syntax decl: unknown) -> void {
+    var names = "";
+    for (compiler.methods(decl)) { m ->
+        for (m.params) { p ->
+            names = names + m.name + "." + p.name + ";";
+        }
+    }
+    @emit("pub fn paramNames() -> string { return \"" + names + "\"; }");
+}
+
+pub fn labelOf(p: Param) -> Field {
+    return Field(label: p.key);
+}

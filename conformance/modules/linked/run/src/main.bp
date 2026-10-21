@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.linked_fn_name_collision.runCase();
+    cases.linked_val_name_collision.runCase();
+}

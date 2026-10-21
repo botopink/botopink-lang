@@ -1,0 +1,20 @@
+//// Decision 792 (7) — `run()` is written directly in the `compiler.init` body: in a function
+//// the init body calls it is refused `run-outside-init`, located at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+fn go(m: compiler.Module) -> void {
+    try m.run() catch { f ->
+        print("abort " + f.message)
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/fine/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ -> go(m) });
+        Error(r) -> print("refused");
+    }
+}
+
+pub fn main() -> void {}

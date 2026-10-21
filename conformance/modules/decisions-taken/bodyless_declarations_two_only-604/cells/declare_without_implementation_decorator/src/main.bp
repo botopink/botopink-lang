@@ -1,0 +1,11 @@
+//// Decision 604 — no bodyless declaration exists but one with `#[external(…)]`
+//// (and `compiler.bp`'s): a decorator is no exception, a marker is a decorator
+//// with an empty body. A bodyless one is refused at the declaration.
+
+import {io.terminal.print} from "std";
+
+declare fn registered(syntax decl: unknown) -> void;
+
+pub fn main() -> void {
+    print("unreached");
+}

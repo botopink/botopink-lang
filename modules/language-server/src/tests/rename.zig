@@ -35,7 +35,7 @@ test "rename: val with usages produces edits for all occurrences" {
 test "rename: fn with calls produces edits for all occurrences" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn f(a: i32) { return a; }
+        \\fn f(a: i32) -> i32 { return a; }
         \\val r = f(1);
     ;
 
@@ -97,12 +97,17 @@ test "rename: symbol used 3 times produces 3 edits" {
 }
 
 // ── Rn5 — ranges corretos ─────────────────────────────────────────────────────
+//
+// Distinct from Rn1 (`rename_val_with_usages`) on purpose: there the old name is
+// one char wide and the new one longer, so an edit range sized from the *new*
+// text would still look plausible. Here a 7-char identifier is renamed to a
+// 1-char one, which pins that every range spans the **old** token.
 
-test "rename: edit ranges cover exactly the identifier token" {
+test "rename: edit ranges cover the old identifier, not the new name" {
     const gpa = std.testing.allocator;
     const source =
-        \\val x = 1;
-        \\val y = x;
+        \\val counter = 1;
+        \\val y = counter;
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);
@@ -112,14 +117,45 @@ test "rename: edit ranges cover exactly the identifier token" {
     const edits = try engine.rename(gpa, source, h.pos(0, 4), "z", tokens);
     defer gpa.free(edits);
 
-    // The first edit should cover the position of 'x' in the declaration (line 0, col 4)
-    var found = false;
+    // Declaration (0,4)–(0,11) and usage (1,8)–(1,15): 7 chars each, the width
+    // of `counter` — never 1, the width of `z`.
+    try std.testing.expectEqual(@as(usize, 2), edits.len);
     for (edits) |edit| {
-        if (edit.range.start.line == 0 and edit.range.start.character == 4) {
-            try std.testing.expectEqual(@as(u32, 5), edit.range.end.character);
-            found = true;
-        }
+        try std.testing.expectEqualStrings("z", edit.newText);
+        try std.testing.expectEqual(edit.range.start.line, edit.range.end.line);
+        try std.testing.expectEqual(
+            @as(u32, 7),
+            edit.range.end.character - edit.range.start.character,
+        );
     }
-    try std.testing.expect(found);
     try snap.assertRename(gpa, "rename_ranges_correct", source, h.pos(0, 4), "z", edits);
+}
+
+// ── Rn — a `fn:` binding cell is a name (decision 305) ─────────────────────────
+
+test "rename: renaming a private fn renames its `body:` binding cells" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\#[compiler.external(.JavaScript(body: mixBody), .Erlang(body: mixBody), .Wasm(body: mixBody))]
+        \\pub declare fn mix(x: f64) -> f64;
+        \\fn mixBody(x: f64) -> f64 { return x; }
+        \\
+        \\import {compiler} from "std";
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
+    const tokens = try h.tokenize(arena.allocator(), source);
+    const cursor = h.pos(2, 4);
+    const edits = try engine.rename(gpa, source, cursor, "mixImpl", tokens);
+    defer gpa.free(edits);
+
+    // The declaration and the three cells that name it, all on the
+    // annotation's line.
+    try std.testing.expectEqual(@as(usize, 4), edits.len);
+    for (edits[0..3]) |edit| {
+        try std.testing.expectEqual(@as(u32, 0), edit.range.start.line);
+        try std.testing.expectEqualStrings("mixImpl", edit.newText);
+    }
 }

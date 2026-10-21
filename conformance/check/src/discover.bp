@@ -1,0 +1,57 @@
+//// Every cell under a path, as `cell.zig`'s `discover` finds them (decisions 457, 765, 779): the
+//// path itself when it is a cell (it holds `src/`), else every cell under it, sorted — never inside a
+//// cell, a hidden directory, `node_modules` or a `deps` directory (a cell's own dependency packages
+//// live there). A directory holding `cases/` is a module of cases: each `cases/<case>` is a cell.
+//// A module's `run/`, `refused/` and `cells/<case>/` are cells as any directory holding `src/` is.
+////
+//// One directory is never a cell: this program's own package, `conformance/check/` — it holds
+//// `src/`, and it is no cell (no `snapshot/`, nothing checks it).
+
+import {host.childNames, host.isDir};
+
+/// The cells found, in order, and what the layout forbids.
+pub type Found(cells: string[] = [], refused: string[] = [])
+
+/// Whether `dir` is this program's own package.
+pub fn isTheProgram(dir: string) -> bool {
+    return dir.endsWith("/conformance/check");
+}
+
+/// The cells under the absolute directory `root`.
+pub fn discover(root: string) -> Found {
+    return walk(root, Found());
+}
+
+fn walk(root: string, found: Found) -> Found {
+    if (isTheProgram(root)) return found;
+    val cases = root + "/cases";
+    val hasCases = isDir(cases);
+    if (isDir(root + "/src")) {
+        var refused = found.refused;
+        if (hasCases)
+            refused = refused.append([root
+                + " holds both cases/ and src/ — a module holds cases or is a cell, not both (decision 765)"]);
+        return Found(cells: found.cells.append([root]), refused: refused);
+    }
+    if (hasCases) {
+        var cells = found.cells;
+        var refused = found.refused;
+        for (childNames(cases, "dirs")) { name ->
+            if (!name.startsWith(".")) {
+                val one = cases + "/" + name;
+                if (!isDir(one + "/src"))
+                    refused = refused.append([one
+                        + " is no cell — a case is a directory holding src/main.bp (decision 765)"])
+                else
+                    cells = cells.append([one]);
+            }
+        }
+        return Found(cells: cells, refused: refused);
+    }
+    var acc = found;
+    for (childNames(root, "dirs")) { name ->
+        if (!name.startsWith(".") && name != "node_modules" && name != "deps")
+            acc = walk(root + "/" + name, acc);
+    }
+    return acc;
+}

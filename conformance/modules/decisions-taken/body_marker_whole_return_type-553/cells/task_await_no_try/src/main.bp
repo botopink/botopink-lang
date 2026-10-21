@@ -1,0 +1,28 @@
+//// Decision 120 of 1.0.10-beta (front 24, § Cells "`Async` and failure", first
+//// line; guide.md § 9, row `@Future<T>` with no error) — `Async<T>` never fails:
+//// `await` unwraps it and needs no `try`. `delayed` is a `Async<void>` whose
+//// body only awaits. Printed from inside `run` (see
+//// `run/task_return_layers.bp`). `reject/effect_type_removed_future_no_error.bp`
+//// is the old spelling.
+
+import {io.terminal.print} from "std";
+
+async fn answer(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+async fn delayed(n: i32) -> Async<void> {
+    val v = await answer(n);
+    print("delayed " + v.toString());
+}
+
+async fn run() -> Async<void> {
+    val a = await answer(20);
+    print(a + 2);
+    await delayed(5);
+    print("end");
+}
+
+pub fn main() -> void {
+    run();
+}

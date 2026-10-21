@@ -1,0 +1,42 @@
+//// Decisions 492 and 527 (0), (4) — a raise from a host binding without
+//// `result: true` is `host`, its message the host's text: a JavaScript
+//// `Error`'s `message`, else the thrown value as `String(e)`; on erlang and
+//// beam the reason printed by `~tp`, without the stack, whatever the class
+//// (`error`, `throw`, `exit`) — decision 489's `HostError` rule, one text for
+//// both. After a contained host raise the program goes on.
+////
+//// wasm never imitates a host raise (527 (0)): under wasmtime no host
+//// raises, so the cell runs where a host does — each binding has no wasm
+//// form, and the wasm build is refused on it.
+
+import {failure, failure.Failure, compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+declare fn raiseError() -> i32;
+
+#[compiler.external(.JavaScript("""(() => { throw "refused"; })()"""), .Erlang("""erlang:throw(refused)"""))]
+declare fn raiseThrow() -> i32;
+
+#[compiler.external(.JavaScript("""(() => { throw new Error("gone"); })()"""), .Erlang("""erlang:exit(gone)"""))]
+declare fn raiseExit() -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error("{bad_input,7}"); })()"""),
+    .Erlang("""erlang:error({bad_input, $0})"""),
+)]
+declare fn raiseReason(n: i32) -> i32;
+
+fn show(r: Result<i32, Failure>) -> void {
+    case r {
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind + ": " + f.message);
+    }
+}
+
+pub fn main() -> void {
+    show(failure.attempt({ -> raiseError() }));
+    show(failure.attempt({ -> raiseThrow() }));
+    show(failure.attempt({ -> raiseExit() }));
+    show(failure.attempt({ -> raiseReason(7) }));
+    print("after");
+}

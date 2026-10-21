@@ -1,0 +1,1 @@
+{ "name": "clock_rfc3339_domain", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "beam"] }

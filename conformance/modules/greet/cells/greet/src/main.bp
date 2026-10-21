@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+
+fn greet(name: string) -> string {
+    return "Hello, " + name + "!";
+}
+
+fn main() -> void {
+    print(greet("world")); // Hello, world!
+}

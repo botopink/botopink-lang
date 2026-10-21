@@ -1,0 +1,37 @@
+//// Decision 799 — a program adds members to a primitive through a contract of its own implemented for it:
+//// `StringShout implement Shout for string {}` gives every `string` the contract's `tailShout`, `"a+b".tailShout()`
+//// answers `a+b!`, std's members answer beside it, and `array<T>` takes a contract the same way.
+
+import {shout.Loud};
+import {io.terminal.print} from "std";
+
+behavior Shout {
+    default fn tailShout(self: Self) -> string {
+        return self + "!";
+    }
+}
+
+StringShout implement Shout for string {};
+
+// A contract of another module, implemented here.
+StringLoud implement Loud for string {};
+
+behavior Second<T> {
+    fn at(self: Self<T>, index: i32) -> ?T;
+
+    default fn second(self: Self<T>) -> ?T {
+        return self.at(1);
+    }
+}
+
+ArrSecond<T> implement Second<T> for array<T> {};
+
+pub fn main() -> void {
+    print("a+b".tailShout());
+    val word = "ab";
+    print(word.tailShout().length());
+    print(word.loud());
+    print([1, 2, 3].second());
+    print(["a", "b"].second());
+    print(["a"].second());
+}

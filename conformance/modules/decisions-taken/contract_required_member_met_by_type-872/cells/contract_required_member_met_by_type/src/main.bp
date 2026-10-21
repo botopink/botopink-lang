@@ -1,0 +1,32 @@
+//// Decision 872 — 799 (4) refuses a bodied `default fn` the type already has; a required member the type has is met by the type's own method and compared with the contract's signature.
+
+import {io.terminal.print} from "std";
+
+behavior Shout {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> string;
+
+    default fn tailShout(self: Self) -> string {
+        return self.slice(0) + "!";
+    }
+}
+
+// `slice` is `string`'s own: the block writes nothing.
+StringShout implement Shout for string {};
+
+behavior Labelled {
+    fn label(self: Self) -> string;
+}
+
+type Tag(name: string) {
+    fn label(self: Self) -> string {
+        return "#" + self.name;
+    }
+}
+
+// `label` is `Tag`'s own, in this module.
+TagShout implement Labelled for Tag {};
+
+pub fn main() -> void {
+    print("a+b".tailShout());
+    print(Tag(name: "a").label());
+}

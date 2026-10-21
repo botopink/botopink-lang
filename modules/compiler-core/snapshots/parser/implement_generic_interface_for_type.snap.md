@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "E",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,19 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "tag",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "tag",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }
@@ -38,15 +41,8 @@
         "interfaces": [
           {
             "generic": {
-              "name": "Context",
-              "args": [
-                {
-                  "named": "E"
-                },
-                {
-                  "named": "E"
-                }
-              ],
+              "name": "Renderable",
+              "args": [],
               "is_builtin": true
             }
           }

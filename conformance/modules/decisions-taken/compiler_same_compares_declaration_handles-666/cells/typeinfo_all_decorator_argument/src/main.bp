@@ -1,0 +1,35 @@
+//// Decision 268 — `@TypeInfo.all` declares `with: Decorator | Decorator[]`,
+//// and a decorator's name has type `Decorator`: a decorator with further
+//// arguments, a single decorator and a list of them are all accepted.
+
+import {compiler, io.terminal.print} from "std";
+
+fn route(syntax decl: unknown, comptime path: string) -> void {
+    compiler.setMeta(Route(path: path));
+}
+
+fn job(syntax decl: unknown) -> void {
+    compiler.setMeta(Job(kind: "job"));
+}
+
+#[route("/home")]
+pub fn home() -> string {
+    return "home";
+}
+
+#[job]
+pub fn sweep() -> string {
+    return "sweep";
+}
+
+pub fn main() -> void {
+    print(@TypeInfo.all(with: route).length);
+    print(@TypeInfo.all(with: job)[0]?.name ?? "none");
+    print(@TypeInfo.all(with: [route, job]).map({ d -> d.name }).join(","));
+}
+
+// What `#[route]` records.
+type Route(path: string)
+
+// What `#[job]` records.
+type Job(kind: string)

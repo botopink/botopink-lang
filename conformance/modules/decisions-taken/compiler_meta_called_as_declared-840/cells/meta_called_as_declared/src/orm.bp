@@ -1,0 +1,13 @@
+//// The meta types and the decorator that records them.
+
+import {compiler} from "std";
+
+pub type Entity(table: string)
+
+pub type Index(column: string)
+
+pub fn entity(syntax decl: unknown) -> void {
+    compiler.setMeta(Entity(table: "users"));
+    compiler.addMeta(Index(column: "id"));
+    compiler.addMeta(Index(column: "name"));
+}

@@ -1,0 +1,18 @@
+pub behavior Shout {
+    fn label(self: Self) -> string;
+
+    default fn shout(self: Self) -> string {
+        return self.label() + "!";
+    }
+}
+
+// The blocks' own `label` is a method of the primitive they implement for.
+pub StringShout implement Shout for string {
+    fn label(self: Self) -> string {
+        return "s:" + self;
+    }
+};
+
+pub fn local() -> string {
+    return "a".label() + "a".shout();
+}

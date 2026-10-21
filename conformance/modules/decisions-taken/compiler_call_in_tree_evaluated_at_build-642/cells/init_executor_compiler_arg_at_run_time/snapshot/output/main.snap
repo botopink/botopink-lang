@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: compiler-arg-at-run-time: `s` is a value of the tree, which exists only when the program runs, and the `comptime` parameter `t` of `compiler.typeInfo` takes only what the build knows
+at src/main.bp:12:37

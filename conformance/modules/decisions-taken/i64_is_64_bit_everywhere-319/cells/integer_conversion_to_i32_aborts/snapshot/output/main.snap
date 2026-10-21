@@ -1,0 +1,4 @@
+botopink-cell 1
+out 2147483647
+abort
+stderr toI32: 2147483648 does not fit i32

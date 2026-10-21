@@ -1,0 +1,31 @@
+//// Decision 638 — a template method's receiver is a `syntax` value: `code`
+//// splices it as written (`Syntax(self)`), so the call it builds runs on the
+//// receiver where the call stands, typed there. The text's hole, a caller's
+//// expression, is spliced the same way; the text the template computed is a
+//// value known at build, spliced as its literal.
+
+import {code, compiler, io.terminal.print} from "std";
+
+type Db(name: string) {
+    pub fn run(self: Self, sql: string, args: string[]) -> string {
+        return self.name + ": " + sql + " " + args.join(",");
+    }
+}
+
+fn query(syntax self: Db, syntax q: string) -> anyvalue {
+    val h = compiler.holes(q);
+    val sql = (compiler.text(q).split("\${").at(0) ?? "") + "?";
+    return code @`${self}.run(${sql}, [${h[0]}])`;
+}
+
+fn pick(first: Db, second: Db, useFirst: bool) -> Db {
+    return if (useFirst) first else second;
+}
+
+pub fn main() -> void {
+    val primary = Db(name: "main");
+    val replica = Db(name: "replica");
+    val id = "7";
+    print(primary.query @`select * from users where id = ${id}`);
+    print(pick(primary, replica, false).query @`delete from users where id = ${id + "1"}`);
+}

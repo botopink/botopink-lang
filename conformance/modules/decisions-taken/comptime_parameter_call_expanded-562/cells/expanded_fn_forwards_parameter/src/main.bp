@@ -1,0 +1,30 @@
+//// Decision 562 — a function whose every parameter is `comptime` and whose
+//// body only forwards a parameter to another such function is expanded at
+//// its call too, never specialised: `twice("a")` writes both `inner` calls
+//// at the call, the second with the argument known at build.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
+declare fn say(line: string) -> void;
+
+fn sayBody(line: string) -> void {
+    print(line);
+}
+
+fn inner(comptime n: string) -> void {
+    say(n);
+}
+
+fn twice(comptime n: string) -> void {
+    inner(n);
+    inner(n + "!");
+}
+
+pub fn main() -> void {
+    twice("hi");
+}

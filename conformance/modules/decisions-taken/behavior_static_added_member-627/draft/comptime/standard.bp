@@ -1,0 +1,7 @@
+import {compiler} from "std";
+
+pub fn standard(syntax decl: unknown, syntax make: unknown) -> void {
+    compiler.addMember("standard", fn() -> decl {
+        return make;
+    });
+}

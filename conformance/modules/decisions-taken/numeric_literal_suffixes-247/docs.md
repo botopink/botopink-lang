@@ -1,0 +1,23 @@
+# Decision 247 — Kotlin's numeric suffixes, lowercase: `1.5` is `f64` and `42` `i32` by default; `1.5f` f32, `1.5d` f64, `42l` i64, `42u`
+
+[run/src/cases/comptime_float_keeps_decimal_point/mod.bp](run/src/cases/comptime_float_keeps_decimal_point/mod.bp)
+[refused/src/cases/float_literal_never_fits_f32/mod.bp](refused/src/cases/float_literal_never_fits_f32/mod.bp)
+[refused/src/cases/integer_literal_beside_float_in_array/mod.bp](refused/src/cases/integer_literal_beside_float_in_array/mod.bp)
+[refused/src/cases/integer_literal_never_fits_f64/mod.bp](refused/src/cases/integer_literal_never_fits_f64/mod.bp)
+[refused/src/cases/integer_literal_operand_of_f64/mod.bp](refused/src/cases/integer_literal_operand_of_f64/mod.bp)
+[refused/src/cases/integer_suffix_out_of_range/mod.bp](refused/src/cases/integer_suffix_out_of_range/mod.bp)
+[refused/src/cases/number_exponent_without_digits/mod.bp](refused/src/cases/number_exponent_without_digits/mod.bp)
+[refused/src/cases/number_pattern_of_another_type/mod.bp](refused/src/cases/number_pattern_of_another_type/mod.bp)
+[refused/src/cases/number_pattern_suffix_disagrees/mod.bp](refused/src/cases/number_pattern_suffix_disagrees/mod.bp)
+[refused/src/cases/number_suffix_float_on_radix/mod.bp](refused/src/cases/number_suffix_float_on_radix/mod.bp)
+[refused/src/cases/number_suffix_integer_on_float/mod.bp](refused/src/cases/number_suffix_integer_on_float/mod.bp)
+[refused/src/cases/number_suffix_unknown/mod.bp](refused/src/cases/number_suffix_unknown/mod.bp)
+[refused/src/cases/number_suffix_uppercase/mod.bp](refused/src/cases/number_suffix_uppercase/mod.bp)
+[run/src/cases/numeric_literal_suffixes/mod.bp](run/src/cases/numeric_literal_suffixes/mod.bp)
+[run/src/cases/numeric_suffix_positions/mod.bp](run/src/cases/numeric_suffix_positions/mod.bp)
+
+Proved also by [array_literal_numeric_join](../mixed_literals_infer_union-150/run/src/cases/array_literal_numeric_join/mod.bp)
+Proved also by [bigint_plus_int_literal](../bigint_decimal_strict_json-332/refused/src/cases/bigint_plus_int_literal/mod.bp)
+Proved also by [bigint_unsuffixed_literal](../bigint_decimal_strict_json-332/refused/src/cases/bigint_unsuffixed_literal/mod.bp)
+Proved also by [comptime_wide_literal](../comptime_runs_at_build-331/run/src/cases/comptime_wide_literal/mod.bp)
+Proved also by [wide_literal_past_js_safe_integer](../i64_is_64_bit_everywhere-319/run/src/cases/wide_literal_past_js_safe_integer/mod.bp)

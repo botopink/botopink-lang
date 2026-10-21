@@ -1,0 +1,22 @@
+//// Decision 298 — typed meta is recorded in the decorator's own body, on its
+//// `@Decl` parameter, where the call's record type is read. A function the
+//// body hands the handle to is refused at its call.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn record(d: unknown) -> void {
+    compiler.addMeta(Entity(table: "cities"));
+}
+
+fn entity(syntax decl: unknown) -> void {
+    record(decl);
+}
+
+#[entity]
+type City(name: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).metaAll(Entity).length);
+}

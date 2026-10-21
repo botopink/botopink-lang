@@ -1,0 +1,20 @@
+//// Decision 416 (1) — `inject` builds a record; a behavior is read with `use
+//// context(…)`, and `inject(Repository)` is refused at the argument.
+
+import {context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+behavior Repository {
+    fn find(self: Self, id: i32) -> string;
+}
+
+component fn Page() -> Component<View> {
+    val r = use inject(Repository);
+    return View(text: "x");
+}
+
+pub async fn main() -> Async<void> {
+    val p = await Page();
+    print(p.text);
+}

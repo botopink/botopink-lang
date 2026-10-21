@@ -1,0 +1,8 @@
+botopink-cell 1
+out true
+out true
+out 0-1-1 0:0:0 weekday 6
+out 9999-12-31 23:59:59 weekday 5
+out 1970-1-1 0:0:0 weekday 4
+out true
+out true

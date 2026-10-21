@@ -1,0 +1,39 @@
+//// The value an annotation argument hands a decorator is a variant of the
+//// parameter's own enum, at build and at run time (decisions 310, 603: a type
+//// is its module plus its name). The `Lifecycle` this module declares and the
+//// one another package declares are other types: neither decides the value
+//// `#[kit.m(lifecycle: .Manual)]` reaches the body and the executor with.
+
+import {kit} from "lib";
+import {kit.Mark} from "lib";
+import {phase} from "other";
+import {io.terminal.print, compiler} from "std";
+
+type Lifecycle {
+    Slow,
+    Manual,
+}
+
+#[kit.m(lifecycle: .Manual)]
+pub fn first() -> i32 {
+    return 1;
+}
+
+#[kit.m]
+pub fn third() -> i32 {
+    return 3;
+}
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(first).meta(Mark)?.lifecycle ?? "none");
+    print(comptime compiler.typeInfo(third).meta(Mark)?.lifecycle ?? "none");
+    for (kit.recorded()) { line ->
+        print(line);
+    }
+    val local: Lifecycle = Lifecycle.Slow;
+    print(case local {
+        Slow -> "local slow";
+        Manual -> "local manual";
+    });
+    print(phase.describe());
+}

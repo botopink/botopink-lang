@@ -1,0 +1,21 @@
+import {io.terminal.print} from "std";
+
+fn grade(n: i32) -> void {
+    case n {
+        i32 when (n > 100) {
+            print("impossible");
+        }
+        0 {
+            print("zero");
+        }
+        _ {
+            print("something else");
+        }
+    }
+}
+
+pub fn main() -> void {
+    grade(200); // impossible
+    grade(0); // zero
+    grade(5); // something else
+}

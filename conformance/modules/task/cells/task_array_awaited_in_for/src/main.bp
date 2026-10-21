@@ -1,0 +1,53 @@
+//// An array of tasks awaited one by one: the element of a `for` loop, a task
+//// read by index, a task held in a record field and a task handed to a
+//// lambda parameter are all tasks, and `await` settles each with its value on
+//// every target.
+
+import {io.terminal.print} from "std";
+
+async fn double(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+fn pass(t: Async<i32>) -> Async<i32> {
+    return t;
+}
+
+async fn total(ts: Async<i32>[]) -> Async<i32> {
+    var acc = 0;
+    for (ts) { t ->
+        val v = await t;
+        acc = acc + v;
+    }
+    return acc;
+}
+
+type Holder(job: Async<i32>)
+
+async fn settle(t: Async<i32>) -> Async<i32> {
+    val v = await t;
+    return v + 1;
+}
+
+pub async fn main() -> Async<void> {
+    val tasks = [double(1), double(2), double(3)];
+    var sum = 0;
+    for (tasks) { t ->
+        val v = await t;
+        print(v);
+        sum = sum + v;
+    }
+    print(sum);
+
+    val second = tasks[1] ?? double(0);
+    print(await second);
+
+    val h = Holder(job: double(7));
+    print(await h.job);
+
+    print(await settle(double(5)));
+    val apply = pass;
+    print(await apply(double(9)));
+
+    print(await total([double(10), double(20)]));
+}

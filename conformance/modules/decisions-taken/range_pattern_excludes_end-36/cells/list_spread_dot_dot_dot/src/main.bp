@@ -1,0 +1,11 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — the array spread is
+//// `..`, not JavaScript's `...` (which is the inclusive pattern range,
+//// decision 36). Refused by name at the `...`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val a = [1, 2];
+    val b = [...a, 3];
+    print(b.length.toString());
+}

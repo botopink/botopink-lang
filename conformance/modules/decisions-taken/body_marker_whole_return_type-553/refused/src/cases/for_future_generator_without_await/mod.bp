@@ -1,0 +1,24 @@
+//// Decision 103 — a `@FutureGenerator` suspends between items: it is
+//// iterated with `for await`, never with `for`.
+
+import {io.terminal.print} from "std";
+
+async iter fn ticks(n: i32) -> AsyncIter<i32> {
+    var i = 0;
+    while (i < n) {
+        yield i;
+        i = i + 1;
+    }
+}
+
+async fn total() -> Async<i32> {
+    var acc = 0;
+    for (ticks(3)) { v ->
+        acc = acc + v;
+    }
+    return acc;
+}
+
+pub fn main() -> void {
+    print(1);
+}

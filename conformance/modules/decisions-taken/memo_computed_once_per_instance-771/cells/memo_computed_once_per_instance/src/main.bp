@@ -1,0 +1,35 @@
+//// Decisions 755, 771 — `use memo({ -> make })` is std's
+//// `hooks.memo<T>(make: fn() -> T) -> Component<T>`: one slot per `use memo`
+//// position, allocated when one `Page(…)` call makes the component value; its
+//// first render runs `make` and fills the slot, a later render of the same
+//// value reads it. `a` rendered twice makes its label and its count once;
+//// `b`, another value of the same component, makes its own.
+
+import {context.RenderScope, hooks.memo, io.terminal.print} from "std";
+
+type Element(text: string) implement Renderable
+
+component fn Page(name: string) -> Component<Element> {
+    val label = use memo({ ->
+        print("label " + name);
+        "page " + name
+    });
+    val count = use memo({ ->
+        print("count " + name);
+        name.length + 1
+    });
+    return Element(text: label + " " + count.toString());
+}
+
+pub async fn main() -> Async<void> {
+    val a = Page("a");
+    val b = Page("bb");
+    val first = (await a.run(RenderScope.root())).value;
+    print(first.text);
+    val again = (await a.run(RenderScope.root())).value;
+    print(again.text);
+    val other = (await b.run(RenderScope.root())).value;
+    print(other.text);
+    val last = (await a.run(RenderScope.root())).value;
+    print(last.text);
+}

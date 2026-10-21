@@ -1,0 +1,1 @@
+{ "name": "try_catch_host_raise_propagates", "targets": ["commonJS", "erlang", "beam"] }

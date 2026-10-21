@@ -1,0 +1,14 @@
+//// Decision 589 — the prelude is the items marked `#[bpp.htmlPrelude]`
+//// where they are declared, a `pub fn` among them: the mark on a function is
+//// accepted, and the program runs (361's marker `val` is retired).
+
+import {bpp, io.terminal.print} from "std";
+
+#[bpp.htmlPrelude]
+pub fn prelude() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(prelude());
+}

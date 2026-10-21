@@ -1,0 +1,10 @@
+//// Decision 793 (3) — a `pub` function whose every parameter is `comptime`,
+//// written in this module and called from another module's top-level
+//// `comptime` block.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn check(comptime name: string) -> void {
+    val label = "init " + name;
+    compiler.init({ -> print(label) });
+}

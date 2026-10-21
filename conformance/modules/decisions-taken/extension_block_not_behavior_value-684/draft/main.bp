@@ -1,0 +1,14 @@
+//// Decision 684 — A type that implements a behavior only through an extension block (`Sym implement B for T`) is not a value of that behavior: the block adds methods where it is visible, and `T` is refused for a `B` parameter, return or context.
+
+import {shapes.Shape, shapes.Square, shapes.Circle, shapes.SquareArea*};
+import {io.terminal.print} from "std";
+
+fn total(s: Shape) -> f64 {
+    return s.area();
+}
+
+pub fn main() -> void {
+    print(Square(side: 2.0).area());
+    print(total(Circle(radius: 1.0)));
+    print(total(Square(side: 2.0)));
+}

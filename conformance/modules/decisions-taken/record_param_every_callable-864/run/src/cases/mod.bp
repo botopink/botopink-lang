@@ -1,0 +1,3 @@
+pub mod record_param_on_method;
+pub mod record_param_on_associated;
+pub mod record_param_generic;

@@ -1,0 +1,1 @@
+{ "name": "host_template_binding_inside_while", "targets": ["erlang", "beam"] }

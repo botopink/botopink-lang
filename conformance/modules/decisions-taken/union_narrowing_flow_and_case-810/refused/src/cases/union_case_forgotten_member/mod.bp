@@ -1,0 +1,20 @@
+//// Decision 810 (3) — a `case` over a union is exhaustive: with generic type
+//// patterns for two of its three members and no `_`, the third is refused at
+//// the `case`, named.
+
+type Box<T>(item: T)
+
+type Pair<T>(left: T, right: T)
+
+type Trio<T>(a: T, b: T, c: T)
+
+pub fn firstCase<T>(v: Box<T> | Pair<T> | Trio<T>) -> T {
+    return case v {
+        Box<T> { b ->
+            b.item
+        }
+        Pair<T> { p ->
+            p.left
+        }
+    };
+}

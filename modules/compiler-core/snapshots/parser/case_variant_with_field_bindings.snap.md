@@ -28,7 +28,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }
@@ -99,7 +98,10 @@
                                     "g",
                                     "b"
                                   ]
-                                }
+                                },
+                                "shape": "variant",
+                                "labels": [],
+                                "rest": false
                               }
                             },
                             "body": {

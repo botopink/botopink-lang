@@ -1,0 +1,4 @@
+//// A library whose `items` module declares a record named `Queue` — the name
+//// std's `collections` also declares.
+
+pub mod items;

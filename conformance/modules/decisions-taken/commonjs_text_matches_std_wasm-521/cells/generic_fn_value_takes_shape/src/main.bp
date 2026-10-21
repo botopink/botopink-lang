@@ -1,0 +1,24 @@
+//// A generic function that writes its `T` as text, named as a value, writes an
+//// `f64` with its decimal part on every target (decision 521, as decision 673
+//// builds it): handed to a host callback (`xs.map(show)`, whose JavaScript
+//// `map` passes the index and the array after the element) and to a function
+//// of the program. On commonJS the value is an arrow of the function's own
+//// arity handing the body the shape of the type this use binds; before it,
+//// `xs.map(show)` answered `["1", "2.5"]`.
+
+import {io.terminal.print} from "std";
+
+fn show<T>(x: T) -> string {
+    return "${x}";
+}
+
+fn applyTo(x: f64, f: fn(x: f64) -> string) -> string {
+    return f(x);
+}
+
+pub fn main() -> void {
+    val xs: f64[] = [1.0, 2.5];
+    print(xs.map(show));
+    print(applyTo(2.0, show));
+    print([1, 2].map(show));
+}

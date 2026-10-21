@@ -1,0 +1,12 @@
+//// A template over its text's captured bindings.
+
+import {compiler} from "std";
+
+pub fn deps(syntax q: string) -> string {
+    var names: string[] = [];
+    for (compiler.bindings(q)) { d ->
+        names.push(compiler.name(d)!);
+    }
+    val text = "[" + names.join(", ") + "]";
+    return text;
+}

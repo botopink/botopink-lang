@@ -1,0 +1,9 @@
+//// A decorator whose `comptime` variadic is one array of fields.
+
+import {compiler} from "std";
+
+pub type Index(columns: string[])
+
+pub fn index<T>(syntax decl: T, comptime ..fields: compiler.Field<T>[]) -> void {
+    compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
+}

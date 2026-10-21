@@ -22,8 +22,8 @@
                     "expr": {
                       "jump": {
                         "loc": {
-                          "line": 2,
-                          "col": 5
+                          "line": 1,
+                          "col": 28
                         },
                         "kind": {
                           "break": {
@@ -31,15 +31,15 @@
                             "value": {
                               "binaryOp": {
                                 "loc": {
-                                  "line": 2,
-                                  "col": 16
+                                  "line": 1,
+                                  "col": 28
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "literal": {
                                     "loc": {
-                                      "line": 2,
-                                      "col": 11
+                                      "line": 1,
+                                      "col": 23
                                     },
                                     "kind": {
                                       "numberLit": "6364"
@@ -49,8 +49,8 @@
                                 "rhs": {
                                   "literal": {
                                     "loc": {
-                                      "line": 2,
-                                      "col": 18
+                                      "line": 1,
+                                      "col": 30
                                     },
                                     "kind": {
                                       "numberLit": "11"
@@ -63,7 +63,8 @@
                         }
                       }
                     },
-                    "emptyLinesBefore": 0
+                    "emptyLinesBefore": 0,
+                    "tail": "returned"
                   }
                 ]
               }

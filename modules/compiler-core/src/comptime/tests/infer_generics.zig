@@ -20,7 +20,7 @@ const h = @import("helpers.zig");
 
 test "infer: type ---- arg satisfies single constraint" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn render(comptime tag: type string, props: i32) -> i32 {
+        \\fn render(comptime tag: type<string>, props: i32) -> i32 {
         \\    return props;
         \\}
         \\val a = render("div", 1);
@@ -29,7 +29,7 @@ test "infer: type ---- arg satisfies single constraint" {
 
 test "infer: type ---- arg satisfies one of multiple constraints" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\fn coerce(comptime v: type<string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val s = coerce("s", 0);
@@ -40,7 +40,7 @@ test "infer: type ---- arg satisfies one of multiple constraints" {
 
 test "infer: type ---- no constraint accepts any type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn id(comptime t: type, x: i32) -> i32 {
+        \\fn id(comptime t: anytype, x: i32) -> i32 {
         \\    return x;
         \\}
         \\val a = id("s", 0);
@@ -51,31 +51,35 @@ test "infer: type ---- no constraint accepts any type" {
 
 test "infer: generic record Pair<A, B>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Pair = record <A, B> { first: A, second: B };
+        \\val Pair = type <A, B>(first: A, second: B);
         \\val p = Pair(first: 42, second: "hello");
-        \\@print(p);
+        \\fn main() -> void {
+        \\    print(p);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: generic record Triple<A, B, C>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Triple = record <A, B, C> { first: A, second: B, third: C };
+        \\val Triple = type <A, B, C>(first: A, second: B, third: C);
         \\val t = Triple(first: 1, second: "x", third: 3.14);
     );
 }
 
 test "infer: generic record Box<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Box = record <T> {
+        \\val Box = type <T>(
         \\    value: T = todo,
-        \\};
+        \\);
         \\val b = Box(42);
     );
 }
 
 test "infer: generic enum Option<T> ---- unit and payload variants" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Option = enum <T> {
+        \\val Option = type <T> {
         \\    None,
         \\    Some(value: T),
         \\};
@@ -86,11 +90,11 @@ test "infer: generic enum Option<T> ---- unit and payload variants" {
 
 test "infer: generic enum Result<T> with Ok and Err" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum <T> {
+        \\val Result = type <T> {
         \\    Ok(value: T),
         \\    Err(message: string),
         \\};
-        \\pub fn isOk(r: Result) -> bool {
+        \\pub fn isOk<T>(r: Result<T>) -> bool {
         \\    return true;
         \\}
         \\val r = Result.Ok(value: 42);
@@ -124,7 +128,7 @@ test "infer: generic fn ---- two calls with different types in same scope" {
         \\fn identity<T>(x: T) -> T {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = identity(42);
         \\    val b: string = identity("hi");
         \\}
@@ -136,7 +140,7 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
         \\fn identity<T>(x: T) -> T {
         \\    return x;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val f = identity;
         \\    val g = identity;
         \\    val a: i32 = f(1);
@@ -147,21 +151,23 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
 
 test "infer: generic interface Container<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Container = interface <T> {
-        \\    fn fetch(self: Self) -> T;
-        \\    fn store(self: Self, value: T);
+        \\val Container = behavior <T> {
+        \\    fn fetch(self: Self<T>) -> T;
+        \\    fn store(self: Self<T>, value: T) -> void;
         \\}
     );
 }
 
 test "infer: @Expr builtin type ---- declaration with bounded return typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\pub fn identity(comptime template: @Expr<string>) -> @Expr<string> {
+        \\pub fn identity(syntax template: string) -> string {
         \\    return template;
         \\}
-        \\fn main() {
-        \\    @print("ok");
+        \\fn main() -> void {
+        \\    print("ok");
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -170,13 +176,13 @@ test "infer: generic record ---- per-use instantiation does not collapse" {
     // `swap` re-constructs with swapped fields (would bind A := B without
     // per-call-site constructor instantiation + per-instance field typing).
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<A, B> { first: A, second: B }
+        \\type Box<A, B>(first: A, second: B)
         \\
         \\fn swap<A, B>(p: Box<A, B>) -> Box<B, A> {
         \\    return Box(first: p.second, second: p.first);
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = Box(first: 1, second: "one");
         \\    val s = swap(b);
         \\    val n: i32 = s.second;
@@ -187,9 +193,9 @@ test "infer: generic record ---- per-use instantiation does not collapse" {
 
 test "infer error: generic record ---- instantiated field type still checks" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Box<A, B> { first: A, second: B }
+        \\type Box<A, B>(first: A, second: B)
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val b = Box(first: 1, second: "one");
         \\    val bad: i32 = b.second;
         \\}
@@ -202,9 +208,9 @@ test "infer error: generic record ---- instantiated field type still checks" {
 // scope: `unbox(Box<i32>)` and `unbox(Box<string>)` each bind `T` fresh.
 test "infer: net-new ---- generic record at two concrete types" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<T> { item: T }
+        \\type Box<T>(item: T)
         \\fn unbox<T>(b: Box<T>) -> T { return b.item; }
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = unbox(Box(item: 7));
         \\    val s: string = unbox(Box(item: "hi"));
         \\}
@@ -216,7 +222,7 @@ test "infer: net-new ---- generic record at two concrete types" {
 // element type.
 test "infer: net-new ---- recursion through a generic data type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Tree<T> {
+        \\type Tree<T> {
         \\    Leaf(value: T),
         \\    Node(left: Tree<T>, right: Tree<T>),
         \\}
@@ -232,13 +238,17 @@ test "infer: net-new ---- recursion through a generic data type" {
 // A generic fn's return type is inferred SOLELY from the call's usage context:
 // `make()` has no value argument fixing `T`, so the `val: i32`/`val: string`
 // annotations are the only source — each call site instantiates fresh.
-test "infer: net-new ---- generic return inferred from usage context" {
+// Decision 668 — the return follows from the type token, never from the
+// binding's annotation alone.
+test "infer: net-new ---- generic return inferred from the type token" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn make<T>() -> T { @todo(); }
-        \\fn main() {
-        \\    val n: i32 = make();
-        \\    val s: string = make();
+        \\fn make<T>(comptime t: type<T>) -> T { panic("not implemented"); }
+        \\fn main() -> void {
+        \\    val n: i32 = make(i32);
+        \\    val s: string = make(string);
         \\}
+        \\
+        \\import {failure.panic} from "std";
     );
 }
 
@@ -247,7 +257,7 @@ test "infer: net-new ---- generic return inferred from usage context" {
 // generic call and the `assert` typechecks.
 test "infer: net-new ---- inline test in a generic module resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<T> { item: T }
+        \\type Box<T>(item: T)
         \\fn unbox<T>(b: Box<T>) -> T { return b.item; }
         \\test "unbox round-trips" {
         \\    val n = unbox(Box(item: 7));
@@ -261,21 +271,21 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn layer1(initial: i32) -> @Context<Element, i32> {
-        \\    initial;
+        \\val Element = type() implement Renderable
+        \\component fn layer1(initial: i32) -> Component<i32> {
+        \\    return initial;
         \\}
-        \\fn layer2() -> @Context<Element, i32> {
+        \\component fn layer2() -> Component<i32> {
         \\    val a = use layer1(0);
-        \\    a;
+        \\    return a;
         \\}
-        \\fn layer3() -> @Context<Element, i32> {
+        \\component fn layer3() -> Component<i32> {
         \\    val b = use layer2();
-        \\    b;
+        \\    return b;
         \\}
-        \\fn Widget() -> Element {
+        \\component fn Widget() -> Component<Element> {
         \\    val c = use layer3();
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
@@ -285,16 +295,16 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
     // each call site instantiates fresh generics, so two calls with different
     // concrete types in the same scope never conflict.
     try h.assertInfersOk(std.testing.allocator,
-        \\interface Pair2<A, B> {
-        \\    default fn of(first: A, second: B) -> #(A, B) {
+        \\behavior Pair2<A, B> {
+        \\    fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
-        \\    default fn first(p: #(A, B)) -> A {
+        \\    fn first(p: #(A, B)) -> A {
         \\        return p._0;
         \\    }
         \\}
         \\
-        \\fn main() {
+        \\fn main() -> void {
         \\    val a: i32 = Pair2.first(Pair2.of(1, "one"));
         \\    val b: bool = Pair2.first(Pair2.of(true, 9));
         \\}
@@ -310,7 +320,7 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
 // second hop sees `.generic`, and the whole expression fails to type.
 test "infer: generic-inference-finalize ---- chained map().filter() propagates element type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val xs = [1, 2, 3];
         \\    val out = xs.map({ x -> x + 1 }).filter({ y -> y > 0 });
         \\    val n: i32 = out.length;
@@ -318,19 +328,18 @@ test "infer: generic-inference-finalize ---- chained map().filter() propagates e
     );
 }
 
-// Shape 2: a generic fn called with zero value args (`empty<K, V>() -> Dict<K, V>`)
-// must use the caller's expected return type to constrain K and V. The
-// explicit `Dict<K, V>` annotation on the val binding is the only source of
-// information; without back-prop the unifier sees both type params unbound
-// and reports `.generic TypeError`.
-test "infer: generic-inference-finalize ---- empty<K,V>() infers from annotated binding" {
+// Shape 2: a generic fn whose type parameters only type tokens bind
+// (`empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V>`) —
+// the return type alone never binds one (decision 668) — answers the
+// `Dict<string, i32>` the binding's annotation asks for.
+test "infer: generic-inference-finalize ---- empty<K,V>(K, V) meets the annotated binding (decision 668)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Dict<K, V> { pairs: Array<#(K, V)> }
-        \\fn empty<K, V>() -> Dict<K, V> {
+        \\type Dict<K, V>(pairs: array<#(K, V)>)
+        \\fn empty<K, V>(comptime k: type<K>, comptime v: type<V>) -> Dict<K, V> {
         \\    return Dict(pairs: []);
         \\}
-        \\fn main() {
-        \\    val d: Dict<string, i32> = empty();
+        \\fn main() -> void {
+        \\    val d: Dict<string, i32> = empty(string, i32);
         \\}
     );
 }
@@ -343,10 +352,10 @@ test "infer: generic-inference-finalize ---- empty<K,V>() infers from annotated 
 // and `p.<field>` / `o.<field>` inside the projection are unbound.
 test "infer: generic-inference-finalize ---- linq join builds tuple element type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Person { id: i32, name: string }
-        \\record Order { personId: i32, product: string }
-        \\fn crossJoin<P, O>(left: Array<P>, right: Array<O>, on: fn(p: P, o: O) -> bool) -> Array<#(P, O)> {
-        \\    var acc: Array<#(P, O)> = [];
+        \\type Person(id: i32, name: string)
+        \\type Order(personId: i32, product: string)
+        \\fn crossJoin<P, O>(left: array<P>, right: array<O>, on: fn(p: P, o: O) -> bool) -> array<#(P, O)> {
+        \\    var acc: array<#(P, O)> = [];
         \\    left.forEach({ p ->
         \\        right.forEach({ o ->
         \\            if (on(p, o)) { acc.push(#(p, o)); }
@@ -354,12 +363,145 @@ test "infer: generic-inference-finalize ---- linq join builds tuple element type
         \\    });
         \\    return acc;
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val people = [Person(id: 1, name: "Ada")];
         \\    val orders = [Order(personId: 1, product: "book")];
         \\    val pairs = crossJoin(people, orders, { p, o -> p.id == o.personId });
         \\    val labels = pairs.map({ pair -> pair._0.name + " ordered " + pair._1.product });
         \\    val n: i32 = labels.length;
         \\}
+    );
+}
+
+test "infer: generic enum unit variant ---- annotated destination fixes its type argument (C7)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Option2<T> { Some(v: T), None }
+        \\val n: Option2<i32> = Option2.None;
+    );
+}
+
+test "infer: pipeline ---- a function RHS is the call and has its return type (C12)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn double(x: i32) -> i32 { return x * 2; }
+        \\val r: i32 = 1 |> double;
+    );
+}
+
+test "infer: @RecordKeys ---- has the type a string[] annotation resolves to (C6)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type P(x: i32, y: i32)
+        \\val k: string[] = @RecordKeys(P);
+    );
+}
+
+test "infer: @field ---- has the named field's type, not the receiver's (C6)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type P(x: string)
+        \\val p = P(x: "a");
+        \\val xv: string = @field(p, "x");
+    );
+}
+
+test "infer: record update ---- a spread with a labelled field checks (C11)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Person(name: string, age: i32)
+        \\val alice = Person(name: "a", age: 1);
+        \\val b = Person(..alice, age: 25);
+    );
+}
+
+test "infer: a type-parameter value widens to its optional at a return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn some<T>(v: T) -> ?T {
+        \\    return v;
+        \\}
+        \\fn pick<T>(v: T, keep: bool) -> ?T {
+        \\    if (keep) return v;
+        \\    return null;
+        \\}
+        \\val a = some(3);
+        \\val b = pick("s", false);
+    );
+}
+
+test "infer error: a `?T` never narrows to its `T` at a return" {
+    const src =
+        \\fn unwrap<T>(v: ?T) -> T {
+        \\    return v;
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    const desc = try h.renderTypeError(std.testing.allocator, src, err);
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "expected `T`, got `?T`") != null);
+    try std.testing.expectEqual(@as(usize, 2), err.loc.?.line);
+}
+
+/// Decision 668 — the declaration whose `src` holds an unbound type parameter
+/// is refused at its name, naming the parameter.
+fn expectTypeParameterUnbound(comptime src: []const u8, want: []const u8, line: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try @import("../std_calls.zig").expand(alloc, try p.parse(alloc), null);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    const desc = try h.renderTypeError(std.testing.allocator, src, err);
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "type-parameter-unbound") != null);
+    try std.testing.expect(std.mem.indexOf(u8, desc, want) != null);
+    try std.testing.expectEqual(line, err.loc.?.line);
+}
+
+test "infer error: a type parameter only the return type names is unbound (decision 668)" {
+    try expectTypeParameterUnbound(
+        \\fn none<T>() -> ?T {
+        \\    return null;
+        \\}
+    , "`none`'s type parameter `T`", 1);
+}
+
+test "infer error: a method's type parameter only the return type names is unbound (decision 668)" {
+    try expectTypeParameterUnbound(
+        \\type Registry(n: i32) {
+        \\    fn get<T>(self: Self) -> ?T {
+        \\        return null;
+        \\    }
+        \\}
+    , "`Registry.get`'s type parameter `T`", 2);
+}
+
+test "infer: a type parameter is bound inside a parameter's type or by the type token (decision 668)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn make<R>(build: fn() -> R) -> R {
+        \\    return build();
+        \\}
+        \\fn firstOf<T>(items: array<T>) -> ?T {
+        \\    return items.at(0);
+        \\}
+        \\fn empty<T>(comptime t: type<T>) -> T[] {
+        \\    return [];
+        \\}
+        \\val a = make({ -> 1 });
+        \\val b = firstOf([1]);
     );
 }

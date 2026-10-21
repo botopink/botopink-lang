@@ -1,0 +1,12 @@
+//// Decision 660 — a declared dependency is part of the program: `alpha`'s
+//// `web` registers through `registry`'s decorator, and its executor runs
+//// before `main` although nothing imports `alpha`. `import` brings names
+//// and nothing else; being declared in `botopink.json` is what runs a
+//// package's registrations.
+
+import {names} from "registry";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(names());
+}

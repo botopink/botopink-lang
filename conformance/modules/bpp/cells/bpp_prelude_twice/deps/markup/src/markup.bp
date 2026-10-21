@@ -1,0 +1,16 @@
+//// The markup's unfold target: answers the literal's length.
+
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
+
+#[bpp.html]
+pub default fn markup(syntax t: string) -> i32 {
+    val root = CustomNode(
+        kind: "markup",
+        span: Span(0, 0, 1),
+        label: "",
+        ref: null,
+        children: [],
+    );
+    compiler.custom(root);
+    return compiler.build(compiler.text(t).length().toString());
+}

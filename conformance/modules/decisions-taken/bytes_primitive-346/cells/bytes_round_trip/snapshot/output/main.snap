@@ -1,0 +1,21 @@
+botopink-cell 1
+out 6
+out text héllo
+out text cba
+out error bytes.toUtf8: not valid UTF-8
+out error bytes.toUtf8: not valid UTF-8
+out text é
+out 4
+out text bcd
+out text d
+out text bc
+out text 
+out text bcd
+out text bc
+out text cd
+out true
+out false
+out false
+out 0
+out text héllo
+out false

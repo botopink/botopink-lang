@@ -1,0 +1,73 @@
+//// Decision 526 — a member's `@Decl` names its owner: `decl.owner` is the
+//// `Declared<unknown>` of the type that holds the method or the field, `null`
+//// at module level. Two types each declare a method `find`; one decorator on
+//// both emits a module-level `val` named from `decl.owner!.name + "_" +
+//// decl.name` (and a function that reads it), so the two registrations never
+//// collide. A field's decorator and an enum's method read their owner the
+//// same way; a module-level function's reads `null`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn register(syntax decl: unknown) -> void {
+    val owner = compiler.owner(decl)!;
+    val reg = "reg_" + compiler.name(owner)! + "_" + compiler.name(decl)!;
+    @emit(
+        "val "
+            + reg
+            + " = \""
+            + compiler.moduleOf(owner)
+            + "."
+            + compiler.name(owner)!
+            + "."
+            + compiler.name(decl)!
+            + "\";",
+    );
+    @emit("pub fn " + reg + "Text() -> string { return " + reg + "; }");
+}
+
+fn topLevel(syntax decl: unknown) -> void {
+    val owner = compiler.owner(decl)?.name ?? "null";
+    @emit("val top_" + compiler.name(decl)! + " = \"" + owner + "\";");
+    @emit("pub fn top_"
+        + compiler.name(decl)!
+        + "Text() -> string { return top_"
+        + compiler.name(decl)!
+        + "; }");
+}
+
+type Users(id: i32) {
+    #[register]
+    fn find(self: Self) -> i32 {
+        return self.id;
+    }
+}
+
+type Orders(id: i32, #[register] total: i32) {
+    #[register]
+    fn find(self: Self) -> i32 {
+        return self.total;
+    }
+}
+
+type Status {
+    Open,
+    Closed,
+
+    #[register]
+    fn find(self: Self) -> i32 {
+        return 0;
+    }
+}
+
+#[topLevel]
+fn helper() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(reg_Users_findText());
+    print(reg_Orders_findText());
+    print(reg_Orders_totalText());
+    print(reg_Status_findText());
+    print(top_helperText());
+}

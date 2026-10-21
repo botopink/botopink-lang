@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: Box needs 1 type argument
+at src/cases/generic_missing_argument/mod.bp:7:11

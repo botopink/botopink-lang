@@ -1,0 +1,19 @@
+//// Decision 330 — `?.` along a chain ending in a method of an optional array
+//// field: `h?.fields?.length()` is absent when `h` is absent and when `fields`
+//// is, so `?? 0` answers `0`, on every target.
+
+import {io.terminal.print} from "std";
+
+type Field(name: string)
+
+type Form(fields: ?Field[])
+
+pub fn main() -> void {
+    print("start");
+    val h: ?Form = null;
+    print(h?.fields?.length() ?? 0);
+    val n = h?.fields?.length();
+    print(n ?? 0);
+    val e: ?Form = Form(fields: null);
+    print(e?.fields?.length() ?? 0);
+}

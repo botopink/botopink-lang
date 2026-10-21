@@ -1,0 +1,238 @@
+//// std/io/terminal — the terminal standard input and output are attached to, cross-backend
+//// (decision 506 (1)).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/tty.html
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/io.html#columns/0,
+////              https://www.erlang.org/doc/apps/stdlib/shell.html#start_interactive/1
+////
+//// `stdoutIsTTY()` and `size()` say what the output is; `setRaw(on)` and `keys()` read the
+//// keyboard. With no terminal (a pipe, a file, CI) the answers are the non-terminal ones on
+//// every target: `stdoutIsTTY()` is `false`, `size()` is `null`, `setRaw` is
+//// `Error(NotATerminal)`, and `keys()` reads whatever standard input holds, decoded the same
+//// way. There is no wasm binding: a call is refused at the call (`std-unsupported-on-target`,
+//// decision 518 (4)).
+
+import {io.stdin, compiler};
+
+// Decision 606 (2) — each value written to standard output, space-separated, and the line
+// ended: a string as its text, any other value as `print` reads it (a type's own `Display`
+// first, decision 27). Imported where it is used, `import {io.terminal.print} from "std";`
+// (`import {io.terminal.print};` inside std); `print(a, b)` is what `println(a, b)` was.
+// On erlang and beam the template names the `'__bp_print'/1` helper the backend emits once
+// per module (a binary with `~ts`, any other value with `~p`); on wasm the call is lowered by
+// the backend until its cell is written (164 s3).
+#[compiler.external(.JavaScript("__bp_print($args)"), .Erlang("'__bp_print'([$args])"))]
+pub declare fn print(..values: unknown[]) -> void;
+
+// The error of `setRaw`.
+pub type TerminalError {
+    // Standard input is not a terminal: there is no mode to change.
+    NotATerminal,
+    // Erlang and beam off Linux: `setRaw` needs `/proc` and `stty` (decision 856).
+    Unsupported,
+    // Any other host failure; `message` is the host's text.
+    Other(message: string),
+}
+
+// One key press, as a terminal sends it.
+pub type Key {
+    // A printable key: one character (`Char("a")`, `Char(" ")`, `Char("é")`).
+    Char(text: string),
+    // Control and a letter, lower case (`Ctrl("c")` is Ctrl-C). Enter, Tab and Backspace are
+    // their own keys, not `Ctrl("m")`, `Ctrl("i")` or `Ctrl("h")`.
+    Ctrl(letter: string),
+    // Alt and a character (the terminal sent Escape and the character together).
+    Alt(text: string),
+    Enter,
+    Tab,
+    Backspace,
+    Delete,
+    Escape,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    // A sequence that is none of the above, as received.
+    Unknown(sequence: string),
+}
+
+// Is standard output a terminal?
+// Node: `tty.isatty(1)`. Erlang: `prim_tty:isatty(stdout)`.
+#[compiler.external(
+    .JavaScript("""require('tty').isatty(1)"""),
+    .Erlang("""(prim_tty:isatty(stdout) =:= true)"""),
+)]
+pub declare fn stdoutIsTTY() -> bool;
+
+// The terminal's size as `#(columns, rows)`, `null` when standard output is no terminal.
+// Node: `process.stdout.columns` / `rows`. Erlang: `io:columns/0` / `io:rows/0`, which answer once
+// the terminal driver runs (`shell:start_interactive({noshell, cooked})`, started here when standard
+// input is a terminal too), else Linux's `stty -F /proc/<pid>/fd/1 size`. Off Linux
+// (`os:type()`) on erlang and beam: `null` (decision 856).
+#[compiler.external(
+    .JavaScript("""(require('tty').isatty(1) && process.stdout.columns > 0 && process.stdout.rows > 0 ? [process.stdout.columns, process.stdout.rows] : null)"""),
+    .Erlang("""(fun() -> case {os:type() =:= {unix, linux}, prim_tty:isatty(stdout)} of {true, true} -> _ = case prim_tty:isatty(stdin) of true -> (catch shell:start_interactive({noshell, cooked})); _ -> ok end, case {io:columns(), io:rows()} of {{ok, __C}, {ok, __R}} -> {__C, __R}; _ -> case string:tokens(os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/1 size 2>/dev/null"), " \n") of [__R2, __C2] -> try {list_to_integer(__C2), list_to_integer(__R2)} catch _:_ -> undefined end; _ -> undefined end end; _ -> undefined end end)()"""),
+)]
+pub declare fn size() -> ?#(i32, i32);
+
+// Standard input to raw mode (`true`: each key arrives as it is pressed, nothing echoed, no
+// line editing, Ctrl-C is a key) or back to cooked mode (`false`).
+// Node: `process.stdin.setRawMode(on)`.
+// Erlang: `shell:start_interactive({noshell, raw | cooked})` (OTP 26) with the echo off in raw, and
+// the terminal's `isig` cleared (`stty -F /proc/<pid>/fd/0 -isig`, Linux): the VM's raw mode keeps
+// it, so Ctrl-C would open the VM's break menu instead of arriving as a key. Off Linux
+// (`os:type()`) the erlang cell answers `Error(Unsupported)` before any of it (decision 856).
+#[compiler.external(
+    .JavaScript("""(() => { if (!require('tty').isatty(0)) return { error: 'notatty|standard input is not a terminal' }; try { process.stdin.setRawMode($0); return { ok: 0 }; } catch (__e) { return { error: 'other|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
+    .Erlang("""(fun(__On) -> case os:type() =:= {unix, linux} of false -> {error, <<"unsupported|setRaw is Linux's on erlang and beam">>}; true -> case prim_tty:isatty(stdin) of true -> try _ = shell:start_interactive({noshell, case __On of true -> raw; false -> cooked end}), _ = io:setopts(standard_io, [{echo, not __On}, binary, {encoding, unicode}]), _ = os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/0 " ++ case __On of true -> "-isig"; false -> "isig" end ++ " 2>/dev/null"), {ok, 0} catch _:__E -> {error, iolist_to_binary([<<"other|">>, io_lib:format("~tp", [__E])])} end; _ -> {error, <<"notatty|standard input is not a terminal">>} end end end)($0)"""),
+)]
+declare fn rawSetRaw(on: bool) -> Result<i32, string>;
+
+// Switch standard input between raw mode (`true`) and cooked mode (`false`). A program that
+// turns it on turns it off before it ends. `NotATerminal` when standard input is no terminal.
+pub fn setRaw(on: bool) -> Result<void, TerminalError> {
+    case rawSetRaw(on) {
+        Ok(_) -> return;
+        Error(m) {
+            if (m.startsWith("notatty|")) throw TerminalError.NotATerminal;
+            if (m.startsWith("unsupported|")) throw TerminalError.Unsupported;
+            throw TerminalError.Other(message: m.slice(m.indexOf("|") + 1));
+        }
+    }
+}
+
+// The Latin letters of the control characters 1 to 26, in order: `\u{1}` is Ctrl-A.
+val ctrlLetters = "abcdefghijklmnopqrstuvwxyz";
+
+// The key the whole sequence `seq` is (one the terminal sent for one key press).
+pub fn parseKey(seq: string) -> Key {
+    if (seq == "\u{d}" || seq == "\u{a}") return Key.Enter;
+    if (seq == "\u{9}") return Key.Tab;
+    if (seq == "\u{7f}" || seq == "\u{8}") return Key.Backspace;
+    if (seq == "\u{1b}") return Key.Escape;
+    if (seq == "\u{1b}[A" || seq == "\u{1b}OA") return Key.Up;
+    if (seq == "\u{1b}[B" || seq == "\u{1b}OB") return Key.Down;
+    if (seq == "\u{1b}[C" || seq == "\u{1b}OC") return Key.Right;
+    if (seq == "\u{1b}[D" || seq == "\u{1b}OD") return Key.Left;
+    if (seq == "\u{1b}[H"
+        || seq == "\u{1b}OH"
+        || seq == "\u{1b}[1~"
+        || seq == "\u{1b}[7~")
+        return Key.Home;
+    if (seq == "\u{1b}[F"
+        || seq == "\u{1b}OF"
+        || seq == "\u{1b}[4~"
+        || seq == "\u{1b}[8~")
+        return Key.End;
+    if (seq == "\u{1b}[3~") return Key.Delete;
+    if (seq == "\u{1b}[5~") return Key.PageUp;
+    if (seq == "\u{1b}[6~") return Key.PageDown;
+    if (seq.length == 1) {
+        val code = seq.charCodeAt(0);
+        if (code >= 1 && code <= 26)
+            return Key.Ctrl(letter: ctrlLetters.slice(code - 1, code));
+        if (code >= 32 && code != 127) return Key.Char(text: seq);
+    }
+    if (seq.length == 2 && seq.startsWith("\u{1b}")) {
+        val rest = seq.slice(1);
+        if (rest.charCodeAt(0) >= 32) return Key.Alt(text: rest);
+    }
+    return Key.Unknown(sequence: seq);
+}
+
+// The length, in characters, of the first key of `s` (not empty), or 0 when `s` begins a
+// sequence that is not complete yet. An Escape alone is a complete key (`readChunk` gives an
+// Escape alone only when nothing followed it); `Escape` and `[` or `O` alone are not.
+fn firstKeyLength(s: string) -> i32 {
+    if (!s.startsWith("\u{1b}")) return 1;
+    if (s.length == 1) return 1;
+    val second = s.charCodeAt(1);
+    if (second == 79) {
+        // `Escape O x`: an application-mode key, three characters.
+        if (s.length >= 3) return 3;
+        return 0;
+    }
+    if (second != 91) return 2;
+    // `Escape [` parameters (0x30..0x3f), intermediates (0x20..0x2f), a final byte (0x40..0x7e).
+    var i = 2;
+    while (i < s.length) {
+        val c = s.charCodeAt(i);
+        if (c >= 64 && c <= 126) return i + 1;
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The keys pressed, as they come, until standard input ends. Put the terminal in raw mode
+// first (`setRaw(true)`), else a key arrives only with its line. Several keys that arrive
+// together (a paste) are several items.
+pub async iter fn keys() -> AsyncIter<Key> {
+    var pending = "";
+    while (true) {
+        var n = 0;
+        if (pending.length > 0) n = firstKeyLength(pending);
+        if (n == 0) {
+            val more = await stdin.readChunk();
+            if (more == null) break;
+            pending = pending + more;
+        } else {
+            val seq = pending.slice(0, n);
+            pending = pending.slice(n);
+            yield parseKey(seq);
+        }
+    }
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "terminal.stdoutIsTTY and size agree" {
+    assert stdoutIsTTY() || size() == null;
+}
+
+test "terminal.parseKey reads the named keys" {
+    assert parseKey("\u{d}") == Key.Enter;
+    assert parseKey("\u{9}") == Key.Tab;
+    assert parseKey("\u{7f}") == Key.Backspace;
+    assert parseKey("\u{1b}") == Key.Escape;
+    assert parseKey("\u{1b}[A") == Key.Up;
+    assert parseKey("\u{1b}[B") == Key.Down;
+    assert parseKey("\u{1b}[C") == Key.Right;
+    assert parseKey("\u{1b}[D") == Key.Left;
+    assert parseKey("\u{1b}[3~") == Key.Delete;
+    assert parseKey("\u{1b}[5~") == Key.PageUp;
+    assert parseKey("\u{1b}OH") == Key.Home;
+}
+
+test "terminal.parseKey reads characters, controls and alt" {
+    assert parseKey("a") == Key.Char(text: "a");
+    assert parseKey(" ") == Key.Char(text: " ");
+    assert parseKey("é") == Key.Char(text: "é");
+    assert parseKey("\u{3}") == Key.Ctrl(letter: "c");
+    assert parseKey("\u{1}") == Key.Ctrl(letter: "a");
+    assert parseKey("\u{1b}x") == Key.Alt(text: "x");
+    assert parseKey("\u{1b}[99;5u") == Key.Unknown(sequence: "\u{1b}[99;5u");
+}
+
+test "terminal.firstKeyLength splits a paste and waits for a cut sequence" {
+    assert firstKeyLength("ab") == 1;
+    assert firstKeyLength("\u{1b}") == 1;
+    assert firstKeyLength("\u{1b}[A") == 3;
+    assert firstKeyLength("\u{1b}[3~x") == 4;
+    assert firstKeyLength("\u{1b}[") == 0;
+    assert firstKeyLength("\u{1b}[1;5") == 0;
+    assert firstKeyLength("\u{1b}O") == 0;
+    assert firstKeyLength("\u{1b}OP") == 3;
+    assert firstKeyLength("\u{1b}x") == 2;
+}
+
+test "terminal.setRaw without a terminal is NotATerminal" {
+    if (!stdin.isTTY()) {
+        val r = setRaw(true);
+        assert r.isError();
+    }
+}

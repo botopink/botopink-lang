@@ -1,0 +1,27 @@
+//// Decision 804 (1) — hooks are read in a type component's `compose` alone:
+//// a helper method is an ordinary function, and a `use` in it is refused at
+//// the `use`.
+
+import {context.createContext, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type View(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+type Card(title: string) implement Component<View> {
+    fn compose(self: Self) -> Component<View> {
+        return View(text: self.title + self.mode());
+    }
+
+    fn mode(self: Self) -> string {
+        val t = use context(themeContext);
+        return t.mode;
+    }
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Card(title: "x").run(RenderScope.root());
+    print(r.value.text);
+}

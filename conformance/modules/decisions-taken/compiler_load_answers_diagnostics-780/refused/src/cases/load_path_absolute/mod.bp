@@ -1,0 +1,10 @@
+//// Decision 780 — the path of `compiler.load` is relative to the package's
+//// `botopink.json`, by `@embed`'s rules: an absolute path is refused at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    try comptime compiler.load("/etc/hostname") catch { r ->
+        print(r.diagnostics.length);
+    }
+}

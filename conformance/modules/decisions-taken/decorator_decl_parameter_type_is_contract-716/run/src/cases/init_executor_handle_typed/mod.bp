@@ -1,0 +1,29 @@
+//// Decisions 581 (2), 716 — inside a `compiler.init` executor the
+//// decorator's `syntax decl` handle is the annotated declaration itself as a
+//// run-time value, typed by the parameter's declared type: `make: decl` is
+//// checked against `make`'s `fn() -> string` once, at the decorator, by
+//// `syntax decl: fn() -> string`, and `main` calls it. The `comptime`
+//// parameter `lifecycle` and the body's `val name` enter the executor as
+//// literals (575 (4)).
+
+pub mod marks;
+pub mod registry;
+import {cases.init_executor_handle_typed.marks.module};
+import {cases.init_executor_handle_typed.registry.all};
+import {io.terminal.print} from "std";
+
+#[module("singleton")]
+pub fn home() -> string {
+    return "home";
+}
+
+#[module("scoped")]
+fn about() -> string {
+    return "about " + home();
+}
+
+pub fn runCase() -> void {
+    for (all()) { m ->
+        print(m.name + " " + m.lifecycle + " " + m.make());
+    }
+}

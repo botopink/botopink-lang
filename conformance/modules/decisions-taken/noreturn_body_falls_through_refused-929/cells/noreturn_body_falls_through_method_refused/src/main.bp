@@ -1,0 +1,15 @@
+//// Decision 929 — a method declared `-> noreturn` whose body can complete is
+//// refused at its name, `noreturn-falls-through`, as a `fn` is: the `if` has no
+//// `else`, so the path where `c` is false runs off the end.
+
+import {failure.panic, io.terminal.print} from "std";
+
+type Gate(open: bool) {
+    fn bad(self: Self) -> noreturn {
+        if (self.open) panic("x");
+    }
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

@@ -1,0 +1,41 @@
+//// Decision 791 (2), (3) — a component is resolved two ways. Inside a
+//// component body `use Badge("title")` runs it with the body's children
+//// scope and answers its `View`; `Badge("child")` only makes the lambda, and
+//// `Page` holds it in its tree as a child, which the renderer runs from its
+//// place with the scope `Page`'s run answered. Both read `Page`'s `dark`.
+//// The root is run by the renderer, `render(Page(), RenderScope.root())`.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type View(text: string, kids: Component<View>[]) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Badge(name: string) -> Component<View> {
+    val t = use context(themeContext);
+    return View(text: name + ":" + t.mode, kids: []);
+}
+
+component fn Page() -> Component<View> {
+    use provide(createContext(Theme(mode: "dark")));
+    val title = use Badge("title");
+    return View(text: "page " + title.text, kids: [Badge("child")]);
+}
+
+// The renderer: run `c` with `scope`, then each child with the scope `c`'s
+// run answered.
+async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
+    val r = await c.run(scope);
+    var out = r.value.text;
+    for (r.value.kids) { k ->
+        val inner = await render(k, r.scope);
+        out = out + " " + inner;
+    }
+    return out;
+}
+
+pub async fn main() -> Async<void> {
+    print(await render(Page(), RenderScope.root()));
+}

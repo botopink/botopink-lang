@@ -1,0 +1,30 @@
+import {compiler, io.terminal.print} from "std";
+
+fn entity(syntax decl: unknown, comptime table: string) -> void {
+    var cols: string[] = [];
+    compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
+    compiler.setMeta(Entity(table: table));
+    compiler.addMember(
+        "pub fn table() -> string { return \"" + table + "\"; }",
+    );
+    compiler.addType("Columns", compiler.buildType("("
+        + cols.join(", ")
+        + ")"));
+}
+
+#[entity("cities")]
+type City(name: string, people: i32)
+
+fn header(c: City.Columns) -> string {
+    return c.name + "|" + c.people;
+}
+
+fn main() -> void {
+    print(City.table()); // cities
+    print(comptime compiler.typeInfo(City).meta(Entity)?.table ?? "none"); // cities
+    print(comptime compiler.typeInfo(City).name); // City
+    print(header(City.Columns(name: "n", people: "p"))); // n|p
+}
+
+// What `#[entity]` records.
+type Entity(table: string)

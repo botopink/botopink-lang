@@ -1,0 +1,1 @@
+{ "name": "import_same_fn_name_in_dependency", "dependencies": { "site": { "path": "deps/site" } } }

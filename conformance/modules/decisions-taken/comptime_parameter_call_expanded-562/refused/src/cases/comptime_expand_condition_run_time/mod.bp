@@ -1,0 +1,39 @@
+//// Decision 562 — a condition of a function whose every parameter is
+//// `comptime` is decided at build, where the expansion runs: one that needs a
+//// run-time value — here an entry's `value`, the declaration itself, never
+//// read at build (356) — is refused at it, naming the value.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""console.log($0)"""),
+    .Erlang("""io:format("~ts~n", [$0])"""),
+    .Wasm(body: sayBody),
+)]
+declare fn say(line: string) -> void;
+
+fn sayBody(line: string) -> void {
+    print(line);
+}
+
+pub fn module(syntax decl: unknown) -> void {
+    compiler.setMeta(ModuleRole(kind: "module"));
+}
+
+#[module]
+pub fn db() -> string {
+    return "db up";
+}
+
+fn boot(comptime modules: Declared<unknown>[]) -> void {
+    for (modules) { d ->
+        if (d.value is fn() -> string) say("starting " + d.name);
+    }
+}
+
+pub fn main() -> void {
+    boot(@TypeInfo.all(with: module));
+}
+
+// What `#[module]` records.
+type ModuleRole(kind: string)

@@ -1,0 +1,13 @@
+//// Decision 531 — a dependency's function the program never reaches is not lowered on wasm and
+//// stops nothing. std's `io.clock`, `io.fs`, `io.http`, `io.process`, `io.stdin` and `testing.mocks`
+//// each hold functions whose host cells have no wasm binding; the program imports them all, calls
+//// only what every target lowers, and answers the same on wasm as on commonJS, erlang and beam.
+//// A call that reaches such a function is refused at the call (`std-unsupported-on-target`,
+//// decision 518 (4)), never the import.
+
+import {io.clock, io.fs, io.http, io.process, io.stdin, testing.mocks, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(clock.toMillis(clock.seconds(2)));
+    print(clock.toMillis(clock.add(clock.minutes(1), clock.millis(5))));
+}

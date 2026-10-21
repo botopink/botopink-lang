@@ -1,0 +1,18 @@
+//// Decision 535 — an uncaught run-time abort writes one text on every target,
+//// the `Failure` an `attempt` would have answered: `<kind>: <message>`. A
+//// raise of a host binding without `result: true` is `host: <message>`, the
+//// host's text — a JavaScript `Error`'s `message`, the erlang reason by `~tp`.
+//// The program ends there; what it printed before stays printed.
+////
+//// wasm never imitates a host raise (527 (0)): the binding has no wasm form.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""(() => { throw new Error("boom"); })()"""), .Erlang("""erlang:error(boom)"""))]
+declare fn explode() -> i32;
+
+pub fn main() -> void {
+    print("before");
+    print(explode());
+    print("after");
+}

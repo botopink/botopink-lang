@@ -1,0 +1,20 @@
+//// Decision 516 — An `@External.Wasm` cell naming nothing is refused by the checker on every target, not on `--target wasm` alone.
+
+import {compiler, io.terminal.print} from "std";
+
+fn halfBody(x: f64) -> f64 {
+    return x / 2.0;
+}
+
+// A wasm cell that names something: a private bodied `fn` of this module.
+#[compiler.external(.JavaScript("$0 / 2"), .Erlang("$0 / 2"), .Wasm(body: halfBody))]
+declare fn half(x: f64) -> f64;
+
+// A wasm cell that names nothing: no `doubleBody` exists in the module.
+#[compiler.external(.JavaScript("$0 * 2"), .Erlang("$0 * 2"), .Wasm(body: doubleBody))]
+declare fn double(x: f64) -> f64;
+
+pub fn main() -> void {
+    print(half(3.0));
+    print(double(3.0));
+}

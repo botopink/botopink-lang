@@ -1,0 +1,1 @@
+{ "name": "ast_syntax_node_typed_at_splice", "dependencies": { "scale": { "path": "deps/scale" } } }

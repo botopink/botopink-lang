@@ -1,0 +1,25 @@
+//// Decision 572 — A marker sits next to `fn`: `#[…] [pub] [default] <marker> fn`
+
+import {io.terminal} from "std";
+import {comptime.actions.serverAction};
+
+#[serverAction]
+pub async fn count(n: i32) -> Async<i32> {
+    return n + 1;
+}
+
+pub iter fn lines(text: string) -> Iter<string> {
+    val parts = text.split("\n");
+    var i = 0;
+    while (i < parts.length) {
+        yield parts.at(i)!;
+        i = i + 1;
+    }
+}
+
+pub async fn main() -> Async<void> {
+    terminal.print(await count(1));
+    terminal.print(lines("a\nb").toArray().join(","));
+    val tripled: fn(x: i32) -> Async<i32> = { async x -> await count(x) * 3 };
+    terminal.print(await tripled(1));
+}

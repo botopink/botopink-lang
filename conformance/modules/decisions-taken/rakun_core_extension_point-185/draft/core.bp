@@ -1,0 +1,13 @@
+//// The extension point: a per-tag epoch, owned by the core.
+
+import {collections.Dict} from "std";
+
+var epochs: Dict<string, i32> = Dict.ofEntries([]);
+
+pub fn tagEpoch(tag: string) -> i32 {
+    return epochs.at(tag) ?? 0;
+}
+
+pub fn bumpTag(tag: string) -> void {
+    epochs = epochs.insert(tag, tagEpoch(tag) + 1);
+}

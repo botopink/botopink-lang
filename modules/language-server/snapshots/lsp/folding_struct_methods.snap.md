@@ -1,8 +1,8 @@
 ----- SOURCE
 ```botopink
-record Counter {
-    _count: i32 = 0,
-    fn increment(self: Self) {
+type Counter(
+    _count: i32 = 0) {
+    fn increment(self: Self) -> void {
         self._count += 1;
     }
 }

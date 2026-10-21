@@ -1,0 +1,27 @@
+import {compiler} from "std";
+
+pub type Sql(method: string, text: string, native: bool)
+
+pub type Statements(lines: string[])
+
+pub fn query(syntax q: string, syntax decl: unknown) -> void {
+    compiler.setMeta(Sql(method: compiler.name(decl)!, text: compiler.text(q), native: false));
+}
+
+pub fn nativeQuery(syntax decl: unknown, comptime sql: string) -> void {
+    compiler.setMeta(Sql(method: compiler.name(decl)!, text: sql, native: true));
+}
+
+pub fn repository(syntax decl: unknown) -> void {
+    var lines: string[] = [];
+    for (compiler.methods(decl)) { m ->
+        val sql = compiler.meta(m, Sql);
+        if (sql == null) {
+            compiler.fail("a repository method declares its query: #[query @`…`] or #[nativeQuery(…)]", at: m);
+        } else {
+            val kind = if (sql!.native) "native" else "query";
+            lines.push(sql!.method + " (" + kind + "): " + sql!.text);
+        }
+    }
+    compiler.setMeta(Statements(lines: lines));
+}

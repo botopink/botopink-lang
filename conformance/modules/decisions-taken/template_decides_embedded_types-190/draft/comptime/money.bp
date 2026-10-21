@@ -1,0 +1,13 @@
+import {code, compiler} from "std";
+
+pub fn cents(amount: i32) -> string {
+    return (amount / 100).toString() + "." + (amount % 100).toString().padStart(2, "0");
+}
+
+pub fn money(syntax t: string) -> string {
+    val h = compiler.holes(t);
+    if (h.length != 1) {
+        compiler.fail("money takes exactly one hole, the amount in cents", at: t);
+    }
+    return code @`cents(${h[0]!})`;
+}

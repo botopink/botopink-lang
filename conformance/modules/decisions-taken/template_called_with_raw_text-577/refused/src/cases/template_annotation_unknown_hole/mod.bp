@@ -1,0 +1,30 @@
+//// Decisions 311, 577 (1) — a template annotation's text holds no language
+//// hole: `${userId}` is text, and the member `sql` builds from it is checked
+//// as written code, where `userId` is the ordinary unbound-name error, at the
+//// annotation and from the `compiler.addMember` that wrote it.
+
+import {compiler, io.terminal.print} from "std";
+
+type Query(sql: string)
+
+fn sql(syntax q: string, syntax decl: unknown) -> string {
+    compiler.addMember(
+        "pub fn "
+            + compiler.name(decl)!
+            + "Text() -> string { return \""
+            + compiler.text(q)
+            + "\"; }",
+    );
+    return compiler.build("\"\"");
+}
+
+type Users(n: i32) {
+    #[sql @`select * from users where id = ${userId}`]
+    pub fn find(self: Self, id: i32) -> i32 {
+        return id + self.n;
+    }
+}
+
+pub fn main() -> void {
+    print(Users(n: 1).find(2).toString());
+}

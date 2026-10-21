@@ -1,0 +1,14 @@
+//// A decorator whose handle is typed by what it calls on the declaration.
+
+import {compiler} from "std";
+
+pub behavior Configurable {
+    fn make() -> Self;
+    fn host(self: Self) -> string;
+}
+
+pub fn configurationProperties(syntax decl: Configurable, comptime prefix: string) -> void {
+    compiler.addMember("check", fn() -> string {
+        return prefix + ": " + decl.make().host();
+    });
+}

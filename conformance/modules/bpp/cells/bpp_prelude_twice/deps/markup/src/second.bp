@@ -1,0 +1,4 @@
+import {bpp} from "std";
+
+#[bpp.htmlPrelude]
+pub val second = bpp.Prelude();

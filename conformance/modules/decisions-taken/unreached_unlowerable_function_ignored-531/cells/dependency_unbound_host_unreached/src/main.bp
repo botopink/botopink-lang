@@ -1,0 +1,10 @@
+//// Decision 531 — a dependency's function the program never reaches is not lowered on wasm and
+//// stops nothing. `lib`'s `viaHost` reaches a host function with no wasm cell; the program calls
+//// only `seven`, so it builds and runs on wasm as on every other target.
+
+import {seven} from "lib";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(seven());
+}

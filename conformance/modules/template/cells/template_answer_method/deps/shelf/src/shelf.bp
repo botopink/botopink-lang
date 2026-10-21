@@ -1,0 +1,14 @@
+//// A package's template answering a record, its built code calling the
+//// package's own function.
+
+import {compiler} from "std";
+
+pub type Label(text: string, size: i32)
+
+pub fn makeLabel(text: string) -> Label {
+    return Label(text: text, size: text.length);
+}
+
+pub default fn label(syntax t: string) -> Label {
+    return compiler.build("makeLabel(\"" + compiler.text(t) + "\")");
+}

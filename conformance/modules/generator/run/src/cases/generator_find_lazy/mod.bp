@@ -1,0 +1,29 @@
+//// Decisions 105, 596 — `find` over a generator steps it one item at a time:
+//// nothing runs past the item that answered, and the generator is closed
+//// there (its pending `defer` runs); with no item answering it runs to the
+//// end and answers no value.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iter<i32> {
+    defer print("closed");
+    print("before");
+    yield 1;
+    print("after");
+    yield 2;
+    print("last");
+    yield 3;
+}
+
+iter fn words() -> Iter<string> {
+    yield "a";
+    yield "long";
+    yield "word";
+}
+
+pub fn runCase() -> void {
+    print(counted().find({ n -> n == 2 }) ?? -1);
+    print(counted().find({ n -> n > 5 }) ?? -1);
+    print(words().find({ w -> w != "a" }) ?? "none");
+    print(words().find({ w -> w == "z" }) ?? "none");
+}

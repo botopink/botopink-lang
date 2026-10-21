@@ -1,0 +1,36 @@
+//// Decision 550 — Once the Zig term library goes, the comptime is compiled straight by the wasm GC backend; the Erlang layer is deleted
+
+import {io.terminal} from "std";
+
+type Point(x: i32, y: i32)
+
+fn far(points: Point[]) -> string {
+    var best = points[0] ?? Point(x: 0, y: 0);
+    for (points) { p ->
+        if (p.x * p.x + p.y * p.y > best.x * best.x + best.y * best.y) best = p;
+    }
+    return "(" + best.x.toString() + ", " + best.y.toString() + ")";
+}
+
+fn squares(n: i32) -> string {
+    var out = "";
+    var i = 1;
+    while (i <= n) {
+        out = out + (i * i).toString() + " ";
+        i = i + 1;
+    }
+    return out.trim();
+}
+
+// Each `comptime` body is compiled by the wasm GC backend and run at build;
+// its answer is spliced into the program, whatever the target.
+val farthest = comptime far([Point(x: 1, y: 2), Point(x: 3, y: -4), Point(x: 0, y: 1)]);
+
+val firstSquares = comptime squares(5);
+
+pub fn main() -> void {
+    terminal.print(farthest);
+    terminal.print(firstSquares);
+    terminal.print(farthest
+        == far([Point(x: 1, y: 2), Point(x: 3, y: -4), Point(x: 0, y: 1)]));
+}

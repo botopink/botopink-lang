@@ -1,0 +1,18 @@
+//// Decision 216 (2) — meta describes a declaration of the module: a
+//// decorator on a field (or a method) has no `compiler.typeInfo` to answer through,
+//// and `decl.setMeta` from it is refused at the annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+fn column(syntax decl: unknown) -> void {
+    compiler.setMeta(Column(name: compiler.name(decl)!));
+}
+
+type City(#[column] name: string)
+
+pub fn main() -> void {
+    print(City(name: "x").name);
+}
+
+// What `#[column]` would record.
+type Column(name: string)

@@ -1,0 +1,44 @@
+//// Decision 606 (1) — the prelude's types and behaviors are written bare, with no import:
+//// `Result`, `Async`, `Iter`, `Component` and the marker `Renderable`, in a return, a
+//// parameter, an `implement` clause and as a type argument of another.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+type Badge(label: string) implement Renderable
+
+fn parse(s: string) -> Result<i32, string> {
+    if (s == "1") return 1;
+    throw "not one: " + s;
+}
+
+async fn later(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+iter fn upTo(n: i32) -> Iter<i32> {
+    var i = 0;
+    while (i < n) {
+        yield i;
+        i = i + 1;
+    }
+}
+
+fn joined(it: Iter<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
+    }
+    return acc;
+}
+
+component fn Card(text: string) -> Component<Badge> {
+    print("card " + text);
+    return Badge(label: text);
+}
+
+pub async fn main() -> Async<void> {
+    print(parse("1"), parse("2"));
+    print(await later(21));
+    print(joined(upTo(4)));
+    await Card("hi").run(RenderScope.root());
+}

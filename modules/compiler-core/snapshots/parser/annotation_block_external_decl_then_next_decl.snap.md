@@ -8,18 +8,17 @@
         "isDeclare": true,
         "isDefault": false,
         "label": null,
-        "name": "absolute_value",
+        "name": "absoluteValue",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
         "annotations": [
           {
-            "name": "External.Erlang",
+            "name": "external",
             "args": [
-              "\"erlang\"",
-              "\"abs\""
+              ".Erlang(\"erlang:abs($0)\")"
             ],
-            "is_builtin": true
+            "is_builtin": false
           }
         ],
         "genericParams": [],
@@ -31,7 +30,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
@@ -57,7 +55,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -70,7 +70,7 @@
                 "kind": {
                   "call": {
                     "receiver": null,
-                    "callee": "absolute_value",
+                    "callee": "absoluteValue",
                     "is_builtin": false,
                     "is_tagged": false,
                     "optional": false,
@@ -81,14 +81,14 @@
                           "unaryOp": {
                             "loc": {
                               "line": 5,
-                              "col": 20
+                              "col": 19
                             },
                             "op": "neg",
                             "expr": {
                               "literal": {
                                 "loc": {
                                   "line": 5,
-                                  "col": 21
+                                  "col": 20
                                 },
                                 "kind": {
                                   "numberLit": "5"
@@ -109,6 +109,27 @@
             "emptyLinesBefore": 0
           }
         ]
+      }
+    },
+    {
+      "use": {
+        "imports": [
+          {
+            "segments": [
+              "compiler"
+            ],
+            "activate": false,
+            "alias": null
+          }
+        ],
+        "source": {
+          "module": "std"
+        },
+        "package": null,
+        "activationOnly": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null
       }
     }
   ]

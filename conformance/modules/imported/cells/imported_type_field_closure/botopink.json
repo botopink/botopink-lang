@@ -1,0 +1,1 @@
+{ "name": "imported_type_field_closure", "dependencies": { "a": { "path": "deps/a" }, "b": { "path": "deps/b" } } }

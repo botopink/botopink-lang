@@ -1,13 +1,13 @@
-//// Gleam-inspired `string_builder` module — a `record StringBuilder` wrapping
+//// Gleam-inspired `string_builder` module — a `type StringBuilder` wrapping
 //// an internal `Array<string>` buffer (`parts`). `toString` joins with "" —
 //// amortises concatenation cost.
 ////
 //// Instance operations are `self`-methods on the record; `empty`/`fromString`/
 //// `fromStrings` are top-level constructors.
 
-pub record StringBuilder {
-    parts: Array<string>,
-
+pub type StringBuilder(
+    parts: array<string>,
+) {
     pub fn append(self: Self, s: string) -> StringBuilder {
         return StringBuilder(parts: self.parts.append([s]));
     }
@@ -37,6 +37,6 @@ pub fn fromString(s: string) -> StringBuilder {
     return StringBuilder(parts: [s]);
 }
 
-pub fn fromStrings(strs: Array<string>) -> StringBuilder {
+pub fn fromStrings(strs: array<string>) -> StringBuilder {
     return StringBuilder(parts: strs);
 }

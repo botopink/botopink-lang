@@ -1,0 +1,11 @@
+//// A library template answers a record; a method call on a field of that
+//// answer resolves like it does on any other value.
+
+import shelf from "shelf";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val built = shelf @`built`;
+    print(built.text);
+    print(built.size.toString());
+}

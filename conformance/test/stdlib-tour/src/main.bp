@@ -1,0 +1,163 @@
+// stdlib-tour — a runnable tour of the `.bp` standard library collections,
+// consumed the way an application does: `import {…} from "std"`, one group
+// under `collections` (decision 106) — the type is the namespace
+// (`Dict.empty()`, `Queue.empty()`, `Set.fromList()`, decision 111) and the
+// `Order` helpers are leaves of their own (`lt()`, `toInt(…)`).
+//
+// The `test {}` blocks double as the demo's regression suite (B1): the dict /
+// queue / set / order tour, the Array combinators, an Order-driven sort, a Queue
+// BFS, and structural record keys / record-set dedup.
+
+import {collections.Dict, collections.Queue, collections.Set, collections.Order, collections.lt, collections.eq, collections.gt, collections.toInt, collections.reverse} from "std";
+
+type Point(x: i32, y: i32)
+
+// ── tour: dict ────────────────────────────────────────────────────────────────
+
+fn wordCounts() -> Dict<string, i32> {
+    return Dict
+        .empty()
+        .insert("ann", 1)
+        .insert("bob", 2)
+        .insert("ann", 3); // right-biased: overwrites
+}
+
+test "dict tour: insert overwrites + at returns Option" {
+    val d = wordCounts();
+    assert d.size() == 2;
+    assert d.at("ann") ?? 0 == 3;
+    assert d.at("missing") ?? -1 == -1;
+}
+
+// ── tour: queue (FIFO) ──────────────────────────────────────────────────────
+
+test "queue tour: fifo order over enqueue/dequeue" {
+    val q = Queue.empty().enqueue("a").enqueue("b").enqueue("c");
+    val r1 = q.dequeue();
+    assert r1._1 ?? "?" == "a";
+    assert r1._0.size() == 2;
+}
+
+// ── tour: set ────────────────────────────────────────────────────────────────
+
+test "set tour: fromList dedups + set algebra" {
+    val a = Set.fromList([1, 2, 3]);
+    val b = Set.fromList([2, 3, 4]);
+    assert a.union(b).size() == 4;
+    assert a.intersection(b).size() == 2;
+    assert a.difference(b).size() == 1;
+}
+
+// ── tour: order ──────────────────────────────────────────────────────────────
+
+test "order tour: toInt + reverse" {
+    assert toInt(lt()) == -1;
+    assert toInt(reverse(lt())) == 1;
+}
+
+// ── Array combinators (B1: map/filter/fold std-level) ───────────────────────
+
+test "array map/filter/fold compose" {
+    val xs = [1, 2, 3, 4, 5];
+    val evensDoubled = xs.filter({ n -> n % 2 == 0 }).map({ n -> n * 2 });
+    assert evensDoubled.join(",") == "4,8";
+    assert xs.fold(0, { acc, n -> acc + n }) == 15;
+}
+
+// ── sort-with-Order (B1) ─────────────────────────────────────────────────────
+// No `sort` primitive exists; this models a comparator that returns the std
+// `Order` sum type and threads it through an insertion sort.
+
+fn cmpInt(a: i32, b: i32) -> Order {
+    return if (a < b) lt() else if (a > b) gt() else eq();
+}
+
+fn insertSorted(x: i32, sorted: array<i32>) -> array<i32> {
+    return if (sorted.isEmpty()) [x] else {
+        val head = sorted.at(0) ?? 0;
+        if (toInt(cmpInt(x, head)) <= 0)
+            [x].append(sorted)
+        else
+            [head].append(insertSorted(x, sorted.slice(1, sorted.length)));
+    };
+}
+
+fn sortInts(xs: array<i32>) -> array<i32> {
+    var out: array<i32> = [];
+    xs.forEach({ x ->
+        out = insertSorted(x, out);
+    });
+    return out;
+}
+
+test "sort-with-Order: insertion sort driven by an Order comparator" {
+    assert sortInts([3, 1, 4, 1, 5, 9, 2, 6]).join(",") == "1,1,2,3,4,5,6,9";
+    assert sortInts([]).join(",") == "";
+    assert sortInts([42]).join(",") == "42";
+}
+
+// ── Queue BFS (B1: run/node — a small graph algorithm) ──────────────────────
+// Graph (DAG):  0 → {1, 2},  1 → {3, 4},  2 → {4},  3/4 → {}
+
+fn neighbors(n: i32) -> array<i32> {
+    return if (n == 0)
+        [1, 2]
+    else if (n == 1)
+        [3, 4]
+    else if (n == 2)
+        [4]
+    else
+        [];
+}
+
+fn bfs(q: Queue<i32>, visited: Set<i32>, acc: array<i32>) -> array<i32> {
+    return if (q.isEmpty()) acc else {
+        val deq = q.dequeue();
+        val rest = deq._0;
+        val node = deq._1 ?? -1;
+        if (visited.contains(node)) bfs(rest, visited, acc) else {
+            var next = rest;
+            neighbors(node).forEach({ m ->
+                next = next.enqueue(m);
+            });
+            bfs(next, visited.insert(node), acc.append([node]));
+        }
+    };
+}
+
+test "queue BFS: visits the graph in level order" {
+    val start: Queue<i32> = Queue.empty().enqueue(0);
+    val seen: Set<i32> = Set.empty();
+    val order2 = bfs(start, seen, []);
+    assert order2.join(",") == "0,1,2,3,4";
+}
+
+// ── record keys / record-set dedup (B1) ─────────────────────────────────────
+//
+// `==` on records is structural on every target (decision 210 of 1.0.11-beta):
+// a freshly-built `Point(x: 1, y: 2)` equals a stored one. `Dict` / `Set` test
+// keys and members with `==`, so a structural read hits and structurally-equal
+// records dedup. (Until 144 B-29 step H made this example a conformance suite
+// these tests asserted the identity semantics of before decision 210, which no
+// gate ran; they were written to be flipped once `==` was structural.)
+
+test "dict with record keys: a structurally-equal key hits" {
+    val k = Point(x: 1, y: 2);
+    val d: Dict<Point, string> = Dict.empty().insert(k, "a");
+    // The very same key value resolves.
+    assert d.at(k) ?? "?" == "a";
+    // A structurally-equal, freshly-built key resolves too.
+    assert d.at(Point(x: 1, y: 2)) ?? "?" == "a";
+}
+
+test "set of records: structurally-equal records dedup" {
+    val s = Set.fromList(
+        [
+            Point(x: 1, y: 1),
+            Point(x: 1, y: 1),
+            Point(x: 2, y: 2),
+        ],
+    );
+    // Two equal records and a third → two members.
+    assert s.size() == 2;
+}

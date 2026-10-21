@@ -1,0 +1,16 @@
+//// Decision 240 — wasm counts a string's index in codepoints, as erlang and beam: `length`, `at`, `slice`, `indexOf`, `lastIndexOf` walk U
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val s = "€1·日本→x";
+    print(s.length);
+    print(s.at(0));
+    print(s.at(4));
+    print(s.at(-1));
+    print(s.slice(2, 5));
+    print(s.indexOf("→"));
+    print(s.indexOf("x"));
+    print(s.lastIndexOf("本"));
+    print(s.at(s.indexOf("日")) == "日");
+}

@@ -1,0 +1,4 @@
+botopink-cell 1
+out Page: async, Header: sync, Comments: async, Card: sync
+out Ring: async, Link: async
+out Feed: async

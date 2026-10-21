@@ -1,0 +1,17 @@
+//// Decision 424 — A generic record or an imported alias is not a derived type's source.
+
+import {types.Type, io.terminal.print} from "std";
+
+type City(name: string, state: string)
+
+type Town = City;
+
+type Box<T>(item: T)
+
+pub val TownName = Type.pick(Town, .name);
+
+pub val Item = Type.pick(Box, .item);
+
+pub fn main() -> void {
+    print(TownName(name: "Porto").name);
+}

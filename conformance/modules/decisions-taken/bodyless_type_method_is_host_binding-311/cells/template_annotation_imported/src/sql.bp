@@ -1,0 +1,46 @@
+//// Decision 311 — a template annotation whose template is declared in another
+//// module: `query` and the helper its body calls travel with it, and the
+//// owner's decorator `repository` (imported too) reads the method's typed meta.
+
+import {compiler} from "std";
+
+pub type Query(sql: string, params: string[])
+
+fn placeholder(n: i32) -> string {
+    return "$" + n.toString();
+}
+
+pub fn query(syntax q: string, syntax decl: unknown) -> string {
+    var text = "";
+    var params: string[] = [];
+    var first = true;
+    // The text's `${…}` holes are the template's own syntax (decision 577
+    // (1)): each one's expression is a parameter.
+    for (compiler.text(q).split("\${")) { piece ->
+        if (first) {
+            text = piece;
+            first = false;
+        } else {
+            val close = piece.indexOf("}");
+            params.push(piece.slice(0, close));
+            text = text + placeholder(params.length) + piece.slice(close + 1);
+        }
+    }
+    compiler.setMeta(Query(sql: text, params: params));
+    return compiler.build("\"\"");
+}
+
+pub fn repository(syntax decl: unknown) -> void {
+    var lines: string[] = [];
+    for (compiler.methods(decl)) { m ->
+        val found = m.meta(Query);
+        if (found != null)
+            lines.push(
+                m.name + ": " + found.sql + " <- " + found.params.join(", "),
+            );
+    }
+    compiler.setMeta(Repository(statements: lines));
+}
+
+// What `#[repository]` records: one statement per method that carries a query.
+pub type Repository(statements: string[])

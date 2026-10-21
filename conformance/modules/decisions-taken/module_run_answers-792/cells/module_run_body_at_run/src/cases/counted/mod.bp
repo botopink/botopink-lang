@@ -1,0 +1,9 @@
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    compiler.init({ -> print("counted init") });
+}
+
+pub fn main() -> void {
+    print("counted main");
+}

@@ -1,0 +1,21 @@
+//// Decision 105 — inside a `#[@future]` fn a `iter loop` may not
+//// `await`: `Iter<T>` has no suspension to honour. For `await` in the
+//// body one writes `stream loop { … }`.
+
+import {io.terminal.print} from "std";
+
+async fn fetch(n: i32) -> Async<i32> {
+    return n;
+}
+
+async fn feed() -> Async<i32> {
+    val g = iter loop {
+        val v = await fetch(1);
+        break v;
+    };
+    return 1;
+}
+
+pub fn main() -> void {
+    print(1);
+}

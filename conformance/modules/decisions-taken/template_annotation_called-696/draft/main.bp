@@ -1,0 +1,12 @@
+//// Decision 696 — A template function is an annotation only when its signature declares the annotated declaration as its second parameter (578 (1): `syntax q: string`, then `syntax decl: unknown`); called as `` f @`…` `` it is `template-annotation-only`, and a template without that parameter at `#[f @`…`]` is `template-annotation-without-decl`.
+
+import {compiler, io.terminal} from "std";
+import {comptime.sql.sql, comptime.sql.Query};
+
+#[sql @`select * from users`]
+pub fn users() -> void {}
+
+pub fn main() -> void {
+    terminal.print(comptime compiler.meta(users, Query)?.sql ?? "-");
+    sql @`select 1`;
+}

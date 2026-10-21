@@ -1,0 +1,11 @@
+import {box.Box};
+
+pub fn isBox(v: Box) -> bool {
+    return v is Box;
+}
+
+pub val seen = isBox(Box(n: 1));
+
+test "the importer read Box at load" {
+    assert(seen);
+}

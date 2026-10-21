@@ -1,0 +1,11 @@
+//// Decision 726 — A type argument's `compiler.Info<unknown>` in a `HookUse` carries the type's whole declaration.
+
+import {io.terminal} from "std";
+import {compiler} from "std";
+import {pages.Post, pages.HookArgs};
+
+// `#[args]` runs after the bodies of `pages`, so its meta is read here.
+pub fn main() -> void {
+    val uses: string[] = comptime compiler.meta(Post, HookArgs)?.uses ?? [];
+    terminal.print(uses.join(" "));
+}

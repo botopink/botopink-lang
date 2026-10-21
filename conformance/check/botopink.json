@@ -1,0 +1,7 @@
+{
+  "name": "check",
+  "version": "0.0.1",
+  "description": "cell check as a botopink program (decision 790): its records module today",
+  "src": "src/",
+  "targets": ["commonJS"]
+}

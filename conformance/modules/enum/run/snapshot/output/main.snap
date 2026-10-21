@@ -1,0 +1,37 @@
+botopink-cell 1
+out /a
+out /a
+out /b!
+out Shape.Circle(radius: 2)
+out Shape.Circle(radius: 3)
+out Mode.Slow(n: 2)
+out Mode.Named(label: "x")
+out Mode.Slow(n: 2)
+out Mode.Slow(n: 5)
+out [Mode.Slow(n: 4), Mode.Fast]
+out token
+out border
+out border
+out token
+out border
+out 1
+out token
+out 7
+out after 1
+out after 0
+out after 2
+out layout
+out break-after
+out break-before
+out token
+out border
+out token
+out Target.Top
+out at Target.Bottom!
+out Shape.Circle(radius: 2)
+out shape Shape.Named(label: "é") and Shape.Dot
+out t=Target.Bottom s=Shape.Named(label: "x")
+out picked Target.Top
+out mode Mode.Slow(n: 3) Mode.Fast
+out plus Target.Top Shape.Circle(radius: 2)
+out 23

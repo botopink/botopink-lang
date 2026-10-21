@@ -24,15 +24,17 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
         ],
         "returnType": {
-          "named": "string"
+          "named": "bool"
         },
         "typeGuardParam": "x",
+        "typeGuardType": {
+          "named": "string"
+        },
         "body": [
           {
             "expr": {

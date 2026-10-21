@@ -1,0 +1,1 @@
+{ "name": "srv", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "app.bp"] }

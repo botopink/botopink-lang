@@ -1,0 +1,16 @@
+pub mod comptime_arg_not_known;
+pub mod comptime_default_outside_decorator;
+pub mod decorator_arg_function_mismatch;
+pub mod decorator_arg_label_unknown;
+pub mod decorator_arg_unbound_function;
+pub mod decorator_argument_kind;
+pub mod decorator_check_without_rule_not_bool;
+pub mod decorator_decl_pattern_mismatch;
+pub mod decorator_decl_pattern_return;
+pub mod decorator_field_key_case;
+pub mod decorator_field_key_too_many;
+pub mod decorator_function_argument_mismatch;
+pub mod decorator_param_not_comptime;
+pub mod decorator_record_argument_mismatch;
+pub mod decorator_type_argument_unknown;
+pub mod decorator_variant_case;

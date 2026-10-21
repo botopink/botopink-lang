@@ -1,0 +1,16 @@
+//// A template function that runs a tag's annotation (decision 302).
+
+import {compiler.DeclKind, compiler.Span, compiler} from "std";
+
+// Gives the annotated declaration a type — a declaration's channel, not a tag's.
+pub fn withType(syntax decl: unknown) -> void {
+    compiler.addType("Extra", compiler.buildType("pub type Extra(n: i32)"));
+}
+
+pub fn markup(syntax q: string) -> string {
+    val text = compiler.text(q);
+    val tag = compiler.tagDecl(DeclKind.Element, "div", []);
+    val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
+        + 2, end: text.indexOf("]>"), line: 1));
+    return compiler.name(d)!;
+}

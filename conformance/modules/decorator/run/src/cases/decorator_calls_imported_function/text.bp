@@ -1,0 +1,14 @@
+//// Plain functions a decorator elsewhere imports: `shout` reaches this
+//// module's private `wrap`, which nobody imports.
+
+fn wrap(s: string) -> string {
+    return "<" + s + ">";
+}
+
+pub fn shout(s: string) -> string {
+    return wrap(s.toUpper());
+}
+
+pub fn count(s: string) -> i32 {
+    return s.split(" ").length;
+}

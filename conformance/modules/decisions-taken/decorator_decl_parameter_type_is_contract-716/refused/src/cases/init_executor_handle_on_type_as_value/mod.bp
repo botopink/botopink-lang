@@ -1,0 +1,23 @@
+//// Decisions 613, 716 — `syntax decl: fn() -> string` admits a function:
+//// the type `Users` does not meet the contract, so the annotation is refused,
+//// naming the contract and the type; the executor's `make: decl`, checked
+//// once at the decorator, is never checked against a type.
+
+pub mod marks;
+pub mod registry;
+import {cases.init_executor_handle_on_type_as_value.marks.registered};
+import {cases.init_executor_handle_on_type_as_value.registry.all};
+import {io.terminal.print} from "std";
+
+#[registered]
+pub type Users() {
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() -> void {
+    for (all()) { e ->
+        print(e.name + " " + e.make());
+    }
+}

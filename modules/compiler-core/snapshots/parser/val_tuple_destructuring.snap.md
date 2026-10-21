@@ -15,7 +15,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -66,7 +68,8 @@
                               }
                             ],
                             "comments": [],
-                            "commentsPerElem": []
+                            "commentsPerElem": [],
+                            "labels": []
                           }
                         }
                       }

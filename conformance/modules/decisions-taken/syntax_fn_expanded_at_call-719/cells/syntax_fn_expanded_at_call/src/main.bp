@@ -1,0 +1,34 @@
+//// Decision 719 — a function whose parameter is `syntax` of a type other
+//// than `string` takes the expression written between the parentheses of an
+//// ordinary call and is expanded where it is called: its body runs at build,
+//// reads the expression through `compiler.*` and returns the code that
+//// stands at the call. `matches` writes the call's file and line into the
+//// run-time call it answers; the caller writes nothing but the expression.
+
+import {compiler} from "std";
+import {io.terminal.print} from "std";
+
+pub fn matchesAt(value: string, file: string, line: i32) -> bool {
+    print(file + ":" + line.toString() + " " + value);
+    return true;
+}
+
+pub fn matches(syntax value: unknown) -> anyvalue {
+    val at = compiler.source(value);
+    return compiler.build("matchesAt("
+        + compiler.text(value)
+        + ", \""
+        + at.file
+        + "\", "
+        + at.line.toString()
+        + ")");
+}
+
+fn render(name: string) -> string {
+    return "<p>" + name + "</p>";
+}
+
+pub fn main() -> void {
+    val ok = matches(render("page"));
+    print(ok.toString());
+}

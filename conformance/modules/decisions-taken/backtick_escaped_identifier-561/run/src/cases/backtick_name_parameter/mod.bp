@@ -1,0 +1,15 @@
+//// Decision 561 — a parameter named between backticks: read in the body,
+//// passed by position and by its label, and a lambda's parameter.
+
+import {io.terminal.print} from "std";
+
+fn scaled(`the value`: i32, `by-factor`: i32) -> i32 {
+    return `the value` * `by-factor`;
+}
+
+pub fn runCase() -> void {
+    print(scaled(3, 4));
+    print(scaled(`by-factor`: 10, `the value`: 5));
+    val twice: fn(i32) -> i32 = { `x y` -> `x y` * 2 };
+    print(twice(21));
+}

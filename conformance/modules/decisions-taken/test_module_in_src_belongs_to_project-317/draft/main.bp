@@ -1,0 +1,9 @@
+//// Decision 317 — `botopink test` in a project whose modules sit in folders: a module whose source is in the project's own `src` belongs t
+
+import {io.terminal} from "std";
+import {io.random.d6};
+
+pub fn main() -> void {
+    val die = d6();
+    terminal.print(die.sides, die.roll(3), die.roll(17));
+}

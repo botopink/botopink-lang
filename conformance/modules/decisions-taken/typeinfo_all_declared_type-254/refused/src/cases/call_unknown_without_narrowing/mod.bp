@@ -1,0 +1,15 @@
+//// Decision 254 — `unknown` is the checked top type: a value of it is not
+//// callable until `is fn(<params>) -> T` narrows it. A factory read out of a
+//// catalogue and called directly is refused where it is called.
+
+import {io.terminal.print} from "std";
+
+fn makeCount() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    val factory: unknown = makeCount;
+    val n: i32 = factory();
+    print(n);
+}

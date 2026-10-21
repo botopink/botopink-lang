@@ -1,0 +1,43 @@
+//// Decision 506 (1) — `io.terminal` without a terminal: a cell's standard streams are pipes, so
+//// `stdoutIsTTY()` is `false`, `size()` is `null`, `setRaw(on)` is `Error(NotATerminal)` (there is
+//// no mode to change) and `keys()` — reading the closed standard input — ends at once. The same
+//// answers on commonJS, erlang and beam. The terminal's own answers (a size, a raw mode, the keys)
+//// need a TTY a check cannot have: `parseKey` is what decodes them, and it is tested by std's own
+//// tests (`libs/std/src/io/terminal.bp`).
+
+import {io.terminal, io.terminal.print} from "std";
+
+fn sizeText() -> string {
+    val dims = terminal.size();
+    return case dims {
+        null -> "no size";
+        _ -> "size " + dims!.toString();
+    };
+}
+
+fn rawText(on: bool) -> string {
+    return case terminal.setRaw(on) {
+        Ok(_) -> "raw ok";
+        Error(e) -> case e {
+            terminal.TerminalError.NotATerminal -> "NotATerminal";
+            terminal.TerminalError.Unsupported -> "Unsupported";
+            terminal.TerminalError.Other(message) -> "Other";
+        };
+    };
+}
+
+async fn scenario() -> Async<void> {
+    print("stdoutIsTTY " + terminal.stdoutIsTTY().toString());
+    print(sizeText());
+    print(rawText(true));
+    print(rawText(false));
+    var seen = 0;
+    for await (terminal.keys()) { k ->
+        seen = seen + 1;
+    }
+    print("keys " + seen.toString());
+}
+
+pub fn main() -> void {
+    scenario();
+}

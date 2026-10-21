@@ -1,0 +1,9 @@
+//// Decision 899 — a bodied generic function another module calls, whose body writes its `T` as text.
+
+pub fn show<T>(v: T) -> string {
+    return "${v}";
+}
+
+pub fn both<A, B>(a: A, b: B) -> string {
+    return "${a} and ${b}";
+}

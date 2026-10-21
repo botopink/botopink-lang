@@ -1,0 +1,25 @@
+//// Decision 391 — The snapshot engine is a library of its own — `snap`, `botopink/snap` at `repository/snap` (326's rule) — and std provides only the general primitives it is written over.
+
+import {compiler, io.terminal, path} from "std";
+
+// What the snapshot engine computes from std's primitives alone: the path
+// `<dir of loc.file>/__snapshots__/<suite>/<slug>.snap` and the file's header.
+fn slug(name: string) -> string {
+    return name.toLower().replaceAll(" ", "_");
+}
+
+fn snapshotPath(file: string, suite: string, name: string) -> string {
+    return path.join([path.dirname(file), "__snapshots__", suite, slug(name)
+        + ".snap"]);
+}
+
+fn header(name: string, subject: string) -> string {
+    return ["botopink-snap 1", "test: " + name, "subject: "
+        + subject, ""].join("\n");
+}
+
+pub fn main() -> void {
+    val loc = comptime compiler.src();
+    terminal.print(snapshotPath(loc.file, "render", "Card With Title"));
+    terminal.print(header("Card With Title", "assertText"));
+}

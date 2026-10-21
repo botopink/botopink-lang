@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "Point",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,19 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "x",
-            "typeRef": {
-              "named": "number"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "x",
+              "typeRef": {
+                "named": "number"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": [
           {
@@ -36,7 +39,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "fnType": null,
                 "destruct": null,
                 "default": null
               }

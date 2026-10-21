@@ -1,0 +1,27 @@
+//// A `case` over a union of records whose arms are constructor patterns
+//// (`Dog(name: n, breed: b) { … }`) covers its members: each arm tests one
+//// member and binds every field, so no `_` is needed (decision 8 §3.3 and
+//// §5.1). The arms were read as covering nothing and the case was refused
+//// "not exhaustive: missing member(s) Dog, Cat".
+
+import {io.terminal.print} from "std";
+
+type Dog(name: string, breed: string)
+
+type Cat(name: string, lives: i32)
+
+fn describe(p: Dog | Cat) -> string {
+    return case p {
+        Dog(name: n, breed: b) {
+            "dog " + n + " " + b
+        }
+        Cat(lives: l, name: n) {
+            "cat " + n + " " + l.toString()
+        }
+    };
+}
+
+pub fn main() -> void {
+    print(describe(Dog(name: "rex", breed: "lab")));
+    print(describe(Cat(name: "tom", lives: 9)));
+}

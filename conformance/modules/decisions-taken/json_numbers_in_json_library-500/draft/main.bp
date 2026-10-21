@@ -1,0 +1,17 @@
+//// Decision 500 — `json` leaves std first (142 s1); `Json`'s numbers land in the json repository, `Decimal` stays in std.
+
+import {io.terminal} from "std";
+import {decimal.Decimal} from "std";
+import {failure.panic} from "std";
+
+fn price(text: string) -> Decimal {
+    return try Decimal.parse(text) catch panic("not a price: " + text);
+}
+
+pub fn main() -> void {
+    val unit = price("1.50");
+    val total = unit.add(price("2.25")).add(price("0.25"));
+    terminal.print(unit.toString());
+    terminal.print(total.toString());
+    terminal.print(total.compare(price("4.00")));
+}

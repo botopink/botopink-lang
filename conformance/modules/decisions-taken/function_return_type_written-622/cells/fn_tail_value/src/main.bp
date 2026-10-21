@@ -1,0 +1,38 @@
+//// Decision 409 — a function body's last expression written without `;` is
+//// its value: `fn inc(x: i32) -> i32 { x + 1 }`. An early `return` stays
+//// (`sign`); an `if` / `else` expression is a tail like any other (`max`); a
+//// tail is checked against `-> R`, generic or not (`first`); every `return
+//// x;` stays valid (`old`).
+
+import {io.terminal.print} from "std";
+
+fn inc(x: i32) -> i32 { x + 1 }
+
+fn sign(n: i32) -> i32 {
+    if (n < 0) return -1;
+    n
+}
+
+fn max(a: i32, b: i32) -> i32 { if (a > b) a else b }
+
+fn first<T>(xs: T[], fallback: T) -> T { xs.at(0) ?? fallback }
+
+fn greet(name: string) -> string {
+    val greeting = "hello, ";
+    greeting + name
+}
+
+fn old(x: i32) -> i32 {
+    return x * 2;
+}
+
+pub fn main() -> void {
+    print(inc(1));
+    print(sign(-5));
+    print(sign(5));
+    print(max(3, 9));
+    print(first([7, 8], 0));
+    print(first([], "none"));
+    print(greet("ana"));
+    print(old(4));
+}

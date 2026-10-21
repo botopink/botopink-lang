@@ -1,0 +1,24 @@
+pub type Val {
+    Num(n: i32),
+    Text(s: string),
+
+    pub fn str(self: Self) -> string {
+        return case self {
+            Text(s: t) -> t;
+            _ -> "";
+        };
+    }
+
+    pub fn plus(self: Self, k: i32) -> i32 {
+        return case self {
+            Num(n: v) -> v + k;
+            _ -> k;
+        };
+    }
+}
+
+pub fn find(kind: i32) -> ?Val {
+    if (kind == 1) return Val.Text(s: "a");
+    if (kind == 2) return Val.Num(n: 40);
+    return null;
+}

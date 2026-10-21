@@ -1,0 +1,25 @@
+//// A decorator another module applies, whose body calls a host function of
+//// its own module and a std one through a leaf import.
+
+import {hash.contentHash, compiler} from "std";
+
+#[compiler.external(
+    .JavaScript("""("<" + $0 + ">")"""),
+    .Erlang("""<<"<", ($0)/binary, ">">>"""),
+    .Wasm(body: wrapBody),
+)]
+declare fn wrap(value: string) -> string;
+
+fn wrapBody(value: string) -> string {
+    return "<" + value + ">";
+}
+
+pub fn stamped(syntax decl: unknown) -> void {
+    @emit(
+        "pub fn stamp() -> string { return \""
+            + wrap(compiler.name(decl)!)
+            + " "
+            + contentHash(compiler.name(decl)!)
+            + "\"; }",
+    );
+}

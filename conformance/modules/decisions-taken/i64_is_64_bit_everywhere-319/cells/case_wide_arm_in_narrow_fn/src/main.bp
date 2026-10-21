@@ -1,0 +1,23 @@
+//// Decisions 319, 247 — a `case` whose arms answer an `i64` (a suffixed
+//// literal's operator) or an `f64` keeps that width inside a function that
+//// answers nothing: the value is bound whole, never narrowed to a word.
+
+import {io.terminal.print} from "std";
+
+fn pick(n: i32) -> void {
+    val big = case n {
+        1 -> 10l + 1l;
+        _ -> 0l;
+    };
+    val half = case n {
+        1 -> 1.5 + 1.0;
+        _ -> 0.5;
+    };
+    print(big);
+    print(half);
+}
+
+pub fn main() -> void {
+    pick(1);
+    pick(2);
+}

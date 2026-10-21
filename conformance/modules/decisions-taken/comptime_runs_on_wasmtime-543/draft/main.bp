@@ -1,0 +1,34 @@
+//// Decision 543 — The comptime runtime's engine: wasmtime in the native compiler, the page's engine on the web; wasm3 removed
+
+import {failure, failure.Failure, failure.panic, io.terminal.print} from "std";
+
+fn explode(n: i32) -> i32 {
+    if (n > 2) panic("too deep at " + n.toString());
+    return n * 10;
+}
+
+fn describe(r: Result<i32, Failure>) -> string {
+    return case r {
+        Ok(v) -> "Ok " + v.toString();
+        Error(f) -> "Error " + f.kind + ": " + f.message;
+    };
+}
+
+fn label(word: string) -> string {
+    return word.toUpper() + " (" + word.length.toString() + ")";
+}
+
+// Computed at build, by the engine that also runs a `--target wasm` program.
+val builtOk = comptime describe(failure.attempt({ -> explode(2) }));
+
+val builtCaught = comptime describe(failure.attempt({ -> explode(3) }));
+
+val builtLabel = comptime label("ação");
+
+pub fn main() -> void {
+    print(builtOk);
+    print(builtCaught);
+    print(builtLabel);
+    print(describe(failure.attempt({ -> explode(3) })));
+    print(builtCaught == describe(failure.attempt({ -> explode(3) })));
+}

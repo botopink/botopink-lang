@@ -1,0 +1,12 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.import_behavior_named_like_prelude.runCase();
+    cases.import_capitalised_fn.runCase();
+    cases.import_nested_module_namespace.runCase();
+    cases.import_same_fn_name_by_module.runCase();
+    cases.import_same_fn_name_two_aliases.runCase();
+    cases.import_std_leaf_field_types.runCase();
+    cases.import_type_alias.runCase();
+    cases.import_type_closure.runCase();
+}

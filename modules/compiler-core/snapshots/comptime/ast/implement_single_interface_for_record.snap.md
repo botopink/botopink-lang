@@ -1,0 +1,65 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Drawable = behavior {
+    fn draw(self: Self) -> void;
+};
+val Circle = type(radius: f64);
+val CircleDrawing = implement Drawable for Circle {
+    fn draw(self: Self) -> void {
+        print("Drawing circle");
+    }
+};
+
+import {io.terminal.print} from "std";
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "interface_def",
+      "name": "Drawable",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "Circle",
+      "fields": {
+        "radius": "f64"
+      }
+    },
+    {
+      "ast": "implement_def",
+      "name": "CircleDrawing",
+      "interfaces": [
+        "Drawable"
+      ],
+      "target": "Circle",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+

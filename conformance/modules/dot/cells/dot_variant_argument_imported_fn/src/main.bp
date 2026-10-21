@@ -1,0 +1,9 @@
+//// A variant written with the leading dot, passed to a function another
+//// module declares, is resolved by that function's parameter type.
+
+import {io.terminal.print} from "std";
+pub mod phase;
+
+pub fn main() -> void {
+    print(phase.describe(.Slow));
+}

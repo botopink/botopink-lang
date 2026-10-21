@@ -1,0 +1,10 @@
+//// Decision 534 — `Dict.bump(key, by)` exists for an integer `V` alone (340): on a
+//// plain `Dict` whose `V` is not an integer type the call is refused, located at the call.
+
+import {collections.Dict, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val totals: Dict<string, f64> = Dict.empty();
+    val next = totals.bump("a", 1.5);
+    print(next.at("a"));
+}

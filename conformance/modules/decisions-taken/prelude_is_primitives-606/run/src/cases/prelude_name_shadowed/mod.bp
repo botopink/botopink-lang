@@ -1,0 +1,24 @@
+//// Decision 606 (1) — a module's own declaration shadows a prelude name, as it shadows
+//// `string` and `Array`: here `Result<T>` and `Async` are this module's records, so a
+//// function returning one is an ordinary function — `return` hands the record itself, and
+//// there is no `throw` or `await` channel.
+
+import {io.terminal.print} from "std";
+
+type Result<T>(value: T, note: string)
+
+type Async(title: string, done: bool)
+
+fn best() -> Result<i32> {
+    return Result(value: 3, note: "own");
+}
+
+fn chore() -> Async {
+    return Async(title: "dishes", done: false);
+}
+
+pub fn runCase() -> void {
+    val r = best();
+    print(r.value, r.note);
+    print(chore().title);
+}

@@ -1,0 +1,8 @@
+//// Decision 359 — the records and the derived type a spread's source comes
+//// from, exported.
+
+import {types.Type} from "std";
+
+pub type Pessoa(nome: string, email: string, telefone: string, idade: i32 = 30)
+
+pub val Contato = Type.pick(Pessoa, .email, .telefone);

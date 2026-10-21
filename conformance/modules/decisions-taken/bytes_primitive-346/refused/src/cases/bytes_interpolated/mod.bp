@@ -1,0 +1,9 @@
+//// Decision 346 — a string template does not read `Bytes` as text: the text the bytes spell
+//// is `b.toUtf8()`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val b = bytes.fromUtf8("a");
+    print("got ${b}");
+}

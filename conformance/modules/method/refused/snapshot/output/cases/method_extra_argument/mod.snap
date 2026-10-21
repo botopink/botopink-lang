@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: 'get' expects 1 argument(s), got 2
+at src/cases/method_extra_argument/mod.bp:10:41

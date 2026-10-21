@@ -1,0 +1,18 @@
+//// Decision 714 — `compiler.wrapWith` is gone: a decorator never changes what
+//// a call does without the caller seeing it. A decorator body that asks for a
+//// wrapper of the annotated function is refused at the call.
+
+import {compiler, io.terminal.print} from "std";
+
+fn loud(syntax decl: fn() -> string) -> void {
+    compiler.wrapWith({ call -> call.run() + "!" });
+}
+
+#[loud]
+fn hello() -> string {
+    return "hello";
+}
+
+pub fn main() -> void {
+    print(hello());
+}

@@ -1,0 +1,19 @@
+import {io.terminal.print} from "std";
+
+behavior Greeter {
+    fn greet(self: Self) -> string;
+}
+
+type Bob(name: string) implement Greeter {
+    fn greet(self: Self) -> string {
+        return "hi " + self.name;
+    }
+}
+
+fn welcome(g: Greeter) -> string {
+    return g.greet();
+}
+
+fn main() -> void {
+    print(welcome(Bob(name: "bob")));
+}

@@ -1,0 +1,26 @@
+//// A template function that reads one typed meta back by `d.meta(T)`
+//// (decision 302).
+
+import {compiler.DeclKind, compiler.Span, compiler} from "std";
+
+pub type Hydrate(level: i32, note: string)
+
+// An annotation without arguments: records what the tag offers — `attr`
+// answers `null` for an attribute the tag does not have, `component` is
+// `null` on an element.
+pub fn hydrated(syntax decl: unknown) -> void {
+    val id = compiler.attr(decl, "id") ?? "no id";
+    val comp = compiler.component(decl)?.name ?? "no component";
+    compiler.setMeta(Hydrate(level: 1, note: id + ", " + comp));
+}
+
+pub fn markup(syntax q: string) -> string {
+    val text = compiler.text(q);
+    val name = text.slice(1, text.indexOf(" "));
+    val tag = compiler.tagDecl(DeclKind.Element, name, []);
+    val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
+        + 2, end: text.indexOf("]>"), line: 1));
+    val h = compiler.meta(d, Hydrate);
+    if (h == null) return "none";
+    return compiler.name(d)! + " " + h.level.toString() + " " + h.note;
+}

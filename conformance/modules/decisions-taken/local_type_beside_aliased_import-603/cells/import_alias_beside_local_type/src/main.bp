@@ -1,0 +1,43 @@
+//// Decision 603 — a type of this module beside an aliased import of a same-named
+//// type is two types: the alias is the other module's type here, the name is this
+//// module's. Each prints as declared, constructs its own fields, answers its own
+//// method, `is` tells them apart, and a function of each takes and answers its own.
+
+pub mod shapes;
+import {shapes.Box as ShapeBox, shapes.widthOf};
+import {io.terminal.print} from "std";
+
+pub type Box(v: i32) {
+    fn describe(self: Self) -> string {
+        return "main:" + self.v.toString();
+    }
+}
+
+fn doubled(b: Box) -> i32 {
+    return b.v * 2;
+}
+
+fn widened(b: ShapeBox) -> i32 {
+    return widthOf(b) + 1;
+}
+
+fn kind(x: unknown) -> string {
+    if (x is Box) return "main";
+    if (x is ShapeBox) return "shapes";
+    return "other";
+}
+
+pub fn main() -> void {
+    val own = Box(v: 1);
+    val other = ShapeBox(w: 2);
+    print(own);
+    print(other);
+    print(own.v);
+    print(other.w);
+    print(doubled(own));
+    print(widened(other));
+    print(own.describe());
+    print(other.describe());
+    print(kind(own));
+    print(kind(other));
+}

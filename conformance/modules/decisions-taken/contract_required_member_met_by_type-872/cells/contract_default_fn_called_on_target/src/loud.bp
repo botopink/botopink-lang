@@ -1,0 +1,23 @@
+pub behavior Shout {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> string;
+
+    default fn shout(self: Self) -> string {
+        return self.slice(0) + "!";
+    }
+}
+
+pub type Tag(name: string) {
+    pub fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
+        return "#" + self.name;
+    }
+}
+
+// The blocks are `pub`, for an importer; their own module calls the `default fn`
+// on a record and on a primitive. `slice` is each type's own.
+pub TagShout implement Shout for Tag {};
+
+pub StringShout implement Shout for string {};
+
+pub fn local() -> string {
+    return "c".shout() + Tag(name: "a").shout();
+}

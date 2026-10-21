@@ -1,0 +1,5 @@
+//// The package root of `p`: a module `p`, named like its package, and a
+//// sibling reading it.
+
+pub mod p;
+pub mod other;

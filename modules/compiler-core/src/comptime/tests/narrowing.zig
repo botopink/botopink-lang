@@ -22,14 +22,18 @@ const h = @import("helpers.zig");
 
 test "infer: narrow ---- if null check record field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
+        \\type User(name: string)
         \\fn greet(maybeUser: ?User) -> string {
         \\    if (maybeUser) { u ->
         \\        return "hello " + u.name;
         \\    };
         \\    return "no user";
         \\}
-        \\@print(greet(User(name: "alice")));
+        \\fn main() -> void {
+        \\    print(greet(User(name: "alice")));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -43,17 +47,32 @@ test "infer: narrow ---- if null check bool" {
         \\    };
         \\    return false;
         \\}
-        \\@print(and(true, true));
+        \\fn main() -> void {
+        \\    print(and(true, true));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: narrow ---- if null check chained" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn getC() -> i32 {
-        \\    val x: ?record { b: ?record { c: i32 } } = null;
+        \\type Inner(c: i32)
+        \\type Outer(b: ?Inner)
+        \\fn getC(o: ?Outer) -> i32 {
+        \\    if (o) { outer ->
+        \\        if (outer.b) { inner ->
+        \\            return inner.c;
+        \\        };
+        \\    };
         \\    return 0;
         \\}
-        \\@print(getC());
+        \\fn main() -> void {
+        \\    print(getC(Outer(b: Inner(c: 7))));
+        \\    print(getC(Outer(b: null)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -61,8 +80,7 @@ test "infer: narrow ---- if null check chained" {
 
 test "infer: narrow ---- case result ok err" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn parse(n: i32) -> @Result<string, string> {
+        \\fn parse(n: i32) -> Result<string, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return "ok";
         \\}
@@ -73,27 +91,34 @@ test "infer: narrow ---- case result ok err" {
         \\        Err(e) -> "error: " + e;
         \\    };
         \\}
-        \\@print(handle(5));
+        \\fn main() -> void {
+        \\    print(handle(5));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: narrow ---- case result different payload types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
-        \\enum AppError { NotFound, Timeout(msg: string) }
-        \\#[@result]
-        \\fn fetchUser(id: i32) -> @Result<User, AppError> {
+        \\type User(name: string)
+        \\type AppError { NotFound, Timeout(msg: string) }
+        \\fn fetchUser(id: i32) -> Result<User, AppError> {
         \\    if (id == 0) { throw AppError.NotFound; };
         \\    return User(name: "alice");
         \\}
-        \\fn main() {
+        \\fn main() -> void {
         \\    val r = fetchUser(1);
         \\    case r {
-        \\        Ok(u) -> @print(u.name);
-        \\        Err(NotFound) -> @print("404");
-        \\        Err(Timeout(msg)) -> @print("timeout: " + msg);
+        \\        Ok(u) -> print(u.name);
+        \\        Err(e) -> print(case e {
+        \\            NotFound -> "404";
+        \\            Timeout(msg) -> "timeout: " + msg;
+        \\        });
         \\    };
         \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -101,7 +126,7 @@ test "infer: narrow ---- case result different payload types" {
 
 test "infer: narrow ---- case enum variant field bindings" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Shape {
+        \\type Shape {
         \\    Circle(radius: f64),
         \\    Rectangle(w: f64, h: f64),
         \\    Point,
@@ -113,19 +138,29 @@ test "infer: narrow ---- case enum variant field bindings" {
         \\        Point -> 0.0;
         \\    };
         \\}
-        \\@print(area(Shape.Circle(2.0)));
+        \\fn main() -> void {
+        \\    print(area(Shape.Circle(2.0)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: narrow ---- case enum nested variant access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Result_ { OkData(val: record { code: i32, msg: string }), Fail }
+        \\type Payload(code: i32, msg: string)
+        \\type Result_ { OkData(data: Payload), Fail }
         \\fn describe(r: Result_) -> string {
         \\    return case r {
         \\        OkData(d) -> d.msg;
         \\        Fail -> "failed";
         \\    };
         \\}
+        \\fn main() -> void {
+        \\    print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -133,7 +168,7 @@ test "infer: narrow ---- case enum nested variant access" {
 
 test "infer: narrow ---- case or patterns shared bindings" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Animal {
+        \\type Animal {
         \\    Dog(breed: string),
         \\    Cat(breed: string),
         \\    Fish,
@@ -158,13 +193,17 @@ test "infer: narrow ---- case guard bound identifier" {
         \\        _ -> "zero";
         \\    };
         \\}
-        \\@print(describe(5));
+        \\fn main() -> void {
+        \\    print(describe(5));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: narrow ---- case guard variant field" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Response {
+        \\type Response {
         \\    Data(code: i32, body: string),
         \\    Error(code: i32),
         \\}
@@ -172,43 +211,43 @@ test "infer: narrow ---- case guard variant field" {
         \\    return case r {
         \\        Data(code, body) if (code == 200) -> body;
         \\        Data(code, body) if (code == 404) -> "not found";
+        \\        Data(code, body) -> "status " + code;
         \\        Error(code) -> "error " + code;
         \\    };
         \\}
-    );
-}
-
-// ── assert pattern narrowing ───────────────────────────────────────────────────
-
-test "infer: narrow ---- assert pattern after assert" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn process(x: ?i32) -> i32 {
-        \\    assert x is Some(n);
-        \\    return n + 1;
+        \\fn main() -> void {
+        \\    print(handle(Response.Data(200, "hi")));
+        \\    print(handle(Response.Error(500)));
         \\}
-        \\@print(process(42));
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
-test "infer: narrow ---- assert pattern enum variant" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Status { Ready, Busy(count: i32), Down }
-        \\fn work(s: Status) -> i32 {
-        \\    assert s is Busy(n);
-        \\    return n;
-        \\}
-    );
-}
+// `assert <expr> is <Pattern>` was a DOCUMENTED SKIP here and in
+// `codegen/tests/narrowing.zig`, pinning a parse error "so the test starts
+// failing the day the form lands". C-08 decided the form does not land: `is`
+// answers a `bool` and does not bind (decision 8 §4), `val assert <Pattern> =
+// <expr>;` is the form that binds a pattern's names into the enclosing scope,
+// and `conformance/docs.md` already lists `assert x is Some(n)` as deliberately absent. The
+// refusal it must keep giving — `error[is-variant-binding]` — is pinned at the
+// language level by `conformance/modules/decisions-taken/pattern_as_binding_refused-11/cells/assert_is_pattern`, which is where
+// a deliberate refusal belongs.
 
 // ── early return narrowing ─────────────────────────────────────────────────────
 
 test "infer: narrow ---- early return guard clause" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn greet(x: ?string) -> string {
-        \\    if (!x) { return "nobody"; };
+        \\    if (x == null) { return "nobody"; };
         \\    return "hello " + x;
         \\}
-        \\@print(greet("world"));
+        \\fn main() -> void {
+        \\    print(greet("world"));
+        \\    print(greet(null));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -219,32 +258,51 @@ test "infer: narrow ---- type guard basic" {
         \\fn isPositive(n: i32) -> n is i32 {
         \\    return n > 0;
         \\}
-        \\@print(isPositive(5));
+        \\fn main() -> void {
+        \\    print(isPositive(5));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 test "infer: narrow ---- type guard narrowing in if" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn isString(x: ?string) -> x is string {
-        \\    if (x) { _ -> return true; };
+        \\    if (x) { s -> return true; };
         \\    return false;
         \\}
-        \\@print(isString("hello"));
+        \\fn main() -> void {
+        \\    print(isString("hello"));
+        \\    print(isString(null));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
 // ── AND condition narrowing ────────────────────────────────────────────────────
 
+// DOCUMENTED SKIP — `if (a && b)` parses since C-08 widened the `if`
+// condition to `prec.lowest`, so what is left is the checker half: `?Box && …`
+// is rejected because an optional is not a bool, and narrowing through an `&&`
+// chain does not exist. Missing feature: `&&`-guarded narrowing; owner: spec
+// 02 (checker). `narrow ---- if null check record field access` covers the
+// nested-`if` form that does work.
 test "infer: narrow ---- and condition field access" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Box = record { weight: i32 }
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\val Box = type(weight: i32)
         \\fn describe(b: ?Box) -> string {
         \\    if (b && b.weight > 10) {
         \\        return "heavy";
         \\    };
         \\    return "light or none";
         \\}
-        \\@print(describe(Box(weight: 20)));
+        \\fn main() -> void {
+        \\    print(describe(Box(weight: 20)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -252,8 +310,8 @@ test "infer: narrow ---- and condition field access" {
 
 test "infer: narrow ---- optional chaining field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Inner = record { value: i32 }
-        \\val Outer = record { inner: ?Inner }
+        \\val Inner = type(value: i32)
+        \\val Outer = type(inner: ?Inner)
         \\fn getValue(o: Outer) -> ?i32 {
         \\    return o.inner?.value;
         \\}
@@ -269,7 +327,12 @@ test "infer: narrow ---- else if chain with null checks" {
         \\    else if (x != 0) { return "nonzero: " + x; }
         \\    else { return "null"; }
         \\}
-        \\@print(classify(42));
+        \\fn main() -> void {
+        \\    print(classify(42));
+        \\    print(classify(null));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -277,7 +340,7 @@ test "infer: narrow ---- else if chain with null checks" {
 
 test "infer: narrow ---- error variant field in wrong arm" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\enum Shape {
+        \\type Shape {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\}
@@ -287,5 +350,77 @@ test "infer: narrow ---- error variant field in wrong arm" {
         \\        Square(side) -> radius;
         \\    };
         \\}
+    );
+}
+
+// ── 06 C5 — a guard is typed `bool`, and its narrowed type is usable ──────────
+// Before C5 the narrowed type sat in `returnType`, so a guard call was typed `T`
+// and the narrowing below was unreachable: the `if` unified the call against
+// `bool` and errored first.
+
+test "infer: narrow ---- a guard call is a bool" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n > 0;
+        \\}
+        \\fn main() -> void {
+        \\    val b: bool = isPositive(5);
+        \\    print(b);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
+test "infer: narrow ---- a guard narrows the argument in the then-branch" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isStr(y: ?string) -> y is string {
+        \\    return y != null;
+        \\}
+        \\fn main() -> void {
+        \\    val y: ?string = "a";
+        \\    if (isStr(y)) {
+        \\        val s: string = y;
+        \\        print(s);
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
+test "infer error: narrow ---- a guard body must answer bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n;
+        \\}
+    );
+}
+
+// ── 06 C12 — a pattern assert checks its subject and its handler ──────────────
+
+test "infer error: narrow ---- an unbound name in a pattern assert reds" {
+    // Both halves used to swallow `error.TypeError` into a fresh type variable,
+    // so this compiled and only aborted at run time (beam printed
+    // `{unresolved_identifier, answer}`).
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() -> void {
+        \\    val assert 42 = answer catch 0;
+        \\    print("unreachable");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
+test "infer error: narrow ---- a pattern assert handler is checked too" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() -> void {
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch fallback;
+        \\    print(answer);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }

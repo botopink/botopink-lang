@@ -1,0 +1,32 @@
+//// Decision 330 — a field read written after a `?.` link continues the
+//// chain, as a method there does (`find(0)?.str().length()`) and as
+//// TypeScript's does: `p(true)?.me().x` reads `x` off the record `me()`
+//// answers when `p(true)` is present, and is absent when it is not, so `??`
+//// takes its default; the receiver is evaluated once, on every target. A
+//// field after a field link (`p(true)?.inner.x`) and a method after the read
+//// (`p(true)?.me().name.length()`) continue it alike.
+
+import {io.terminal.print} from "std";
+
+type Point(x: i32, name: string, inner: Inner) {
+    fn me(self: Self) -> Point {
+        return self;
+    }
+}
+
+type Inner(x: i32)
+
+fn p(present: bool) -> ?Point {
+    print("p");
+    if (present) return Point(x: 7, name: "seven", inner: Inner(x: 3));
+    return null;
+}
+
+pub fn main() -> void {
+    print(p(true)?.me().x ?? -1);
+    print(p(false)?.me().x ?? -1);
+    print(p(true)?.inner.x ?? -1);
+    print(p(false)?.inner.x ?? -1);
+    print(p(true)?.me().name.length() ?? -1);
+    print(p(false)?.me().name ?? "none");
+}

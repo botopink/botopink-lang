@@ -4,10 +4,35 @@
 /// ArenaAllocator and frees it after type-checking is complete.
 const std = @import("std");
 const ast = @import("../ast.zig");
+const reflectionMod = @import("reflection.zig");
+const hooksMod = @import("hooks.zig");
+const memberFnMod = @import("member_fn.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
+const trace = @import("./trace.zig");
+const hostCells = @import("./host_cells.zig");
+const astBuild = @import("./ast_build.zig");
+
+/// Decision 757 — a call that passes types to `comptime t: type<T>`
+/// parameters (`Env.typeTokenCalls`).
+pub const TypeTokenCall = struct {
+    /// The positions of the type arguments among the call's written ones.
+    at: []const usize,
+    /// Per position, the name written: a type, or a `comptime t: type<T>`
+    /// parameter of the body the call sits in, handed on.
+    names: []const []const u8,
+    /// A method's owner type; null for a function.
+    owner: ?[]const u8 = null,
+};
 
 // ── type definitions ──────────────────────────────────────────────────────────
+
+/// What `Env.aliasedWrapper` answers: the alias the source wrote and the
+/// builtin wrapper (`"Result"`, `"Async"`, …, without `@`) it expands to.
+pub const AliasedWrapper = struct {
+    alias: []const u8,
+    wrapper: []const u8,
+};
 
 /// A field inside a record, struct, or enum variant.
 pub const FieldDef = struct {
@@ -37,8 +62,15 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
+        /// Decision 811 (1) — `opaque type`: built, opened and its methods
+        /// without `pub` called only inside its own methods (`opaque_types.zig`).
+        opaque_: bool = false,
+        /// Decision 811 (1) — the `pub` methods answering the type, which
+        /// `opaque-construction` names.
+        makers: []const []const u8 = &.{},
     };
 
     pub const Struct = struct {
@@ -49,8 +81,9 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
     };
 
     pub const Enum = struct {
@@ -61,17 +94,17 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         variants: []VariantDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
     };
 
-    /// The `ContextBase` of this type when it implements `@Context<B, R>` inline.
-    /// Returns null for types that do not implement `@Context`.
-    pub fn contextBase(self: TypeDef) ?[]const u8 {
+    /// True when this type implements `@Renderable` (decision 354).
+    pub fn isRenderable(self: TypeDef) bool {
         return switch (self) {
-            .record => |r| r.contextBase,
-            .struct_ => |s| s.contextBase,
-            .enum_ => |e| e.contextBase,
+            .record => |r| r.renderable,
+            .struct_ => |s| s.renderable,
+            .enum_ => |e| e.renderable,
         };
     }
 
@@ -98,6 +131,15 @@ pub const TypeDef = union(enum) {
     /// `resolveTypeRefInContext` to fill omitted trailing generic args at
     /// user-typeDef call sites (parallel to `builtinDefaultFilledArgs` for
     /// builtin wrappers).
+    /// The generic parameters the type declares (`Pair<A, B>` → `A`, `B`).
+    pub fn genericParams(self: TypeDef) []const []const u8 {
+        return switch (self) {
+            .record => |r| r.genericParams,
+            .struct_ => |s| s.genericParams,
+            .enum_ => |e| e.genericParams,
+        };
+    }
+
     pub fn genericDefaults(self: TypeDef) []const ?*T.Type {
         return switch (self) {
             .record => |r| r.genericDefaults,
@@ -122,23 +164,156 @@ pub const ExtEntry = struct {
     interfaces: []const ast.TypeRef = &.{},
     /// Method names declared in the block.
     methods: []const []const u8,
+    /// The return type each method of `methods` writes, parallel to it.
+    returns: []const ?ast.TypeRef = &.{},
 };
 
-// ── @Context capability scope ───────────────────────────────────────────────────
+/// The declaration a type import item resolved to (`Env.importedTypeDecls`).
+pub const ImportedTypeDecl = struct {
+    /// The type's declared name (the item's leaf).
+    name: []const u8,
+    /// The module path that declares it (`catalog`, `srv/app`).
+    module: []const u8,
+};
+
+// ── @Component capability scope ───────────────────────────────────────────────────
 
 /// Capability information about the function body currently being inferred.
 ///
 /// The function's return type decides whether `use` is allowed inside the body:
-/// the return must implement `@Context<ContextBase, Return>`. All `use` calls in
-/// the body must agree on the same `ContextBase`. `null` on the environment means
-/// no function body is currently being inferred (top-level position).
+/// it must be `@Component<R>` (decisions 102, 128, 354). `null` on the
+/// environment means no function body is currently being inferred (top-level
+/// position).
 pub const FnContext = struct {
-    /// True when the function's return type implements `@Context<_, _>`.
+    /// True when the function's return type is `@Component<R>`.
     implementsContext: bool,
-    /// The `ContextBase` name when `implementsContext` is true; null otherwise.
-    base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
+    /// True when the enclosing fn is marked `component` — and only then
+    /// (decisions 354, 553, 573). It is the same flag as `Env.inContextFn`. A
+    /// `use` in any other body is `useWithoutComponent`, which names the
+    /// marker to write.
+    annotated: bool = false,
+    /// The enclosing fn's name, for that diagnostic.
+    fnName: []const u8 = "",
+    /// Decision 354 — true when the return is `@Component<R>` with an `R` that
+    /// implements `@Renderable`: a component, whose body may `use provide`.
+    renderable: bool = false,
+    /// Decision 804 (1) — set on a helper method of a type component (the
+    /// component's name): hooks are read in its `compose` alone.
+    composeHelperOf: ?[]const u8 = null,
+};
+
+/// Decision 354 — what a name imported from std's `context` module declares;
+/// decision 388's `RenderScope`, made only by `RenderScope.root()`.
+pub const StdContextName = enum { context_type, create_context, provide, context, inject, render_scope };
+
+/// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
+/// identity (`declIdentity`) of the decorator the argument names, or null when
+/// the argument is a `Decorator` value (`b.decorator`) read as written.
+pub const DecoratorSame = struct { other: ?[]const u8 };
+
+/// Decision 372 — a `@typeInfo(X).meta.<decorator>.<key>` read of this
+/// module's `X` whose decorator reads `.hooks` and had not run when the read
+/// was inferred: `rewrite` is the string literal `srcRewrites` holds at `loc`,
+/// filled once the decorator ran (`infer.zig` `answerDeferredMetaReads`).
+pub const DeferredMetaRead = struct {
+    loc: ast.Loc,
+    rewrite: *ast.Expr,
+    module: []const u8,
+    name: []const u8,
+    decorator: []const u8,
+    key: []const u8,
+};
+
+/// Decision 328 — a method call whose receiver was still a free type variable
+/// when it was checked (`(fn(n) { n.toString() })(2)`, its `n` typed only by
+/// the call; a binding no longer reaches it, decision 583): answered once the module's bodies are
+/// inferred (`infer.zig` `resolvePendingReceiverCalls`), so every backend sees
+/// the lowering its receiver's type asks for. `param` names the lambda
+/// parameter the receiver is, when it is one.
+pub const PendingReceiverCall = struct {
+    loc: ast.Loc,
+    receiver: *T.Type,
+    callee: []const u8,
+    ret: *T.Type,
+    args: []ast.CallArgOf(.typed),
+    param: ?[]const u8,
+};
+
+/// Decision 375 — the declaration a call or a `use` names, with the call's
+/// type (null for a `use`, whose operand is a hook): only a call whose type
+/// resolved to `@Component<R>` is one commonJS may leave unawaited.
+/// What a `@Component` method's body writes (`Env.methodHooks`).
+pub const MethodHooks = struct {
+    uses: []const hooksMod.Use,
+    calls: []const hooksMod.Builder.PendingCall,
+    dynamicCalls: []const hooksMod.Builder.DynamicCall,
+    is_async: bool,
+};
+
+/// A std function a leaf import binds (`Env.stdLeafFns`).
+pub const StdLeafFn = struct { module: []const u8, name: []const u8 };
+
+/// STD-001 (decision 518 (4)) — one call of std function `module.name` at
+/// `loc` and the host declarations it reaches (`StdHost`), in the order the
+/// call is followed through the module's own bodies: the first one with no
+/// binding for a target is the one its refusal names
+/// (`codegen/target_check.zig`).
+pub const StdCall = struct {
+    site: TargetSite,
+    module: []const u8,
+    name: []const u8,
+    hosts: []const StdHost,
+};
+
+/// Where a refusal of the target is located: the place inference saw, moved
+/// as an inference error there would be — code a decorator added is located
+/// at its annotation, with the call that added it (`comptime.zig`
+/// `locateInOutputs`).
+pub const TargetSite = struct {
+    loc: ast.Loc,
+    origin: ?@import("error.zig").Frame = null,
+    frames: []const @import("error.zig").Frame = &.{},
+};
+
+/// A host declaration (`declare fn` with implementations) a std call reaches.
+pub const StdHost = struct {
+    name: []const u8,
+    implementations: []const ast.Implementation,
+};
+
+pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
+
+/// Decisions 354, 379, 723 — one `use provide(ctx)` / `use context(ctx)` /
+/// `use inject(R)`: which hook, the context's identity and the `T` it carries.
+pub const ContextUse = struct {
+    kind: enum { provide, read, inject },
+    /// The context's identity: its value's type (379), the run-time key in a
+    /// `RenderScope` (388).
+    key: []const u8,
+    /// The type as written, for a message.
+    name: []const u8,
+    value_type: *T.Type,
+    /// A read's fallback: the name of the context value it names (decision
+    /// 723), a module-level `val` of this module or an imported one.
+    default_ref: ?[]const u8 = null,
+    /// Decision 416 — an `inject(R)`'s fields, each read as a context of its
+    /// type (`resolveContextReads` fills their fallbacks).
+    fields: []InjectField = &.{},
+};
+
+/// One field of a record `use inject(R)` builds (decision 416 (1)): read
+/// from the context of its type (`key`; null for a type that keys none),
+/// else that type's declared default (`default_ref`), else the field's own
+/// default (`field_default`).
+pub const InjectField = struct {
+    name: []const u8,
+    key: ?[]const u8,
+    value_type: *T.Type,
+    type_name: []const u8,
+    default_ref: ?[]const u8 = null,
+    field_default: ?*const ast.Expr = null,
 };
 
 /// How `throw` should be type-checked in the current function scope.
@@ -146,12 +321,23 @@ pub const FnContext = struct {
 /// Set by `inferFnDecl` when entering a named function body and reset to
 /// `.unchecked` inside nested function expressions (lambdas have no declared
 /// return type). `inferJumpExpr` reads it to validate `throw` statements.
+/// Decision 595 (5), (7) — what a region's `try`s told the checker: the
+/// error type of its first `try` (every other one must fail with it), and
+/// how many it holds.
+pub const TryRegion = struct {
+    err: ?*T.Type = null,
+    errLoc: ast.Loc = .{ .line = 0, .col = 0 },
+    tries: usize = 0,
+};
+
 pub const ThrowContext = union(enum) {
     /// No declared return type (top-level or lambda) — `throw` is left unchecked.
     unchecked,
-    /// Enclosing fn returns `@Result<D, E>` — a thrown value must unify with `E`.
+    /// The enclosing fn's return carries `@Result<D, E>` in some layer (the
+    /// fallible channel, decision 121) — a thrown value must unify with `E`.
     result: *T.Type,
-    /// Enclosing fn has a declared non-`@Result` return type — `throw` is illegal.
+    /// Enclosing fn's declared return carries no `@Result` — `throw` / `try`
+    /// are illegal.
     plain,
 };
 
@@ -184,19 +370,146 @@ pub const CustomAstEntry = struct {
 
 /// A compiler-provided template method resolved by inference (expr-templates
 /// F4): `text`/`parts`/`source`/`context`/`lookup`/`bindings`/`fail`/`failAt`
-/// on an `expr` receiver, plus `ref` on a `Binding`. Mirrors `MethodLowering`:
+/// on an `expr` receiver. Mirrors `MethodLowering`:
 /// keyed by the call's source `Loc` and consumed by the call-site expansion
 /// pass (F6). Instances only exist at comptime — no codegen backend ever sees
 /// these calls.
-pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindings, build, custom, fail, failAt, ref };
+/// `tagDecl` / `annotate` — decision 302: a tag's `@Decl` and an annotation
+/// run over it (`template_eval.zig` § tag annotations).
+/// Decision 426 — a memoized template run's build and notes (`infer.zig`
+/// `BuiltInfo`).
+pub const TemplateBuilt = struct {
+    callee: []const u8 = "",
+    at: ?ast.Loc = null,
+    file: ?[]const u8 = null,
+    notes: []const []const u8 = &.{},
+    /// Decisions 625 (2), 752 — a `compiler.ast` tree's `Name`s and nodes by
+    /// the location each took, so an error at one is reported at the call.
+    ast_names: []const astBuild.Placed = &.{},
+    ast_nodes: []const astBuild.At = &.{},
+};
+
+pub const TemplateOp = enum { value, text, source, context, lookup, bindings, holes, build, ast, isSyntax, custom, fail, failAt, tagDecl, annotate, note };
 
 /// Everything the inference-time template evaluator needs to run a template
 /// body in the external eval runtime (expr-templates F6-full). Null in
 /// tooling paths (`compileTypesOnly` / LSP) — only the full `compile`
 /// pipeline evaluates template bodies.
+/// `Env.namespaces` — what the transform needs to write `jwt.sign(x)` as a
+/// call of an imported function: each qualified call's loc names its
+/// namespace and function (`calls`), and every namespace import item is
+/// replaced by one aliased leaf per function called through it
+/// (`ns.aliasFor`), which every backend already lowers.
+pub const NamespaceImports = struct {
+    /// Bound name → the imported module's exports.
+    modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
+    /// Bound name → the imported module's path (`@typeInfo(models.City)`
+    /// reflects `City` of that module — decision 216).
+    paths: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Call loc → the namespace and the function it calls.
+    calls: std.AutoHashMapUnmanaged(ast.Loc, Call) = .empty,
+    /// `"<namespace>\x00<function>"` → the function's parameters as written
+    /// (the exporting module's `defaultParamsKey` entry), so `ns.f(b: 1, a: 2)`
+    /// is checked and lowered by label and a short call is filled (C-04).
+    params: std.StringHashMapUnmanaged([]const ast.Param) = .empty,
+    /// `00 · 01-std` — an imported name the import resolves to two modules'
+    /// declarations (a bare `import {parse};` over two modules declaring
+    /// `pub fn parse`): local name → the declaring module paths, sorted. The
+    /// name is left unbound, `infer.unboundAt` refuses each use of it, located,
+    /// naming the modules, and `transform.rewriteNamespaceImports` drops the
+    /// item — an import no use reads is no refusal.
+    ambiguous: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+
+    pub fn paramsKey(arena: std.mem.Allocator, namespace: []const u8, callee: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ namespace, callee });
+    }
+
+    pub const Call = struct { namespace: []const u8, callee: []const u8 };
+
+    /// The local name a namespace call is rewritten to: an import alias no
+    /// source can spell (`$`), so it never collides with a declaration.
+    pub fn aliasFor(arena: std.mem.Allocator, namespace: []const u8, callee: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "__bp_ns_{s}__{s}", .{ namespace, callee });
+    }
+};
+
+/// Decision 562 — an imported function expanded at its call site
+/// (`Env.expandedImports`).
+pub const ExpandedImport = struct { decl: ast.FnDecl, owner: []const u8 };
+
+/// One name of a template's library bound in the consumer (`Env.templateImports`).
+/// `Env.failedImports` — the refused module an import item names, and the item.
+pub const FailedImport = struct {
+    module: []const u8,
+    loc: ast.Loc,
+};
+
+pub const TemplateImport = struct {
+    /// The module path the template was declared in.
+    owner: []const u8,
+    /// The name as that module declares it.
+    name: []const u8,
+};
+
+/// Decisions 384, 385 — a name another module wrote, bound in this one under
+/// `alias` (`templateAlias(module, name)`): a value through the binding and
+/// `Env.templateImports`, a type through an import the re-analysis adds.
+pub const HygieneImport = struct {
+    alias: []const u8,
+    module: []const u8,
+    name: []const u8,
+    isType: bool,
+};
+
+/// The key a module's PRIVATE function or value is exported under for its
+/// templates' text (decision 112): a NUL no source name contains, so no
+/// `import` can reach it.
+pub fn templatePrivateKey(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "\x00tpl\x00{s}", .{name});
+}
+
+/// The alias a name of the template module `owner` is bound under in a
+/// consumer (decision 112, `Env.templateImports`): `__bp_tpl_<owner>__<name>`,
+/// the owner's path with every non-alphanumeric byte as `_`. One spelling for
+/// the built code's names (`infer.applyDslHygiene`), the functions a
+/// `comptime` carries for them (`comptime.zig` `importTemplateSupport`) and
+/// the constructor of a lifted record (`block_eval.zig`).
+pub fn templateAlias(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
+    var mangled: std.ArrayListUnmanaged(u8) = .empty;
+    for (owner) |ch| try mangled.append(arena, if (std.ascii.isAlphanumeric(ch)) ch else '_');
+    return std.fmt.allocPrint(arena, "__bp_tpl_{s}__{s}", .{ mangled.items, name });
+}
+
+/// A declaration's identity as `lookup` answers it (decision 112):
+/// `<module path>@@<Decl>` with the path's `/` written `@` — a dependency's
+/// module path starts with its package (`shapesdsl/shapesdsl` →
+/// `shapesdsl@shapesdsl@@area`, decision 109). A root-package module's path
+/// carries no package here: the checker is not told the root package's name
+/// (`decisions-pending.md` 01c-a), so its identity starts at the path.
+pub fn declIdentity(arena: std.mem.Allocator, modulePath: []const u8, name: []const u8) ![]const u8 {
+    const path = if (modulePath.len == 0) "main" else modulePath;
+    const out = try std.fmt.allocPrint(arena, "{s}@@{s}", .{ path, name });
+    for (out[0..path.len]) |*ch| if (ch.* == '/') {
+        ch.* = '@';
+    };
+    return out;
+}
+
 pub const TemplateEvalCtx = struct {
     io: std.Io,
     build_root: []const u8,
+    /// Where the module's analysis records, across every pass, what the
+    /// target's checks read when the analysis is refused (`TargetTrace`).
+    target_trace: ?*TargetTrace = null,
+};
+
+/// What `codegen/target_check.zig` reads of a module whose analysis was
+/// refused (a type or validation error): the std calls reaching a host
+/// declaration inference met before the refusal, in order. A
+/// refusal of the target there came first when inference read the target, so
+/// it is the one the module answers on that target (decision 798 (4)).
+pub const TargetTrace = struct {
+    calls: std.ArrayListUnmanaged(StdCall) = .empty,
 };
 
 /// Constraint metadata for one `comptime ...: typeparam` parameter of a function.
@@ -213,37 +526,37 @@ pub const TypeparamConstraint = struct {
 
 // ── environment ───────────────────────────────────────────────────────────────
 
-/// Context active while inferring the body of an effect fn (async /
-/// generator — i.e. one marked `#[@future]` / `#[@iterator]` / `#[@generator]`
-/// / `#[@asyncGenerator]`). Drives validation of `await` and `yield`; `null`
+/// Context active while inferring the body of an effect fn (a return of
+/// `@Result`, `@Async`, `@Component`, `@Iter` or `@AsyncIter`, decision 118)
+/// or of a prefixed `iter` / `stream` loop. Drives validation of `await` and
+/// `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
 /// alludes to was removed in v0.beta.19.)
 pub const StarFnCtx = struct {
-    /// `await` is permitted here — async function (`@Future`) or async
-    /// generator (`@AsyncIterator`).
+    /// `await` is permitted here — `@Async`, `@Component` or `@AsyncIter`.
     allowsAwait: bool,
-    /// `yield` (and generator delegation) is permitted here — `@Iterator` /
-    /// `@Generator` / `@AsyncIterator`. False for a pure `@Future`.
+    /// `yield` is permitted here — `@Iter` / `@AsyncIter`.
     allowsYield: bool,
-    /// `@Iterator<T>` / `@Generator<T, _>` / `@AsyncIterator<T, _>` item type
-    /// that `yield` values must unify with; `null` when unknown or absent
-    /// (`@Future`).
+    /// `@Iter<T>` / `@AsyncIter<T>` item type that `yield <v>` AND
+    /// `break <v>` values unify with (decision 122: `break v` emits `v` and
+    /// ends — the last item is an item like the others, there is no
+    /// completion channel); `null` when unknown or absent (`@Async`). When it
+    /// is `@Result<U, E>`, a `U` is wrapped `Ok(v)`.
     iterItem: ?*T.Type,
-    /// `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` completion type that
-    /// `break <expr>` values must unify with (§1I RI2/RI3). `null` for
-    /// effects without a completion channel (`@Future`, `@Generator`'s `R`
-    /// rides on `return` instead).
-    iterCompletion: ?*T.Type,
-    /// The label declared on the fn signature (`#[@iterator] fn … :name`),
-    /// used to scope `break :name` to the iterator FSM vs. an enclosing loop.
+    /// The label declared on the fn signature (`fn … -> @Iter<T> :name`),
+    /// used to scope `break :name` to the generator vs. an enclosing loop.
     /// Drives the §1I REGRAS DE ESCOPO disambiguation in the `.@"break"`
     /// type-checker.
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
-    /// specific rejections (RF1/RF2/RF5 fire only inside `#[@future]`, RI*
-    /// only inside `#[@iterator]` / `#[@asyncGenerator]`, etc.).
+    /// specific rejections (RI* only inside `@Iter` / `@AsyncIter`, etc.).
     effect: ast.EffectKind,
+    /// Decision 584 (2) — the generator scope is a marked lambda's
+    /// (`{ iter x -> … }`, lowered onto an `iter loop`): its body is a
+    /// function body, so `break <value>` is refused and a `return <value>` is
+    /// read as an `iter fn`'s.
+    markedLambda: bool = false,
 };
 
 /// The type-checking environment.
@@ -256,7 +569,11 @@ pub const StarFnCtx = struct {
 /// the untyped call node into a `__bp_<domain>_<op>(receiver, args...)` builtin
 /// call that each codegen backend lowers to its native form.
 pub const MethodLowering = struct {
-    pub const Domain = enum { result, option };
+    /// `width` (decisions 617 (3), 496): a member a primitive width declares
+    /// itself (`i32`'s `abs`) — the call is that width's free function,
+    /// `__<width>_<method>(recv, args)` (`prelude_cache.widthMemberName`),
+    /// which carries the member's host cells; `op` is not read.
+    pub const Domain = enum { result, option, width };
     pub const Op = enum { map, flatMap, unwrapOr, isOk, isError };
     domain: Domain,
     op: Op,
@@ -265,6 +582,8 @@ pub const MethodLowering = struct {
     /// value, so the transform drops it and keeps the args as-is. False for
     /// method form (`x.map(f)`) where the receiver becomes the first arg.
     qualified: bool = false,
+    /// The width of a `.width` lowering (`i32`); empty otherwise.
+    width: []const u8 = "",
 };
 
 /// A type-directed lowering for a stdlib-module method call on a builtin-array
@@ -279,7 +598,32 @@ pub const StdArrayLowering = struct {
 /// The builtin-primitive family of a method-call receiver. Lets a backend that
 /// has no native method dispatch (erlang/beam/wasm) map `xs.map(f)` /
 /// `s.toUpper()` / `n.abs()` to the host's equivalent (`lists:map(F, Xs)`, …).
-pub const PrimKind = enum { array, string, bool, int, float };
+/// `bigint` is a family of its own (decision 332): its methods are
+/// `primitives.bp`'s `BigInt`, never the fixed-width tower's.
+/// `bytes` is decision 346's `Bytes`: its methods are `primitives.bp`'s
+/// `Bytes`, never `String`'s (an Erlang binary holds both).
+pub const PrimKind = enum { array, string, bool, int, float, bigint, bytes };
+
+/// Map a builtin-primitive type name to its `PrimKind` family, or null when the
+/// name is not a primitive (a record/struct/enum/type variable). Used to record
+/// how a value-receiver instance call lowers on the non-JS backends.
+pub fn primKindOfName(typeName: []const u8) ?PrimKind {
+    const map = [_]struct { t: []const u8, k: PrimKind }{
+        .{ .t = "array", .k = .array },
+        .{ .t = "string", .k = .string },
+        .{ .t = "bool", .k = .bool },
+        .{ .t = "i32", .k = .int },
+        .{ .t = "i64", .k = .int },
+        .{ .t = "u32", .k = .int },
+        .{ .t = "u64", .k = .int },
+        .{ .t = "f32", .k = .float },
+        .{ .t = "f64", .k = .float },
+        .{ .t = "bigint", .k = .bigint },
+        .{ .t = "bytes", .k = .bytes },
+    };
+    for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
+    return null;
+}
 
 /// How a value-receiver instance call `recv.method(args)` lowers on backends
 /// without native method dispatch. Recorded by inference keyed by call loc.
@@ -292,7 +636,161 @@ pub const PrimKind = enum { array, string, bool, int, float };
 ///                (`owner:method(Recv, args)`) from its own import index.
 pub const InstanceLowering = union(enum) {
     prim: PrimKind,
-    record: []const u8,
+    /// A method on a named type (record or enum) — the type's name.
+    type_: []const u8,
+    /// A field READ on a record or struct — the receiver's type name. Recorded
+    /// for `p.x` where `x` is a declared field, which is what the backends that
+    /// store a record positionally (13-module-identity's decision 21: erlang
+    /// and beam store `{TypeAtom, F1, …}`) need to turn the field's NAME into
+    /// its index. A method call records `.type_`; only a field read records
+    /// this, so a backend that dispatches natively can ignore it.
+    field_of: []const u8,
+    /// Decision 122 — `seq.next()` called by hand on an `@Iter<T>`
+    /// (answers `YieldStep<T>`) or a `@AsyncIter<T>` (answers
+    /// `@Async<YieldStep<T>>`). commonJS maps the generator's `{ value, done }`
+    /// onto the variants; erlang and beam step a generator first (144 B-128:
+    /// its next item before the generator itself) and wasm, whose sequence is
+    /// the list of its items, does not, then each pops the head and rebinds
+    /// the receiver to the rest when it is a local name. Also keyed by a `for` / `for
+    /// await` loop's own loc when what it iterates is an `@Iter` /
+    /// `@AsyncIter` (144 B-128): erlang and beam step a generator lazily there,
+    /// one item per round.
+    sequence_next: SequenceKind,
+    /// An arithmetic operator's result type, keyed by its operator's loc —
+    /// `+`, `-`, `*`, `/`, `%`, a unary `-`, and a `+=` (keyed by its
+    /// binding's loc). The tag keeps the name of its first reader: onze F7's
+    /// `/`, which truncates toward zero and answers an integer over integers on
+    /// every backend, and divides as floats over floats. Decision 264 reads
+    /// the integer kinds for every operator: the result is checked against the
+    /// type's range and aborts outside it (`ArithKind.range`). Absent when the
+    /// operands' type was never resolved (a generic `T`); a backend then keeps
+    /// its own reading, unchecked.
+    division: ArithKind,
+    /// A method call the VALUE answers, for a backend without native dispatch
+    /// — the receiver's type name: its static type is a `behavior` declaring
+    /// the method without a body, so the implementation is whichever type
+    /// implements it, or a host-built value.
+    by_value: []const u8,
+    /// A method call on a nominal type this module has no declaration of — a
+    /// `Dict` answered by an imported fn, whose type was never imported here.
+    /// The name only: a backend that finds a record or enum of that name in
+    /// the program asks the value, whose tag names its module (decision 21).
+    unplaced_type: []const u8,
+    /// 144 B-10 (decision 430) — `Box.wrap` named without a call: the
+    /// associated fn `wrap` of the named type `Box`, as a function value
+    /// (`apply(1, Box.wrap)`, `val w = Box.wrap;`). Keyed by the member
+    /// read's loc. `arity` is the fn's declared parameter count (no `self`).
+    assoc_fn_value: AssocFnValue,
+    /// Decision 432 — an `await` (keyed by its loc) whose operand may be a
+    /// failing task: a `@Async<X>` with `X` a `@Result`, `unknown` or a type the
+    /// checker leaves open (a type parameter), or an operand not typed as a
+    /// `@Async` at all (a call through a record's function field): a failing
+    /// task rejects on commonJS, so the backend reads the settled task back as
+    /// the `@Result` (`__bp_await`, which leaves anything else as it is).
+    /// Never recorded for a `@Component`, nor for a `@Async` of any other type.
+    task_await,
+    /// Decision 432 — a `return t` (keyed by the `return`'s loc) whose operand
+    /// is the whole `@Async<X>` wrapper of its function, `X` as for
+    /// `task_await`: commonJS hands the task over as the value it settles
+    /// with (`__bp_await`), never adopted as it rejects.
+    task_return,
+    /// Decision 432 — an `async { … }` block (keyed by its loc) whose value is
+    /// a `@Result` it builds with `throw` / `try` / `return`: on commonJS the
+    /// task it makes rejects with the error and resolves with the bare value.
+    failing_task_block,
+    /// Decision 150 (decision 8 §3.2) — a `case` or an `if` (keyed by its
+    /// loc) whose arms disagree, so its value is the union of the arms'
+    /// types: the union, and each arm's own type in arm order (`then`, then
+    /// `else`, for an `if`). A backend that boxes a union member by its
+    /// static type (wasm) boxes each arm by its member and types a `val`
+    /// bound to it as the union, whatever the arm's shape.
+    union_value: UnionValue,
+    /// 144 B-78 (decision 521) — a value written as text whose type holds a
+    /// float (`env.textValues`), keyed by the operand's loc plus
+    /// `ast.text_synthetic_col` (the operand's own loc may key another
+    /// lowering — a field read, a call): the type as written. commonJS has one
+    /// number type, so it reads here that `"${p.x}"` writes an `f64`.
+    text_value: ast.TypeRef,
+};
+
+/// What `InstanceLowering.union_value` holds: the union as written (its
+/// members those the checker could name; `unknown` when one cannot be
+/// written) and each arm's type, null for an arm that answers no value (a
+/// jump) or whose type cannot be written.
+pub const UnionValue = struct { type_: ast.TypeRef, arms: []const ?ast.TypeRef };
+
+/// What `InstanceLowering.assoc_fn_value` names: the type that declares the
+/// associated fn, the fn, and its parameter count.
+pub const AssocFnValue = struct { type_name: []const u8, method: []const u8, arity: usize };
+
+/// The numeric type an `InstanceLowering.division` records: a float, or one
+/// of the sized integer types (decision 264).
+pub const ArithKind = enum {
+    float,
+    i8,
+    u8,
+    i16,
+    u16,
+    i32,
+    u32,
+    i64,
+    u64,
+    isize,
+    usize,
+    /// Decision 332 — an integer of any size: no range, never an overflow.
+    bigint,
+
+    pub fn isInt(k: ArithKind) bool {
+        return k != .float;
+    }
+
+    /// The type's inclusive range, on every target (commonJS holds the 64-bit
+    /// four as a number or a `BigInt`, decision 319). `isize` / `usize` are
+    /// `i64` / `u64`, as the `is` test reads them on every target. Null for
+    /// `.float`, and for `.bigint`, which has no range (decision 332).
+    pub fn range(k: ArithKind) ?struct { lo: i128, hi: i128 } {
+        return switch (k) {
+            .float, .bigint => null,
+            .i8 => .{ .lo = -128, .hi = 127 },
+            .u8 => .{ .lo = 0, .hi = 255 },
+            .i16 => .{ .lo = -32768, .hi = 32767 },
+            .u16 => .{ .lo = 0, .hi = 65535 },
+            .i32 => .{ .lo = std.math.minInt(i32), .hi = std.math.maxInt(i32) },
+            .u32 => .{ .lo = 0, .hi = std.math.maxInt(u32) },
+            .i64, .isize => .{ .lo = std.math.minInt(i64), .hi = std.math.maxInt(i64) },
+            .u64, .usize => .{ .lo = 0, .hi = std.math.maxInt(u64) },
+        };
+    }
+};
+
+/// Which sequence a `.next()` (`InstanceLowering.sequence_next`) steps.
+pub const SequenceKind = enum { iterator, stream };
+
+/// Decision 580 — where a `compiler.init` executor stands: the index of
+/// its source in `Env.contributions`, and the index of its annotated
+/// declaration in the module's declarations. Decision 567 — a type error
+/// inside it is located at `loc`, the annotation that ran the decorator, its
+/// `compiler.init` call (`call`) the `called from` line. Decision 798 (2) —
+/// `decorator` is the annotation's name (`registered`, or a top-level
+/// `comptime` block's `__bp_comptime_<k>` marker), which `--emit-resolved`
+/// names in the executor's origin comment.
+pub const ExecutorAnchor = struct { contribution: usize, decl: usize, loc: ?ast.Loc = null, call: ?CallSite = null, decorator: []const u8 = "" };
+
+/// Decision 798 (2) — where an expansion came from: the template (or the
+/// function expanded at its call, 562) as the call names it, the file it is
+/// declared in and its line. `--emit-resolved` prints it as the comment
+/// `// from <what> (<file>:<line>)` over the statement the expansion stands in.
+pub const ExpansionOrigin = struct { what: []const u8, module: []const u8, file: []const u8, line: usize };
+
+/// Decision 798 (2) — a module's decorator outputs, in the order their
+/// sources are placed past the module's last line (`comptime.zig`
+/// `parseAndMergeContributions`, `mergeMembers`, `mergeAssocTypes`): what
+/// `comptime/resolved_origins.zig` `outputAt` reads a line's owner from.
+pub const OutputRecords = struct {
+    contributions: []const []const u8 = &.{},
+    members: []const MemberContribution = &.{},
+    types: []const TypeContribution = &.{},
+    anchors: []const ExecutorAnchor = &.{},
 };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
@@ -305,44 +803,203 @@ pub const InstanceLowering = union(enum) {
 /// `pub fn d(comptime _: @Decl) { … }`. It is run over the annotated declaration
 /// at comptime (P2: placement/argument rules live in the body). `null` for a
 /// bodyless `declare fn` marker, which only gets argument validation.
+/// One member a decorator body added to a type (`decl.addMember`, decision 216).
+pub const MemberContribution = struct {
+    /// The type the member joins — its name in this module.
+    target: []const u8,
+    /// The member's botopink source, as the body wrote it.
+    source: []const u8,
+    /// The annotation that ran the decorator: every refusal about the member
+    /// is located here.
+    loc: ?ast.Loc,
+    /// The decorator as the annotation spells it (`entity`, `mocks.mock`).
+    decorator: []const u8,
+    /// Decision 567 — the `decl.addMember` call that wrote the member: the
+    /// decorator's file and the call's place in it.
+    call: ?CallSite = null,
+    /// Decision 669 — each name the member reads that the decorator's module
+    /// (another module) declares or imports, and the alias it is bound under
+    /// here: `comptime.zig` `mergeMembers` writes the member with them.
+    renames: []const @import("member_fn.zig").Rename = &.{},
+    /// Decision 669 — each `print` / `panic` the member reads that the
+    /// writing module's std imports bind (`Reflection.stdCalls`).
+    stdCalls: []const @import("std_calls.zig").Item = &.{},
+};
+
+/// Decision 567 — where a decorator body wrote the `decl.addMember` /
+/// `decl.addType` call whose output the module's analysis refused.
+/// Decision 798 (2) — `module` is the decorator's module path, which
+/// `--emit-resolved`'s origin comment labels the file by (empty when unknown).
+pub const CallSite = struct { file: []const u8, loc: ast.Loc, module: []const u8 = "" };
+
+/// Decision 575 (6) — what a library's source annotation implemented
+/// (`compiler.implement(source)`) for the declaration it annotates.
+pub const ImplementContribution = struct {
+    /// The declaration's name — a method's, with `owner` its type.
+    target: []const u8,
+    owner: ?[]const u8,
+    impl: ast.Implementation,
+};
+
+/// One associated type a decorator body declared (`decl.addType`, decision 216).
+pub const TypeContribution = struct {
+    /// The owner — the annotated type, or the type owning the annotated member.
+    owner: []const u8,
+    /// The associated type's own name (`Columns` in `City.Columns`).
+    name: []const u8,
+    /// Its shape, as it follows the name in a declaration (`(id: string)`).
+    source: []const u8,
+    loc: ?ast.Loc,
+    decorator: []const u8,
+    /// Decision 567 — the `decl.addType` call that declared it.
+    call: ?CallSite = null,
+};
+
+/// The top-level name an associated type is declared under: `City.Columns`
+/// is `City__Columns`. Not an enum section's `__Token__Text`: the backends
+/// read that mangling as "a section of the enum `Token`" and take the outer
+/// enum's module for the value's tag (`erlang.zig` `typeOwnerPath`), which an
+/// associated type of a `behavior` does not have. A module declaring the
+/// mangled name itself is refused where the type is added
+/// (`decorator-type-duplicate`).
+pub fn assocTypeName(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}__{s}", .{ owner, name });
+}
+
+/// Decision 252 — one builtin's declared signature (`Env.builtinDecls`).
+pub const BuiltinDecl = struct {
+    genericParams: []const ast.GenericParam,
+    params: []const ast.Param,
+    returnType: ?ast.TypeRef,
+};
+
+/// What a template module carries beside the template, or why it cannot be
+/// built (`infer.Support`, stored per imported template).
+pub const ComptimeSupport = struct {
+    fns: []const ast.FnDecl,
+    conflict: ?[]const u8 = null,
+};
+
+/// Decision 280 — one decorator parameter's value as the body receives it.
+pub const DecoratorArgValue = struct {
+    /// The value as botopink source.
+    source: []const u8,
+    /// Built by a function of the decorator module — an array, a record, a
+    /// variant, a field key, `null` — rather than handed over as a literal
+    /// term (a string, a number, a `bool`).
+    built: bool,
+    /// Decision 364 — the argument is not known while the program compiles
+    /// and the body never reads the parameter: nothing is built, the body
+    /// receives `undefined`.
+    absent: bool = false,
+    /// Where the argument is written; null for a default. `x.fail(…)`
+    /// reports there (decision 364 (3)).
+    loc: ?ast.Loc = null,
+    /// Decision 370 (2) — the expression as the annotation wrote it (a
+    /// default as the decorator declared it): what a member function the
+    /// decorator hands to `decl.addMember(name, fn…)` reads in its place.
+    lexeme: []const u8 = "",
+};
+
+/// Question s29-b — one typed meta value recorded on a method: its owner,
+/// the method, the record type's declared name, whether the type repeats
+/// (`addMeta`), and the value as the build-time term a decorator body reads.
+pub const MethodTypedMeta = struct {
+    owner: []const u8,
+    method: []const u8,
+    typeName: []const u8,
+    repeat: bool,
+    value: @import("../codegen/beam/term.zig").Term,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
+    /// The leading parameter's type — `@Decl` or `@Decl<P>` (decision 280
+    /// (2)); null for an annotation type (`implement @Annotation`).
+    decl: ?ast.TypeRef = null,
+    /// The decorator's type parameters (`fn check<T>(…)`), bound per
+    /// application by `@Decl<P>` and the arguments.
+    generics: []const ast.GenericParam = &.{},
+    /// The functions of the decorator's own module its body calls, directly
+    /// or through one another (`infer.decoratorSupport`) — compiled into the
+    /// decorator module beside it. Filled for an IMPORTED decorator; a local
+    /// one computes it from `Env.fnDecls` when it runs.
+    support: []const ast.FnDecl = &.{},
+    /// Why the imported decorator's module cannot be built (`infer.Support`):
+    /// two functions it reaches share a name. Refused where it is applied.
+    conflict: ?[]const u8 = null,
+    /// Decision 564 — the behavior `@Decl<B>` names, as its declaring module
+    /// resolves it: set for an imported decorator whose `B` is a `behavior` of
+    /// that module (the importer need not name `B`).
+    declBehavior: ?[]const u8 = null,
+    /// The module that declares an imported decorator: its parameter types
+    /// are read there, through that module's own declarations.
+    module: []const u8 = "",
 };
 
-/// A type-directed lowering for a `return`/`throw` jump inside a fn returning
-/// `@Result<D, E>`. Recorded by inference keyed by the jump's source `Loc` and
-/// consumed by the transform pass, which wraps the value in a `__bp_ok(…)` /
-/// `__bp_error(…)` builtin call (and rewrites `throw` into a `return`) so every
-/// backend materialises the same `{ok, V}` / `{error, E}` Result value.
-/// `unwrap_passthrough` handles `return try f()`: unwrapping then immediately
-/// re-wrapping is the identity, so the transform drops the `try` and returns
-/// `f()`'s Result directly.
-pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough };
+/// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside
+/// a body whose return carries a `@Result<D, E>` layer (decisions 119, 121,
+/// 122). Recorded by inference keyed by the jump's source `Loc` and consumed by
+/// the transform pass, which wraps the value in a `__bp_ok(…)` /
+/// `__bp_error(…)` builtin call so every backend materialises the same
+/// `{ok, V}` / `{error, E}` Result value:
+///   - `wrap_ok`            — `return v` → `return __bp_ok(v)`
+///   - `wrap_error`         — `throw e` → `return __bp_error(e)`
+///   - `unwrap_passthrough` — `return try f()` → `return f()` (unwrap then
+///                            re-wrap is the identity)
+///   - `yield_ok`           — in an `@Iter<@Result<U, E>>` / `@AsyncIter<…>`
+///                            scope, `yield v` / `break v` with `v: U` →
+///                            `yield __bp_ok(v)` / `break __bp_ok(v)`
+///   - `break_error`        — in that scope, `throw e` → `break __bp_error(e)`:
+///                            the error is the last item and the sequence ends
+pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough, yield_ok, break_error };
 
-/// §1F F4F-tail — `return`/`throw` jumps inside `#[@future]` fns. The transform
-/// rewrites `return <t>;` to `return __bp_future_resolved(<t>);` (wrap_resolved)
-/// and `throw <e>;` to `return __bp_future_rejected(<e>);` (wrap_rejected). The
-/// JS `async function` machinery handles the actual promise wrap, so commonJS
-/// strips the markers back to bare `return <t>;` / `throw <e>;` at codegen.
-/// Other backends (erlang/beam) consume the same uniform AST form.
-pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
+/// What the nearest enclosing construct does with a `break` (decision 105):
+/// a loop leaves it; a `comptime { … }` block takes the `break` the parser
+/// wrapped its tail in (`valueBlock`); a `case` arm's block is a scope of the
+/// enclosing function, so a bare `break` reaches the enclosing loop and
+/// `break <value>` is refused (`armBlock`, decision 541 (3)); nothing else
+/// takes a bare `break`, and a `break <value>` anywhere else needs a generator
+/// scope.
+pub const BreakScope = enum { none, loop, valueBlock, armBlock };
 
-/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@asyncGenerator]`
-/// fns. The transform rewrites:
-///   - `break <c>;` (targeting the FSM, per RI2/RI3 scoping) → `return @IteratorStep.Done(<c>);`
-///   - `break;` (bare, targeting the FSM)                    → `return @IteratorStep.Done();`
-///   - `throw <e>;`                                          → `return @IteratorStep.Error(<e>);`
-/// `yield <t>;` is NOT rewritten — backends emit `yield t` natively (JS `function*`).
-/// Each backend then renders the enum constructor through its existing enum
-/// codegen (no special-case lowering needed at this layer).
-pub const IteratorJumpLowering = enum { wrap_done, wrap_done_void, wrap_error };
+/// Decision 359 — a derived type's lineage (`Env.derivedTypes`).
+pub const DerivedLineage = struct {
+    from: []const []const u8,
+    partial: bool,
+};
+
+/// What the checker records for a `case` arm pattern, by its `patternLoc`
+/// (`Env.resultPatternLocs`).
+pub const PatternNote = struct {
+    /// The pattern is `Ok` / `Error` over a `@Result` subject.
+    result: bool = false,
+    /// The pattern with every bare nullary variant name in a nested position
+    /// written as the variant path (B-154).
+    resolved: ?ast.Pattern = null,
+};
 
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
     /// Value bindings: variable/function name → *Type.
     bindings: std.StringHashMap(*T.Type),
+    /// The names whose most recent binder was a `val` (decision 38). `bind`
+    /// clears a name — a `var`, a parameter, a pattern may all be assigned;
+    /// `bindVal` sets it — and an assignment to a set name is refused.
+    /// 01 R8 — the bindings that hold a TYPE rather than a value
+    /// (`val T = i32;`, `val U = T;`). `resolveTypeName`'s bindings arm
+    /// accepts these, a primitive and an imported constructor, and refuses
+    /// every other binding: `val n = 5; val x: n = 7;` names a value.
+    typeValueNames: std.StringHashMap(void),
+    valNames: std.StringHashMap(void),
+    /// The `var`s a condition has narrowed in the scope being walked, by name
+    /// → the type the `var` was declared with. An assignment to a narrowed
+    /// `var` is checked against that declared type (`x = x.next` inside
+    /// `while (x != null)` assigns a `?Node`) and ends the narrowing: the name
+    /// takes its declared type back for the rest of the scope.
+    narrowedDecl: std.StringHashMapUnmanaged(*T.Type) = .empty,
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.
@@ -360,10 +1017,41 @@ pub const Env = struct {
     /// Template functions (`-> expr [T]` return): name → declaration. Calls to
     /// these are expanded at comptime (F6); the decls never reach codegen.
     templateFns: std.StringHashMap(ast.FnDecl),
+    /// C-01 (13 half 1, step 5) — the module path each comptime-evaluated
+    /// declaration (a template fn, a decorator with a body) was DECLARED in,
+    /// keyed by the declaration's identity: the address of its body, which the
+    /// defining module and every importer share because the registry hands the
+    /// same `ast.FnDecl` across. A name is not an identity here — two modules
+    /// may export a template of one name. Read by `comptimeOwnerOf` when the
+    /// evaluator names its module atom (`bp@comptime@<path>__tpl__<decl>__<hash>`).
+    comptimeOwners: std.AutoHashMap(usize, []const u8),
+    /// 01 step 12 — every enum variant's constructor under its QUALIFIED name
+    /// (`Shape.Circle`). The bare name is also bound in `bindings`, one flat
+    /// table in which the last enum to declare a name wins; a written
+    /// qualification is answered from here, so it cannot be overridden by
+    /// another enum that declares the same variant.
+    variantCtors: std.StringHashMap(*T.Type),
+    /// 01 step 12 — bare variant name → every enum declaring it, in
+    /// declaration order. Two or more claimants make the bare name ambiguous:
+    /// a use that relies on the flat table is refused naming them.
+    variantClaims: std.StringHashMap([]const []const u8),
     /// Call-site expansions: call loc → the expanded (untyped) expression that
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
     templateExpansions: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 798 (2) — each expansion's origin, by the call's loc (a key of
+    /// `templateExpansions`): read only by `comptime.zig` `resolvedProgram`.
+    expansionOrigins: std.AutoHashMapUnmanaged(ast.Loc, ExpansionOrigin) = .empty,
+    /// Decision 798 (2) — on a re-analysis's env, the outputs of pass 1 that
+    /// placed the merged module's lines (`comptime.zig` `keepPassOneTraces`);
+    /// null on pass 1's own env, whose lists are those outputs.
+    passOneOutputs: ?OutputRecords = null,
+    /// Decisions 311 (3), 415 (1) — calls named like a template of the scope
+    /// that inference resolved to something else (a method of the receiver's
+    /// own type, a `"std"` namespace's function; for a free call, a parameter
+    /// or a local of that name, the nearest binding): no expansion is owed
+    /// there (`refuseUnexpandedTemplateCalls`).
+    templateMethodDeclined: std.AutoHashMap(ast.Loc, void),
     /// Reference ASTs from `q.custom(tree, code)` (expr-custom): call loc → the
     /// canonical `CustomNode` tree + provenance. Sibling of `templateExpansions`
     /// — the `code` half lives there and reaches codegen; this `ast` half is
@@ -375,9 +1063,311 @@ pub const Env = struct {
     scopeSnapshot: ?*template.ScopeSnapshot = null,
     /// Module path of the file being inferred ("" for main) — capture provenance.
     modulePath: []const u8 = "",
+    /// Whether the module being inferred is one of std's (decision 445): the
+    /// prelude and the embedded std modules (`registerStdlib`), a `std/…`
+    /// module, or one the driver marks `Module.std_member`. Only std's modules
+    /// may write a `std:` cell (`infer.refuseStdBinding`).
+    inStd: bool = false,
+    /// The module's bodyless declarations are the compiler's (the prelude's
+    /// `primitives.bp`'s compiler section / `failure.bp`'s `panic`, the reflection cluster, std's
+    /// `types.bp`; decision 575 (1) — a `.d.bp` is no kind of its own): they are the
+    /// compiler's builtins, which no annotation implements until `#[builtin]`
+    /// marks them (decision 575 (2)), so `declare-without-implementation` is
+    /// not its rule.
+    compilerBodies: bool = false,
+    /// Decision 575 (3) — the package of the module being inferred: `std`
+    /// for std's, the dependency's name, `""` for the root package
+    /// (`compiler.package` in a decorator, the handle's `package`).
+    package: []const u8 = "",
+    /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
+    /// inferred, relative to its package root, extension included
+    /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from
+    /// `<name>.bp` when the driver did not supply one (tests, LSP).
+    srcPath: []const u8 = "",
+    /// `@src().fnName`: the name of the declaration whose body is being inferred
+    /// — the fn name, `Type.method` for a method, the test name (or `test_<idx>`)
+    /// inside a `test` block, `""` at module level. A lambda does not change it.
+    currentFnName: []const u8 = "",
+    /// Decisions 787, 792 (7) — how deep the checker is inside the executor a
+    /// body that runs at build hands `compiler.init` (the argument of its
+    /// handle's `compile`): `Module.run()` is written there, or in the
+    /// executor's function (`__bp_executor_<k>`), and nowhere else.
+    initArgDepth: u32 = 0,
+    /// Decision 364 — the parameters of the function whose body is being
+    /// inferred: a `comptime x: @Expr<T>` among them (`Param.exprWrapped`) is
+    /// read `x.value`, never `.value` of a type, and answers no other method
+    /// but a decorator's `.fail(…)`.
+    currentParams: []const ast.Param = &.{},
+    /// `@src()` rewrites (decision 73): call-site location → the untyped
+    /// `SourceLocation(file: …, line: …, column: …, fnName: …)` constructor call
+    /// the transform pass splices in its place, so every backend lowers the
+    /// builtin through its ordinary record-constructor path. Separate from
+    /// `templateExpansions` so the comptime snapshot's "spliced program" trigger
+    /// (`template_expansions > 0`) is not fired by a source location.
+    srcRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// True once the module referenced the builtin `SourceLocation` record
+    /// (`@src()` or a hand-written constructor / annotation). `comptime.zig`
+    /// then prepends the record's declaration to the transformed program so the
+    /// backends learn its field list the way they learn a user record's.
+    usesSourceLocation: bool = false,
+    /// True once the module built the prelude record `__Source` at run time
+    /// (`Source(file: …, line: …, col: …)`); `comptime.zig` then splices its
+    /// declaration, as `usesSourceLocation` does for `SourceLocation`.
+    usesSourceRecord: bool = false,
+    /// True once the module referenced the prelude enum `YieldStep<T>`
+    /// (decision 122 — an annotation, or a `.next()` called by hand on an
+    /// `@Iter` / `@AsyncIter`). `comptime.zig` then prepends the enum's
+    /// declaration to the transformed program, exactly as `usesSourceLocation`
+    /// does for the record, so every backend builds and matches `Yield(value)`
+    /// / `Done` through the enum path it already has.
+    usesYieldStep: bool = false,
+    /// Decision 519 — the reader `@embed` reads this module's package
+    /// through (`Module.files`); null in a compiler with no file system, where
+    /// every `@embed` is refused at the call (`embed-no-reader`).
+    packageFiles: ?@import("../module.zig").PackageFiles = null,
+    /// Decision 519 — true once the module wrote `@embed`: `comptime.zig`
+    /// prepends the private `Asset` record (`withAssetDecl`) as it does
+    /// `SourceLocation`.
+    usesAsset: bool = false,
+    /// Decision 519 — the bytes of every `Asset` known at build, keyed by the
+    /// type node its `@embed` answered (fresh per call, so a `val` bound to it
+    /// carries the same node): what `a.text()` reads at build.
+    assetTypes: std.AutoHashMapUnmanaged(*const T.Type, []const u8) = .empty,
+    /// Decision 519 — each `@embed` call's `Asset(…)` constructor (the same
+    /// node `srcRewrites` holds under the call's loc), which a `comptime`'s
+    /// module carries in place of the builtin (`block_eval.Rewrites`).
+    embedRewrites: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// Decision 519 — the functions of this module whose `@embed` reads a
+    /// `comptime` parameter's value, with those parameters: each is emitted
+    /// with one more parameter per name, `__embed_<p>: Asset`
+    /// (`comptime.zig` `withEmbedParams`).
+    embedParamFns: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// Decision 519 — the `Asset` arguments a call of such a function passes
+    /// (read in the caller's package), keyed by the call's loc: the transform
+    /// appends them after the call's own (`transform.zig`).
+    embedCallArgs: std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = .empty,
+    /// Decision 519 — `embed.embedParams` of each function a call of this
+    /// module named, read once.
+    embedParamsSeen: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// E3.9 — where a `@Result` value came from, keyed by the (fresh) type
+    /// node inference gave it: an `await`, a `for` item, or the `try` /
+    /// `throw` that made an `async { }` block's value or an `iter` / `stream`
+    /// item one. `unify.zig` copies it onto a `typeMismatch` whose `got` side
+    /// is that node, and the hint names the fix for that source.
+    resultOrigins: std.AutoHashMapUnmanaged(*T.Type, @import("error.zig").ResultOrigin) = .empty,
+    /// Ordinal of the next `test` block in program order — the `test_<idx>`
+    /// fallback name of an anonymous `test { … }` (the same index the commonJS
+    /// registry uses). Reset by `inferProgram`/`inferProgramTyped`.
+    testIndex: usize = 0,
     /// True while inferring the body of a template function (`-> @Expr<…>`).
     /// Gates the `@expr`/`@code` construction builtins.
     inTemplateFn: bool = false,
+    /// The template function whose body is being inferred (`inTemplateFn`),
+    /// for decision 356's read of a catalogue entry's `value`
+    /// (`Reflection.templateValueReads`).
+    currentTemplateFn: ?[]const u8 = null,
+    /// Decision 354 (3) — true while inferring a decorator's body (a fn whose
+    /// first parameter is `comptime _: @Decl`): compile-time evaluation with
+    /// no render tree, where `use` is refused (`use-outside-render-tree`).
+    inDecoratorFn: bool = false,
+    /// Decision 564 — inside a 562 expansion: the body of a function expanded
+    /// at its call site (`hooks.isExpandedFn`) or the code an expansion
+    /// emits, where a behavior's function may be called on a catalogue
+    /// entry's `value` (`infer.zig` `refuseBehaviorCallOnEntry`).
+    inExpansion: bool = false,
+    /// Decision 370 (2) — the body of the decorator being inferred: a member
+    /// function it hands to `decl.addMember(name, fn…)` reads none of its
+    /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.
+    decoratorBody: ?[]const ast.Stmt = null,
+    /// Decision 370 (2) — the typed function expression `inferMemberFnCall`
+    /// is inferring as a decorator's member: its written signature arrives as
+    /// the expected type (decision 408 types every other one where it stands).
+    memberFnAt: ?ast.Loc = null,
+    /// Decision 354 (3) — the number of `comptime { … }` / `comptime <expr>`
+    /// enclosing the position being inferred; `use` is refused inside one.
+    comptimeDepth: u32 = 0,
+    /// Decision 354 — the local names an import from std's `context` module
+    /// binds, by the declaration each one names: the type `Context<T>` and
+    /// the two hooks `provide` / `context`, which the compiler lowers.
+    stdContextNames: std.StringHashMapUnmanaged(StdContextName) = .empty,
+    /// Decisions 771, 774 — the local names a leaf import of std's `hooks`
+    /// module binds to its `memo` hook (`import {hooks.memo} from "std"`).
+    stdMemoNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 811 (1) — the type whose method body is being checked
+    /// (`inferTypeMethods`): inside it, an opaque type is built and opened.
+    opaqueOwner: ?[]const u8 = null,
+    /// Decisions 755, 771 — each `use memo(make)`, by the `use`'s location:
+    /// the `T` it answers. The scope lowering gives each one a slot made with
+    /// the component's value (`context_lower.zig`).
+    memoUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 354 — where the body of the `@Component<R>` fn being inferred
+    /// first renders a component (decision 791: a `use c` of it, or an `await`
+    /// of it while 388 (4) stands): a `use provide(…)` after it is refused, since the child rendered
+    /// before it would not see the value. Null until one renders; saved and
+    /// restored around each fn body.
+    firstRenderAt: ?ast.Loc = null,
+    /// Decision 357 — the construct enclosing the position being inferred
+    /// that makes a `use` there conditional or repeated (an `if` / `else`,
+    /// a loop, a lambda, …): a `use` is written at the top level of a
+    /// `@Component` body only. Null at the body's top level; set by the
+    /// outermost such construct and restored on its way out.
+    useConstruct: ?[]const u8 = null,
+    /// Decision 357 — the line of the first top-level statement of the body
+    /// being inferred that may leave it early (`return`, `throw`, a bare
+    /// `try`): a `use` after it does not run on every call. Saved and
+    /// restored around every function and lambda body.
+    earlyExitLine: ?usize = null,
+    /// Decision 354 — the location of the `use` that is the whole statement
+    /// being inferred, if one is: `use provide(…)` stands only there.
+    useStatementLoc: ?ast.Loc = null,
+    /// Decision 354 (2) — the value location of the module-level `val` whose
+    /// initializer is being inferred: the one place `Context<T>()` may be
+    /// written (a context's identity is its declaration).
+    contextDeclSite: ?ast.Loc = null,
+    /// Decision 354 — each `use provide(…)` / `use context(…)`, by the
+    /// `use`'s location: what the scope lowering makes of it (388 (4)).
+    contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,
+    /// Decisions 378, 379 — this module's context defaults by type key
+    /// (`reflection.ContextDefault`).
+    contextDefaults: std.StringHashMapUnmanaged(reflectionMod.ContextDefault) = .empty,
+    /// A read whose type's default another module declares names that `val`
+    /// through a hidden import: alias → the declaring module and `val`
+    /// (`comptime.zig` adds the import for the backends).
+    contextDefaultImports: std.StringArrayHashMapUnmanaged(struct { module: []const u8, name: []const u8 }) = .empty,
+    /// A std type a lifted `comptime` value constructs that the module does
+    /// not import (`block_eval.Lifter.constructorName`): name → its std
+    /// module, imported for the backends (`comptime.zig`).
+    liftedStdTypes: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 379 — each `createContext(…)` call, by location: the scope
+    /// lowering writes its argument in its place (a context is its value at
+    /// run time, `context_lower.zig`).
+    createContextCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 277 — the hook node of the top-level function whose body is
+    /// being inferred (`hooks.zig`): each `use` and each `@Component` call
+    /// written in it, lambdas included. Null outside such a body.
+    hookBuilder: ?*hooksMod.Builder = null,
+    /// Decision 277 — the node of each top-level function of this module whose
+    /// body has been inferred, by name; published to the session
+    /// (`Reflection.hookFns`) when the analysis ends.
+    hookNodes: std.StringHashMapUnmanaged(hooksMod.Node) = .empty,
+    /// Decision 376 — what each top-level function's body writes for its
+    /// stage, by name (`hooks.StageFacts`); `infer.zig` `markStages` reads it
+    /// once every body of the module is inferred.
+    stageFacts: std.StringHashMapUnmanaged(hooksMod.StageFacts) = .empty,
+    /// Decision 375 with question 04s12-a's answer — what each `@Component`
+    /// method's body writes, keyed `<Type>.<method>`: marked as a top-level
+    /// function is (`infer.zig` `markHookAsync`), its synchronous ones in
+    /// `syncFns` under that key.
+    methodHooks: std.StringArrayHashMapUnmanaged(MethodHooks) = .empty,
+    /// Each call of a method of a declared type, by location, with the
+    /// method it reaches (`<Type>.<method>`): a call of a synchronous
+    /// `@Component` method is not awaited (`syncCalls`).
+    methodCallTargets: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// A top-level function's call of a `@Component` method of this module
+    /// (`from` the function, `method` its key): followed by `markHookAsync`.
+    methodEdges: std.ArrayListUnmanaged(struct { from: []const u8, method: []const u8 }) = .empty,
+    /// Decision 376 — the functions whose stage `markStages` has written
+    /// into their node.
+    stagesDone: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 380 — whether a call is of a function computed at build
+    /// (`infer.zig` `callFoldable`), for `block_eval.knownAtBuild`.
+    foldableCall: ?*const fn (*Env, ast.CallExprOf(.untyped)) bool = null,
+    /// Decision 376 — each local name a std leaf import binds to a function
+    /// (`import {io.clock.nowMillis} from "std"` → `nowMillis`), with the
+    /// std module and the declared name: its stage is that declaration's.
+    stdLeafFns: std.StringHashMapUnmanaged(StdLeafFn) = .empty,
+    /// Decision 375 — the declaration each call of a `@Component` function
+    /// and each `use` of a declared hook names, by the call's (the `use`'s)
+    /// location, wherever it is written: whether the target's node is
+    /// synchronous decides whether commonJS awaits it.
+    hookTargets: std.AutoHashMapUnmanaged(ast.Loc, HookTarget) = .empty,
+    /// Decision 375 — this module's top-level functions whose node is
+    /// synchronous (`infer.zig` `markHookAsync`): commonJS emits a plain
+    /// `function` for one answering `@Component<R>`.
+    syncFns: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 375 — the calls and `use`s (by `hookTargets`' location) whose
+    /// target's node is synchronous: commonJS emits no `await` there.
+    syncCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 371 — each `d.same(other)` on a `Decorator` this module's
+    /// inference typed, by the call's location (`infer.zig`
+    /// `inferDecoratorSame`): the comptime runtime reads it as `==` of two
+    /// identities (`decorator_same.zig`).
+    decoratorSame: std.AutoHashMapUnmanaged(ast.Loc, DecoratorSame) = .empty,
+    /// Decision 371 — this module's functions a decorator of it runs, inferred
+    /// ahead of the run so its `same` calls are typed (by body pointer).
+    decoratorBodiesChecked: std.AutoHashMapUnmanaged(usize, void) = .empty,
+    /// Decision 371 — the module's imports and `val`s were bound ahead of
+    /// Pass 2 for a decorator body inferred before its run.
+    earlyValsBound: bool = false,
+    /// Decision 372 — `"<declaration>\x00<decorator>"` for each annotation of
+    /// a top-level declaration of this module whose decorator reads `.hooks`
+    /// (`infer.zig` `noteHooksReaders`): such a decorator runs after Pass 2,
+    /// so a `@typeInfo(X).meta.<decorator>.<key>` read inferred before it ran
+    /// is answered once it has (`deferredMetaReads`).
+    hooksReaders: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 372 — the identity of each decorator in `hooksReaders`: a
+    /// `@TypeInfo.all` listing one is refused (`typeinfo-all-hooks-reader`).
+    hooksReaderIds: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 372 — the `.hooks` readers of this analysis have run.
+    hooksReadersRan: bool = false,
+    /// Decision 372 — the meta reads waiting for a `.hooks` reader of this
+    /// module, answered (or refused, `typeinfo-meta-missing`) when it ran.
+    deferredMetaReads: std.ArrayListUnmanaged(DeferredMetaRead) = .empty,
+    /// Decision 328 — the method calls on a receiver still free when checked
+    /// (`PendingReceiverCall`).
+    pendingReceiverCalls: std.ArrayListUnmanaged(PendingReceiverCall) = .empty,
+    /// Decision 328 — each parameter of a lambda written where no type is
+    /// expected (an immediate call's callee, an array element; an unannotated
+    /// `val` is refused `lambda-untyped`, 583): the fresh variable it was bound to,
+    /// and its name.
+    freeLambdaParams: std.AutoHashMapUnmanaged(*T.Type, []const u8) = .empty,
+    /// Decision 328 — the lambda `inferFunctionExpr` is about to check is
+    /// written where no type is expected; read and cleared by the lambda.
+    lambdaWithoutExpected: bool = false,
+    /// Decision 298 — the lines a typed meta read's answer is parsed on, one
+    /// per read, past every line of the module (`infer.zig`
+    /// `typedMetaRewriteLine`): no node of an answer shares a location with
+    /// the module's own code or with another answer.
+    typedMetaLines: usize = 0,
+    /// Decision 388 — every call whose value is, or may resolve to, a
+    /// `@Component<R>`, by location, with that type: a call makes the
+    /// component's lambda and runs nothing (decision 791 (1)).
+    componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 791 (3) — every `use c` whose operand is a component, by the
+    /// `use`'s location: in a component body it runs `c` with the body's
+    /// children scope and answers its `R` (`context_lower.zig`), where a hook's
+    /// `use` runs it with the scope the body received.
+    componentUses: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 804 (1) — the module's type components, as
+    /// `component_types.zig` rewrote them: the record a `compose` body's
+    /// `self` reads (`Card__Self`) to the component's name (`Card`). A helper
+    /// of the record takes no `use`, and `Card.compose()` is refused.
+    composedTypes: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Every `use`'s operand type, by the `use`'s location: the `R` a `use`
+    /// of a value that is no call (`use c`) runs, carried for wasm.
+    useOperandTypes: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 574 — every `{ component -> … }` lambda, by its location,
+    /// with the `R` of the `@Component<R>` it answers: `context_lower.zig`
+    /// lowers its body as a `component fn`'s, a lambda over the scope.
+    componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 432 — every written `await`, by its location, with its
+    /// operand's type; and every `return` of a whole `@Async` wrapper, by the
+    /// `return`'s location. Read once inference is done
+    /// (`infer.taskLowerings`), when each type is as resolved as it gets.
+    taskAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    taskReturns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 432 — every `async { … }` whose value is a `@Result` its body
+    /// builds (`failing_task_block`), by the block's location.
+    failingTaskBlocks: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 388 (2) — every `c.run(scope)` on a `@Component<R>` value, by
+    /// the call's location, with that `R`: lowered to the call of the lambda
+    /// `c` is, its `Rendered<R>` carried for wasm (`context_lower.zig`).
+    componentRuns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 388 — every call of a host function (a bodyless `declare fn`,
+    /// an `#[@External…]` binding — this module's or an imported one), by
+    /// location: a host answering `@Component<R>` answers the host's own
+    /// value, never a lambda over a scope, so nothing runs it.
+    hostCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Runtime-backed template evaluation context (F6-full). Null in tooling
     /// paths — non-V1 template bodies then raise the V1 driver error.
     templateEval: ?TemplateEvalCtx = null,
@@ -385,6 +1375,17 @@ pub const Env = struct {
     /// texts) → the expanded expression. The expansion is still re-inferred
     /// per call site; only the external evaluation is skipped.
     templateEvalCache: std.StringHashMap(*const ast.Expr),
+    /// Decision 426 — what each memoized expansion's run told
+    /// `finishExpansion` (its build, its notes), by the same key.
+    templateEvalBuilt: std.StringHashMapUnmanaged(TemplateBuilt) = .empty,
+    /// Decision 426 (4) — the `q.note(message)`s of the template call at a
+    /// location: an error at the call carries them (`infer.zig` `unifyAt`).
+    templateNotes: std.AutoHashMapUnmanaged(ast.Loc, []const []const u8) = .empty,
+    /// Decision 429 — the last expansion id this module handed out: each
+    /// template expansion whose code is parsed from built text takes the
+    /// next one (`infer.parseCodeText`), and its nodes carry it in
+    /// `ast.Loc.expansion`.
+    expansionCount: u32 = 0,
     /// Monotonically increasing counter for fresh type variable IDs.
     nextId: T.TypeId,
     /// Monotonically increasing counter for type definition IDs (record$$0, struct$$1, ...).
@@ -393,6 +1394,25 @@ pub const Env = struct {
     level: usize,
     /// The most recent type error (set before returning `error.TypeError`).
     lastError: ?@import("error.zig").TypeError,
+    /// 06 N30 — the annotation being resolved (`x: Foo` → `Foo`'s column), so an
+    /// unknown type name reds at the annotation. Set through `atTypeRef`.
+    typeRefLoc: ?ast.Loc = null,
+    /// Decision 319 — set while the operand of a unary `-` that is an integer
+    /// literal is inferred: the literal's range check reads `-<digits>`, so
+    /// `-9223372036854775808l` is `i64`'s minimum, not `2^63` out of range.
+    negatingLiteral: bool = false,
+    /// 00 · 01-checker — the type the expression at the position being inferred
+    /// is expected to produce, when the site knows it: a `val`'s annotation, a
+    /// declared parameter, the body's return target, an array literal's element
+    /// type. Read by `tryResolveEnumSectionPath` to choose among the enums whose
+    /// section tree carries the same path (`.Color.Red.500` on both `Token` and
+    /// `__Token__Border`) — the choice used to fall out of `typeDefs`' hash
+    /// order. Nothing is unified from here: the site that set the expectation
+    /// still unifies the inferred type itself.
+    expectedType: ?*T.Type = null,
+    /// C10 — annotations whose type name was not known yet when resolved; the
+    /// second pass (`checkPendingTypeNames`) reds on the ones still unknown.
+    pendingTypeNames: std.ArrayListUnmanaged(PendingTypeName) = .empty,
     /// Builtin `@Result`/`@Option` method calls discovered during inference,
     /// keyed by the call's source location. Drives the AST transform lowering.
     method_lowerings: std.AutoHashMap(ast.Loc, MethodLowering),
@@ -400,39 +1420,123 @@ pub const Env = struct {
     /// Result value, keyed by the jump's source location. Drives the AST
     /// transform `__bp_ok`/`__bp_error` wrapping.
     result_jump_lowerings: std.AutoHashMap(ast.Loc, ResultJumpLowering),
-    /// `return`/`throw` jumps inside `#[@future]` fns that the transform
-    /// rewrites to `__bp_future_resolved(...)` / `__bp_future_rejected(...)`
-    /// wrapper calls. Keyed by the jump's source location.
-    future_jump_lowerings: std.AutoHashMap(ast.Loc, FutureJumpLowering),
-    /// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` /
-    /// `#[@asyncGenerator]` fns that target the FSM (top-level `break`/`throw`
-    /// or `break :label` with the fn's signature label, per RI2/RI3 scoping).
-    /// The transform pass rewrites each entry into a `return @IteratorStep.<v>(…)`
-    /// call so the backend's existing enum-constructor codegen materialises the
-    /// step value. `yield` is NOT recorded — it stays as native `yield t`.
-    iterator_jump_lowerings: std.AutoHashMap(ast.Loc, IteratorJumpLowering),
+    /// Decision 118 rule 1 — the effect wrapper an ALIASED return resolves to
+    /// (`-> Parser<i32>` with `type Parser<T> = @Result<T, E>`), set while
+    /// inferring that body: a capability used in it is
+    /// `effect-wrapper-behind-alias`, naming the wrapper to write. Null when
+    /// the return is written literally or is no wrapper at all.
+    aliasWrapper: ?[]const u8 = null,
+    /// Number of `async { }` blocks (decision 124) enclosing the position being
+    /// inferred, counted from the nearest lambda. A `use` inside one is refused:
+    /// the block is closed like a closure.
+    asyncBlockDepth: u32 = 0,
+    /// True while inferring a body whose fallible channel's `E` is INFERRED —
+    /// an unannotated `async { }` block or an `iter` / `stream` loop with
+    /// `throw` / `try` of its own (decisions 124, 125): its `throw` / `try`
+    /// errors join one `E`, and two that do not unify are
+    /// `gen-infer-conflicting-errors`.
+    inferredErrorScope: bool = false,
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
+    /// C1 — the type a `return <value>` in the body currently being inferred
+    /// must unify with: the declared return type, or an effect wrapper's inner
+    /// channel (`@Result<R, E>` → R, `@Async<T>` → T — `U` when `T` is
+    /// `@Result<U, E>` —, `@Component<T>` → the `T` of
+    /// `@Component<T>`). Null where returns are not checked (no declared
+    /// return type, template fns, top level).
+    returnTarget: ?*T.Type = null,
+    /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
+    /// return type; not lambdas, whose target is a shared fresh var).
+    returnBareIsVoid: bool = false,
+    /// C1 — the fn's whole declared return type, for a returned value that is
+    /// already the wrapper (`return state(start)` in a `-> @Component<X>` hook).
+    returnWhole: ?*T.Type = null,
+    /// C1 — set while inferring a `case` block arm: its `return`s leave the
+    /// enclosing fn, so the arm's lambda keeps the fn's return target.
+    keepReturnTarget: bool = false,
+    /// The generic-param map of the fn body being inferred, so annotations
+    /// inside the body resolve `T` to the fn's own generic var.
+    fnGenericMap: ?*std.StringHashMap(*T.Type) = null,
+    /// The generic-param map of the type method body being inferred (the
+    /// owner's parameters and the method's own). Annotations in the body do not
+    /// resolve through it (`fnGenericMap` stays unset there); it only tells the
+    /// `val` annotation's name lookup (`refuseUnknownName`) which names are
+    /// type parameters in scope.
+    methodGenericMap: ?*const std.StringHashMap(*T.Type) = null,
+    /// Decision 667 — the parameters of the function or method body being
+    /// inferred: a `comptime t: type<T>` among them is the type `v is t` tests.
+    bodyParams: []const ast.Param = &.{},
+    /// Decision 525 — where the statement being inferred is a `case` or a
+    /// block `{ … }` written as a whole statement (its value discarded). Set
+    /// by the statement loops (`inferStmtsTyped`, `inferBodyStmts`) per
+    /// statement and restored after it; the `case` arm reads it to tell a
+    /// statement from a value, whose every arm answers one.
+    statementBlockLoc: ?ast.Loc = null,
+    /// Decision 525 — the locations of the blocks `{ … }` inferred so far: an
+    /// argument at one is a block's value (`unifyArgument` refuses it where a
+    /// function is expected).
+    blockLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 297 — the functions a call of this module passed a type to
+    /// (`pick(User)` → `pick__type()`, `value_or_type.zig`): an import of one
+    /// brings its type form along (`value_or_type.withTwinImports`).
+    typeArgTwins: std.StringHashMapUnmanaged(void) = .empty,
     /// How `throw` is checked in the function body currently being inferred.
     throwContext: ThrowContext = .unchecked,
+    /// Decision 595 — the `try … catch` region whose `try`s are being
+    /// inferred, or null: a `try` there hands its failure to the region's
+    /// `catch` instead of the function's channel. Cleared by every nested
+    /// function (a lambda, an `async { }` block, a prefixed loop) and while
+    /// the region's own handler is inferred (595 (6)).
+    tryRegion: ?*TryRegion = null,
     /// Active effect-fn context while inferring its body (for `await`/`yield`
     /// rules). The field name is historical — see `StarFnCtx` above.
     starFn: ?StarFnCtx = null,
-    /// True while inferring the body of a `#[@context]` fn. `#[@context]`
-    /// doesn't fit the `StarFnCtx` shape (no await/yield/iter), so it gets
-    /// its own gate. Read by the `@getContex` builtin-call handler for §1C
-    /// RC5 (the intrinsic is only valid inside a `#[@context]` fn body).
+    /// True while inferring the body of a `-> @Component<R>` fn — the same
+    /// question as `FnContext.annotated` (decision 104: one flag, set by the
+    /// `@Component` return alone); cleared in a nested closure's and a
+    /// prefixed loop's body.
     inContextFn: bool = false,
     /// Labels currently in scope (effect-fn label + enclosing loop labels),
     /// used to validate `yield :label` / `break :label`. Pushed/popped as
     /// scopes nest.
     labelStack: std.ArrayListUnmanaged([]const u8) = .empty,
-    /// Number of `loop {…}` blocks currently enclosing the position being
-    /// inferred. Read by the `.@"break"` handler to apply §1I REGRAS DE
-    /// ESCOPO: an unlabelled `break` inside a nested loop targets the loop,
-    /// not the enclosing iterator fn, so RI2/RI3 only fire when `loopDepth`
-    /// is 0 (or the break is labelled with the fn's `StarFnCtx.fnLabel`).
+    /// Number of loops (`for` / `while` / `loop`, the annotated `loop`
+    /// included) currently enclosing the position being inferred, counted
+    /// from the nearest fn, lambda or annotated-loop body. Read by the
+    /// `.@"break"` / `.@"continue"` handlers: a bare `break` inside a loop
+    /// leaves the loop and ends the generator only at depth 0; `continue`
+    /// needs a loop. `yield` and `break <value>` do not read it (decision
+    /// 105): they feed the nearest generator scope through every loop.
     loopDepth: u32 = 0,
+    /// Decision 539 — true while a `defer` body is inferred; the four depths
+    /// below are the nesting the body began at, so a nested function, async
+    /// block or generator loop (which are other paths) is told from the body
+    /// itself (`inferDefer`).
+    deferActive: bool = false,
+    deferLambdaDepth: u32 = 0,
+    deferAsyncDepth: u32 = 0,
+    deferGeneratorDepth: u32 = 0,
+    /// The label stack's length at the `defer`: a label below it names a loop
+    /// outside the body.
+    deferLabelFloor: usize = 0,
+    /// Decision 105 / decision 2 — what the nearest enclosing construct does
+    /// with a `break`. `.loop` inside a loop body, `.valueBlock` inside a
+    /// `comptime { … }` block or a `case` arm's block (where `break <value>`
+    /// is the block's value), `.none` at a fn or lambda body.
+    breakScope: BreakScope = .none,
+    /// Decision 105 — the labels in scope OUTSIDE the nearest enclosing
+    /// annotated loop. Its body is closed like a closure: a `break :outer` /
+    /// `continue :outer` naming one of these is refused as crossing the
+    /// border rather than as unbound.
+    closedLabels: []const []const u8 = &.{},
+    /// Number of prefixed loops (`iter loop { … }`) enclosing the
+    /// position being inferred. Their body runs later, on demand, so a `use`
+    /// inside one is refused (decision 105 — the annotated loop is closed).
+    generatorLoopDepth: u32 = 0,
+    /// The effect the return of the fn whose body is being inferred activates
+    /// (decision 118), or null for a plain `fn` (and at module level). Read by
+    /// the refusals, which name it.
+    fnEffect: ?ast.EffectKind = null,
     /// Registered `implement`/`extend` blocks, keyed by activation symbol name.
     extensions: std.StringHashMap(ExtEntry),
     /// Activation set: symbols enabled for extension dispatch in this file
@@ -453,7 +1557,7 @@ pub const Env = struct {
     /// so codegen emits each one as a top-level enum (the user-written outer
     /// enum already names its section wrappers via `_inner: __Enum__Section`
     /// payload type — these decls bind the referenced names).
-    synthesisedEnumDecls: std.StringHashMap(ast.EnumDecl),
+    synthesisedEnumDecls: std.StringHashMap(ast.TypeDecl),
     /// §enum-sections F2 — untyped AST rewrites for a path-access expression
     /// (`.Color.Red.500`). The F2 resolver in `infer.zig` populates this map
     /// keyed by the outermost identAccess loc when the chain matches an
@@ -463,13 +1567,126 @@ pub const Env = struct {
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 8 §6 T4 — every tuple element this module reads by its label
+    /// (`row.pop`), keyed by the access's loc, with the element's position.
+    /// The transform reads the same fact off `enumSectionRewrites`; a comptime
+    /// module is lowered from the untransformed AST, so `template_eval`
+    /// `relabelTupleReads` rewrites the functions it carries from here
+    /// (an untyped `x.kind` is a map read — `{badmap, {…}}` on a tuple).
+    tupleLabelReads: std.AutoHashMapUnmanaged(ast.Loc, usize) = .empty,
+    /// C-02 (decision 63, amended 2026-09-19) — the untyped rewrite of an index
+    /// expression, keyed by the index node's own loc.
+    ///
+    /// `xs[k]` **is** `xs.at(k)`, `xs[a..b]` is `xs.slice(a, b)` and `xs[1..]`
+    /// is `xs.slice(1, null)`: the index has no typing rule of its own, so
+    /// `inferIndexExpr` builds the method call, types THAT, and leaves the call
+    /// here for `comptime/transform.zig` to splice. Kept apart from
+    /// `enumSectionRewrites` for the reason `srcRewrites` is kept apart from
+    /// `templateExpansions`: one channel, one meaning.
+    ///
+    /// A tuple is the one receiver the `Index<K, V>` behavior cannot express —
+    /// it needs a CONSTANT index and answers a type PER POSITION — so its
+    /// rewrite is the positional member access every backend already emits
+    /// (`t[0]` → `t._0`) rather than a method call.
+    indexRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 54 — locs of the `case`s that are the optional's pattern form
+    /// (`case x { null { … } v { … } }`), with the binder's name. Inference
+    /// validates the shape and narrows the binder; the comptime transform
+    /// rewrites the node into the equivalent `if (x) { v -> … } else { … }`,
+    /// which is the lowering all four backends already have for an optional.
+    /// Nothing below inference learns a new pattern.
+    optionalNullCases: std.AutoHashMap(ast.Loc, []const u8),
     /// Interface declarations that expose associated functions (`default fn` with
-    /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
-    /// `Array`) registered before user inference. Used to emit their namespace
+    /// no `self`), keyed by name. Includes stdlib primitives (`Array`,
+    /// `String`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
-    assocInterfaceDecls: std.StringHashMap(ast.InterfaceDecl),
+    assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
+    /// A program's own `behavior` named like one std already registered
+    /// (`behavior String { default fn … }`) EXTENDS std's: its members are
+    /// added to std's under the one name in `assocInterfaceDecls`, and this
+    /// map keeps std's declaration as it was, so a re-registration of the
+    /// program's decl merges against std's members only
+    /// (`infer.registerInterfaceAssociatedFns`). Read by `comptime.zig`
+    /// `withUsedAssocInterfaces`, which emits the merged declaration in place
+    /// of the program's.
+    stdBehaviorBase: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// `pub behavior` declarations this module IMPORTS, by name — read only to
+    /// tell that a method call's receiver is typed by a behavior declaring the
+    /// method (`InstanceLowering.behavior`). Kept apart from
+    /// `assocInterfaceDecls`, whose entries codegen emits.
+    importedBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// Decision 831 (1), (2) — the identities (`<module path>@@<B>`,
+    /// `ast.behaviorIdentity`) a type implementing an imported behavior
+    /// carries, by the name this module binds it under (its alias, when one is
+    /// written): the declared behavior's own first, then each behavior it
+    /// `extends`, resolved in its declaring module.
+    importedBehaviorMarks: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// The `implement` blocks imported and activated (`import {m.Block*}`), in
+    /// order: a block for a primitive gives this module's primitive the
+    /// contract's `default fn`s (`adopt_defaults.zig`, decision 799).
+    importedImplements: std.ArrayListUnmanaged(ast.ImplementDecl) = .empty,
+    /// Decision 539 (6) — the ambient behaviors of `primitives.bp`'s compiler section a program
+    /// names with no import (`Display`, `Closeable`), by name. Read last, after a
+    /// module's own and its imported behaviors: a parameter typed by one
+    /// resolves (`fn f(c: Closeable)`), a call on such a value finds the method,
+    /// and an inline `implement` of one is checked against its declaration. A
+    /// module's own `behavior` of the same name shadows it. Never emitted.
+    ambientBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// The `pub behavior`s of `primitives.bp`'s compiler section a compiler
+    /// rule reads by name (`comptime.zig` `rule_read_behaviors`: `Async`,
+    /// `Component`, `Iter`, …), by name. Never a type a program names through
+    /// them; read only for the members each declares, so a field read or a
+    /// method call on a value they type answers a declared member or is
+    /// refused (B-162, `infer.zig` `refuseBehaviorUnknownMember`).
+    ruleReadBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// The `Ok(…)` / `Error(…)` patterns matched against a `@Result` subject,
+    /// keyed by the arm's `patternLoc` (a `val assert`'s own loc). The
+    /// transform writes each as `Result.Ok` / `Result.Error`, so a backend
+    /// never reads the bare name as a variant of a user enum that declares
+    /// one (`type Level { Info, Error }`).
+    ///
+    /// The same table carries B-154's rewrite: an arm pattern whose bare
+    /// names include a nullary variant of the matched sub-pattern's type is
+    /// recorded here already resolved (`resolved`), and the transform puts it
+    /// in the arm's place.
+    resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, PatternNote) = .empty,
+    /// The scope rule (the nearest binding wins): the free calls whose callee
+    /// is a parameter or a local, keyed by the call's loc. The transform
+    /// never takes such a call for the module function of that name, so a
+    /// function with `comptime` parameters hidden by a local keeps every
+    /// argument of the call (`transform.localFnOf`).
+    localCalleeCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 757 — the calls that pass a type to a `comptime t: type<T>`
+    /// parameter of an ordinary function or method, by the call's loc
+    /// (`infer.noteTypeTokenArgs`); `type_token.zig` drops those arguments and
+    /// calls the copy specialised for the types.
+    typeTokenCalls: std.AutoHashMapUnmanaged(ast.Loc, TypeTokenCall) = .empty,
+    /// Decision 757 — the reads `t.value` of a type token handed on as a call's
+    /// argument (`self.count(t)`), by the read's loc: the type, not refused.
+    typeTokenHandOns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 758 — the tests `x is t` over a run-time type token `t:
+    /// type<T>`, by the test's loc: written `__bp_is_type(x, t)`.
+    runtimeTokenTests: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 810 (1), (3) — each `v is B<…>` (by the call's loc) and each
+    /// type pattern `B<…> { … }` (by the arm's `patternLoc`) whose `B` is a
+    /// behavior, with the name the backends test it by
+    /// (`ast.behavior_test_prefix` and its declared name); `type_token.apply`
+    /// writes it into the program.
+    behaviorTests: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// Decision 758 — the types written where a run-time token is taken, by
+    /// the name's loc: written `__bp_type_token(Users)`, the type's identity.
+    runtimeTokenArgs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 107's namespace form over a module of the program's own
+    /// package or a dependency (`import {jwt} from "sec"`, `import {jwt};`):
+    /// the bound name, its module's exports, and the calls made through it.
+    namespaces: NamespaceImports = .{},
+    /// The handles a `from "std"` namespace import binds (`mocks` for
+    /// `import {testing.mocks}`) → the module, for the annotation check: a
+    /// `#[mocks.<name>]` names a decorator of that module or is refused.
+    stdDecoratorHandles: std.StringHashMapUnmanaged([]const u8) = .empty,
+
     /// Interface names actually used as an associated-fn call receiver
-    /// (`Pair.of(...)`), recorded during inference so codegen emits only the
+    /// (`Array.range(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
     usedAssocInterfaces: std.StringHashMap(void),
     /// Resolved external-dispatch rewrites: call-site location → extension symbol
@@ -486,10 +1703,17 @@ pub const Env = struct {
     /// exports table (pub fn name → inferred type). Shared registry tables,
     /// populated by the compile session before inference.
     stdModules: std.StringHashMap(std.StringHashMap(*T.Type)),
-    /// Local (alias-aware) names imported via `import {…} from "std"` —
-    /// marked during inference; only these gate qualified calls
-    /// (`bool.negate(x)`) against `stdModules`.
-    stdImports: std.StringHashMap(void),
+    /// Local (alias-aware) names imported via `import {…} from "std"` that
+    /// name a std MODULE (a namespace) → the module's key in `stdModules`
+    /// (`dict` → `dict`, `import {io.fs}` → `fs` → `io/fs`). Marked during
+    /// inference; only these gate qualified calls (`bool.negate(x)`) against
+    /// `stdModules`. A symbol leaf (`import {io.fs.readText}`) is an ordinary
+    /// value binding instead and is not here.
+    stdImports: std.StringHashMap([]const u8),
+    /// Every local name an `import` of this module binds → the item that
+    /// bound it, so a second item binding the same name is
+    /// `import-name-collision` (decision 107) at its own site.
+    importBound: std.StringHashMap(ast.ImportPath),
     /// Public type declarations (`pub record`/`struct`/`enum`) of each "std"
     /// package module, keyed by module name. Populated by `registerStdlib`;
     /// `markStdImports` registers them into the importing env so case
@@ -497,16 +1721,28 @@ pub const Env = struct {
     stdModuleTypes: std.StringHashMap([]const ast.DeclKind),
     /// STD-001 — full FnDecl slice of each "std" package module, keyed by
     /// module name. Populated by `registerStdlib` alongside `stdModuleTypes`.
-    /// Consumed by `markStdImports` when `Env.target != null` to red
-    /// `std-unsupported-on-target` on imports whose declares lack an
-    /// `@external(<target>, …)` match. Owns nothing — the FnDecl slices
-    /// point into the arena where `registerStdlib` parsed them.
+    /// Read by the stage and decorator lookups of a std function. Owns
+    /// nothing — the FnDecl slices point into the arena where
+    /// `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
-    /// STD-001 — active codegen target name when this env is on the
-    /// project-side compile path (null in tests / LSP / std-prelude
-    /// inference). Set via `setTarget`; consumed by `markStdImports`.
-    /// One of `"commonJS"` / `"erlang"` / `"beam"` / `"wasm"`.
-    target: ?[]const u8 = null,
+    /// STD-001 (decision 518 (4)) — every `fn` of each std module, private
+    /// ones too, keyed like `stdModuleFns`: the call check follows a call
+    /// through the module's own bodies to the host cell it reaches
+    /// (`infer.zig` `stdUnsupportedReach`). Owns nothing.
+    stdModuleAllFns: std.StringHashMap([]const ast.FnDecl),
+    /// STD-001 (decision 518 (4)) — every call of a std function that
+    /// reaches a host declaration, in inference order, with the host
+    /// declarations it reaches (`infer.zig` `recordStdCall`). Inference never
+    /// reads the build target (decision 798 (4)): the refusal of a call whose
+    /// host has no binding for the target is `codegen/target_check.zig`'s, at
+    /// emit. There is no `target` field: a comptime read of the target does
+    /// not compile.
+    stdHostCalls: std.ArrayListUnmanaged(StdCall) = .empty,
+    /// `stdHostCalls`' host lists, shared per `<module>\x00<function>`.
+    stdHostsReached: std.StringHashMapUnmanaged([]const StdHost) = .empty,
+    /// The module's `TargetTrace` (`TemplateEvalCtx.target_trace`), null in
+    /// tooling paths.
+    targetTrace: ?*TargetTrace = null,
     /// Stdlib method calls on builtin-array receivers (`xs.isEmpty()` sugar).
     /// Key: call loc, value: { module, method }. Consumed by transform.
     stdArrayLowerings: std.AutoHashMap(ast.Loc, StdArrayLowering),
@@ -514,6 +1750,19 @@ pub const Env = struct {
     /// loc. Lets backends without native method dispatch lower record + builtin
     /// primitive methods. Empty contribution on commonJS (native dispatch).
     instanceLowerings: std.AutoHashMap(ast.Loc, InstanceLowering),
+    /// Every arithmetic operator inferred (`+` `-` `*` `/` `%`, a unary `-`,
+    /// a `+=`), keyed by its operator's loc, with its result type. Read once
+    /// inference is done (the operands may be type variables when the operator
+    /// is met) and turned into `InstanceLowering.division` entries.
+    divisions: std.AutoHashMap(ast.Loc, *T.Type),
+    /// 144 B-78 (decision 521) — every value written as text: the operand of a
+    /// `+` whose other side is a `string` (a string template's holes are one),
+    /// and each argument of `@print` / `@println` / `@debug`, keyed by the
+    /// operand's loc, with each type inferred there (a body inferred twice —
+    /// a behavior's default per implementer — records twice). Read once
+    /// inference is done and turned into `InstanceLowering.text_value`
+    /// entries (`infer.textValueLowerings`) where every reading names a float.
+    textValues: std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)),
     /// Stdlib modules implicitly required via array method dispatch; used by
     /// the compile session to prepend synthetic imports for the codegen.
     implicitStdModules: std.StringHashMap(void),
@@ -528,15 +1777,309 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Decision 580 — the `compiler.init` executors among `contributions`:
+    /// each one's index there and the index in the module's declarations of
+    /// the declaration it annotates (the type that owns an annotated member).
+    /// The re-analysis places the executor's `val __bp_init_<k>` right after
+    /// that declaration, so the module's body runs it in source order.
+    executorAnchors: std.ArrayListUnmanaged(ExecutorAnchor) = .empty,
+    /// The index in the module's declarations of the declaration
+    /// `invokeDecorators` is running the decorators of.
+    decoratedDeclIndex: usize = 0,
+    /// Decision 216 (1) — the members decorator bodies gave the types of this
+    /// module (`decl.addMember(source)`), in call order. `analyzeSource`
+    /// parses each into the target type's body and re-analyzes the module, as
+    /// it does with `contributions`. Allocated in `arena`.
+    memberContributions: std.ArrayListUnmanaged(MemberContribution) = .empty,
+    /// Decision 216 (3) — the associated types decorator bodies declared
+    /// (`decl.addType(name, source)`), in call order; merged as top-level
+    /// types named `__<Owner>__<Name>` before the re-analysis.
+    typeContributions: std.ArrayListUnmanaged(TypeContribution) = .empty,
+    /// Decision 575 (6) — what a library's source annotation implemented
+    /// (`compiler.implement(source)`), by the declaration it annotates;
+    /// `infer.zig` `applyImplementContributions` adds each to the
+    /// declaration's `implementations` before they are checked.
+    implementContributions: std.ArrayListUnmanaged(ImplementContribution) = .empty,
+    /// Decision 280 — how each parameter of a decorator application reaches
+    /// the body, keyed by the annotation's location: `infer.zig`
+    /// `checkDecoratorArgs` writes it once the arguments are typed,
+    /// `runDeclDecorators` reads it. Allocated in `arena`.
+    decoratorArgValues: std.AutoHashMapUnmanaged(ast.Loc, []const DecoratorArgValue) = .empty,
+    /// Decision 370 (2) — each decorator type parameter as one annotation
+    /// bound it (`check<T>` on `Signup`: `T` is `Signup`), keyed like
+    /// `decoratorArgValues`: a member function's types are spelled with them.
+    decoratorTypeArgs: std.AutoHashMapUnmanaged(ast.Loc, []const memberFnMod.TypeArg) = .empty,
+    /// Decision 216 (3) — set on the first analysis of a module whose
+    /// decorators have not run yet: a dotted type name `Owner.Name` whose
+    /// owner is a type is accepted unresolved (`resolveTypeName`), since the
+    /// owner's decorators may still declare it; the first one taken is kept
+    /// here and refused if no pass-2 re-analysis follows.
+    assocTypesPending: bool = false,
+    pendingAssocTypeName: ?struct { name: []const u8, loc: ?ast.Loc } = null,
+    /// Decision 216 — the compile session's reflection (`reflection.zig`):
+    /// where a decorator's `decl.setMeta` is recorded and `@typeInfo` reads.
+    /// Null outside a session (unit helpers that infer one program alone).
+    reflection: ?*reflectionMod.Reflection = null,
+    /// Decision 216 (4) — the module reads `@TypeInfo.all`: its first
+    /// analysis stops before bodies, and the re-analysis receives the answers.
+    typeinfoAllPending: bool = false,
+    /// Call loc → the `Declared<T>` array answering that `@TypeInfo.all`
+    /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
+    typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// Decision 564 — call loc → the behavior that answer's decorators share:
+    /// it is typed `Declared<B>[]` (`typeinfo_all.Plan.behaviors`).
+    typeinfoAllBehaviors: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// The module names the prelude records `Declared` / `DeclaredMeta`, so
+    /// `comptime.zig` splices their declarations in (`withDeclaredDecls`).
+    usesDeclared: bool = false,
+    /// The names this module declares at top level (types, behaviors, fns,
+    /// vals) — what `@typeInfo(Name)` reflects when no import binds `Name`.
+    ownDecls: std.StringHashMapUnmanaged(void) = .empty,
+    /// The `type` declarations among them, each with its number of type
+    /// parameters: a type position names one before it is registered
+    /// (`resolveTypeName`, a name a prelude value also holds).
+    ownTypeDecls: std.StringHashMapUnmanaged(usize) = .empty,
+    /// Erlang sent to and replies received from the `erl` runtime by every
+    /// decorator / template evaluation in this module, in order (snapshots).
+    /// Allocated in `arena`.
+    comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
+    /// Decision 788 (3) — what the module's build bodies printed (a
+    /// decorator's, a top-level `comptime { … }`'s), in the order they ran:
+    /// the build's output (`OkData.build_output`).
+    buildOutput: std.ArrayListUnmanaged(u8) = .empty,
+    /// The byte ranges of `buildOutput` the module's `comptime` nodes wrote
+    /// (`foldBodyComptime`), so the re-analysis over a decorator's output does
+    /// not print again what the first analysis printed (`keepPassOneTraces`).
+    buildRuns: std.ArrayListUnmanaged(struct { start: usize, len: usize }) = .empty,
+    /// Question s29-b — the typed meta a method's decorators recorded
+    /// (decision 298 on a method, 313), in recording order: the owner's own
+    /// decorators run after its methods' and read it on `decl.methods`
+    /// (`m.meta(T)` / `m.metaAll(T)`, `decorator_eval.DeclHandle.methodMeta`).
+    methodTypedMeta: std.ArrayListUnmanaged(MethodTypedMeta) = .empty,
+    /// Decision 57 (1.0.5-beta) — the checker's warning channel: diagnostics
+    /// that do not stop the compilation, each a located `TypeError` rendered
+    /// like an error. Filled through `warn`; surfaced as `OkData.warnings`.
+    /// Decision 8 §1.4 (a binding that falls to `unknown`) and §4.3 (an `is`
+    /// test that is always false) write here. Allocated in `arena`.
+    warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
+    /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
+    bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
+    /// True while the operand of a `use` is inferred.
+    inUseOperand: bool = false,
+    /// The location of the call written as `use`'s operand: std's `provide`
+    /// / `context` are hooks, legal only there (decision 354).
+    useOperandLoc: ?ast.Loc = null,
+    /// Decision 110 — an imported type's `as` name → the declared name
+    /// (`registerImportedTypeAlias`); a constructor call through the alias is
+    /// renamed at the call so no backend sees the alias.
+    importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The constructor `registerImportedTypeAlias` bound each alias to: the
+    /// alias still names the type while its binding is that one, even after
+    /// the declared name was bound again (std's `compiler.Module`, decision
+    /// 811 (4): `Bp__LoadModule.of(…)` read as `Module.of(…)`).
+    importedTypeAliasCtors: std.StringHashMapUnmanaged(*T.Type) = .empty,
+    /// An import item whose name another module the backends' name-keyed
+    /// lookup would also read declares, out of the checker's reach: a BUNDLED
+    /// package's module beside a shorthand `import {x};` (decision 170), a
+    /// module of the importing package beside `from "<pkg>"`, or the package
+    /// `log` beside the module path `import {log.levelName};` (decision 206).
+    /// The item's loc → the module it resolved to, which the transformed
+    /// program names (`from "<module>"`, `withImportSourcesNamed`) so the
+    /// backends read the same answer.
+    itemOwners: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// The declaration each non-std type import item resolved to, by the
+    /// local name the item binds (`resolveImports` in `comptime.zig`): its
+    /// declared name and the module path that declares it. One declaration
+    /// reached by two items — `import {catalog.Widget};` beside the
+    /// `import {Widget as __bp_ti_0} from "catalog";` a `@TypeInfo.all`
+    /// answer adds — is one type: registered once, and the same identity to
+    /// decision 170's two-types check (`noteExplicitTypeNames`), however each
+    /// item spells its source.
+    importedTypeDecls: std.StringHashMapUnmanaged(ImportedTypeDecl) = .empty,
+    /// Decision 310 — a type import item whose alias is the type's identity
+    /// in this module: the module imports two same-named types from two
+    /// modules (`import {m1.T as A}; import {m2.T as B};`), so the declared
+    /// name tells them apart nowhere. The alias → the declared name and the
+    /// declaring module. The declaration is registered under the alias
+    /// (`infer.registerRenamedImportedType`), a value imported from another
+    /// module has its signature's type renamed so (`infer.renameImportedType`),
+    /// and the transformed program keeps the alias, which each backend maps
+    /// back to the declared name in its module (`crossModule.TypeAliases`).
+    renamedTypeImports: std.StringArrayHashMapUnmanaged(ImportedTypeDecl) = .empty,
+    /// 144 B-10 — an enum this module writes by dot-shorthand (`.Top` where a
+    /// `Mode` is expected) and neither declares nor imports by name: the
+    /// enum's name → the module that declares it. The transformed program
+    /// imports it there (`comptime.zig` `withImportSourcesNamed`), so a
+    /// backend that names the enum to build the variant (commonJS's class,
+    /// erlang's tag) has it in scope.
+    implicitEnumImports: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 170 — the type names this module declares or imports by name
+    /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
+    /// collected before any import is marked (`noteExplicitTypeNames`). A std
+    /// module NAMESPACE (`import {collections}`) registers its `pub` types
+    /// bare only where no such name is taken: the declaration the module
+    /// named wins over the one a namespace brings along implicitly.
+    explicitTypeNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 147 (lg-a) — the body being inferred is a lambda's, whose
+    /// fallible channel is its EXPECTED return's: the refusal of a `try` /
+    /// `throw` there names the expected `fn(…) -> @Result<U, E>` form.
+    inLambdaBody: bool = false,
+    /// Decision 148 (lg-b) — how many lambda bodies enclose the expression
+    /// being inferred (a `case` arm's block is not one), and, for each local
+    /// a body bound, the depth it was bound at with the type it was bound to
+    /// (a module-level binding is never noted). A write to a name bound at a
+    /// shallower depth is a write to a captured `var`.
+    lambdaDepth: u32 = 0,
+    localDepth: std.StringHashMapUnmanaged(LocalDepth) = .empty,
+    /// The lambda body being inferred may write captured `var`s: a `forEach`
+    /// body, or a local closure called only at statement position.
+    captureWriteOk: bool = true,
+    /// Set by the site that infers the next lambda when that lambda is one of
+    /// the two exempt shapes; consumed by `inferFunctionExprExpected`.
+    nextLambdaExempt: bool = false,
+    /// The `val f = { … }` names of the block being inferred whose every later
+    /// use is a call at statement position (`f();`).
+    statementClosures: std.StringHashMapUnmanaged(void) = .empty,
+    /// An assignment's re-bind (narrowing restore) does not move a depth.
+    suppressDepthNote: bool = false,
+    /// A std module's `pub` type a namespace import did NOT register because
+    /// `explicitTypeNames` holds its name → the std module key. A call into
+    /// that namespace whose signature names the type is refused
+    /// (`refuseShadowedStdSignature`): types are nominal by name, and the
+    /// checker would read std's type as this module's.
+    shadowedStdTypes: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 8 §1.3 — a top-level fn's declaration, for a call that writes
+    /// its type arguments (`first<string>([])`): the generic parameters, the
+    /// parameters and the return as written. Filled by `registerFnSignatures`.
+    fnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// A function this module IMPORTS, by the name it is bound under, with
+    /// every function it reaches in its own module (the first entry is the
+    /// imported function itself, under that name) — what a decorator of this
+    /// module carries when its body calls it (`infer.decoratorSupport`).
+    importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// Decision 8 §1.3 — an imported function's declaration as its module
+    /// exports it, by the name it is bound under (`ns.f` through a
+    /// namespace), for a call that writes its type arguments
+    /// (`resolve<Box>(…)`): the generic parameters, in order, and the types
+    /// that name them.
+    importedFnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// Decision 341 — every std function as a comptime module carries it
+    /// (`host_cells.zig` `StdFn`: named `__bp_std__<module>__<name>`, its
+    /// own std calls renamed so), keyed by that name. Built once, by
+    /// `comptime.registerStdlib` into the std template, and shared read-only
+    /// by every env cloned from it; null where no std was registered.
+    stdCarried: ?*const hostCells.StdCarried = null,
+    /// Decision 341 — this module's functions with their std calls renamed
+    /// (`host_cells.zig` `Writer.rewrite`), by body address: one copy per
+    /// function, so two closures carrying it carry one function.
+    stdRewritten: std.AutoHashMapUnmanaged(usize, ast.FnDecl) = .empty,
+    /// 01-compiler/14 step 8 (decision 355) — an imported `val` whose
+    /// initializer its module knew at build, by the local name the import
+    /// binds: the value as `block_eval.termJson` wrote it when the module
+    /// exported it (`comptime.zig` `registerExports`). A template's hole
+    /// naming it is known at build (`block_eval.knownAtBuild`).
+    importedBuildValues: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// A template this module IMPORTS, by its body's address (as
+    /// `comptimeOwners`), with the functions of its own module its body
+    /// reaches (`infer.decoratorSupport`, exported by `comptime.zig`
+    /// `registerExports`) — compiled into the template module beside it
+    /// (decision 331, calls included). A local template computes it from
+    /// `fnDecls` when it is expanded.
+    importedTemplateSupport: std.AutoHashMapUnmanaged(usize, ComptimeSupport) = .empty,
+    /// Decision 331 — the declarations of the module being inferred
+    /// (`inferProgramTyped` sets them): the types and functions a `comptime`
+    /// evaluated on the runtime carries (`block_eval.zig`).
+    moduleDecls: []const ast.DeclKind = &.{},
+    /// Decision 331 — every module's type declarations the build analysed so
+    /// far, by module path (`comptime.zig`'s `typeDeclRegistry`): where
+    /// `block_eval.zig` finds a type of another package the block reaches.
+    /// Null in tooling that analyses one module.
+    typeDeclRegistry: ?*const std.StringHashMap(std.StringHashMap(ast.DeclKind)) = null,
+    /// Decision 331 — the last synthetic column a lifted `comptime` value's
+    /// node took (`block_eval.Lifter.nextLoc`): each node is located apart,
+    /// since the lowering tables are keyed by location.
+    comptimeLiftSeq: usize = 0,
+    /// Decision 112 — the exports of each module an imported template was
+    /// declared in, by module path, private functions and values included
+    /// under `templatePrivateKey`: the names the template's own text may use.
+    templateOwnerExports: std.StringHashMapUnmanaged(*const std.StringHashMap(*T.Type)) = .empty,
+    /// Decision 112 — a name a template's LIBRARY wrote into the built code,
+    /// bound under an alias that no source can spell, and the declaration it
+    /// stands for (`dsl_hygiene.zig`). `comptime.zig` imports each alias from
+    /// its owner so the backends lower it as a cross-module reference.
+    templateImports: std.StringArrayHashMapUnmanaged(TemplateImport) = .empty,
+    /// Decision 112 — each imported name, by the name it is bound under, with
+    /// the module that declares it and its declared name: what a template's
+    /// `lookup` answers for it (`infer.buildScopeSnapshot`).
+    importOwners: std.StringHashMapUnmanaged(TemplateImport) = .empty,
+    /// Decision 562 — an imported function expanded at its call site
+    /// (`hooks.isExpandedFn`), by the name it is bound under (`f`, or
+    /// `ns.f` through a namespace): its declaration as its module carried
+    /// it, and that module (`expand_call.zig`).
+    expandedImports: std.StringHashMapUnmanaged(ExpandedImport) = .empty,
+    /// Decision 757 — an imported function whose `comptime t: type<T>`
+    /// parameters specialise it and whose body reads one
+    /// (`type_token.copiedPerType`), by the name it is bound under (`f`, or
+    /// `ns.f`): its declaration as its module carried it, and that module.
+    /// The copy per type argument is written into this module
+    /// (`token_import.zig`).
+    tokenImports: std.StringHashMapUnmanaged(ExpandedImport) = .empty,
+    /// Decision 562 — the bodies being expanded now (by their address): a
+    /// call of one of them inside its own expansion is not expanded again.
+    expanding: std.AutoHashMapUnmanaged(usize, void) = .empty,
+    /// An imported name (or namespace), by the name it is bound under, whose
+    /// import reaches no declaration only because the module it names was
+    /// refused earlier in the build (`Reflection.failedModules`): the module
+    /// and the import item. `infer.unboundAt` refuses a use of it as
+    /// `import-of-failed-module` at the item — the module's own error is the
+    /// one to fix, and `unbound variable` would hide it.
+    failedImports: std.StringHashMapUnmanaged(FailedImport) = .empty,
+    /// Decisions 384, 385 — every module's exports the build analysed so far,
+    /// by module path (`comptime.zig`'s registry), private functions and
+    /// values of a module that shares them under `templatePrivateKey`
+    /// (`written_names.zig`). Null in tooling that analyses one module.
+    exportsRegistry: ?*const std.StringHashMap(std.StringHashMap(*T.Type)) = null,
+    /// Decisions 384, 385 — a name written in another module that this
+    /// module's re-analysis binds under its alias (`written_names.zig`): a
+    /// library member's names (`infer.memberFnSource`) and a catalogue
+    /// entry's `@Expr` names (`typeinfo_all.zig`), recorded on the first
+    /// analysis and handed to the second (`comptime.zig` `analyzeMerged`).
+    hygieneImports: std.ArrayListUnmanaged(HygieneImport) = .empty,
+    /// Decision 395 (1) — the decorator's type parameters while the member it
+    /// hands on is typed (`infer.inferMemberFnCall`): `@typeInfo(T)` of one of
+    /// them is the read's type alone (`infer.typedMetaReadOfTypeParam`).
+    memberFnGenerics: ?*const std.StringHashMap(*T.Type) = null,
+    /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
+    /// whose branches disagreed. A use the union refuses names it, so the
+    /// author sees the widening and not only the refusal.
+    unionOrigins: std.AutoHashMapUnmanaged(*T.Type, struct { loc: ast.Loc, kind: []const u8 }) = .empty,
+    /// Decision 150 — each `case` / `if` whose value is the union of its
+    /// arms, by its loc: the union and each arm's type in arm order, read
+    /// into `InstanceLowering.union_value` once the module is inferred
+    /// (`infer.unionValueLowerings`).
+    unionValues: std.AutoHashMapUnmanaged(ast.Loc, struct { type_: *T.Type, arms: []const ?*T.Type }) = .empty,
+    /// 01 step 13 — each name a top-level body introduced (it was unbound
+    /// before the body), mapped to that body's name, for the diagnostic a
+    /// later use outside it gets. Allocated in `arena`.
+    closedLocals: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 8 §1.4 — bindings born as `[]` with no annotation, turned into
+    /// warnings once the module is inferred (`infer.zig` `flushBirthWarnings`).
+    birthWarnings: std.ArrayListUnmanaged(@import("infer.zig").BirthWarning) = .empty,
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
-    /// Fn declarations parsed by `registerStdlib` from `builtins_fns.d.bp`
-    /// (todo / panic / trap / emit / module / getContex / field). Made
-    /// available to `transform.expandTrailingDefaults` so a bare `todo()` /
-    /// `panic()` call site at user code resolves to the parsed `FnDecl` and
-    /// its trailing literal default lands in `c.args` before dispatch.
+    /// Fn declarations `registerStdlib` reads from std's modules — `print`
+    /// (`io/terminal.bp`) and `panic` (`failure.bp`), decision 606 (2). Made
+    /// available to `transform.expandTrailingDefaults` so a `panic()` call
+    /// site resolves to the parsed `FnDecl` and its trailing literal default
+    /// lands in `c.args` before dispatch.
     stdlibFnDecls: std.StringHashMap(ast.FnDecl),
+    /// Decision 252 — every builtin's declaration, parsed by
+    /// `registerStdlib` from `primitives.bp`'s compiler section and std's `print` / `panic` and keyed
+    /// by the name after `@` (`TypeInfo.all` for the static method). A call to
+    /// a builtin held `.declaration` (`comptime/builtins.zig`) is checked
+    /// against it (`infer.zig` `checkBuiltinArguments`).
+    builtinDecls: std.StringHashMap(BuiltinDecl),
     /// Constructor parameter lists for record / struct / enum-variant types,
     /// keyed by the bare type name (`Config`) for records/structs and the
     /// `Enum.Variant` qualified path (`Level.Error`) for enum variants. Each
@@ -544,22 +2087,74 @@ pub const Env = struct {
     /// `expandTrailingDefaults` can inject them at call sites — same rule as
     /// free-fn defaults; constructors take the same arity-check shape.
     ctorParams: std.StringHashMap([]const ast.Param),
+    /// Decision 329 — the namespace types in scope (`type Type { fn … }`), by
+    /// declared name: a call of the name constructs nothing and is refused.
+    namespaceTypes: std.StringHashMap(void),
+    /// Decision 359 — each derived type's (307) lineage, by declared name
+    /// (`ast.TypeDecl.derivedFrom` / `derivedPartial`): the records a value of
+    /// it may be spread into, and whether it is `Type.partial`'s answer.
+    derivedTypes: std.StringHashMap(DerivedLineage),
+    /// Decision 330 — set while `recv?.m(args)` is typed the way it was
+    /// before the optional lost its methods (`infer.inferOptionalOperator`):
+    /// the method is the payload's, read through `?.`.
+    inOptionalChain: bool = false,
     /// Type guard function info, keyed by function name. A type guard
     /// `fn f(x: T) -> x is NarrowedT` narrows `x` from `T` to `NarrowedT`
     /// when called in an `if` condition or as a statement (assertion mode).
     typeGuardFns: std.StringHashMap(TypeGuardInfo),
+    /// C-04 (01 step 7, N1) — call sites where inference accepted a call that
+    /// omitted an argument because the parameter declares a default, keyed by
+    /// the call's `ast.Loc`. `transform` reads the plan and materialises it, so
+    /// every backend sees a complete call and none of them learns a new rule.
+    /// A call short of a REQUIRED argument is never recorded here — that is N2,
+    /// and it stays the arity error it has always been.
+    defaultInjections: std.AutoHashMap(ast.Loc, DefaultFill),
+    /// C-04 — the declared parameter list of every top-level `fn` of this
+    /// module, keyed by name; the mirror of `stdlibFnDecls` for the program's
+    /// own functions. A `T.func` carries no defaults, so without this the
+    /// free-fn call path cannot tell an omitted trailing default (N1) from a
+    /// missing required argument (N2).
+    fnParams: std.StringHashMap([]const ast.Param),
+    /// C-04 — the declared parameter list of every inherent method, keyed
+    /// `"<Type>.<method>"` and **including** `self`, exactly as written.
+    /// `setInherentMethodType` stores TYPES, which carry no defaults.
+    inherentMethodParams: std.StringHashMap([]const ast.Param),
+    /// Decision 8 §1.3 — the declaration of every inherent method, keyed
+    /// `"<Type>.<method>"`: `recv.m<T>(…)` pins the method's own type
+    /// parameters, which only the declaration names in order.
+    inherentMethodDecls: std.StringHashMap(ast.BehaviorMethod),
+    /// 01 R2 — the constructor and variant bindings a type registered as a
+    /// TYPE only gave up (`registerTypesOnly`): not in scope, but still where
+    /// a generic type's registration cells are read from
+    /// (`instantiateFieldType`), so two instances never share one cell.
+    typeOnlyCtors: std.StringHashMap(*T.Type),
+    /// Type aliases in scope (`type Parser<T> = @Result<T, ParseError>;`,
+    /// decision 118 rule 1), the module's own and the imported ones. An alias
+    /// is transparent: `resolveTypeRefInContext` substitutes its target. Never
+    /// a typedef and never a binding. Arena-owned; std's template has none.
+    typeAliases: std.StringHashMapUnmanaged(ast.TypeAliasDecl) = .empty,
+    /// The aliases being expanded right now, innermost last: an alias met
+    /// again while it is on this stack is `type-alias-recursive`.
+    aliasExpanding: std.ArrayListUnmanaged([]const u8) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Env {
         return .{
             .arena = arena,
             .bindings = std.StringHashMap(*T.Type).init(arena),
+            .valNames = std.StringHashMap(void).init(arena),
+            .typeValueNames = std.StringHashMap(void).init(arena),
             .typeDefs = std.StringHashMap(TypeDef).init(arena),
             .fnTypeparams = std.StringHashMap([]const TypeparamConstraint).init(arena),
             .fnExprParams = std.StringHashMap([]const ExprParamInfo).init(arena),
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = std.StringHashMap(ast.FnDecl).init(arena),
+            .comptimeOwners = std.AutoHashMap(usize, []const u8).init(arena),
+            .variantCtors = std.StringHashMap(*T.Type).init(arena),
+            .variantClaims = std.StringHashMap([]const []const u8).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .templateMethodDeclined = std.AutoHashMap(ast.Loc, void).init(arena),
+            .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
             .nextId = 0,
@@ -568,8 +2163,6 @@ pub const Env = struct {
             .lastError = null,
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
-            .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
-            .iterator_jump_lowerings = std.AutoHashMap(ast.Loc, IteratorJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -578,22 +2171,36 @@ pub const Env = struct {
             .activations = std.StringHashMap(void).init(arena),
             .inherentMethods = std.StringHashMap(std.StringHashMap(void)).init(arena),
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .synthesisedEnumDecls = std.StringHashMap(ast.EnumDecl).init(arena),
+            .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
-            .assocInterfaceDecls = std.StringHashMap(ast.InterfaceDecl).init(arena),
+            .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
+            .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = std.StringHashMap([]const ast.DeclKind).init(arena),
             .stdModuleFns = std.StringHashMap([]const ast.FnDecl).init(arena),
+            .stdModuleAllFns = std.StringHashMap([]const ast.FnDecl).init(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
+            .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
+            .textValues = std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
+            .builtinDecls = std.StringHashMap(BuiltinDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
+            .namespaceTypes = std.StringHashMap(void).init(arena),
+            .derivedTypes = std.StringHashMap(DerivedLineage).init(arena),
+            .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
+            .fnParams = std.StringHashMap([]const ast.Param).init(arena),
+            .inherentMethodParams = std.StringHashMap([]const ast.Param).init(arena),
+            .inherentMethodDecls = std.StringHashMap(ast.BehaviorMethod).init(arena),
+            .typeOnlyCtors = std.StringHashMap(*T.Type).init(arena),
             .typeGuardFns = std.StringHashMap(TypeGuardInfo).init(arena),
         };
     }
@@ -614,30 +2221,49 @@ pub const Env = struct {
     /// (level, jump lowerings, label stack, etc.) is freshly initialised.
     ///
     /// Avoids the ~83ms/call cost of re-parsing + re-inferring the stdlib
-    /// (`primitives.d.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
+    /// (`primitives.bp`, `@Decl` cluster, `CustomNode`, `failure.bp`'s `panic`)
     /// on every `freshEnv`, which `registerStdlib` did unconditionally.
     /// Lex + parse + infer of the test snippet itself only costs ~µs.
     pub fn cloneFromTemplate(tmpl: *const Env, arena: std.mem.Allocator) !Env {
+        var env = try cloneFromTemplateFields(tmpl, arena);
+        // T17 — the reflection records' spellings (`Param` = `__Decl__Param`,
+        // `comptime.zig` `decl_reflection_src`) are the template's only
+        // aliases every module sees; no other template alias is in scope.
+        var ait = tmpl.typeAliases.iterator();
+        while (ait.next()) |e| switch (e.value_ptr.target) {
+            .named => |n| if (std.mem.startsWith(u8, n, "__Decl__")) try env.typeAliases.put(arena, e.key_ptr.*, e.value_ptr.*),
+            else => {},
+        };
+        return env;
+    }
+
+    fn cloneFromTemplateFields(tmpl: *const Env, arena: std.mem.Allocator) !Env {
         return .{
             .arena = arena,
             .bindings = try tmpl.bindings.cloneWithAllocator(arena),
+            .valNames = try tmpl.valNames.cloneWithAllocator(arena),
+            .typeValueNames = try tmpl.typeValueNames.cloneWithAllocator(arena),
             .typeDefs = try tmpl.typeDefs.cloneWithAllocator(arena),
             .fnTypeparams = try tmpl.fnTypeparams.cloneWithAllocator(arena),
             .fnExprParams = try tmpl.fnExprParams.cloneWithAllocator(arena),
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = try tmpl.templateFns.cloneWithAllocator(arena),
+            .comptimeOwners = try tmpl.comptimeOwners.cloneWithAllocator(arena),
+            .variantCtors = try tmpl.variantCtors.cloneWithAllocator(arena),
+            .variantClaims = try tmpl.variantClaims.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .templateMethodDeclined = std.AutoHashMap(ast.Loc, void).init(arena),
+            .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
             .nextId = tmpl.nextId,
+            .stdCarried = tmpl.stdCarried,
             .nextTypeId = tmpl.nextTypeId,
             .level = 0,
             .lastError = null,
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
-            .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
-            .iterator_jump_lowerings = std.AutoHashMap(ast.Loc, IteratorJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -648,20 +2274,36 @@ pub const Env = struct {
             .inherentMethodTypes = try cloneNestedTypeMap(tmpl.inherentMethodTypes, arena),
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
+            .ambientBehaviorDecls = try tmpl.ambientBehaviorDecls.clone(arena),
+            .ruleReadBehaviorDecls = try tmpl.ruleReadBehaviorDecls.clone(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = try tmpl.stdModules.cloneWithAllocator(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = try tmpl.stdModuleTypes.cloneWithAllocator(arena),
             .stdModuleFns = try tmpl.stdModuleFns.cloneWithAllocator(arena),
+            .stdModuleAllFns = try tmpl.stdModuleAllFns.cloneWithAllocator(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
+            .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
+            .textValues = std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
+            .builtinDecls = try tmpl.builtinDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
+            .namespaceTypes = try tmpl.namespaceTypes.cloneWithAllocator(arena),
+            .derivedTypes = try tmpl.derivedTypes.cloneWithAllocator(arena),
+            .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
+            .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
+            .inherentMethodParams = try tmpl.inherentMethodParams.cloneWithAllocator(arena),
+            .inherentMethodDecls = try tmpl.inherentMethodDecls.cloneWithAllocator(arena),
+            .typeOnlyCtors = try tmpl.typeOnlyCtors.cloneWithAllocator(arena),
             .typeGuardFns = try tmpl.typeGuardFns.cloneWithAllocator(arena),
         };
     }
@@ -685,14 +2327,17 @@ pub const Env = struct {
         self.typeDefs.deinit();
         self.method_lowerings.deinit();
         self.result_jump_lowerings.deinit();
-        self.future_jump_lowerings.deinit();
-        self.iterator_jump_lowerings.deinit();
         self.fnTypeparams.deinit();
         self.fnExprParams.deinit();
         self.exprCaptures.deinit();
         self.templateLowerings.deinit();
         self.templateFns.deinit();
+        self.comptimeOwners.deinit();
+        self.variantCtors.deinit();
+        self.variantClaims.deinit();
         self.templateExpansions.deinit();
+        self.templateMethodDeclined.deinit();
+        self.srcRewrites.deinit();
         self.customAstByLoc.deinit();
         self.templateEvalCache.deinit();
         self.extensions.deinit();
@@ -709,17 +2354,31 @@ pub const Env = struct {
         // the compile session, not this env. Only the outer maps are ours.
         self.stdModules.deinit();
         self.stdImports.deinit();
+        self.importBound.deinit();
         self.stdModuleTypes.deinit();
         self.stdModuleFns.deinit();
+        self.stdModuleAllFns.deinit();
         self.stdArrayLowerings.deinit();
         self.instanceLowerings.deinit();
+        self.divisions.deinit();
+        self.textValues.deinit();
         self.implicitStdModules.deinit();
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();
+        self.builtinDecls.deinit();
         self.ctorParams.deinit();
+        self.namespaceTypes.deinit();
+        self.derivedTypes.deinit();
+        self.defaultInjections.deinit();
+        self.fnParams.deinit();
+        self.inherentMethodParams.deinit();
+        self.inherentMethodDecls.deinit();
+        self.typeOnlyCtors.deinit();
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
+        self.indexRewrites.deinit();
+        self.optionalNullCases.deinit();
     }
 
     // ── extension dispatch helpers ────────────────────────────────────────────
@@ -748,6 +2407,33 @@ pub const Env = struct {
     pub fn getInherentMethodType(self: *Env, typeName: []const u8, method: []const u8) ?*T.Type {
         const set = self.inherentMethodTypes.get(typeName) orelse return null;
         return set.get(method);
+    }
+
+    /// C-04 — store `typeName.method`'s parameters AS WRITTEN (`self` included),
+    /// the only place the `default` expressions survive registration.
+    pub fn setInherentMethodParams(self: *Env, typeName: []const u8, method: []const u8, params: []const ast.Param) !void {
+        const key = try std.fmt.allocPrint(self.arena, "{s}.{s}", .{ typeName, method });
+        try self.inherentMethodParams.put(key, params);
+    }
+
+    /// C-04 — `typeName.method`'s parameters as written, `self` included.
+    pub fn getInherentMethodParams(self: *Env, typeName: []const u8, method: []const u8) ?[]const ast.Param {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ typeName, method }) catch return null;
+        return self.inherentMethodParams.get(key);
+    }
+
+    /// Decision 8 §1.3 — store `typeName.method`'s declaration.
+    pub fn setInherentMethodDecl(self: *Env, typeName: []const u8, method: ast.BehaviorMethod) !void {
+        const key = try std.fmt.allocPrint(self.arena, "{s}.{s}", .{ typeName, method.name });
+        try self.inherentMethodDecls.put(key, method);
+    }
+
+    /// Decision 8 §1.3 — `typeName.method`'s declaration, if one was registered.
+    pub fn getInherentMethodDecl(self: *Env, typeName: []const u8, method: []const u8) ?ast.BehaviorMethod {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ typeName, method }) catch return null;
+        return self.inherentMethodDecls.get(key);
     }
 
     pub fn isActivated(self: *Env, name: []const u8) bool {
@@ -804,11 +2490,175 @@ pub const Env = struct {
     }
 
     pub fn bind(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
         try self.bindings.put(name, ty);
+        _ = self.valNames.remove(name);
+        try self.noteLocalDepth(name, ty);
     }
 
-    pub fn lookupTypeDef(self: *Env, name: []const u8) ?TypeDef {
+    pub const LocalDepth = struct { depth: u32, ty: *T.Type };
+
+    fn noteLocalDepth(self: *Env, name: []const u8, ty: *T.Type) !void {
+        if (self.bodyScope == null or self.suppressDepthNote) return;
+        try self.localDepth.put(self.arena, name, .{ .depth = self.lambdaDepth, .ty = ty });
+    }
+
+    /// The lambda depth `name`'s current binding was made at, when it is a
+    /// local of a body (null for a module-level binding or an unknown name).
+    pub fn localBindDepth(self: *Env, name: []const u8) ?u32 {
+        const ld = self.localDepth.get(name) orelse return null;
+        const cur = self.bindings.get(name) orelse return null;
+        if (cur != ld.ty) return null;
+        return ld.depth;
+    }
+
+    /// 01 step 13 — one entry of a body's undo log: what `name` was bound to
+    /// (and whether as a `val`) before the body bound it.
+    pub const BindUndo = struct { name: []const u8, prev: ?*T.Type, wasVal: bool };
+
+    /// Record `name`'s current binding in the open body scope, if any, before
+    /// it is overwritten.
+    fn noteBind(self: *Env, name: []const u8) !void {
+        const log = self.bodyScope orelse return;
+        try log.append(self.arena, .{ .name = name, .prev = self.bindings.get(name), .wasVal = self.valNames.contains(name) });
+    }
+
+    /// Decision 641 — whether the body being inferred binds `name` (a
+    /// parameter, a local, a pattern binder, a lambda's parameter): a value
+    /// named like a primitive type (`val bytes = …`) shadows the type's
+    /// statics there. `localBindDepth` cannot tell: a parameter typed by the
+    /// name (`bytes: bytes`) is bound to the type's own binding.
+    pub fn boundInBody(self: *const Env, name: []const u8) bool {
+        const log = self.bodyScope orelse return false;
+        for (log.items) |u| if (std.mem.eql(u8, u.name, name)) return true;
+        return false;
+    }
+
+    /// 01 step 13 — a body's bindings end with the body. `bindings` is one flat
+    /// table, so a `val` declared inside one `fn` used to stay bound for every
+    /// declaration inferred after it: `fn later() { return v; }` checked
+    /// against another function's local, and a local named like an exported
+    /// fn retyped it for the next function. `openBodyScope` starts an undo
+    /// log; `closeBodyScope` replays it backwards, which puts every name the
+    /// body bound (parameters, locals, pattern binders) back exactly as it was.
+    pub fn openBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo)) ?*std.ArrayListUnmanaged(BindUndo) {
+        const outer = self.bodyScope;
+        self.bodyScope = log;
+        return outer;
+    }
+
+    pub fn closeBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo), outer: ?*std.ArrayListUnmanaged(BindUndo), owner: []const u8) void {
+        self.bodyScope = outer;
+        if (outer == null) for (log.items) |u| {
+            if (u.prev == null and !self.closedLocals.contains(u.name))
+                self.closedLocals.put(self.arena, u.name, owner) catch {};
+        };
+        var i = log.items.len;
+        while (i > 0) {
+            i -= 1;
+            const u = log.items[i];
+            if (u.prev) |p| {
+                self.bindings.put(u.name, p) catch {};
+            } else {
+                _ = self.bindings.remove(u.name);
+            }
+            if (u.wasVal) {
+                self.valNames.put(u.name, {}) catch {};
+            } else {
+                _ = self.valNames.remove(u.name);
+            }
+        }
+        log.clearRetainingCapacity();
+    }
+
+    /// `bind` for a `val` — local or module-level: the name is then refused
+    /// as an assignment target until something else binds it (decision 38).
+    pub fn bindVal(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
+        try self.bindings.put(name, ty);
+        try self.valNames.put(name, {});
+        try self.noteLocalDepth(name, ty);
+    }
+
+    /// Was `name`'s most recent binder a `val`?
+    pub fn isVal(self: *Env, name: []const u8) bool {
+        return self.valNames.contains(name);
+    }
+
+    /// Decision 753 — a `type` a std module declares as a member of a union
+    /// alias this module has registered (`compiler.Node`'s `Fn`), with its
+    /// number of type parameters: the alias names it, and a prelude value of
+    /// the same name (`DeclKind.Fn`) does not make it a value. Null for any
+    /// other name.
+    fn stdAliasMemberArity(self: *const Env, name: []const u8) ?usize {
+        var it = self.stdModuleTypes.valueIterator();
+        while (it.next()) |decls| for (decls.*) |d| {
+            if (d != .type_ or !std.mem.eql(u8, d.type_.name, name)) continue;
+            for (decls.*) |a| {
+                if (a != .typeAlias or !self.typeAliases.contains(a.typeAlias.name)) continue;
+                const members = a.typeAlias.target.unionMembers() orelse continue;
+                for (members) |m| if (m == .named and std.mem.eql(u8, m.named, name)) return d.type_.genericParams.len;
+            }
+        };
+        return null;
+    }
+
+    pub fn lookupTypeDef(self: *const Env, name: []const u8) ?TypeDef {
         return self.typeDefs.get(name);
+    }
+
+    /// The `behavior` declaration `name` names: the module's own (std's
+    /// registered ones included), else an imported one, else an ambient one
+    /// of `primitives.bp`'s compiler section (decision 539 (6)) — unless a type of that name is
+    /// in scope (`type Index(column: string)`, a library's `Slice<T>`): the
+    /// module's own type is what the name reads.
+    pub fn behaviorDecl(self: *const Env, name: []const u8) ?ast.BehaviorDecl {
+        if (self.assocInterfaceDecls.get(name) orelse self.importedBehaviorDecls.get(name)) |d| return d;
+        if (self.typeDefs.contains(name)) return null;
+        return self.ambientBehaviorDecls.get(name);
+    }
+
+    /// The type alias `name` names, if one is in scope.
+    pub fn lookupTypeAlias(self: *const Env, name: []const u8) ?ast.TypeAliasDecl {
+        return self.typeAliases.get(name);
+    }
+
+    /// The alias a written type goes through, with the builtin wrapper it
+    /// finally stands for. `type Parser<T> = @Result<T, E>;` makes `-> Parser<i32>`
+    /// answer `.{ .alias = "Parser", .wrapper = "Result" }`; an alias of an
+    /// alias is followed (`type P2<T> = Parser<T>;` answers `.alias = "P2"`,
+    /// the name written). Null when `ref` is not an alias, or the alias ends at
+    /// a type that is not a builtin `@Wrapper<…>`.
+    ///
+    /// This is the reading decision 118 rule 1 needs: the declared return
+    /// `TypeRef` keeps the alias spelling (the checker substitutes only when it
+    /// builds the type), so the effect checker asks this on `FnDecl.returnType`
+    /// to tell "the wrapper written in the return" (activates) from "the
+    /// wrapper behind an alias" (types the function, activates nothing —
+    /// `effect-wrapper-behind-alias` when the body uses a capability).
+    pub fn aliasedWrapper(self: *const Env, ref: ast.TypeRef) ?AliasedWrapper {
+        const written = aliasNameOf(ref) orelse return null;
+        var decl = self.typeAliases.get(written) orelse return null;
+        var depth: usize = 0;
+        while (depth < 32) : (depth += 1) {
+            switch (decl.target) {
+                .generic => |g| if (g.is_builtin) return .{ .alias = written, .wrapper = g.name },
+                else => {},
+            }
+            const next = aliasNameOf(decl.target) orelse return null;
+            decl = self.typeAliases.get(next) orelse return null;
+        }
+        return null;
+    }
+
+    /// The name a type reference spells when it could be an alias: `Name` or
+    /// `Name<…>` (not a builtin, not a union).
+    fn aliasNameOf(ref: ast.TypeRef) ?[]const u8 {
+        return switch (ref) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin or ref.unionMembers() != null) null else g.name,
+            else => null,
+        };
     }
 
     /// Record the typeparam constraints for a function (keyed by name).
@@ -819,6 +2669,86 @@ pub const Env = struct {
     /// Look up the typeparam constraints for a function, or null if it has none.
     pub fn lookupTypeparams(self: *Env, name: []const u8) ?[]const TypeparamConstraint {
         return self.fnTypeparams.get(name);
+    }
+
+    /// Record a warning (decision 57). Inference may walk one expression more
+    /// than once (the untyped and the typed pass), so a warning already
+    /// recorded at the same location with the same text is not repeated.
+    pub fn warn(self: *Env, w: @import("error.zig").TypeError) !void {
+        for (self.warnings.items) |seen| {
+            const same_loc = if (seen.loc) |a| (if (w.loc) |b| a.eql(b) else false) else w.loc == null;
+            if (!same_loc) continue;
+            if (seen.kind == .custom and w.kind == .custom and std.mem.eql(u8, seen.kind.custom.message, w.kind.custom.message)) return;
+        }
+        try self.warnings.append(self.arena, w);
+    }
+
+    /// C-01 — record the module path `decl` was declared in (see
+    /// `comptimeOwners`). A bodyless declaration is never evaluated and has no
+    /// identity to key by, so it is not recorded. The first owner stays: the
+    /// defining module registers its own declaration before any importer sees it.
+    pub fn noteComptimeOwner(self: *Env, decl: ast.FnDecl, owner: []const u8) !void {
+        const key = ownerKey(decl) orelse return;
+        const gop = try self.comptimeOwners.getOrPut(key);
+        if (!gop.found_existing) gop.value_ptr.* = owner;
+    }
+
+    /// The file `module` is written in, as a diagnostic names it: this module's
+    /// own `srcPath`, else the session's (`Reflection.srcPaths`), else
+    /// `<module>.bp`.
+    pub fn srcPathOf(self: *Env, module: []const u8) []const u8 {
+        if (std.mem.eql(u8, module, self.modulePath) and self.srcPath.len > 0) return self.srcPath;
+        if (self.reflection) |r| if (r.srcPaths.get(module)) |p| return p;
+        return std.fmt.allocPrint(self.arena, "{s}.bp", .{if (module.len > 0) module else "main"}) catch module;
+    }
+
+    /// The label `module`'s own diagnostics print (decision 545): `srcPathOf`
+    /// for a program module, the module path plus `.bp` for a dependency's.
+    pub fn diagLabelOf(self: *Env, module: []const u8) []const u8 {
+        if (self.reflection) |r| if (r.diagLabels.get(module)) |p| return p;
+        return self.srcPathOf(module);
+    }
+
+    /// The file `decl`'s calls are located in (decision 532): the file of the
+    /// module it was declared in; this module's when nothing recorded it.
+    /// Decision 798 (2) — records that the expansion at `loc` came from
+    /// `decl` (a template, or a function expanded at its call): its name, its
+    /// file (`srcPathOfDecl`, as a decorator's output call site names it) and
+    /// the line its name is written on.
+    /// The decorator outputs that placed this module's lines past its end.
+    pub fn outputRecords(self: *const Env) OutputRecords {
+        return self.passOneOutputs orelse .{
+            .contributions = self.contributions.items,
+            .members = self.memberContributions.items,
+            .types = self.typeContributions.items,
+            .anchors = self.executorAnchors.items,
+        };
+    }
+
+    pub fn noteExpansionOrigin(self: *Env, loc: ast.Loc, decl: ast.FnDecl) std.mem.Allocator.Error!void {
+        const owner = self.comptimeOwnerOf(decl);
+        try self.expansionOrigins.put(self.arena, loc, .{ .what = decl.name, .module = if (owner.len > 0) owner else self.modulePath, .file = self.srcPathOfDecl(decl), .line = decl.nameLoc.line });
+    }
+
+    pub fn srcPathOfDecl(self: *Env, decl: ast.FnDecl) []const u8 {
+        const owner = self.comptimeOwnerOf(decl);
+        return self.srcPathOf(if (owner.len > 0) owner else self.modulePath);
+    }
+
+    /// The module path `decl` was declared in, or "" when nothing recorded it
+    /// (the compiler's own tests evaluate a declaration no module owns).
+    pub fn comptimeOwnerOf(self: *const Env, decl: ast.FnDecl) []const u8 {
+        const key = ownerKey(decl) orelse return "";
+        return self.comptimeOwners.get(key) orelse "";
+    }
+
+    /// The identity `comptimeOwners` keys a declaration by: its body, or — a
+    /// marker's body is empty (decision 604) — its parameter list. A `declare
+    /// fn` has neither and is never recorded.
+    fn ownerKey(decl: ast.FnDecl) ?usize {
+        if (decl.body.len > 0) return @intFromPtr(decl.body.ptr);
+        if (!decl.isDeclare and decl.params.len > 0) return @intFromPtr(decl.params.ptr);
+        return null;
     }
 
     /// Record the `expr` meta-kind params for a function (keyed by name).
@@ -848,16 +2778,22 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64",  "u64", "isize", "usize",
+            "i8",     "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",  "isize",    "usize",
+            // Decision 332 — an integer of any size
+            "bigint",
+            // Decision 346 — an immutable byte sequence
+            "bytes",
             // float types
             "f32", "f64",
             // other primitives
             "bool", "string", "void", "v128",
-            // §1G — `any` is the unconstrained default for effect-wrapper error
-            // channels (`@Future<T, E = any>` / `@Iterator<T, E = any, C = void>`).
-            // It is treated as opaque at the type level — no operations beyond
-            // being threaded through generics.
-            "any",
+            // No `any` (1.0.5 decision 31): a written `any` is refused by
+            // `resolveTypeRefInContext` as `any-type-removed`, naming
+            // `unknown`, the type that holds any value.
+            // The declared return of `@panic` / `todo` / `trap`
+            // (`libs/std/src/failure.bp`'s `panic`, `primitives.bp`'s compiler section): a type no
+            // module declares, so C10's second pass needs it named here.
+            "noreturn",
             // special
             "Self",
         };
@@ -865,10 +2801,12 @@ pub const Env = struct {
             const ty = try self.namedType(p);
             try self.bind(p, ty);
         }
-        // Built-in functions bound with placeholder void type.
-        // These are runtime functions — actual types are resolved during codegen.
-        try self.bind("print", try self.namedType("void"));
-        try self.bind("println", try self.namedType("void"));
+        // No `print` / `println` binding: printing is the builtin `@print`
+        // (`@println`, `@debug`), which every backend lowers. A bare
+        // `print(x)` type-checked here and then lowered on commonJS alone —
+        // erlang emitted a call to an undefined local, beam an unresolved
+        // call, wasm a trap — so it is unbound, and `unboundAt` names the
+        // builtin.
     }
 
     // ── level management ──────────────────────────────────────────────────────
@@ -881,10 +2819,100 @@ pub const Env = struct {
         self.level -= 1;
     }
 
+    /// 06 N30 — the type annotation being resolved right now (`x: Foo` → the
+    /// column of `Foo`). `resolveTypeName` attaches it to an unknown-type error
+    /// so the caret lands on the annotation instead of the file. Set and
+    /// restored by the inference sites that know the declaration.
+    pub fn atTypeRef(self: *Env, loc: ?ast.Loc) ?ast.Loc {
+        const prev = self.typeRefLoc;
+        if (loc) |l| {
+            if (l.line != 0) self.typeRefLoc = l;
+        }
+        return prev;
+    }
+
     // ── type name resolution ──────────────────────────────────────────────────
 
     /// Resolve a string type name (from AST) to a *Type.
     /// Generic parameters are looked up in `genericMap` first.
+    /// N28 — `Token.Text.Size` → `__Token__Text__Size`, the name
+    /// `registerEnumSection` files a section's typedef under. The dotted form is
+    /// what the author writes; the mangled one never appears in source.
+    pub fn mangleSectionPath(self: *Env, path: []const u8) ![]const u8 {
+        var buf: std.ArrayList(u8) = .empty;
+        var it = std.mem.splitScalar(u8, path, '.');
+        while (it.next()) |seg| {
+            try buf.appendSlice(self.arena, "__");
+            try buf.appendSlice(self.arena, seg);
+        }
+        return buf.toOwnedSlice(self.arena);
+    }
+
+    /// N28 — the dotted path of a registered section whose segments, run
+    /// together, spell `flat` (`TokenText` → `Token.Text`), or null. Lets an
+    /// annotation written in the pre-decision flat spelling say what to write.
+    fn sectionPathForFlatName(self: *Env, flat: []const u8) !?[]const u8 {
+        var it = self.typeDefs.iterator();
+        while (it.next()) |e| {
+            const key = e.key_ptr.*;
+            if (!std.mem.startsWith(u8, key, "__")) continue;
+            var run: std.ArrayList(u8) = .empty;
+            defer run.deinit(self.arena);
+            var dotted: std.ArrayList(u8) = .empty;
+            var segs = std.mem.splitSequence(u8, key[2..], "__");
+            var first = true;
+            while (segs.next()) |seg| {
+                try run.appendSlice(self.arena, seg);
+                if (!first) try dotted.append(self.arena, '.');
+                try dotted.appendSlice(self.arena, seg);
+                first = false;
+            }
+            // A one-segment internal name (`__Source`, decision 576 (13)) is
+            // no section: a section is `__Owner__Leaf`.
+            if (!first and std.mem.indexOf(u8, key[2..], "__") != null and std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
+            dotted.deinit(self.arena);
+        }
+        return null;
+    }
+
+    /// True when `name` names a type the module (or the compiler) knows — a
+    /// typedef, a binding, a behavior, an ambient behavior or a compiler-known
+    /// name. The one lookup behind the bare name's and a generic application
+    /// head's refusal.
+    pub fn typeNameDeclared(self: *Env, name: []const u8) bool {
+        if (self.typeDefs.get(name) != null) return true;
+        if (self.bindings.get(name) != null) return true;
+        // A `behavior` names a type in annotation position (`-> Counter`)
+        // without being a typedef: its decl is recorded here.
+        if (self.assocInterfaceDecls.get(name) != null) return true;
+        // An ambient behavior of `primitives.bp`'s compiler section (decision 539 (6)).
+        if (self.ambientBehaviorDecls.contains(name)) return true;
+        return isCompilerKnownTypeName(name);
+    }
+
+    /// C10 second pass — after every declaration of the module is registered,
+    /// an annotation that still names nothing is an error at the annotation.
+    pub fn checkPendingTypeNames(self: *Env) !void {
+        // The list belongs to the program that filled it: `registerStdlib` runs
+        // one inference per std module on the same env, and a name left pending
+        // by one must not red in the next.
+        defer self.pendingTypeNames.clearRetainingCapacity();
+        for (self.pendingTypeNames.items) |p| {
+            if (self.typeNameDeclared(p.name)) continue;
+            const e = @import("error.zig").TypeError.unknownTypeName(p.name);
+            self.lastError = if (p.loc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+    }
+
+    /// Records a written type name whose lookup waits for the second pass
+    /// (`checkPendingTypeNames`); only an annotation the parser located counts.
+    pub fn notePendingTypeName(self: *Env, name: []const u8) void {
+        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+            self.pendingTypeNames.append(self.arena, .{ .name = name, .loc = self.typeRefLoc }) catch {};
+        }
+    }
+
     pub fn resolveTypeName(
         self: *Env,
         name: []const u8,
@@ -892,6 +2920,43 @@ pub const Env = struct {
     ) !*T.Type {
         // Generic parameters bound in the current function/type
         if (genericMap.get(name)) |ty| return ty;
+        // Decision 8 §2 — `unknown` is a type the compiler owns, not a name a
+        // module declares. It has to answer before the two-pass `pendingTypeNames`
+        // walk below, which reds a name nothing declared: an annotation the
+        // parser located (`-> unknown`, `x: unknown`) would otherwise be
+        // reported as an undeclared type.
+        if (std.mem.eql(u8, name, ast.unknown_type_name)) return self.namedType(name);
+        // Decision 207 — an inline `type(…)` the module pass did not declare:
+        // it stands on a parameter of something that is not a top-level `fn`.
+        if (std.mem.eql(u8, name, ast.inline_type_name)) {
+            const e = @import("error.zig").TypeError.custom(
+                @import("diagnostics.zig").inline_type_position ++ ": an inline `type(…)` is the type of a top-level `fn`'s parameter only — not a method's, a behavior member's or a host declaration's",
+                "Name the type (`type LinkProps(…)`) and write the name in this signature.",
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+        // N28 — a section of an enum-shaped `type` is named by its path
+        // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
+        // typedef is registered under the mangled `__Token__Text` form by
+        // `registerEnumSection`; the dotted spelling is the written one.
+        if (std.mem.indexOfScalar(u8, name, '.') != null) {
+            const mangled = try self.mangleSectionPath(name);
+            if (self.typeDefs.get(mangled)) |_| return self.namedType(mangled);
+            // Decision 216 (3) — `Owner.Name` before the owner's decorators
+            // ran: accepted for now, decided by the re-analysis (or refused
+            // after the decorators, when none follows).
+            if (self.assocTypesPending) {
+                const head = name[0..std.mem.indexOfScalar(u8, name, '.').?];
+                if (self.ownDecls.contains(head) or self.lookupTypeDef(head) != null) {
+                    if (self.pendingAssocTypeName == null) self.pendingAssocTypeName = .{ .name = name, .loc = self.typeRefLoc };
+                    return self.freshVar();
+                }
+            }
+            const e = @import("error.zig").TypeError.unknownTypeName(name);
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
         // Registered user-defined types — bare name on a generic typeDef
         // (`r: Result`, `-> Pair`) means "any args". Produce `Name<fresh, …>`
         // so it unifies with the constructor's `Name<T_cell, …>` return type;
@@ -907,6 +2972,12 @@ pub const Env = struct {
             for (params, 0..) |_, i| args[i] = try self.freshVar();
             return self.namedTypeArgs(name, args);
         }
+        // An imported `behavior` is the nominal type its own module names
+        // (`-> Request` there is `Request`), not the display name its import
+        // binding carries (`behavior Request { … }`): resolved to that, an
+        // alias or a signature written against the imported behavior never
+        // unified with a value the declaring module typed.
+        if (self.importedBehaviorDecls.contains(name)) return self.namedType(name);
         // Primitive / built-in names
         if (self.bindings.get(name)) |ty| {
             // A name bound to a *constructor function* (`fn(fields…) -> Name`)
@@ -920,12 +2991,89 @@ pub const Env = struct {
             if (d.* == .func and d.func.ret.isNamed(name)) {
                 return self.namedType(name);
             }
-            return ty;
+            // A primitive is bound to itself (`registerBuiltins`); a `val`
+            // bound to a type is recorded in `typeValueNames`. A binding of
+            // function type keeps the arm's old answer: std's `Array` and
+            // imported constructors whose return is not spelled like the
+            // binding (`Array` → `array<T>`) are read through it, and a
+            // variant constructor used as a type is not R8's question.
+            //
+            // A declaration's own binding — what a `type`/`behavior` binds its
+            // name to, and what an import of one carries — is typed by the
+            // declaration's display name (`behavior Request { … }`, the R1
+            // builders), which no value's type can spell: it holds a space.
+            const declBinding = d.* == .named and std.mem.indexOfScalar(u8, d.named.name, ' ') != null;
+            if (d.isNamed(name) or d.* == .func or declBinding or self.typeValueNames.contains(name)) return ty;
+            // A `type` of this module whose name a prelude value holds — a
+            // unit variant of a builtin enum (`DeclKind.Element`,
+            // `DeclKind.Field`) — read in its own declaration before it is
+            // registered (`type Element(children: Element[])`): the type.
+            if (self.ownTypeDecls.get(name) orelse self.stdAliasMemberArity(name)) |arity| {
+                if (arity == 0) return self.namedType(name);
+                const args = try self.arena.alloc(*T.Type, arity);
+                for (args) |*a| a.* = try self.freshVar();
+                return self.namedTypeArgs(name, args);
+            }
+            // 01 R8 — any other binding is a value, and a value is not a type.
+            const e = @import("error.zig").TypeError.custom(
+                try std.fmt.allocPrint(self.arena, "'{s}' is a value, not a type", .{name}),
+                "a type position takes a type: a `type` or `behavior` declaration, a primitive, or a `val` bound to one (`val T = i32;`)",
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
         }
-        // Fallback: treat as an opaque named type (forward reference, etc.)
+        // N28 — the flat spelling of a section type (`TokenText` for
+        // `Token.Text`) is a name the author had to guess from a mangling the
+        // language never showed. It is not a type: name the path instead.
+        if (try self.sectionPathForFlatName(name)) |dotted| {
+            const e = @import("error.zig").TypeError.custom(
+                try std.fmt.allocPrint(self.arena, "the type '{s}' is not defined in this scope", .{name}),
+                try std.fmt.allocPrint(self.arena, "a section is named by its path: use `{s}`", .{dotted}),
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+        // C10 — a name nothing declares. It cannot red here: a record may
+        // annotate a type declared further down the file, and registration
+        // resolves fields in declaration order. Record it with the annotation's
+        // location and let `checkPendingTypeNames` (run once every decl is
+        // registered) red on what is still unknown — the second pass of C10's
+        // two-pass resolution.
+        //
+        // Only an annotation the parser located enters the list (`typeRefLoc`,
+        // set by `resolveParamType` / `resolveFieldType`). A resolution with no
+        // annotation in scope is a synthesised or re-entered one — a generic
+        // parameter resolved outside the context that binds it, a signature
+        // rebuilt from a stored type — and has neither a caret to red at nor a
+        // source the user wrote. Compiler-known names never enter the list.
+        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+            self.pendingTypeNames.append(self.arena, .{
+                .name = name,
+                .loc = self.typeRefLoc,
+            }) catch {};
+        }
         return self.namedType(name);
     }
 };
+
+/// C10 — an annotation that named no known type when it was resolved. Checked
+/// again once every declaration of the module is registered, so a forward
+/// reference (`type A(b: B)` above `type B(…)`) resolves and only a name
+/// nothing declares reds.
+pub const PendingTypeName = struct {
+    name: []const u8,
+    loc: ?ast.Loc,
+};
+
+/// C10 — names the compiler knows without any module declaring them, so the
+/// two-pass registration cannot see them as typedefs: `Children` is the markup
+/// child list a UI library annotates, coerced by `childrenCoercion` in
+/// `infer.zig`.
+fn isCompilerKnownTypeName(name: []const u8) bool {
+    const known = [_][]const u8{"Children"};
+    for (known) |k| if (std.mem.eql(u8, name, k)) return true;
+    return false;
+}
 
 /// Type guard information for narrowing at call sites.
 /// `fn f(x: T) -> x is NarrowedT` records the param index and narrowed type name.
@@ -933,3 +3081,88 @@ pub const TypeGuardInfo = struct {
     paramIndex: usize,
     narrowedTypeName: []const u8,
 };
+
+/// C-04 (01 step 7, N1) — how a call that omitted an argument lines up with the
+/// callee's parameters. Inference writes one of these into `Env.defaultInjections`
+/// the moment it *accepts* such a call; `comptime/transform.zig` materialises it
+/// and nothing else, so the checker and the lowering can never disagree about
+/// which argument was filled in.
+pub const DefaultFill = struct {
+    /// The callee's parameters, in declaration order. For a method this is the
+    /// list the ARGUMENTS line up with — `self` is already dropped.
+    params: []const ast.Param,
+    /// One entry per parameter: the index of the argument the call wrote, or
+    /// `null` for a parameter that takes its own declared `default`.
+    slots: []const ?usize,
+};
+
+/// C-04 — plan the fill for a call of `labels.len` arguments against `params`.
+///
+/// Answers `null` when the call needs no fill (it wrote an argument for every
+/// parameter) and `error.CannotFill` when it cannot have one: a parameter left
+/// without an argument and without a `default` is a missing REQUIRED argument,
+/// which is N2's arity error and must stay one.
+///
+/// An argument whose label names a parameter claims that parameter's slot, so
+/// `P(y: 2)` against `type P(x: i32 = 0, y: i32)` fills `x` from its default —
+/// the rule the plain tail-append cannot express, because `y` is the trailing
+/// parameter and `y` is required. Unlabelled arguments take the remaining slots
+/// in order. Any label that names no parameter (a `..` record-update spread,
+/// most of all) abandons the plan: those calls have their own paths and their
+/// own diagnostics.
+pub fn planDefaultFill(
+    arena: std.mem.Allocator,
+    params: []const ast.Param,
+    labels: []const ?[]const u8,
+) !?DefaultFill {
+    if (labels.len > params.len) return error.CannotFill;
+    // A complete call needs no plan unless a label moves an argument (01 —
+    // `diff(b: 1, a: 10)`, `P(y: "a", x: 1)`): the plan is then a pure
+    // reorder into declaration order, which every consumer applies alike.
+    if (labels.len == params.len) {
+        var any_label = false;
+        for (labels) |l| if (l != null) {
+            any_label = true;
+        };
+        if (!any_label) return null;
+    }
+
+    const slots = try arena.alloc(?usize, params.len);
+    @memset(slots, null);
+
+    // Pass 1 — every labelled argument claims the parameter it names.
+    var claimed = try arena.alloc(bool, labels.len);
+    @memset(claimed, false);
+    for (labels, 0..) |maybe_label, ai| {
+        const label = maybe_label orelse continue;
+        const pi = for (params, 0..) |p, i| {
+            if (std.mem.eql(u8, p.name, label)) break i;
+        } else return error.CannotFill;
+        if (slots[pi] != null) return error.CannotFill; // the same slot twice
+        slots[pi] = ai;
+        claimed[ai] = true;
+    }
+
+    // Pass 2 — the rest take the free slots in declaration order.
+    var pi: usize = 0;
+    for (labels, 0..) |_, ai| {
+        if (claimed[ai]) continue;
+        while (pi < params.len and slots[pi] != null) pi += 1;
+        if (pi >= params.len) return error.CannotFill;
+        slots[pi] = ai;
+        pi += 1;
+    }
+
+    // Pass 3 — N2: every slot the call left empty must declare a default.
+    for (slots, params) |slot, p| {
+        if (slot == null and p.default == null) return error.CannotFill;
+    }
+    // A complete call whose labels name the parameters in order moves nothing.
+    if (labels.len == params.len) {
+        const identity = for (slots, 0..) |slot, i| {
+            if (slot == null or slot.? != i) break false;
+        } else true;
+        if (identity) return null;
+    }
+    return DefaultFill{ .params = params, .slots = slots };
+}

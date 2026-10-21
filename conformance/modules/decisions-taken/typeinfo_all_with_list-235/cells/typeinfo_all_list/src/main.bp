@@ -1,0 +1,69 @@
+//// Decision 235 — `@TypeInfo.all(with: [a, b])` answers every declaration
+//// carrying any decorator of the list, in the one order (module path, then
+//// declaration order), a declaration carrying two of them once, with the
+//// meta every listed decorator set. Each `value` is `unknown` (decision 254);
+//// calling it through `is fn() -> T` is front 130's. A type's entry has no
+//// return type: `returnTypeName` is `""` (decision 256).
+
+import {compiler, io.terminal.print} from "std";
+
+fn service(syntax decl: unknown) -> void {
+    compiler.setMeta(Service(role: "service"));
+    compiler.addMember("pub fn make() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
+}
+
+fn repository(syntax decl: unknown) -> void {
+    compiler.setMeta(Store(store: "sql"));
+    compiler.addMember("pub fn make() -> string { return \""
+        + compiler.name(decl)!
+        + "\"; }");
+}
+
+fn audited(syntax decl: unknown) -> void {
+    compiler.setMeta(Audited(audit: "yes"));
+}
+
+#[service]
+type Mailer(host: string)
+
+#[repository]
+type Orders(table: string)
+
+#[service]
+#[audited]
+type Billing(rate: i32)
+
+pub fn main() -> void {
+    for (@TypeInfo.all(with: [repository, service], member: "make")) { d ->
+        var meta: string[] = [];
+        for (d.metaAll(Service)) { m ->
+            meta.push("role=" + m.role);
+        }
+        for (d.metaAll(Store)) { m ->
+            meta.push("store=" + m.store);
+        }
+        print(d.name + " " + meta.join(","));
+    }
+    for (@TypeInfo.all(with: [service, audited], member: "make")) { d ->
+        print(
+            d.name
+                + " "
+                + (d.metaAll(Service).length
+                    + d.metaAll(Audited).length).toString()
+                + " ["
+                + d.returnTypeName
+                + "]",
+        );
+    }
+}
+
+// What `#[service]` records.
+type Service(role: string)
+
+// What `#[repository]` records.
+type Store(store: string)
+
+// What `#[audited]` records.
+type Audited(audit: string)

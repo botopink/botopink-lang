@@ -1,0 +1,80 @@
+//// Decision 298 — a decorator's meta is a typed value keyed by its type:
+//// `decl.setMeta(Entity(table: "cities"))` records one `Entity` on the
+//// declaration, read `compiler.typeInfo(City).meta(Entity)` → `?Entity`;
+//// `decl.addMeta(Index(…))` records values that repeat, read
+//// `compiler.typeInfo(City).metaAll(Index)` → `Index[]`. A type nothing recorded
+//// answers `null` and `[]`. Every field kind the compiler writes back where
+//// the meta is read: a string, an integer, a float, a `bool`, a variant, an
+//// array and an optional.
+
+import {compiler, io.terminal.print} from "std";
+
+type Level { Low, High }
+
+type Entity(table: string, columns: string[], weight: f64, audited: bool, level: Level, alias: ?string)
+
+type Index(column: string, unique: bool, order: i32)
+
+type Other(note: string)
+
+fn entity(syntax decl: unknown, comptime table: string) -> void {
+    var names: string[] = [];
+    compiler.fields(decl).forEach({ f -> names.push(f.name) });
+    compiler.setMeta(
+        Entity(
+            table: table,
+            columns: names,
+            weight: 1.5,
+            audited: compiler.name(decl)! == "City",
+            level: Level.High,
+            alias: null,
+        ),
+    );
+}
+
+fn index(
+    syntax decl: unknown,
+    comptime column: string,
+    comptime order: i32,
+) -> void {
+    compiler.addMeta(
+        Index(
+            column: column,
+            unique: order == 1,
+            order: order,
+        ),
+    );
+}
+
+#[entity("cities")]
+#[index("name", 1)]
+#[index("state", 2)]
+type City(name: string, state: string)
+
+fn levelName(l: Level) -> string {
+    return case l {
+        Low -> "low";
+        High -> "high";
+    };
+}
+
+pub fn main() -> void {
+    val e = comptime compiler.typeInfo(City).meta(Entity);
+    print(e?.table ?? "none");
+    if (e) {
+        x ->
+        print(x.columns.join(","));
+        print(x.weight.toString());
+        print(if (x.audited) "audited" else "plain");
+        print(levelName(x.level));
+        print(x.alias ?? "no alias");
+    }
+    val indexes = comptime compiler.typeInfo(City).metaAll(Index);
+    print(indexes.length);
+    for (indexes) { i ->
+        val kind = if (i.unique) "unique" else "shared";
+        print(i.column + " " + i.order.toString() + " " + kind);
+    }
+    print(comptime compiler.typeInfo(City).meta(Other)?.note ?? "no other");
+    print(comptime compiler.typeInfo(City).metaAll(Other).length);
+}

@@ -1,0 +1,14 @@
+//// Decision 444 (144 B-00e; its cell waited on B-00k for decision 457's
+//// per-target answer, 144 B-29 step H): `Infinity`, `-Infinity` and `NaN`
+//// print as those words on wasm, as commonJS prints them. OTP has no such
+//// floats: erlang and beam abort on the division, before a value exists, with
+//// the integer division's `panic` (decision 675).
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val zero = 0.0;
+    print(1.0 / zero);
+    print(0.0 - 1.0 / zero);
+    print(zero / zero);
+}

@@ -1,0 +1,15 @@
+//// Decision 584 (2) — a marked lambda's body is a function body: no loop
+//// encloses its top level, so a `continue` there is refused,
+//// `continue-outside-loop`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val odds: fn(n: i32) -> Iter<i32> = { iter n ->
+        if (n % 2 == 0) continue;
+        yield n;
+    };
+    for (odds(3)) { x ->
+        print(x);
+    }
+}

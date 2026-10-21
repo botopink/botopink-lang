@@ -1,0 +1,17 @@
+//// Decision 872 — 799 (4) refuses a bodied `default fn` the type already has; a required member the type has is met by the type's own method and compared with the contract's signature.
+
+import {io.terminal.print} from "std";
+
+behavior Cut {
+    default fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
+        return "cut";
+    }
+}
+
+// A bodied `default fn` `string` already has: refused at the block,
+// `behavior-member-redeclared`.
+StringCut implement Cut for string {};
+
+pub fn main() -> void {
+    print("ab".slice(1));
+}

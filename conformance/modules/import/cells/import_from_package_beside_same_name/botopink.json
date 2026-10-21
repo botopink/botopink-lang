@@ -1,0 +1,1 @@
+{ "name": "import_from_package_beside_same_name", "dependencies": { "pkg": { "path": "deps/pkg" } } }

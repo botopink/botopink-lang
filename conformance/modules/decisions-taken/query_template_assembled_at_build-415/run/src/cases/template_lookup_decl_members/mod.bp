@@ -1,0 +1,50 @@
+//// Decision 415 (2) — the declaration `q.lookup` answers carries, beside
+//// `name`, `kind`, `module` and `fields`, an enum's `variants`, a type's
+//// `methods` (each with its parameters and return — here a method with no
+//// `self`) and a function's `params`.
+
+import {compiler, io.terminal.print} from "std";
+
+type Color {
+    Red,
+    Green,
+}
+
+type Counter(n: i32) {
+    pub fn of(start: i32, step: i32) -> Counter {
+        return Counter(n: start + step);
+    }
+}
+
+fn scale(x: i32, factor: f64) -> f64 {
+    return factor;
+}
+
+fn shape(syntax q: string) -> string {
+    val d = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    var text = compiler.name(d)!;
+    for (compiler.variants(d)) { v ->
+        text = text + " " + v.name;
+    }
+    for (compiler.methods(d)) { m ->
+        text = text
+            + " "
+            + m.name
+            + "("
+            + m.params.map({ p -> p.name + ":" + p.typeName }).join(",")
+            + ")->"
+            + m.returnType;
+    }
+    for (compiler.params(d)) { p ->
+        text = text + " " + p.name + ":" + p.typeName;
+    }
+    return compiler.build("\"" + text + "\"");
+}
+
+pub fn runCase() -> void {
+    print(shape @`Color`);
+    print(shape @`Counter`);
+    print(shape @`scale`);
+}

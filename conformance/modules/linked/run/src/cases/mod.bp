@@ -1,0 +1,2 @@
+pub mod linked_fn_name_collision;
+pub mod linked_val_name_collision;

@@ -15,7 +15,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -43,7 +45,10 @@
                               }
                             }
                           ]
-                        }
+                        },
+                        "shape": "variant",
+                        "labels": [],
+                        "rest": false
                       }
                     },
                     "expr": {
@@ -102,7 +107,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "fatal": false
                   }
                 }
               }

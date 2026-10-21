@@ -1,0 +1,2 @@
+pub mod comptime_block_in_body;
+pub mod comptime_expression_static_call;

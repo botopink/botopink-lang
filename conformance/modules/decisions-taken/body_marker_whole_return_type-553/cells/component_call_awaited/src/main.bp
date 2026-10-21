@@ -1,0 +1,44 @@
+//// Decision 791 (1), (3) — a call of a component only makes its lambda, in a
+//// component body too, and the body resolves a component with `use`:
+//// `val tree = use view(props)` (jhonstart's layout chain) runs the lambda a
+//// record field's function answers, and `view(child: Element)` takes the
+//// `Element` a `use Title()` answered, never the call itself.
+
+import {context.RenderScope, io.terminal.print} from "std";
+
+pub type Element(tag: string, kids: Element[]) implement Renderable
+
+fn text(s: string) -> Element {
+    return Element(tag: s, kids: []);
+}
+
+pub component fn Title() -> Component<Element> {
+    return text("title");
+}
+
+pub component fn Wrap(child: Element) -> Component<Element> {
+    return Element(tag: "wrap", kids: [child]);
+}
+
+pub type Slot(view: fn(child: Element) -> Component<Element>)
+
+pub component fn Page(slot: Slot) -> Component<Element> {
+    val direct = use Title();
+    val view = slot.view;
+    val title = use Title();
+    val wrapped = use view(title);
+    return Element(tag: "page", kids: [direct, wrapped]);
+}
+
+fn render(e: Element) -> string {
+    var out = e.tag;
+    for (e.kids) { k ->
+        out = out + "," + render(k);
+    }
+    return out;
+}
+
+pub async fn main() -> Async<void> {
+    val page = (await Page(Slot(view: { c -> Wrap(c) })).run(RenderScope.root())).value;
+    print(render(page));
+}

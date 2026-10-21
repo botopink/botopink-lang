@@ -1,0 +1,27 @@
+//// Decision 848 — `compiler.variants(d)` answers `compiler.Variant[]`, one
+//// entry per constructible variant: its `name`, its payload `fields` (empty for
+//// a unit variant), its `annotations`, and the `section` — the enclosing
+//// sections' names joined by `.`, `null` at the top level. A section is no entry
+//// of its own, but its wrapper constructor is (`Color`, one field); a numeric
+//// leaf is named by its digits.
+
+pub mod marks;
+import {marks.outline, marks.Outline};
+import {io.terminal.print, compiler} from "std";
+
+#[outline]
+type Token {
+    Eof,
+    Num(value: i32),
+    Color {
+        Red,
+        Warm {
+            Orange,
+            500,
+        }
+    }
+}
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(Token).meta(Outline)?.text ?? "none");
+}

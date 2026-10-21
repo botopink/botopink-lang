@@ -1,0 +1,12 @@
+//// The default module: a handle fn that shares the package's name, and a
+//// member the handle reaches.
+
+import {compiler} from "std";
+
+pub fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub default fn shapes(syntax q: string) -> i32 {
+    return compiler.build("1");
+}

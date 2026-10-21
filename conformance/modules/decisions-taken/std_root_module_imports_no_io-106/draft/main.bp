@@ -1,0 +1,25 @@
+//// Decision 106 — std in three categories: a pure root, `io/` and `testing/`
+
+import {io.terminal} from "std";
+import {collections.Dict, collections.Set, hash.sha256, encoding.base64Encode} from "std";
+import {io.random} from "std";
+
+// Pure root modules: the same input gives the same output, on every run.
+fn tally(words: string[]) -> Dict<string, i32> {
+    var counts: Dict<string, i32> = Dict.empty();
+    for (words) { w ->
+        counts = counts.bump(w, 1);
+    }
+    return counts;
+}
+
+pub fn main() -> void {
+    val words = ["a", "b", "a"];
+    terminal.print(Set.fromList(words).size());
+    terminal.print(tally(words).at("a") ?? 0);
+    terminal.print(sha256("abc"));
+    terminal.print(base64Encode("hi"));
+    // `io.` on the import line: entropy talks to the world outside the process.
+    val heads = random.coin();
+    terminal.print(heads || !heads);
+}

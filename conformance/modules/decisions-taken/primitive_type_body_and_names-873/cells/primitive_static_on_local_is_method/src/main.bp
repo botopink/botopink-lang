@@ -1,0 +1,10 @@
+//// Decision 873 — A primitive type's body declares a property as `val length: i32;`, a form of `primitives.bp` alone; a local shadows a primitive type's statics in its body; a module-level `fn` / `val` named like any lowercase type — `array` included — is `primitive-type-name-taken`; a failed `toUtf8` names `bytes.toUtf8`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    // The local `bytes` shadows the type in this body: `bytes.fromUtf8` is a
+    // method call on the value, and a `bytes` value has no `fromUtf8`.
+    val bytes = bytes.fromUtf8("a");
+    print(bytes.fromUtf8("b").length());
+}

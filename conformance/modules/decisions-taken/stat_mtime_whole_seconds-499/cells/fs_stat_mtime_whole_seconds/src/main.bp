@@ -1,0 +1,25 @@
+//// 144 B-24, decision 499 — `fs.stat`'s `mtime` is whole seconds (× 1000, epoch milliseconds)
+//// on every target: the Node form floors `mtimeNs` to the second as erlang and beam read it
+//// (the parent floored it to the millisecond on commonJS).
+
+import {io.fs, io.terminal.print} from "std";
+
+fn wholeSeconds(epochMillis: i64) -> bool {
+    return epochMillis % 1000l == 0l;
+}
+
+// After 2020-01-01T00:00:00Z.
+fn recent(epochMillis: i64) -> bool {
+    return epochMillis > 1577836800000l;
+}
+
+pub fn main() -> void {
+    fs.writeText("five.txt", "12345");
+    case fs.stat("five.txt") {
+        Ok(s) {
+            print(wholeSeconds(s.mtime));
+            print(recent(s.mtime));
+        }
+        Error(reason) -> print(reason);
+    }
+}

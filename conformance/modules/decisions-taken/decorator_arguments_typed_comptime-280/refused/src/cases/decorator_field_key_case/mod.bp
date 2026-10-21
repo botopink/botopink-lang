@@ -1,0 +1,25 @@
+//// Decision 280 (4) — a field is named exactly as declared: `.Code`
+//// against the field `code` is the missing-field error, at the `.Code`.
+
+import {types.Type, compiler, io.terminal.print} from "std";
+
+fn index<T>(syntax decl: T, comptime ..fields: Type.Field<T>[]) -> void {
+    compiler.setMeta(Index(columns: fields.map({ f -> f.name })));
+}
+
+fn unique<T>(syntax decl: T, comptime field: Type.Field<T>) -> void {
+    compiler.setMeta(Unique(column: field.name));
+}
+
+#[unique(.Code)]
+type City(code: string, name: string)
+
+pub fn main() -> void {
+    print(City(code: "SP", name: "São Paulo").name);
+}
+
+// What `#[index]` records.
+type Index(columns: string[])
+
+// What `#[unique]` records.
+type Unique(column: string)

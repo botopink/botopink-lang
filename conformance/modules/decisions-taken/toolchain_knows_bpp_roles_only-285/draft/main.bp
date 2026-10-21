@@ -1,0 +1,10 @@
+//// Decision 285 — The toolchain knows these things about `.bpp`:
+
+import {app.layout};
+import {app.blog.page};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(layout());
+    print(page(slug: "hello"));
+}

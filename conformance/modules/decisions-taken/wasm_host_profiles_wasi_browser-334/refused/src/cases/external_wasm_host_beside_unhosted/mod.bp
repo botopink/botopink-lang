@@ -1,0 +1,12 @@
+//// Decision 334 — a wasm binding without `host:` serves every host, so a
+//// second binding naming one host would bind that host twice. Refused at the
+//// second annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.floor($0)"), .Wasm(op: "f64.floor"), .Wasm(op: "f64.ceil", host: .Browser))]
+declare fn roundOf(x: f64) -> f64;
+
+pub fn main() -> void {
+    print(roundOf(2.5));
+}

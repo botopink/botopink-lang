@@ -1,0 +1,31 @@
+//// Decision 595 (5) — one `E` per region: every `try` in a region fails with
+//// the same error type. `read` fails with `IoError`, `parseInt` with
+//// `ParseError`; the second `try` is refused, naming both — handle one on the
+//// spot (`try parseInt(raw) catch …`) or convert it (`catch throw …`).
+
+import {io.terminal.print} from "std";
+
+type IoError { Closed }
+
+type ParseError { NotANumber }
+
+fn read(open: bool) -> Result<string, IoError> {
+    if (!open) throw IoError.Closed;
+    return "42";
+}
+
+fn parseInt(raw: string) -> Result<i32, ParseError> {
+    if (raw == "") throw ParseError.NotANumber;
+    return raw.length;
+}
+
+fn load(open: bool) -> i32 {
+    return try {
+        val raw = try read(open);
+        try parseInt(raw)
+    } catch 0;
+}
+
+pub fn main() -> void {
+    print(load(true));
+}

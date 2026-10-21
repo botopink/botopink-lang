@@ -1,0 +1,41 @@
+//// Decision 716 (1) — `syntax decl: Module`, a behavior, types `decl` by
+//// the behavior's members: `decl.make().start()` is checked once, at the
+//// decorator, against `Module`, and each annotated type that implements it
+//// runs it as its own `Users.make().start()`, `Db.make().start()`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Module {
+    fn make() -> Self;
+    fn start(self: Self) -> string;
+}
+
+pub fn module(syntax decl: Module) -> void {
+    compiler.init({ -> print(decl.make().start()) });
+}
+
+#[module]
+pub type Users(n: i32) implement Module {
+    fn make() -> Self {
+        return Users(n: 0);
+    }
+
+    fn start(self: Self) -> string {
+        return "users up";
+    }
+}
+
+#[module]
+pub type Db(url: string) implement Module {
+    fn make() -> Self {
+        return Db(url: "mem");
+    }
+
+    fn start(self: Self) -> string {
+        return "db up";
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

@@ -1,0 +1,5 @@
+//// Decision 733 — (a): a library has no `"entry"` — the key is an executable's alone, refused in a library's manifest.
+
+pub fn greet(name: string) -> string {
+    return "hello " + name;
+}

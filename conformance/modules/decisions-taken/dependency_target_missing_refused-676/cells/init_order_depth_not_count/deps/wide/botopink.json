@@ -1,0 +1,1 @@
+{ "name": "wide", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "marks.bp"], "dependencies": { "w1": { "path": "../w1" }, "w2": { "path": "../w2" }, "base": { "path": "../base" } } }

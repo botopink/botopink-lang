@@ -1,0 +1,132 @@
+//// What the program asks of node that std does not answer, each a host cell of its own: the
+//// program runs on commonJS alone (`botopink.json` `"targets"`). A directory read here is read as
+//// `modules/compiler-cli/src/cli/cell.zig` reads it — a name's kind is the directory entry's own (a
+//// link to a directory is no directory of `childNames(.dirs)`), names sorted by their bytes — and
+//// a path is resolved as Zig's `std.fs.path.resolve` resolves it (no link followed).
+
+import {compiler} from "std";
+
+/// Write `text` to stdout whole, synchronously: a report that loses a line loses a cell.
+#[compiler.external(.JavaScript("""(() => { const __fs = require('fs'); const __b = Buffer.from($0, 'utf8'); let __o = 0; while (__o < __b.length) { try { __o += __fs.writeSync(1, __b, __o, __b.length - __o); } catch (__e) { if (__e.code !== 'EAGAIN') throw __e; } } })()"""))]
+pub declare fn writeOut(text: string) -> void;
+
+/// Write `text` to stderr whole, synchronously.
+#[compiler.external(.JavaScript("""(() => { const __fs = require('fs'); const __b = Buffer.from($0, 'utf8'); let __o = 0; while (__o < __b.length) { try { __o += __fs.writeSync(2, __b, __o, __b.length - __o); } catch (__e) { if (__e.code !== 'EAGAIN') throw __e; } } })()"""))]
+pub declare fn writeErr(text: string) -> void;
+
+/// The status the process exits with once its work is done (node's `process.exitCode`).
+#[compiler.external(.JavaScript("""(() => { process.exitCode = $0; })()"""))]
+pub declare fn setExitCode(code: i32) -> void;
+
+/// The directory the command started in, absolute.
+#[compiler.external(.JavaScript("""process.cwd()"""))]
+pub declare fn cwd() -> string;
+
+/// `path.resolve` of the segments: absolute, normalised, no link followed.
+#[compiler.external(.JavaScript("""require('path').resolve(...$0)"""))]
+pub declare fn resolve(segments: string[]) -> string;
+
+/// Whether `path` opens as a directory (a link to one included), as `openDir` answers.
+#[compiler.external(.JavaScript("""(() => { try { return require('fs').statSync($0).isDirectory(); } catch (__e) { return false; } })()"""))]
+pub declare fn isDir(path: string) -> bool;
+
+/// Whether `path` is there (a link is followed: a dangling one is not there), as `access` answers.
+#[compiler.external(.JavaScript("""(() => { try { require('fs').accessSync($0); return true; } catch (__e) { return false; } })()"""))]
+pub declare fn exists(path: string) -> bool;
+
+/// The names in `dir` — `which` is `dirs`, `files` or `all` — sorted by their bytes; a directory
+/// entry's own kind decides (a link is never a directory here); none when `dir` does not open.
+#[compiler.external(.JavaScript("""(() => { let __es; try { __es = require('fs').readdirSync($0, { withFileTypes: true }); } catch (__e) { return []; } const __w = $1; const __n = __es.filter((__e) => __w === 'all' || (__w === 'dirs') === __e.isDirectory()).map((__e) => __e.name); return __n.sort((__a, __b) => Buffer.compare(Buffer.from(__a), Buffer.from(__b))); })()"""))]
+pub declare fn childNames(dir: string, which: string) -> string[];
+
+/// `strings` sorted by their bytes (UTF-8), as Zig's `std.mem.order` sorts them.
+#[compiler.external(.JavaScript("""[...$0].sort((__a, __b) => Buffer.compare(Buffer.from(__a), Buffer.from(__b)))"""))]
+pub declare fn sortStrings(strings: string[]) -> string[];
+
+/// Whether `a` sorts before `b` by their bytes (UTF-8).
+#[compiler.external(.JavaScript("""(Buffer.compare(Buffer.from($0), Buffer.from($1)) < 0)"""))]
+pub declare fn lessThan(a: string, b: string) -> bool;
+
+/// The file's text, or null when it cannot be read.
+#[compiler.external(.JavaScript("""(() => { try { return require('fs').readFileSync($0, 'utf8'); } catch (__e) { return null; } })()"""))]
+pub declare fn readText(path: string) -> ?string;
+
+/// Write `text` to `path`, its directory made first.
+#[compiler.external(.JavaScript("""(() => { const __fs = require('fs'); __fs.mkdirSync(require('path').dirname($0), { recursive: true }); __fs.writeFileSync($0, $1); })()"""))]
+pub declare fn writeText(path: string, text: string) -> void;
+
+/// Delete the file `path`; nothing when it is not there.
+#[compiler.external(.JavaScript("""(() => { try { require('fs').unlinkSync($0); } catch (__e) {} })()"""))]
+pub declare fn deleteFile(path: string) -> void;
+
+/// Make the directory `path` and every directory above it.
+#[compiler.external(.JavaScript("""(() => { require('fs').mkdirSync($0, { recursive: true }); })()"""))]
+pub declare fn makeDirs(path: string) -> void;
+
+/// Delete the tree at `path`; nothing when it is not there.
+#[compiler.external(.JavaScript("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); })()"""))]
+pub declare fn removeTree(path: string) -> void;
+
+/// 64 random bits as 16 hexadecimal digits.
+#[compiler.external(.JavaScript("""require('crypto').randomBytes(8).toString('hex')"""))]
+pub declare fn randomHex() -> string;
+
+/// The CPUs of the machine.
+#[compiler.external(.JavaScript("""require('os').availableParallelism()"""))]
+pub declare fn cpuCount() -> i32;
+
+/// `MemAvailable` of `/proc/meminfo` in kB, or -1 when it cannot be read.
+#[compiler.external(.JavaScript("""(() => { try { const __m = /MemAvailable:[  ]*([0-9]+)/.exec(require('fs').readFileSync('/proc/meminfo', 'utf8')); return __m ? Number(__m[1]) : -1; } catch (__e) { return -1; } })()"""))]
+pub declare fn memAvailableKb() -> i32;
+
+/// `text` without its ANSI colour sequences (`ESC [ digits-and-semicolons m`), as `refusals.zig`
+/// `stripAnsi` cuts them.
+#[compiler.external(.JavaScript("""$0.replace(new RegExp(String.fromCharCode(27) + '[[][0-9;]*m', 'g'), '')"""))]
+pub declare fn stripAnsi(text: string) -> string;
+
+/// `text` with every run of the characters of `chars` cut from its end.
+#[compiler.external(.JavaScript("""(() => { let __s = $0; while (__s.length > 0 && $1.includes(__s[__s.length - 1])) __s = __s.slice(0, -1); return __s; })()"""))]
+pub declare fn trimEndOf(text: string, chars: string) -> string;
+
+/// `text` with every run of the characters of `chars` cut from its start.
+#[compiler.external(.JavaScript("""(() => { let __s = $0; while (__s.length > 0 && $1.includes(__s[0])) __s = __s.slice(1); return __s; })()"""))]
+pub declare fn trimStartOf(text: string, chars: string) -> string;
+
+/// The program's arguments (after the script).
+#[compiler.external(.JavaScript("""process.argv.slice(2)"""))]
+pub declare fn args() -> string[];
+
+/// The value of the environment variable `name`, or null.
+#[compiler.external(.JavaScript("""(process.env[$0] ?? null)"""))]
+pub declare fn envVar(name: string) -> ?string;
+
+/// A JSON number as an `i32`.
+#[compiler.external(.JavaScript("""Math.trunc($0)"""))]
+pub declare fn truncate(value: f64) -> i32;
+
+/// A timer of `millis` milliseconds, its handle opaque: `timerDone` answers when it fires,
+/// `stopTimer` disarms it (a wait that ended first leaves nothing keeping the process alive).
+#[compiler.external(.JavaScript("""(() => { const __o = {}; __o.p = new Promise((__r) => { __o.t = setTimeout(() => __r(0), $0); }); return __o; })()"""))]
+pub declare fn startTimer(millis: i32) -> unknown;
+
+#[compiler.external(.JavaScript("""$0.p"""))]
+pub declare fn timerDone(timer: unknown) -> Async<i32>;
+
+#[compiler.external(.JavaScript("""clearTimeout($0.t)"""))]
+pub declare fn stopTimer(timer: unknown) -> void;
+
+/// The real path of `path` (every link followed), or null when it does not resolve.
+#[compiler.external(.JavaScript("""(() => { try { return require('fs').realpathSync($0); } catch (__e) { return null; } })()"""))]
+pub declare fn realPath(path: string) -> ?string;
+
+/// Whether `path` is a symbolic link (read as `readLink` reads it: a link of any kind).
+#[compiler.external(.JavaScript("""(() => { try { require('fs').readlinkSync($0); return true; } catch (__e) { return false; } })()"""))]
+pub declare fn isLink(path: string) -> bool;
+
+/// Make `link` a symbolic link to the directory `target`.
+#[compiler.external(.JavaScript("""(() => { require('fs').symlinkSync($0, $1, 'dir'); })()"""))]
+pub declare fn symLink(target: string, link: string) -> void;
+
+/// Copy the file `from` to `to`, byte for byte.
+#[compiler.external(.JavaScript("""(() => { const __fs = require('fs'); __fs.writeFileSync($1, __fs.readFileSync($0)); })()"""))]
+pub declare fn copyFile(source: string, target: string) -> void;

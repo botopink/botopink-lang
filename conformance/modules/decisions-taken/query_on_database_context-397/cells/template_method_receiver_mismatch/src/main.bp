@@ -1,0 +1,21 @@
+//// Decisions 311 (3), 397 (3) — a template method's receiver is checked
+//// against its `self: @Expr<R>` as an argument is: a value whose type neither
+//// is `R` nor implements it is refused at the receiver.
+
+import {code, compiler, io.terminal.print} from "std";
+
+behavior Named {
+    fn name(self: Self) -> string;
+}
+
+type Robot(serial: i32)
+
+fn tag(syntax self: Named, syntax q: string) -> string {
+    val said = "[" + compiler.text(q) + "] ";
+    return code @`${said} + ${self}.name()`;
+}
+
+pub fn main() -> void {
+    val r = Robot(serial: 7);
+    print(r.tag @`vip`);
+}

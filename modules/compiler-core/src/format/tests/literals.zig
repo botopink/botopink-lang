@@ -9,7 +9,7 @@ const h = @import("helpers.zig");
 
 test "format: tuple ---- empty" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #();
         \\}
     );
@@ -17,7 +17,7 @@ test "format: tuple ---- empty" {
 
 test "format: tuple ---- single element" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1);
         \\}
     );
@@ -25,7 +25,7 @@ test "format: tuple ---- single element" {
 
 test "format: tuple ---- two elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1, 2);
         \\}
     );
@@ -33,7 +33,7 @@ test "format: tuple ---- two elements" {
 
 test "format: tuple ---- three elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    #(1, 2, 3);
         \\}
     );
@@ -41,7 +41,7 @@ test "format: tuple ---- three elements" {
 
 test "format: int ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    1;
         \\}
     );
@@ -49,7 +49,7 @@ test "format: int ---- simple" {
 
 test "format: int ---- with underscores" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    121_234_345_989_000;
         \\}
     );
@@ -57,7 +57,7 @@ test "format: int ---- with underscores" {
 
 test "format: int ---- negative" {
     try h.assertFormat(std.testing.allocator,
-        \\fn i() {
+        \\fn i() -> void {
         \\    -12_928_347_925;
         \\}
     );
@@ -65,7 +65,7 @@ test "format: int ---- negative" {
 
 test "format: float ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0;
         \\}
     );
@@ -73,7 +73,7 @@ test "format: float ---- simple" {
 
 test "format: float ---- negative" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    -1.0;
         \\}
     );
@@ -81,7 +81,7 @@ test "format: float ---- negative" {
 
 test "format: float ---- with decimals" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    9999.6666;
         \\}
     );
@@ -89,7 +89,7 @@ test "format: float ---- with decimals" {
 
 test "format: float ---- scientific notation" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0e1;
         \\}
     );
@@ -97,7 +97,7 @@ test "format: float ---- scientific notation" {
 
 test "format: float ---- negative exponent" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    1.0e-1;
         \\}
     );
@@ -105,7 +105,7 @@ test "format: float ---- negative exponent" {
 
 test "format: string ---- simple" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    "Hello";
         \\}
     );
@@ -113,7 +113,7 @@ test "format: string ---- simple" {
 
 test "format: string ---- escape sequences" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    "\\n\\t";
         \\}
     );
@@ -121,7 +121,7 @@ test "format: string ---- escape sequences" {
 
 test "format: list ---- empty" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [];
         \\}
     );
@@ -129,7 +129,7 @@ test "format: list ---- empty" {
 
 test "format: list ---- single element" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1];
         \\}
     );
@@ -137,7 +137,7 @@ test "format: list ---- single element" {
 
 test "format: list ---- multiple elements" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1, 2, 3];
         \\}
     );
@@ -145,7 +145,7 @@ test "format: list ---- multiple elements" {
 
 test "format: list ---- with spread" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [1, 2, 3, ..x];
         \\}
     );
@@ -153,7 +153,7 @@ test "format: list ---- with spread" {
 
 test "format: list ---- nested lists" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        really_long_variable_name,
         \\        really_long_variable_name,
@@ -167,7 +167,7 @@ test "format: list ---- nested lists" {
 
 test "format: list ---- comments inside" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        // First!
         \\        // First?
@@ -182,7 +182,7 @@ test "format: list ---- comments inside" {
 
 test "format: list ---- trailing comments" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    [
         \\        1,
         \\        2,
@@ -192,25 +192,62 @@ test "format: list ---- trailing comments" {
     );
 }
 
-test "format: list ---- compact wrapping integers" {
-    try h.assertFormat(std.testing.allocator,
-        \\fn main() {
-        \\    [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000];
+// A list that does not fit breaks one element per line with the trailing comma
+// (decision 65: all-or-nothing, no fill); it stayed on one line of 117 columns
+// while every group was pinned.
+test "format: list ---- a list past the width breaks one element per line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() -> void {
+        \\    [
+        \\        100,
+        \\        200,
+        \\        300,
+        \\        400,
+        \\        500,
+        \\        600,
+        \\        700,
+        \\        800,
+        \\        900,
+        \\        1000,
+        \\        1100,
+        \\        1200,
+        \\        1300,
+        \\        1400,
+        \\        1500,
+        \\        1600,
+        \\        1700,
+        \\        1800,
+        \\        1900,
+        \\        2000,
+        \\    ];
         \\}
     );
 }
 
-test "format: list ---- compact wrapping strings" {
-    try h.assertFormat(std.testing.allocator,
-        \\fn main() {
-        \\    ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+test "format: list ---- a list of strings past the width breaks the same way" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() -> void {
+        \\    [
+        \\        "one",
+        \\        "two",
+        \\        "three",
+        \\        "four",
+        \\        "five",
+        \\        "six",
+        \\        "seven",
+        \\        "eight",
+        \\        "nine",
+        \\        "ten",
+        \\        "eleven",
+        \\        "twelve",
+        \\    ];
         \\}
     );
 }
 
 test "format: tuple destruct ---- val binding" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    val #(a, b) = #(1, 2);
         \\}
     );
@@ -218,7 +255,7 @@ test "format: tuple destruct ---- val binding" {
 
 test "format: tuple destruct ---- var binding" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\    var #(x, y) = #(10, 20);
         \\}
     );
@@ -234,7 +271,7 @@ test "format: tuple destruct ---- function parameter" {
 
 test "format: tuple destruct ---- long variable names" {
     try h.assertFormat(std.testing.allocator,
-        \\fn extract_coordinates() {
+        \\fn extract_coordinates() -> void {
         \\    val #(longitude, latitude) = get_coordinates();
         \\}
     );
@@ -242,7 +279,7 @@ test "format: tuple destruct ---- long variable names" {
 
 test "format: tuple destruct ---- with try-catch" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f() {
+        \\fn f() -> void {
         \\    val #(a, b) = try fetch() catch throw Error(msg: "failed");
         \\}
     );
@@ -309,10 +346,91 @@ test "format: line string ---- normalizes to triple quotes" {
     , out);
 }
 
-test "format: record literal ---- round-trip" {
+test "format: tuple literal ---- round-trip" {
     try h.assertFormat(std.testing.allocator,
-        \\fn main() {
-        \\    val cfg = record { port: 8080, debug: true };
+        \\fn main() -> void {
+        \\    val cfg = #(8080, true);
         \\}
+    );
+}
+
+test "format: interface literal ---- basic" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() -> void {
+        \\    val decl = @Decl(kind: "Record", name: "Service");
+        \\}
+    );
+}
+
+test "format: interface literal ---- multiple fields" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() -> void {
+        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [], methods: []);
+        \\}
+    );
+}
+
+test "format: interface literal ---- with array" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() -> void {
+        \\    val decl = @Decl(
+        \\        kind: "Record",
+        \\        name: "Service",
+        \\        fields: [Field(name: "x", typeName: "i32")],
+        \\    );
+        \\}
+    );
+}
+
+test "format: a string holding a quote keeps its triple fences" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() -> void {
+        \\    val r = parse("""{"a":1}""");
+        \\}
+    );
+}
+
+// G7 (09's handover, a sibling example's `main.bp:111-113`): a comment written on an
+// array or tuple element's own line, after the element, is that element's. The
+// literal loops counted it among the NEXT element's leading comments and the
+// printer put it above that element — where it says something false — and the
+// result was idempotent, so `format --check` passed over it.
+test "format: array literal ---- an element keeps its trailing comment on its line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\val xs = [
+        \\    1, // one
+        \\    2, // two
+        \\    3,
+        \\];
+        \\
+        \\val boxes = [
+        \\    // leading stays above
+        \\    Box(label: "sq", w: 4, h: 4), // w == h, h > 2
+        \\    Box(label: "wide", w: 6, h: 2), // w != h
+        \\];
+    );
+}
+
+test "format: tuple literal ---- an element keeps its trailing comment on its line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\val t = #(
+        \\    1, // first
+        \\    "b",
+        \\);
+    );
+}
+
+test "format: array literal ---- the last element's comment without a comma stays on its line" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\val ys = [
+        \\    1, 2, // both on one line
+        \\    3 // last, no comma
+        \\];
+    ,
+        \\val ys = [
+        \\    1,
+        \\    2, // both on one line
+        \\    3, // last, no comma
+        \\];
     );
 }

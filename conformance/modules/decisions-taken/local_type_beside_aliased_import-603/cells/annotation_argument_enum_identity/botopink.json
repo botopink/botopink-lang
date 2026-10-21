@@ -1,0 +1,1 @@
+{ "name": "annotation_argument_enum_identity", "dependencies": { "lib": { "path": "deps/lib" }, "other": { "path": "deps/other" } } }

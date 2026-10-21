@@ -1,0 +1,7 @@
+//// A member that tells: it bumps the epoch and knows nothing of the client.
+
+import {core.bumpTag};
+
+pub fn revalidateTag(tag: string) -> void {
+    bumpTag(tag);
+}

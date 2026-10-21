@@ -1,0 +1,11 @@
+//// Decision 547 — `keyed` left `Ets`: a `Dict` var is one value, written atomically as any
+//// `x = f(x)`, so `keyed: true` is refused at the annotation as any unknown argument is.
+
+import {collections.Dict} from "std";
+
+#[compiler.beamMemory(.Ets(keyed: true))]
+var counts: Dict<string, i32> = Dict.empty();
+
+pub fn read() -> ?i32 {
+    return counts.at("a");
+}

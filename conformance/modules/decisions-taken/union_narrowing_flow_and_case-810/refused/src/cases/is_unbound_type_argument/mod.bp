@@ -1,0 +1,9 @@
+//// Decision 810 (1) — `is-type-parameter` stays for a type parameter nothing
+//// binds: `x` is an `unknown`, so `x is Box<T>` names a `T` its type does not
+//// bind, and no target knows it at run time.
+
+type Box<T>(item: T)
+
+pub fn holds<T>(x: unknown, sample: T) -> bool {
+    return x is Box<T>;
+}

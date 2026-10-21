@@ -1,0 +1,44 @@
+//// A package whose decorator takes an enum parameter: its body reads the
+//// value at build, and its executor hands it on to the program before `main`.
+
+import {compiler} from "std";
+
+pub type Lifecycle {
+    Eager,
+    Lazy(afterMs: i32),
+    Manual,
+}
+
+var seen: string[] = [];
+
+/// The variant's name, lower-cased.
+pub fn word(lifecycle: Lifecycle) -> string {
+    return case lifecycle {
+        Eager -> "eager";
+        Lazy(n) -> "lazy " + n.toString();
+        Manual -> "manual";
+    };
+}
+
+/// Records `lifecycle` under `name`; what `#[m]`'s executor calls.
+pub fn record(name: string, lifecycle: Lifecycle) -> void {
+    seen.push(name + " " + word(lifecycle));
+}
+
+/// What the executors recorded, in init order.
+pub fn recorded() -> string[] {
+    return seen;
+}
+
+pub fn m(syntax decl: unknown, comptime lifecycle: Lifecycle = .Eager) -> void {
+    val manual = if (lifecycle == Lifecycle.Manual)
+        "is manual"
+    else
+        "is not manual";
+    compiler.setMeta(Mark(lifecycle: word(lifecycle) + " " + manual));
+    val name = compiler.name(decl)!;
+    compiler.init({ -> record(name, lifecycle) });
+}
+
+// What `#[m]` records at build.
+pub type Mark(lifecycle: string)

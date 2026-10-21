@@ -1,0 +1,34 @@
+//// Decision 539 (6) — `Closeable` and `Display` are ambient behaviors of `primitives.bp`: a
+//// program names them as a parameter's type with no import, and a call on such a value
+//// dispatches to the implementer's method.
+
+import {io.terminal.print} from "std";
+
+type Door(name: string) implement Closeable {
+    fn close(self: Self) -> void {
+        print("closed " + self.name);
+    }
+}
+
+type Money(cents: i32) implement Display {
+    fn display(self: Self) -> string {
+        return "$" + self.cents.toString();
+    }
+}
+
+fn shut(c: Closeable) -> void {
+    c.close();
+}
+
+fn show(d: Display) -> string {
+    return d.display();
+}
+
+pub fn runCase() -> void {
+    shut(Door(name: "front"));
+    val doors: Closeable[] = [Door(name: "back"), Door(name: "side")];
+    for (doors) { d ->
+        shut(d);
+    }
+    print(show(Money(cents: 7)));
+}

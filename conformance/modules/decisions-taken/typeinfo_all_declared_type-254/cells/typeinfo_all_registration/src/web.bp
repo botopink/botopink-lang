@@ -1,0 +1,28 @@
+//// The framework: `#[route(path)]` marks a page function and records its
+//// path; `#[component]` gives a type the member its catalogue calls.
+
+import {compiler.DeclKind, compiler} from "std";
+
+pub fn route(syntax decl: unknown, comptime path: string) -> void {
+    compiler.setMeta(Route(path: path));
+    if (compiler.kind(decl) != DeclKind.Fn)
+        compiler.fail("#[route] must annotate a function", at: decl);
+}
+
+pub fn component(syntax decl: unknown) -> void {
+    compiler.addMember(
+        "pub fn describe() -> string { return \"component "
+            + compiler.name(decl)!
+            + "\"; }",
+    );
+}
+
+pub fn unused(syntax decl: unknown) -> void {
+    compiler.setMeta(Unused(marked: true));
+}
+
+// What `#[route]` records.
+pub type Route(path: string)
+
+// What `#[unused]` records.
+pub type Unused(marked: bool)

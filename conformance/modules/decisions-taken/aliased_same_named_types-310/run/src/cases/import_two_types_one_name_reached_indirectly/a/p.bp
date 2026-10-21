@@ -1,0 +1,21 @@
+import {compiler} from "std";
+
+pub type Policy(ms: i32)
+
+pub fn slow() -> Policy {
+    return Policy(ms: 100);
+}
+
+pub fn msOf(p: Policy) -> i32 {
+    return p.ms;
+}
+
+pub fn quick(syntax t: string) -> Policy {
+    return compiler.build("slow()");
+}
+
+pub fn stamp<T>(syntax decl: T) -> void {
+    compiler.addMember("policy", fn(self: T) -> Policy {
+        return Policy(ms: 7);
+    });
+}

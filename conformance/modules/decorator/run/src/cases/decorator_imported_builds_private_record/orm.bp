@@ -1,0 +1,13 @@
+//// The decorator builds `Note`, a record private to this module, and
+//// records its meta from it.
+
+import {compiler} from "std";
+
+pub type Entity(table: string)
+
+type Note(text: string)
+
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    val n = Note(text: table);
+    compiler.setMeta(Entity(table: n.text));
+}

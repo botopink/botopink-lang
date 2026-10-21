@@ -1,0 +1,1 @@
+{ "name": "module_named_like_its_package", "dependencies": { "p": { "path": "deps/p" } } }

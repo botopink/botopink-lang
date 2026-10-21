@@ -1,0 +1,8 @@
+botopink-cell 1
+out pid is positive true
+out status 4
+out stdout out:start-cwd:a=b
+out stderr err
+out again 4
+out NoSuchProcess
+out NotFound definitely-not-a-binary-bp-std

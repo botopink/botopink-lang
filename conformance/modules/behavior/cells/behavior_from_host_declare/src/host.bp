@@ -1,0 +1,8 @@
+import {greet.Greeter};
+import {compiler} from "std";
+
+#[compiler.external(
+    .JavaScript("(() => ({ greet: () => 'host' }))()"),
+    .Erlang("#{greet => fun(_) -> <<\"host\">> end}"),
+)]
+pub declare fn fromHost() -> Greeter;

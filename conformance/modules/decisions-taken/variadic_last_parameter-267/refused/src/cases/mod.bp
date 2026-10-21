@@ -1,0 +1,6 @@
+pub mod variadic_default;
+pub mod variadic_label;
+pub mod variadic_not_array;
+pub mod variadic_not_last;
+pub mod variadic_spread_at_call;
+pub mod variadic_twice;

@@ -1,0 +1,45 @@
+//// Decision 823 — `is Async<unknown>` answers whether the value is a task — what one `await` reads its `T` through, settled or not; on erlang and beam no value is one.
+////
+//// A pending task, a settled one, and a `T | Async<T>` holding a plain value
+//// or a task: commonJS and wasm answer `true` for each task and `false` for
+//// the plain value; erlang and beam `false` for every value, a call answering
+//// `Async<T>` there answering its settled `T` (823 (2)). An `await` over a
+//// `T | Async<T>` reads the `T` alike on the four targets (823 (4)).
+
+import {async, io.terminal.print} from "std";
+
+async fn later(n: i32) -> Async<i32> {
+    val v = await async.delay(5, n);
+    return v;
+}
+
+fn settled(n: i32) -> Async<i32> {
+    return async { n };
+}
+
+fn either(k: i32) -> i32 | Async<i32> {
+    if (k == 0) return 7;
+    return later(k);
+}
+
+async fn both() -> Async<i32> {
+    val a = either(0);
+    val b = either(3);
+    val x = await a;
+    val y = await b;
+    print(x);
+    print(y);
+    return 0;
+}
+
+pub fn main() -> void {
+    val pending = later(1);
+    print(pending is Async<unknown>);
+    val done = settled(2);
+    print(done is Async<unknown>);
+    val plain = either(0);
+    print(plain is Async<unknown>);
+    val task = either(3);
+    print(task is Async<unknown>);
+    both();
+}

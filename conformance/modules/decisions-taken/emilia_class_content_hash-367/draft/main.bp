@@ -1,0 +1,17 @@
+//// Decision 367 — Contract 4 follows 338: an emilia class is the layer's prefix plus `contentHash` over the class's rules, as `styled` renders them — one class rule for every component.
+
+import {hash, io.terminal.print} from "std";
+
+fn className(rules: string) -> string {
+    return "e_" + hash.contentHash(rules);
+}
+
+pub fn main() -> void {
+    val card = className("padding:4px;border-radius:2px");
+    val sameCard = className("padding:4px;border-radius:2px");
+    val other = className("padding:8px;border-radius:2px");
+    print(card);
+    print(sameCard);
+    print(card == sameCard);
+    print(card == other);
+}

@@ -1,0 +1,10 @@
+//// Decision 547 (iii) — a record field holding a task makes the record hold one: the `var` of
+//// that record type is refused at its type.
+
+type Job(id: i32, result: ?Async<i32>)
+
+var current: ?Job = null;
+
+pub fn read() -> bool {
+    return current == null;
+}

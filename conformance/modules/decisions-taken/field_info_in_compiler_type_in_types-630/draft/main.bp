@@ -1,0 +1,22 @@
+//// Decision 630 — The records stay in `compiler.bp`, the utilities in `types.bp`: `compiler.Field<T>` and `compiler.Info<T>` are the types `Compiler` names, and `Type` — with `partial`, `pick`, `omit`, `merge`, `required` as statics written in botopink (628) — is `types.bp`, which imports `compiler`.
+
+import {compiler, compiler.Field, compiler.Info, io.terminal} from "std";
+import {types.Type} from "std";
+
+type Livro(titulo: string, paginas: i32, autor: string)
+
+pub val Resumo = Type.pick(Livro, .titulo, .autor);
+
+fn names(fields: Field<Livro>[]) -> string {
+    return fields.map({ f -> f.name }).join(",");
+}
+
+pub fn main() -> void {
+    val fields: Field<Livro>[] = comptime compiler.fields(Livro);
+    terminal.print(names(fields));
+    terminal.print(fields.at(1)!);
+    val info: string = comptime compiler.typeInfo(Livro).name;
+    terminal.print(info);
+    val r = Resumo(titulo: "Dom Casmurro", autor: "Machado");
+    terminal.print(r.titulo, r.autor);
+}

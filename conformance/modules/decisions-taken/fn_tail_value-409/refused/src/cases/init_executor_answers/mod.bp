@@ -1,0 +1,20 @@
+//// Decision 409 — an executor `compiler.init` takes is checked against
+//// `fn()`: what it answers is no value to drop. A lambda whose tail answers
+//// one is refused at the tail.
+
+import {compiler, io.terminal.print} from "std";
+
+fn count() -> i32 { 1 }
+
+fn written(syntax decl: unknown) -> void {
+    compiler.init({ -> count() });
+}
+
+#[written]
+pub fn home() -> string {
+    return "home";
+}
+
+pub fn main() -> void {
+    print(home());
+}

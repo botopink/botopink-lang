@@ -1,0 +1,22 @@
+//// 144 B-49 — a module that keeps a decorator calling `io.random.seed` /
+//// `seededFloat` builds on commonJS: the emitted module requires std's
+//// `./sidecars/random.mjs`, which ships from the bundled std (it is no
+//// dependency of the project), never refused as an owner with no package
+//// directory. The decorator draws at build, the seed fixing the draws.
+
+import {compiler, io.terminal.print, io.random} from "std";
+
+fn drawn(syntax decl: unknown) -> void {
+    random.seed(42);
+    val x = random.seededFloat();
+    @emit("pub fn label() -> string { return \""
+        + compiler.name(decl)!
+        + " ${x}\"; }");
+}
+
+#[drawn]
+type Point(x: i32, y: i32)
+
+pub fn runCase() -> void {
+    print(label());
+}

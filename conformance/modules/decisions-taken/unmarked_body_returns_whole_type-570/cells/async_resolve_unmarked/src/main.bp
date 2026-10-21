@@ -1,0 +1,27 @@
+//// Decision 570 — `Async.resolve(v)` hands a value on as an `Async<T>` from a
+//// function that carries no marker: `handedOn` is an ordinary function whose
+//// return type is `Async<i32>`, `marked` the `async fn` whose marker wraps its
+//// value; a caller awaits both alike, and an `Async.resolve` is awaited where
+//// it is made.
+
+import {io.terminal.print} from "std";
+
+async fn marked() -> Async<i32> {
+    return 1;
+}
+
+fn handedOn() -> Async<i32> {
+    return Async.resolve(2);
+}
+
+fn pick(first: bool) -> Async<string> {
+    if (first) return Async.resolve("first");
+    return Async.resolve("second");
+}
+
+pub async fn main() -> Async<void> {
+    print(await marked());
+    print(await handedOn());
+    print(await pick(false));
+    print(await Async.resolve(4) + 1);
+}

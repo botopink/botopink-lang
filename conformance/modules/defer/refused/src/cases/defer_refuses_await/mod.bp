@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+pub async fn f() -> Async<i32> {
+    defer {
+        await (async { 1 });
+    }
+    return 2;
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

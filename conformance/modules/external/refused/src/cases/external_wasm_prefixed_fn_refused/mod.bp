@@ -1,0 +1,12 @@
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Math.tan($0)"), .Erlang("math:tan($0)"), .Wasm("fn:tanBody"))]
+pub declare fn tanOf(x: f64) -> f64;
+
+fn tanBody(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() -> void {
+    print(tanOf(0.0));
+}

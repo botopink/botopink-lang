@@ -1,0 +1,14 @@
+//// Decision 575 (3) — `compiler.init` is an output, and only a decorator
+//// has a declaration to compile it beside: a function with a run-time
+//// parameter is refused at the output (`compiler-output-outside-decorator`);
+//// one whose every parameter is `comptime` is expanded instead (808).
+
+import {compiler, io.terminal.print} from "std";
+
+fn setup(text: string) -> void {
+    compiler.init({ -> print(text) });
+}
+
+pub fn main() -> void {
+    setup("x");
+}

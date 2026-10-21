@@ -1,0 +1,8 @@
+import {compiler} from "std";
+
+#[compiler.external(.Erlang("orm_host:table($0)"))]
+declare fn table(name: string) -> string;
+
+pub fn describe(name: string) -> string {
+    return table(name);
+}

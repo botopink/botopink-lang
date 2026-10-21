@@ -1,0 +1,12 @@
+//// Decision 610 (2) — a source naming neither a template nor a cell
+//// (`.Erlang()`) gives its target no code: it is refused at the argument,
+//// `external-source-empty`.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.Erlang(), .JavaScript("Math.abs($0)"))]
+declare fn magnitude(x: f64) -> f64;
+
+pub fn main() -> void {
+    print(magnitude(-2.5));
+}

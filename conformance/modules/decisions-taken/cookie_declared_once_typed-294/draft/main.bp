@@ -1,0 +1,32 @@
+//// Decision 294 — A cookie is declared once, typed:
+
+import {io.clock, io.terminal.print} from "std";
+
+pub type Cookie<T>(name: string, httpOnly: bool = false, secure: bool = false, maxAge: ?clock.Duration = null) {
+    pub fn set(self: Self<T>, value: T, encode: fn(v: T) -> string) -> string {
+        var parts = [self.name + "=" + encode(value)];
+        if (self.httpOnly) parts = parts.append(["HttpOnly"]);
+        if (self.secure) parts = parts.append(["Secure"]);
+        val age = self.maxAge;
+        if (age != null)
+            parts = parts.append(["Max-Age="
+                + (age.millis / 1000l).toString()]);
+        return parts.join("; ");
+    }
+
+    pub fn clear(self: Self<T>) -> string {
+        return self.name + "=; Max-Age=0";
+    }
+}
+
+pub type SessionId(value: string)
+
+pub val sessionCookie = Cookie<SessionId>("session", httpOnly: true, secure: true, maxAge: clock.hours(720));
+
+pub val themeCookie = Cookie<bool>("dark");
+
+pub fn main() -> void {
+    print(sessionCookie.set(SessionId(value: "abc123"), { s -> s.value }));
+    print(sessionCookie.clear());
+    print(themeCookie.set(true, { b -> b.toString() }));
+}

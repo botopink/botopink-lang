@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: decorator-meta-not-record: `decl.setMeta(…)` records a value of a record type, written as its constructor at the call
+at src/cases/meta_not_record/mod.bp:14:22

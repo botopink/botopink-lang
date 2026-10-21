@@ -2,11 +2,11 @@
 //!
 //! After argument validation, a decorator's body RUNS over the declaration it
 //! annotates: the core serializes that declaration into a `@Decl` handle and
-//! executes the body in the node runtime (host-side comptime, like `@Expr`
-//! templates). `decl.fail(...)` surfaces as a scoped type error; a clean return
-//! accepts the placement. The core has NO lib knowledge — the body holds every
-//! rule. (P1's recognition + generic argument validation live in
-//! `decorators.zig`; these scenarios need the full node pipeline.)
+//! executes the body on the persistent `erl` (host-side comptime, like `@Expr`
+//! templates). `decl.fail(...)` surfaces as a type error at the annotation; a
+//! clean return accepts the placement. The core has NO lib knowledge — the body
+//! holds every rule. (P1's recognition + generic argument validation live in
+//! `decorators.zig`; these scenarios need the full compile pipeline.)
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -16,10 +16,10 @@ const h = @import("helpers.zig");
 /// is kept alive until after the assertion (its arena backs the outcome).
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    const build_root = h.buildRootPathFromSrc(io, loc);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     if (outcome == .typeError) {
         const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
         defer std.testing.allocator.free(desc);
@@ -32,17 +32,30 @@ fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !voi
 /// type error whose message contains `needle`. The session is kept alive until
 /// after the assertion (its arena backs the error message).
 fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8) !void {
+    try assertRejectsAt(loc, src, needle, null);
+}
+
+/// `assertRejects`, also checking the diagnostic's `line:col` when given.
+fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8, at: ?[2]usize) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    const build_root = h.buildRootPathFromSrc(io, loc);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .typeError);
-    const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
-    defer std.testing.allocator.free(desc);
-    if (std.mem.indexOf(u8, desc, needle) == null) {
+    // Match the diagnostic's own message, not the rendered report: the report
+    // quotes the source, where the expected text appears as a string literal.
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    if (std.mem.indexOf(u8, message, needle) == null) {
+        const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
+        defer std.testing.allocator.free(desc);
         std.debug.print("\nexpected rejection containing \"{s}\", got:\n{s}\n", .{ needle, desc });
         return error.TestUnexpectedResult;
+    }
+    if (at) |want| {
+        const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(want, [2]usize{ got.line, got.col });
     }
 }
 
@@ -50,53 +63,249 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
 
 test "decorator invocation: body accepts a record" {
     try assertAccepts(@src(),
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
 test "decorator invocation: body rejects wrong placement (fn instead of record)" {
     try assertRejects(@src(),
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
         \\}
         \\#[service]
-        \\fn notARecord() { }
-    , "must annotate a record");
+        \\fn notARecord() -> void { }
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
+    , "must annotate a type with fields");
+}
+
+test "decorator invocation: rejection points at the annotation" {
+    try assertRejectsAt(@src(),
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl, span: Span(0, 1, 1)); }
+        \\}
+        \\
+        \\#[service]
+        \\fn notARecord() -> void { }
+        \\
+        \\import {compiler, compiler.Span, compiler.DeclKind} from "std";
+    , "must annotate a type with fields", .{ 5, 3 });
+}
+
+test "decorator invocation: a method nothing answers is the compiler's message, naming the call in the body" {
+    // 1.0.11 front 14 step 1: the refusal is the compiler's own (no runtime
+    // ran). The decorator is the module's own, so its body is checked when
+    // the evaluator refuses it (01-checker's decorator-body row): the
+    // checker's unknown method, located at the call in the body.
+    try assertRejectsAt(@src(),
+        \\fn check(syntax decl: unknown) -> void {
+        \\    val n = compiler.name(decl)!;
+        \\    val x = n.frobnicate(1, 2);
+        \\}
+        \\
+        \\#[check]
+        \\type A(x: i32)
+        \\
+        \\import {compiler} from "std";
+    , "unknown-primitive-method: `string` has no method `frobnicate`", .{ 3, 15 });
+}
+
+test "decorator invocation: a raise in another module's decorator body names the body's file" {
+    // 144 B-23 (14-comptime-on-beam step 1's last half), decision 532: the
+    // refusal is located at the call that raised, in the decorator's own file
+    // — `deco.bp` (`@src().file` of a module the driver gave no `srcPath`),
+    // line 3, column 5 —, and the annotation is the `called from` line.
+    const deco =
+        \\pub fn check(syntax decl: unknown) -> void {
+        \\    val n = compiler.name(decl)!;
+        \\    panic("boom " + n);
+        \\}
+        \\import {compiler} from "std";
+        \\
+        \\import {failure.panic} from "std";
+    ;
+    const src =
+        \\import {deco.check};
+        \\#[check]
+        \\type A(x: i32)
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{
+        .{ .path = "deco", .source = deco },
+        .{ .path = "", .source = src },
+    }, io, build_root);
+    defer session.deinit(std.testing.allocator);
+    const outcome = for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o.outcome;
+    } else return error.TestNoMainOutput;
+    try std.testing.expect(outcome == .typeError);
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    try std.testing.expectEqualStrings("{error,{panic,<<\"boom A\">>}}", message);
+    // Decision 532: located at the call that raised, in the decorator's own
+    // file; the annotation that ran the body is the one `called from` line,
+    // and `loc` stays the annotation, the first call in this module's file.
+    const origin = outcome.typeError.origin orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("deco.bp", origin.file);
+    try std.testing.expectEqual([2]usize{ 3, 5 }, [2]usize{ origin.loc.line, origin.loc.col });
+    try std.testing.expectEqual(@as(usize, 1), outcome.typeError.frames.len);
+    try std.testing.expectEqualStrings("main.bp", outcome.typeError.frames[0].file);
+    try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ outcome.typeError.frames[0].loc.line, outcome.typeError.frames[0].loc.col });
+    const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ got.line, got.col });
+}
+
+test "decorator invocation: round trip ---- a @Decl handle carries fields, methods, variants and annotations" {
+    // Front 14 step 3: the handle reaches the body as `main/1`'s argument (an
+    // external term); the body reads every part back and emits it, and the reply
+    // is byte-identical on the BEAM and the wat runtime.
+    const src =
+        \\fn column(syntax decl: unknown, comptime name: string) -> void { }
+        \\fn describe(syntax decl: unknown, comptime label: string) -> void {
+        \\    var out = compiler.name(decl)! + "[" + label + "]";
+        \\    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\    for (compiler.fields(decl)) { f ->
+        \\        out = out + " field " + f.name + ":" + f.typeName;
+        \\        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\    };
+        \\    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
+        \\    for (compiler.methods(decl)) { m ->
+        \\        var ps = "";
+        \\        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
+        \\        out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
+        \\    };
+        \\    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+        \\}
+        \\#[describe("record")]
+        \\type Point(#[column("px")] x: i32, y: ?i32) {
+        \\    fn scaled(self: Self, by: i32) -> Point {
+        \\        return Point(x: self.x * by, y: self.y);
+        \\    }
+        \\}
+        \\#[describe("enum")]
+        \\type Mode {
+        \\    Fast,
+        \\    Slow,
+        \\    fn label(self: Self) -> string {
+        \\        return "mode";
+        \\    }
+        \\}
+        \\val p = describePoint();
+        \\val m = describeMode();
+        \\
+        \\import {compiler} from "std";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    // `#[describe]` twice (the record, the enum) and `#[column]` once, whose
+    // body is empty and answers no contribution.
+    var record: ?[]const u8 = null;
+    var enumeration: ?[]const u8 = null;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "describePoint") != null) record = r;
+        if (std.mem.indexOf(u8, r, "describeMode") != null) enumeration = r;
+    }
+    const rec = record orelse return error.TestExpectedReply;
+    const en = enumeration orelse return error.TestExpectedReply;
+    // Annotations with their raw argument lexemes, fields with their types and
+    // their own annotations, methods with their parameters and return type.
+    for ([_][]const u8{
+        "Point[record] @describe(\\\"record\\\")",
+        " field x:i32 @column(\\\"px\\\")",
+        " field y:?i32",
+        " method scaled(self:Self;by:i32;)->Point",
+    }) |needle| {
+        if (std.mem.indexOf(u8, rec, needle) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ needle, rec });
+            return error.TestExpectedContains;
+        }
+    }
+    // Variants (and no field) on the enum-shaped type.
+    for ([_][]const u8{
+        "Mode[enum] @describe(\\\"enum\\\") variant Fast variant Slow method label(self:Self;)->string",
+    }) |needle| {
+        if (std.mem.indexOf(u8, en, needle) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ needle, en });
+            return error.TestExpectedContains;
+        }
+    }
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "decorator invocation: a \\u{…} literal in the body evaluates to the character on both runtimes" {
+    // 1.0.12 front 14 step 7 (02-erlang step 5 box 2): the body's literal and
+    // the annotation's plain argument reach the comptime module as text written
+    // by `erl_emitter.writeStringFromLexeme`, the erlang target's renderer, so
+    // `\u{…}` is the code point's UTF-8 bytes — not Erlang's `\x{263A}`, which
+    // a plain `<<"…">>` truncates to its low byte. The wat runtime decodes the
+    // same lexeme in `wat.zig`'s `literalBytes`; both replies must agree.
+    const src =
+        \\fn smile(syntax decl: unknown, comptime mark: string) -> void {
+        \\    val s = "<\u{263A}\u{e7}\u{1F600}>";
+        \\    @emit("pub val smiled" + compiler.name(decl)! + " = \"" + s + mark + "\";");
+        \\}
+        \\#[smile("[\u{2028}\u{263A}]")]
+        \\type Face(x: i32)
+        \\
+        \\import {compiler} from "std";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    // U+263A, U+00E7, U+1F600, then the argument's U+2028, U+263A — each as
+    // its UTF-8 bytes, the whole code point.
+    const expected = "pub val smiledFace = \\\"<\xE2\x98\xBA\xC3\xA7\xF0\x9F\x98\x80>[\xE2\x80\xA8\xE2\x98\xBA]\\\";";
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, expected) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ expected, r });
+            return error.TestExpectedContains;
+        }
+    }
 }
 
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
-        \\fn getMapping(comptime decl: @Decl, path: string) {
-        \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
+        \\fn getMapping(syntax decl: unknown, comptime path: string) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
-        \\interface Routes {
+        \\behavior Routes {
         \\    #[getMapping("/users")]
-        \\    fn index(self: Self) -> string
+        \\    fn index(self: Self) -> string;
         \\}
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
 test "decorator invocation: method decorator rejects a record" {
     try assertRejects(@src(),
-        \\fn getMapping(comptime decl: @Decl, path: string) {
-        \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
+        \\fn getMapping(syntax decl: unknown, comptime path: string) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Method) { compiler.fail("#[getMapping] must annotate a method", at: decl); }
         \\}
         \\#[getMapping("/x")]
-        \\record Nope { }
+        \\type Nope()
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
     , "must annotate a method");
 }
 
 test "decorator invocation: body reads the reflected name" {
     try assertRejects(@src(),
-        \\fn named(comptime decl: @Decl) {
-        \\    if (decl.name == "Bad") { decl.fail("the name Bad is reserved"); }
+        \\fn named(syntax decl: unknown) -> void {
+        \\    if (compiler.name(decl)! == "Bad") { compiler.fail("the name Bad is reserved", at: decl); }
         \\}
         \\#[named]
-        \\record Bad { }
+        \\type Bad()
+        \\
+        \\import {compiler} from "std";
     , "the name Bad is reserved");
 }
 
@@ -104,21 +313,53 @@ test "decorator invocation: @compilerError rejects wrong placement" {
     // The generic compile-time error builtin — no `@Decl` handle needed — also
     // surfaces as a scoped rejection when the body runs.
     try assertRejects(@src(),
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
-        \\fn notARecord() { }
-    , "must annotate a record");
+        \\fn notARecord() -> void { }
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
+    , "must annotate a type with fields");
 }
 
 test "decorator invocation: @compilerError body accepts the right placement" {
     try assertAccepts(@src(),
-        \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
+    );
+}
+
+test "decorator invocation: decl.variants tells an enum-shaped type from a record" {
+    // `DeclKind.Type` covers both shapes; `decl.variants` is empty for a record
+    // and lists the variant names of an enum.
+    try assertRejects(@src(),
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); };
+        \\    if (compiler.variants(decl).length > 0) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
+        \\}
+        \\#[service]
+        \\type Mode { Fast, Slow }
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
+    , "must annotate a type with fields");
+}
+
+test "decorator invocation: decl.variants is empty on a record" {
+    try assertAccepts(@src(),
+        \\fn service(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) != DeclKind.Type) { compiler.fail("#[service] must annotate a type with fields", at: decl); };
+        \\    if (compiler.variants(decl).length > 0) { compiler.fail("#[service] must annotate a type with fields", at: decl); }
+        \\}
+        \\#[service]
+        \\type UserService(name: string)
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
     );
 }
 
@@ -128,17 +369,17 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     // The decorator body builds wiring as ordinary code; `@emit(source)` splices
     // it into the module, where it is inferred + emitted like hand-written decls.
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(@src());
+    const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
-        \\fn singleton(comptime decl: @Decl) {
+        \\fn singleton(syntax decl: unknown) -> void {
         \\    @emit("pub val wiredMarker = 99;");
         \\}
         \\#[singleton]
-        \\record Service { x: i32 }
+        \\type Service(x: i32)
     ;
-    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
     defer session.deinit(std.testing.allocator);
-    const outcome = session.outputs.items[0].outcome;
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .ok);
     var found = false;
     var decoratorEmitted = false;
@@ -152,17 +393,44 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     if (decoratorEmitted) return error.DecoratorFnNotDropped;
 }
 
+test "decorator invocation: the body runs on the wat runtime, for no target (decisions 434, 798)" {
+    // `comptime.compile` selects the runtime itself and takes no target —
+    // comptime never reads it (decision 798 (4)) —, so every driver
+    // (`botopink build`, `test`, `check`) evaluates decorators on wat.
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const src =
+        \\fn singleton(syntax decl: unknown) -> void {
+        \\    @emit("pub val wiredMarker = 99;");
+        \\}
+        \\#[singleton]
+        \\type Service(x: i32)
+    ;
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root);
+    defer session.deinit(std.testing.allocator);
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
+    try std.testing.expect(outcome == .ok);
+    const traces = outcome.ok.comptime_traces;
+    try std.testing.expect(traces.len > 0);
+    // The listing is the wasm the module was lowered to.
+    for (traces) |t| {
+        const listing = try t.listing.render(std.testing.allocator);
+        defer std.testing.allocator.free(listing);
+        try std.testing.expect(std.mem.indexOf(u8, listing, "(func ") != null);
+    }
+}
+
 test "decorator invocation: a body may reference an @emit'd declaration" {
     // Annotation processors run BEFORE bodies are inferred, so the generated decls
     // are spliced before any body that references them is type-checked. Here a `fn`
     // calls an `@emit`ed factory — with body-first inference this failed as an
     // unbound variable (the regression that blocked `@emit` under `botopink test`).
     try assertAccepts(@src(),
-        \\fn gen(comptime decl: @Decl) {
+        \\fn gen(syntax decl: unknown) -> void {
         \\    @emit("pub fn makeThing() -> i32 { return 7; }");
         \\}
         \\#[gen]
-        \\record Anchor { x: i32 }
+        \\type Anchor(x: i32)
         \\fn useit() -> i32 { return makeThing(); }
     );
 }
@@ -171,28 +439,200 @@ test "decorator invocation: interface-level marker runs over the interface" {
     // A marker on an interface reflects with `kind == Interface` and runs its body
     // (previously interface-level markers were silently skipped).
     try assertRejects(@src(),
-        \\fn onlyRecords(comptime decl: @Decl) {
-        \\    if (decl.kind == DeclKind.Interface) { decl.fail("marker is not allowed on an interface"); }
+        \\fn onlyRecords(syntax decl: unknown) -> void {
+        \\    if (compiler.kind(decl) == DeclKind.Behavior) { compiler.fail("marker is not allowed on a behavior", at: decl); }
         \\}
         \\#[onlyRecords]
-        \\interface Repo { fn find(self: Self, id: i32) -> string }
-    , "not allowed on an interface");
+        \\behavior Repo { fn find(self: Self, id: i32) -> string; }
+        \\
+        \\import {compiler, compiler.DeclKind} from "std";
+    , "not allowed on a behavior");
 }
 
 test "decorator invocation: mock-style synthesis from an interface compiles" {
     // A mocking-lib shape: reflect an interface's methods, emit a record that
     // implements it plus a factory, then use the factory — all in one compile.
     try assertAccepts(@src(),
-        \\fn mock(comptime decl: @Decl) {
+        \\fn mock(syntax decl: unknown) -> void {
         \\    var methods = "";
-        \\    decl.methods.forEach({ m ->
+        \\    compiler.methods(decl).forEach({ m ->
         \\        methods = methods + "  fn " + m.name + "(self: Self) -> i32 { return 0; }\n";
         \\    });
-        \\    @emit("record Mock" + decl.name + " implement " + decl.name + " {\n  tag: string,\n" + methods + "}");
-        \\    @emit("pub fn mock" + decl.name + "() -> " + decl.name + " { return Mock" + decl.name + "(tag: \"\"); }");
+        \\    @emit("type Mock" + compiler.name(decl)! + "(\n  tag: string,\n) implement " + compiler.name(decl)! + " {\n" + methods + "}");
+        \\    @emit("pub fn mock" + compiler.name(decl)! + "() -> " + compiler.name(decl)! + " { return Mock" + compiler.name(decl)! + "(tag: \"\"); }");
         \\}
         \\#[mock]
-        \\interface Counter { fn value(self: Self) -> i32 }
+        \\behavior Counter { fn value(self: Self) -> i32; }
         \\fn useit() -> i32 { return mockCounter().value(); }
+        \\
+        \\import {compiler} from "std";
     );
+}
+
+test "decorator invocation: a helper of another module builds that module's record on both runtimes" {
+    // A library's `#[page]` calls `routing`'s `segment.parseSegment`, which
+    // builds a `Segment(…)`: the record travels into the decorator module with
+    // the helper (`block_eval.typesReached`), and a method the body calls on
+    // it with the type. The parent binary lowered `Seg(…)` as a call of an
+    // undefined `Seg/2` — the decorator module did not compile on either
+    // runtime ("call to undefined function Seg/2"), and `s.shout()` was a
+    // method no primitive answers.
+    const lib =
+        \\pub type Seg(name: string, size: i32) {
+        \\    pub fn shout(self: Self) -> string {
+        \\        return self.name.toUpper();
+        \\    }
+        \\}
+        \\pub fn parseSeg(raw: string) -> Seg {
+        \\    return Seg(name: raw, size: raw.length());
+        \\}
+    ;
+    const src =
+        \\import {seg.parseSeg};
+        \\fn page(syntax decl: unknown) -> void {
+        \\    val s = parseSeg(compiler.name(decl)!);
+        \\    @emit("pub fn seen" + compiler.name(decl)! + "() -> string { return \"" + s.shout() + s.size.toString() + "\"; }");
+        \\}
+        \\#[page]
+        \\type Home(x: i32)
+        \\val shown = seenHome();
+        \\
+        \\import {compiler} from "std";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{
+        .{ .path = "seg", .source = lib },
+        .{ .path = "", .source = src },
+    });
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "return \\\"HOME4\\\";") != null) return;
+    }
+    std.debug.print("\nno reply emits seenHome:\n", .{});
+    for (replies) |r| std.debug.print("{s}\n", .{r});
+    return error.TestExpectedContains;
+}
+
+test "comptime: round trip ---- a decorator's host function runs its runtime's cell, the reply byte-identical (decision 341)" {
+    // 01-compiler/14 step 6, decisions 434, 452. `bang` carries both cells —
+    // the comptime runtime runs its `@External.Wasm(fn: …)` body, its Erlang
+    // template never runs at build — and std's `hash.contentHash` answers
+    // std-wasm's text (`host_cells.zig`).
+    const src =
+        \\import {hash} from "std";
+        \\#[compiler.external(.JavaScript("""($0 + "!")"""), .Erlang("""<<($0)/binary, "!">>"""), .Wasm(body: bangBody))]
+        \\declare fn bang(value: string) -> string;
+        \\fn bangBody(value: string) -> string {
+        \\    return value + "!";
+        \\}
+        \\fn labelled(syntax decl: unknown) -> void {
+        \\    @emit("pub fn label() -> string { return \"" + bang(compiler.name(decl)!) + hash.contentHash(compiler.name(decl)!) + "\"; }");
+        \\}
+        \\#[labelled]
+        \\type Point(x: i32, y: i32)
+        \\
+        \\import {compiler} from "std";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    var found = false;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "Point!de553cf") != null) found = true;
+    }
+    try std.testing.expect(found);
+}
+
+/// Wraps an allocator and counts the bytes it holds live: the exact measure of
+/// what a session keeps, unlike the process's resident set, which another
+/// test's allocations, the page cache and the host's load all move.
+const LiveBytes = struct {
+    child: std.mem.Allocator,
+    live: usize = 0,
+
+    fn allocator(self: *LiveBytes) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{ .alloc = allocFn, .resize = resizeFn, .remap = remapFn, .free = freeFn } };
+    }
+    fn allocFn(ctx: *anyopaque, len: usize, a: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        const r = self.child.rawAlloc(len, a, ra) orelse return null;
+        self.live += len;
+        return r;
+    }
+    fn resizeFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, n: usize, ra: usize) bool {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        if (!self.child.rawResize(m, a, n, ra)) return false;
+        self.live = self.live - m.len + n;
+        return true;
+    }
+    fn remapFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, n: usize, ra: usize) ?[*]u8 {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        const r = self.child.rawRemap(m, a, n, ra) orelse return null;
+        self.live = self.live - m.len + n;
+        return r;
+    }
+    fn freeFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, ra: usize) void {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        self.child.rawFree(m, a, ra);
+        self.live -= m.len;
+    }
+};
+
+// 144 B-117 — a decorator call keeps its outcome and its trace entry, never
+// what it was made from: the module's source and tree, the erased copy of every
+// function the body reaches, the encoded argument and the runtime's reply were
+// the session arena's, so a project of many call sites held ~20 MB each until
+// the session ended (73 refused markers, 8 GB). The bytes the session holds
+// after the calls (counted on the allocator it was given, not read from the
+// process's resident set, which a busy machine moves — B-155) are about what
+// their traces keep.
+test "decorator invocation: a call holds its trace and outcome only, not the scratch it ran from" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    const calls = 60;
+    var body: std.ArrayListUnmanaged(u8) = .empty;
+    defer body.deinit(alloc);
+    try body.appendSlice(alloc, "import {compiler} from \"std\";\nfn big(syntax decl: unknown) -> void {\n");
+    var k: usize = 0;
+    while (k < 250) : (k += 1) try body.print(alloc, "    if (compiler.name(decl)! == \"never{d}\") {{ compiler.fail(\"message {d}\", at: decl); }}\n", .{ k, k });
+    try body.appendSlice(alloc, "}\n");
+    // One call first: the runtime's one-time state (its linked bytes, the
+    // engine, the prelude) is the process's, not a call's.
+    {
+        const warm = try std.fmt.allocPrint(alloc, "{s}#[big]\ntype Warm(x: i32)\n", .{body.items});
+        defer alloc.free(warm);
+        var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = warm }}, io, build_root);
+        defer session.deinit(alloc);
+        try std.testing.expect(session.outputs.items[session.outputs.items.len - 1].outcome == .ok);
+    }
+    var counted: LiveBytes = .{ .child = alloc };
+    const calloc = counted.allocator();
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    defer src.deinit(alloc);
+    try src.appendSlice(alloc, body.items);
+    var t: usize = 0;
+    while (t < calls) : (t += 1) try src.print(alloc, "#[big]\ntype T{d}(x: i32)\n", .{t});
+    var session = try comptimeMod.compile(calloc, &.{.{ .path = "", .source = src.items }}, io, build_root);
+    defer session.deinit(calloc);
+    const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
+    try std.testing.expect(outcome == .ok);
+    try std.testing.expectEqual(@as(usize, calls), outcome.ok.comptime_traces.len);
+    // 144 B-127 — a trace keeps its module's atom, the argument lines and the
+    // reply; the listing's lowered functions are built when it is read, not
+    // kept per call.
+    var kept: usize = 0;
+    for (outcome.ok.comptime_traces) |e| kept += e.listing.module.len + e.listing.text.len + e.reply.len;
+    const grown = counted.live;
+    var listed: usize = 0;
+    for (outcome.ok.comptime_traces) |e| {
+        const listing = try e.listing.render(alloc);
+        defer alloc.free(listing);
+        listed += listing.len;
+    }
+    std.debug.print("\nB117 kept={d} listed={d} grown={d}\n", .{ kept, listed, grown });
+    try std.testing.expect(grown < kept * 2 + 16 * 1024 * 1024);
+    // The calls' listings rendered are more than the session grew by: a
+    // listing kept per call would not fit.
+    try std.testing.expect(grown < listed);
 }

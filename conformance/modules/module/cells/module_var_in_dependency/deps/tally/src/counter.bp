@@ -1,0 +1,10 @@
+//// A module-level `var` in a package other than the program's: its reads and
+//// writes reach the process storage on erlang and beam although this module
+//// imports nothing from std.
+
+var hits: i32 = 0;
+
+pub fn bump() -> i32 {
+    hits = hits + 1;
+    return hits;
+}

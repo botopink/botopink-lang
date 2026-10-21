@@ -1,0 +1,39 @@
+//// Decision 757 — a function with a `comptime t: type<T>` parameter is
+//// specialised per type argument: the copy `r.get(Users)` compiles to tests
+//// `e is Users`, and the `t` it hands on to `self.count(t)` is a `comptime`
+//// argument known at build (decision 417) — the call of `count`'s copy for
+//// the same type.
+
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+pub type Orders(total: i32)
+
+pub type Registry(entries: unknown[]) {
+    pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
+        var n = 0;
+        for (self.entries) { e ->
+            if (e is t) n = n + 1;
+        }
+        return n;
+    }
+
+    pub fn get<T>(self: Self, comptime t: type<T>) -> ?T {
+        if (self.count(t) == 0) return null;
+        for (self.entries) { e ->
+            if (e is t) return e;
+        }
+        return null;
+    }
+}
+
+pub fn main() -> void {
+    val order: unknown = Orders(total: 9);
+    val user: unknown = Users(count: 2);
+    val r = Registry(entries: [order, user, user]);
+    print(r.get(Users)?.count ?? 0);
+    print(r.get(Orders)?.total ?? 0);
+    val empty = Registry(entries: [order]);
+    print(empty.get(Users)?.count ?? -1);
+}

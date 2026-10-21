@@ -1,0 +1,17 @@
+//// Decisions 431 (2), 432, 490 — a `Async` binding that writes `result: true`
+//// must hold the `Result` inside the task, `Async<Result<…, HostError>>`: a
+//// `Async<T>` never fails, so a host that answers later and can fail has
+//// nowhere to put the error. `-> Async<i32>` is refused at the annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("Promise.resolve($0)", result: true), .Erlang("$0", result: true))]
+declare fn later(n: i32) -> Async<i32>;
+
+async fn run() -> Async<void> {
+    print(await later(1));
+}
+
+pub fn main() -> void {
+    run();
+}

@@ -1,0 +1,12 @@
+//// Decision 267 — a function has at most one variadic parameter: the second
+//// `..` is refused.
+
+import {io.terminal.print} from "std";
+
+fn both(..a: i32[], ..b: i32[]) -> i32 {
+    return 0;
+}
+
+pub fn main() -> void {
+    print(both());
+}

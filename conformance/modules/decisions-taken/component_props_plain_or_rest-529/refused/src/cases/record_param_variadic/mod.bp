@@ -1,0 +1,15 @@
+//// Decision 529 (2) — a record parameter and a variadic do not share a
+//// function: the variadic takes the positional arguments, the record the
+//// labelled ones. Refused at the declaration, at the variadic.
+
+import {io.terminal.print} from "std";
+
+type CardProps(title: string)
+
+fn Card(..props: CardProps, ..rest: string[]) -> string {
+    return props.title;
+}
+
+pub fn main() -> void {
+    print(Card(title: "a"));
+}

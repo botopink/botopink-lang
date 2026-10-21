@@ -1,0 +1,3 @@
+pub behavior Shout {
+    fn label(self: Self) -> string;
+}

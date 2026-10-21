@@ -1,0 +1,21 @@
+//// Decision 357 (1) — a lambda (an event handler, a `forEach` body) runs when
+//// it is called, if ever: a `use` in it is refused at the `use`, naming the
+//// lambda. The value a handler needs is read at the top level and captured.
+
+type Element(count: i32) implement Renderable
+
+component fn state(initial: i32) -> Component<i32> {
+    return initial;
+}
+
+component fn Widget() -> Component<Element> {
+    val onClick: fn() -> i32 = { ->
+        val n = use state(1);
+        return n;
+    };
+    return Element(count: onClick());
+}
+
+pub fn main() -> void {
+    Widget();
+}

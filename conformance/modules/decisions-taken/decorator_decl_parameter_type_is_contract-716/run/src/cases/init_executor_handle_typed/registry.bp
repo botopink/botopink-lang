@@ -1,0 +1,14 @@
+//// The run-time registry the executors write to: each entry holds the
+//// annotated declaration itself, called when `main` runs.
+
+pub type Module(name: string, lifecycle: string, make: fn() -> string)
+
+var entries: Module[] = [];
+
+pub fn add(m: Module) -> void {
+    entries.push(m);
+}
+
+pub fn all() -> Module[] {
+    return entries;
+}

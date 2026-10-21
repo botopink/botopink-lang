@@ -1,0 +1,10 @@
+//// 144 B-24, decision 497 — `clock.offsetMinutes` one millisecond before 0000-01-01T00:00:00Z
+//// aborts, naming the value, on every target.
+
+import {io.clock, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("before");
+    print(clock.offsetMinutes(-62167219200001l));
+    print("after");
+}

@@ -1,0 +1,8 @@
+//// Decision 215 — the same refusal for `!=`, the literal on the left.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val x = 2.0;
+    print(3 != x);
+}

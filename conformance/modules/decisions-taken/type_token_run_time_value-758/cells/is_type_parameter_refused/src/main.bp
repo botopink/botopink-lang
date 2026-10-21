@@ -1,0 +1,16 @@
+//// Decisions 667, 758 — a type parameter is erased at run time, so `v is T`
+//// with `T` a type parameter of the enclosing function can be decided by no
+//// target: it is refused at the test, naming the parameter and the two forms
+//// that work — `comptime t: type<T>` and `t: type<T>`, tested with `v is t`.
+
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+fn sameType<T>(v: unknown, sample: T) -> bool {
+    return v is T;
+}
+
+pub fn main() -> void {
+    print(sameType(Users(count: 1), Users(count: 2)));
+}

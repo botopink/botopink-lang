@@ -1,0 +1,19 @@
+//// The names `shelf/items` declares, with other fields and field orders.
+
+pub type Queue(size: i32, label: string, extra: bool)
+
+pub type Shape {
+    Square(side: i32, color: string),
+    Circle(radius: i32),
+    Dot,
+}
+
+pub type Gauge(n: i32) {
+    fn reading(self: Self) -> i32 {
+        return self.n;
+    }
+}
+
+pub fn rivalLabel(q: Queue) -> string {
+    return q.label;
+}

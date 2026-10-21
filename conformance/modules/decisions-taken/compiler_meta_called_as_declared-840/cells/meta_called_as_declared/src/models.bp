@@ -1,0 +1,6 @@
+//// The annotated declaration, in its own module.
+
+import {orm.entity};
+
+#[entity]
+pub type User(id: i32, name: string)

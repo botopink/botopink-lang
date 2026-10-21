@@ -1,0 +1,5 @@
+//// Private to the package: under `internal/`.
+
+pub fn shout(s: string) -> string {
+    return s.toUpper() + "!";
+}

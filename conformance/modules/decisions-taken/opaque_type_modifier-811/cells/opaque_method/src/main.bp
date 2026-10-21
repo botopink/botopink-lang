@@ -1,0 +1,11 @@
+//// Decisions 811 (1), 814 (2), 859 — a method of an opaque type written without `pub` is called only in
+//// the type's module: called from another module it is `method-not-pub`, located at the call.
+
+import {io.terminal.print} from "std";
+mod token;
+import {token.Token};
+
+pub fn main() -> void {
+    val t = Token.bumped(Token.of("a"));
+    print(t.uses());
+}

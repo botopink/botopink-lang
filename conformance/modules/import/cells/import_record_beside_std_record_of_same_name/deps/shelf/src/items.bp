@@ -1,0 +1,5 @@
+pub type Queue(label: string, size: i32)
+
+pub fn describe(q: Queue) -> string {
+    return q.label + ":" + q.size.toString();
+}

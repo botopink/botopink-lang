@@ -1,0 +1,8 @@
+//// A module of the package that is not its root: a call here that leaves
+//// `boot`'s catalogue default out is refused at the call.
+
+import {boot} from "frame";
+
+pub fn start() -> void {
+    boot();
+}

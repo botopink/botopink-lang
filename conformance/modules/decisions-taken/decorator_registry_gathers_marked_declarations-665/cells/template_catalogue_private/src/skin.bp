@@ -1,0 +1,10 @@
+import {theme} from "looks";
+
+#[theme]
+fn brand() -> string {
+    return "brand";
+}
+
+pub fn unused() -> string {
+    return brand();
+}

@@ -1,0 +1,5 @@
+{
+  "name": "bpp_anonymous_default_named_by_importer-213",
+  "dependencies": { "markup": { "path": "deps/markup" } },
+  "bpp": "markup"
+}

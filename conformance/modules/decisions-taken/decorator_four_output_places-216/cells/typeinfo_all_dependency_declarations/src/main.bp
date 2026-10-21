@@ -1,0 +1,32 @@
+//// Decision 216 (4) — `@TypeInfo.all(with: d)` answers every declaration of
+//// the build that carries `d`: the package's own and its dependencies'.
+//// `plugin` annotates `service` with `core`'s `#[m]`, and `extra` — a
+//// dependency of `plugin`, not of this package — annotates `helper`. No module
+//// here imports either: declaring `plugin` in `botopink.json` is all the
+//// program does for both to be listed, beside the package's own `local`, by
+//// module path (`extra/root`, `main`, `plugin/root`), each `value` the
+//// function itself.
+
+import {m, Role} from "core";
+import {io.terminal.print} from "std";
+
+#[m]
+pub fn local() -> string {
+    return "main local";
+}
+
+pub fn main() -> void {
+    for (@TypeInfo.all(with: m)) { d ->
+        val run = d.value;
+        val said = if (run is fn() -> string) run() else "?";
+        print(
+            d.module
+                + " "
+                + d.name
+                + " "
+                + d.metaAll(Role).map({ x -> "role=" + x.role }).join(",")
+                + " "
+                + said,
+        );
+    }
+}

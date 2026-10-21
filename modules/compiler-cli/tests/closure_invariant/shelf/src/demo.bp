@@ -1,0 +1,11 @@
+//// A module of the library with its own `main/0`: built, it is an entry
+//// point, and an entry point loads the host sidecars beside it only when its
+//// closure binds a BEAM host (`binds_erlang_host`) — never because a consumer
+//// does.
+
+import {items.Queue, items.describe};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(describe(Queue(label: "demo", size: 0)));
+}

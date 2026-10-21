@@ -1,0 +1,50 @@
+botopink-cell 1
+out 0123
+out error
+out 6
+out parsed before
+out 1
+out parsed after
+out error: negative -2
+out sugared 1
+out 1
+out sugared -2
+out error: negative -2
+out thrown before 1
+out 1
+out thrown after 1
+out thrown before -2
+out error: stop at -2
+out loop before
+out 1
+out loop after
+out error: loop end
+out 2 4 6
+out 2 4 6
+out 2 4
+out 10 20
+out 0 1 1 2 3 5 8 13 21 34
+out 3 1 -4
+out 2 7
+out try ok 1
+out try error negative -2
+out try done
+out throw ok 0
+out throw ok 1
+out throw error limit 2
+out throw done
+out as-is ok 1
+out as-is error negative -2
+out as-is ok 3
+out as-is done
+out sum 6
+out sum failed: negative -2
+out 1
+out error: negative -2
+out 3
+out count 1
+out count failed: p3: 503
+out batch ana,bia
+out batch caio
+out error p3: 503
+out end of p1

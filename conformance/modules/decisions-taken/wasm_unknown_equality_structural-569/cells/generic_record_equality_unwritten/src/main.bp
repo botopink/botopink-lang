@@ -1,0 +1,28 @@
+//// Decision 569 (and 210) — `==` over a generic record or enum whose type arguments are not
+//// written compares each field by its value, recursively — a number, a string, an array, a
+//// tuple, a nested record, a variant's payload — never by identity, on every target.
+
+import {io.terminal.print} from "std";
+
+type Pair<A, B>(left: A, right: B)
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+pub fn main() -> void {
+    print(Pair(left: 1, right: "x") == Pair(left: 1, right: "x"));
+    print(Pair(left: 1, right: "x") == Pair(left: 2, right: "x"));
+    print(Pair(left: 1, right: "x") != Pair(left: 1, right: "y"));
+    print(Pair(left: [1, 2], right: "x") == Pair(left: [1, 2], right: "x"));
+    print(Pair(left: [1, 2], right: "x") == Pair(left: [1, 3], right: "x"));
+    print(Pair(left: Pair(left: 1, right: 2), right: "x")
+        == Pair(left: Pair(left: 1, right: 2), right: "x"));
+    print(Pair(left: #(1, "a"), right: 2.5)
+        == Pair(left: #(1, "a"), right: 2.5));
+    print(Pair(left: #(1, "a"), right: 2.5)
+        == Pair(left: #(1, "b"), right: 2.5));
+    print(Maybe.Some(value: "a") == Maybe.Some(value: "a"));
+    print(Maybe.Some(value: "a") == Maybe.Some(value: "b"));
+}

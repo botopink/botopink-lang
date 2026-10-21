@@ -1,0 +1,1 @@
+{ "name": "deep", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "marks.bp"], "dependencies": { "mid": { "path": "../mid" } } }

@@ -1,0 +1,11 @@
+import {io.terminal.print} from "std";
+
+fn link(
+    props: type(href: string, label: string, external: bool = false),
+) -> string {
+    return props.label + " <" + props.href + ">";
+}
+
+fn main() -> void {
+    print(link(href: "/a", label: "A")); // A </a>
+}

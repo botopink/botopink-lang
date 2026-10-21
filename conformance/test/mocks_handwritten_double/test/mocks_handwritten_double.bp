@@ -1,0 +1,30 @@
+//// conformance/docs.md § Mocks — the reference's example, a test suite run on commonJS, erlang
+//// and beam (`botopink test` does not run on wasm).
+
+// wasm refuses this suite on a host binding: `pushMatcher` has no `#[compiler.external(.Wasm)]` binding. Its `botopink.json` narrows `"targets"` to the three that bind it.
+
+import {testing.mocks} from "std";
+
+behavior UserRepo {
+    fn find(self: Self, id: i32) -> string;
+}
+
+// The double: every method funnels through `mocks.invoke`, which records the
+// call and answers the matching stub value or the type-default.
+type MockUserRepo(__id: string) implement UserRepo {
+    fn find(self: Self, id: i32) -> string {
+        return mocks.invoke(self.__id, "find", [mocks.key(id)], "");
+    }
+}
+
+fn mockUserRepo() -> UserRepo {
+    return MockUserRepo(__id: mocks.newMock());
+}
+
+test "repo: eq(v) stubs only the matching argument" {
+    val repo = mockUserRepo();
+    val _s = mocks.when(repo.find(mocks.eq(7))).thenReturn("ana");
+    assert repo.find(7) == "ana";
+    assert repo.find(8) == "";
+    val _v = mocks.verify(repo, mocks.times(2)).find(mocks.anyInt());
+}

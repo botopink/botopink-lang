@@ -1,0 +1,13 @@
+//// Decision 685 — A template method is found by a name in the call site's scope: `` value.method @`…` `` resolves `method` as a template whose `syntax self: R` receiver takes the receiver (577 (3), 578 (1)); a receiver's type never imports code by itself.
+
+import {io.terminal} from "std";
+import {store.Memory, audit.read};
+
+// `read` is the name in this module's scope: `audit.read`, imported. The
+// receiver's type `Memory` comes from `store`, which declares a `read` of its
+// own; importing `Memory` brings none of it.
+pub fn main() -> void {
+    val mem = Memory(prefix: "m:");
+    terminal.print(mem.read @`title`);
+    terminal.print(mem.fetch("plain"));
+}

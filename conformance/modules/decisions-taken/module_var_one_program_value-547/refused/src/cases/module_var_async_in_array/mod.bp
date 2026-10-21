@@ -1,0 +1,8 @@
+//// Decision 547 (iii) — "holds" reads through every type constructor: an array of tasks is
+//// refused at the `var`'s type as a bare `Async` is.
+
+var pending: Async<i32>[] = [];
+
+pub fn read() -> i32 {
+    return pending.length;
+}

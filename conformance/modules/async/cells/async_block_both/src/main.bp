@@ -1,0 +1,25 @@
+import {io.terminal.print} from "std";
+
+type User(id: i32, name: string)
+
+async fn fetchUser(id: i32) -> Async<Result<User, string>> {
+    if (id <= 0) throw "no user";
+    return User(id: id, name: "ana");
+}
+
+async fn both() -> Async<Result<string, string>> {
+    val first = async {
+        return try await fetchUser(1);
+    }; // Async<Result<User, string>>
+    val count = async {
+        return 2;
+    }; // Async<i32>
+    val u = try await first;
+    val n = await count;
+    return u.name + n.toString();
+}
+
+pub async fn main() -> Async<void> {
+    val r = await both();
+    print(r.unwrapOr("none")); // ana2
+}

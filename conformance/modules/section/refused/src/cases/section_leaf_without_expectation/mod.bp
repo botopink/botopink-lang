@@ -1,0 +1,15 @@
+//// 01 step 12 — a section leaf has a leading-dot shorthand only where the
+//// position's type is that section. Here nothing says so, and the refusal
+//// names the section instead of reporting `unbound variable 'Zeta'`.
+
+import {io.terminal.print} from "std";
+
+pub type Token {
+    Layout { Break { Zeta, Eta } },
+    Text { Bold },
+}
+
+pub fn main() -> void {
+    val b = .Zeta;
+    print(0);
+}

@@ -1,0 +1,32 @@
+//// Decision 298 — a meta record's field may hold a tuple of data and a
+//// `Type.Field<T>`: each is rebuilt where the meta is read, the tuple as
+//// written (`#(1, 9)`) and the field as its run-time form, `Field(Book,
+//// "pages")` (decision 631). Read back here on every target (144 B-19).
+
+import {types.Type, compiler, io.terminal.print} from "std";
+
+type Span(range: #(i32, i32), label: string)
+
+type Sort<T>(by: Type.Field<T>, keys: Type.Field<T>[])
+
+fn span(syntax decl: unknown, comptime start: i32, comptime end: i32) -> void {
+    compiler.setMeta(Span(range: #(start, end), label: compiler.name(decl)!));
+}
+
+fn sort<T>(syntax decl: T, comptime by: Type.Field<T>) -> void {
+    compiler.setMeta(Sort(by: by, keys: [by]));
+}
+
+#[span(1, 9)]
+#[sort(.pages)]
+type Book(title: string, pages: i32)
+
+pub fn main() -> void {
+    val s = comptime compiler.typeInfo(Book).meta(Span);
+    print(s?.label ?? "none");
+    val r = s?.range ?? #(0, 0);
+    print(r.0 + r.1);
+    val o = comptime compiler.typeInfo(Book).meta(Sort);
+    print(o?.by?.name ?? "none");
+    print(o?.keys?.length ?? 0);
+}

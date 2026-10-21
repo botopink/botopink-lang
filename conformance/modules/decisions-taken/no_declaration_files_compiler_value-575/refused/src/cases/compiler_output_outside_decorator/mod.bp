@@ -1,0 +1,16 @@
+//// Decision 575 (3) — the outputs (`compiler.setMeta`, `addMember`, …) write
+//// to the annotated declaration, and only a decorator has one: a function
+//// whose first parameter is no `syntax` is refused at the output
+//// (`compiler-output-outside-decorator`).
+
+import {compiler} from "std";
+
+pub type Mark(text: string)
+
+fn mark(comptime text: string) -> void {
+    compiler.setMeta(Mark(text: text));
+}
+
+pub fn main() -> void {
+    mark("x");
+}

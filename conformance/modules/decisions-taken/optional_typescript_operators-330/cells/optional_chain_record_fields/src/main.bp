@@ -1,0 +1,34 @@
+//// Decision 330 — `?.` along a chain of record fields, each one optional:
+//// the chain is absent at the first absent link, whichever it is, and a
+//// member or a method after a `?.` link runs only on a present value, on
+//// every target.
+
+import {io.terminal.print} from "std";
+
+type Street(name: string)
+
+type Address(street: ?Street, zip: string)
+
+type User(name: string, address: ?Address)
+
+fn user(k: i32) -> ?User {
+    if (k == 0) return null;
+    if (k == 1) return User(name: "ann", address: null);
+    if (k == 2)
+        return User(name: "bo", address: Address(street: null, zip: "01"));
+    return User(name: "cy", address: Address(street: Street(name: "Main"), zip: "002"));
+}
+
+pub fn main() -> void {
+    print(user(3)?.address?.street?.name ?? "none");
+    print(user(2)?.address?.street?.name ?? "none");
+    print(user(1)?.address?.street?.name ?? "none");
+    print(user(0)?.address?.street?.name ?? "none");
+    print(user(3)?.address?.street?.name.length() ?? -1);
+    print(user(2)?.address?.street?.name.length() ?? -1);
+    print(user(0)?.address?.street?.name.length() ?? -1);
+    print(user(2)?.address?.zip.length() ?? -1);
+    print(user(1)?.address?.zip.length() ?? -1);
+    print(user(3)?.name.toUpper() ?? "none");
+    print(user(0)?.name.toUpper() ?? "none");
+}

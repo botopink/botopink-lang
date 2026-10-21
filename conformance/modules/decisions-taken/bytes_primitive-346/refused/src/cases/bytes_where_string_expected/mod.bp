@@ -1,0 +1,13 @@
+//// Decision 346 — `Bytes` is no `string`: passing one where a `string` is expected is a
+//// mismatch at the argument; the text the bytes spell is `b.toUtf8()`.
+
+import {io.terminal.print} from "std";
+
+fn shout(s: string) -> string {
+    return s.toUpper();
+}
+
+pub fn main() -> void {
+    val b = bytes.fromUtf8("a");
+    print(shout(b));
+}

@@ -1,0 +1,22 @@
+//// Decision 518 — `needs:` on `compiler.external(.Wasm)` names the host features a
+//// binding needs, each a value of std's closed enum `WasmNeed { Exceptions,
+//// Http }`. A value outside it names no feature, and is refused at the
+//// annotation on every target, not on a wasm build alone (decision 516).
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("Math.abs($0)"),
+    .Erlang("erlang:abs($0)"),
+    .Wasm(body: absBody, needs: [.Threads]),
+)]
+declare fn hostAbs(n: i32) -> i32;
+
+fn absBody(n: i32) -> i32 {
+    if (n < 0) return -n;
+    return n;
+}
+
+pub fn main() -> void {
+    print(hostAbs(-3));
+}

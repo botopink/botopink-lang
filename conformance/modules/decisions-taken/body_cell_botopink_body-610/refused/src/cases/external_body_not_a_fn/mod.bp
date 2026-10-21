@@ -1,0 +1,17 @@
+//// Decision 610 (1) — `body:` is a bare identifier naming a private bodied
+//// `fn` of the same module whose parameters and return are the
+//// declaration's. A `pub` function is the module's surface already, so it is
+//// refused at the argument, `external-body-not-a-fn`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+#[compiler.external(.Erlang("lists:reverse($0)"), .JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+pub fn main() -> void {
+    print(backwards([1, 2, 3]));
+}

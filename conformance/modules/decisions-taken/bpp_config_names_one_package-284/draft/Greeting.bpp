@@ -1,0 +1,3 @@
+val loud = shout("hello");
+---
+<p>{loud}</p>

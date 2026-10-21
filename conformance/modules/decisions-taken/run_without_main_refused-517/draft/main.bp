@@ -1,0 +1,13 @@
+//// Decision 517 — `botopink run` of a program with no `fn main` is a located error, the same message on every target and host.
+
+import {io.terminal.print} from "std";
+
+pub type Greeting(text: string)
+
+pub fn greet(name: string) -> Greeting {
+    return Greeting(text: "hello " + name);
+}
+
+pub fn show() -> void {
+    print(greet("world").text);
+}

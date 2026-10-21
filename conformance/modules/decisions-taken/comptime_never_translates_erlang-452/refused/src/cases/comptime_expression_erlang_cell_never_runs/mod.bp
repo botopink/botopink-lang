@@ -1,0 +1,17 @@
+//// 1.0.12-beta `1-botopink-lang/144` B-00k (decisions 434, 452) — an
+//// `compiler.external(.Erlang)` cell never runs at build, reached from a `comptime`
+//// expression as from a decorator (`comptime_host_cell_unavailable_erlang_only`):
+//// `tag` has no `std:` and no `fn:` cell, so the call is refused at the
+//// `comptime`, naming both, whatever the build's target. The parent of the
+//// group (`239f789f`) ran the Erlang cell on the erlang and beam targets'
+//// BEAM comptime (`x:erlang`) and refused it on the wat runtime with another
+//// message (decision 341's).
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""($0 + ":node")"""), .Erlang("""<<($0)/binary, ":erlang">>"""))]
+declare fn tag(value: string) -> string;
+
+pub fn main() -> void {
+    print(comptime tag("x"));
+}

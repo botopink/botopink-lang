@@ -1,0 +1,24 @@
+//// Decision 328 — a lambda passed where a parameter receives it is typed by
+//// that parameter, a type parameter of the callee included: `chain` in
+//// `{ req, chain -> chain.next(req) }` is `Ch` of `register<Rq, Ch>`, so the
+//// call is not refused as a parameter nothing types (rakun-service's
+//// `registerFilter`).
+
+import {io.terminal.print} from "std";
+
+pub type Chain(
+    index: i32,
+) {
+    pub fn next(self: Self, req: string) -> string {
+        return req + "#" + self.index.toString();
+    }
+}
+
+pub fn register<Rq, Ch>(name: string, entry: fn(req: Rq, chain: Ch) -> string) -> string {
+    return "registered " + name;
+}
+
+pub fn runCase() -> void {
+    print(register("first", { req, chain -> chain.next(req) }));
+    print(Chain(index: 2).next("direct"));
+}

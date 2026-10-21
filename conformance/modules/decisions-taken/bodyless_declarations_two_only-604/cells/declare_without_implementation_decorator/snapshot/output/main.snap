@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: declare-without-implementation: `registered` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:7:12

@@ -1,0 +1,27 @@
+//// Decision 631 — a field crosses to run time as `Field(Book, "pages")`,
+//// the constructor over its owner and its name: two reads of one field are
+//// equal, two fields of one owner are not, and a field keys a `Dict`.
+
+import {types.Type, compiler, collections.Dict, io.terminal.print} from "std";
+
+type Sort<T>(by: Type.Field<T>, then: Type.Field<T>)
+
+fn sort<T>(syntax decl: T, comptime by: Type.Field<T>, comptime then: Type.Field<T>) -> void {
+    compiler.setMeta(Sort(by: by, then: then));
+}
+
+#[sort(.pages, .title)]
+type Book(title: string, pages: i32)
+
+pub fn main() -> void {
+    val first = comptime compiler.typeInfo(Book).meta(Sort);
+    val again = comptime compiler.typeInfo(Book).meta(Sort);
+    val by = first!.by;
+    val then = first!.then;
+    print(by == again!.by);
+    print(by == then);
+    print(by.name + " " + then.name);
+    val widths = Dict.empty().insert(by, 4).insert(then, 30);
+    print(widths.at(by) ?? 0);
+    print(widths.at(then) ?? 0);
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: a .bpp header reads top to bottom: this declaration is written after the statement `val n = 1;` — write the declarations (`import`, `type`, `fn`, `pub`) first, the statements (`val`, `use`) after
+at src/Card.bpp:2:1

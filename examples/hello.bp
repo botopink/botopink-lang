@@ -1,7 +1,0 @@
-// hello.bp — the smallest runnable botopink program.
-//
-// Compile & run:  botopink run examples/hello.bp
-// Type-check:     botopink check examples/hello.bp
-fn main() {
-    @print("hello, botopink");
-}

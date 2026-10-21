@@ -1,0 +1,16 @@
+//// Decision 200 — `html` is the `pub default fn` of the core member `jhonstart`, carrying `bpp`'s `#[html]` (`#[bpp.html]`, 361) — `import
+
+import {io.terminal} from "std";
+import html, {Element, renderToString} from "rakun-bpp";
+import {badge as Badge};
+
+// `html` is the core package's default function: a template call in a `.bp` module.
+fn greeting(name: string) -> Element {
+    return html @`<p class="greet">Hello, {name}</p>`;
+}
+
+pub async fn main() -> Async<void> {
+    terminal.print(await renderToString(greeting("Ana")));
+    // A `.bpp` file's markup unfolds onto the same function.
+    terminal.print(await renderToString(html @`<Badge label="new"/>`));
+}

@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.template_method_behavior_method.runCase();
+    cases.template_method_own_method.runCase();
+}

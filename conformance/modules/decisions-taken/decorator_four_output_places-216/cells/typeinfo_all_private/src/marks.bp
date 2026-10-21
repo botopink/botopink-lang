@@ -1,0 +1,8 @@
+import {compiler} from "std";
+
+pub fn tagged(syntax decl: unknown) -> void {
+    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
+}
+
+// What `#[tagged]` records.
+pub type Tagged(tag: string)

@@ -1,0 +1,40 @@
+//// Decision 804 (1) — a type implementing `Component<R>` is a component: its
+//// fields are the props, `fn compose(self: Self) -> Component<R>` is where it
+//// starts, and `Card(…)` answers the component, never a record. `Page`
+//// provides `dark`, so the `Card` it `use`s reads `dark` and calls its helper
+//// `label`; the `Card` it only calls makes a lambda that nothing runs, so
+//// `compose ran` prints twice: once under `Page`, once at the root.
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type View(text: string) implement Renderable
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+type Card(title: string, body: string = "none") implement Component<View> {
+    fn compose(self: Self) -> Component<View> {
+        val t = use context(themeContext);
+        print("compose ran");
+        return View(text: t.mode + ":" + self.title + "/" + self.label());
+    }
+
+    fn label(self: Self) -> string {
+        return "<" + self.body + ">";
+    }
+}
+
+component fn Page() -> Component<View> {
+    use provide(createContext(Theme(mode: "dark")));
+    val made = Card(title: "lazy");
+    val c = use Card(title: "used", body: "b");
+    return View(text: "page " + c.text);
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Page().run(RenderScope.root());
+    print(r.value.text);
+    val alone = await Card(title: "root").run(RenderScope.root());
+    print(alone.value.text);
+}

@@ -1,0 +1,25 @@
+import {compiler, io.terminal.print} from "std";
+
+pub type Check<T>(message: string, rule: fn(v: T) -> bool)
+
+fn check<T>(
+    syntax decl: T,
+    syntax message: string,
+    syntax rule: fn(v: T) -> bool,
+) -> void {
+    compiler.addMeta(Check(message: message, rule: rule));
+}
+
+fn passwordsMatch(s: Signup) -> bool {
+    return s.password == s.confirm;
+}
+
+#[check("the passwords differ", passwordsMatch)]
+type Signup(password: string, confirm: string)
+
+fn main() -> void {
+    val s = Signup(password: "a", confirm: "b");
+    for (comptime compiler.typeInfo(Signup).metaAll(Check)) { c ->
+        if (!c.rule(s)) print(c.message); // the passwords differ
+    }
+}

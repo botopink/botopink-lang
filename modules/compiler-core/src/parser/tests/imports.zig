@@ -1,4 +1,4 @@
-//! parser: import/activate/delegate/star declarations (split from tests.zig).
+//! parser: import/activate/declare/star declarations (split from tests.zig).
 
 const std = @import("std");
 const snapMod = @import("../../utils/snap.zig");
@@ -50,6 +50,54 @@ test "parser: import activate with alias" {
 
 test "parser: import mixed plain and activate" {
     try h.assertParser(std.testing.allocator, @src(), "import {Pato, PatoNada*, PatoVoa* as Voa, std.List as L} from \"ducks\";");
+}
+
+// ── decision 107: the grouped spelling ───────────────────────────────────────
+// A group flattens to the same `ImportPath`s the dotted spelling produces —
+// the snapshot shows `segments` only, never a group node.
+
+test "parser: import group flattens to dotted paths" {
+    try h.assertParser(std.testing.allocator, @src(), "import {io: {fs: {readText, writeText}, clock: {nowMillis}}} from \"std\";");
+}
+
+test "parser: import group and dotted path mix in one list" {
+    try h.assertParser(std.testing.allocator, @src(), "import {collections.Dict, io: {fs: {readText as read}}, collections: {ArraySets*}} from \"std\";");
+}
+
+test "parser: import group prefix is also a leaf when listed" {
+    try h.assertParser(std.testing.allocator, @src(), "import {io: {fs, fs: {readText}}} from \"std\";");
+}
+
+test "parser: import group without from resolves against the root" {
+    try h.assertParser(std.testing.allocator, @src(), "import {html: {Element, tag}, router.pathname};");
+}
+
+test "parser: import group nested three deep is a.b.c" {
+    try h.assertParser(std.testing.allocator, @src(), "import {a: {b: {c}}, bbb.rr.dd, ee.tt.rr*} from \"modulo\";");
+}
+
+test "parser: import star on a group node is refused" {
+    try h.expectParseError(std.testing.allocator,
+        \\error[import-group-modifier]: `*` and `as` belong to an import leaf, not to a group
+        \\ --> <test>:1:11
+        \\  |
+        \\1 | import {io* : {fs}} from "std";
+        \\  |           ^ this node opens braces
+        \\  |
+        \\  = hint: write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`
+        \\
+        \\
+    , "import {io* : {fs}} from \"std\";");
+}
+
+test "parser: import alias on a group node is refused" {
+    try h.expectParseFails(std.testing.allocator, "import {io as x: {fs}} from \"std\";");
+}
+
+test "parser: import dotted name before a colon is refused" {
+    // A group takes ONE identifier before the colon; `a.b: {…}` is written as
+    // `a: {b: {…}}`.
+    try h.expectParseFails(std.testing.allocator, "import {a.b: {c}} from \"std\";");
 }
 
 test "parser: activate statement" {
@@ -119,68 +167,27 @@ test "parser: pub default mod parses at any module top level" {
 
 test "parser: mod in fn body is a parse error" {
     try h.expectParseFails(std.testing.allocator,
-        \\fn main() {
+        \\fn main() -> void {
         \\  mod nested;
         \\}
     );
 }
 
-test "parser: delegate ---- val form simple" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val log = declare fn(self: Self);
-    );
-}
-
-test "parser: delegate ---- val form with return type" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Predicate = declare fn(value: i32) -> bool;
-    );
+// Decision 575 (6) — the delegate forms went: `val x = declare fn(…)` is
+// refused at its `declare`.
+test "parser: delegate ---- val form is removed-delegate" {
+    try h.expectErrorAt("val log = declare fn(self: Self);", .removedDelegate, 1, 11);
+    try h.expectErrorAt("val Predicate = declare fn(value: i32) -> bool;", .removedDelegate, 1, 17);
 }
 
 test "parser: delegate ---- shorthand simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\declare fn log(self: Self);
+        \\declare fn log(message: string) -> void;
     );
 }
 
 test "parser: delegate ---- shorthand pub with return type" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub declare fn transform(input: string) -> string;
-    );
-}
-
-test "parser: star fn ---- async declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(url: string) -> @Future<Response> {
-        \\    return download(url);
-        \\}
-    );
-}
-
-test "parser: star fn ---- generator declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fib() -> @Iterator<Int> {
-        \\    yield 1;
-        \\}
-    );
-}
-
-test "parser: star fn ---- async generator declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\pub fn stream() -> @AsyncIterator<Int, Error> {
-        \\    yield 1;
-        \\}
-    );
-}
-
-test "parser: star fn ---- label after return type" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<Int> :gen {
-        \\    yield :gen 1;
-        \\}
     );
 }

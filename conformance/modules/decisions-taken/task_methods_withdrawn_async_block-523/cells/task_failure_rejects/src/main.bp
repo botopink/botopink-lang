@@ -1,0 +1,39 @@
+//// Decision 432 (inverting 120 and 121 of 1.0.10-beta for a JavaScript
+//// observer) — on commonJS a `Async` return is a Promise, and a `throw` in a
+//// `Async<Result<…>>` body REJECTS it with the thrown value; a success
+//// resolves it with the bare value, never an `{ ok }` / `{ error }` wrapper.
+//// The observer is host code: it attaches both callbacks to the Promise the
+//// call answered and hands the resolved value or the rejection back to
+//// botopink. Until 432 the Promise resolved with the `Error` value, and this
+//// cell printed `resolved Error negative`.
+////
+//// `"targets"` is `commonJS`: the claim is about a JavaScript Promise;
+//// erlang, beam and wasm run a Async's failure as its value, which
+//// `task_result_rejects` reads on every target.
+
+import {io.terminal.print, compiler} from "std";
+
+async fn check(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+fn resolved(v: i32) -> void {
+    print("resolved " + v.toString());
+}
+
+fn rejected(e: string) -> void {
+    print("rejected " + e);
+}
+
+#[compiler.external(.JavaScript("""$0.then((__v) => $1(__v), (__e) => $2(__e))"""))]
+declare fn observe(
+    t: Async<Result<i32, string>>,
+    onResolve: fn(v: i32),
+    onReject: fn(e: string),
+) -> void;
+
+pub fn main() -> void {
+    observe(check(1), resolved, rejected);
+    observe(check(-1), resolved, rejected);
+}

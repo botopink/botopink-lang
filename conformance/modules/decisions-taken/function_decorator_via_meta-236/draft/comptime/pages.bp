@@ -1,0 +1,11 @@
+import {compiler} from "std";
+import {comptime.routes};
+
+// What `#[page]` records: the route, as typed meta.
+pub type Route(pattern: string)
+
+// One generic body for every page: record the route, register the page.
+pub fn page(syntax decl: fn(segments: string[]) -> string, comptime pattern: string) -> void {
+    compiler.setMeta(Route(pattern: pattern));
+    compiler.init({ -> routes.register(compiler.meta(decl, Route)!.pattern, decl); });
+}

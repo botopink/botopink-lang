@@ -1,0 +1,6 @@
+import {collections.Dict, collections.Set, io.fs, io.clock, testing.asserts, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val d: Dict<string, i32> = Dict.empty();
+    print(d.size()); // 0
+}

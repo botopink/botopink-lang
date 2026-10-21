@@ -1,0 +1,8 @@
+//// The entity, annotated in its own module.
+
+import {orm.entity};
+
+#[entity("users")]
+pub type User(id: i32, email: string)
+
+pub type Plain(x: i32)

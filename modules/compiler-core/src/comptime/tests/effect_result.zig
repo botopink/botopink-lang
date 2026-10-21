@@ -20,10 +20,9 @@ const h = @import("helpers.zig");
 
 // ── R11: manual Result.Ok in `return` forbidden ────────────────────────────
 
-test "§1 R11 — return Result.Ok(...) inside #[@result] reds return-must-be-bare-R" {
+test "§1 R11 — return Result.Ok(...) inside @Result reds return-must-be-bare-R" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    return Result.Ok(42);
         \\}
     );
@@ -31,10 +30,9 @@ test "§1 R11 — return Result.Ok(...) inside #[@result] reds return-must-be-ba
 
 // ── R12: `return Result.Error(...)` (wrong channel) reds ───────────────────
 
-test "§1 R12 — return Result.Error(...) inside #[@result] reds result-return-type-mismatch" {
+test "§1 R12 — return Result.Error(...) inside @Result reds result-return-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    return Result.Error("boom");
         \\}
     );
@@ -42,10 +40,9 @@ test "§1 R12 — return Result.Error(...) inside #[@result] reds result-return-
 
 // ── R11-mirror: manual `throw Result.Error(...)` forbidden ─────────────────
 
-test "§1 R11-mirror — throw Result.Error(...) inside #[@result] reds throw-must-be-bare-E" {
+test "§1 R11-mirror — throw Result.Error(...) inside @Result reds throw-must-be-bare-E" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    throw Result.Error("boom");
         \\}
     );
@@ -53,10 +50,9 @@ test "§1 R11-mirror — throw Result.Error(...) inside #[@result] reds throw-mu
 
 // ── throw-mismatch: `throw Result.Ok(...)` (wrong channel) reds ────────────
 
-test "§1 throw-mismatch — throw Result.Ok(...) inside #[@result] reds result-throw-type-mismatch" {
+test "§1 throw-mismatch — throw Result.Ok(...) inside @Result reds result-throw-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
-        \\fn fetch() -> @Result<i32, string> {
+        \\fn fetch() -> Result<i32, string> {
         \\    throw Result.Ok(42);
         \\}
     );
@@ -64,14 +60,13 @@ test "§1 throw-mismatch — throw Result.Ok(...) inside #[@result] reds result-
 
 // ── happy path: bare return / throw + try-catch round-trip ─────────────────
 
-test "§1 happy path — bare return + throw inside #[@result] type-checks" {
+test "§1 happy path — bare return + throw inside @Result type-checks" {
     // The F4 transform rewrites the bare jumps to `__bp_ok`/`__bp_error`;
     // the typed-AST view here only asserts inference reaches the body's
     // tail without firing any R11/R12.
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
-        \\#[@result]
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\type AppError(msg: string)
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
@@ -80,9 +75,8 @@ test "§1 happy path — bare return + throw inside #[@result] type-checks" {
 
 test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
-        \\#[@result]
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\type AppError(msg: string)
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
@@ -93,18 +87,79 @@ test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     );
 }
 
-test "§1 happy path — nested `#[@result]` call propagates Error via `try`" {
+test "§1 happy path — nested `@Result` call propagates Error via `try`" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
-        \\#[@result]
-        \\fn parse(n: i32) -> @Result<i32, AppError> {
+        \\type AppError(msg: string)
+        \\fn parse(n: i32) -> Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
-        \\#[@result]
-        \\fn double(n: i32) -> @Result<i32, AppError> {
+        \\fn double(n: i32) -> Result<i32, AppError> {
         \\    val v = try parse(n);
         \\    return v + v;
         \\}
     );
+}
+
+// ── a `throw` in a `case` arm is the enclosing function's (144 B-22 step 6) ──
+
+test "a throw in a case arm of a @Result fn is the fn's error in every arm form and position" {
+    // An expression arm and a block arm, with the `case` returned, bound by a
+    // `val`, passed as an argument and written as a statement: each of the
+    // six `throw`s keeps the fn's fallible channel and is recorded as the
+    // fn's `return __bp_error(e)` — a block arm is not a lambda of its own.
+    const n = try h.resultJumpLoweringCount(std.testing.allocator,
+        \\type Value { Num(n: i32), Text(s: string) }
+        \\fn g(n: i32) -> i32 { return n; }
+        \\fn returned(v: Value) -> Result<i32, string> {
+        \\    return case v {
+        \\        Num(n) -> g(n);
+        \\        _ -> throw "a";
+        \\    };
+        \\}
+        \\fn bound(v: Value) -> Result<i32, string> {
+        \\    val r = case v {
+        \\        Num(n) -> g(n);
+        \\        Text(s) {
+        \\            throw "b" + s;
+        \\        }
+        \\    };
+        \\    return r;
+        \\}
+        \\fn argument(v: Value) -> Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ -> throw "c";
+        \\    });
+        \\}
+        \\fn argumentBlock(v: Value) -> Result<i32, string> {
+        \\    return g(case v {
+        \\        Num(n) -> n;
+        \\        _ {
+        \\            throw "d";
+        \\        }
+        \\    });
+        \\}
+        \\fn statement(v: Value) -> Result<i32, string> {
+        \\    case v {
+        \\        Num(_) {
+        \\            print("num");
+        \\        }
+        \\        _ {
+        \\            throw "e";
+        \\        }
+        \\    }
+        \\    return 0;
+        \\}
+        \\fn statementExpression(v: Value) -> Result<i32, string> {
+        \\    case v {
+        \\        Num(_) -> print("num");
+        \\        _ -> throw "f";
+        \\    }
+        \\    return 0;
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    , .wrap_error);
+    try std.testing.expectEqual(@as(usize, 6), n);
 }

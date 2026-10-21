@@ -1,0 +1,23 @@
+//// Decision 305 — a decorator's labelled argument is written `label: value`,
+//// as a call's is. `label = value` is a located parse error at the label,
+//// naming the form to write.
+
+import {types.Type, compiler, io.terminal.print} from "std";
+
+fn check<T>(
+    syntax decl: T,
+    comptime message: string,
+    comptime at: ?Type.Field<T> = null,
+) -> void {
+    compiler.setMeta(Check(message: message));
+}
+
+#[check("must match", at = .confirm)]
+type Account(password: string, confirm: string)
+
+pub fn main() -> void {
+    print("unreached");
+}
+
+// What `#[check]` records.
+type Check(message: string)

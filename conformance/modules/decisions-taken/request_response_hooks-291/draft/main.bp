@@ -1,0 +1,12 @@
+//// Decision 291 — A page reads the request and writes the response through two hooks:
+
+import {compiler, io.terminal.print} from "std";
+import {pages.NotFound, pages.About, pages.written};
+import {comptime.stages.Stage};
+
+pub async fn main() -> Async<void> {
+    print((await NotFound()).text);
+    print(written().join(", "));
+    print(comptime compiler.meta(NotFound, Stage)?.kind ?? "?");
+    print(comptime compiler.meta(About, Stage)?.kind ?? "?");
+}

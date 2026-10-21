@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: case-arm-no-value: this arm of a `case` used as a value answers nothing
+at src/cases/case_arm_no_value/mod.bp:10:9

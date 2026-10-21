@@ -1,0 +1,8 @@
+//// Decision 525 — a block whose value is `void` (its last expression written
+//// with `;`) handed where `unknown` is expected is refused at the block.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print({ print("inside"); });
+}

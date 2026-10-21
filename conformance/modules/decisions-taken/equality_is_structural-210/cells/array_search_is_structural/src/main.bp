@@ -1,0 +1,39 @@
+//// `indexOf`, `lastIndexOf` and `contains` compare by `==`, which is structural on
+//// every target (decision 210): two records, tuples, nested lists or payload variants
+//// with the same parts are the same element, not two references.
+
+import {io.terminal.print} from "std";
+
+type P(x: i32, name: string)
+
+type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+}
+
+pub fn main() -> void {
+    val ps = [P(x: 1, name: "a"), P(x: 2, name: "b"), P(x: 1, name: "a")];
+    print(ps.indexOf(P(x: 1, name: "a")));
+    print(ps.lastIndexOf(P(x: 1, name: "a")));
+    print(ps.contains(P(x: 2, name: "b")));
+    print(ps.contains(P(x: 3, name: "c")));
+    print(ps.indexOf(P(x: 9, name: "z")));
+
+    val ts = [#(1, "a"), #(2, "b"), #(1, "a")];
+    print(ts.indexOf(#(2, "b")));
+    print(ts.lastIndexOf(#(1, "a")));
+    print(ts.contains(#(1, "a")));
+    print(ts.contains(#(3, "c")));
+
+    val ls = [[1, 2], [3], [1, 2]];
+    print(ls.indexOf([3]));
+    print(ls.lastIndexOf([1, 2]));
+    print(ls.contains([1, 2]));
+    print(ls.contains([2, 1]));
+
+    val vs = [Shape.Circle(r: 1), Shape.Square(side: 1), Shape.Circle(r: 1)];
+    print(vs.indexOf(Shape.Square(side: 1)));
+    print(vs.lastIndexOf(Shape.Circle(r: 1)));
+    print(vs.contains(Shape.Circle(r: 1)));
+    print(vs.contains(Shape.Circle(r: 2)));
+}

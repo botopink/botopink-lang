@@ -1,0 +1,20 @@
+# Decision 525 — A `{` without `->` is a block, never a closure; `@block` is removed; a block used as a value answers its last expression written without `;` (409).
+
+[cells/async_block_tail_case/src/main.bp](cells/async_block_tail_case/src/main.bp)
+[cells/async_block_tail_value/src/main.bp](cells/async_block_tail_value/src/main.bp)
+[refused/src/cases/block_argument_not_function/mod.bp](refused/src/cases/block_argument_not_function/mod.bp)
+[refused/src/cases/block_builtin_removed/mod.bp](refused/src/cases/block_builtin_removed/mod.bp)
+[run/src/cases/block_for_return_leaves_function/mod.bp](run/src/cases/block_for_return_leaves_function/mod.bp)
+[run/src/cases/block_partial_return/mod.bp](run/src/cases/block_partial_return/mod.bp)
+[run/src/cases/block_reassigns_enclosing_var/mod.bp](run/src/cases/block_reassigns_enclosing_var/mod.bp)
+[run/src/cases/block_return_leaves_function/mod.bp](run/src/cases/block_return_leaves_function/mod.bp)
+[run/src/cases/block_tail_value/mod.bp](run/src/cases/block_tail_value/mod.bp)
+[refused/src/cases/block_trailing_not_function/mod.bp](refused/src/cases/block_trailing_not_function/mod.bp)
+[run/src/cases/block_value_reassigns_enclosing_var/mod.bp](run/src/cases/block_value_reassigns_enclosing_var/mod.bp)
+[refused/src/cases/block_void_value_refused/mod.bp](refused/src/cases/block_void_value_refused/mod.bp)
+[refused/src/cases/case_arm_no_value/mod.bp](refused/src/cases/case_arm_no_value/mod.bp)
+[refused/src/cases/comptime_block_break_value/mod.bp](refused/src/cases/comptime_block_break_value/mod.bp)
+[run/src/cases/trailing_lambda_call/mod.bp](run/src/cases/trailing_lambda_call/mod.bp)
+
+Proved also by [comptime_block_in_body](../comptime_evaluated_and_lifted-266/run/src/cases/comptime_block_in_body/mod.bp)
+Proved also by [comptime_expression_is_block](../type_application_versus_comparison-255/run/src/cases/comptime_expression_is_block/mod.bp)

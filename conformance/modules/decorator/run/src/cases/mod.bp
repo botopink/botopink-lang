@@ -1,0 +1,10 @@
+pub mod decorator_calls_imported_function;
+pub mod decorator_calls_module_function;
+pub mod decorator_emitted_proxies_dispatch;
+pub mod decorator_imported_builds_private_record;
+pub mod decorator_imported_calls_module_function;
+pub mod decorator_lambda_many_locals;
+pub mod decorator_member_record_update;
+pub mod decorator_negative_argument;
+pub mod decorator_random_seeded_commonjs;
+pub mod decorator_same_refuses_mark;

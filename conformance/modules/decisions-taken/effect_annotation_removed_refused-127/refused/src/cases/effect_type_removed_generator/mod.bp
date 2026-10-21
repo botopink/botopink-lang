@@ -1,0 +1,13 @@
+//// Decisions 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@generator]` + `@Generator<T>`) — `@Generator<T>` is
+//// `effect-type-removed`, fix-it `Iter<T>`. The new form is
+//// `run/iterator_fibonacci.bp`.
+
+import {io.terminal.print} from "std";
+
+fn nums(n: i32) -> @Generator<i32> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; }
+}
+
+pub fn main() -> void { for (nums(2)) { x -> print(x); } }

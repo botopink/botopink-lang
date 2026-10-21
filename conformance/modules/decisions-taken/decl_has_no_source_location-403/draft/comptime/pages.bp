@@ -1,0 +1,10 @@
+import {compiler} from "std";
+
+// What `#[page]` records: the route it was given and where the page is
+// declared — a value for diagnostics, never a source of the route.
+pub type PageMeta(route: string, file: string, line: i32)
+
+pub fn page(syntax decl: unknown, comptime route: string) -> void {
+    val at = compiler.src();
+    compiler.setMeta(PageMeta(route: route, file: at.file, line: at.line));
+}

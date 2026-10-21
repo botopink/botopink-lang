@@ -1,0 +1,9 @@
+//// The package's decorator: each annotated declaration prints its package
+//// and its name when the init list runs it.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn mark(syntax decl: unknown) -> void {
+    val name = compiler.name(decl);
+    compiler.init({ -> print("core " + name) });
+}

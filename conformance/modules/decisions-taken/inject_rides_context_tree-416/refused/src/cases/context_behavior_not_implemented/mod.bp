@@ -1,0 +1,17 @@
+//// Decision 416 (2) — a context keyed by a behavior holds a value of a type
+//// that implements it: `PlainText` does not implement `Repository`, refused
+//// at the argument.
+
+import {context.createContext, io.terminal.print} from "std";
+
+behavior Repository {
+    fn find(self: Self, id: i32) -> string;
+}
+
+type PlainText(text: string)
+
+pub val repoContext = createContext(PlainText(text: "x"), Repository);
+
+pub fn main() -> void {
+    print("unreached");
+}

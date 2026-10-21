@@ -1,0 +1,20 @@
+//// A reader: `names` calls `@TypeInfo.all` outside a template body, so the
+//// module answers for the whole program — and it also holds the package's
+//// default function.
+
+import {compiler} from "std";
+
+pub fn tagged(syntax decl: unknown) -> void {
+    compiler.setMeta(Tagged(tag: compiler.name(decl)!));
+}
+
+pub fn names() -> string {
+    return @TypeInfo.all(with: tagged).map({ e -> e.name }).join(",");
+}
+
+pub default fn cat(syntax e: string) -> string {
+    return e;
+}
+
+// What `#[tagged]` records.
+pub type Tagged(tag: string)

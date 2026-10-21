@@ -1,0 +1,21 @@
+//// A generic function over `T[]` takes an array of `f64` on every target
+//// (decision 521): `apply([1.0, 2.5], dbl)` and `apply(ys, dbl)` answer
+//// `[2.0, 5.0]`, with the float's decimal part. On wasm the call was refused
+//// ("a float has no lowering in a generic array") and, once bound, its
+//// `xs.map(f)` over a function-typed parameter fell out of the GC lowering.
+
+import {io.terminal.print} from "std";
+
+fn apply<T>(xs: T[], f: fn(x: T) -> T) -> T[] {
+    return xs.map(f);
+}
+
+fn dbl(x: f64) -> f64 {
+    return x * 2.0;
+}
+
+pub fn main() -> void {
+    print(apply([1.0, 2.5], dbl));
+    val ys: f64[] = [4.5, 1.0];
+    print(apply(ys, dbl));
+}

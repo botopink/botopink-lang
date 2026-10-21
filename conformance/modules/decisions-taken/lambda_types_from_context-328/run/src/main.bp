@@ -1,0 +1,5 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.lambda_arg_generic_param_method.runCase();
+}

@@ -1,0 +1,14 @@
+import {compiler, io.terminal.print} from "std";
+
+type Point(x: i32, y: i32)
+
+#[compiler.external(.JavaScript("({ x: 7, y: 9 })"), .Erlang("#{x => 7, y => 9}"))]
+declare fn hostPoint() -> Point;
+
+fn distance(p: Point) -> i32 {
+    return p.x + p.y; // 16 on every backend that has a host
+}
+
+pub fn main() -> void {
+    print(distance(hostPoint())); // 16
+}

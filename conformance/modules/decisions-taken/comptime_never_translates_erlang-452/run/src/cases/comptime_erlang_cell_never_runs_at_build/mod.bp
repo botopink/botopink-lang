@@ -1,0 +1,37 @@
+//// 1.0.12-beta `1-botopink-lang/144` B-00k (decisions 434, 452) — at build a
+//// host function answers by its `std:` cell, else its `compiler.external(.Wasm)(fn: …)`
+//// cell; an `compiler.external(.Erlang)` cell never runs there, whatever the build's
+//// target. `tag`'s three cells answer three different texts, so the output
+//// names the cell the decorator's call ran: `Point:fn` on the four targets.
+//// (`run/comptime_erlang_cell_ignored_fn_serves` states the same rule over a
+//// name its Erlang cell leaves unchanged, so it cannot tell the cells apart.)
+////
+//// The parent of the group (`239f789f`) ran erlang's and beam's comptime on
+//// the BEAM, which called the Erlang cell: `Point:erlang` there, `Point:fn`
+//// on commonJS and wasm.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""($0 + ":node")"""),
+    .Erlang("""<<($0)/binary, ":erlang">>"""),
+    .Wasm(body: tagBody),
+)]
+declare fn tag(value: string) -> string;
+
+fn tagBody(value: string) -> string {
+    return value + ":fn";
+}
+
+fn tagged(syntax decl: unknown) -> void {
+    @emit("pub fn summary() -> string { return \""
+        + tag(compiler.name(decl)!)
+        + "\"; }");
+}
+
+#[tagged]
+type Point(x: i32, y: i32)
+
+pub fn runCase() -> void {
+    print(summary());
+}

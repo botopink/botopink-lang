@@ -1,0 +1,1 @@
+{ "name": "narrowing_on_dependency_target_missing", "targets": ["commonJS", "erlang"], "dependencies": { "outer": { "path": "deps/outer" } } }

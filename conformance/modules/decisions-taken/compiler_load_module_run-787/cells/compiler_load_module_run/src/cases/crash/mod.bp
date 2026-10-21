@@ -1,0 +1,6 @@
+import {failure.panic, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("crash main");
+    panic("boom");
+}

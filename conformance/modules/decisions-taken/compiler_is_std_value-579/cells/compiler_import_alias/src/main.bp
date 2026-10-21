@@ -1,0 +1,18 @@
+//// Decision 579 (3) — the import binds `compiler` under the name it gives:
+//// `import {compiler as c} from "std";` reads the compiler of the point
+//// through `c`, the rules read off the binding, not the spelling.
+
+import {compiler as c, io.terminal.print} from "std";
+
+pub type Named(name: string)
+
+fn named(syntax decl: unknown) -> void {
+    c.setMeta(Named(name: c.name(decl)! + " in " + c.module));
+}
+
+#[named]
+pub type City(name: string)
+
+pub fn main() -> void {
+    print(comptime c.typeInfo(City).meta(Named)!.name);
+}

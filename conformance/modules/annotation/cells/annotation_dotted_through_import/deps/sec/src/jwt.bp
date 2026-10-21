@@ -1,0 +1,7 @@
+//// A module of a dependency whose decorator is reached through its namespace.
+
+import {compiler} from "std";
+
+pub fn stamped(syntax decl: unknown) -> void {
+    val _n = compiler.name(decl)!;
+}

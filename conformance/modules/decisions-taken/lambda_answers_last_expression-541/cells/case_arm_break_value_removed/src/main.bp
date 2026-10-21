@@ -1,0 +1,19 @@
+//// Decision 541 (3) — a `case` arm's `break <value>` is removed, as
+//// `comptime`'s was: the arm's value is its tail. Refused at the `break`
+//// (`botopink format` writes `break v;` back as the tail `v`).
+
+import {io.terminal.print} from "std";
+
+fn arm(n: i32) -> i32 {
+    val v = case n {
+        0 {
+            break 10;
+        }
+        _ { 20 }
+    };
+    return v;
+}
+
+pub fn main() -> void {
+    print(arm(0));
+}

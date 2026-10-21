@@ -1,0 +1,5 @@
+import {encoding} from "std";
+
+pub fn hex(s: string) -> string {
+    return encoding.hexEncode(s);
+}

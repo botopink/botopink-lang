@@ -1,0 +1,29 @@
+//// Decision 806 (3) — each `run()` starts clean whatever a `var` is stored in on the BEAM: an `Ets` var, an unannotated
+//// `Dict` var and a `PersistentTerm` var of the loaded package start at their declaration on each run, so `hits` prints 1
+//// and `counts.at("a")` 0 both times and the `PersistentTerm` var's initialiser runs at each run.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("src/cases/memory/mod.bp");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            try m.run() catch { r ->
+                print("abort " + r.message)
+            }
+            try m.run() catch { r ->
+                print("abort " + r.message)
+            }
+        });
+        Error(refused) -> print("refused");
+    }
+}
+
+// The program's own `Ets` var: the annotation picks how the BEAM holds it and changes nothing elsewhere (547).
+#[compiler.beamMemory(.Ets)]
+var vezes: i32 = 0;
+
+pub fn main() -> void {
+    vezes = vezes + 1;
+    print("main");
+}

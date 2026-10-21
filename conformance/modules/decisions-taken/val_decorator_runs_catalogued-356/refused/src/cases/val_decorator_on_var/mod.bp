@@ -1,0 +1,19 @@
+//// Decision 356 runs a decorator on a module-level `val`; on a module `var`
+//// it is refused at the annotation (question `116-c` open). The parent binary
+//// dropped the decorator silently and printed `1`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn mark(syntax decl: unknown) -> void {
+    compiler.setMeta(Mark(seen: true));
+}
+
+#[mark]
+var count = 1;
+
+pub fn main() -> void {
+    print(count);
+}
+
+// What `#[mark]` records.
+type Mark(seen: bool)

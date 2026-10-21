@@ -1,0 +1,32 @@
+//// Decision 39's fixture — five requests, each its own process, three
+//// increments each, on one `#[compiler.beamMemory(.Ets)]` var: `15`. Without the
+//// registered owner the table died with the request that created it, every
+//// request read `3` and the counter ended at `0`. `hits = hits + 1` and
+//// `hits += 1` read the `var` they write: the compare-and-swap (decision 547
+//// (ii)). The per-request reads are not printed: their order is the scheduler's.
+
+import {async, io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Ets)]
+var hits: i32 = 0;
+
+async fn request() -> Async<i32> {
+    hits = hits + 1;
+    hits = hits + 1;
+    hits += 1;
+    return 0;
+}
+
+pub async fn main() -> Async<void> {
+    val done = await async.runAll(
+        [
+            { -> request() },
+            { -> request() },
+            { -> request() },
+            { -> request() },
+            { -> request() },
+        ],
+    );
+    print(done.length());
+    print(hits);
+}

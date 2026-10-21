@@ -1,0 +1,9 @@
+//// Decision 362 — `05-jhonstart/26` rewrites the native builders into 351's props form, in place, and the hand-written callers with them — one builder per tag, never two.
+
+import {io.terminal} from "std";
+import {elements.a, elements.AnchorProps, elements.Target};
+
+pub fn main() -> void {
+    terminal.print(a(AnchorProps(href: "/", children: ["home"])).render());
+    terminal.print(a(AnchorProps(href: "/docs", target: Target.Blank, class: "nav", children: ["docs"])).render());
+}

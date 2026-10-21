@@ -1,0 +1,660 @@
+//// `code`, the template that builds the typed AST from code written with
+//// `${…}` holes (decisions 625 (4), 637, 638, 753).
+////
+//// `` code @`Element(tag: ${tag}, kids: [${kids}])` `` reads its text into
+//// `compiler.Node` records and answers what `compiler.ast` builds from them:
+//// code enters the compiler written, never as a string the compiler parses
+//// back (625). Each hole is read by its arrival: a `syntax` value — a
+//// template's receiver, a caller's hole from `compiler.holes(t)`, any
+//// `syntax` parameter — is spliced as it was written (`Syntax(e)`, 638), any
+//// other value as its literal (`Lit(v)`).
+////
+//// The text is one expression of the vocabulary `Node` has: a name, a number,
+//// a string, `true` / `false`, a member, a call with positional and labelled
+//// arguments, `[…]`, `#(…)`, the binary operators `|| && == != < > <= >= + -
+//// * / %`, the unary `-` and `!`, `if (c) a else b`, an untyped lambda
+//// `{ a, b -> body }`, and a typed function `fn(a: A) -> R { return …; }`
+//// whose types are the type nodes (753). Anything else — an index, a string
+//// with a hole inside it, a statement other than `return` or an expression —
+//// is refused at the template's call, naming what was met.
+////
+//// Imported where used: `import {code} from "std";`.
+
+import {compiler, compiler.Node, compiler.Name, compiler.Lit, compiler.Member, compiler.Call, compiler.Arg, compiler.List, compiler.Tuple, compiler.Binary, compiler.Unary, compiler.If, compiler.Lambda, compiler.Syntax, compiler.Fn, compiler.FnParam, compiler.Return, compiler.NamedType, compiler.ArrayType, compiler.TupleType, compiler.LabeledTupleType, compiler.OptionalType, compiler.FnType, compiler.GenericType, compiler.UnionType};
+
+pub default fn code(syntax q: string) -> anyvalue {
+    val given = compiler.holes(q);
+    var holes: Node[] = [];
+    var i = 0;
+    while (i < given.length) {
+        val h = given.at(i);
+        if (compiler.isSyntax(h)) holes.push(Syntax(h)) else holes.push(Lit(h));
+        i = i + 1;
+    }
+    val parsed = parseCode(compiler.text(q), holes);
+    if (parsed.err != "") compiler.fail("code: " + parsed.err);
+    return compiler.ast(parsed.node);
+}
+
+// ── The tokens ──────────────────────────────────────────────────────────────
+
+// `kind` one of `name`, `int`, `float`, `str`, `punct`, `hole`, `eof`; `hole`
+// the hole's index for a `hole`, a number's value its `text`.
+type Tok(kind: string, text: string, hole: i32)
+
+type Lexed(toks: Tok[], err: string)
+
+fn charAt(cs: string[], i: i32) -> string {
+    if (i < 0) return "";
+    return cs.at(i) ?? "";
+}
+
+fn isDigit(c: string) -> bool {
+    return c != "" && "0123456789".contains(c);
+}
+
+fn isIdentStart(c: string) -> bool {
+    return c != ""
+        && "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".contains(c);
+}
+
+fn isIdentPart(c: string) -> bool {
+    return isIdentStart(c) || isDigit(c);
+}
+
+fn isSpace(c: string) -> bool {
+    return c == " " || c == "\n" || c == "\t" || c == "\r";
+}
+
+// The two-character operators; every other punctuation is one character.
+fn isPair(two: string) -> bool {
+    return two == "->"
+        || two == "=="
+        || two == "!="
+        || two == "<="
+        || two == ">="
+        || two == "&&"
+        || two == "||"
+        || two == "??";
+}
+
+fn isPunct(c: string) -> bool {
+    return c != "" && "()[]{},.:;+-*/%<>!#?|=".contains(c);
+}
+
+fn escaped(c: string) -> string {
+    if (c == "n") return "\n";
+    if (c == "t") return "\t";
+    if (c == "r") return "\r";
+    if (c == "0") return string.fromCodepoint(0);
+    return c;
+}
+
+fn lexed(toks: Tok[], err: string) -> Lexed {
+    return Lexed(toks: toks, err: err);
+}
+
+// The text's tokens, a hole `${…}` one token (its braces nest, a string's do
+// not count — as the compiler finds the holes `compiler.holes` answers).
+fn tokenize(text: string) -> Lexed {
+    val cs = text.chars();
+    var toks: Tok[] = [];
+    var i = 0;
+    var hole = 0;
+    var err = "";
+    while (err == "" && i < cs.length) {
+        val c = charAt(cs, i);
+        val next = charAt(cs, i + 1);
+        if (isSpace(c))
+            i = i + 1
+        else if (c == "/" && next == "/")
+            while (i < cs.length && charAt(cs, i) != "\n") {
+                i = i + 1;
+            }
+        else if (c == "$" && next == "{") {
+            var depth = 1;
+            var j = i + 2;
+            var quoted = false;
+            while (depth > 0 && j < cs.length) {
+                val d = charAt(cs, j);
+                if (quoted) {
+                    if (d == "\\") j = j + 1 else if (d == "\"") quoted = false;
+                } else if (d == "\"")
+                    quoted = true
+                else if (d == "{")
+                    depth = depth + 1
+                else if (d == "}")
+                    depth = depth - 1;
+                j = j + 1;
+            }
+            if (depth > 0) err = "a `\${` with no closing `}`" else {
+                toks.push(Tok(kind: "hole", text: "", hole: hole));
+                hole = hole + 1;
+                i = j;
+            }
+        } else if (isIdentStart(c)) {
+            var j = i;
+            while (isIdentPart(charAt(cs, j))) {
+                j = j + 1;
+            }
+            toks.push(Tok(kind: "name", text: cs
+                .slice(i, j)
+                .join(""), hole: 0));
+            i = j;
+        } else if (isDigit(c)) {
+            var j = i;
+            while (isDigit(charAt(cs, j)) || charAt(cs, j) == "_") {
+                j = j + 1;
+            }
+            var kind = "int";
+            if (charAt(cs, j) == "." && isDigit(charAt(cs, j + 1))) {
+                kind = "float";
+                j = j + 1;
+                while (isDigit(charAt(cs, j)) || charAt(cs, j) == "_") {
+                    j = j + 1;
+                }
+            }
+            toks.push(Tok(kind: kind, text: cs
+                .slice(i, j)
+                .join("")
+                .replaceAll("_", ""), hole: 0));
+            i = j;
+        } else if (c == "\"") {
+            var j = i + 1;
+            var value = "";
+            var closed = false;
+            while (err == "" && !closed && j < cs.length) {
+                val d = charAt(cs, j);
+                if (d == "\"") closed = true else if (d == "\\") {
+                    value = value + escaped(charAt(cs, j + 1));
+                    j = j + 1;
+                } else if (d == "$" && charAt(cs, j + 1) == "{")
+                    err = "a hole inside a string literal: write the string and the hole apart, `\"a\" + \${x}`"
+                else
+                    value = value + d;
+                j = j + 1;
+            }
+            if (err == "" && !closed)
+                err = "a string literal with no closing `\"`";
+            toks.push(Tok(kind: "str", text: value, hole: 0));
+            i = j;
+        } else if (isPair(c + next)) {
+            toks.push(Tok(kind: "punct", text: c + next, hole: 0));
+            i = i + 2;
+        } else if (isPunct(c)) {
+            toks.push(Tok(kind: "punct", text: c, hole: 0));
+            i = i + 1;
+        } else err = "`" + c + "` is no token of the language";
+    }
+    toks.push(Tok(kind: "eof", text: "", hole: 0));
+    return lexed(toks, err);
+}
+
+// ── The parser ──────────────────────────────────────────────────────────────
+
+// A node read and the index of the token after it; `err` the reason the text
+// is no code of `Node`'s vocabulary, empty when it is.
+type P(node: Node, pos: i32, err: string)
+
+// Nodes read and the index of the token after them.
+type Ps(nodes: Node[], pos: i32, err: string)
+
+type Params(params: FnParam[], pos: i32, err: string)
+
+fn ok(node: Node, pos: i32) -> P {
+    return P(node: node, pos: pos, err: "");
+}
+
+fn bad(err: string, pos: i32) -> P {
+    return P(node: Lit(0), pos: pos, err: err);
+}
+
+fn tokAt(ts: Tok[], i: i32) -> Tok {
+    return ts.at(i) ?? Tok(kind: "eof", text: "", hole: 0);
+}
+
+fn isP(ts: Tok[], i: i32, text: string) -> bool {
+    val t = tokAt(ts, i);
+    return t.kind == "punct" && t.text == text;
+}
+
+fn isWord(ts: Tok[], i: i32, word: string) -> bool {
+    val t = tokAt(ts, i);
+    return t.kind == "name" && t.text == word;
+}
+
+fn shown(t: Tok) -> string {
+    if (t.kind == "eof") return "the end of the text";
+    if (t.kind == "hole") return "a hole";
+    if (t.kind == "str") return "a string";
+    return "`" + t.text + "`";
+}
+
+fn expected(ts: Tok[], i: i32, what: string) -> P {
+    return bad("expected " + what + ", found " + shown(tokAt(ts, i)), i);
+}
+
+fn parseCode(text: string, holes: Node[]) -> P {
+    val lx = tokenize(text);
+    if (lx.err != "") return bad(lx.err, 0);
+    val p = expr(lx.toks, 0, holes);
+    if (p.err != "") return p;
+    if (tokAt(lx.toks, p.pos).kind != "eof")
+        return expected(lx.toks, p.pos, "the end of the expression");
+    return p;
+}
+
+fn expr(ts: Tok[], i: i32, holes: Node[]) -> P {
+    return binary(ts, i, holes, 1);
+}
+
+// The precedence of a binary operator, 0 for a token that is none.
+fn precedence(t: Tok) -> i32 {
+    if (t.kind != "punct") return 0;
+    val op = t.text;
+    if (op == "||") return 1;
+    if (op == "&&") return 2;
+    if (op == "==" || op == "!=") return 3;
+    if (op == "<" || op == ">" || op == "<=" || op == ">=") return 4;
+    if (op == "+" || op == "-") return 5;
+    if (op == "*" || op == "/" || op == "%") return 6;
+    return 0;
+}
+
+fn binary(ts: Tok[], i: i32, holes: Node[], least: i32) -> P {
+    var left = unary(ts, i, holes);
+    var going = left.err == "";
+    while (going) {
+        val t = tokAt(ts, left.pos);
+        val prec = precedence(t);
+        if (prec == 0 || prec < least) going = false else {
+            val right = binary(ts, left.pos + 1, holes, prec + 1);
+            if (right.err != "") {
+                left = right;
+                going = false;
+            } else left = ok(Binary(op: t.text, lhs: left.node, rhs: right.node), right.pos);
+        }
+    }
+    return left;
+}
+
+fn unary(ts: Tok[], i: i32, holes: Node[]) -> P {
+    if (isP(ts, i, "-") || isP(ts, i, "!")) {
+        val operand = unary(ts, i + 1, holes);
+        if (operand.err != "") return operand;
+        return ok(Unary(op: tokAt(ts, i).text, operand: operand.node), operand.pos);
+    }
+    return postfix(ts, i, holes);
+}
+
+fn postfix(ts: Tok[], i: i32, holes: Node[]) -> P {
+    var cur = primary(ts, i, holes);
+    var going = cur.err == "";
+    while (going) {
+        if (isP(ts, cur.pos, ".")) {
+            val t = tokAt(ts, cur.pos + 1);
+            if (t.kind != "name") {
+                cur = expected(ts, cur.pos + 1, "a member name after `.`");
+                going = false;
+            } else cur = ok(Member(target: cur.node, member: t.text), cur.pos
+                + 2);
+        } else if (isP(ts, cur.pos, "(")) {
+            val args = callArgs(ts, cur.pos + 1, holes);
+            if (args.err != "") {
+                cur = bad(args.err, args.pos);
+                going = false;
+            } else cur = ok(Call(callee: cur.node, args: args.nodes), args.pos);
+        } else going = false;
+    }
+    return cur;
+}
+
+// A call's arguments after its `(`, up to and past its `)`: `name: value` an
+// `Arg`, any other a positional node.
+fn callArgs(ts: Tok[], i: i32, holes: Node[]) -> Ps {
+    var out: Node[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, ")")) {
+        val labelled = tokAt(ts, pos).kind == "name" && isP(ts, pos + 1, ":");
+        val start = if (labelled) pos + 2 else pos;
+        val v = expr(ts, start, holes);
+        if (v.err != "") {
+            err = v.err;
+            pos = v.pos;
+        } else {
+            if (labelled)
+                out.push(Arg(name: tokAt(ts, pos).text, value: v.node))
+            else
+                out.push(v.node);
+            pos = v.pos;
+            if (isP(ts, pos, ","))
+                pos = pos + 1
+            else if (!isP(ts, pos, ")"))
+                err = expected(ts, pos, "`,` or `)`").err;
+        }
+    }
+    if (err != "") return Ps(nodes: out, pos: pos, err: err);
+    return Ps(nodes: out, pos: pos + 1, err: "");
+}
+
+// Expressions separated by `,` up to and past `close`.
+fn exprList(ts: Tok[], i: i32, holes: Node[], close: string) -> Ps {
+    var out: Node[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, close)) {
+        val v = expr(ts, pos, holes);
+        if (v.err != "") {
+            err = v.err;
+            pos = v.pos;
+        } else {
+            out.push(v.node);
+            pos = v.pos;
+            if (isP(ts, pos, ","))
+                pos = pos + 1
+            else if (!isP(ts, pos, close))
+                err = expected(ts, pos, "`,` or `" + close + "`").err;
+        }
+    }
+    if (err != "") return Ps(nodes: out, pos: pos, err: err);
+    return Ps(nodes: out, pos: pos + 1, err: "");
+}
+
+fn intOf(text: string) -> i32 {
+    val cs = text.chars();
+    var n = 0;
+    var i = 0;
+    while (i < cs.length) {
+        n = n * 10 + (charAt(cs, i).charCodeAt(0) - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+fn floatOf(text: string) -> f64 {
+    val parts = text.split(".");
+    val whole = intOf(parts.at(0) ?? "0");
+    val frac = parts.at(1) ?? "0";
+    var scale = 1.0;
+    var i = 0;
+    while (i < frac.length()) {
+        scale = scale * 10.0;
+        i = i + 1;
+    }
+    return whole.toF64() + intOf(frac).toF64() / scale;
+}
+
+fn primary(ts: Tok[], i: i32, holes: Node[]) -> P {
+    val t = tokAt(ts, i);
+    if (t.kind == "hole") return ok(holes.at(t.hole) ?? Lit(0), i + 1);
+    if (t.kind == "int") return ok(Lit(intOf(t.text)), i + 1);
+    if (t.kind == "float") return ok(Lit(floatOf(t.text)), i + 1);
+    if (t.kind == "str") return ok(Lit(t.text), i + 1);
+    if (t.kind == "name") {
+        if (t.text == "true") return ok(Lit(true), i + 1);
+        if (t.text == "false") return ok(Lit(false), i + 1);
+        if (t.text == "if") return ifExpr(ts, i + 1, holes);
+        if (t.text == "fn") return fnExpr(ts, i + 1, holes);
+        return ok(Name(t.text), i + 1);
+    }
+    if (isP(ts, i, "(")) {
+        val inner = expr(ts, i + 1, holes);
+        if (inner.err != "") return inner;
+        if (!isP(ts, inner.pos, ")")) return expected(ts, inner.pos, "`)`");
+        return ok(inner.node, inner.pos + 1);
+    }
+    if (isP(ts, i, "[")) {
+        val items = exprList(ts, i + 1, holes, "]");
+        if (items.err != "") return bad(items.err, items.pos);
+        return ok(List(items: items.nodes), items.pos);
+    }
+    if (isP(ts, i, "#") && isP(ts, i + 1, "(")) {
+        val elems = exprList(ts, i + 2, holes, ")");
+        if (elems.err != "") return bad(elems.err, elems.pos);
+        return ok(Tuple(elems: elems.nodes), elems.pos);
+    }
+    if (isP(ts, i, "{")) return lambda(ts, i + 1, holes);
+    return expected(ts, i, "an expression");
+}
+
+// `if (cond) then else otherwise`, after its `if`.
+fn ifExpr(ts: Tok[], i: i32, holes: Node[]) -> P {
+    if (!isP(ts, i, "(")) return expected(ts, i, "`(` after `if`");
+    val cond = expr(ts, i + 1, holes);
+    if (cond.err != "") return cond;
+    if (!isP(ts, cond.pos, ")")) return expected(ts, cond.pos, "`)`");
+    val then = expr(ts, cond.pos + 1, holes);
+    if (then.err != "") return then;
+    if (!isWord(ts, then.pos, "else"))
+        return expected(ts, then.pos, "`else`: an `if` that answers a value has both branches");
+    val otherwise = expr(ts, then.pos + 1, holes);
+    if (otherwise.err != "") return otherwise;
+    return ok(If(cond: cond.node, then: then.node, otherwise: otherwise.node), otherwise.pos);
+}
+
+// `{ a, b -> body }` (or `{ -> body }`), after its `{`.
+fn lambda(ts: Tok[], i: i32, holes: Node[]) -> P {
+    var names: string[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, "->")) {
+        val t = tokAt(ts, pos);
+        if (t.kind != "name")
+            err = expected(ts, pos, "a parameter name or `->`").err
+        else {
+            names.push(t.text);
+            pos = pos + 1;
+            if (isP(ts, pos, ","))
+                pos = pos + 1
+            else if (!isP(ts, pos, "->"))
+                err = expected(ts, pos, "`,` or `->`").err;
+        }
+    }
+    if (err != "") return bad(err, pos);
+    val body = expr(ts, pos + 1, holes);
+    if (body.err != "") return body;
+    if (!isP(ts, body.pos, "}")) return expected(ts, body.pos, "`}`");
+    return ok(Lambda(params: names, body: body.node), body.pos + 1);
+}
+
+// `fn(a: A, b: B) -> R { statements }`, after its `fn` (decision 753).
+fn fnExpr(ts: Tok[], i: i32, holes: Node[]) -> P {
+    if (!isP(ts, i, "(")) return expected(ts, i, "`(` after `fn`");
+    val ps = fnParams(ts, i + 1, holes);
+    if (ps.err != "") return bad(ps.err, ps.pos);
+    if (!isP(ts, ps.pos, "->"))
+        return expected(ts, ps.pos, "`->` and the return type");
+    val ret = typeNode(ts, ps.pos + 1, holes);
+    if (ret.err != "") return ret;
+    if (!isP(ts, ret.pos, "{")) return expected(ts, ret.pos, "`{`");
+    val body = statements(ts, ret.pos + 1, holes);
+    if (body.err != "") return bad(body.err, body.pos);
+    return ok(Fn(params: ps.params, ret: ret.node, body: body.nodes), body.pos);
+}
+
+fn fnParams(ts: Tok[], i: i32, holes: Node[]) -> Params {
+    var out: FnParam[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, ")")) {
+        val t = tokAt(ts, pos);
+        if (t.kind != "name" || !isP(ts, pos + 1, ":"))
+            err = expected(ts, pos, "a typed parameter `name: Type`").err
+        else {
+            val ann = typeNode(ts, pos + 2, holes);
+            if (ann.err != "") {
+                err = ann.err;
+                pos = ann.pos;
+            } else {
+                out.push(FnParam(name: t.text, annotation: ann.node));
+                pos = ann.pos;
+                if (isP(ts, pos, ","))
+                    pos = pos + 1
+                else if (!isP(ts, pos, ")"))
+                    err = expected(ts, pos, "`,` or `)`").err;
+            }
+        }
+    }
+    if (err != "") return Params(params: out, pos: pos, err: err);
+    return Params(params: out, pos: pos + 1, err: "");
+}
+
+// A function's statements after its `{`, up to and past its `}`: `return e;`
+// a `Return`, any other an expression.
+fn statements(ts: Tok[], i: i32, holes: Node[]) -> Ps {
+    var out: Node[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, "}")) {
+        if (tokAt(ts, pos).kind == "eof")
+            err = expected(ts, pos, "`}`").err
+        else {
+            val returned = isWord(ts, pos, "return");
+            val v = expr(ts, if (returned) pos + 1 else pos, holes);
+            if (v.err != "") {
+                err = v.err;
+                pos = v.pos;
+            } else {
+                if (returned)
+                    out.push(Return(result: v.node))
+                else
+                    out.push(v.node);
+                pos = v.pos;
+                if (isP(ts, pos, ";")) pos = pos + 1;
+            }
+        }
+    }
+    if (err != "") return Ps(nodes: out, pos: pos, err: err);
+    return Ps(nodes: out, pos: pos + 1, err: "");
+}
+
+// ── The types (decision 753) ───────────────────────────────────────────────
+
+// `A | B`, or one type.
+fn typeNode(ts: Tok[], i: i32, holes: Node[]) -> P {
+    val first = arrayType(ts, i, holes);
+    if (first.err != "" || !isP(ts, first.pos, "|")) return first;
+    var members: Node[] = [first.node];
+    var pos = first.pos;
+    var err = "";
+    while (err == "" && isP(ts, pos, "|")) {
+        val m = arrayType(ts, pos + 1, holes);
+        if (m.err != "") {
+            err = m.err;
+            pos = m.pos;
+        } else {
+            members.push(m.node);
+            pos = m.pos;
+        }
+    }
+    if (err != "") return bad(err, pos);
+    return ok(UnionType(members: members), pos);
+}
+
+// `T[]`, `T[][]`, or one type.
+fn arrayType(ts: Tok[], i: i32, holes: Node[]) -> P {
+    var cur = baseType(ts, i, holes);
+    while (cur.err == ""
+        && isP(ts, cur.pos, "[")
+        && isP(ts, cur.pos + 1, "]")) {
+        cur = ok(ArrayType(elem: cur.node), cur.pos + 2);
+    }
+    return cur;
+}
+
+fn baseType(ts: Tok[], i: i32, holes: Node[]) -> P {
+    val t = tokAt(ts, i);
+    if (t.kind == "hole") return ok(holes.at(t.hole) ?? Lit(0), i + 1);
+    if (isP(ts, i, "?")) {
+        val inner = arrayType(ts, i + 1, holes);
+        if (inner.err != "") return inner;
+        return ok(OptionalType(inner: inner.node), inner.pos);
+    }
+    if (isP(ts, i, "#") && isP(ts, i + 1, "("))
+        return tupleType(ts, i + 2, holes);
+    if (isWord(ts, i, "fn")) {
+        if (!isP(ts, i + 1, "(")) return expected(ts, i + 1, "`(` after `fn`");
+        val ps = typeList(ts, i + 2, holes, ")");
+        if (ps.err != "") return bad(ps.err, ps.pos);
+        if (!isP(ts, ps.pos, "->"))
+            return expected(ts, ps.pos, "`->` and the return type");
+        val ret = typeNode(ts, ps.pos + 1, holes);
+        if (ret.err != "") return ret;
+        return ok(FnType(params: ps.nodes, returns: ret.node), ret.pos);
+    }
+    if (t.kind == "name") {
+        if (isP(ts, i + 1, "<")) {
+            val args = typeList(ts, i + 2, holes, ">");
+            if (args.err != "") return bad(args.err, args.pos);
+            return ok(GenericType(name: t.text, args: args.nodes), args.pos);
+        }
+        return ok(NamedType(t.text), i + 1);
+    }
+    if (isP(ts, i, "(")) {
+        val inner = typeNode(ts, i + 1, holes);
+        if (inner.err != "") return inner;
+        if (!isP(ts, inner.pos, ")")) return expected(ts, inner.pos, "`)`");
+        return ok(inner.node, inner.pos + 1);
+    }
+    return expected(ts, i, "a type");
+}
+
+// Types separated by `,` up to and past `close`.
+fn typeList(ts: Tok[], i: i32, holes: Node[], close: string) -> Ps {
+    var out: Node[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, close)) {
+        val v = typeNode(ts, pos, holes);
+        if (v.err != "") {
+            err = v.err;
+            pos = v.pos;
+        } else {
+            out.push(v.node);
+            pos = v.pos;
+            if (isP(ts, pos, ","))
+                pos = pos + 1
+            else if (!isP(ts, pos, close))
+                err = expected(ts, pos, "`,` or `" + close + "`").err;
+        }
+    }
+    if (err != "") return Ps(nodes: out, pos: pos, err: err);
+    return Ps(nodes: out, pos: pos + 1, err: "");
+}
+
+// `#(A, B)` or `#(a: A, b: B)`, after its `#(`.
+fn tupleType(ts: Tok[], i: i32, holes: Node[]) -> P {
+    val labelled = tokAt(ts, i).kind == "name" && isP(ts, i + 1, ":");
+    var types: Node[] = [];
+    var labels: string[] = [];
+    var pos = i;
+    var err = "";
+    while (err == "" && !isP(ts, pos, ")")) {
+        val t = tokAt(ts, pos);
+        if (labelled && (t.kind != "name" || !isP(ts, pos + 1, ":")))
+            err = expected(ts, pos, "a labelled element `name: Type`").err
+        else {
+            if (labelled) {
+                labels.push(t.text);
+                pos = pos + 2;
+            }
+            val v = typeNode(ts, pos, holes);
+            if (v.err != "") {
+                err = v.err;
+                pos = v.pos;
+            } else {
+                types.push(v.node);
+                pos = v.pos;
+                if (isP(ts, pos, ","))
+                    pos = pos + 1
+                else if (!isP(ts, pos, ")"))
+                    err = expected(ts, pos, "`,` or `)`").err;
+            }
+        }
+    }
+    if (err != "") return bad(err, pos);
+    if (labelled)
+        return ok(LabeledTupleType(types: types, labels: labels), pos + 1);
+    return ok(TupleType(types: types), pos + 1);
+}

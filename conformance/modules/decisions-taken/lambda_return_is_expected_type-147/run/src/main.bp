@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.generic_ctor_fallible_lambda_fresh.runCase();
+    cases.lambda_result_return_try.runCase();
+}

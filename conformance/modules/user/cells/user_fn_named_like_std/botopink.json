@@ -1,0 +1,1 @@
+{ "name": "user_fn_named_like_std", "targets": ["commonJS", "erlang", "beam"] }

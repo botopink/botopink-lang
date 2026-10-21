@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: the upper bound is below the lower one
+at src/cases/decorator_expr_fail_at_argument/mod.bp:12:22

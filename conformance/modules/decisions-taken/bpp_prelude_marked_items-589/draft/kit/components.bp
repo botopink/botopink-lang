@@ -1,0 +1,18 @@
+import {bpp} from "std";
+import {internal.text.shout};
+
+// Marked where declared: a `.bpp` sees these by their plain names.
+#[bpp.htmlPrelude]
+pub fn Card(title: string) -> string {
+    return "[" + shout(title) + "]";
+}
+
+#[bpp.htmlPrelude]
+pub fn Badge(text: string) -> string {
+    return "(" + text + ")";
+}
+
+// `pub` without the mark: the package's API, not the prelude.
+pub fn cardCount() -> i32 {
+    return 2;
+}

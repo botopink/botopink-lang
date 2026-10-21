@@ -1,0 +1,14 @@
+//// 144 B-22 row "a module-level `var` of a library module lowers to `std@beam`
+//// on erlang, not imported by the module" (was `02-erlang` rows box 1, found
+//// with a std module). A pin: the row no longer reproduces — re-measured with
+//// a std module holding a `var` (`2` on every target) — and std holds no
+//// module-level `var` today, so the cell guards the same lowering through a
+//// dependency's module, on every target.
+
+import {counter} from "tally";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    counter.bump();
+    print(counter.bump());
+}

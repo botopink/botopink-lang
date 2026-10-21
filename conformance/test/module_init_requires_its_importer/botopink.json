@@ -1,0 +1,1 @@
+{ "name": "module_init_requires_its_importer", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

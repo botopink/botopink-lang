@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `#[on]` expects a declaration of type `fn(E) -> unknown`, and `wrong` is `fn() -> void`
+at src/cases/decorator_decl_pattern_mismatch/mod.bp:11:3

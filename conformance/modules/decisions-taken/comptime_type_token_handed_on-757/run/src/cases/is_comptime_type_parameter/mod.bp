@@ -1,0 +1,35 @@
+//// Decisions 667, 757 — a type to test against travels as a `comptime t:
+//// type<T>` parameter: the call `r.count(Users)` infers `T` from `t`, and the
+//// copy of `count` it compiles to (decision 417) tests `e is Users`, an
+//// ordinary run-time test with one answer on every target. A function of the
+//// module takes one the same way.
+
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+pub type Orders(total: i32)
+
+pub type Registry(entries: unknown[]) {
+    pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
+        var n = 0;
+        for (self.entries) { e ->
+            if (e is t) n = n + 1;
+        }
+        return n;
+    }
+}
+
+fn holds<T>(v: unknown, comptime t: type<T>) -> bool {
+    return v is t;
+}
+
+pub fn runCase() -> void {
+    val order: unknown = Orders(total: 9);
+    val user: unknown = Users(count: 2);
+    val r = Registry(entries: [order, user, user]);
+    print(r.count(Users));
+    print(r.count(Orders));
+    print(holds(order, Users));
+    print(holds(order, Orders));
+}

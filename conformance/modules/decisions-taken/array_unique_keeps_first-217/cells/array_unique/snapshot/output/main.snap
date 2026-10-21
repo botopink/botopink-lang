@@ -1,0 +1,8 @@
+botopink-cell 1
+out [1, 2, 3]
+out [3, 1]
+out ["b", "a", "c"]
+out [1.5, 2.5]
+out [true, false]
+out []
+out 1

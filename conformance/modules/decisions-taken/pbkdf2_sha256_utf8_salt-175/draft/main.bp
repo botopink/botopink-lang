@@ -1,0 +1,16 @@
+//// Decision 175 — † `hash.pbkdf2Sha256(password, salt, iterations, length)` derives over the salt's UTF-8 bytes, the same on node and erla
+
+import {io.terminal, hash} from "std";
+
+pub fn main() -> void {
+    // RFC 6070's inputs under SHA-256: the same key on every target.
+    terminal.print(hash.pbkdf2Sha256("password", "salt", 1, 32));
+    // The salt is derived over its UTF-8 bytes: `å` is two bytes.
+    terminal.print(hash.pbkdf2Sha256("password", "sålt", 1, 16));
+    // A salt that is itself base64 is derived over its characters, never
+    // over the bytes it encodes: `c2FsdA` is not `salt`.
+    terminal.print(
+        hash.pbkdf2Sha256("password", "c2FsdA", 1, 32)
+            == hash.pbkdf2Sha256("password", "salt", 1, 32),
+    );
+}

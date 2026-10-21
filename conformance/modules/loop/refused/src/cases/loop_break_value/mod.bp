@@ -1,0 +1,14 @@
+//// Decision 105 — `break <value>` emits the value and ends the nearest
+//// generator scope, and needs one: an annotated fn or an annotated `loop`. A
+//// plain fn's `for` is a statement with no value to give; the refusal names
+//// the three annotations that open a scope.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    var found = 0;
+    for ([5, 8, 15, 20]) { x ->
+        if (x > 10) { break x; }
+    }
+    print(found);
+}

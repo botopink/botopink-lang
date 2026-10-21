@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: implement-signature-differs: `Always.find` does not match the contract `Lookup` — contract: fn find(self: Always, key: string) -> ?string · written: fn find(self: Always, key: string) -> string
+at src/main.bp:12:8

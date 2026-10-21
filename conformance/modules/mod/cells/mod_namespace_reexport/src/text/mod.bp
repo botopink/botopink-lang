@@ -1,0 +1,6 @@
+// src/text/mod.bp
+mod split;
+
+pub val splitPath = split.splitPath;
+
+pub type Pair = split.Pair;

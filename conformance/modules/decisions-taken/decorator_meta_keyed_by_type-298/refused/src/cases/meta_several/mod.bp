@@ -1,0 +1,19 @@
+//// Decision 298 — `meta(T)` answers one value; a declaration holding several
+//// (recorded with `decl.addMeta`) is read with `metaAll(T)`, and `meta(T)` is
+//// refused at the read.
+
+import {compiler, io.terminal.print} from "std";
+
+type Index(column: string)
+
+fn index(syntax decl: unknown, comptime column: string) -> void {
+    compiler.addMeta(Index(column: column));
+}
+
+#[index("name")]
+#[index("state")]
+type City(name: string, state: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).meta(Index)?.column ?? "none");
+}

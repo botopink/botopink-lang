@@ -1,0 +1,16 @@
+//// `x?.m()`, `x!.m()` and `(x ?? d).m()` where `m` is a method of an enum the
+//// program never names: only `find` is imported, its `?Val` answer carries the
+//// type, and the call reaches the type's own module (the dependency's import
+//// closure), on every target.
+
+import {find} from "shapes";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val b = find(1);
+    print(b?.str() ?? "none");
+    print(find(2)?.plus(2) ?? 0);
+    print(find(3)?.str() ?? "none");
+    print(b!.str());
+    print((find(3) ?? b!).str());
+}

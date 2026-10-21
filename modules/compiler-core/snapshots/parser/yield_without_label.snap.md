@@ -24,12 +24,13 @@
             },
             "typeName": "",
             "modifier": "none",
-            "fnType": null,
             "destruct": null,
             "default": null
           }
         ],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -39,11 +40,13 @@
                   "line": 2,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "identifier": {
                     "loc": {
                       "line": 2,
-                      "col": 11
+                      "col": 10
                     },
                     "kind": {
                       "ident": "items"
@@ -54,6 +57,11 @@
                 "params": [
                   "item"
                 ],
+                "paramsLoc": {
+                  "line": 2,
+                  "col": 19
+                },
+                "condition": false,
                 "body": [
                   {
                     "expr": {

@@ -1,0 +1,40 @@
+//// Decisions 723, 755 — a component that provides a value made at run time
+//// makes its context with `use memo`: `val c = use memo({ ->
+//// createContext(Theme(…)) }); use provide(c);`. `Label` reads it through
+//// the handle it imports, `themeContext`; with no provider above it reads
+//// the handle's default. The context is made on the value's first render
+//// and kept for it: `page` rendered twice makes it once.
+
+pub mod theme;
+
+import {theme.Theme, theme.themeContext};
+import {context.RenderScope, context.createContext, context.provide, context.context, hooks.memo, io.terminal.print} from "std";
+
+type Element(text: string) implement Renderable
+
+component fn Label() -> Component<Element> {
+    val t = use context(themeContext);
+    return Element(text: t.mode);
+}
+
+component fn Page(mode: string) -> Component<Element> {
+    val c = use memo({ ->
+        print("made " + mode);
+        createContext(Theme(mode: mode))
+    });
+    use provide(c);
+    val l = use Label();
+    return Element(text: l.text);
+}
+
+pub async fn main() -> Async<void> {
+    val outside = (await Label().run(RenderScope.root())).value;
+    print(outside.text);
+    val page = Page("dark");
+    val first = (await page.run(RenderScope.root())).value;
+    print(first.text);
+    val again = (await page.run(RenderScope.root())).value;
+    print(again.text);
+    val other = (await Page("sepia").run(RenderScope.root())).value;
+    print(other.text);
+}

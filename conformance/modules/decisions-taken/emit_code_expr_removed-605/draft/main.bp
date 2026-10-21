@@ -1,0 +1,15 @@
+//// Decision 605 — `@emit`, `@code` and `@expr` are removed now, with `builtins.d.bp`, in B-139; nothing is parked and 604 gains no exception; 165 s10 lands before B-139.
+
+import {io.terminal.print} from "std";
+import {comptime.register.register, comptime.register.legacy, comptime.register.routes};
+
+#[register]
+type Account(id: i32)
+
+#[legacy]
+type Order(id: i32)
+
+pub fn main() -> void {
+    print(Account.describe());
+    print(routes().join(","));
+}

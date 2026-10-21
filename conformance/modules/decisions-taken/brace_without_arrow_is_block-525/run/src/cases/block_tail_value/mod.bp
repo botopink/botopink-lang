@@ -1,0 +1,16 @@
+//// Decision 525 — a block `{ … }` used as a value answers its last
+//// expression written without `;` (decision 409), as a function and a lambda
+//// do: a single expression, statements then a tail, and a braced `if` at its
+//// end. `@block` is gone (`modules/block_builtin_removed`).
+
+import {io.terminal.print} from "std";
+
+pub fn runCase() -> void {
+    val a = { 1 + 2 };
+    val b = {
+        val x = 4;
+        x * 10
+    };
+    val c = { if (a > 2) "big" else "small" };
+    print(a, b, c);
+}

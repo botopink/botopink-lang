@@ -1,0 +1,63 @@
+//// std/functions — combinators over function values (decision 738).
+////
+//// Plain functions of a std module, imported by path:
+//// `import {functions.compose} from "std";`. A function's type is
+//// `fn(A) -> B`; no `Function` contract names it. Pure botopink, no host
+//// backing, so the module runs on every target.
+////
+//// No import (decision 106: a root module).
+
+/// The argument, unchanged.
+pub fn identity<A>(x: A) -> A {
+    return x;
+}
+
+/// `f`, then `g`: `compose(f, g)(a)` is `g(f(a))`.
+pub fn compose<A, B, C>(f: fn(a: A) -> B, g: fn(b: B) -> C) -> fn(A) -> C {
+    return { a -> g(f(a)) };
+}
+
+/// `f` with its two arguments swapped: `flip(f)(b, a)` is `f(a, b)`.
+pub fn flip<A, B, C>(f: fn(a: A, b: B) -> C) -> fn(B, A) -> C {
+    return { b, a -> f(a, b) };
+}
+
+/// A function answering `x` whatever it is given. The argument is typed
+/// `unknown` (decision 668: no parameter would bind a type for it), so one
+/// binding takes any argument.
+pub fn constant<A>(x: A) -> fn(unknown) -> A {
+    return { ignored -> x };
+}
+
+test "functions.identity" {
+    assert identity(42) == 42;
+    assert identity("hi") == "hi";
+    assert identity(true);
+}
+
+test "functions.compose runs left to right" {
+    val double: fn(i32) -> i32 = { n -> n * 2 };
+    val addOne: fn(i32) -> i32 = { n -> n + 1 };
+    val f = compose(double, addOne);
+    assert f(3) == 7;
+    assert f(0) == 1;
+}
+
+test "functions.compose with a string transform" {
+    val shout: fn(string) -> string = { s -> s + "!" };
+    val greet: fn(string) -> string = { s -> "Hello, " + s };
+    val greetAndShout = compose(greet, shout);
+    assert greetAndShout("world") == "Hello, world!";
+}
+
+test "functions.flip reverses the argument order" {
+    val sub: fn(i32, i32) -> i32 = { a, b -> a - b };
+    val rsub = flip(sub);
+    assert rsub(3, 10) == 7;
+}
+
+test "functions.constant ignores its argument" {
+    val always42 = constant(42);
+    assert always42("anything") == 42;
+    assert always42(0) == 42;
+}

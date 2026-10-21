@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `Cache<User[]>`
+at src/cases/decorator_record_argument_mismatch/mod.bp:22:13

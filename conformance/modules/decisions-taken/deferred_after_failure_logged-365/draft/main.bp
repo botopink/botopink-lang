@@ -1,0 +1,41 @@
+//// Decision 365 — A deferred `after()` failure reaching the core's logger is front 17's step, not 128's.
+
+import {io.terminal} from "std";
+import {failure.attempt, failure.panic} from "std";
+
+type Deferred(id: string, run: fn())
+
+// What a request keeps for after its response: the functions `after` deferred.
+type Request(id: string, deferred: Deferred[])
+
+fn after(req: Request, id: string, run: fn()) -> Request {
+    return Request(..req, deferred: req.deferred.append([Deferred(id: id, run: run)]));
+}
+
+fn logError(name: string, correlationId: string, line: string) -> void {
+    terminal.print("ERROR", name, "[" + correlationId + "]", line);
+}
+
+// Runs every deferred function; one that raises is reported through the
+// logger with the request's id, never dropped.
+fn drainAfter(req: Request) -> void {
+    for (req.deferred) { d ->
+        case attempt(d.run) {
+            Ok(value: _) {}
+            Error(error: f) {
+                logError("rakun.request.after", req.id, "after: failed "
+                    + d.id
+                    + " "
+                    + f.message);
+            }
+        }
+    }
+}
+
+pub fn main() -> void {
+    var req = Request(id: "req-42", deferred: []);
+    req = after(req, "audit", { -> terminal.print("audit written") });
+    req = after(req, "metrics", { -> panic("metrics host down") });
+    terminal.print("response sent");
+    drainAfter(req);
+}

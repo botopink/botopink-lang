@@ -1,0 +1,23 @@
+//// Decision 328 — a generic function's result `R` is the lambda's own type, whatever its shape:
+//// `apply<T, R>(x: T, f: fn(T) -> R) -> R` answers a number, a record, an array and a string
+//// from the lambda it is given, on every target.
+
+import {io.terminal.print} from "std";
+
+type Holder(name: string, size: i32)
+
+fn apply<T, R>(x: T, f: fn(T) -> R) -> R {
+    return f(x);
+}
+
+pub fn main() -> void {
+    val h = Holder(name: "box", size: 3);
+    print(apply(h, { v -> v.size + 1 }));
+    print(apply(h, { v -> v.name }));
+    print(apply(h, { v -> "s" }));
+    print(apply(h, { v -> Holder(name: v.name, size: 9) }).size);
+    print(apply(h, { v -> [v.size, 7] })[1]);
+    print(apply(h, { v -> [v.name, "z"] })[0]);
+    print(apply(h, { v -> v.size > 2 }));
+    print(apply(h, { v -> 1.5 }));
+}

@@ -1,0 +1,1 @@
+{ "name": "targets_default_is_dependencies_intersection", "dependencies": { "beamkit": { "path": "deps/beamkit" } } }

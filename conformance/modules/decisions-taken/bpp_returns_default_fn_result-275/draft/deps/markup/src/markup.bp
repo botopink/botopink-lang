@@ -1,0 +1,10 @@
+//// The package the manifest's `"bpp"` names: its `#[bpp.html]` default function declares `-> i32`, so every
+//// `.bpp` unfolded onto it returns `i32`. It answers the number of codepoints of the markup.
+
+import {bpp, code, compiler} from "std";
+
+#[bpp.html]
+pub default fn markup(syntax t: string) -> i32 {
+    val size = compiler.text(t).trim().length;
+    return code @`${size}`;
+}

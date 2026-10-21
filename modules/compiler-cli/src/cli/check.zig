@@ -1,116 +1,131 @@
-/// `botopink check` — type-check without generating code.
+/// `botopink check [<path>]` — type-check without generating code.
+///
+/// Loads the same module set `botopink test` compiles — `src/` through the
+/// module tree **and** the flat `test/` suite — plus the declared dependencies,
+/// so a module `test` reports as broken is one `check` diagnoses. Every failing
+/// module is rendered with file, line and excerpt from its comptime outcome —
+/// lex and parse errors included (`diagnostics.printSyntaxError`).
 const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
 const sources = @import("./sources.zig");
+const scanner = @import("./scanner.zig");
 const libs = @import("./libs.zig");
+const build_cmd = @import("./build.zig");
+const diagnostics = @import("./diagnostics.zig");
+const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
 
-pub fn run(gpa: std.mem.Allocator, io: std.Io, env_map: libs.EnvMap) !u8 {
+pub const Options = struct {
+    /// Project directory to check; null → the current directory.
+    path: ?[]const u8 = null,
+};
+
+pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvMap) !u8 {
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
+    if (opts.path) |p| {
+        std.process.setCurrentPath(io, p) catch |err| {
+            const msg = try std.fmt.allocPrint(arena, "cannot enter '{s}': {s}", .{ p, @errorName(err) });
+            reporter.errMsg(msg);
+            return 1;
+        };
+    }
+
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
     };
 
-    var loaded = sources.load(gpa, io, proj, "src") catch return 1;
-    defer loaded.free(gpa);
-    const project_modules = loaded.modules;
-
-    if (project_modules.len == 0) {
-        reporter.errMsg("no source files found in src/");
+    const target = proj.parsedTarget() orelse {
+        build_cmd.reportUnsupportedTarget(proj.target);
         return 1;
-    }
+    };
 
     // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
-    // so `import … from "<lib>"` type-checks. Dependencies compile first.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
-        switch (err) {
-            error.LibsRootNotFound => {
-                reporter.errMsg("project declares dependencies but no libs/ directory was found in this or any parent directory");
-                reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
-            },
-            error.LibNotFound => reporter.errMsg("a declared dependency was not found under the libs root"),
-            error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
-            else => reporter.errMsg("failed to load project dependencies"),
-        }
+    // so `import … from "<lib>"` type-checks. Dependencies compile first,
+    // and load first: a `.bpp` file unfolds onto the package `"bpp"` names
+    // (front 116 step 2, `closure_keys.bpp`).
+    const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj) };
+    const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
+        build_cmd.reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
 
-    // Keep only real `.bp` dependency modules. Declaration-only (`.d.bp`) modules
-    // use declaration-file syntax the regular pipeline doesn't parse for external
-    // libs yet (the declaration-parse path is std-only), so they are skipped
-    // rather than failed — they carry host-bound / gated surface, not code.
-    var real_deps: std.ArrayListUnmanaged(bp.Module) = .empty;
-    for (dep_modules) |d| {
-        if (!d.declaration) try real_deps.append(arena, d);
+    var loaded = sources.loadWith(gpa, io, proj, proj.srcDir(), if (closure_keys.bpp) |*b| b else null) catch return 1;
+    defer loaded.free(gpa);
+    var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
+    defer test_scan.free(gpa);
+    // Decision 519 — a test module's `@embed` reads the package's files.
+    for (test_scan.modules) |*m| m.files = bp.PackageFiles.disk(io, proj.dir);
+    const test_modules = test_scan.modules;
+
+    // The flat `test/` directory is not a package, so it never reached the
+    // resolver: check its imports here, against the same rule `src/` answers to.
+    sources.checkFlatImports(gpa, proj, loaded.modules, test_scan) catch return 1;
+
+    if (loaded.modules.len == 0 and test_modules.len == 0) {
+        reporter.errMsg("no source files found in src/ or test/");
+        return 1;
     }
 
-    const modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, project_modules });
+    // The code cache's level B (144 B-60): the target's entries, as `build`
+    // reads and writes them.
+    var level_b: analysis_store.Cache = undefined;
+    try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    level_b.logs = closure_keys.logs;
+    defer level_b.deinit();
+    // The compiled comptime modules beside it (decision 543).
+    try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);
 
-    reporter.checking(modules.len);
+    // A dependency's modules are one set under every command, so one level B
+    // entry.
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ dep_modules, loaded.modules, test_modules });
+
+    reporter.checking(all_modules.len);
     const t0 = std.Io.Timestamp.now(io, .awake);
 
-    // STD-001 — same target-name vocabulary `codegen.generate` threads in,
-    // so `botopink check` reds on the same `from "std"` imports `botopink build`
-    // would have aborted on.
-    const target_name: []const u8 = switch (proj.parsedTarget()) {
-        .commonJS => "node",
-        .erlang, .beam => "erlang",
-        .wasm => "wasm",
-    };
+    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
 
-    var session = bp.comptime_pipeline.compile(
+    // The analysis reads no target (decision 798 (4)); the target's own
+    // refusals — a std call with no binding for it (STD-001) — are the ones `botopink build`'s
+    // emit gives (`codegen.targetCheck`), so `check` reds where `build` would.
+    var session = bp.comptime_pipeline.compileWith(
         gpa,
-        modules,
+        all_modules,
         io,
         ".botopinkbuild",
-        target_name,
+        &level_b.store,
     ) catch |err| {
         reporter.errMsg("type-check failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;
     };
     defer session.deinit(gpa);
+    level_b.commit();
+    _ = try bp.codegen.targetCheck.apply(session.arena.allocator(), session.outputs.items, diagnostics.comptimeTargetName(target, proj.wasmHost()));
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 
-    var had_error = false;
     for (session.outputs.items) |o| {
-        switch (o.outcome) {
-            .ok => {},
-            .parseError => {
-                had_error = true;
-                std.debug.print("error: parse error in {s}\n", .{o.name});
-            },
-            .validationError => |ce| {
-                had_error = true;
-                const rendered = ce.renderAlloc(gpa, o.src) catch continue;
-                defer gpa.free(rendered);
-                std.debug.print("{s}", .{rendered});
-            },
-            .typeError => |te| {
-                had_error = true;
-                const msg = te.message(gpa) catch continue;
-                defer gpa.free(msg);
-                if (te.loc) |loc| {
-                    std.debug.print("error: {s} at {s}:{d}:{d}\n", .{ msg, o.name, loc.line, loc.col });
-                } else {
-                    std.debug.print("error: {s} in {s}\n", .{ msg, o.name });
-                }
-            },
-        }
+        if (diagnostics.renderOutcome(gpa, io, arena, o)) try failed.append(arena, o.name);
     }
 
-    if (had_error) return 1;
+    diagnostics.reportOrphans(arena, loaded.orphans.len);
+
+    if (failed.items.len > 0) {
+        diagnostics.reportFailedModules(arena, failed.items);
+        return 1;
+    }
 
     reporter.checked(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;

@@ -1,0 +1,7 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.is_enum_variant.runCase();
+    cases.is_function_type.runCase();
+    cases.is_truth_table.runCase();
+}

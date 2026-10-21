@@ -1,0 +1,5 @@
+//// A fixture library: a decorator compiling a registration (`registry`) and
+//// a module of its own that uses it (`builtin`).
+
+pub mod registry;
+pub mod builtin;

@@ -1,0 +1,10 @@
+//// Report L (R3) — a located error inside a dependency's declaration names
+//// the declaring file and line (`a/client.bp`), never a line of the module
+//// that imports it.
+
+import {lifeOf, make} from "b";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(lifeOf(make(7)));
+}

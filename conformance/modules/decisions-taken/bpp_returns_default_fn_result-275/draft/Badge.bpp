@@ -1,0 +1,5 @@
+type Props(label: string)
+
+val shown = props.label.toUpper();
+---
+<span>{shown}</span>

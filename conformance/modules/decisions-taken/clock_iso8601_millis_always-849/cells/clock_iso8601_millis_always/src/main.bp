@@ -1,0 +1,15 @@
+//// 144 B-10, decision 849 — `io/clock`'s `formatIso8601` answers `YYYY-MM-DDTHH:MM:SS.sssZ` on
+//// every target, the milliseconds always written (a whole second ends `.000`), and
+//// `parseIso8601` reads both widths.
+
+import {io.clock, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(clock.formatIso8601(0l));
+    print(clock.formatIso8601(1000l));
+    print(clock.formatIso8601(1234567890123l));
+    print(clock.formatIso8601(-1l));
+    print(clock.parseIso8601("2009-02-13T23:31:30.123Z").unwrapOr(0l));
+    print(clock.parseIso8601("2009-02-13T23:31:30Z").unwrapOr(0l));
+    print(clock.parseIso8601(clock.formatIso8601(1234567890123l)).unwrapOr(0l));
+}

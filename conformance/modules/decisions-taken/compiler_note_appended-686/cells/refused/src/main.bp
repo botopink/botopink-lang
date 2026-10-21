@@ -1,0 +1,9 @@
+//// Decision 765 — a case of a module is a full cell: this one is refused, its answer is in `helper.snap`.
+
+pub mod helper;
+import {helper.twice};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(twice(2));
+}

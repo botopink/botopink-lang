@@ -1,0 +1,37 @@
+//// Decision 234 — Constructor injection resolves a field by its type (Spring's model, 281): a stereotyped type's factory is its member `T.
+
+import {io.terminal} from "std";
+import {rakun, component, provides} from "rakun";
+
+pub type Clock(zone: string, millis: i64)
+
+// The one way to provide a bean of a type the program does not stereotype.
+#[provides]
+pub fn fixedClock() -> Clock {
+    return Clock(zone: "UTC", millis: 86400000l);
+}
+
+// A stereotyped type: its fields are resolved by their types.
+#[component]
+pub type Ledger(entries: string[] = [])
+
+#[component]
+pub type Invoices(clock: Clock, ledger: Ledger) {
+    pub fn stamp(self: Self, id: string) -> string {
+        return id
+            + " at "
+            + self.clock.millis.toString()
+            + " "
+            + self.clock.zone;
+    }
+}
+
+pub fn main() -> void {
+    rakun.boot();
+    // Asked for by the type itself; the answer is typed by it.
+    val invoices: ?Invoices = rakun.context().resolveNamed(Invoices);
+    terminal.print(invoices?.stamp("inv-1") ?? "no bean");
+    // The factory the stereotype gives the type is its member `make`.
+    val made = Invoices.make();
+    terminal.print(made.clock == invoices?.clock, made.ledger.entries.length);
+}

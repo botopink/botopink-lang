@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn add(x: i32, y: i32) { return x; }
+fn add(x: i32, y: i32) -> i32 { return x; }
    ↑
 ```
 
@@ -8,5 +8,5 @@ fn add(x: i32, y: i32) { return x; }
 kind: markdown
 
 ```botopink
-fn add(x: i32, y: i32)
+fn add(x: i32, y: i32) -> i32
 ```

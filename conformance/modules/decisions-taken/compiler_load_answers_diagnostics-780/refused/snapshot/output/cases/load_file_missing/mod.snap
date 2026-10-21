@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-file-missing: `compiler.load("src/cases/nothing_here.bp")` names no file of the package
+at src/cases/load_file_missing/mod.bp:7:32

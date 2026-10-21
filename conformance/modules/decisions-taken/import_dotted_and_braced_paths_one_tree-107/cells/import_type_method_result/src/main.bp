@@ -1,0 +1,23 @@
+//// Decision 107 — a method of an imported type that answers a `Result` hands its `Ok` and `Error`
+//// payloads to the importer's `case` as the types it declares: `Shop(…).num()` is `Ok("corner")`,
+//// its payload the string, as it is for a free function or a method in the same module, on every target.
+
+pub mod shop;
+
+import {io.terminal.print} from "std";
+import {shop.Shop};
+
+pub fn main() -> void {
+    case Shop(name: "corner").num() {
+        Ok(t) -> print(t);
+        Error(e) -> print(e);
+    }
+    case Shop(name: "corner").code() {
+        Ok(n) -> print(n + 1);
+        Error(e) -> print(e);
+    }
+    case Shop(name: "").code() {
+        Ok(n) -> print(n + 1);
+        Error(e) -> print(e);
+    }
+}

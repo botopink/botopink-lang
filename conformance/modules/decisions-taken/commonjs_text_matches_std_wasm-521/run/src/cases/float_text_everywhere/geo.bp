@@ -1,0 +1,5 @@
+pub type Pt(x: f64, n: i32)
+
+pub fn origin() -> Pt {
+    return Pt(x: 2.0, n: 0);
+}

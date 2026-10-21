@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[spread-dot-dot-dot]: `...` is the inclusive range, not a spread
+at src/cases/record_spread_dot_dot_dot/mod.bp:11:18
+label write `..`

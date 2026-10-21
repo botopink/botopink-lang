@@ -1,0 +1,11 @@
+//// Decision 346 — no literal is `Bytes`: a string literal where `Bytes` is expected is a
+//// mismatch at the literal; the bytes of a text are `Bytes.fromUtf8(s)`. (The parent binary
+//// refused the literal too, as a type it did not know; it refused `Bytes.fromUtf8` first.)
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val made = bytes.fromUtf8("a");
+    val b: bytes = "a";
+    print(made == b);
+}

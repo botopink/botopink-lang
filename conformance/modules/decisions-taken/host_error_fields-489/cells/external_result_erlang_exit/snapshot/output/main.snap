@@ -1,0 +1,5 @@
+botopink-cell 1
+out error broken host HostErrorName.Error
+out error thrown host HostErrorName.Throw
+out error gone host HostErrorName.Exit
+out ok 4

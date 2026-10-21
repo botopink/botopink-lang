@@ -27,7 +27,7 @@ test "foldingRange: fn block" {
 test "foldingRange: enum block" {
     const gpa = std.testing.allocator;
     const source =
-        \\enum Color {
+        \\type Color {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -67,9 +67,9 @@ test "foldingRange: consecutive use imports" {
 test "foldingRange: struct with methods" {
     const gpa = std.testing.allocator;
     const source =
-        \\record Counter {
-        \\    _count: i32 = 0,
-        \\    fn increment(self: Self) {
+        \\type Counter(
+        \\    _count: i32 = 0) {
+        \\    fn increment(self: Self) -> void {
         \\        self._count += 1;
         \\    }
         \\}

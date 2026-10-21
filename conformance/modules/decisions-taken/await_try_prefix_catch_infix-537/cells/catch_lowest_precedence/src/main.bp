@@ -1,0 +1,41 @@
+//// Decision 537 — `catch` is an infix operator of the lowest precedence: its
+//// right side is the fallback, its left side the whole expression before it.
+//// `try await t catch 0 * 2` is `(try await t) catch (0 * 2)`, and parentheses
+//// group as anywhere: `(try await t catch 0) * 2` doubles the result — the
+//// `async { (try await t catch 0) * 2 }` of decision 523.
+
+import {io.terminal.print} from "std";
+
+async fn load(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+async fn fallback(n: i32) -> Async<i32> {
+    val t = load(n);
+    return try await t catch 7 * 2;
+}
+
+async fn doubled(n: i32) -> Async<i32> {
+    val t = load(n);
+    return (try await t catch 7) * 2;
+}
+
+async fn composed(n: i32) -> Async<i32> {
+    val t = load(n);
+    val twice = async { (try await t catch 0) * 2 };
+    return await twice;
+}
+
+async fn run() -> Async<void> {
+    print(await fallback(5));
+    print(await fallback(-5));
+    print(await doubled(5));
+    print(await doubled(-5));
+    print(await composed(6));
+    print(await composed(-6));
+}
+
+pub fn main() -> void {
+    run();
+}

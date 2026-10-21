@@ -1,0 +1,12 @@
+//// Decision 575 (6) — a behavior declares a member's signature, or a `default
+//// fn` with a body: `declare fn` inside one is refused at the member.
+
+import {io.terminal.print} from "std";
+
+behavior Greeter {
+    declare fn greet(self: Self) -> string;
+}
+
+pub fn main() -> void {
+    print("unreached");
+}

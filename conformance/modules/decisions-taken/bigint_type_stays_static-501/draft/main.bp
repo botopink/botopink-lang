@@ -1,0 +1,23 @@
+//// Decision 501 — A `bigint`'s type stays static: no widening to `unknown`, no `is` test, no `comptime` computing one.
+
+import {io.terminal.print} from "std";
+
+fn total(xs: bigint[]) -> bigint {
+    var sum = 0n;
+    for (xs) { x ->
+        sum = sum + x;
+    }
+    return sum;
+}
+
+fn show(a: i32 | bigint) -> void {
+    print(a);
+}
+
+pub fn main() -> void {
+    val big = 9007199254740993n;
+    print(big);
+    print(total([big, 7n]));
+    show(5);
+    show(big * 2n);
+}

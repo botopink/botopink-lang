@@ -1,0 +1,119 @@
+# Homes that override `scripts/consolidate-cells.py plan` (decision 765 (2)): one
+# `<cell> <row> [also <row>,<row>]` per line, the row the cell proves by its behaviour and the
+# rows it proves also (none when `also` is left out); `outside` homes it under its name prefix.
+# Written by the one pass over the ambiguity list; a cell not listed keeps plan's home.
+
+# Index: decision 63's ambient `Index` is 139's rule; 539 (6) only names `Closeable` beside it.
+ambient_index_implement_missing_method 139
+ambient_index_parameter 139
+
+# Literals: the cell is the join of 150; 247's refusal is its own cell.
+array_literal_numeric_join 150 also 247
+
+# Async blocks: 124's block, not 334's host profiles.
+async_block_all_of 124
+
+# `@BeamMemory`: the keyed rules 547 removes are 168's and 340's, not 547's.
+beam_memory_ets_keyed 168 also 174
+beam_memory_ets_keyed_read_modify_write 340
+beam_memory_ets_keyed_recompose 168
+
+# bigint: question 139-a is no decision 139.
+bigint_comptime 332
+bigint_into_unknown 332
+bigint_type_test 332
+
+# Bytes: the bridges are 346's; the error enum 486's.
+bytes_encoding_bridges 346 also 486
+
+# Components: the dropped base parameter is 354 (1).
+component_base_parameter 354
+
+# comptime: the argument known at build is 280 (0); the block forms 266 and 255 (2); attempt at build 518.
+comptime_arg_not_known 280
+comptime_attempt_at_build 518 also 543
+comptime_block_in_body 266 also 525
+comptime_expression_is_block 255 also 525,266
+
+# Contexts: a value crossing the render scope is 388's, as context_wide_number_through_scope.
+context_optional_wide_number_through_scope 388 also 379,354,504
+
+# `@Decl<B>` (564) is overtaken: the contract of a `syntax decl` parameter is 716 (1).
+decorator_decl_behavior_not_implemented 716
+
+# 384's member hygiene; 310 is only named.
+decorator_member_fn_imported_name 384
+
+# Derived types: 307's export; 351 is only the example.
+derived_type_imported 307
+
+# Effects: the old annotations and types refused are 127's migration, not 553's markers.
+effect_annotation_removed_context 127
+effect_annotation_removed_future 127
+effect_annotation_removed_future_generator 127
+effect_annotation_removed_generator 127
+effect_annotation_removed_iterator 127
+effect_annotation_removed_result 127
+effect_annotation_removed_result_generator 127
+effect_annotation_removed_use 127
+effect_type_removed_future 127
+effect_type_removed_future_generator 127
+effect_type_removed_future_no_error 127
+effect_type_removed_generator 127
+effect_type_removed_iterable 127
+effect_type_removed_result_generator 127
+effect_type_removed_use 127
+iterator_error_param_removed 127
+
+# Prefixed loops: 125's `iter loop` / `stream loop`.
+prefixed_loop_result_item 125 also 553
+stream_loop_no_failure 125 also 553
+
+# Cited by decision 2 or 118 only (overtaken by 330 / 553), proving neither.
+fn_falls_off_end outside
+if_without_else_value outside
+result_void_falls_off_end outside
+import_type_alias outside
+result_i64_map_flat_map outside
+
+# Host results: a `result: true` binding's errors are 490's; 491 (`op:` / `fn:`) is not exercised.
+external_result_host_error 490 also 489,431
+
+# Imports.
+import_bundled_package_beside_own_module 206
+import_std_folder_namespace 110 also 107,518
+import_two_types_one_name 310
+
+# Records.
+record_spread_beside_record_update 529 also 359,37
+record_structural_equality 210 also 211
+
+# Stages: 376's rule; 562 explains the expansion beside it.
+stage_build_and_run 376 also 562
+stage_of_functions 376 also 562
+
+# std: the cell proves its subject row.
+std_failure_attempt_crash 527 also 546
+abort_text_crash 535 also 527,546
+std_failure_attempt_task 494 also 518,492,432
+std_hash_on_every_target 260 also 238,261
+
+# syntax functions: 719's expansion; 756's file path rides along.
+syntax_fn_expanded_at_call 719 also 756
+
+# Templates.
+template_built_code_diagnostic_located 429 also 577
+template_catalogue_no_theme 358
+template_hole_error_far_in_built_code 577
+template_hole_error_on_later_line 577
+template_hole_typed_at_caller 577
+
+# The catalogue: 235's list order; 562's expansion; a behavior-typed catalogue is 564's, overtaken.
+typeinfo_all_behavior_call_outside_expansion 562
+typeinfo_all_behavior_none_shared outside
+typeinfo_all_behavior_shared 235
+typeinfo_all_behavior_typed outside
+typeinfo_all_list 235 also 254,256
+
+# print: the local shadowing the imported `print` is 606's prelude rule, not the prefix's.
+print_local_shadows_import 606

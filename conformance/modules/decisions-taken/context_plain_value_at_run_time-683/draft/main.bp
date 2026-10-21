@@ -1,0 +1,27 @@
+//// Decision 683 — std's `Context<T>` holds `contextValue: T`, and at run time a context is its plain value — an `f64` / `i64` context crosses wasm's scope as any value.
+
+import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+pub val rateContext = comptime createContext(1.5);
+
+pub val limitContext = comptime createContext(100l);
+
+component fn Price() -> Component<View> {
+    val rate = use context(rateContext);
+    val limit = use context(limitContext);
+    return View(text: rate.toString() + " x " + limit.toString());
+}
+
+component fn Page() -> Component<View> {
+    use provide(createContext(2.25));
+    val p = await Price();
+    return View(text: p.text);
+}
+
+pub async fn main() -> Async<void> {
+    print(rateContext.contextValue);
+    print((await Price()).text);
+    print((await Page()).text);
+}

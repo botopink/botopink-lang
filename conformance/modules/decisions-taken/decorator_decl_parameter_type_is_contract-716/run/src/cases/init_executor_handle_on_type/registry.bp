@@ -1,0 +1,11 @@
+//// The run-time registry the executors write to.
+
+var entries: string[] = [];
+
+pub fn add(e: string) -> void {
+    entries.push(e);
+}
+
+pub fn all() -> string[] {
+    return entries;
+}

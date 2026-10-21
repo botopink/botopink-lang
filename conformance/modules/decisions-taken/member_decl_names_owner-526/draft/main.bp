@@ -1,0 +1,28 @@
+//// Decision 526 — A member's `@Decl` names its owner: `owner: ?Declared<unknown>` (`null` at module level), set by the checker when it runs a member's decorator.
+
+import {io.terminal} from "std";
+import {comptime.queries.query};
+import {comptime.registry};
+
+type Users() {
+    #[query("select * from users")]
+    pub fn all(self: Self) -> string[] {
+        return [];
+    }
+}
+
+type Orders() {
+    #[query("select * from orders")]
+    pub fn all(self: Self) -> string[] {
+        return [];
+    }
+}
+
+#[query("select 1")]
+pub fn ping() -> void {}
+
+pub fn main() -> void {
+    for (registry.all()) { q ->
+        terminal.print(q._0, "->", q._1);
+    }
+}

@@ -1,0 +1,1 @@
+{ "name": "fs_file_defer_close", "targets": ["commonJS", "erlang", "beam"] }

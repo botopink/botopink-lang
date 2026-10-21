@@ -1,0 +1,44 @@
+//// Decision 546 — Wrapping every host call costs 15–21 % on erlang and beam (decisions 492, 527 (1); 144 B-07)
+
+import {compiler, failure, failure.Failure, failure.HostError, io.terminal.print} from "std";
+
+// Declared outside std, without `result: true`: its raise is marked `host`.
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error("disk on fire"); })()"""),
+    .Erlang("""erlang:error(disk_on_fire)"""),
+)]
+declare fn readSector(n: i32) -> i32;
+
+// Declared with `result: true`: the raise arrives as `Error(HostError(…))`.
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error("disk on fire"); })()""", result: true),
+    .Erlang("""erlang:error(disk_on_fire)""", result: true),
+)]
+declare fn tryReadSector(n: i32) -> Result<i32, HostError>;
+
+fn checked(n: i32) -> i32 {
+    assert n >= 0, "a sector number is never negative";
+    return n;
+}
+
+fn show(r: Result<i32, Failure>) -> void {
+    case r {
+        Ok(v) -> print("Ok " + v.toString());
+        Error(f) -> print("Error " + f.kind);
+    }
+}
+
+pub fn main() -> void {
+    show(failure.attempt({ -> readSector(7) }));
+    val sector = try tryReadSector(7) catch { e ->
+        print("caught " + e.kind);
+        -1
+    };
+    print(sector);
+    val asserted = failure.attempt({ -> checked(-1) });
+    case asserted {
+        Ok(v) -> print(v);
+        Error(f) -> print(f.kind + ": " + f.message);
+    }
+    print("after");
+}

@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.record_param.runCase();
+    cases.record_param_across_modules.runCase();
+    cases.record_spread_beside_record_update.runCase();
+    cases.record_update_base_not_a_name.runCase();
+}

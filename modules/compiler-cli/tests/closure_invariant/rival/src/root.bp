@@ -1,0 +1,3 @@
+//// A second dependency of `crowded` alone, outside `shelf`'s closure.
+
+pub mod items;

@@ -1,0 +1,21 @@
+//// Decision 216 (3) — an owner's associated types have one name each: a
+//// second `Columns` (from this decorator or another) is refused at the
+//// annotation that adds it.
+
+import {compiler, io.terminal.print} from "std";
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.addType("Columns", compiler.buildType("(id: string)"));
+}
+
+fn table(syntax decl: unknown) -> void {
+    compiler.addType("Columns", compiler.buildType("(name: string)"));
+}
+
+#[entity]
+#[table]
+type City(id: i32)
+
+pub fn main() -> void {
+    print(City(id: 1).id);
+}

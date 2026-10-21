@@ -1,0 +1,13 @@
+//// Decision 660 — the init list runs package by package in dependency
+//// order: `top` depends on `zeta` and `core`, so their executors run first
+//// and `top`'s last, though the program lists `top` first; `zeta` and
+//// `core` depend on nothing, so they run in the order `top`'s
+//// `botopink.json` lists them, `zeta` before `core`. Every dependency's
+//// executors run before the program's own code, and nothing here imports
+//// any of them.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("main");
+}

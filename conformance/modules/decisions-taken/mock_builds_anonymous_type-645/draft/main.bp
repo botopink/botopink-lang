@@ -1,0 +1,18 @@
+//// Decision 645 — `mock(Greeter)` builds an anonymous type: an inline type implementing the behavior, `compiler.buildTypeInline(fields: [Field("__id", string)], implements: [t])`, given its methods by `addMember` and instantiated — no `"Mock"` name, no `addType`; and an inline type may `implement` a behavior.
+
+import {comptime.stubs.stub};
+import {io.terminal.print} from "std";
+
+pub behavior Greeter {
+    fn hello(self: Self, name: string) -> string;
+    fn bye(self: Self, name: string) -> string;
+}
+
+fn greetBoth(g: Greeter, name: string) -> string {
+    return g.hello(name) + ", " + g.bye(name);
+}
+
+pub fn main() -> void {
+    val g: Greeter = stub(Greeter, "fixed");
+    print(greetBoth(g, "Ana"));
+}

@@ -1,0 +1,9 @@
+pub mod inline_type_across_modules;
+pub mod inline_type_field_named_like_param;
+pub mod inline_type_in_field;
+pub mod inline_type_in_return;
+pub mod inline_type_in_val_annotation;
+pub mod inline_type_missing_field;
+pub mod inline_type_on_method_param;
+pub mod inline_type_twice_on_one_fn;
+pub mod inline_type_unknown_field;

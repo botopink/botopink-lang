@@ -1,0 +1,15 @@
+//// Decision 718 — `src` is a function of `Compiler`, always called:
+//// `comptime compiler.src()` is the place it is written. A function that runs
+//// when the program runs and needs its caller's place takes it as an ordinary
+//// parameter, and the caller writes the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+fn report(message: string, at: SourceLocation) -> void {
+    print(message, at.file, at.line, at.column, at.fnName);
+}
+
+pub fn main() -> void {
+    report("first", comptime compiler.src()); // first src/main.bp 13 30 main
+    report("second", comptime compiler.src()); // second src/main.bp 14 31 main
+}

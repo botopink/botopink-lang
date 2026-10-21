@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "User",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,19 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "name",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "behaviorMarks": [],
+        "shape": {
+          "record": [
+            {
+              "name": "name",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }
@@ -40,7 +43,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {

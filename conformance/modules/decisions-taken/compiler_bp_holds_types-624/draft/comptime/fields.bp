@@ -1,0 +1,12 @@
+import {compiler} from "std";
+
+// What `#[fieldList]` records. Every type it names — `compiler.Field<T>`,
+// `DeclAnnotation` — is declared in `compiler.bp`, beside `Compiler`.
+pub type FieldList(lines: string[])
+
+pub fn label(syntax decl: unknown, comptime text: string) -> void {}
+
+pub fn fieldList(syntax decl: unknown) -> void {
+    val fields: compiler.Field<unknown>[] = compiler.fields(decl);
+    compiler.setMeta(FieldList(lines: fields.map({ f -> f.name + " " + f.annotations.length.toString() })));
+}

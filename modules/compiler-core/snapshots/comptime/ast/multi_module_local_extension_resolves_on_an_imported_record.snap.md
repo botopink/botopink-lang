@@ -1,0 +1,113 @@
+----- SOURCE CODE -- pond.bp
+```botopink
+pub type Pato(id: i32)
+```
+
+----- TYPED AST JSON -- pond.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "Pato",
+      "fields": {
+        "id": "i32"
+      }
+    }
+  ]
+}
+```
+
+
+----- SOURCE CODE -- main.bp
+```botopink
+import {pond.Pato};
+val Swimmer = behavior {
+    fn swim(self: Self) -> i32;
+}
+val PatoNada = implement Swimmer for Pato {
+    fn swim(self: Self) -> i32 {
+        return self.id;
+    }
+}
+val donald = Pato(1);
+val splash = donald.swim();
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "interface_def",
+      "name": "Swimmer",
+      "methods": [
+        {
+          "name": "swim",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "i32"
+        }
+      ]
+    },
+    {
+      "ast": "val",
+      "ident": "donald",
+      "return_type": "Pato",
+      "expr": {
+        "ast": "call",
+        "params": [
+          {
+            "value": "i32"
+          }
+        ],
+        "return_type": "Pato"
+      }
+    },
+    {
+      "ast": "val",
+      "ident": "splash",
+      "return_type": "i32",
+      "expr": {
+        "ast": "call",
+        "params": [],
+        "return_type": "i32"
+      }
+    },
+    {
+      "ast": "implement_def",
+      "name": "PatoNada",
+      "interfaces": [
+        "Swimmer"
+      ],
+      "target": "Pato",
+      "methods": [
+        {
+          "name": "swim",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ast": "use",
+      "declarations": [
+        {
+          "ast": "use-declaration",
+          "ident": "Pato",
+          "return_type": "fn(i32) -> Pato"
+        }
+      ]
+    }
+  ]
+}
+```
+

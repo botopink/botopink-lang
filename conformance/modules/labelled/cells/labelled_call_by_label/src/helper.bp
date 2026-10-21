@@ -1,0 +1,13 @@
+pub fn describe(n: i32, s: string) -> string {
+    return s + n.toString();
+}
+
+pub fn pad(s: string, width: i32 = 3) -> string {
+    return s + width.toString();
+}
+
+pub type Box(n: i32) {
+    pub fn make(label: string, count: i32) -> string {
+        return label + count.toString();
+    }
+}

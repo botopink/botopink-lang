@@ -1,0 +1,33 @@
+//// Decision 388 (2), (4) — `c.run(scope)` answers a `Rendered`: the body's
+//// result and the scope its `use provide`s made for its children. `Shell`
+//// provides `dark`; `Mode` run with the scope `Shell`'s run answered reads
+//// it, and a component that provides nothing answers the scope it received
+//// (`Mode` run again with it reads `dark`). Outside every body the root is
+//// run with `c.run(RenderScope.root())` (791 (4): no `await c`).
+
+import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+
+type View(text: string) implement Renderable
+
+pub val modeContext = comptime createContext("");
+
+component fn Shell() -> Component<View> {
+    use provide(createContext("dark"));
+    return View(text: "shell");
+}
+
+component fn Mode() -> Component<View> {
+    val m = use context(modeContext);
+    return View(text: "mode " + m);
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Shell().run(RenderScope.root());
+    print(r.value.text);
+    val m = await Mode().run(r.scope);
+    print(m.value.text);
+    val again = await Mode().run(m.scope);
+    print(again.value.text);
+    val v = (await Shell().run(RenderScope.root())).value;
+    print(v.text);
+}

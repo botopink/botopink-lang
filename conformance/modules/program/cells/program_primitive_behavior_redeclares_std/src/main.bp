@@ -1,0 +1,18 @@
+//// A program's contract implemented for `string` adds members to `string`
+//// and redeclares none (decision 799 (4)): a `default fn startsWith` of its
+//// own, a member `string` already has, is `behavior-member-redeclared` at the
+//// implementation.
+
+import {io.terminal.print} from "std";
+
+behavior Prefixed {
+    default fn startsWith(self: Self, p: string) -> bool {
+        return false;
+    }
+}
+
+StringPrefixed implement Prefixed for string {};
+
+pub fn main() -> void {
+    print("x".startsWith("x"));
+}

@@ -1,0 +1,20 @@
+//// Decision 311 — `#[f "…"]` names a template function; a decorator (or
+//// any other function) there is refused at the annotation.
+
+import {compiler, io.terminal.print} from "std";
+
+fn mark(syntax decl: unknown) -> void {
+    compiler.setMeta(Mark(marked: true));
+}
+
+#[mark "select 1"]
+fn one() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(one().toString());
+}
+
+// What `#[mark]` records.
+type Mark(marked: bool)

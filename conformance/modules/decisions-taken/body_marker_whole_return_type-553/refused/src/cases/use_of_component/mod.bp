@@ -1,0 +1,18 @@
+//// Decision 791 (3) — `use c` resolves a component only inside a component
+//// body: in `errado`, a plain function answering `Element`, `use Counter()`
+//// is refused at the `use` as a hook's `use` is outside a component body
+//// (553, 722).
+
+type Element(count: i32) implement Renderable
+
+component fn Counter() -> Component<Element> {
+    return Element(count: 1);
+}
+
+fn errado() -> Element {
+    return use Counter();
+}
+
+pub fn main() -> void {
+    errado();
+}

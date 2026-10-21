@@ -1,0 +1,44 @@
+//// Decision 780 — `compiler.load(path)` compiles a file of the package at build, as the
+//// entry of a package of its own, and answers its refusals as data: each `Diagnostic`
+//// holds the code, the message, the file, the line, the column and the label
+//// `botopink build` prints for it. The loaded files are no module of this program —
+//// none is declared, and their refusals never refuse it (decision 782: the answer
+//// is a `Result`, read with `try … catch`, decision 783; its failure a `Refused`
+//// holding the loaded `Module` and its `diagnostics`, decision 786).
+
+import {compiler, io.terminal.print} from "std";
+
+fn show(d: compiler.Diagnostic) -> void {
+    print("code=" + d.code);
+    print("message=" + d.message);
+    print("at=" + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+    print("label=" + (d.label ?? "none"));
+}
+
+pub fn main() -> void {
+    // A type error: one refusal, its message naming no code, no label.
+    try comptime compiler.load("src/cases/broken.bp") catch { r ->
+        print(r.diagnostics.length);
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+    // A parse error: its code and the label beside its caret.
+    try comptime compiler.load("src/cases/unclosed.bp") catch { r ->
+        print(r.diagnostics.length);
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+    // The `mod` tree beside the loaded file is its package's: a refusal in
+    // `helper.bp` is located there.
+    try comptime compiler.load("src/cases/two_modules/main.bp") catch { r ->
+        print(r.diagnostics.length);
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+}

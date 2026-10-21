@@ -1,0 +1,19 @@
+//// Many annotations, one member: the checks record meta, `validated` owns `validate`.
+
+import {compiler} from "std";
+
+pub type Check<T>(message: string, rule: fn(v: T) -> bool)
+
+pub fn check<T>(syntax decl: T, comptime message: string, syntax rule: fn(v: T) -> bool) -> void {
+    compiler.addMeta(Check<T>(message: message, rule: rule));
+}
+
+pub fn validated<T>(syntax decl: T) -> void {
+    compiler.addMember("validate", fn(self: T) -> string[] {
+        var out: string[] = [];
+        for (comptime compiler.typeInfo(T).metaAll(Check)) { c ->
+            if (!c.rule(self)) out.push(c.message);
+        }
+        return out;
+    });
+}

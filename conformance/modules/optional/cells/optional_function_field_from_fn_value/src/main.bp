@@ -1,0 +1,17 @@
+//// A function value is a value of its optional function type, as any `T` is a
+//// value of `?T`: a record field typed `?fn(string) -> string` takes a named
+//// function directly.
+
+import {io.terminal.print} from "std";
+
+pub type Cfg(scoper: ?fn(string) -> string = null)
+
+fn scopeA1(s: string) -> string {
+    return "a1-" + s;
+}
+
+pub fn main() -> void {
+    val cfg = Cfg(scoper: scopeA1);
+    print(cfg.scoper?.("x") ?? "none");
+    print(Cfg().scoper == null);
+}

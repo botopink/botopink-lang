@@ -1,0 +1,25 @@
+//// A program's own `type` may take the name of a builtin enum's variant —
+//// `DeclKind.Element`, `DeclKind.Field` — and name itself in its own
+//// fields: the name in a type position is the program's type.
+
+import {io.terminal.print} from "std";
+
+type Element(tag: string, children: Element[])
+
+type Field(name: string, inner: ?Field)
+
+fn depth(e: Element) -> i32 {
+    var most = 0;
+    for (e.children) { c ->
+        val d = depth(c);
+        if (d > most) most = d;
+    }
+    return most + 1;
+}
+
+pub fn runCase() -> void {
+    val tree = Element(tag: "a", children: [Element(tag: "b", children: [])]);
+    print(depth(tree));
+    val f = Field(name: "outer", inner: Field(name: "inner", inner: null));
+    print(f.inner?.name ?? "none");
+}

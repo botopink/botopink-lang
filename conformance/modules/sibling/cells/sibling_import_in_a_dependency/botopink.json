@@ -1,0 +1,1 @@
+{ "name": "sibling_import_in_a_dependency", "dependencies": { "tree": { "path": "deps/tree" } } }

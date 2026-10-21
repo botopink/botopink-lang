@@ -1,0 +1,13 @@
+pub behavior Greeter {
+    fn greet(self: Self) -> string;
+}
+
+pub type Bob(name: string) implement Greeter {
+    pub fn greet(self: Self) -> string {
+        return "hi " + self.name;
+    }
+}
+
+pub fn useIt(g: Greeter) -> string {
+    return g.greet();
+}

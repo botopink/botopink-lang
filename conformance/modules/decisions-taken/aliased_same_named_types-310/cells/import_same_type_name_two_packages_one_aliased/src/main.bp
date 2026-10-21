@@ -1,0 +1,32 @@
+//// Decision 310 — row 33's shape: two packages each declare `App`, one
+//// imported plain and one under an alias, in one module. They are two types:
+//// `App` is `srv`'s, `SiteApp` is `site`'s, and `site`'s `makeSite() -> App`
+//// answers a `SiteApp` here. Each prints as declared and answers its own
+//// method, and `is` tells them apart.
+
+import {App} from "srv";
+import {App as SiteApp, makeSite} from "site";
+import {io.terminal.print} from "std";
+
+fn port(a: App) -> i32 {
+    return a.port;
+}
+
+fn kind(v: unknown) -> string {
+    if (v is SiteApp) return "site";
+    if (v is App) return "srv";
+    return "other";
+}
+
+pub fn main() -> void {
+    val a = App(port: 1, basePath: "");
+    val s: SiteApp = makeSite();
+    print(a.describe());
+    print(s.render());
+    print(a);
+    print(s);
+    print(port(a));
+    print(kind(a));
+    print(kind(s));
+    print(SiteApp(title: "u").title);
+}

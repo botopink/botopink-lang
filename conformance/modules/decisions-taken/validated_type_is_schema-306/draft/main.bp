@@ -1,0 +1,44 @@
+//// Decision 306 — The type is the only schema, and `#[schema]` becomes `#[validated]`.
+
+import {io.terminal} from "std";
+import {compiler} from "std";
+import {decorators.validated, decorators.email, decorators.minValue} from "validation";
+import {decorators.each, decorators.lowercased} from "validation";
+import {decorators.Validated, report.ValidationReport} from "validation";
+
+// One declaration both checks and parses.
+#[validated]
+pub type Signup(
+    #[email] email: string,
+    #[minValue(18)] age: i32,
+    #[each(email, lowercased)] guests: string[] = [],
+)
+
+// A one-field record encoded as its field.
+#[validated(transparent)]
+pub type Email(#[email] value: string)
+
+// Another library takes the type, never a schema value.
+pub fn fieldNames<T>(comptime t: type<T>) -> string[] {
+    val validated = comptime compiler.typeInfo(t).meta(Validated) != null;
+    if (!validated)
+        compiler.fail("fieldNames takes a #[validated] type", at: t);
+    return comptime compiler.typeInfo(t).fields.map({ f -> f.name });
+}
+
+fn show(r: Result<Signup, ValidationReport>) -> string {
+    return case r {
+        Ok(s) -> s.email + " " + s.age.toString() + " " + s.guests.join(",");
+        Error(report) -> report.violations
+            .map({ v -> v.field + ":" + v.code })
+            .join(" ");
+    };
+}
+
+pub fn main() -> void {
+    terminal.print(show(Signup.parse("{\"email\": \"ana@x.org\", \"age\": 30, \"guests\": [\"bo@x.org\"]}")));
+    terminal.print(show(Signup.parse("{\"email\": \"ana\", \"age\": 12, \"guests\": [\"Bo@X.org\"]}")));
+    terminal.print(Signup(email: "ana@x.org", age: 17).validate().isOk());
+    terminal.print(Email.encode(Email(value: "ana@x.org")));
+    terminal.print(fieldNames(Signup).join(","));
+}

@@ -1,0 +1,32 @@
+//// A library whose `boot` reads the catalogue of the program that calls it
+//// (decision 551): its `comptime` parameter defaults to
+//// `@TypeInfo.all(with: m)`, `m` resolved here, in the declaring module, and
+//// the query answered for the program the call is compiled in.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn m(syntax decl: unknown) -> void {
+    compiler.setMeta(Role(role: compiler.name(decl)!));
+}
+
+#[m]
+pub fn frameCore() -> string {
+    return "frame core";
+}
+
+fn show(all: Declared<unknown>[]) -> void {
+    for (all) { d ->
+        val run = d.value;
+        val said = if (run is fn() -> string) run() else "?";
+        print(
+            d.module + " " + d.name + " " + said,
+        );
+    }
+}
+
+pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: m)) -> void {
+    show(modules);
+}
+
+// What `#[m]` records: the role its declaration plays.
+pub type Role(role: string)

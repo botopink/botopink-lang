@@ -1,0 +1,20 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    var count = 0;
+    val doubles = iter loop {
+        count = count + 1;
+        if (count == 10) break count * 2; // the last item: 20
+        yield count * 2; // 2 4 6 … 18
+    };
+    for (doubles) { d ->
+        print(d);
+    }
+
+    val evens = iter for ([1, 2, 3, 4]) { x ->
+        if (x % 2 == 0) yield x;
+    };
+    for (evens) { e ->
+        print(e);
+    }
+}

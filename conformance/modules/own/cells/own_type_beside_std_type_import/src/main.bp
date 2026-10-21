@@ -1,0 +1,27 @@
+//// Decision 603 — a module's own `type Dict(…)` beside std's `Dict` imported
+//// under an alias is two types: `Dict` is this module's record, `D` is std's
+//// dictionary. Each constructs its own, answers its own methods, and prints
+//// as declared. The module's `Dict(initialMs: 5)` used to resolve to std's
+//// (`Dict has no parameter named initialMs`).
+
+import {collections.Dict as D, io.terminal.print} from "std";
+
+type Dict(initialMs: i32)
+
+fn ms(d: Dict) -> i32 {
+    return d.initialMs;
+}
+
+fn count(d: D<string, i32>) -> i32 {
+    return d.size();
+}
+
+pub fn main() -> void {
+    val own = Dict(initialMs: 5);
+    val table = D.empty().insert("k", 7);
+    print(own.initialMs);
+    print(ms(own));
+    print(count(table));
+    print(table.hasKey("k"));
+    print(own);
+}

@@ -1,0 +1,2 @@
+{ "name": "web", "files": ["root.bp"],
+  "dependencies": { "core": { "path": "../core" } } }

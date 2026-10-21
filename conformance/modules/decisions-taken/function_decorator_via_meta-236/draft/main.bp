@@ -1,0 +1,21 @@
+//// Decision 236 — A function decorator's per-function code is generic library code fed by meta: `#[page]` records its route in typed meta
+
+import {io.terminal} from "std";
+import {comptime.pages.page};
+import {comptime.routes.dispatch};
+
+#[page("blog/[slug]")]
+pub fn post(segments: string[]) -> string {
+    return "post " + (segments.at(0) ?? "?");
+}
+
+#[page("about")]
+pub fn about(segments: string[]) -> string {
+    return "about us";
+}
+
+pub fn main() -> void {
+    terminal.print(dispatch("blog/hello-world"));
+    terminal.print(dispatch("about"));
+    terminal.print(dispatch("blog"));
+}

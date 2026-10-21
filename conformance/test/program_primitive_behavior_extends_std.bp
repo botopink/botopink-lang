@@ -1,0 +1,35 @@
+//// A program's own contract implemented for `string` (decision 799) adds
+//// its members to `string`: std's `startsWith`, `slice` and `length` answer on
+//// `self` inside the contract's default fns (the contract declares the ones
+//// it calls, `string`'s own members meet them, and the copy on `string` types
+//// `self` as the primitive), and on any string beside them. A `test/` cell:
+//// `program/run`'s `program_primitive_behavior_extends_std` runs it on wasm
+//// and beam too.
+
+behavior Shout {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> string;
+
+    fn length(self: Self) -> i32;
+
+    default fn tailShout(self: Self) -> string {
+        val tail = self.slice(1);
+        return if (tail.startsWith("+")) tail.toUpper() else tail;
+    }
+
+    default fn twiceLen(self: Self) -> i32 {
+        return self.length() * 2;
+    }
+}
+
+StringShout implement Shout for string {};
+
+test "a program's contract member calls std's members on self" {
+    assert "a+b".tailShout() == "+B";
+    assert "ab".tailShout() == "b";
+    assert "abc".twiceLen() == 6;
+}
+
+test "std's string members still answer beside the program's" {
+    assert "x".startsWith("x");
+    assert "ab".slice(1) == "b";
+}

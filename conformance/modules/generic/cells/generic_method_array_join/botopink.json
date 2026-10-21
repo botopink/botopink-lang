@@ -1,0 +1,1 @@
+{ "name": "generic_method_array_join", "dependencies": { "seq": { "path": "deps/seq" } } }

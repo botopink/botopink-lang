@@ -1,0 +1,22 @@
+//// Decision 298 — a meta read names its record type: `meta(T)` with a `T`
+//// that is no record type of the module or its imports is refused at the
+//// argument.
+
+import {compiler, io.terminal.print} from "std";
+
+type Entity(table: string)
+
+fn entity(syntax decl: unknown) -> void {
+    compiler.setMeta(Entity(table: "cities"));
+}
+
+#[entity]
+type City(name: string)
+
+fn table() -> string {
+    return "cities";
+}
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(City).metaAll(table).length);
+}

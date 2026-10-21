@@ -1,0 +1,26 @@
+//// A dependency's module imported as a namespace (`import {shapes} from
+//// "kit"`) is read as a module of the package is: `shapes.Pt` in a type,
+//// `shapes.Pt(…)` and `shapes.origin()` called, `shapes.shift` a function
+//// value — on every target (144 B-10, decision 430). Its exports were known
+//// to calls alone: `shapes.Pt` was an unknown type, `shapes.shift` an
+//// unbound variable.
+
+import {shapes} from "kit";
+import {io.terminal.print} from "std";
+
+fn moved(p: shapes.Pt) -> shapes.Pt {
+    return shapes.shift(p, 1);
+}
+
+fn apply(p: shapes.Pt, f: fn(shapes.Pt, i32) -> shapes.Pt) -> shapes.Pt {
+    return f(p, 5);
+}
+
+pub fn main() -> void {
+    val o: shapes.Pt = shapes.origin();
+    print(moved(o));
+    print(shapes.Pt(x: 3, y: 4).x);
+    val f = shapes.shift;
+    print(f(o, 2).y);
+    print(apply(o, shapes.shift).x);
+}

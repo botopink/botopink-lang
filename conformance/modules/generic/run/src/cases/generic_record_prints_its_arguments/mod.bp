@@ -1,0 +1,41 @@
+//// Decision 8 §7 — `terminal.print` of a value of a generic declaration prints each
+//// field as the value it holds, whatever the type argument: a field written
+//// as the type parameter, an array of it (`items: Array<T>`, `kids: T[]`),
+//// in a record or a variant, built directly or by a generic function.
+
+import {io.terminal.print} from "std";
+
+type W(x: i32)
+
+type Q<T>(items: array<T>)
+
+type B<T>(v: T)
+
+type Tree<T> {
+    Leaf(v: T),
+    Node(kids: T[]),
+}
+
+fn wrap<T>(v: T) -> B<T> {
+    return B(v: v);
+}
+
+pub fn runCase() -> void {
+    print(Q(items: [7]));
+    print(Q(items: ["a", "b"]));
+    print(Q(items: [true]));
+    print(Q(items: [1.5]));
+    print(Q(items: [W(x: 1)]));
+    print(B(v: "s"));
+    print(B(v: 3));
+    print(B(v: [1, 2]));
+    print(B(v: false));
+    print(B(v: W(x: 2)));
+    val o: ?i32 = 4;
+    print(B(v: o));
+    print(Tree.Leaf(v: "x"));
+    print(Tree.Node(kids: [1, 2]));
+    print(wrap("w"));
+    print(wrap(5));
+    print([B(v: "e")]);
+}

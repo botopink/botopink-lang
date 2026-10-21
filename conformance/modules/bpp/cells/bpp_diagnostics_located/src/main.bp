@@ -1,0 +1,13 @@
+//// Front 116 — a diagnostic in a `.bpp` file is reported at the file's line
+//// and column: a type error in the header, and a `failAt` of the markup's
+//// function on the markup's first line and on a later one.
+
+pub mod components;
+import {components.Header, components.First, components.Later};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Header());
+    print(First());
+    print(Later());
+}

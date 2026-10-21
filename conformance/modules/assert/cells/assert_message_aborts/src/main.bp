@@ -1,0 +1,18 @@
+//// The language half of `modules/compiler-cli/tests/test_tooling.sh`'s failing
+//// `assert cond, "msg"` (144 B-29 step H): an `assert` whose condition holds
+//// does nothing; one that fails aborts the program, and the abort names the
+//// message. (How `botopink test` reports a failed assertion — the FAIL line,
+//// its `src/main.bp:<line>` — is the CLI's contract and stays in the script.)
+
+import {io.terminal.print} from "std";
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub fn main() -> void {
+    assert double(2) == 4, "double(2) should be four";
+    print("held");
+    assert double(2) == 5, "double(2) should be five";
+    print("not reached");
+}

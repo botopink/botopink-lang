@@ -1,0 +1,32 @@
+//// Decision 321 — Two providers of one type are told apart by a label, checked at compile time.
+
+import {io.terminal} from "std";
+import {rakun, component, provides, qualifier, primary} from "rakun";
+
+pub type Database(url: string)
+
+// Two providers of one type: the label is the author's, not the function's name.
+#[provides]
+#[qualifier("reports")]
+pub fn analyticsDb() -> Database {
+    return Database(url: "pg://replica/analytics");
+}
+
+#[provides]
+#[primary]
+pub fn mainDb() -> Database {
+    return Database(url: "pg://primary/app");
+}
+
+// A constructor field takes the same marker.
+#[component]
+pub type ReportJob(#[qualifier("reports")] db: Database, fallback: Database)
+
+pub fn main() -> void {
+    rakun.boot();
+    val ctx = rakun.context();
+    terminal.print(ctx.resolveNamed(Database, "reports")?.url ?? "none");
+    terminal.print(ctx.resolveNamed(Database)?.url ?? "none");
+    val job = ctx.resolveNamed(ReportJob);
+    terminal.print(job?.db.url ?? "none", job?.fallback.url ?? "none");
+}

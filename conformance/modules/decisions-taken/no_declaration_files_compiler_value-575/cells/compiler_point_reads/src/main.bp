@@ -1,0 +1,20 @@
+//// Decision 575 (3) — in a decorator, `compiler` is the annotated
+//// declaration's point: `compiler.module` and `compiler.package` name its
+//// module and package (the root package's is `""`), `compiler.isStd` whether
+//// it is std's.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Where(pkg: string, std: bool, module: string)
+
+fn where(syntax decl: unknown) -> void {
+    compiler.setMeta(Where(pkg: compiler.package, std: compiler.isStd, module: compiler.module));
+}
+
+#[where]
+pub type City(name: string)
+
+pub fn main() -> void {
+    val w = comptime compiler.typeInfo(City).meta(Where)!;
+    print("[" + w.pkg + "] " + w.std.toString() + " " + w.module);
+}

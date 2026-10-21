@@ -1,0 +1,14 @@
+import {compiler, code} from "std";
+import {io.terminal.print} from "std";
+
+pub fn matchesAt(value: string, file: string, line: i32) -> bool {
+    print(file + ":" + line.toString() + " " + value);
+    return true;
+}
+
+// The code's names are this module's (638): the caller writes `probe.matches(…)`
+// and imports nothing else.
+pub fn matches(syntax value: unknown) -> anyvalue {
+    val at = compiler.source(value);
+    return code @`matchesAt(${value}, ${at.file}, ${at.line})`;
+}

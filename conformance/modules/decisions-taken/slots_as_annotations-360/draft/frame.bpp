@@ -1,0 +1,8 @@
+import {panel as Panel};
+---
+<div class="frame">
+  <Panel>
+    <Slot />
+    <Slot name="footer" #[slot("footer")] />
+  </Panel>
+</div>

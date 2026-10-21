@@ -1,0 +1,16 @@
+//// Decision 780 (1) — a test package whose `test/` module `compiler.load`s files under
+//// `src/`: they are compiled as a package of their own and never join the program that
+//// `botopink test` runs, as `botopink build` leaves them out. The refused file is a
+//// `Result` the test reads, not a failed module of the package.
+
+import {compiler} from "std";
+
+test "a refused file under src is an Error, not a failed module" {
+    val broken = comptime compiler.load("src/cases/broken.bp");
+    assert broken.isError(), "broken.bp is refused";
+}
+
+test "a file under src that compiles is an Ok" {
+    val fine = comptime compiler.load("src/cases/fine.bp");
+    assert fine.isOk(), "fine.bp compiles";
+}

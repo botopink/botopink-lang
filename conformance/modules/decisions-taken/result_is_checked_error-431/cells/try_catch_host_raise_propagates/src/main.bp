@@ -1,0 +1,57 @@
+//// Decision 431 — `try e catch f` handles the `Error` of its operand's `Result`
+//// on the spot, and only that. A raise that does not arrive as one — a host
+//// binding's, a `panic` — is not the operand's `Error`: it leaves the
+//// `try … catch` and only `attempt` contains it. A binding declared
+//// `result: true` answers its failure as an `Error`, and that one reaches the
+//// `catch`.
+////
+//// wasm never imitates a host raise (527 (0)): the cell runs where a host does.
+
+import {failure, failure.Failure, failure.HostError, compiler, failure.panic, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("""(() => { throw new Error("signal"); })()"""), .Erlang("""erlang:throw($0)"""))]
+declare fn sig(r: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error("signal"); })()""", result: true),
+    .Erlang("""erlang:throw($0)""", result: true),
+)]
+declare fn sigResult(r: string) -> Result<i32, HostError>;
+
+fn raising(s: string) -> Result<string, string> {
+    val _n = sig("nav:x");
+    return s;
+}
+
+fn panicking(s: string) -> Result<string, string> {
+    panic("inside the operand");
+}
+
+fn failing(s: string) -> Result<string, string> {
+    throw "bad";
+}
+
+fn answering(s: string) -> Result<string, string> {
+    return s;
+}
+
+fn bound(s: string) -> Result<i32, HostError> {
+    return sigResult(s);
+}
+
+fn show(r: Result<string, Failure>) -> void {
+    case r {
+        Ok(v) -> print("Ok " + v);
+        Error(f) -> print("Error " + f.kind);
+    }
+}
+
+pub fn main() -> void {
+    show(failure.attempt({ -> try raising("a") catch "fallback" }));
+    show(failure.attempt({ -> try panicking("a") catch "fallback" }));
+    show(failure.attempt({ -> try failing("a") catch "fallback" }));
+    show(failure.attempt({ -> try answering("a") catch "fallback" }));
+    val b = try bound("a") catch -1;
+    print(b.toString());
+    print("after");
+}

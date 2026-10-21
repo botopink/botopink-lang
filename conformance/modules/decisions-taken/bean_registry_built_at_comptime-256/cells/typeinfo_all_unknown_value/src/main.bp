@@ -1,0 +1,31 @@
+//// Decision 254 — `@TypeInfo.all(…)` answers `Declared<unknown>[]` whatever
+//// the program declares, so declarations whose values differ in type sit in
+//// one answer: two functions of different signatures, catalogued together.
+//// Each entry names its function's declared return type (`returnTypeName`,
+//// decision 256), the key a catalogue of providers is built by.
+
+import {compiler, io.terminal.print} from "std";
+
+fn job(syntax decl: unknown) -> void {
+    compiler.setMeta(Job(kind: "job"));
+}
+
+#[job]
+pub fn count() -> i32 {
+    return 1;
+}
+
+#[job]
+pub fn greet(name: string) -> string {
+    return "hi " + name;
+}
+
+pub fn main() -> void {
+    val all: Declared<unknown>[] = @TypeInfo.all(with: job);
+    for (all) { d ->
+        print(d.name + " " + d.module + " " + d.returnTypeName);
+    }
+}
+
+// What `#[job]` records.
+type Job(kind: string)

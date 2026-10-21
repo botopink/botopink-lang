@@ -1,0 +1,5 @@
+pub type Tag(label: string) {
+    fn of(s: string) -> Tag {
+        return Tag(label: "<" + s + ">");
+    }
+}

@@ -1,0 +1,19 @@
+//// Decision 547 (amends 167) — `#[compiler.beamMemory(…)]` only picks how the BEAM holds a
+//// `var`; the `var` means the same on every target, so off the BEAM the annotation is
+//// accepted and changes nothing. It used to be refused on commonJS and wasm. The `var`
+//// is written through a `fn` and read back: `2` on the four targets.
+
+import {io.terminal.print} from "std";
+
+#[compiler.beamMemory(.Ets)]
+var hits: i32 = 0;
+
+fn bump() -> void {
+    hits = hits + 1;
+}
+
+pub fn main() -> void {
+    bump();
+    bump();
+    print(hits);
+}

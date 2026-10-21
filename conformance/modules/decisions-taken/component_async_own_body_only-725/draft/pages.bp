@@ -1,0 +1,32 @@
+import {async} from "std";
+import {comptime.marks.marks};
+
+pub type Element(text: string, kids: Component<Element>[] = []) implement Renderable
+
+async fn count() -> Async<i32> {
+    return 2;
+}
+
+component fn Comments() -> Component<Element> {
+    val n = await count();
+    return Element(text: n.toString() + " comments");
+}
+
+component fn Pause() -> Component<Element> {
+    val text = await async.delay(1, "paused");
+    return Element(text: text);
+}
+
+component fn Counted() -> Component<Element> {
+    val pending = count();
+    return Element(text: "counted");
+}
+
+component fn Header() -> Component<Element> {
+    return Element(text: "header");
+}
+
+#[marks]
+pub component fn Page() -> Component<Element> {
+    return Element(text: "page", kids: [Header(), Comments(), Pause(), Counted()]);
+}

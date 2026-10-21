@@ -1,0 +1,46 @@
+//// Decisions 431 (2), 489, 490 — a host function declared as a method of its
+//// type answers the same as a module-level one when its binding writes
+//// `result: true`: a value is `Ok(v)`, a throw (commonJS) or a raise
+//// (erlang, beam) is `Error(HostError(…))`, and a `Async` method's rejection
+//// or raise reads back as that `Error` at its `await`. The receiver is `$0`.
+////
+//// `"targets"` is `commonJS`, `erlang`, `beam`: the claim is the host's;
+//// wasm has no host that raises (`external_result_host_error`).
+
+import {failure, failure.HostError, compiler, io.terminal.print} from "std";
+
+type Meter(base: i32) {
+    #[compiler.external(
+        .JavaScript("""(($1 >= 0) ? $0.base + $1 : (() => { throw new Error("negative"); })())""", result: true),
+        .Erlang("""(case $1 >= 0 of true -> element(2, $0) + $1; false -> erlang:error(negative) end)""", result: true),
+    )]
+    declare fn plus(self: Self, n: i32) -> Result<i32, HostError>;
+
+    #[compiler.external(
+        .JavaScript("""(($1 > 0) ? Promise.resolve($0.base * $1) : Promise.reject(new Error("late")))""", result: true),
+        .Erlang("""(case $1 > 0 of true -> element(2, $0) * $1; false -> erlang:error(late) end)""", result: true),
+    )]
+    declare fn later(self: Self, n: i32) -> Async<Result<i32, HostError>>;
+}
+
+fn show(r: Result<i32, HostError>) -> void {
+    case r {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print("error", e.message, e.kind, e.name);
+    }
+}
+
+async fn run() -> Async<void> {
+    val m = Meter(base: 3);
+    show(m.plus(4));
+    show(m.plus(-1));
+    show(await m.later(2));
+    show(await m.later(0));
+    val a = try m.plus(-2) catch 10;
+    val b = try await m.later(-1) catch 20;
+    print(a + b);
+}
+
+pub fn main() -> void {
+    run();
+}

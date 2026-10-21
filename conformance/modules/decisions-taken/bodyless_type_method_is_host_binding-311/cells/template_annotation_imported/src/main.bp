@@ -1,0 +1,20 @@
+mod sql;
+import {sql.query, sql.repository, sql.Query, sql.Repository};
+import {compiler, io.terminal.print} from "std";
+
+#[repository]
+behavior Users {
+    #[query @`select * from users where id = ${id} limit 1`]
+    fn find(self: Self, id: i32) -> string;
+}
+
+#[query @`delete from s where u = ${u}`]
+fn logout(u: string) -> string {
+    return u;
+}
+
+pub fn main() -> void {
+    val statements: string[] = comptime compiler.typeInfo(Users).meta(Repository)?.statements ?? [];
+    print(statements.join(" | "));
+    print(comptime compiler.typeInfo(logout).meta(Query)!.sql);
+}

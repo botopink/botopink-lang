@@ -1,0 +1,22 @@
+//// A template and `syntax` functions whose code names what this module imports:
+//// `unit` by name and `units` as a namespace from this package, std's `pow` by
+//// name and `math` as a namespace. The module that calls them imports none.
+
+import {code, compiler, math, math.pow} from "std";
+import {units, units.unit};
+
+pub fn sized(syntax e: i32) -> anyvalue {
+    return code @`${e}.toString() + unit()`;
+}
+
+pub fn tagged(syntax e: i32) -> anyvalue {
+    return code @`units.label(${e})`;
+}
+
+pub fn squared(syntax e: f64) -> anyvalue {
+    return code @`pow(${e}, 2.0) + math.pow(${e}, 3.0)`;
+}
+
+pub fn named(syntax q: string) -> anyvalue {
+    return compiler.build("units.label(" + compiler.text(q).length().toString() + ") + unit()");
+}

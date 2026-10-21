@@ -1,0 +1,16 @@
+//// A `behavior`'s associated `default fn` called through the behavior from
+//// another module — `Shape.unit()` after `import {shapes.Shape}` — runs the
+//// function its own module declares, as a local behavior's does; the call
+//// reaches it under an alias too (`Area.scaled(7)`), and one associated fn
+//// calls another of its behavior in its own module. On every target (144
+//// B-19).
+
+pub mod shapes;
+import {shapes.Shape};
+import {shapes.Shape as Area};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Shape.unit());
+    print(Area.scaled(7));
+}

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: variadic-label: `values` of `sum` is variadic and takes no label
+at src/cases/variadic_label/mod.bp:11:23

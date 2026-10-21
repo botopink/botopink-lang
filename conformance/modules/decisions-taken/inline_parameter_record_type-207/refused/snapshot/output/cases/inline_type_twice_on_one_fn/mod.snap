@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: inline-type-position: `two` takes a second inline type (`b`) — one parameter of a function may have one, `a` already does
+at src/cases/inline_type_twice_on_one_fn/mod.bp:6:28

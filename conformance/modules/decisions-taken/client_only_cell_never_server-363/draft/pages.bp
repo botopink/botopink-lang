@@ -1,0 +1,26 @@
+//// A browser-only hook, read once in an island and once in a server-rendered component.
+
+import {compiler} from "std";
+import {comptime.stages.clientOnly, comptime.stages.client, comptime.stages.page};
+
+type View(text: string) implement Renderable
+
+#[compiler.external(.JavaScript("""(globalThis.location ? "ready" : "none")"""))]
+declare fn readStatus() -> string;
+
+#[clientOnly]
+component fn linkStatus() -> Component<string> {
+    return readStatus();
+}
+
+#[client]
+component fn Status() -> Component<View> {
+    val s = use linkStatus();
+    return View(text: s);
+}
+
+#[page]
+pub component fn Nav() -> Component<View> {
+    val s = use linkStatus();
+    return View(text: "nav " + s);
+}

@@ -1,0 +1,8 @@
+//// Decision 589 — (f), a sixth option: the prelude is the items marked `#[bpp.htmlPrelude]` where they are declared, one by one.
+
+import {io.terminal} from "std";
+import {home as Home};
+
+pub fn main() -> void {
+    terminal.print(Home());
+}

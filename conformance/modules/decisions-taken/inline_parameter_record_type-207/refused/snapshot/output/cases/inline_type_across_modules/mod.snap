@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: inline-type-position: `href:` is a field of the props of `link`, an inline type built only in the module that declares `link`
+at src/cases/inline_type_across_modules/mod.bp:11:11

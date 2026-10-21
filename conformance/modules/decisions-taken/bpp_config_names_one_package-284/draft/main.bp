@@ -1,0 +1,10 @@
+//// Decision 284 — Configuration in JSON, case by case.
+
+import {Greeting};
+import {words.shout} from "markup";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(Greeting());
+    print(shout("configured"));
+}

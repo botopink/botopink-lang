@@ -1,0 +1,27 @@
+//// The style section's unfold target: a hook answering the section's
+//// length, and refusing a `!` in it at the `!`. The code it builds calls
+//// `sized`, which the `.bpp` header imports.
+
+import {bpp, compiler.CustomNode, compiler.Span, compiler} from "std";
+
+pub component fn sized(size: i32) -> Component<i32> {
+    return size;
+}
+
+#[bpp.style]
+pub component fn css(syntax t: string) -> Component<i32> {
+    val text = compiler.text(t);
+    val at = text.indexOf("!");
+    if (at >= 0)
+        compiler.fail("css: `!` is not a rule", at: t, span: Span(at, at
+            + 1, 1));
+    val root = CustomNode(
+        kind: "css",
+        span: Span(0, 0, 1),
+        label: "",
+        ref: null,
+        children: [],
+    );
+    compiler.custom(root);
+    return compiler.build("sized(" + text.length().toString() + ")");
+}

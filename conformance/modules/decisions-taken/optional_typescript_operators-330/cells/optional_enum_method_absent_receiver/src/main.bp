@@ -1,0 +1,40 @@
+//// Decision 330 — `x?.m()` where `m` is a method of an enum and `x` is
+//// absent: the method is not called and the whole call is absent, so `??`
+//// takes its default; `x` is evaluated once, on every target
+//// (`modules/optional_enum_method_call` is the present receiver).
+
+import {io.terminal.print} from "std";
+
+type Val {
+    Num(n: i32),
+    Text(s: string),
+
+    fn str(self: Self) -> string {
+        return case self {
+            Text(s: t) -> t;
+            _ -> "";
+        };
+    }
+
+    fn plus(self: Self, k: i32) -> i32 {
+        return case self {
+            Num(n: v) -> v + k;
+            _ -> k;
+        };
+    }
+}
+
+fn find(kind: i32) -> ?Val {
+    print("find");
+    if (kind == 1) return Val.Text(s: "a");
+    if (kind == 2) return Val.Num(n: 40);
+    return null;
+}
+
+pub fn main() -> void {
+    val b = find(0);
+    print(b?.str() ?? "none");
+    print(find(0)?.plus(2) ?? -1);
+    print(find(0)?.str().length() ?? -2);
+    print(find(2)?.plus(2) ?? -1);
+}

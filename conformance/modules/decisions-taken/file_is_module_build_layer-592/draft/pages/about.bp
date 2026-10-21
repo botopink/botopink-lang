@@ -1,0 +1,15 @@
+//// `pages.about`: imports `pages.home`, which imports it.
+
+import {pages.home};
+import {comptime.route.route};
+
+pub val base = 41;
+
+#[route("/about")]
+pub fn render() -> string {
+    return "about links " + home.path();
+}
+
+pub fn path() -> string {
+    return "/about";
+}

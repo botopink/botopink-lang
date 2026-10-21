@@ -1,0 +1,3 @@
+pub fn main() -> void {
+    val count: i32 = "three";
+}

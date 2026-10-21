@@ -1,0 +1,7 @@
+botopink-cell 1
+out manual is manual
+out eager is not manual
+out first manual
+out third eager
+out local slow
+out other slow

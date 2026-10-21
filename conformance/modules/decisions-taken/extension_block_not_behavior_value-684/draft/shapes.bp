@@ -1,0 +1,17 @@
+pub behavior Shape {
+    fn area(self: Self) -> f64;
+}
+
+pub type Square(side: f64)
+
+pub SquareArea implement Shape for Square {
+    fn area(self: Self) -> f64 {
+        return self.side * self.side;
+    }
+}
+
+pub type Circle(radius: f64) implement Shape {
+    pub fn area(self: Self) -> f64 {
+        return 3.0 * self.radius * self.radius;
+    }
+}

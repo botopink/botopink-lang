@@ -1,0 +1,7 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.template_default_arg_two_expansions.runCase();
+    cases.template_name_collision.runCase();
+    cases.template_two_alike_expansions.runCase();
+}

@@ -1,0 +1,9 @@
+type Props(title: string)
+
+fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+val size = props.title.length();
+---
+<h1>{props.title}</h1>

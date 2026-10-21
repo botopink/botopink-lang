@@ -1,0 +1,8 @@
+pub mod std_default_fn_in_a_std_module;
+pub mod std_encoding_on_every_target;
+pub mod std_import;
+pub mod std_namespace_calls_same_name;
+pub mod std_namespace_type_in_signature;
+pub mod std_path_relative;
+pub mod std_querystring_on_every_target;
+pub mod std_type_ctor_through_namespace;

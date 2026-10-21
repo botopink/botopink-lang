@@ -1,0 +1,13 @@
+//// The functions that write the code; `print` is imported here, not where they are called.
+
+import {code, compiler, io.terminal.print} from "std";
+
+pub fn log(label: string, syntax e: i32) -> void {
+    val text = compiler.text(e);
+    return code @`print(${label} + ": " + ${text})`;
+}
+
+pub fn logAny(label: string, syntax e: i32) -> anyvalue {
+    val text = compiler.text(e);
+    return code @`print(${label} + ": " + ${text})`;
+}

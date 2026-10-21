@@ -1,0 +1,11 @@
+//// Decisions 622, 846 — a return type is written behind `->`: `fn double(x: i32) i32`
+//// has no arrow, so it is refused at its name, `fn-return-missing`, the hint
+//// naming `-> i32`.
+
+fn double(x: i32) i32 {
+    return x * 2;
+}
+
+pub fn main() -> void {
+    double(2);
+}

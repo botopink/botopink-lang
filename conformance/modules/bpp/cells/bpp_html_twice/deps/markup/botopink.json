@@ -1,0 +1,1 @@
+{"name": "markup", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "markup.bp", "prelude.bp"]}

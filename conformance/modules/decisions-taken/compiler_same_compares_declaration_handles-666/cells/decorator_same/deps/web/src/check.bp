@@ -1,0 +1,26 @@
+//// `web/check` — names each annotation of the declaration it annotates by
+//// what `Decorator.same` answers: `web` for `web/markers`'s `serverOnly`,
+//// `check` for itself, `other` for anything else — however the annotation
+//// spells the name.
+
+import {markers.serverOnly};
+import {compiler} from "std";
+
+pub fn check(syntax decl: unknown) -> void {
+    var out: string[] = [];
+    compiler
+        .annotations(decl)
+        .forEach({ a ->
+            val which = if (a.decorator.same(serverOnly))
+                "web"
+            else if (a.decorator.same(check))
+                "check"
+            else
+                "other";
+            out.push(a.name + "=" + which)
+        });
+    compiler.setMeta(Check(ids: out));
+}
+
+// What `#[check]` records: each annotation as `<name>=<which>`.
+pub type Check(ids: string[])

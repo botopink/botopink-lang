@@ -10,6 +10,12 @@ const types = @import("parser/types.zig");
 const patterns = @import("parser/patterns.zig");
 const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
+const template_markers = @import("parser/template_markers.zig");
+const implementations = @import("parser/implementations.zig");
+const syntax_params = @import("parser/syntax_params.zig");
+pub const syntax_use = @import("parser/syntax_use.zig");
+pub const compiler_surface = @import("parser/compiler_surface.zig");
+pub const comptime_blocks = @import("parser/comptime_blocks.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -17,9 +23,9 @@ pub const TokenKind = token.TokenKind;
 pub const ImportDecl = ast.ImportDecl;
 pub const ImportSource = ast.ImportSource;
 pub const ImportPath = ast.ImportPath;
-pub const InterfaceDecl = ast.InterfaceDecl;
-pub const InterfaceField = ast.InterfaceField;
-pub const InterfaceMethod = ast.InterfaceMethod;
+pub const BehaviorDecl = ast.BehaviorDecl;
+pub const BehaviorField = ast.BehaviorField;
+pub const BehaviorMethod = ast.BehaviorMethod;
 pub const Param = ast.Param;
 pub const Stmt = ast.Stmt;
 pub const Expr = ast.Expr;
@@ -29,8 +35,10 @@ pub const BranchExpr = ast.BranchExpr;
 pub const LoopExpr = ast.LoopExprOf(.untyped);
 pub const FunctionExpr = ast.FunctionExpr;
 pub const Loc = ast.Loc;
-pub const RecordDecl = ast.RecordDecl;
-pub const RecordField = ast.RecordField;
+pub const TypeDecl = ast.TypeDecl;
+pub const TypeAliasDecl = ast.TypeAliasDecl;
+pub const TypeShape = ast.TypeShape;
+pub const Field = ast.Field;
 pub const ImplementDecl = ast.ImplementDecl;
 pub const ExtendDecl = ast.ExtendDecl;
 pub const ImplementMethod = ast.ImplementMethod;
@@ -40,16 +48,11 @@ pub const GenericParam = ast.GenericParam;
 pub const ParamModifier = ast.ParamModifier;
 pub const CallArg = ast.CallArg;
 pub const TrailingLambda = ast.TrailingLambda;
-pub const EnumDecl = ast.EnumDecl;
 pub const EnumVariant = ast.EnumVariant;
-pub const EnumVariantField = ast.EnumVariantField;
 pub const EnumSection = ast.EnumSection;
 pub const FnDecl = ast.FnDecl;
 pub const ValDecl = ast.ValDecl;
-pub const DelegateDecl = ast.DelegateDecl;
 pub const Annotation = ast.Annotation;
-pub const FnType = ast.FnType;
-pub const FnTypeParam = ast.FnTypeParam;
 pub const ParamDestruct = ast.ParamDestruct;
 pub const Pattern = ast.Pattern;
 pub const ListPatternElem = ast.ListPatternElem;
@@ -75,28 +78,64 @@ pub const ParseErrorType = enum {
     uselessSpread,
     /// Removed error union syntax `T!E` (use `@Result<D, E>` instead)
     removedErrorUnion,
-    /// Removed builtin type syntax `@Result(D, E)` (use `@Result<D, E>` instead)
+    /// Removed builtin type syntax `@Result(D, E)` (use `Result<D, E>` instead)
     removedBuiltinType,
-    /// `use` hook after branch/return (must be in static prefix)
-    useAfterBranch,
+    /// Decision 606 (1) — a prelude type written with `@` (`@Result<…>`): the
+    /// prelude's names are written bare. Located at the `@name`.
+    preludeNameWithSigil,
+    /// Decision 606 (2), (3) — a call written `@print(…)`, `@panic(…)`,
+    /// `@typeInfo(…)`, …, or the annotation `#[@external(…)]`: no `@name`
+    /// is left. Located at the `@name`.
+    builtinNameRemoved,
     /// Malformed `${…}` string interpolation (unterminated or invalid expression)
     badInterpolation,
     /// Meta-kind parameter (`type` / `expr T`) without the `comptime` modifier
     metaKindRequiresComptime,
+    /// `type(…)` written as a type anywhere but a parameter's whole
+    /// annotation — a return, a field, a `val` annotation (decision 207).
+    /// Located at the `type`.
+    inlineTypeOutsideParameter,
     /// Anonymous `implement`/`extend` block (the name is required)
     anonymousImplExtend,
     /// Removed `*fn` prefix (use `#[@<effect>]` annotation instead).
     /// Deprecation window was v0.beta.12; the prefix is hard-removed in v0.beta.19.
     deprecatedStarFn,
-    /// R1 (§2) — `#[@<effect>] declare fn …`: effect annotations mark an
-    /// implementation (a fn with a body); `declare fn` expresses the effect
-    /// through the return wrapper alone.
-    effectOnDeclareForbidden,
-    /// R2 (§2) — `interface I { #[@<effect>] fn … }`: interface methods are
-    /// declarative — they express the effect through the return wrapper alone.
-    effectOnInterfaceMethodForbidden,
-    /// R5 (§2) — more than one `#[@<effect>]` annotation on the same fn.
-    effectDuplicateAnnotation,
+    /// Decisions 118 / 127 — `#[@result]`, `#[@future]`, `#[@use]`,
+    /// `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`: the
+    /// effect annotations left the language; the return type is the effect.
+    effectAnnotationRemoved,
+    /// The same annotation written before a loop: the loop takes the `iter` /
+    /// `stream` prefix instead (decision 125).
+    effectAnnotationRemovedLoop,
+    /// Decisions 120 / 127 — `@Future<…>` in a type: the wrapper is `@Async<T>`,
+    /// and a failure is `@Async<@Result<T, E>>`.
+    effectTypeRemovedFuture,
+    /// Decisions 122 / 127 — `@Generator<T>` in a type: `@Iter<T>`.
+    effectTypeRemovedGenerator,
+    /// Decisions 122 / 127 — `@ResultGenerator<T, E>`: `@Iter<@Result<T, E>>`.
+    effectTypeRemovedResultGenerator,
+    /// Decisions 122 / 127 — `@FutureGenerator<T, E>`: `@AsyncIter<@Result<T, E>>`.
+    effectTypeRemovedFutureGenerator,
+    /// Decisions 128 / 127 / 354 — `@Use<C, T>`: `@Component<T>`.
+    effectTypeRemovedUse,
+    /// Decision 354 — `@Context<C>` left the language: a component's `R`
+    /// implements `@Renderable`, and a context is a `Context<T>` object.
+    contextMarkerRemoved,
+    /// Decision 354 — `@Component<C, R>`: the base parameter is gone, the
+    /// wrapper is `@Component<R>`. Located on the base.
+    componentBaseParamRemoved,
+    /// Decision 354 — `@Renderable` is a bare marker, `@Renderable<…>` is refused.
+    renderableTakesNoTypeArguments,
+    /// Decision 316 — `fn(..) -> R` written anywhere but as `@Decl<…>`'s
+    /// pattern. Located on the `..`.
+    anyParamsOutsideDecl,
+    /// Decision 127 — a pre-122 sequence name that had already left
+    /// (`@AsyncIterator`, `@Iterable`, `@IteratorStep`, `@Yield`): refused,
+    /// naming the current one.
+    effectTypeRemovedLegacy,
+    /// Decisions 122 / 127 — `@Iter<T, E>`: the iterator has no error
+    /// parameter; the item carries the failure, `@Iter<@Result<T, E>>`.
+    iteratorErrorParamRemoved,
     /// R16 / RG1 (§1G) — a generic parameter without a default follows one
     /// with a default. Defaulted generics must be the trailing parameters.
     genericDefaultBeforeRequired,
@@ -104,23 +143,276 @@ pub const ParseErrorType = enum {
     /// `break <C>` (or bare `break`) inside an iterator instead.
     yieldBreakRemoved,
     /// RG4 (§1G) — a generic argument list with a skipped middle slot
-    /// (`@Iterator<i32, , i64>`). Either pass the middle argument explicitly,
+    /// (`@ResultGenerator<i32, , i64>`). Either pass the middle argument explicitly,
     /// or rely on defaults for the contiguous trailing range.
     genericArgSkipForbidden,
     /// D5 (fn-param-default-expansion §F2) — a fn param without a default
     /// follows one with a default (`fn f(a: i32 = 1, b: i32)`). Defaults
     /// occupy trailing positions only, mirroring §1G's generic-param rule.
     fnParamDefaultTrailingOnly,
+    /// Decision 267 — a variadic parameter (`..rest: T[]`) followed by
+    /// another parameter. Located at the variadic's `..`.
+    variadicNotLast,
+    /// Decision 267 — a second variadic parameter in one list. Located at the
+    /// second one's `..`.
+    variadicTwice,
+    /// Decision 267 — a default on a variadic parameter. Located at the `=`.
+    variadicDefault,
+    /// Decision 267 — a variadic parameter whose type is not written `T[]`.
+    /// Located at the type.
+    variadicNotArray,
+    /// Decision 529 (2) — a default on a record parameter (`..props: R = …`).
+    /// Located at the `=`.
+    recordParamDefault,
+    /// Decision 244 — the same rule on a field list: a record type's field
+    /// (`type Port(number: i32 = 80, host: string)`), a variant's payload or
+    /// an inline parameter type, without a default, after one with a default.
+    fieldDefaultTrailingOnly,
+    /// A `_` parameter in a function that has a body. `_` names no parameter —
+    /// it is a declaration's placeholder (`declare fn f(comptime _: type)`),
+    /// legal only where there is no body to bind it in.
+    discardParamWithBody,
+    /// A free function names a parameter `self`. `self` is the receiver of a
+    /// method — a function written in a `type`, `behavior`, `implement` or
+    /// `extend` body — and nothing else; outside one it would be an ordinary
+    /// name that every backend reads as a receiver.
+    selfParamOutsideType,
+    /// A keyword written where a name is declared — a field, a parameter, a
+    /// binding (`type Edge(from: string, …)`, `fn f(from: i32)`,
+    /// `val from = 1`). Every keyword is reserved in every position; the
+    /// diagnostic names the word rather than report a field "with no name"
+    /// or a stray token.
+    reservedWordAsName,
     /// D2 (fn-param-default-expansion §F2) — a positional call argument
     /// follows a named one (`f(host: "x", "y")`). Once the call switches to
     /// named-arg form, the remaining args must also be named (the
     /// `..base` spread is allowed anywhere).
     fnParamPositionalAfterNamed,
+    /// The retired `@[…]` annotation-block opener (spec 05 §5.12). Annotation
+    /// blocks are written `#[…]`; the builtin marker `@` belongs on the
+    /// annotation name (`#[@External.Node(…)]`), not on the block.
+    retiredAnnotationBlock,
+    /// `type P(x: i32) { A }` — a field list and a variant in the same
+    /// declaration: a `type` is a record (fields) or an enum (variants).
+    typeRecordWithVariants,
+    /// `record P { … }` — `record` was replaced by `type` in 1.0.3.
+    removedKeywordRecord,
+    /// `enum E { … }` — `enum` was replaced by `type` in 1.0.3.
+    removedKeywordEnum,
+    /// Decision 107 — `*` or `as` on an import node that opens braces
+    /// (`import {io* : {fs}}`, `import {io as x: {fs}}`). Both belong to a
+    /// leaf: an activation names one extension and an alias renames one
+    /// binding, and a group is neither.
+    importGroupModifier,
+    /// `interface I { … }` — `interface` was renamed to `behavior` in 1.0.3.
+    removedKeywordInterface,
+    /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
+    removedRecordLiteral,
+    removedDelegate,
+    /// Decision 525 — `@block { … }` / `@block(…)`: the builtin is removed; a
+    /// block is written `{ … }`.
+    removedBlockBuiltin,
+    /// `loop (…) { … }` — decision 105: `loop` takes no parenthesis; a
+    /// collection is `for (xs) { x -> … }`, a condition `while (cond) { … }`.
+    removedLoopParenthesised,
+    /// `while (cond) { x -> … }` / `loop { x -> … }` — neither binds a name
+    /// (decision 105); only `for` takes `{ x -> … }`.
+    loopBindsNothing,
+    /// `for (xs) { … }` without `x ->` — a `for` binds the item it iterates.
+    forWithoutBinder,
+    /// Decision 956 (2) — a `for` binds one parameter per source, in order:
+    /// `for xs { x, i -> … }` and `for (a, b) { x -> … }` are refused at the
+    /// block, `detail` naming both counts (`forCountDetail`).
+    forParameterCount,
+    /// Decision 956 (4) — `for x in xs { … }`: the item is the block's
+    /// parameter, `for xs { x -> … }`.
+    forInLoop,
+    /// Decision 956 (2) — several sources are written in parentheses:
+    /// `for a, b { … }` is `for (a, b) { x, y -> … }`.
+    forSourcesParenthesised,
+    /// `for await (a, b) { … }` — `for await` walks one `AsyncIter`; decision
+    /// 956 (2)'s several sources are synchronous.
+    forAwaitOneSource,
+    /// `#[…] loop` with an annotation that is not a generator effect, or a
+    /// generator annotation on `for` / `while` — only `loop` takes the
+    /// annotation, and only the three generator effects (decision 105).
+    loopAnnotationNotGenerator,
+    /// `throw new Error(…)` — `new` is not a keyword (06 N27).
+    removedKeywordNew,
+    /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
+    removedRecordType,
+    /// `type T` — the type of a type is written `type<T>` (decision 575 (5)).
+    removedTypeBareParam,
+    /// The bare `type` — written `anytype` (decision 578 (2)).
+    removedBareType,
+    /// `@Expr<T>`, `@ExprCustom<T>`, `@Decl` — gone (decision 576 (1)).
+    removedExprType,
+    /// `unknown<i32>` / `unknown(…)` — decision 8 §2's `unknown` is one type,
+    /// not a constructor: it takes no type arguments (06 N19).
+    unknownTakesNoArguments,
+    /// `i32 | ` — a union type with nothing after the `|` (decision 8 §3, 06 N20).
+    unionMemberMissing,
+    /// `x is` with no type after it (decision 8 §4, 06 N21).
+    isMissingType,
+    /// `x is Option.Some(v)` — the variant-binding form of `is` (§4.2), which
+    /// the grammar does not carry yet: `is` takes a type (06 N21).
+    isVariantBinding,
+    /// `1..9` in a pattern — `..` is iteration and slicing; an inclusive range
+    /// pattern is `1...9` (decision 8 §5.2, 06 N22).
+    patternRangeExclusive,
+    /// `1...` — a range pattern with no upper bound (§5.2, 06 N22).
+    patternRangeMissingEnd,
+    /// `.Rect(.., width: w)` — `..` stands for the rest, so it comes last
+    /// (§5.1 P7, 06 N22).
+    patternRestNotLast,
+    /// `#(name: n, ..)` — a tuple pattern is positional; a label in one is an
+    /// error (§5.1 P6, 06 N22).
+    patternTupleLabel,
+    /// `case x { n { … } }` — a lower-case name alone is not a pattern
+    /// (§5.2, 06 N22).
+    caseBareNameArm,
+    /// `case x { MAX { … } }` — a constant is not a pattern (§5.2, 06 N22).
+    caseConstantPattern,
+    /// `type P {}`, `type P { fn … }`, `type P` — a record without its field
+    /// list. The empty record is `type P()` and one with members
+    /// `type P() { … }` (decision 138); braces alone are an enum's. Located
+    /// where the `()` belongs.
+    typeWithoutFieldList,
+    namespaceTypeSelf,
+    assocTypeDuplicate,
+    nullishBesideLogical,
+    /// `#[x] type Name = T;` — an alias is a name for a type, not a
+    /// declaration that carries metadata; it takes no annotation.
+    typeAliasAnnotated,
+    /// `type Name<T = i32> = …;` — an alias parameter takes no default: the
+    /// alias is written with every argument (`Name<i32>`).
+    typeAliasGenericDefault,
+    /// `type S { fn f(self: Self) {} A }` — variants come before methods.
+    typeVariantAfterMethod,
+    /// `type P(val x: i32)` — the field list takes no `val` prefix.
+    typeFieldValPrefix,
+    /// `type T { A, A }`, `Color { Red, Red }` — a variant declared twice at
+    /// one level of an enum body. The second is located.
+    enumVariantDuplicate,
+    /// `type Shape { Circle(i32) }`, `type P(i32)` — a field or a variant
+    /// payload written without its name. Decision 12: the form is refused, with
+    /// a diagnostic that names `Variant(field: T)`.
+    fieldNeedsName,
+    /// A `,` after a member of a `type`/`behavior` body: members end with `;`
+    /// (bodyless) or `}` (with a body), never with `,`.
+    memberCommaSeparator,
+    /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
+    /// without its terminating `;`.
+    memberMissingSemicolon,
+    /// Decision 628 — `default fn unit() -> Self { … }` in a `behavior`: a
+    /// member without `self` is a static, written `fn`. Located at `default`.
+    defaultOnStatic,
+    /// Decision 289 — `pub default <name>;` naming no `fn` of the module.
+    defaultUnknown,
+    /// Decision 289 — a second default function in one module: `pub default
+    /// <name>;` naming a function already the default, or a second such line.
+    defaultTwice,
+    /// `$self` in an `@External` template: markers are positional (decision 5),
+    /// `$0` is the first declared parameter — `self` on a method.
+    templateSelfMarker,
+    /// `$stringify(…)` in an `@External` template (decisions 164, 239): a
+    /// template writes the host's own string conversion.
+    templateStringifyMarker,
+    /// `$N` in an `@External` template past the declaration's parameters.
+    templateMarkerOutOfRange,
+    /// `fn f(x: string)` with no body and no `-> …` — decision 33 (b): a
+    /// declaration without a body says what it answers, even when the answer
+    /// is nothing.
+    bodylessFnNeedsReturnType,
+    /// `1 + if (c) { 2 } else { 3 }`, `-if (…) …`, `(if (c) a else b).v` —
+    /// an `if` expression begins an expression and is never an operand, by
+    /// decision 137's reading of `try` / `await`. Located at the `if`.
+    ifOperand,
+    /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
+    /// step 3). Located at the `?`.
+    ternaryAbsent,
+    /// `1 << 2`, `a >> 1`, `a & b`, `a ^ b` — the language has no bitwise
+    /// operators, and no replacement to name (front 15 step 3). Located at the
+    /// operator.
+    bitwiseOperatorAbsent,
+    /// `'a'` — there is no character literal; a character is a one-character
+    /// string (front 15 step 3). Located at the literal.
+    charLiteralAbsent,
+    /// `fn inner(x: i32) { … }` inside a body — a `fn` declares at module
+    /// level; inside a body a function is a value bound with `val` (front 15
+    /// step 3). Located at the `fn`.
+    nestedFnDecl,
+    /// `fn m(self: Self) { … }` inside an enum section's braces — a section
+    /// holds leaves and nested sections only; a method is the enum's, declared
+    /// in the enum's own body (decision 151). Located at the `fn`.
+    sectionBodyMethod,
+    /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
+    /// array literal is `..` (front 15 step 3). Located at the `...`.
+    listSpreadDotDotDot,
+    /// `Pessoa(...old, nome: n)` — `...` is only the inclusive range `a...b`;
+    /// a record's spread is `..` (decision 529 (3)). Located at the `...`.
+    spreadDotDotDot,
+    /// `type P(x: i32)` followed by `implement A for P { … }`: the `implement`
+    /// was read as the bodyless type's own clause, whose receiver is the type
+    /// itself, so `for` has nothing to name (front 15 step 3). Located at the
+    /// `for`.
+    implementClauseFor,
+    /// `#(x: 1, y: 2)` — a tuple LITERAL is positional; labels belong to the
+    /// tuple type `#(x: i32, y: i32)` (decision 8 §6). The labeled
+    /// construction is not parsed (`01-checker` §6); this names it instead of
+    /// blaming the value for a missing `val` (front 15 step 3). Located at the
+    /// label.
+    tupleLiteralLabel,
+    /// `#[compiler.beamMemory(.Ets(keyed: true))]`, `#[mark(level = .High)]` — an
+    /// annotation's labelled argument is `label: value`, as a call's is
+    /// (decision 305). Located at the label, naming `label:`.
+    annotationLabelEquals,
+    /// `42L`, `1.5F` — a numeric suffix is lower case (decision 247).
+    /// Located at the suffix; the caption names the lower-case one.
+    numberSuffixUppercase,
+    /// `2x`, `10px`, `1.5q` — the letters glued to a number are no suffix
+    /// (decision 247). Located at the letters.
+    numberSuffixUnknown,
+    /// `0b1f`, `0o7d` — a radix literal is an integer and takes an integer
+    /// suffix only (decision 247; in `0x…` the letters are hex digits).
+    /// Located at the suffix.
+    numberSuffixFloatOnRadix,
+    /// `1.5u`, `1e3l` — a literal with a fraction or an exponent is floating
+    /// and takes `f` or `d` only (decision 247). Located at the suffix.
+    numberSuffixIntegerOnFloat,
+    /// `1e`, `2.5ex` — an exponent without digits (decision 247). Located at
+    /// the `e`.
+    numberExponentWithoutDigits,
+    /// Decision 553 (2) — `async fn f() -> i32`: a marker whose return type is
+    /// not the wrapper it names, written literally. Located at the marker.
+    markerTypeMismatch,
+    /// Decision 584 (3) — `async fn f()`: a marker with no return type at all
+    /// (every function is typed, 583, 622). The code is `marker-type-mismatch`;
+    /// the caption names the return type to write, `detail` the marker's word.
+    /// Located at the marker.
+    markerReturnMissing,
+    /// Decision 584 (1) — `{ iter yield 1; }`, `{ async x }`: a marker inside a
+    /// lambda's brace opens a marked lambda, which writes `->`; the block forms
+    /// are `async { … }` (523) and `iter loop { … }` / `stream loop { … }`
+    /// (125). Located at the marker.
+    markerWithoutArrow,
+    /// Decision 553 (1) — `async fn f() -> @Async<i32>;`, `declare async fn …`,
+    /// a behavior's bodyless member: a marker says how a body compiles, and a
+    /// declaration has none (open point B-116-b). Located at the marker.
+    markerOnDeclaration,
+    /// Decision 811 (1) — `opaque` written before a type with no field list
+    /// (an enum, a namespace type) or before a type alias: the modifier
+    /// closes a record's constructor and fields. Located at `opaque`.
+    opaqueNotRecord,
 };
 
 pub const ParseErrorInfo = struct {
     kind: ParseErrorType,
-    /// Byte offset of the start of the problematic token in the original source
+    /// Byte offset of the start of the problematic token in the original
+    /// source. `print.render` resolves the rendered line from it and
+    /// `lsp_types.spanToRange` builds the LSP range from it, so it MUST be a
+    /// byte offset — never a column. Use `fromToken` rather than filling the
+    /// fields by hand.
     start: usize,
     /// Byte offset of the end (exclusive)
     end: usize,
@@ -132,6 +424,38 @@ pub const ParseErrorInfo = struct {
     col: usize = 1,
     /// Extra context (e.g. the reserved word name)
     detail: ?[]const u8 = null,
+
+    /// Builds the diagnostic for `tok`: the span covers the whole token and
+    /// `start`/`end` are the byte offsets the renderer and the LSP expect.
+    /// This is the single place the location contract is applied — the
+    /// per-site `.start = tok.col - 1` spelling it replaced reported every
+    /// multi-line source's errors on line 1.
+    pub fn fromToken(kind: ParseErrorType, tok: Token) ParseErrorInfo {
+        return .{
+            .kind = kind,
+            .start = tok.offset,
+            .end = tok.offset + tok.lexeme.len,
+            .lexeme = tok.lexeme,
+            .line = tok.line,
+            .col = tok.col,
+        };
+    }
+
+    /// `fromToken` plus `detail` (e.g. the offending reserved word).
+    pub fn fromTokenDetail(kind: ParseErrorType, tok: Token, detail: []const u8) ParseErrorInfo {
+        var info = fromToken(kind, tok);
+        info.detail = detail;
+        return info;
+    }
+
+    /// `fromToken` with a span of exactly `len` bytes from the token's start
+    /// — for diagnostics whose carets cover a fixed surface (`*fn`) rather
+    /// than the token's own lexeme.
+    pub fn fromTokenSpan(kind: ParseErrorType, tok: Token, len: usize) ParseErrorInfo {
+        var info = fromToken(kind, tok);
+        info.end = info.start + len;
+        return info;
+    }
 };
 
 pub const ParseError = error{ UnexpectedToken, OutOfMemory };
@@ -149,17 +473,47 @@ pub const Parser = struct {
     noTrailingLambda: bool = false,
     /// When true, `parsePipelineExpr` will not consume a trailing `catch` operator.
     noTailCatch: bool = false,
+    /// The first `_` parameter of the parameter list parsed last
+    /// (`parseParamList` resets it), for `refuseDiscardParam` — a `_` is
+    /// legal only in a signature with no body.
+    discardParam: ?Token = null,
+    /// The first parameter named `self` of the list parsed last
+    /// (`parseParamList` resets it). `self` is a method's receiver, so a free
+    /// function (`parseFnBody`) that names one is `self-param-outside-type`.
+    selfParam: ?Token = null,
+    /// Decision 267 — the `..` of the last variadic parameter
+    /// `parseParamList` read, for its not-last / twice refusals.
+    lastVariadicTok: ?Token = null,
     /// One `>` still owed to an enclosing generic-argument list: nested
     /// generics close with `>>`, which the lexer scans as a single shift
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
     /// for the inner list and credits the second `>` here for the outer one.
     pending_gt: bool = false,
+    /// Decisions 575, 576 — keep the program as written: no
+    /// `compiler_surface` pass. The formatter sets it, so it prints
+    /// `compiler.*`, a bare read of a `comptime` parameter and a template's
+    /// `return e` back as they were written.
+    keep_surface: bool = false,
+    /// Decision 606 — refuse the spellings no source writes any more
+    /// (`@print(…)`, `@Result<…>`, `#[@external(…)]`: `builtinNameRemoved`,
+    /// `preludeNameWithSigil`). Set where a module's own source is parsed
+    /// (`comptime.zig` `analyzeSource`); the compiler's own re-parses of
+    /// text it rendered (a decorator's member, a template's expansion) read
+    /// its internal builtins as before.
+    refuse_removed_builtins: bool = false,
+    /// Decision 873 (1) — a property in a type body (`pub val length: i32;`)
+    /// is a form of std's prelude alone. Set where a module other than the
+    /// prelude is parsed (`comptime.zig` `analyzeSource`): a `val` there is the
+    /// parse error a type body gives any other non-member.
+    refuse_type_properties: bool = false,
+    /// Decision 316 — set while the type argument of `@Decl<…>` is parsed:
+    /// `fn(..) -> R` (a function of any parameters) is a pattern written there
+    /// alone (`anyParamsOutsideDecl` anywhere else).
+    inDeclPattern: bool = false,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
-        interface: u32 = 0,
-        @"struct": u32 = 0,
-        record: u32 = 0,
-        @"enum": u32 = 0,
+        behavior: u32 = 0,
+        type: u32 = 0,
     } = .{},
     const This = @This();
 
@@ -215,11 +569,12 @@ pub const Parser = struct {
         return 0;
     }
 
-    /// Creates a Loc from a Token's line and column.
+    /// Creates a Loc from a Token's line, column and expansion.
     pub fn locFromToken(tok: Token) Loc {
         return .{
             .line = tok.line,
             .col = tok.col,
+            .expansion = tok.expansion,
         };
     }
 
@@ -238,12 +593,88 @@ pub const Parser = struct {
     }
 
     pub fn parse(this: *This, alloc: std.mem.Allocator) ParseError!Program {
+        // Every `UnexpectedToken` leaves a located `parseError`. The named
+        // rejections fill it at the site; a plain `consume` mismatch deep in
+        // an expression (`print((1);`) does not, so record the token the
+        // parser stopped on — callers render the location instead of a bare
+        // error name.
+        var program = this.parseDecls(alloc) catch |err| {
+            if (err == ParseError.UnexpectedToken and this.parseError == null) {
+                // A keyword where a name is being declared — `from: i32` in a
+                // parameter list, `val from = 1`, `{ from -> … }` — stops the
+                // parser on the keyword with a declarator after it; say so.
+                const tok = this.peek();
+                const next = this.peekAt(1).kind;
+                const declares = next == .colon or next == .equal or next == .rightArrow;
+                this.parseError = ParseErrorInfo.fromToken(if (declares and isKeywordName(tok)) .reservedWordAsName else .unexpectedToken, tok);
+            }
+            return err;
+        };
+        // Decision 575 (6): each declaration's `#[external(…)]` sources read
+        // into its `implementations`; decision 5: their templates' positional
+        // markers translated for the renderers — `$self`, `$stringify`
+        // (decision 239) and an out-of-range `$N` are refused here.
+        if (implementations.fillProgram(alloc, this.tokens, &program) catch |err| {
+            program.deinit(alloc);
+            return err;
+        }) |failure| {
+            program.deinit(alloc);
+            this.parseError = ParseErrorInfo.fromToken(switch (failure.kind) {
+                .selfMarker => .templateSelfMarker,
+                .stringifyMarker => .templateStringifyMarker,
+                .indexOutOfRange => .templateMarkerOutOfRange,
+            }, failure.tok);
+            return ParseError.UnexpectedToken;
+        }
+        // Decision 788: each top-level `comptime { … }` read onto a decorator
+        // over an anchor (`parser/comptime_blocks.zig`).
+        if (!this.keep_surface) comptime_blocks.expandProgram(alloc, &program) catch |err| {
+            program.deinit(alloc);
+            return if (err == error.OutOfMemory) ParseError.OutOfMemory else ParseError.UnexpectedToken;
+        };
+        // Decision 907: a function with a `syntax` parameter takes the form
+        // its uses ask for — `#[f]` a decorator's, `f(e)` the call's
+        // (`parser/syntax_use.zig`).
+        if (!this.keep_surface) syntax_use.applyProgram(alloc, &program) catch {
+            program.deinit(alloc);
+            return ParseError.OutOfMemory;
+        };
+        // Decision 364: a non-template function's `comptime x: @Expr<T>`
+        // carries `T` in its `typeRef` (`parser/syntax_params.zig`).
+        syntax_params.unwrapProgram(alloc, &program);
+        // Decisions 575 (3), (4), 576: `compiler.*`, a `comptime x: T`'s bare
+        // reads and a template's returns, read onto the machinery
+        // (`parser/compiler_surface.zig`).
+        if (!this.keep_surface) compiler_surface.expandProgram(alloc, &program) catch {
+            program.deinit(alloc);
+            return ParseError.OutOfMemory;
+        };
+        return program;
+    }
+
+    /// The declarations of the tokens as written, read onto nothing (no
+    /// pass of `parse` runs): `parser/comptime_blocks.zig` builds its
+    /// declarations from text with it.
+    pub fn parseRawDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
+        return this.parseDecls(alloc);
+    }
+
+    fn parseDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
         var decls: std.ArrayList(DeclKind) = .empty;
         errdefer {
             for (decls.items) |*d| d.deinit(alloc);
             decls.deinit(alloc);
         }
+        var blankBefore: std.ArrayList(bool) = .empty;
+        errdefer blankBefore.deinit(alloc);
+        var defaultNames: std.ArrayList(Token) = .empty;
+        defer defaultNames.deinit(alloc);
         while (!this.check(.endOfFile)) {
+            const blank = if (this.current > 0) blk: {
+                const prev = this.tokens[this.current - 1];
+                break :blk this.peek().line > prev.line + std.mem.count(u8, prev.lexeme, "\n") + 1;
+            } else false;
+            try blankBefore.append(alloc, blank);
             const decl: DeclKind = if (this.check(.import)) blk: {
                 const d = try this.parseImportDecl(alloc);
                 _ = this.match(.semicolon);
@@ -258,26 +689,41 @@ pub const Parser = struct {
                 const d = try this.parseActivationStmt(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .use = d };
-            } else if (this.checkShorthand(.@"fn") or this.checkStarFn() or this.checkDefaultFn()) blk: {
+            } else if (this.checkDefaultName()) {
+                // Decision 289 — `pub default <name>;`: no declaration of its
+                // own; it marks the named `fn` once every decl is parsed.
+                _ = blankBefore.pop();
+                _ = this.advance();
+                _ = this.advance();
+                try defaultNames.append(alloc, this.advance());
+                _ = try this.consume(.semicolon);
+                continue;
+            } else if (this.checkShorthand(.@"fn") or this.checkStarFn() or this.checkDefaultFn() or this.checkMarkedFn()) blk: {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"fn" = d };
-            } else if (this.checkShorthand(.@"enum")) blk: {
-                const d = try this.parseShorthandEnumDecl(alloc);
+            } else if (this.isTypeAliasAt(0)) blk: {
+                break :blk .{ .typeAlias = try this.parseTypeAliasDecl(alloc) };
+            } else if (this.checkShorthandNamed(.type) or this.checkOpaqueType()) blk: {
+                const d = try this.parseShorthandTypeDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .@"enum" = d };
-            } else if (this.checkShorthand(.record)) blk: {
-                const d = try this.parseShorthandRecordDecl(alloc);
+                break :blk .{ .type_ = d };
+            } else if (this.checkShorthand(.behavior)) blk: {
+                const d = try this.parseShorthandBehaviorDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .record = d };
+                break :blk .{ .behavior = d };
+            } else if (this.removedDeclKeywordAt(0) != null or
+                (this.check(.@"pub") and this.removedDeclKeywordAt(1) != null))
+            {
+                return this.failRemovedDeclKeyword(if (this.check(.@"pub")) 1 else 0);
             } else if (this.checkShorthandDelegate()) blk: {
-                const d = try this.parseShorthandDelegateDecl(alloc);
+                // Decision 575 (6) — an unannotated `declare fn` is a
+                // function like an annotated one: refused at the declaration
+                // when no annotation implements it
+                // (`declare-without-implementation`).
+                const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .delegate = d };
-            } else if (this.checkShorthand(.interface)) blk: {
-                const d = try this.parseShorthandInterfaceDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .interface = d };
+                break :blk .{ .@"fn" = d };
             } else if (this.checkNamedDecl(.implement)) blk: {
                 const d = try this.parseShorthandImplementDecl(alloc);
                 _ = this.match(.semicolon);
@@ -286,17 +732,29 @@ pub const Parser = struct {
                 const d = try this.parseShorthandExtendDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .extend = d };
+            } else if (this.check(.@"comptime") and this.peekAt(1).kind == .leftBrace) blk: {
+                // Decision 788 — a top-level `comptime { … }`: a build body of
+                // the module (`parser/comptime_blocks.zig`).
+                const tok = this.advance();
+                const body = try this.parseFnBodyInBraces(alloc);
+                _ = this.match(.semicolon);
+                break :blk .{ .comptimeBlock = .{ .loc = locFromToken(tok), .body = body } };
             } else if (this.check(.@"test")) blk: {
                 const d = try this.parseTestDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"test" = d };
-            } else if (this.check(.loop)) blk: {
+            } else if (this.check(.loop) or this.check(.@"while") or this.check(.@"for")) blk: {
                 // top-level loop statement: parsed as a val named "_loop"
-                const e = try this.parseLoopExpr(alloc);
+                const e = if (this.check(.loop))
+                    try this.parseLoopExpr(alloc, null)
+                else if (this.check(.@"while"))
+                    try this.parseWhileExpr(alloc)
+                else
+                    try this.parseForExpr(alloc);
                 const ePtr = try this.boxExpr(alloc, .{ .loop = e });
                 _ = this.match(.semicolon);
                 break :blk DeclKind{ .val = ast.ValDecl{ .name = "_loop", .value = ePtr } };
-            } else if (this.checkShorthand(.val)) blk: {
+            } else if (this.checkShorthand(.val) or this.checkShorthand(.@"var")) blk: {
                 const decl = try this.parseValForm(alloc);
                 // Optional semicolon after top-level val declaration
                 _ = this.match(.semicolon);
@@ -311,11 +769,58 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
-                    .@"enum" => DeclKind{ .@"enum" = try this.parseShorthandEnumDecl(alloc) },
-                    .record => DeclKind{ .record = try this.parseShorthandRecordDecl(alloc) },
-                    .interface => DeclKind{ .interface = try this.parseShorthandInterfaceDecl(alloc) },
-                    // An ANNOTATED `declare fn` is the FFI declaration form
-                    // (`@[external(…)] pub declare fn …;`), not a delegate.
+                    // `#[d] pub default fn …` — an annotated default function
+                    // (decision 289; `.bpp`'s route decorator).
+                    // Decision 579 — `#[builtin] pub default declare val <name>: <Type>;`.
+                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .declare and
+                        this.peekAt((if (isPub) annEnd + 1 else annEnd) + 2).kind == .val)
+                        DeclKind{ .builtinVal = try this.parseBuiltinValDecl(alloc) }
+                    else if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn" or
+                        this.markedFnAt((if (isPub) annEnd + 1 else annEnd) + 1))
+                        DeclKind{ .@"fn" = try this.parseFnDecl(alloc) }
+                    else
+                        return ParseError.UnexpectedToken,
+                    .identifier => blk2: {
+                        const off = if (isPub) annEnd + 1 else annEnd;
+                        // Decision 553 (1) — `#[…] [pub] <marker> fn`.
+                        if (this.markedFnAt(off)) break :blk2 DeclKind{ .@"fn" = try this.parseFnDecl(alloc) };
+                        // Decision 811 (1) — `#[…] [pub] opaque type X(…)`.
+                        if (this.opaqueTypeAt(off)) break :blk2 DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) };
+                        if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
+                        return ParseError.UnexpectedToken;
+                    },
+                    .type => blk2: {
+                        if (this.isTypeAliasAt(annEnd)) {
+                            this.parseError = ParseErrorInfo.fromToken(.typeAliasAnnotated, this.peek());
+                            return ParseError.UnexpectedToken;
+                        }
+                        break :blk2 DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) };
+                    },
+                    .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
+                    // `#[compiler.beamMemory(.Ets)] var hits: i32 = 0;` (front 17): the
+                    // annotations land on the binding. Only the plain form takes
+                    // them — `val Name = fn …` and the other `val` shorthands do
+                    // not, and are refused where the annotation is.
+                    .val, .@"var" => blk2: {
+                        const annTok = this.peek();
+                        const anns = try this.parseAnnotations(alloc);
+                        var decl = try this.parseValForm(alloc);
+                        switch (decl) {
+                            .val => |*v| v.annotations = anns,
+                            else => {
+                                decl.deinit(alloc);
+                                for (anns) |*ann| ann.deinit(alloc);
+                                alloc.free(anns);
+                                // Refused at the annotation, not at whatever
+                                // token follows the form (decision 67).
+                                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, annTok);
+                                return ParseError.UnexpectedToken;
+                            },
+                        }
+                        break :blk2 decl;
+                    },
+                    // An annotated `declare fn` (`#[external(…)] pub declare
+                    // fn …;`), as an unannotated one.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
                     else => return ParseError.UnexpectedToken,
                 };
@@ -323,11 +828,14 @@ pub const Parser = struct {
                 _ = this.match(.semicolon);
                 break :blk decl;
             } else if (this.check(.commentNormal) or this.check(.commentDoc) or this.check(.commentModule)) blk: {
+                const trailing = decls.items.len > 0 and this.onPreviousTokenLine();
                 const tok = this.advance();
                 break :blk DeclKind{ .comment = .{
                     .text = commentText(tok.lexeme),
                     .is_module = tok.kind == .commentModule,
                     .is_doc = tok.kind == .commentDoc,
+                    .trailing = trailing,
+                    .loc = locFromToken(tok),
                 } };
             } else {
                 // A bare `implement …` / `extend …` (optionally `pub`) with no name:
@@ -340,12 +848,95 @@ pub const Parser = struct {
                 }
                 if (isReservedWord(this.peek().kind)) {
                     this.reportReservedWordError();
+                    return ParseError.UnexpectedToken;
                 }
+                // `name = <expr>` at top level: a binding that forgot its
+                // `val`/`var`. `parseExpr` raises the same diagnostic for the
+                // annotated form (`name: T = …`); without this arm the top
+                // level returned an UnexpectedToken with NO `parseError`, so
+                // nothing was rendered at all.
+                if (this.check(.identifier) and
+                    (this.peekAt(1).kind == .equal or this.peekAt(1).kind == .plusEqual))
+                {
+                    const tok = this.peek();
+                    this.parseError = ParseErrorInfo.fromTokenDetail(.novalBinding, tok, tok.lexeme);
+                    return ParseError.UnexpectedToken;
+                }
+                // No stderr from the parser: the error carries the location
+                // (`errorInfo`) and the caller renders it.
                 return ParseError.UnexpectedToken;
             };
             try decls.append(alloc, decl);
         }
-        return Program{ .decls = try decls.toOwnedSlice(alloc) };
+        try this.markDefaultNames(decls.items, defaultNames.items);
+        const declSlice = try decls.toOwnedSlice(alloc);
+        errdefer {
+            for (declSlice) |*d| d.deinit(alloc);
+            alloc.free(declSlice);
+        }
+        return Program{ .decls = declSlice, .blankLineBefore = try blankBefore.toOwnedSlice(alloc) };
+    }
+
+    /// Decision 289 — each `pub default <name>;` makes the module's `fn
+    /// <name>` its default (`isDefault`, `defaultBy`). A name no top-level `fn`
+    /// declares is `default-unknown`; a function already the default (written
+    /// `pub default fn <name>` or named by an earlier line) is `default-twice`,
+    /// both at the name. Two different defaults are the checker's
+    /// (`validateUniqueDefaults`).
+    fn markDefaultNames(this: *This, decls: []DeclKind, names: []const Token) ParseError!void {
+        for (names) |tok| {
+            const target: *ast.FnDecl = for (decls) |*d| switch (d.*) {
+                .@"fn" => |*f| if (std.mem.eql(u8, f.name, tok.lexeme)) break f,
+                else => {},
+            } else {
+                this.parseError = ParseErrorInfo.fromTokenDetail(.defaultUnknown, tok, tok.lexeme);
+                return ParseError.UnexpectedToken;
+            };
+            if (target.isDefault) {
+                this.parseError = ParseErrorInfo.fromTokenDetail(.defaultTwice, tok, tok.lexeme);
+                return ParseError.UnexpectedToken;
+            }
+            target.isDefault = true;
+            target.defaultBy = locFromToken(tok);
+            // The default is what the module exports to its importer.
+            if (!target.isPub) {
+                target.isPub = true;
+                target.pubByDefault = true;
+            }
+        }
+    }
+
+    /// Decision 579 (1) — `#[builtin] pub default declare val <name>: <Type>;`,
+    /// the cursor on the first annotation. The one bodyless value declaration:
+    /// `pub`, `default`, a type and `#[builtin]` are each required, and it
+    /// takes no value; anything else is refused at the token that departs.
+    fn parseBuiltinValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.BuiltinValDecl {
+        const annTok = this.peek();
+        const anns = try this.parseAnnotations(alloc);
+        errdefer {
+            for (anns) |*ann| ann.deinit(alloc);
+            alloc.free(anns);
+        }
+        const builtin = for (anns) |a| {
+            if (!a.is_builtin and std.mem.eql(u8, a.name, "builtin") and a.args.len == 0) break true;
+        } else false;
+        if (!builtin) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, annTok);
+            return ParseError.UnexpectedToken;
+        }
+        _ = try this.consume(.@"pub");
+        _ = try this.consume(.default);
+        _ = try this.consume(.declare);
+        _ = try this.consume(.val);
+        const nameTok = try this.consume(.identifier);
+        _ = try this.consume(.colon);
+        var ty = try this.parseTypeRef(alloc);
+        errdefer ty.deinit(alloc);
+        if (!this.check(.semicolon)) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        return .{ .name = nameTok.lexeme, .nameLoc = locFromToken(nameTok), .annotations = anns, .typeAnnotation = ty };
     }
 
     /// Parses a top-level `mod Name;` / `pub mod Name;` module declaration.
@@ -360,12 +951,14 @@ pub const Parser = struct {
         _ = try this.consume(.mod);
         const nameTok = try this.consume(.identifier);
         _ = try this.consume(.semicolon);
-        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault };
+        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault, .loc = locFromToken(nameTok) };
     }
 
     /// Dispatches `val [pub] Name = <kind> ...` to the appropriate sub-parser.
     /// Uses pure lookahead ---- no state mutation.
     pub fn parseValForm(this: *This, alloc: std.mem.Allocator) ParseError!DeclKind {
+        // `var` has the plain form only — no shorthand reads it.
+        if (this.checkShorthand(.@"var")) return .{ .val = try this.parseValDecl(alloc) };
         // Check if we have `val Name : Type = Value` (type annotation) or `val Name = Value`
         var offset: usize = 0;
         if (this.peekAt(offset).kind == .@"pub") offset += 1; // optional pub
@@ -386,19 +979,64 @@ pub const Parser = struct {
         const adjustedOffset = this.skipAnnotationsLookaheadFrom(baseOffset);
         const body = this.peekAt(adjustedOffset).kind;
         const bodyNext = this.peekAt(adjustedOffset + 1).kind;
+        if (body == .identifier and this.removedDeclKeywordAt(adjustedOffset) != null) {
+            const lexeme = this.peekAt(adjustedOffset).lexeme;
+            // `val x = record { a: 1 }` in a lower-case binding is the removed
+            // anonymous record literal; `val Point = record { … }` the removed
+            // declaration form. `val Name = interface fn(…)` was a delegate.
+            if (std.mem.eql(u8, lexeme, "record") and bodyNext == .leftBrace and this.valFormNameIsLower()) {
+                return this.failRemovedAt(.removedRecordLiteral, adjustedOffset);
+            }
+            return this.failRemovedDeclKeyword(adjustedOffset);
+        }
         return switch (body) {
-            .record => .{ .record = try this.parseRecordDecl(alloc) },
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
-            .@"enum" => .{ .@"enum" = try this.parseEnumDecl(alloc) },
-            .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
-            .interface => if (bodyNext == .@"fn")
-                .{ .delegate = try this.parseDelegateDecl(alloc) }
-            else
-                .{ .interface = try this.parseInterfaceDecl(alloc) },
+            // Decision 575 (6) — `val x = declare fn(…)` went with the
+            // delegate forms.
+            .declare => this.failRemovedAt(.removedDelegate, adjustedOffset),
+            .type => switch (bodyNext) {
+                .lessThan, .leftParenthesis, .leftBrace, .implement => .{ .type_ = try this.parseTypeDecl(alloc) },
+                else => .{ .val = try this.parseValDecl(alloc) },
+            },
+            .behavior => .{ .behavior = try this.parseBehaviorDecl(alloc) },
             .@"fn" => .{ .@"fn" = try this.parseFnDeclFromVal(alloc) },
             else => .{ .val = try this.parseValDecl(alloc) },
         };
+    }
+
+    /// The removed 1.0.2 declaration keyword at `offset` — `record`, `enum` or
+    /// `interface`, which lex as identifiers since 1.0.3 — when it is followed
+    /// by what a declaration would take (a name, `{`, `<` or `fn`). Null
+    /// otherwise, so the three words stay free as ordinary identifiers.
+    pub fn removedDeclKeywordAt(this: *This, offset: usize) ?ParseErrorType {
+        const tok = this.peekAt(offset);
+        if (tok.kind != .identifier) return null;
+        const next = this.peekAt(offset + 1).kind;
+        if (next != .identifier and next != .leftBrace and next != .lessThan and next != .@"fn") return null;
+        if (std.mem.eql(u8, tok.lexeme, "record")) return .removedKeywordRecord;
+        if (std.mem.eql(u8, tok.lexeme, "enum")) return .removedKeywordEnum;
+        if (std.mem.eql(u8, tok.lexeme, "interface")) return .removedKeywordInterface;
+        return null;
+    }
+
+    /// Records the targeted removed-keyword diagnostic at the keyword token.
+    pub fn failRemovedDeclKeyword(this: *This, offset: usize) ParseError {
+        const kind = this.removedDeclKeywordAt(offset) orelse .unexpectedToken;
+        return this.failRemovedAt(kind, offset);
+    }
+
+    pub fn failRemovedAt(this: *This, kind: ParseErrorType, offset: usize) ParseError {
+        const tok = this.peekAt(offset);
+        this.parseError = ParseErrorInfo.fromTokenSpan(kind, tok, tok.lexeme.len);
+        return ParseError.UnexpectedToken;
+    }
+
+    /// `val name = …` / `pub val name = …`: the bound name starts lower-case.
+    fn valFormNameIsLower(this: *This) bool {
+        const off: usize = if (this.check(.@"pub")) 2 else 1;
+        const name = this.peekAt(off).lexeme;
+        return name.len > 0 and std.ascii.isLower(name[0]);
     }
 
     /// true if the current token is `kind`, or `pub` followed by `kind`.
@@ -406,12 +1044,52 @@ pub const Parser = struct {
         return this.check(kind) or (this.check(.@"pub") and this.peekAt(1).kind == kind);
     }
 
+    /// true if `kind Name` or `pub kind Name` is next — for keywords that also
+    /// have a non-declaration meaning (`type` is the kind of types too).
+    pub inline fn checkShorthandNamed(this: *This, kind: TokenKind) bool {
+        if (this.check(kind)) return this.peekAt(1).kind == .identifier;
+        if (this.check(.@"pub")) return this.peekAt(1).kind == kind and this.peekAt(2).kind == .identifier;
+        return false;
+    }
+
+    /// Decision 811 (1) — the contextual word `opaque` at `offset`, followed
+    /// by `type` and a name: the modifier of a type declaration. `opaque`
+    /// stays a free identifier everywhere else.
+    pub fn opaqueTypeAt(this: *This, offset: usize) bool {
+        const t = this.peekAt(offset);
+        return t.kind == .identifier and std.mem.eql(u8, t.lexeme, "opaque") and
+            this.peekAt(offset + 1).kind == .type and this.peekAt(offset + 2).kind == .identifier;
+    }
+
+    /// `[pub] opaque type Name` next (decision 811 (1)).
+    pub fn checkOpaqueType(this: *This) bool {
+        return this.opaqueTypeAt(0) or (this.check(.@"pub") and this.opaqueTypeAt(1));
+    }
+
     /// true for a named shorthand decl `Name <kind> …` or `pub Name <kind> …`,
     /// used to detect `Name implement …` / `Name extend …`.
     pub inline fn checkNamedDecl(this: *This, kind: TokenKind) bool {
-        if (this.check(.identifier)) return this.peekAt(1).kind == kind;
-        if (this.check(.@"pub")) return this.peekAt(1).kind == .identifier and this.peekAt(2).kind == kind;
+        if (this.check(.identifier)) return this.kindAfterGenerics(1) == kind;
+        if (this.check(.@"pub")) return this.peekAt(1).kind == .identifier and this.kindAfterGenerics(2) == kind;
         return false;
+    }
+
+    /// The kind of the token at `at`, or — when a `<…>` list of type
+    /// parameters starts there (`ArrShout<T> implement …`, decision 799 (2))
+    /// — of the token after its closing `>`.
+    fn kindAfterGenerics(this: *This, at: usize) TokenKind {
+        if (this.peekAt(at).kind != .lessThan) return this.peekAt(at).kind;
+        var i = at + 1;
+        var depth: usize = 1;
+        while (depth > 0) : (i += 1) {
+            switch (this.peekAt(i).kind) {
+                .lessThan => depth += 1,
+                .greaterThan => depth -= 1,
+                .identifier, .comma, .colon, .equal, .pipe => {},
+                else => return this.peekAt(i).kind,
+            }
+        }
+        return this.peekAt(i).kind;
     }
 
     /// true if a removed `*fn` declaration is next: `*fn` or `pub *fn`. Used
@@ -430,6 +1108,12 @@ pub const Parser = struct {
         if (this.check(.default)) return this.peekAt(1).kind == .@"fn";
         if (this.check(.@"pub")) return this.peekAt(1).kind == .default and this.peekAt(2).kind == .@"fn";
         return false;
+    }
+
+    /// Decision 289 — `pub default <name>;` at a module's top level.
+    pub inline fn checkDefaultName(this: *This) bool {
+        return this.check(.@"pub") and this.peekAt(1).kind == .default and
+            this.peekAt(2).kind == .identifier and this.peekAt(3).kind == .semicolon;
     }
 
     /// `default mod Name;` / `pub default mod Name;` at a module's top level — the
@@ -479,21 +1163,49 @@ pub const Parser = struct {
         /// Preserve `//`/`///`/`////` comment tokens as comment-literal statements.
         handleComments: bool = false,
         semicolonPolicy: SemicolonPolicy = .required,
-        /// Reject a `use` hook that appears after a branch/return (static-prefix rule).
-        useAfterBranchGuard: bool = false,
+        /// Decision 409 — a function body: its last statement written without
+        /// `;` (a comment after it aside, a braced `if` / `case` / loop
+        /// excluded) is marked `tail = .value`.
+        markTail: bool = false,
+        /// Decision 525 — a block used as a value (a bare `{ … }`, a `case`
+        /// arm, `comptime { … }`, `async { … }`): a braced `if` / `case` at
+        /// its end is its last expression too, so it is marked the tail — the
+        /// `;` after a braced statement is optional and means nothing
+        /// (decision 29 (c)). A function body keeps decision 409's reading (a
+        /// braced statement is never its tail).
+        bracedTail: bool = false,
     };
 
     /// Parse `{ stmt; stmt; ... }`. The opening `{` must be the current token.
     /// Unifies every brace-delimited block in the parser via `BlockParseOptions`.
     pub fn parseBlock(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         _ = try this.consume(.leftBrace);
+        return this.parseBlockBody(alloc, opts);
+    }
+
+    /// The body of a brace-delimited block, `{` **already consumed**, up to and
+    /// including the `}`.
+    ///
+    /// It exists for the two blocks that read something between the `{` and the
+    /// first statement and so cannot call `parseBlock`: the `if` then-branch's
+    /// `{ x -> … }` value binding, and a lambda's `{ a, b -> … }` parameter
+    /// list. Both used to carry their own copy of this loop, written before
+    /// `BlockParseOptions` existed, and each copy left out comment handling and
+    /// empty-line tracking — so a `//` comment was a parse error inside an `if`
+    /// then-branch and inside every `loop (…) { x -> … }` body (which is a
+    /// lambda body), while the same comment in a fn body, a `test` body or an
+    /// `if` **else**-branch parsed. **A block that needs a prologue calls this;
+    /// it does not copy the loop.**
+    pub fn parseBlockBody(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         var stmts: std.ArrayList(Stmt) = .empty;
         errdefer {
             for (stmts.items) |*s| s.deinit(alloc);
             stmts.deinit(alloc);
         }
-        var seenBranch = false;
-        _ = &seenBranch; // used only when useAfterBranchGuard is set
+        // Decision 409 — the last statement that is not a comment, and
+        // whether a `;` ended it.
+        var lastStmt: ?usize = null;
+        var lastBare = false;
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             const emptyLinesBefore: u32 = if (opts.trackEmptyLines) blk: {
                 const prevLine = if (this.current > 0) this.tokens[this.current - 1].line else 1;
@@ -503,34 +1215,247 @@ pub const Parser = struct {
 
             if (opts.handleComments and try this.tryParseCommentStmt(alloc, &stmts, emptyLinesBefore)) continue;
 
-            if (opts.useAfterBranchGuard) {
-                if (seenBranch and this.check(.use)) {
-                    const tok = this.peek();
-                    this.parseError = .{
-                        .kind = .useAfterBranch,
-                        .start = tok.col - 1,
-                        .end = tok.col - 1 + tok.lexeme.len,
-                        .lexeme = tok.lexeme,
-                        .line = tok.line,
-                        .col = tok.col,
-                    };
-                    return ParseError.UnexpectedToken;
-                }
-                if (this.check(.@"if") or this.check(.@"return") or this.check(.loop) or this.check(.case))
-                    seenBranch = true;
-            }
-
-            const expr = try this.parseExpr(alloc);
-            switch (opts.semicolonPolicy) {
+            // Decision 539 — `defer <expr>;` marks the statement; `defer { … }`
+            // is `defer` over a block expression.
+            const isDeferred = this.match(.@"defer");
+            var expr = try this.parseExpr(alloc);
+            // The statement is parsed before the separator is checked, so a
+            // semicolon-policy failure leaves it owned by nobody. It is freed
+            // here rather than leaked; once appended, `stmts`' own errdefer
+            // owns it and this one is discharged.
+            errdefer expr.deinit(alloc);
+            var bare = false;
+            if (this.isBracedBlockStmt(expr)) {
+                // Decision 29 (c) as decision 60 orders it: a braced `if`,
+                // `loop` or `case` statement ends at its `}`, and the `;` after
+                // it is accepted, never required, whatever the block's policy —
+                // for good: C-13 is formatting (decision 524), and
+                // `botopink format` removes the `;`.
+                // In a block used as a value it is the tail either way: the
+                // `;` there means nothing (decision 525).
+                _ = this.match(.semicolon);
+                // Decision 541 (4) — a block `{ … }` ending a function body is
+                // its tail, as a block used as a value is anywhere.
+                bare = opts.bracedTail or isValueBlockExpr(expr);
+            } else switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
-                .optional => _ = this.match(.semicolon),
-                .requiredExceptLast => if (!this.match(.semicolon) and !this.check(.rightBrace))
-                    return ParseError.UnexpectedToken,
+                .optional => bare = !this.match(.semicolon),
+                .requiredExceptLast => if (!this.match(.semicolon)) {
+                    // A `//` comment after the tail is no statement: the
+                    // `}` still follows it.
+                    if (!this.closesAfterComments(opts.handleComments)) return ParseError.UnexpectedToken;
+                    bare = true;
+                },
             }
-            try stmts.append(alloc, .{ .expr = expr, .emptyLinesBefore = emptyLinesBefore });
+            lastStmt = stmts.items.len;
+            lastBare = bare;
+            try stmts.append(alloc, .{ .expr = expr, .emptyLinesBefore = emptyLinesBefore, .deferred = isDeferred });
         }
         _ = try this.consume(.rightBrace);
+        if (opts.markTail and lastBare) {
+            if (lastStmt) |i| if (!stmts.items[i].deferred and isTailExpr(stmts.items[i].expr)) {
+                stmts.items[i].tail = .value;
+            };
+        }
         return stmts.toOwnedSlice(alloc);
+    }
+
+    /// Whether the next token, past any comment tokens (when the block keeps
+    /// comments), is the `}` that closes the block.
+    fn closesAfterComments(this: *This, comptime handleComments: bool) bool {
+        var i = this.current;
+        if (handleComments) {
+            while (i < this.tokens.len and (this.tokens[i].kind == .commentNormal or
+                this.tokens[i].kind == .commentDoc or this.tokens[i].kind == .commentModule)) : (i += 1)
+            {}
+        }
+        return i < this.tokens.len and this.tokens[i].kind == .rightBrace;
+    }
+
+    /// Decision 541 (4) — a block `{ … }` (`case true { _ { … } }`, `isBlock`).
+    fn isValueBlockExpr(expr: Expr) bool {
+        return expr == .collection and expr.collection.kind == .case and expr.collection.kind.case.isBlock;
+    }
+
+    /// Decision 525 — mark a block's tail: its last statement, when it was
+    /// written without `;` (`lastBare`) and is an expression (`isTailExpr`).
+    pub fn markBlockTail(stmts: []Stmt, lastBare: bool) void {
+        if (!lastBare or stmts.len == 0) return;
+        const s = &stmts[stmts.len - 1];
+        if (!s.deferred and isTailExpr(s.expr)) s.tail = .value;
+    }
+
+    /// Decision 409 — a statement that can be a body's tail: an expression,
+    /// not a `val` / `var` / assignment, a jump, a `use` or a comment.
+    fn isTailExpr(expr: Expr) bool {
+        return switch (expr) {
+            // `try e` and `await e` are values (decision 537), not jumps.
+            .jump => |j| j.kind == .try_ or j.kind == .await_,
+            .binding, .useHook, .loop => false,
+            .literal => |lit| lit.kind != .comment,
+            else => true,
+        };
+    }
+
+    /// Decision 409 — a body whose written return has a value answers its
+    /// tail: the parser wraps it in `return` (`tail = .returned`, located at
+    /// the expression), so the checker, the evaluators and every backend read
+    /// the `return` it means and the printer writes the value back as it was
+    /// written. A tail every path of which already leaves the body (`if (c)
+    /// return a else return b`, `@panic(…)`) is left as it is.
+    pub fn returnTail(alloc: std.mem.Allocator, body: []Stmt, returnType: ?ast.TypeRef) ParseError!void {
+        if (body.len == 0) return;
+        const rt = returnType orelse return;
+        var i = body.len;
+        while (i > 0) : (i -= 1) {
+            const e = body[i - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            break;
+        }
+        if (i == 0) return;
+        const s = &body[i - 1];
+        if (s.tail != .value) return;
+        if (!returnHasValue(rt, body)) return;
+        if (tailLeaves(s.expr)) return;
+        const value = try alloc.create(Expr);
+        value.* = s.expr;
+        s.expr = .{ .jump = .{ .loc = value.getLoc(), .kind = .{ .@"return" = value } } };
+        s.tail = .returned;
+    }
+
+    /// Decision 525 — a block whose value leaves it through a jump of its
+    /// own: `async { … }`'s `return` (the block is a task of its own) and
+    /// `comptime { … }`'s `break` (what its evaluators read). Its tail is
+    /// wrapped in that jump (`tail = .returned`, located at the expression),
+    /// as `returnTail` does for a function body, and the printer writes the
+    /// value back alone. A tail every path of which already leaves is left.
+    pub fn jumpTail(alloc: std.mem.Allocator, body: []Stmt, comptime kind: enum { @"return", @"break" }) ParseError!void {
+        var i = body.len;
+        while (i > 0) : (i -= 1) {
+            const e = body[i - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            break;
+        }
+        if (i == 0) return;
+        const s = &body[i - 1];
+        if (s.tail != .value) return;
+        if (tailLeaves(s.expr)) return;
+        const value = try alloc.create(Expr);
+        value.* = s.expr;
+        s.expr = .{ .jump = .{ .loc = value.getLoc(), .kind = switch (kind) {
+            .@"return" => .{ .@"return" = value },
+            .@"break" => .{ .@"break" = .{ .label = null, .value = value } },
+        } } };
+        s.tail = .returned;
+    }
+
+    /// Whether a written return answers a value its tail can be: not `void`
+    /// / `noreturn`, not a wrapper whose value layer is `void`
+    /// (`@Result<void, E>`, `@Async<void>`), not a generator that yields.
+    fn returnHasValue(rt: ast.TypeRef, body: []const Stmt) bool {
+        return switch (rt) {
+            .named => |n| !std.mem.eql(u8, n, "void") and !std.mem.eql(u8, n, "noreturn"),
+            .generic => |g| blk: {
+                if (!g.is_builtin) break :blk true;
+                const eff = ast.EffectKind.fromWrapperName(g.name) orelse break :blk true;
+                switch (eff) {
+                    .iterator, .stream => break :blk !ast.bodyYields(body),
+                    .result, .task, .component => {
+                        if (g.args.len == 0) break :blk true;
+                        break :blk returnHasValue(g.args[0], body);
+                    },
+                }
+            },
+            else => true,
+        };
+    }
+
+    /// A tail no path of which falls through to a value: a jump, an `if` /
+    /// `else` or a `case` whose every branch ends in one, a `noreturn`
+    /// builtin.
+    fn tailLeaves(e: Expr) bool {
+        return switch (e) {
+            // `try e` and `await e` are values (decision 537), not jumps: a
+            // tail `await f(x)` is the value the body answers.
+            .jump => |j| j.kind != .try_ and j.kind != .await_,
+            .branch => |b| switch (b.kind) {
+                .if_ => |iff| blk: {
+                    const els = iff.else_ orelse break :blk false;
+                    break :blk stmtsLeave(iff.then_) and stmtsLeave(els);
+                },
+                else => false,
+            },
+            .collection => |c| switch (c.kind) {
+                .case => |cs| blk: {
+                    if (cs.arms.len == 0) break :blk false;
+                    for (cs.arms) |arm| {
+                        const leaves = switch (arm.body) {
+                            .function => |f| f.kind.syntax == .lambda and stmtsLeave(f.kind.body),
+                            else => tailLeaves(arm.body),
+                        };
+                        if (!leaves) break :blk false;
+                    }
+                    break :blk true;
+                },
+                .grouped => |g| tailLeaves(g.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.is_builtin and cc.receiver == null and
+                    (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo") or
+                        std.mem.eql(u8, cc.callee, "trap") or std.mem.eql(u8, cc.callee, "compilerError")),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    fn stmtsLeave(stmts: []const Stmt) bool {
+        var n = stmts.len;
+        while (n > 0) : (n -= 1) {
+            const e = stmts[n - 1].expr;
+            if (e == .literal and e.literal.kind == .comment) continue;
+            return tailLeaves(e);
+        }
+        return false;
+    }
+
+    /// True when `expr`, just parsed as a statement, is a **braced
+    /// block-shaped statement**: an `if` (`a ?? b`'s desugaring excluded — it
+    /// is written without braces), a loop (`while`, `for`, `loop`, prefixed or
+    /// annotated) or a `case`, **and** the token that ended it is its closing
+    /// `}` (decision 29 (c), narrowed by decision 60 to the braced form).
+    ///
+    /// The test is the last token, not the keyword: `if (c) return x;` is an
+    /// `if` with no closing brace to end it, and keeps its `;`; `if (c) a else
+    /// { b; }` ends in one. It does not descend either: `val x = if (c) { 1 }
+    /// else { 2 };` is a binding and `return case s { … };` a `return`, and
+    /// both end with `;` like any statement.
+    ///
+    /// `format.zig` prints no `;` after exactly these statements, deciding from
+    /// the printed text's last character the way this decides from the last
+    /// token — the two agree on what "ends in `}`" means.
+    pub fn isBracedBlockStmt(this: *const This, expr: Expr) bool {
+        const shaped = switch (expr) {
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| !isNullishDesugar(i),
+                // Decision 595 (4) — a `try … catch { … }` statement ends at
+                // its handler block's `}`, as a braced `if` does.
+                .tryCatch => |tc| isValueBlockExpr(tc.handler.*),
+            },
+            .loop => true,
+            .collection => |c| c.kind == .case,
+            else => false,
+        };
+        if (!shaped or this.current == 0) return false;
+        return this.tokens[this.current - 1].kind == .rightBrace;
+    }
+
+    /// `a ?? b` is parsed into an `if` binding the reserved
+    /// `ast.nullish_binding_name`; it is an expression, never a block statement.
+    fn isNullishDesugar(i: anytype) bool {
+        const b = i.binding orelse return false;
+        return std.mem.eql(u8, b, ast.nullish_binding_name);
     }
 
     /// Parse `{ expr; expr; ... }` — a brace-delimited block of semicolon-separated expressions.
@@ -540,8 +1465,31 @@ pub const Parser = struct {
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .requiredExceptLast,
-            .useAfterBranchGuard = true,
         });
+    }
+
+    /// A block that **starts a function body** — a `fn` / method body, a `test`
+    /// body, a `fn (…) { … }` expression. Where a `use` may stand in it is the
+    /// checker's rule (decision 357, `use-not-top-level`), not the parser's.
+    pub fn parseFnBodyInBraces(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
+        return this.parseBlock(alloc, .{
+            .trackEmptyLines = true,
+            .handleComments = true,
+            .semicolonPolicy = .requiredExceptLast,
+            .markTail = true,
+        });
+    }
+
+    /// The token of kind `kind` at `loc` — the one an already-parsed node was
+    /// built from — so a diagnostic raised after the parse still carries the
+    /// byte offsets `ParseErrorInfo.fromToken` requires. Falls back to the
+    /// current token when no token matches (it always does for a node the
+    /// parser just built).
+    fn tokenAt(this: *This, loc: Loc, kind: TokenKind) Token {
+        for (this.tokens) |tok| {
+            if (tok.kind == kind and tok.line == loc.line and tok.col == loc.col and tok.expansion == loc.expansion) return tok;
+        }
+        return this.peek();
     }
 
     /// Parse either `{ expr; ... }` or a single `expr`.
@@ -571,14 +1519,16 @@ pub const Parser = struct {
 
     /// Parses `{ stmt; ... }` preserving comment nodes as literal expressions.
     /// Used in fn/method bodies where source comments must be kept.
+    /// Decision 409 — a method's last expression may drop its `;` (its tail).
     pub fn parseMethodBodyStmts(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
-        return this.parseBlock(alloc, .{ .handleComments = true });
+        return this.parseBlock(alloc, .{ .handleComments = true, .semicolonPolicy = .requiredExceptLast, .markTail = true });
     }
 
     /// Parses `{ stmt; ... }` without special comment handling.
-    /// Used in implement methods, getters, setters, and interface default bodies.
+    /// Used in getters, setters, and interface default bodies; a method's last
+    /// expression may drop its `;` (decision 409).
     pub fn parseSimpleBodyStmts(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
-        return this.parseBlock(alloc, .{});
+        return this.parseBlock(alloc, .{ .semicolonPolicy = .requiredExceptLast, .markTail = true });
     }
 
     pub const parseParamList = decl_grammar.parseParamList;
@@ -588,10 +1538,13 @@ pub const Parser = struct {
     /// Pure lookahead.
     pub fn skipAnnotationsLookaheadFrom(this: *This, offset: usize) usize {
         var o = offset;
-        while ((this.peekAt(o).kind == .hash or this.peekAt(o).kind == .at) and
-            this.peekAt(o + 1).kind == .leftSquareBracket)
-        {
-            o += 2; // skip `#`/`@` and `[`
+        while (true) {
+            // Decision 286 — comments may sit between two blocks (and after
+            // the last), as `parseAnnotations` reads them.
+            var q = o;
+            if (o > offset) while (isCommentKind(this.peekAt(q).kind)) : (q += 1) {};
+            if (!this.isAnnotationStartAt(q)) break;
+            o = q + 2; // skip `#`/`@` and `[`
             var depth: usize = 1;
             while (depth > 0 and this.peekAt(o).kind != .endOfFile) {
                 switch (this.peekAt(o).kind) {
@@ -602,18 +1555,22 @@ pub const Parser = struct {
                 o += 1;
             }
         }
+        if (o > offset) while (isCommentKind(this.peekAt(o).kind)) : (o += 1) {};
         return o;
     }
 
     /// Parses zero or more annotation blocks at the current position.
     ///
-    /// Primary form (new): `#[@builtin(arg, arg), custom()]`
+    /// The only form is `#[@builtin(arg, arg), custom()]`:
     ///   - `@name` prefix marks a compiler-known (builtin) attribute;
     ///   - plain `name` is a user-defined attribute;
     ///   - comma-separated list of any mix.
     ///
-    /// Legacy form (kept for migration): `@[name(…), name(…)]`
-    ///   - all annotations inside are treated as builtin (`is_builtin = true`).
+    /// The retired `@[name(…)]` opener (spec 05 §5.12) is REJECTED here, with
+    /// a diagnostic naming its `#[@name(…)]` replacement. It is still detected
+    /// by the lookaheads (`skipAnnotationsLookaheadFrom`, the interface-member
+    /// check) so a stale `@[` reaches this diagnostic instead of a bare
+    /// "unexpected token".
     ///
     /// Returns an owned slice (empty when no annotations are present).
     pub fn parseAnnotations(this: *This, alloc: std.mem.Allocator) ParseError![]Annotation {
@@ -622,20 +1579,93 @@ pub const Parser = struct {
             for (list.items) |*ann| ann.deinit(alloc);
             list.deinit(alloc);
         }
-        while ((this.check(.hash) or this.check(.at)) and this.peekAt(1).kind == .leftSquareBracket) {
-            const isLegacyAtBlock = this.check(.at);
-            _ = this.advance(); // `#` or `@`
-            _ = try this.consume(.leftSquareBracket);
-            while (true) {
-                var ann = try this.parseAnnotationCall(alloc);
-                // In the legacy `@[…]` form every annotation is implicitly builtin.
-                if (isLegacyAtBlock) ann.is_builtin = true;
-                try list.append(alloc, ann);
-                if (!this.match(.comma)) break;
+        // Decision 286 — the comments met around the annotations: each lands
+        // in the `written` slot of the annotation it precedes.
+        var lead: std.ArrayList([]const u8) = .empty;
+        defer lead.deinit(alloc);
+        var pending: std.ArrayList([]const u8) = .empty;
+        defer pending.deinit(alloc);
+        while (true) {
+            // The first block starts here (the caller owns the comments before
+            // it); a later one may follow comments, which belong to it.
+            const skipped = if (list.items.len > 0) this.commentRunLength() else 0;
+            if (!this.isAnnotationStartAt(skipped)) break;
+            try this.takeAnnotationComments(alloc, &lead);
+            if (this.check(.at)) {
+                this.parseError = ParseErrorInfo.fromTokenSpan(.retiredAnnotationBlock, this.peek(), "@[".len);
+                return ParseError.UnexpectedToken;
             }
+            _ = this.advance(); // `#`
+            _ = try this.consume(.leftSquareBracket);
+            // Decisions 118 / 127 — the six effect annotations are recognised
+            // only to be refused, located on the annotation's name.
+            var removed: ?Token = null;
+            var first = true;
+            while (true) {
+                try this.takeAnnotationComments(alloc, &pending);
+                const nameTok = this.peek();
+                var ann = try this.parseAnnotationCall(alloc);
+                errdefer ann.deinit(alloc);
+                if (ann.is_builtin and ast.isRemovedEffectAnnotation(ann.name)) {
+                    if (removed == null) removed = nameTok;
+                }
+                ann.written.listContinues = !first;
+                if (first) ann.written.leadComments = try lead.toOwnedSlice(alloc);
+                ann.written.innerComments = try pending.toOwnedSlice(alloc);
+                try list.append(alloc, ann);
+                first = false;
+                try this.takeAnnotationComments(alloc, &pending);
+                if (!this.match(.comma)) break;
+                try this.takeAnnotationComments(alloc, &pending);
+                // A list written one annotation per line ends with a comma
+                // (`#[\n    a(…),\n    b(…),\n]`), as an argument list may.
+                if (this.check(.rightSquareBracket)) {
+                    list.items[list.items.len - 1].written.trailingComma = true;
+                    break;
+                }
+            }
+            list.items[list.items.len - 1].written.closeComments = try pending.toOwnedSlice(alloc);
             _ = try this.consume(.rightSquareBracket);
+            if (removed) |tok| {
+                // Before a loop the fix-it is the `iter` / `stream` prefix
+                // (decision 125); anywhere else it is the return type.
+                const onLoop = this.check(.loop) or this.check(.@"while") or this.check(.@"for");
+                this.parseError = ParseErrorInfo.fromToken(if (onLoop) .effectAnnotationRemovedLoop else .effectAnnotationRemoved, tok);
+                return ParseError.UnexpectedToken;
+            }
+        }
+        if (list.items.len > 0) {
+            try this.takeAnnotationComments(alloc, &pending);
+            list.items[list.items.len - 1].written.afterComments = try pending.toOwnedSlice(alloc);
         }
         return list.toOwnedSlice(alloc);
+    }
+
+    /// True when the token at `offset` opens an annotation block (`#[`, or the
+    /// retired `@[`, which `parseAnnotations` refuses by name).
+    fn isAnnotationStartAt(this: *This, offset: usize) bool {
+        const k = this.peekAt(offset).kind;
+        return (k == .hash or k == .at) and this.peekAt(offset + 1).kind == .leftSquareBracket;
+    }
+
+    /// How many comment tokens start at the current position.
+    fn commentRunLength(this: *This) usize {
+        var o: usize = 0;
+        while (isCommentKind(this.peekAt(o).kind)) o += 1;
+        return o;
+    }
+
+    fn isCommentKind(k: TokenKind) bool {
+        return k == .commentNormal or k == .commentDoc or k == .commentModule;
+    }
+
+    /// Consumes the run of comments at the current position into `out`, each
+    /// as the source wrote it (decision 286: a comment around an annotation
+    /// stays where it was written).
+    fn takeAnnotationComments(this: *This, alloc: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+        while (isCommentKind(this.peek().kind)) {
+            try out.append(alloc, std.mem.trimEnd(u8, this.advance().lexeme, " \t\r\n"));
+        }
     }
 
     /// Parses a single annotation call.
@@ -658,6 +1688,11 @@ pub const Parser = struct {
             is_builtin = true;
             name_start = this.advance();
             name_end = name_start;
+            // Decision 606 (4) — the source annotation is `#[compiler.external(…)]`.
+            if (this.refuse_removed_builtins and std.mem.eql(u8, name_start.lexeme, "@external")) {
+                this.parseError = ParseErrorInfo.fromToken(.builtinNameRemoved, name_start);
+                return ParseError.UnexpectedToken;
+            }
         } else {
             const nameTok = this.peek();
             if (nameTok.kind != .identifier and !isReservedWord(nameTok.kind)) return ParseError.UnexpectedToken;
@@ -668,7 +1703,7 @@ pub const Parser = struct {
             _ = this.advance(); // `.`
             name_end = this.advance(); // ident
         }
-        const name: []const u8 = blk: {
+        const written_name: []const u8 = blk: {
             const skip: usize = if (is_builtin) 1 else 0; // strip leading `@`
             if (name_end.lexeme.ptr == name_start.lexeme.ptr) {
                 break :blk name_start.lexeme[skip..];
@@ -677,15 +1712,62 @@ pub const Parser = struct {
             const end = @intFromPtr(name_end.lexeme.ptr) + name_end.lexeme.len;
             break :blk @as([*]const u8, @ptrFromInt(begin))[0 .. end - begin];
         };
+        // Decision 606 (4) — `#[compiler.external(…)]` is the source annotation:
+        // the checker reads it as std's `external` (`external.bp`), its sources
+        // typed as that decorator's; the formatter keeps it as written.
+        const name: []const u8 = if (!this.keep_surface and std.mem.eql(u8, written_name, @import("parser/implementations.zig").member_annotation_name))
+            @import("parser/implementations.zig").annotation_name
+        else
+            written_name;
+
+        // Decision 311 — `#[f "…"]` / `#[f """…"""]`: the template call
+        // `f "…"` written as an annotation. The literal is kept as written (a
+        // node of its own beside the call form) and read again by the checker,
+        // which captures it unevaluated; its `${…}` holes are parsed here so a
+        // malformed hole is a parse error at the literal.
+        if (!is_builtin and this.check(.templateText)) {
+            // Decision 577 — `` #[f @`…`] ``: the raw text, read as a literal
+            // with no hole.
+            const tok = this.advance();
+            const raw = try exprs.templateTextRaw(alloc, tok.lexeme);
+            const content = try exprs.templateTextContent(alloc, raw);
+            return Annotation{
+                .name = name,
+                .args = &.{},
+                .template = try std.mem.concat(alloc, u8, &.{ "\"", content, "\"" }),
+                .templateLoc = locFromToken(tok),
+                .templateText = raw,
+                .loc = .{ .line = name_start.line, .col = name_start.col },
+            };
+        }
+        if (!is_builtin and (this.check(.stringLiteral) or this.check(.multilineStringLiteral))) {
+            const strTok = this.advance();
+            var probe = try exprs.parseStringToken(this, alloc, strTok);
+            probe.deinit(alloc);
+            return Annotation{
+                .name = name,
+                .args = &.{},
+                .template = strTok.lexeme,
+                .templateLoc = locFromToken(strTok),
+                .loc = .{ .line = name_start.line, .col = name_start.col },
+            };
+        }
 
         var args: std.ArrayList([]const u8) = .empty;
         errdefer args.deinit(alloc);
+        // One entry per argument: the label written before it, or `""`.
+        var labels: std.ArrayList([]const u8) = .empty;
+        defer labels.deinit(alloc);
+        var argLocs: std.ArrayList(Loc) = .empty;
+        errdefer argLocs.deinit(alloc);
+        var any_label = false;
+        var args_trailing = false;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
                 // is recognised before label-strip and spans through balanced parens
                 // + the `:` separator + the value, landing as one arg lexeme
-                // (`when($argc == 1): "lists:nthtail($0, $self)"`). Readers
+                // (`when($argc == 1): "lists:nthtail($1, $0)"`). Readers
                 // (`ast.externalArityBranchFor`) detect the `when(` prefix.
                 if (this.check(.identifier) and
                     std.mem.eql(u8, this.peek().lexeme, "when") and
@@ -714,22 +1796,72 @@ pub const Parser = struct {
                         }
                     }
                     try args.append(alloc, spanLexemes(first, last));
+                    try labels.append(alloc, "");
+                    try argLocs.append(alloc, locFromToken(first));
                     if (!this.match(.comma)) break;
                     continue;
                 }
-                // Labeled argument (`runtime:`, `module:`, `method:`, `inline:`) —
-                // both the `:` (Form B label) and the `=` (fn-style default-arg
-                // assignment, `inline = true`) separators are accepted, keeping
-                // annotation args close to how fn params are written. The label is
+                // Labelled argument (`keyed: true`, `inline: true`, `fn: tanBody`,
+                // `module:`, `method:`) — written `label: value`, as a call's
+                // labelled argument is (decision 305); `label = value` is a
+                // located error at the label naming `label:`. The label is
                 // cosmetic at this layer; the value lands positionally so each
-                // annotation's reader (`FnDecl.externalFor` / `InterfaceMethod.externalFor`
+                // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
-                if (this.check(.identifier) and
+                // Decision 481 — a keyword names a label too (`fn: tanBody`
+                // on `@External.Wasm`): before a `:` it starts no
+                // expression, so it can only be the label.
+                var label: []const u8 = "";
+                if ((this.check(.identifier) or isKeywordName(this.peek())) and
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
-                    _ = this.advance(); // label name
-                    _ = this.advance(); // `:` or `=`
+                    const labelTok = this.advance(); // label name
+                    label = labelTok.lexeme;
+                    const sep = this.advance(); // `:` or `=`
+                    if (sep.kind == .equal) {
+                        var info = ParseErrorInfo.fromToken(.annotationLabelEquals, labelTok);
+                        info.end = sep.offset + sep.lexeme.len;
+                        this.parseError = info;
+                        return ParseError.UnexpectedToken;
+                    }
+                    any_label = true;
+                }
+                try labels.append(alloc, label);
+                try argLocs.append(alloc, locFromToken(this.peek()));
+                if (!is_builtin or std.mem.eql(u8, name, "external")) {
+                    // Decision 575 (6) — `#[@external(.Erlang("…"), …)]`'s
+                    // sources are values of std's `Implementation`, parsed as
+                    // a decorator's arguments are.
+                    // Decision 280 (1) — a decorator's argument is a value of
+                    // any type (`[1, 2]`, `Cache<Item>("items")`, `env("X")`,
+                    // `.name`): one expression, kept as its source span and
+                    // located, which the checker parses again and types
+                    // against the parameter (`infer.zig` `checkDecoratorArgs`).
+                    const first = this.peek();
+                    const first_index = this.current;
+                    var e = try this.parseExpr(alloc);
+                    e.deinit(alloc);
+                    // Decision 305 — inside the argument too (an enum case's
+                    // own arguments, `#[compiler.beamMemory(.Ets(keyed = true))]`,
+                    // decision 663), a label is written `label: value`: a name
+                    // and `=` opening an argument list's item is refused at the
+                    // label, as at the annotation's own arguments.
+                    var k = first_index + 1;
+                    while (k + 1 < this.current) : (k += 1) {
+                        const t = this.tokens[k];
+                        const before = this.tokens[k - 1].kind;
+                        if (t.kind != .identifier or this.tokens[k + 1].kind != .equal) continue;
+                        if (before != .leftParenthesis and before != .comma) continue;
+                        var info = ParseErrorInfo.fromToken(.annotationLabelEquals, t);
+                        info.end = this.tokens[k + 1].offset + this.tokens[k + 1].lexeme.len;
+                        this.parseError = info;
+                        return ParseError.UnexpectedToken;
+                    }
+                    try args.append(alloc, spanLexemes(first, this.tokens[this.current - 1]));
+                    if (!this.match(.comma)) break;
+                    if (this.check(.rightParenthesis)) args_trailing = true;
+                    continue;
                 }
                 if ((this.check(.dot) or this.check(.identifier)) and
                     (this.peekAt(1).kind == .dot or this.peekAt(1).kind == .identifier))
@@ -740,6 +1872,30 @@ pub const Parser = struct {
                     var last = first;
                     while (this.check(.dot) or this.check(.identifier)) last = this.advance();
                     try args.append(alloc, spanLexemes(first, last));
+                } else if (this.check(.minus) and this.peekAt(1).kind == .numberLiteral) {
+                    try this.checkNumberLiteral(this.peekAt(1));
+                    // `#[mark(-20)]` — a negative literal is one argument, the
+                    // sign and the digits spanned into one lexeme, so the
+                    // reader that parses the lexeme as an expression sees
+                    // `-20`. It used to be the catch-all at the digits: the
+                    // `-` was taken as the whole argument and `20` had
+                    // nowhere to go (front 15 step 4b).
+                    const first = this.advance(); // `-`
+                    const last = this.advance(); // the digits
+                    try args.append(alloc, spanLexemes(first, last));
+                } else if (this.check(.leftSquareBracket)) {
+                    // Decision 518 — a list of enum values (`needs:
+                    // [.Exceptions, .Http]`) is one argument, spanned from
+                    // `[` to its `]`; the checker reads its items.
+                    const first = this.advance(); // `[`
+                    var last = first;
+                    var depth: usize = 1;
+                    while (depth > 0 and !this.check(.endOfFile)) {
+                        if (this.check(.leftSquareBracket)) depth += 1;
+                        if (this.check(.rightSquareBracket)) depth -= 1;
+                        last = this.advance();
+                    }
+                    try args.append(alloc, spanLexemes(first, last));
                 } else {
                     const tok = this.advance();
                     try args.append(alloc, tok.lexeme);
@@ -748,17 +1904,22 @@ pub const Parser = struct {
             }
             _ = try this.consume(.rightParenthesis);
         }
-        return Annotation{
+        const ann = Annotation{
             .name = name,
             .args = try args.toOwnedSlice(alloc),
+            .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
+            .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
+            .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
+            .written = .{ .argsTrailingComma = args_trailing },
         };
+        return ann;
     }
 
     /// The single source lexeme spanning `first`..`last` inclusive. Used to keep
     /// an enum/member chain (`Target.Erlang`) as one annotation argument — the
     /// tokens are adjacent in source, so the byte range is contiguous.
-    fn spanLexemes(first: Token, last: Token) []const u8 {
+    pub fn spanLexemes(first: Token, last: Token) []const u8 {
         const begin = @intFromPtr(first.lexeme.ptr);
         const end = @intFromPtr(last.lexeme.ptr) + last.lexeme.len;
         return first.lexeme.ptr[0 .. end - begin];
@@ -771,6 +1932,10 @@ pub const Parser = struct {
         isPub: bool,
         name: []const u8,
         annotations: []Annotation,
+        /// Where the name is written.
+        nameLoc: ast.Loc = .{ .line = 0, .col = 0 },
+        /// Decision 811 (1) — `opaque` written before `type` (shorthand only).
+        opaqueTok: ?Token = null,
     };
 
     /// Frees an owned annotation slice (used on declaration parse-error paths).
@@ -789,20 +1954,23 @@ pub const Parser = struct {
             const annotations = try this.parseAnnotations(alloc);
             errdefer freeAnnotations(alloc, annotations);
             const isPub = this.match(.@"pub");
+            // Decision 811 (1) — `[pub] opaque type X(…)`: the contextual
+            // word before `type` (the lexer reads it as an identifier).
+            const opaqueTok: ?Token = if (keyword == .type and this.opaqueTypeAt(0)) this.advance() else null;
             _ = try this.consume(keyword);
-            const name = (try this.consume(.identifier)).lexeme;
+            const nameTok = try this.consume(.identifier);
             _ = this.tryParseId();
-            return .{ .isPub = isPub, .name = name, .annotations = annotations };
+            return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok), .opaqueTok = opaqueTok };
         }
         const isPub = this.match(.@"pub");
         _ = try this.consume(.val);
-        const name = (try this.consume(.identifier)).lexeme;
+        const nameTok = try this.consume(.identifier);
         _ = this.tryParseId();
         _ = try this.consume(.equal);
         const annotations = try this.parseAnnotations(alloc);
         errdefer freeAnnotations(alloc, annotations);
         _ = try this.consume(keyword);
-        return .{ .isPub = isPub, .name = name, .annotations = annotations };
+        return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok) };
     }
 
     // ── expression helper ─────────────────────────────────────────────────────
@@ -813,6 +1981,20 @@ pub const Parser = struct {
         const ptr = try alloc.create(Expr);
         ptr.* = expr;
         return ptr;
+    }
+
+    /// `boxExpr`, taking ownership even when the allocation fails: the value is
+    /// freed on the error path, so the caller must **not** keep an
+    /// `errdefer expr.deinit(alloc)` alive across the call. The boxed copy owns
+    /// the children from here on, and a second `deinit` of the same children is
+    /// a double free — that is what aborted the compiler on
+    /// `val assert Ok(n) = f();` with no `catch` (06 C12).
+    pub fn boxExprOwned(this: *This, alloc: std.mem.Allocator, expr: Expr) ParseError!*Expr {
+        return this.boxExpr(alloc, expr) catch |err| {
+            var mut = expr;
+            mut.deinit(alloc);
+            return err;
+        };
     }
 
     /// The binary-operator enum carried by `binaryOp` expressions.
@@ -834,13 +2016,63 @@ pub const Parser = struct {
         args: []CallArg,
         trailing: []TrailingLambda,
     ) Expr {
-        return Expr{ .call = .{ .loc = locFromToken(tok), .kind = .{ .call = .{
+        return makeCallAt(locFromToken(tok), receiver, callee, is_builtin, args, trailing);
+    }
+
+    /// `makeCall` for callers that already hold the callee's `Loc` rather than
+    /// its token (the tagged-call sugar, which rebuilds a method call from an
+    /// `identAccess` node). Call locs are keyed by location downstream, so the
+    /// loc must be the CALLEE's — never the receiver's.
+    pub fn makeCallAt(
+        loc: Loc,
+        receiver: ?*Expr,
+        callee: []const u8,
+        is_builtin: bool,
+        args: []CallArg,
+        trailing: []TrailingLambda,
+    ) Expr {
+        return Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
             .receiver = receiver,
             .callee = callee,
             .is_builtin = is_builtin,
             .args = args,
             .trailing = trailing,
         } } } };
+    }
+
+    /// Decision 247 — the suffix of a number token is one of
+    /// `lexer.number_suffixes`, lower case, and fits the literal: `f` / `d`
+    /// on a decimal literal only, an integer suffix on an integer literal
+    /// only, an exponent with its digits. Every refusal is located at the
+    /// suffix. Called by every site that reads a number token as a literal.
+    pub fn checkNumberLiteral(this: *This, tok: Token) ParseError!void {
+        const parts = lexer.splitNumber(tok.lexeme);
+        if (parts.suffix.len == 0) return;
+        var at = tok;
+        at.offset += parts.digits.len;
+        at.col += parts.digits.len;
+        at.lexeme = parts.suffix;
+        const kind: ParseErrorType = blk: {
+            if (lexer.numberSuffixType(parts.suffix) == null) {
+                if (!parts.radix and (parts.suffix[0] == 'e' or parts.suffix[0] == 'E')) break :blk .numberExponentWithoutDigits;
+                if (lexer.numberSuffixLowercase(parts.suffix)) |lower| {
+                    var info = ParseErrorInfo.fromToken(.numberSuffixUppercase, at);
+                    info.lexeme = lower;
+                    this.parseError = info;
+                    return ParseError.UnexpectedToken;
+                }
+                break :blk .numberSuffixUnknown;
+            }
+            if (lexer.numberSuffixIsFloat(parts.suffix)) {
+                if (parts.radix) break :blk .numberSuffixFloatOnRadix;
+                return;
+            }
+            if (parts.floating) break :blk .numberSuffixIntegerOnFloat;
+            return;
+        };
+        if (kind == .numberExponentWithoutDigits) at.lexeme = at.lexeme[0..1];
+        this.parseError = ParseErrorInfo.fromToken(kind, at);
+        return ParseError.UnexpectedToken;
     }
 
     /// Builds a `jump` expression (`return`/`throw`/`try`/`break`/`yield`), boxing `inner` when present.
@@ -852,8 +2084,18 @@ pub const Parser = struct {
     /// If the current token is a comment, consumes it and appends it as a comment
     /// literal statement to `stmts`, returning true. Otherwise returns false.
     /// `emptyLinesBefore` is recorded on the appended statement.
+    /// The current token starts on the line where the previous token ends —
+    /// a comment there is a trailing comment (`f(); // note`). False after `{`.
+    pub fn onPreviousTokenLine(this: *This) bool {
+        if (this.current == 0) return false;
+        const prev = this.tokens[this.current - 1];
+        if (prev.kind == .leftBrace) return false;
+        return this.peek().line == prev.line + std.mem.count(u8, prev.lexeme, "\n");
+    }
+
     pub fn tryParseCommentStmt(this: *This, alloc: std.mem.Allocator, stmts: *std.ArrayList(Stmt), emptyLinesBefore: u32) ParseError!bool {
         if (!this.check(.commentNormal) and !this.check(.commentDoc) and !this.check(.commentModule)) return false;
+        const trailing = this.onPreviousTokenLine() and stmts.items.len > 0;
         const tok = this.advance();
         const kind: ast.CommentKind = if (tok.kind == .commentDoc)
             .{ .doc = "" }
@@ -863,23 +2105,59 @@ pub const Parser = struct {
             .{ .normal = "" };
         const text = try alloc.dupe(u8, commentText(tok.lexeme));
         try stmts.append(alloc, .{
-            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text } } } },
+            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text, .trailing = trailing } } } },
             .emptyLinesBefore = emptyLinesBefore,
         });
         return true;
     }
 
     /// If `noTailCatch` is false and the next token is `catch`, wraps `expr` in a tryCatch node.
-    /// Otherwise returns `expr` unchanged. Used to apply `catch` as a tail operator.
+    /// Otherwise returns `expr` unchanged. `catch` is the infix operator of the lowest precedence
+    /// (decision 537): its left side is the whole expression before it, its right side the fallback.
+    /// A left side that is itself a `try e` is the `try e catch h` form: one node over `e`, with
+    /// `tryKeyword` set (the printer writes the keyword back).
     pub fn wrapCatch(this: *This, alloc: std.mem.Allocator, expr: Expr) ParseError!Expr {
         if (!this.noTailCatch and this.match(.@"catch")) {
             const catchTok = this.tokens[this.current - 1];
-            const handler = try this.parseExpr(alloc);
-            const exprPtr = try this.boxExpr(alloc, expr);
+            var binder: ?[]const u8 = null;
+            const handler = if (this.check(.leftBrace)) try this.parseCatchBlock(alloc, &binder) else try this.parseExpr(alloc);
             const handlerPtr = try this.boxExpr(alloc, handler);
-            return Expr{ .branch = .{ .loc = locFromToken(catchTok), .kind = .{ .tryCatch = .{ .expr = exprPtr, .handler = handlerPtr } } } };
+            if (expr == .jump and expr.jump.kind == .try_) {
+                if (expr.jump.kind.try_) |inner| {
+                    // Decision 595 (2) — `try { … } catch h`: the block is the
+                    // region. `try e catch h` is `try { e } catch h`: the
+                    // operand form unless `e` holds a `try` of its own, which
+                    // makes the whole `try e` the region.
+                    if (isValueBlockExpr(inner.*)) {
+                        return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true, .region = true, .binder = binder } } } };
+                    }
+                    if (ast.exprFindRegionTry(inner.*) == null) {
+                        return Expr{ .branch = .{ .loc = expr.jump.loc, .kind = .{ .tryCatch = .{ .expr = inner, .handler = handlerPtr, .tryKeyword = true, .binder = binder } } } };
+                    }
+                }
+            }
+            // Decision 595 (2) — the whole left side is the region when it
+            // holds a `try` (`(try a) + (try b) catch 0`); without one it is
+            // the operand form `r catch h`.
+            const region = ast.exprFindRegionTry(expr) != null;
+            const exprPtr = try this.boxExpr(alloc, expr);
+            return Expr{ .branch = .{ .loc = if (region and expr == .jump) expr.jump.loc else locFromToken(catchTok), .kind = .{ .tryCatch = .{ .expr = exprPtr, .handler = handlerPtr, .region = region, .binder = binder } } } };
         }
         return expr;
+    }
+
+    /// Decision 595 (3) — a `catch` handler written as a block, the current
+    /// token its `{`: `{ … }` (its value the fallback) or `{ e -> … }`, `e` the
+    /// region's error bound like a `case` arm's binder — never a lambda's
+    /// parameter, so the block is a scope of the enclosing function. Lands as
+    /// the block (`makeBlockExpr`), the binder written to `binder`.
+    fn parseCatchBlock(this: *This, alloc: std.mem.Allocator, binder: *?[]const u8) ParseError!Expr {
+        const braceTok = this.advance();
+        if (this.check(.identifier) and this.peekAt(1).kind == .rightArrow) {
+            binder.* = this.advance().lexeme;
+            _ = this.advance();
+        }
+        return exprs.parseBlockValueBody(this, alloc, braceTok);
     }
 
     /// Parses comma-separated identifiers (e.g., `extends T1, T2, T3` or `use { a, b, c }`).
@@ -896,18 +2174,19 @@ pub const Parser = struct {
         return list.toOwnedSlice(alloc);
     }
 
+    /// True when `tok` is a keyword spelled like a name (`from`, `type`,
+    /// `case`): identifier-shaped, but lexed as a keyword. `_` is not one.
+    pub fn isKeywordName(tok: Token) bool {
+        if (tok.kind == .identifier or tok.lexeme.len == 0) return false;
+        if (!std.ascii.isAlphabetic(tok.lexeme[0])) return false;
+        for (tok.lexeme) |c| if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+        return true;
+    }
+
     /// Reports a reserved word error for the current token.
     pub fn reportReservedWordError(this: *This) void {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .reservedWord,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = tok.lexeme,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.reservedWord, tok, tok.lexeme);
     }
 
     // ── val decl ─────────────────────────────────────────────────────────────
@@ -917,6 +2196,10 @@ pub const Parser = struct {
     pub const parseTypeRef = types.parseTypeRef;
 
     pub const parseBaseTypeRef = types.parseBaseTypeRef;
+
+    pub const parseTypeRefMember = types.parseTypeRefMember;
+
+    pub const startsTypeRef = types.startsTypeRef;
 
     // ── import decl ──────────────────────────────────────────────────────────
 
@@ -944,33 +2227,49 @@ pub const Parser = struct {
 
     // ── delegate decl ────────────────────────────────────────────────────────────
 
-    pub const parseDelegateDecl = decl_grammar.parseDelegateDecl;
-
-    pub const parseShorthandDelegateDecl = decl_grammar.parseShorthandDelegateDecl;
-
-    pub const parseDelegateParams = decl_grammar.parseDelegateParams;
-
     // ── interface decl ───────────────────────────────────────────────────────────
-
-    pub const parseInterfaceDecl = decl_grammar.parseInterfaceDecl;
-
-    pub const parseShorthandInterfaceDecl = decl_grammar.parseShorthandInterfaceDecl;
 
     pub const parseExtendsClause = decl_grammar.parseExtendsClause;
 
-    pub const parseInterfaceBody = decl_grammar.parseInterfaceBody;
-
-    pub const parseInterfaceMethod = decl_grammar.parseInterfaceMethod;
-
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
+
+    // ── body markers (decision 553) ──────────────────────────────────────────
+
+    pub const markerAt = decl_grammar.markerAt;
+    pub const MarkerAt = decl_grammar.MarkerAt;
+
+    pub const markedFnAt = decl_grammar.markedFnAt;
+
+    pub const parseFnMarker = decl_grammar.parseFnMarker;
+
+    pub const checkFnMarker = decl_grammar.checkFnMarker;
+
+    /// Decision 553 (1) — `[pub] [default] [declare] <marker> fn` at a
+    /// module's top level (`declare` only to be refused,
+    /// `marker-on-declaration`).
+    pub fn checkMarkedFn(this: *This) bool {
+        var i: usize = 0;
+        if (this.peekAt(i).kind == .@"pub") i += 1;
+        if (this.peekAt(i).kind == .default) i += 1;
+        if (this.peekAt(i).kind == .declare) i += 1;
+        return this.markedFnAt(i);
+    }
 
     // ── record decl ──────────────────────────────────────────────────────────
 
-    pub const parseRecordDecl = decl_grammar.parseRecordDecl;
+    pub const parseTypeDecl = decl_grammar.parseTypeDecl;
 
-    pub const parseShorthandRecordDecl = decl_grammar.parseShorthandRecordDecl;
+    pub const parseShorthandTypeDecl = decl_grammar.parseShorthandTypeDecl;
 
-    pub const parseRecordBody = decl_grammar.parseRecordBody;
+    pub const isTypeAliasAt = decl_grammar.isTypeAliasAt;
+
+    pub const parseTypeAliasDecl = decl_grammar.parseTypeAliasDecl;
+
+    pub const parseTypeDeclRest = decl_grammar.parseTypeDeclRest;
+
+    pub const parseBehaviorDecl = decl_grammar.parseBehaviorDecl;
+
+    pub const parseShorthandBehaviorDecl = decl_grammar.parseShorthandBehaviorDecl;
 
     // ── implement decl ────────────────────────────────────────────────────────────
 
@@ -991,26 +2290,12 @@ pub const Parser = struct {
     /// Reports an anonymous-implement/extend error for the current token.
     pub fn reportAnonImplExtendError(this: *This) void {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .anonymousImplExtend,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = tok.lexeme,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.anonymousImplExtend, tok, tok.lexeme);
     }
 
     pub const parseImplementMethod = decl_grammar.parseImplementMethod;
 
     // ── enum decl ─────────────────────────────────────────────────────────────
-
-    pub const parseEnumDecl = decl_grammar.parseEnumDecl;
-
-    pub const parseShorthandEnumDecl = decl_grammar.parseShorthandEnumDecl;
-
-    pub const parseEnumBody = decl_grammar.parseEnumBody;
 
     // ── case / pattern matching ────────────────────────────────────────────────
 
@@ -1034,21 +2319,30 @@ pub const Parser = struct {
 
     // ── param / type name helpers ─────────────────────────────────────────────
 
+    /// A parameter name — an identifier, or `_`, the placeholder of a bodyless
+    /// declaration (noted in `discardParam` for `refuseDiscardParam`).
     pub fn consumeParamName(this: *This) ParseError!Token {
-        if (this.check(.identifier)) return this.advance();
+        if (this.check(.identifier)) {
+            const tok = this.advance();
+            if (this.selfParam == null and std.mem.eql(u8, tok.lexeme, "self")) this.selfParam = tok;
+            return tok;
+        }
+        if (this.check(.underscore)) {
+            const tok = this.advance();
+            if (this.discardParam == null) this.discardParam = tok;
+            return tok;
+        }
         return ParseError.UnexpectedToken;
     }
 
     /// True when `kind` may be used as a record field / member name. `get` and
     /// `set` are soft keywords: they introduce struct getters/setters only at
-    /// the start of a struct member, and are otherwise ordinary names (a hook
-    /// returns the shape `{ value, set }` where `set` is a function field).
+    /// Consume a record field / member name — an `identifier`.
     pub fn isMemberName(kind: TokenKind) bool {
-        return kind == .identifier or kind == .get or kind == .set;
+        return kind == .identifier;
     }
 
-    /// Consume a record field / member name — an `identifier`, or the soft
-    /// keywords `get` / `set`.
+    /// Consume a record field / member name — an `identifier`.
     pub fn consumeMemberName(this: *This) ParseError!Token {
         if (isMemberName(this.peek().kind)) return this.advance();
         return ParseError.UnexpectedToken;
@@ -1088,6 +2382,7 @@ pub const Parser = struct {
     };
 
     pub const parseBinaryExpr = exprs.parseBinaryExpr;
+    pub const parseExprAtStart = exprs.parseExprAtStart;
 
     pub const parsePrimary = exprs.parsePrimary;
 
@@ -1099,7 +2394,7 @@ pub const Parser = struct {
 
     // ── lambda / call helpers ─────────────────────────────────────────────────
 
-    pub const parseBlockExpr = exprs.parseBlockExpr;
+    pub const parseBlockValueBody = exprs.parseBlockValueBody;
 
     pub const isComment = exprs.isComment;
 
@@ -1122,6 +2417,20 @@ pub const Parser = struct {
         // parseError may not be set here; the top-level caller must populate
         // it before propagating if rich error context is needed.
         return ParseError.UnexpectedToken;
+    }
+
+    /// Decision 166 — true when the last significant token consumed (comments
+    /// skipped) is a comma: asked right before a list's closing delimiter, it
+    /// is the list's trailing comma.
+    pub fn prevIsComma(this: *const This) bool {
+        var i = this.current;
+        while (i > 0) {
+            i -= 1;
+            const k = this.tokens[i].kind;
+            if (k == .commentNormal or k == .commentDoc or k == .commentModule) continue;
+            return k == .comma;
+        }
+        return false;
     }
 
     pub fn match(this: *This, kind: TokenKind) bool {
@@ -1148,6 +2457,27 @@ pub const Parser = struct {
         }
     }
 
+    /// The source text of tokens `first`..`end` (exclusive), comments
+    /// included — what a construct quotes as written (decision 527 (2): the
+    /// condition a failed `assert` names). Empty when the range is empty, or
+    /// the tokens are not one span of the source this parser reads.
+    pub fn sourceSpan(this: *This, first: usize, end: usize) []const u8 {
+        if (end <= first or end > this.tokens.len) return "";
+        const a = this.tokens[first];
+        const z = this.tokens[end - 1];
+        if (this.source) |src| {
+            const stop = z.offset + z.lexeme.len;
+            if (z.offset >= a.offset and stop <= src.len and
+                std.mem.eql(u8, src[a.offset..][0..a.lexeme.len], a.lexeme))
+                return src[a.offset..stop];
+            return "";
+        }
+        const begin = @intFromPtr(a.lexeme.ptr);
+        const stop = @intFromPtr(z.lexeme.ptr) + z.lexeme.len;
+        if (stop < begin or stop - begin > 4096) return "";
+        return a.lexeme.ptr[0 .. stop - begin];
+    }
+
     pub fn peek(this: *This) Token {
         return this.tokens[this.current];
     }
@@ -1164,6 +2494,10 @@ pub const Parser = struct {
     }
 
     pub const parseLoopExpr = exprs.parseLoopExpr;
+    pub const parseWhileExpr = exprs.parseWhileExpr;
+    pub const parseForExpr = exprs.parseForExpr;
+    pub const parseAnnotatedLoopExpr = exprs.parseAnnotatedLoopExpr;
+    pub const parseGenLoopExpr = exprs.parseGenLoopExpr;
 
     pub const parseRangeExpr = exprs.parseRangeExpr;
 };
@@ -1231,4 +2565,9 @@ pub fn printListSpreadError(err: ListSpreadError, path: []const u8, line: usize,
     stderr.print(" {s}\n\n", .{msgs.message}) catch return;
     for (0..lineW + 1) |_| stderr.writeByte(' ') catch return;
     stderr.print("hint: {s}\n\n", .{msgs.hint}) catch return;
+}
+
+test {
+    _ = template_markers;
+    _ = implementations;
 }

@@ -1,0 +1,8 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.array_literal_numeric_join.runCase();
+    cases.array_literal_union.runCase();
+    cases.array_literal_union_elements.runCase();
+    cases.case_if_union_value_shapes.runCase();
+}

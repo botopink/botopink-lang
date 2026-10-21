@@ -1,0 +1,1 @@
+{ "name": "external_host", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

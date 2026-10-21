@@ -1,0 +1,8 @@
+import {compiler} from "std";
+
+// What `#[mark]` records.
+pub type Mark(seen: bool)
+
+pub fn mark(syntax decl: unknown) -> void {
+    compiler.setMeta(Mark(seen: true));
+}

@@ -1,0 +1,34 @@
+//// Decision 280, example 1 — the decorator body sees the annotated function
+//// through `@Decl<T>`: `#[check]` without `rule` refuses a function that does
+//// not answer `bool`, at the annotation (`decl.fail`).
+
+import {types.Type, compiler.DeclKind, compiler, io.terminal.print} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    syntax decl: T,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
+) -> void {
+    if (compiler.kind(decl) == DeclKind.Fn
+        && compiler.returnType(decl) != "bool")
+        compiler.fail("#[check] without `rule` annotates an `fn(x) -> bool`", at: decl);
+    compiler.setMeta(Check(message: message));
+}
+
+type Account(password: string, handle: string)
+
+#[check("the password holds the handle")]
+fn bad(a: Account) -> string {
+    return a.password;
+}
+
+pub fn main() -> void {
+    print("unreached");
+}
+
+// What `#[check]` records.
+type Check(message: string)

@@ -1,0 +1,14 @@
+//// Decision 2 (01 R7) — an `if` in value position needs its `else`. This
+//// compiled and bound `undefined` (commonJS, wasm, beam) or `ok` (erlang)
+//// when the condition was false.
+
+import {io.terminal.print} from "std";
+
+fn sign(n: i32) -> string {
+    val r = if (n > 0) { "positive" };
+    return r;
+}
+
+pub fn main() -> void {
+    print(sign(-3));
+}

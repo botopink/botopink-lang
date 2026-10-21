@@ -1,0 +1,5 @@
+//// A module nothing reaches, with a type error.
+
+pub fn broken() -> i32 {
+    return "not a number";
+}

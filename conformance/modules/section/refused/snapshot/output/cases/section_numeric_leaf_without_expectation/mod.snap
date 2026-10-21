@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `.50` is a leaf of the section `Tok.Percent`, and nothing here says the position is that section
+at src/cases/section_numeric_leaf_without_expectation/mod.bp:13:13

@@ -1,0 +1,7 @@
+pub mod tag_annotation_add_member;
+pub mod tag_annotation_add_type;
+pub mod tag_annotation_emit;
+pub mod tag_annotation_meta_twice;
+pub mod tag_annotation_not_decorator;
+pub mod tag_annotation_reads_meta;
+pub mod tag_annotation_unknown_name;

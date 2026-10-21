@@ -1,0 +1,2 @@
+pub mod comptime_section_path_declared_after;
+pub mod comptime_value_not_liftable;

@@ -1,0 +1,21 @@
+//// The decorator lives in a library module of its own.
+
+import {compiler} from "std";
+
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    var names: string[] = [];
+    compiler.fields(decl).forEach({ f -> names.push(f.name) });
+    compiler.addMember(
+        "pub fn fromRow(row: string[]) -> Self { return "
+            + compiler.name(decl)!
+            + "(name: row.join(\"-\"), size: row.length); }",
+    );
+    compiler.addMember(
+        "pub fn table() -> string { return \"" + table + "\"; }",
+    );
+    compiler.addMember(
+        "pub fn columns(self: Self) -> string { return \""
+            + names.join(",")
+            + "\"; }",
+    );
+}

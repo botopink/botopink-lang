@@ -1,0 +1,17 @@
+//// Decision 8 §5.1 P7 — without `..` a pattern must name every field.
+
+import {io.terminal.print} from "std";
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+pub fn main() -> void {
+    val s = Shape.Rect(width: 1, height: 2);
+    val y = case s {
+        .Rect(width: w) { w }
+        .Circle(r) { r }
+    };
+    print(y);
+}

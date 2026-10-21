@@ -1,0 +1,9 @@
+//// Decision 622 — `main` writes its return type like every function:
+//// `pub fn main() -> void { … }`. Without `->` it is refused at its name,
+//// `fn-return-missing`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() {
+    print("unreached");
+}

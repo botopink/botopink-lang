@@ -1,0 +1,34 @@
+//// Two decorators that declare associated types: `#[entity]` a record of
+//// column names, `#[double]` a test double that implements the annotated
+//// behavior.
+
+import {compiler} from "std";
+
+pub fn entity(syntax decl: unknown) -> void {
+    var cols: string[] = [];
+    compiler.fields(decl).forEach({ f -> cols.push(f.name + ": string") });
+    compiler.addType("Columns", compiler.buildType("("
+        + cols.join(", ")
+        + ")"));
+}
+
+pub fn double(syntax decl: unknown) -> void {
+    var methods: string[] = [];
+    compiler
+        .methods(decl)
+        .forEach({ m ->
+            methods.push(
+                "pub fn "
+                    + m.name
+                    + "(self: Self) -> string { return self.reply; }",
+            )
+        });
+    compiler.addType(
+        "Mock",
+        compiler.buildType("(reply: string) implement "
+            + compiler.name(decl)!
+            + " { "
+            + methods.join(" ")
+            + " }"),
+    );
+}

@@ -1,0 +1,16 @@
+//// Decision 621 — in a cell of `Implementation` only the `template` is
+//// positional. A function named second, unlabelled, is refused at the
+//// argument, naming the label to write: `body:`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+#[compiler.external(.Erlang("lists:reverse($0)", reverseBody), .JavaScript("[...$0].reverse()"))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+pub fn main() -> void {
+    print(backwards([1, 2, 3]));
+}

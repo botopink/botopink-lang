@@ -1,0 +1,24 @@
+//// A tuple held in a type parameter's slot is printed as a tuple on every
+//// target (decision 521): a generic record's field (`Box(value: #(1, 2))`),
+//// the answer of a generic function (`id(#(3, "x"))`), the two together, a
+//// tuple inside an array in the slot, and a record field declared a tuple.
+//// JavaScript holds a tuple as an array; before it, commonJS printed
+//// `Box(value: [1, 2])` and `[3, "x"]`.
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+type Pair(t: #(i32, i32))
+
+fn id<T>(x: T) -> T {
+    return x;
+}
+
+pub fn main() -> void {
+    print(Box(value: #(1, 2)));
+    print(id(#(3, "x")));
+    print(Box(value: id(#(4, 5))));
+    print(Box(value: [#(6, 7)]));
+    print(Pair(t: #(8, 9)));
+}

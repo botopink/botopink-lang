@@ -1,0 +1,4 @@
+pub mod associated_fn_as_value;
+pub mod associated_fn_default;
+pub mod associated_fn_of_type_default;
+pub mod associated_fn_value_answers_record;

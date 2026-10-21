@@ -1,0 +1,17 @@
+//// Decision 169 — Codepoints on erlang: `indexOf` / `lastIndexOf` answer the codepoint index, as `at` / `slice` / `length` do there, so an
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val city = "São Paulo, São Luís";
+    val comma = city.indexOf(",");
+    print(comma);
+    print(city.at(comma));
+    print(city.slice(0, comma));
+    val last = city.lastIndexOf("São");
+    print(last);
+    print(city.slice(last));
+    print(city.at(city.indexOf("ã")) == "ã");
+    print(city.lastIndexOf("í"));
+    print(city.indexOf("x"));
+}

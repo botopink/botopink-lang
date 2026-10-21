@@ -1,0 +1,35 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type Point(x: i32, y: i32)
+fn make() -> Point {
+    return Point(x: 3, y: 4);
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['__bp_priv__make'/0]).
+
+%% type Point: x, y
+
+make() ->
+    {test@main@@Point, 3, 4}.
+
+'__bp_priv__make'() -> make().
+```
+
+----- ERLANG -- test@main@@Point.erl
+```erlang
+-module(test@main@@Point).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, x) -> erlang:element(2, V);
+'__bp_get'(V, y) -> erlang:element(3, V).
+
+'__bp_format'(V) -> {record, "Point", [{"x", erlang:element(2, V)}, {"y", erlang:element(3, V)}]}.
+```
+
+----- RUN LOG -----
+```logs
+```

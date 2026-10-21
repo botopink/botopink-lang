@@ -1,0 +1,11 @@
+//// Decision 575 (5) — `compiler.typeInfo` takes a type (`comptime t: type<T>`): a
+//// value, `city`, is refused at the argument.
+
+import {io.terminal.print, compiler} from "std";
+
+pub type City(name: string)
+
+pub fn main() -> void {
+    val city = City(name: "x");
+    print(comptime compiler.typeInfo(city).name);
+}

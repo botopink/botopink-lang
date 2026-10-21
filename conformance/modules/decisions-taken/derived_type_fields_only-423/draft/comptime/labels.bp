@@ -1,0 +1,2 @@
+// A field marker: it records nothing, it is read back from the field's annotations.
+pub fn label(syntax decl: unknown, comptime text: string) -> void {}

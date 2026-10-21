@@ -1,0 +1,10 @@
+//// Decision 409 — with `;` the last expression is a statement, and a body with
+//// `-> R` then needs a `return`: `fn(x: i32) -> i32 { x + 1; }` is refused at
+//// the function expression.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val inc = fn(x: i32) -> i32 { x + 1; };
+    print(inc(1));
+}

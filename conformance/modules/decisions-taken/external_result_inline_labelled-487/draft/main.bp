@@ -1,0 +1,23 @@
+//// Decision 487 — `result:` and `inline:` are labelled, read by label in any order; a bare positional `bool` is refused.
+
+import {compiler, failure.HostError, io.terminal.print} from "std";
+
+// Labelled, in any order around the positional template.
+#[compiler.external(
+    .JavaScript(result: true, "JSON.parse($0)"),
+    .Erlang("erlang:binary_to_integer($0)", result: true),
+)]
+declare fn decodeInt(text: string) -> Result<i32, HostError>;
+
+#[compiler.external(.JavaScript("$0.length"), .Erlang(inline: false, "erlang:byte_size($0)"))]
+declare fn byteCount(text: string) -> i32;
+
+// A bare `true` after the template says nothing of which flag it sets.
+#[compiler.external(.JavaScript("$0.toUpperCase()"), .Erlang("string:uppercase($0)", true))]
+declare fn upper(text: string) -> string;
+
+pub fn main() -> void {
+    print(try decodeInt("42") catch -1);
+    print(byteCount("abc"));
+    print(upper("abc"));
+}

@@ -1,0 +1,1 @@
+{ "name": "std_host_error_variants", "targets": ["commonJS", "erlang", "beam"] }

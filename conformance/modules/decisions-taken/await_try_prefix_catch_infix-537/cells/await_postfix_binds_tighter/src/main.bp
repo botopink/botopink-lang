@@ -1,0 +1,30 @@
+//// Decision 537 (amended) — postfix (`.`, `()`) binds tighter than the
+//// prefixes `await` and `try`, as `-t.x` is `-(t.x)`: `await box.task` is
+//// `await (box.task)`, `await make(3)` is `await (make(3))` and
+//// `await box.again()` is `await (box.again())`, and `await tasks[1]!` is `await (tasks[1]!)`.
+
+import {io.terminal.print} from "std";
+
+type Box(task: Async<i32>) {
+    fn again(self: Self) -> Async<i32> {
+        return self.task;
+    }
+}
+
+async fn make(n: i32) -> Async<i32> {
+    return n * 10;
+}
+
+async fn run() -> Async<void> {
+    val box = Box(task: make(4));
+    print(await box.task);
+    print(await make(3));
+    print(await box.again());
+    print(await box.task + await make(1));
+    val tasks = [make(1), make(2), make(3)];
+    print(await tasks[1]!);
+}
+
+pub fn main() -> void {
+    run();
+}

@@ -1,0 +1,12 @@
+//// Decision 529 (3) — `..` is the one spelling of a record's spread; `...`
+//// is only the inclusive range `a...b`, so a spread written with three dots
+//// is refused by name at the `...`.
+
+import {io.terminal.print} from "std";
+
+type Pessoa(nome: string, idade: i32)
+
+pub fn main() -> void {
+    val ana = Pessoa(nome: "Ana", idade: 3);
+    print(Pessoa(...ana, nome: "Bia"));
+}

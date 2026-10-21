@@ -1,0 +1,11 @@
+//// Decision 472 — an arithmetic error at build reads as Erlang's, located as
+//// JavaScript's: a float division by zero at build is `comptime-badarith`,
+//// naming the expression and `(division by zero)`, at the expression — never
+//// the raw `{error,badarith}` term. One message on every target.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val atBuild = comptime 1.0 / 0.0;
+    print(atBuild);
+}

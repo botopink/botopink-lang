@@ -7,7 +7,27 @@ pub const codegen = @import("./codegen.zig");
 pub const format = @import("./format.zig");
 pub const print_errors = @import("./print.zig");
 pub const Module = @import("./module.zig").Module;
+pub const Targets = @import("./module.zig").Targets;
+pub const PackageFiles = @import("./module.zig").PackageFiles;
+pub const ReadLog = @import("./module.zig").ReadLog;
 pub const comptime_pipeline = @import("./comptime.zig");
+/// The comptime runtime's entry: `useCompiledCache`, the compiled-module cache
+/// a command keeps under its cache root (decision 543).
+pub const comptime_runtime = @import("./comptime/runtime/runtime.zig");
+/// The OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228).
+pub const otp = @import("./otp.zig");
+/// The code cache's level B entry format (144 B-60): the container, and the
+/// encoder and decoder of a module's analysis (`comptime/analysis_entry.zig`).
+pub const analysis_entry = @import("./comptime/analysis_entry.zig");
+/// The code cache's level B inside a compile (144 B-60 S2): the store a
+/// driver hands `codegen.Config.analysis_store` / `compileWith`.
+pub const level_b = @import("./comptime/level_b.zig");
+/// Decision 805 — the `.bpr` a `--emit-runtime` build writes and `build` / `run` read back.
+pub const runtime_file = @import("./comptime/runtime_file.zig");
+/// Decisions 780–783 — `compiler.load(path)`: the paths a program's reads
+/// write (`literalPaths`), which the CLI's resolver leaves out of the
+/// package's module tree.
+pub const load = @import("./comptime/load.zig");
 // `@ExprCustom` tooling read API (expr-custom): the canonical reference node and
 // the per-call-site entries a language server consumes. Generic — names no
 // sub-language. See `comptime_pipeline.OkData.custom_ast`.

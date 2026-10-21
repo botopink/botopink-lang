@@ -1,0 +1,15 @@
+//// Decision 450 — The Erlang term library and the OTP functions are std-wasm's; `bp_wat_rt.wasm` goes.
+
+import {io.terminal} from "std";
+
+fn shout(s: string) -> string {
+    return s.toUpper() + "!";
+}
+
+pub fn main() -> void {
+    val atBuild = comptime shout("straße élan");
+    val atRun = shout("straße élan");
+    terminal.print(atBuild);
+    terminal.print(atRun);
+    terminal.print(atBuild == atRun);
+}

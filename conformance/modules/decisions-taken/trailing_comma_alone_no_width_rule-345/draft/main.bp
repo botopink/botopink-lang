@@ -1,0 +1,39 @@
+//// Decision 345 — The trailing comma alone decides a delimited list's shape — 166 as written.
+
+import {io.terminal} from "std";
+
+type Point(
+    x: i32,
+    y: i32,
+)
+
+type Line(start: Point, end: Point)
+
+fn describe(label: string, p: Point, scale: i32) -> string {
+    return label
+        + " "
+        + (p.x * scale).toString()
+        + ","
+        + (p.y * scale).toString();
+}
+
+pub fn main() -> void {
+    // A comma after the last element: one element per line, the comma kept.
+    val names: string[] = [
+        "ana",
+        "bia",
+        "carla",
+    ];
+    // No comma after the last element: one line, whatever its width.
+    val long: string[] = ["a first rather long element", "a second rather long element", "a third rather long element"];
+    // Written open, without that comma: joined onto one line.
+    val joined = describe("point", Point(x: 1, y: 2), 3);
+    val line = Line(start: Point(x: 0, y: 0), end: Point(
+        x: 4,
+        y: 5,
+    ));
+    terminal.print(names.length());
+    terminal.print(long.length());
+    terminal.print(joined);
+    terminal.print(line.end.y);
+}

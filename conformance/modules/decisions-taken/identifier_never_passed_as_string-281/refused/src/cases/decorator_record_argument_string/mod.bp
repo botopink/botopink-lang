@@ -1,0 +1,29 @@
+//// Decisions 280 (1), 281, example 5 — the cache is the record itself, not
+//// its name: a string against `Cache<T>` is refused at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+type Product(name: string)
+
+type User(name: string)
+
+type Cache<T>(name: string)
+
+fn cacheable<A, T>(
+    syntax decl: fn(a: A) -> T,
+    comptime cache: Cache<T>,
+) -> void {
+    compiler.setMeta(Cacheable(cache: cache.name));
+}
+
+#[cacheable("products")]
+fn byCategory(c: string) -> Product[] {
+    return [Product(name: c)];
+}
+
+pub fn main() -> void {
+    print(byCategory("tea").length);
+}
+
+// What `#[cacheable]` records.
+type Cacheable(cache: string)

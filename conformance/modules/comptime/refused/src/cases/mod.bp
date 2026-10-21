@@ -1,0 +1,2 @@
+pub mod comptime_method_nothing_answers;
+pub mod comptime_template_call_declared_after;

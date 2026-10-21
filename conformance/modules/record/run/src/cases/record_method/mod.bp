@@ -1,0 +1,11 @@
+import {io.terminal.print} from "std";
+
+type Counter(n: i32) {
+    fn current(self: Self) -> i32 {
+        return self.n;
+    }
+}
+
+pub fn runCase() -> void {
+    print(Counter(n: 3).current()); // 3
+}

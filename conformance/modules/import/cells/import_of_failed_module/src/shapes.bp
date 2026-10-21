@@ -1,0 +1,4 @@
+pub fn area(side: i32) -> i32 {
+    val label: string = side * side;
+    return side * side;
+}

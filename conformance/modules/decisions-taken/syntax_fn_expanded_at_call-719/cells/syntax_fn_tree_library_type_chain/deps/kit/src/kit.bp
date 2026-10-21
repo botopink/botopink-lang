@@ -1,0 +1,27 @@
+//// A `syntax` expression function whose code is a call chain over this module's
+//// own generic type `Seq<T>`, ending in `toArray()`.
+
+import {code} from "std";
+
+pub type Seq<T>(items: array<T>) {
+    // Without `pub`: called only in the tree this module writes (decision 859).
+    fn keep(self: Self<T>, pred: fn(item: T) -> bool) -> Seq<T> {
+        return Seq(items: self.items.filter(pred));
+    }
+
+    fn pick<U>(self: Self<T>, selector: fn(item: T) -> U) -> Seq<U> {
+        return Seq(items: self.items.map(selector));
+    }
+
+    fn toArray(self: Self<T>) -> array<T> {
+        return self.items;
+    }
+}
+
+fn seqOf<T>(xs: array<T>) -> Seq<T> {
+    return Seq(items: xs);
+}
+
+pub fn evensTimesTen(syntax e: array<i32>) -> anyvalue {
+    return code @`seqOf(${e}).keep({ n -> n % 2 == 0 }).pick({ n -> n * 10 }).toArray()`;
+}

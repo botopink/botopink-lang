@@ -1,0 +1,67 @@
+//// Decisions 431, 486 — a std function whose host call can fail answers `Result<T, E>`, never a `string`.
+//// Where std maps the host's raise (`encoding`, `io.clock`, `io.fs`) `E` is the module's own enum and the
+//// same input is the same variant on every target; `json`, `regex` and `io.process` answer std's
+//// `HostError` itself, its `kind` `"host"`. The calls that succeed answer `Ok` beside the failing ones.
+
+import {json, encoding, regex, io.clock, io.process, failure, failure.HostError, io.terminal.print} from "std";
+
+fn encodingName(e: encoding.EncodingError) -> string {
+    return case e {
+        encoding.EncodingError.NotBase64 -> "NotBase64";
+        encoding.EncodingError.NotHex -> "NotHex";
+        encoding.EncodingError.NotPercentEncoded -> "NotPercentEncoded";
+    };
+}
+
+fn clockName(e: clock.ClockError) -> string {
+    return case e {
+        clock.ClockError.NotRfc3339 -> "NotRfc3339";
+    };
+}
+
+fn showHost<T>(label: string, r: Result<T, HostError>) -> void {
+    case r {
+        Ok(_) -> print(label + ": ok");
+        Error(e) -> print(label + ": " + e.kind);
+    }
+}
+
+fn showEncoding<T>(label: string, r: Result<T, encoding.EncodingError>) -> void {
+    case r {
+        Ok(_) -> print(label + ": ok");
+        Error(e) -> print(label + ": " + encodingName(e));
+    }
+}
+
+pub fn main() -> void {
+    showHost("json.parse of an object", json.parse("{\"a\":1}"));
+    showHost("json.parse of bad text", json.parse("{bad"));
+    showHost("json.stringify of bad text", json.stringify("[1,"));
+    showHost("json.unquote of a string literal", json.unquote("\"x\""));
+    showHost("json.unquote of a number", json.unquote("1"));
+    showEncoding("base64Decode of base64", encoding.base64Decode("Zm9v"));
+    showEncoding("base64Decode of bad text", encoding.base64Decode("!!!!"));
+    showEncoding("base64UrlDecode of bad text", encoding.base64UrlDecode("!!!!"));
+    showEncoding("base64DecodeBytes of bad text", encoding.base64DecodeBytes("!!!!"));
+    showEncoding("hexDecode of hex", encoding.hexDecode("6869"));
+    showEncoding("hexDecode of bad text", encoding.hexDecode("zz"));
+    showEncoding("hexDecode of an odd length", encoding.hexDecode("686"));
+    showEncoding("hexDecodeBytes of bad text", encoding.hexDecodeBytes("zz"));
+    showEncoding("percentDecode of an escape", encoding.percentDecode("%C3%A9"));
+    showEncoding("percentDecode of a bad escape", encoding.percentDecode("%zz"));
+    showHost("regex.compile of a pattern", regex.compile("[0-9]+"));
+    showHost("regex.compile of a bad pattern", regex.compile("("));
+    case clock.parseIso8601("2024-02-29T12:34:56Z") {
+        Ok(_) -> print("clock.parseIso8601 of a timestamp: ok");
+        Error(e) -> print("clock.parseIso8601 of a timestamp: "
+            + clockName(e));
+    }
+    case clock.parseIso8601("not a date") {
+        Ok(_) -> print("clock.parseIso8601 of bad text: ok");
+        Error(e) -> print("clock.parseIso8601 of bad text: " + clockName(e));
+    }
+    showHost(
+        "process.run of a missing binary",
+        process.run("definitely-not-a-binary-bp-std", []),
+    );
+}

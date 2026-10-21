@@ -5,6 +5,7 @@
 /// rebuilt lazily: it is populated on first use and invalidated when a
 /// file is saved or a watched file changes.
 const std = @import("std");
+const manifest = @import("manifest");
 const bp = @import("botopink");
 const proto = @import("./protocol.zig");
 const lsp_types = @import("./lsp_types.zig");
@@ -162,7 +163,7 @@ pub const ProjectIndex = struct {
                 continue;
             }
 
-            if (!std.mem.endsWith(u8, name, ".bp")) continue;
+            if (!manifest.isSourceFile(name)) continue;
 
             const file_path = std.fmt.allocPrint(self.gpa, "{s}/{s}", .{ dir_path, name }) catch continue;
             defer self.gpa.free(file_path);
@@ -170,12 +171,8 @@ pub const ProjectIndex = struct {
             const file_uri = lsp_types.pathToUri(self.gpa, file_path) catch continue;
             defer self.gpa.free(file_uri);
 
-            // Module name: filename without .d.bp or .bp extension.
-            const module_name_end = if (std.mem.endsWith(u8, name, ".d.bp"))
-                name.len - 5 // strip ".d.bp"
-            else
-                name.len - 3; // strip ".bp"
-            const module_name = name[0..module_name_end];
+            // Module name: filename without its source extension.
+            const module_name = manifest.stripSourceExt(name);
 
             self.module_uris.append(self.gpa, self.gpa.dupe(u8, module_name) catch continue) catch {};
 
@@ -208,9 +205,10 @@ pub const ProjectIndex = struct {
                 .@"fn" => .function,
                 .val => .value,
                 .record => .record,
-                
                 .@"enum" => .@"enum",
-                .interface => .interface,
+                .interface, .behavior => .interface,
+                // 1.0.3 `type`: its shape decides record or enum.
+                .type => if (typeDeclIsEnum(tokens, j)) |is_enum| (if (is_enum) SymbolDeclKind.@"enum" else SymbolDeclKind.record) else null,
                 else => null,
             };
             if (kind == null) continue;
@@ -234,3 +232,35 @@ pub const ProjectIndex = struct {
         }
     }
 };
+
+/// For a `type` keyword at `kw` followed by a name, whether the declaration is
+/// enum-shaped (no `(…)` field list and a body that starts with a variant).
+/// Null when `type` does not open a declaration here.
+fn typeDeclIsEnum(tokens: []const Token, kw: usize) ?bool {
+    var p = kw + 1;
+    while (p < tokens.len and tokens[p].kind == .endOfFile) : (p += 1) {}
+    if (p >= tokens.len or tokens[p].kind != .identifier) return null;
+    p += 1;
+    var angle: i32 = 0;
+    while (p < tokens.len) : (p += 1) {
+        switch (tokens[p].kind) {
+            .endOfFile => continue,
+            .lessThan => angle += 1,
+            .greaterThan => angle -= 1,
+            .leftParenthesis => if (angle == 0) return false,
+            .leftBrace => if (angle == 0) {
+                var q = p + 1;
+                while (q < tokens.len) : (q += 1) {
+                    switch (tokens[q].kind) {
+                        .endOfFile, .commentNormal, .commentDoc, .commentModule => continue,
+                        .identifier, .numberLiteral => return true,
+                        else => return false,
+                    }
+                }
+                return false;
+            },
+            else => if (angle == 0 and tokens[p].kind != .implement and tokens[p].kind != .identifier and tokens[p].kind != .comma and tokens[p].kind != .at and tokens[p].kind != .builtinIdent) return false,
+        }
+    }
+    return false;
+}

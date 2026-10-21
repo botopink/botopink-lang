@@ -1,0 +1,14 @@
+//// The decorator: its executor calls the annotated type's `make`.
+
+import {cases.init_executor_handle_on_type.registry.add};
+import {compiler} from "std";
+
+// What a service is: a type that makes its own entry.
+pub behavior Service {
+    fn make() -> string;
+}
+
+pub fn service(syntax decl: Service) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> add(name + " " + decl.make()) });
+}

@@ -1,0 +1,28 @@
+//// Decision 774 — `stage` and `beamMemory` are members of `compiler`, as `external` is — `#[compiler.stage(.Any)]`, `#[compiler.beamMemory(.Ets)]` — one home for every annotation the compiler itself reads (606 (4)); `memo` is a function of std's `hooks` module, imported as any std function (582's forms) and written in a `use`.
+
+import {compiler, hooks.memo, io.terminal.print} from "std";
+
+// Callable at build and at run time.
+#[compiler.stage(.Any)]
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+// Kept in ETS on erlang and beam; an ordinary module `var` elsewhere.
+#[compiler.beamMemory(.Ets)]
+var hits: i32 = 0;
+
+type Element(text: string) implement Renderable
+
+component fn Badge(name: string) -> Component<Element> {
+    val label = use memo({ -> "badge " + name });
+    return Element(text: label);
+}
+
+pub async fn main() -> Async<void> {
+    print(comptime double(21));
+    hits = hits + double(1);
+    print(hits);
+    val badge = await Badge("a");
+    print(badge.text);
+}

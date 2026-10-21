@@ -1,0 +1,17 @@
+//// An associated type a decorator declares is named in a diagnostic as its
+//// owner's path, `City.Columns`, as it is written — never as the top-level
+//// type it is hoisted into (144 B-19).
+
+import {compiler, io.terminal.print} from "std";
+
+fn columns(syntax decl: unknown) -> void {
+    compiler.addType("Columns", compiler.buildType("(id: string)"));
+}
+
+#[columns]
+type City(name: string)
+
+pub fn main() -> void {
+    val c = City.Columns(id: "a");
+    print(c.nope);
+}

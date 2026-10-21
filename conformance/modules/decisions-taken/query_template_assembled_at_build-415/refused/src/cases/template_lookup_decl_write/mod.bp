@@ -1,0 +1,22 @@
+//// Decision 415 (2) — the declaration `q.lookup` answers is read-only:
+//// `setMeta`, `addMeta`, `addMember` and `addType` on it are
+//// refused at the call (`template-lookup-decl-write`). A decorator on that
+//// declaration records what it carries.
+
+import {compiler, io.terminal.print} from "std";
+
+type Note(text: string)
+
+type User(id: i32)
+
+fn stamp(syntax q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    compiler.setMeta(Note(text: "seen"));
+    return compiler.build("\"" + compiler.name(decl)! + "\"");
+}
+
+pub fn main() -> void {
+    print(stamp @`User`);
+}

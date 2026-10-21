@@ -1,0 +1,11 @@
+pub behavior Shape {
+    fn area(self: Self) -> i32;
+
+    fn unit() -> i32 {
+        return 1;
+    }
+
+    fn scaled(n: i32) -> i32 {
+        return n * Shape.unit();
+    }
+}

@@ -1,0 +1,30 @@
+//// A behavior's bodied `default fn` that answers `Async<T>` and awaits, adopted by a
+//// type that implements the behavior without declaring it, is an async method of that
+//// type: called on a typed value and awaited. commonJS emitted the adopted body as a
+//// plain function, which Node refuses ("await is only valid in async functions").
+
+import {io.terminal.print} from "std";
+
+async fn fetch(n: i32) -> Async<i32> {
+    return n * 10;
+}
+
+behavior Loader {
+    fn base(self: Self) -> i32;
+
+    default async fn load(self: Self) -> Async<i32> {
+        val v = await fetch(self.base());
+        return v + 1;
+    }
+}
+
+type Box(n: i32) implement Loader {
+    fn base(self: Self) -> i32 {
+        return self.n;
+    }
+}
+
+pub async fn main() -> Async<void> {
+    val r = await Box(n: 4).load();
+    print(r); // 41
+}

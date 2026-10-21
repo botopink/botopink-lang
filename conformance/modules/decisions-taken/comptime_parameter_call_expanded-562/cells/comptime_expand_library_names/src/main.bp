@@ -1,0 +1,10 @@
+//// Decision 562 — `marquee` is expanded in `main`, and the code it emits
+//// names `marquee`'s own `Label`, `shout` and `path`: each resolves as in the
+//// library that wrote it, though `main` imports none of them.
+
+import {marquee} from "marquee";
+
+pub fn main() -> void {
+    marquee("home");
+    marquee("news");
+}

@@ -1,0 +1,17 @@
+import {json.Json, io.terminal.print} from "std";
+
+fn main() -> void {
+    val doc = Json.Obj([#("name", Json.Str("ada")), #("n", Json.Num(1.0))]);
+    val values = [
+        Json.Null,
+        Json.Bool(true),
+        Json.Num(1.5),
+        Json.Str("ada"),
+        Json.Str(""),
+        Json.Arr([Json.Str("x")]),
+        doc,
+    ];
+    print(values.map({ v -> v.isString().toString() }).join(","));
+    print((doc.field("name") ?? Json.Null).isString());
+    print((doc.field("n") ?? Json.Null).isString());
+}

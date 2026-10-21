@@ -1,0 +1,1 @@
+{ "name": "module_init", "version": "0.0.1", "targets": ["commonJS", "erlang", "beam"] }

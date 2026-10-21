@@ -1,0 +1,30 @@
+import {io.terminal.print} from "std";
+
+iter fn fibonacci(limit: i32) -> Iter<i32> {
+    var a = 0;
+    var b = 1;
+    var i = 0;
+    while (i < limit) {
+        yield a;
+        val t = a + b;
+        a = b;
+        b = t;
+        i = i + 1;
+    }
+}
+
+iter fn firstNegative(xs: i32[]) -> Iter<i32> {
+    for (xs) { x ->
+        if (x < 0) break x; // emits the negative and ends
+        yield x;
+    }
+}
+
+fn main() -> void {
+    for (fibonacci(10)) { n ->
+        print(n);
+    } // an ordinary function may iterate
+    for (firstNegative([1, -2, 3])) { n ->
+        print(n);
+    } // 1, then -2
+}

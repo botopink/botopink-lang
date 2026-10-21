@@ -1,0 +1,1 @@
+{ "name": "template_reads_val_build_value", "dependencies": { "looks": { "path": "deps/looks" } } }

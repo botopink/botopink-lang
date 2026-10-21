@@ -1,0 +1,24 @@
+//// Decision 606 (2) — `panic` is a function of std's `failure.bp`, imported where it is used,
+//// beside `attempt`, which catches it: the message is the `Failure`'s, its kind `panic`; the
+//// default message is `panic`; an uncaught one aborts with `panic: <message>` (decision 535).
+
+import {io.terminal.print, failure.panic, failure.attempt} from "std";
+
+fn half(n: i32) -> i32 {
+    if (n % 2 != 0) panic("odd: " + n.toString());
+    return n / 2;
+}
+
+pub fn main() -> void {
+    print(half(8));
+    case attempt({ -> half(3) }) {
+        Ok(v) -> print("ok", v);
+        Error(f) -> print(f.kind, f.message);
+    }
+    case attempt({ -> panic() }) {
+        Ok(_) -> print("ok");
+        Error(f) -> print(f.kind, f.message);
+    }
+    half(5);
+    print("never");
+}

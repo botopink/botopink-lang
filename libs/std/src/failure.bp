@@ -1,0 +1,110 @@
+//// std/failure — the two records a failure that is not a typed error carries
+//// (decisions 431, 492).
+////
+//// `HostError` is what a host binding that writes `result: true` answers on
+//// the `Error` side: the host's message and `kind`, always `"host"`.
+//// `Failure` is what `attempt` answers on the `Error` side: `kind` is `panic`
+//// (`panic`, `@todo`, `x!`, an overflow, a division by zero), `host` (a raise
+//// from a binding without `result: true`) or `crash` (a VM or emitted-code
+//// fault, a wasm trap).
+////
+//// `attempt(f)` runs `f` and answers `Ok` of its value, or `Error(Failure)`
+//// for a raise it caught — the one way to contain a crash (decision 431 (3)).
+//// `attemptTask(f)` is its `Async` form (decision 494): the task `f` answers,
+//// awaited, or the `Failure` it crashed with — a `Async<Result<…>>` read
+//// back by `await` like any failing task (decision 432). The kinds
+//// (decision 492): a `panic` / `@todo` (and so `x!`), a failed `assert`
+//// and an integer overflow or division by zero are `panic`, their message
+//// the text the program wrote. A raise of a binding declared outside std without
+//// `result: true` is `host` (decision 546), its message the host's text — on
+//// commonJS an `Error`'s `message`, else `String(e)`, the call run through
+//// `__bp_host_mark`, which marks it `__bp_host`; any raise nothing marked is
+//// `crash`, its message the same text. On erlang and beam a
+//// host raise is the raise of a binding declared outside std without `result:
+//// true` — a library's or the program's, whose calls are wrapped to mark it
+//// (decision 546) — its message the reason by `~tp` (decision 489's reading);
+//// a raise nothing marked, a failing match or a std binding's, is `crash`,
+//// its message the reason by `~tp` too.
+////
+//// Both are bodyless: each backend wraps the call (a JavaScript `try` /
+//// rejection handler, an erlang `try … catch`; beam compiles the erlang
+//// form). On wasm (decision 518) each is a private body over `caught`, the
+//// `wasi: .Attempt` adapter: the thunk runs inside a `try_table` that
+//// catches the program's aborts (wasm exception handling), so the binding
+//// declares `needs: [.Exceptions]` and a program reaching it runs with the
+//// host's exceptions on (`-W exceptions=y` on wasmtime). On wasm an abort
+//// is `panic`; a trap (an overflow or a division by zero there, a host
+//// fault) is no exception and is not caught. `attemptTask` contains what
+//// the thunk raises before the task's first `await`.
+
+import {compiler};
+
+pub type HostErrorName {
+    Error,
+    Throw,
+    Exit,
+}
+
+pub type HostError(message: string, kind: string, name: HostErrorName, detail: ?string)
+
+pub type Failure(message: string, kind: string)
+
+// Decision 606 (2) — the abort `attempt` catches as a `panic` `Failure`: the program stops
+// with `panic: <message>` (decision 535) unless an `attempt` above it answers the `Failure`.
+// Imported where it is used, `import {failure.panic} from "std";` (`import {failure.panic};`
+// inside std); `panic("not implemented")` is what `todo` was.
+#[compiler.external(
+    .Erlang("erlang:error({panic, $0})"),
+    .JavaScript("(() => { throw Object.defineProperty(new Error($0), '__bp_panic', { value: true }) })()"),
+)]
+pub declare fn panic(message: string = "panic") -> noreturn;
+
+// The Node forms read an abort by the `__bp_panic` mark the backend puts on
+// every one it raises — `panic`, `@todo`, an integer overflow or division
+// by zero, a failed `assert` (whose mark carries its message) — or a test
+// body's `assert` (`__bp_assert_loc`); the Erlang forms by the reasons the
+// backends raise for them (`{panic, M}`, `{todo, M}`, `{integer_overflow,
+// M}`, `{bp_assert, M, Where}`). `attemptTask` answers a failing task
+// (decision 432): marked `__bp_fails`, resolved with the value, rejected with
+// the `Failure` (`__bp_failure`); a failing task `f` answers is read as
+// `await` reads it.
+#[compiler.external(
+    .JavaScript("""((__f, __k) => { try { return { ok: __f() }; } catch (__e) { return { error: __k(__e) }; } })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))"""),
+    .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
+    .Wasm(body: attemptOnWasm),
+)]
+pub declare fn attempt<T>(f: fn() -> T) -> Result<T, Failure>;
+
+#[compiler.external(
+    .JavaScript("""((__f, __k) => { const __t = (async () => { const __x = __f(); return (__x != null && __x.__bp_fails === true) ? await __x.then((__v) => ({ ok: __v }), (__e) => { if (__x.__bp_failure === true) { return { error: __e }; } throw __e; }) : await __x; })().then((__v) => __v, (__e) => { __t.__bp_failure = true; throw __k(__e); }); __t.__bp_fails = true; __t.catch(() => {}); return __t; })($0, ((__e) => (__e != null && __e.__bp_panic != null) ? new Failure(typeof __e.__bp_panic === "string" ? __e.__bp_panic : __e.message, "panic") : (__e != null && typeof __e.__bp_assert_loc === "string") ? new Failure(__e.message, "panic") : new Failure((__e instanceof Error) ? __e.message : String(__e), (__e != null && __e.__bp_host === true) ? "host" : "crash")))"""),
+    .Erlang("""(fun(__F) -> try {ok, __F()} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo orelse __T =:= integer_overflow) andalso (is_binary(__M) orelse is_list(__M)) -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, _, _, __M} -> {error, {'std@failure@@Failure', unicode:characters_to_binary(__M), <<"panic">>}}; error:{bp_assert, __M, _} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"panic">>}}; error:{bp_host, __M} when is_binary(__M) -> {error, {'std@failure@@Failure', __M, <<"host">>}}; _:__R -> {error, {'std@failure@@Failure', unicode:characters_to_binary(io_lib:format("~tp", [__R])), <<"crash">>}} end end)($0)"""),
+    .Wasm(body: attemptTaskOnWasm),
+)]
+pub declare fn attemptTask<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>>;
+
+// wasm's form (decision 518): the thunk's value, or the message of the abort
+// it raised — `Error` of the abort's text, which `attempt` makes a `panic`.
+// The bodies over it are compiled on every target, so it has a form on each;
+// only wasm calls it (`attempt`'s own forms answer elsewhere).
+#[compiler.external(
+    .JavaScript("""((__f) => { try { return { ok: __f() }; } catch (__e) { return { error: (__e instanceof Error) ? __e.message : String(__e) }; } })($0)"""),
+    .Erlang("""(fun(__F) -> try {ok, __F()} catch _:__R -> {error, unicode:characters_to_binary(io_lib:format("~tp", [__R]))} end end)($0)"""),
+    .Wasm(wasi: .Attempt, needs: [.Exceptions]),
+)]
+declare fn caught<T>(f: fn() -> T) -> Result<T, string>;
+
+fn attemptOnWasm<T>(f: fn() -> T) -> Result<T, Failure> {
+    case caught(f) {
+        Ok(v) -> return v;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}
+
+// The task the thunk started — or the `Failure` it raised before its first
+// `await` — and then its value.
+async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> {
+    case caught(f) {
+        Ok(t) -> return await t;
+        Error(m) -> throw Failure(message: m, kind: "panic");
+    }
+}

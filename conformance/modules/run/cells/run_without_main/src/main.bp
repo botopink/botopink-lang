@@ -1,0 +1,5 @@
+type Point(x: i32, y: i32)
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}

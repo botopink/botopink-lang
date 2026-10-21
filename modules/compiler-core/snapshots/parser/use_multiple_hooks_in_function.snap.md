@@ -15,7 +15,9 @@
         "annotations": [],
         "genericParams": [],
         "params": [],
-        "returnType": null,
+        "returnType": {
+          "named": "void"
+        },
         "typeGuardParam": null,
         "body": [
           {
@@ -170,7 +172,8 @@
                                                     }
                                                   }
                                                 },
-                                                "emptyLinesBefore": 0
+                                                "emptyLinesBefore": 0,
+                                                "tail": "value"
                                               }
                                             ]
                                           }
@@ -250,7 +253,8 @@
                                             }
                                           }
                                         },
-                                        "emptyLinesBefore": 0
+                                        "emptyLinesBefore": 0,
+                                        "tail": "value"
                                       }
                                     ]
                                   }

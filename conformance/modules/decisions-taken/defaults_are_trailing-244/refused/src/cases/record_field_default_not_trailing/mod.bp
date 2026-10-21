@@ -1,0 +1,11 @@
+//// Decision 244 — a default is trailing everywhere. A record's field without a
+//// default after one with a default is refused at that field, as a free
+//// `fn`'s parameter is (`fn-param-default-trailing-only`).
+
+import {io.terminal.print} from "std";
+
+type Port(number: i32 = 80, host: string)
+
+pub fn main() -> void {
+    print(Port(host: "a").number);
+}

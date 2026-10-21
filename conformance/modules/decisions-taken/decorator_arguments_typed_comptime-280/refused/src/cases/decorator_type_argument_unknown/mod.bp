@@ -1,0 +1,25 @@
+//// Decision 280 (1), example 3 (lg2-f) — a `comptime t: type` argument names a
+//// type in scope: a misspelt one is the unknown-type error at the argument
+//// (it used to surface only at boot, from the string).
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior MailSender {
+    fn send(self: Self, to: string) -> string;
+}
+
+fn conditionalOnMissingBean(syntax decl: unknown, comptime t: anytype) -> void {
+    compiler.setMeta(MissingBean(bean: compiler.name(decl)!));
+}
+
+#[conditionalOnMissingBean(MailSendr)]
+fn consoleMail() -> string {
+    return "console";
+}
+
+pub fn main() -> void {
+    print(consoleMail());
+}
+
+// What `#[conditionalOnMissingBean]` records.
+type MissingBean(bean: string)

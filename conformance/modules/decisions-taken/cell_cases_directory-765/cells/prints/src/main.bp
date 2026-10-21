@@ -1,0 +1,10 @@
+//// Decision 765 — a case of a module is a full cell: it prints one answer on every target.
+
+pub mod text;
+import {text.label};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(label(55));
+    print("done");
+}

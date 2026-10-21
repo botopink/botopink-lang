@@ -1,0 +1,9 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.fn_declaration.runCase();
+    cases.fn_empty_body_call.runCase();
+    cases.fn_empty_main.runCase();
+    cases.fn_expression_string_parameter.runCase();
+    cases.fn_field_call_in_for.runCase();
+}

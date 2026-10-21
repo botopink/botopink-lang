@@ -1,0 +1,9 @@
+import {compiler, compiler.NamedType} from "std";
+
+fn typeAsValue(syntax q: string) -> anyvalue {
+    return compiler.ast(NamedType(compiler.text(q)));
+}
+
+pub fn typeNode() -> string {
+    return typeAsValue @`string`;
+}

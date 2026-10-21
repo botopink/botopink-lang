@@ -1,0 +1,17 @@
+import {io.terminal.print} from "std";
+
+type ParseError { Empty, Bad(text: string) }
+
+type Id = i32;
+
+type Pair<A, B> = #(A, B);
+
+pub type Parser<T> = Result<T, ParseError>;
+
+fn swap(p: Pair<Id, string>) -> Pair<string, Id> {
+    return #(p.1, p.0);
+}
+
+pub fn runCase() -> void {
+    print(swap(#(1, "a"))); // #("a", 1)
+}

@@ -1,0 +1,9 @@
+//// The decorator: each annotated declaration registers its name.
+
+import {registry.register};
+import {compiler} from "std";
+
+pub fn registered(syntax decl: unknown) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> register(name) });
+}
