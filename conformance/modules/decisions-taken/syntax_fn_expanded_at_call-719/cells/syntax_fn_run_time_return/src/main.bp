@@ -1,0 +1,27 @@
+//// Decisions 719, 841 — a function with a `syntax` expression parameter
+//// returns any written type: `-> T` is code of type `T`, checked where it is
+//// spliced, as a template's is (578 (2)); `-> void` included. `twice` answers
+//// an `i32` at its call, `log` a statement that prints its label and the
+//// expression as written beside its value.
+
+import {code, compiler, io.terminal.print} from "std";
+
+pub fn show(label: string, text: string, value: i32) -> void {
+    print(label + ": " + text + " = " + value.toString());
+}
+
+pub fn twice(syntax e: i32) -> i32 {
+    return code @`${e} + ${e}`;
+}
+
+pub fn log(label: string, syntax e: i32) -> void {
+    val text = compiler.text(e);
+    return code @`show(${label}, ${text}, ${e})`;
+}
+
+pub fn main() -> void {
+    val n = 3;
+    val doubled: i32 = twice(n * 2);
+    print(doubled.toString());
+    log("sum", n + 4);
+}

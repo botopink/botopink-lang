@@ -457,7 +457,7 @@ caller and captured **unevaluated**:
   (`registerImportedTemplateFn`, `comptime.zig`), and the namespace branch of `inferCallExprWith` hands the
   call to `expandQualifiedSyntaxCall`. Cells `syntax_fn_expanded_at_call`, `syntax_fn_text_of_expression`,
   `syntax_fn_called_through_module`, `syntax_fn_string_param_needs_template_text`,
-  `syntax_fn_expression_param_given_template_text`, `syntax_fn_run_time_return`.
+  `syntax_fn_expression_param_given_template_text`, `syntax_fn_run_time_return` (841: `-> i32` and `-> void` answered as code).
 
 Call-site expansion (`expandTemplateCall`, from `inferCallExpr`):
 `classifyTemplateBody` reduces `return <tree param>`, `return @expr(E)` (E must

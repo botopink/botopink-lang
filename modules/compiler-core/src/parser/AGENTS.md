@@ -992,9 +992,9 @@ what was written (`ast.Arrival`, dumped only when not `written`; the formatter p
   `syntax p: T` whose `T` is no `string`, no `self` receiver, no template text) that is no decorator
   (`ast.isSyntaxExprFn`: it writes a return, or its first `syntax` parameter is not its first) is expanded
   at its ordinary call: `unwrapProgram` keeps its trees (no `declHandle`), and `compiler_surface.zig`
-  reads its return as a template's — only `anyvalue` or `anytype` (`ast.isBuildAnswer`); any other return,
-  none included, is `template-signature` at the declaration (`refuseSyntaxFnReturn`, located at the
-  return, else the name). A `declare fn` and a type's methods are untouched.
+  reads its return as a template's — any written `T` (`void` included) is code of type `T`, `anyvalue` or
+  `anytype` (decision 841); `template-signature` no longer reads the return, and one that writes none is
+  left to the checker's `fn-return-missing` (622). A `declare fn` and a type's methods are untouched.
   `compiler.addType(name, compiler.buildType("(…)"))` hands the built type's text to `addType`;
   `buildType` elsewhere waits for B-140. `-> syntax T` is `removed-expr-type` (`decls.zig`
   `parseReturnTypeRef`), and the bare `type` is `removed-bare-type` (`types.zig`; `x is type` keeps it).

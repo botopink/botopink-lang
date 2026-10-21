@@ -1404,7 +1404,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/string_trim_keeps_nbsp | modules/decisions-taken/commonjs_text_matches_std_wasm-521/run/src/cases/string_trim_keeps_nbsp | 521 |  | a |
 | modules/syntax_fn_expanded_at_call | modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_expanded_at_call | 719 | 756 | t |
 | modules/syntax_fn_expression_param_given_template_text | modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_expression_param_given_template_text | 719 |  | b |
-| modules/syntax_fn_run_time_return | modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_run_time_return | 719 | 578 | b |
+| modules/syntax_fn_run_time_return | modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_run_time_return | 719 | 578 | b |
 | modules/syntax_fn_source_file_is_path | modules/decisions-taken/syntax_fn_source_file_is_path-756/cells/syntax_fn_source_file_is_path | 756 |  | a |
 | modules/syntax_fn_string_param_needs_template_text | modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_string_param_needs_template_text | 719 |  | a |
 | modules/syntax_fn_text_of_expression | modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_text_of_expression | 719 |  | a |

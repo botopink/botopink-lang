@@ -189,14 +189,12 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
     const P = Pass{ .alloc = alloc, .scratch = arena.allocator() };
     for (program.decls) |*d| switch (d.*) {
         .@"fn" => |*f| {
-            // Decision 719 — a function with a `syntax` expression parameter
-            // is expanded at its call and answers code: `anyvalue` or
-            // `anytype`; any other return is refused at the declaration.
-            const syntaxFn = !f.isDeclare and ast.isSyntaxExprFn(f.params, f.returnType);
-            if (syntaxFn and !(if (f.returnType) |rt| ast.isBuildAnswer(rt) else false)) {
-                try refuseSyntaxFnReturn(P, f);
-                continue;
-            }
+            // Decisions 719, 841 — a function with a `syntax` expression
+            // parameter is expanded at its call and answers code: `-> T` is
+            // code of type `T` (`void` included), `anyvalue` or `anytype`.
+            // One that writes no return is left to the checker's
+            // `fn-return-missing` (622).
+            const syntaxFn = !f.isDeclare and f.returnType != null and ast.isSyntaxExprFn(f.params, f.returnType);
             try expandFn(P, f.name, f.params, &f.returnType, &f.genericParams, &f.body, syntaxFn);
         },
         .type_ => |*t| try expandType(P, t),
@@ -257,32 +255,13 @@ fn expandType(P: Pass, t: *ast.TypeDecl) error{OutOfMemory}!void {
     for (t.assocTypes) |*inner| try expandType(P, inner);
 }
 
-/// Decision 719 — a function with a `syntax` expression parameter whose
-/// return is no build answer (`-> i32`, none): refused at the declaration.
-/// A build body returns code, never a value (578 (2)).
-fn refuseSyntaxFnReturn(P: Pass, f: *ast.FnDecl) error{OutOfMemory}!void {
-    var ctx: Ctx = .{ .alloc = P.alloc, .scratch = P.scratch };
-    const p = f.params[ast.syntaxExprIndex(f.params).?];
-    const at: ast.Loc = if (f.returnType != null and f.returnTypeLoc.line != 0) f.returnTypeLoc else if (f.nameLoc.line != 0) f.nameLoc else p.loc;
-    const answer: []const u8 = if (f.returnType) |rt| switch (rt) {
-        .named => |n| try std.fmt.allocPrint(P.alloc, "returns `{s}`, a value at run time", .{n}),
-        else => "returns a value at run time",
-    } else "returns nothing";
-    const msg = try std.fmt.allocPrint(P.alloc, "the function `{s}` takes the expression `{s}` (`syntax {s}`) and {s}: it is expanded at its call and returns code — `anyvalue` or `anytype`", .{ f.name, p.name, p.name, answer });
-    const refused = try refusal(&ctx, at, diagnostics.template_signature, msg, "A function with a `syntax` expression parameter is expanded where it is called, and its build body returns the code that stands at the call (decisions 578 (2), 719): declare `-> anyvalue` (the built code, typed at the call) or `-> anytype` (a built type), or make the parameter an ordinary one.");
-    const stmts = try P.alloc.alloc(ast.Stmt, f.body.len + 1);
-    stmts[0] = .{ .expr = refused };
-    @memcpy(stmts[1..], f.body);
-    f.body = stmts;
-}
-
 fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.TypeRef, gps: ?*[]ast.GenericParam, bodyRef: *[]ast.Stmt, syntaxFn: bool) error{OutOfMemory}!void {
     const body = bodyRef.*;
     // Decision 578 (1) — a template by its text parameter answers its return
     // (`T`, or `anyvalue`: the type the built code has at each call) as the
     // tree the machinery knows; its returns are lifted as `-> expr T`'s were.
-    // Decision 719 — a function with a `syntax` expression parameter
-    // (`syntaxFn`, its return `anyvalue` or `anytype`) is read the same way.
+    // Decisions 719, 841 — a function with a `syntax` expression parameter
+    // (`syntaxFn`, any written return) is read the same way.
     var byText = false;
     if (ast.templateTextIndex(params) != null or syntaxFn) {
         const already = if (returnRef.*) |rt| rt.isTemplateReturnType() else false;

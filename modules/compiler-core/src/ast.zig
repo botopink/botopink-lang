@@ -1978,17 +1978,6 @@ pub fn isSyntaxExprFn(params: []const Param, returnType: ?TypeRef) bool {
     return i > 0 and params[0].arrival != .syntax;
 }
 
-/// Decision 719, 578 (2) — whether `rt` is a build body's answer for a
-/// function with a `syntax` expression parameter: `anyvalue` (the built
-/// code, typed where the call stands) or `anytype` (a built type).
-pub fn isBuildAnswer(rt: TypeRef) bool {
-    return switch (rt) {
-        .named => |n| std.mem.eql(u8, n, anyvalue_type_name),
-        .typeparam => |cs| cs.len == 0,
-        else => false,
-    };
-}
-
 /// Decision 578 (2) — a value whose type is known once its code is built: a
 /// template's return, `compiler.build`'s answer.
 pub const anyvalue_type_name = "anyvalue";

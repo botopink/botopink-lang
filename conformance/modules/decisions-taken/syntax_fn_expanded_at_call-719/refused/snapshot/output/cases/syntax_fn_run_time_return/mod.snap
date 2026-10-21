@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: template-signature: the function `length` takes the expression `value` (`syntax value`) and returns `i32`, a value at run time: it is expanded at its call and returns code — `anyvalue` or `anytype`
-at src/cases/syntax_fn_run_time_return/mod.bp:8:42

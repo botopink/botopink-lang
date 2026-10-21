@@ -3793,14 +3793,17 @@ for a `mod probe` of the package — is expanded as the bare call is:
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_called_through_module -->
 
-Such a function answers `anyvalue` (the built code, typed at the call) or
-`anytype` (a built type); a run-time return (`-> i32`, none) is refused at the
-declaration (`template-signature`) — a build body returns code, never a
-value. A template text given to a `syntax` expression parameter is
+Such a function returns any written type `T` — `void` included —, `anyvalue`
+(the built code, typed at the call) or `anytype` (a built type): its build
+body returns code, and `-> T` is code of type `T`, checked where it is spliced,
+as a template's is (841). The `syntax` parameter alone marks the expansion; a
+function that writes no return is `fn-return-missing` (622):
+
+<!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_run_time_return -->
+
+A template text given to a `syntax` expression parameter is
 `syntax-call-outside-syntax` at the call, the message naming the form the
 parameter takes, as `markup("…")` is for a `syntax q: string` one:
-
-<!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_run_time_return -->
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_expression_param_given_template_text -->
 

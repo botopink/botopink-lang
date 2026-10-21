@@ -5,4 +5,4 @@
 [run/src/cases/compiler_template_expr_return/mod.bp](run/src/cases/compiler_template_expr_return/mod.bp)
 [cells/template_answer_component/src/main.bp](cells/template_answer_component/src/main.bp)
 
-Proved also by [syntax_fn_run_time_return](../syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_run_time_return/mod.bp)
+Proved also by [syntax_fn_run_time_return](../syntax_fn_expanded_at_call-719/cells/syntax_fn_run_time_return/src/main.bp)

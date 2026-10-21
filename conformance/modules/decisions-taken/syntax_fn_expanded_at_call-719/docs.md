@@ -2,7 +2,7 @@
 
 [cells/syntax_fn_expanded_at_call/src/main.bp](cells/syntax_fn_expanded_at_call/src/main.bp)
 [refused/src/cases/syntax_fn_expression_param_given_template_text/mod.bp](refused/src/cases/syntax_fn_expression_param_given_template_text/mod.bp)
-[refused/src/cases/syntax_fn_run_time_return/mod.bp](refused/src/cases/syntax_fn_run_time_return/mod.bp)
 [refused/src/cases/syntax_fn_string_param_needs_template_text/mod.bp](refused/src/cases/syntax_fn_string_param_needs_template_text/mod.bp)
 [cells/syntax_fn_text_of_expression/src/main.bp](cells/syntax_fn_text_of_expression/src/main.bp)
 [cells/syntax_fn_called_through_module/src/main.bp](cells/syntax_fn_called_through_module/src/main.bp)
+[cells/syntax_fn_run_time_return/src/main.bp](cells/syntax_fn_run_time_return/src/main.bp)
