@@ -2131,8 +2131,7 @@ matches each label to its field, and `rewriteRecordUpdate` records the complete 
 the labelled value, or `base.<field>` inferred under a loc of its own: the base's line, its column
 with the field index + 1 in the upper half of `usize`, bit `@bitSizeOf(usize) / 2` — 32 natively, 16
 on wasm32, where a shift by 32 does not compile — in `enumSectionRewrites`,
-whose call rewrite in `transform.zig` then moves the arguments too; the base must be a name or a
-path of names, anything else would run once per copied field), so
+whose call rewrite in `transform.zig` then moves the arguments too; decision 864 (2) deleted the name-only refusal: any source is evaluated once, by `inferRecordSpread`'s binding), so
 `refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
 and spells that form out, naming the receiver when it is a plain name it can spread.
 

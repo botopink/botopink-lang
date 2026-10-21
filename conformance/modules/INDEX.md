@@ -1254,6 +1254,11 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/record_param_spread_other_type | modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_spread_other_type | 529 | 359 | b |
 | modules/record_param_twice | modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_twice | 529 |  | b |
 | modules/record_param_unknown_label | modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_unknown_label | 529 |  | b |
+| modules/record_param_default_refused | modules/decisions-taken/record_param_every_callable-864/refused/src/cases/record_param_default_refused | 864 |  | b |
+| modules/record_param_generic | modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_generic | 864 |  | b |
+| modules/record_param_on_associated | modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_on_associated | 864 |  | b |
+| modules/record_param_on_method | modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_on_method | 864 |  | b |
+| modules/record_param_variadic_refused | modules/decisions-taken/record_param_every_callable-864/refused/src/cases/record_param_variadic_refused | 864 |  | b |
 | modules/record_param_variadic | modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_variadic | 529 |  | b |
 | modules/record_spread | modules/decisions-taken/record_spread_copies_fields-359/run/src/cases/record_spread | 359 |  | b |
 | modules/record_spread_across_modules | modules/decisions-taken/record_spread_copies_fields-359/run/src/cases/record_spread_across_modules | 359 |  | b |

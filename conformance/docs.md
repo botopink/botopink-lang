@@ -2280,7 +2280,7 @@ a method or of a plain function, with parameters (`f(3) { n -> n * 3 }`) or with
 
 `defer <expr>;` runs `<expr>` when the block it is written in ends (decision 539) — block scope, as in
 Zig and Swift. Several run in reverse order, and each runs on every exit of the block: the end,
-`return`, `break`, `continue`, a propagating `try`, a `throw`, a panic `attempt` catches:
+`return`, `break`, `continue`, a panic `attempt` catches:
 
 <!-- example: modules/defer/run/src/cases/defer_block_end_reverse_order -->
 
@@ -3122,6 +3122,19 @@ the record's type or one derived from it (`record-spread-type`, at the `..`).
 <!-- example: modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_default -->
 <!-- example: modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_unknown_label -->
 <!-- example: modules/decisions-taken/component_props_plain_or_rest-529/refused/src/cases/record_param_spread_other_type -->
+
+A method and an associated function take a record parameter as a function does — labels naming `R`'s
+fields and a spread packed into one `R(…)` at the call (decision 864 (5)): `shelf.add(title: "a")`,
+`Maker.label("p", ..base)`. A generic `R` (`..p: Props<T>`) is legal, its fields typed by the call
+(decision 864 (6)). The refusals hold on every callable: a record parameter beside a variadic
+(`record-param-variadic`, at the variadic), on every callable, and a record parameter with a default
+(`record-param-default`, at the `=`), on every callable (decision 864 (4)).
+
+<!-- example: modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_on_method -->
+<!-- example: modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_on_associated -->
+<!-- example: modules/decisions-taken/record_param_every_callable-864/run/src/cases/record_param_generic -->
+<!-- example: modules/decisions-taken/record_param_every_callable-864/refused/src/cases/record_param_variadic_refused -->
+<!-- example: modules/decisions-taken/record_param_every_callable-864/refused/src/cases/record_param_default_refused -->
 
 ### Effects
 

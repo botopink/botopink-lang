@@ -1,0 +1,15 @@
+//// Decision 864 (6) — a generic `R` (`..p: Props<T>`) is legal, its fields
+//// typed by the call.
+
+import {io.terminal.print} from "std";
+
+type Props<T>(value: T, label: string = "v")
+
+fn show<T>(..p: Props<T>) -> string {
+    return "${p.label}=${p.value}";
+}
+
+pub fn runCase() -> void {
+    print(show(value: 3));
+    print(show(value: 4, label: "s"));
+}

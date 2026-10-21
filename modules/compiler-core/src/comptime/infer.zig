@@ -9691,6 +9691,8 @@ fn inferTypeMethods(
     for (methods) |m| {
         const body = m.body orelse continue;
         if (m.is_declare) continue;
+        // Decision 864 (4) — a method's record parameter is held to the same rules.
+        try checkRecordParamList(env, m.name, m.params);
 
         // 01 step 13 — a method's parameters and locals end with its body.
         var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
@@ -18595,9 +18597,9 @@ const DeferFrame = struct {
     floor: usize,
     loopDepth: u32,
     breakScope: @TypeOf(@as(Env, undefined).breakScope),
+    tryRegion: @TypeOf(@as(Env, undefined).tryRegion),
 };
 
-    tryRegion: @TypeOf(@as(Env, undefined).tryRegion),
 /// Decision 539 — the statement `defer <expr>;` is inferred as a path of its
 /// own: no loop and no label outside it is a target, and `return`, `yield`
 /// and `await` are refused (`refuseInDefer`). Its value is discarded.
@@ -18610,12 +18612,12 @@ fn enterDefer(env: *Env) DeferFrame {
         .floor = env.deferLabelFloor,
         .loopDepth = env.loopDepth,
         .breakScope = env.breakScope,
-    };
-    env.deferActive = true;
         .tryRegion = env.tryRegion,
-    env.deferLambdaDepth = env.lambdaDepth;
+    };
     // Decision 866 — a `try` region outside the body is not the body's.
     env.tryRegion = null;
+    env.deferActive = true;
+    env.deferLambdaDepth = env.lambdaDepth;
     env.deferAsyncDepth = env.asyncBlockDepth;
     env.deferGeneratorDepth = env.generatorLoopDepth;
     env.deferLabelFloor = env.labelStack.items.len;
@@ -18632,9 +18634,9 @@ fn leaveDefer(env: *Env, f: DeferFrame) void {
     env.deferLabelFloor = f.floor;
     env.loopDepth = f.loopDepth;
     env.breakScope = f.breakScope;
+    env.tryRegion = f.tryRegion;
 }
 
-    env.tryRegion = f.tryRegion;
 /// Whether the position being inferred is the body of a `defer` itself, and
 /// not a function, async block or generator loop nested in it.
 fn inDeferBody(env: *const Env) bool {
@@ -18662,10 +18664,10 @@ fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
         },
         .yield => .{ diagnostics.defer_yield, "`yield`" },
         .await_ => .{ diagnostics.defer_await, "`await`" },
-        .@"break" => |b| blk: {
-            if (b.label) |lbl| {
         .throw_ => .{ diagnostics.defer_throw, "`throw`" },
         .try_ => if (env.tryRegion == null) .{ diagnostics.defer_try, "`try`" } else return,
+        .@"break" => |b| blk: {
+            if (b.label) |lbl| {
                 var i = env.labelStack.items.len;
                 while (i > 0) : (i -= 1) {
                     if (std.mem.eql(u8, env.labelStack.items[i - 1], lbl)) break;
@@ -20209,9 +20211,9 @@ pub fn isClosedDefault(e: ast.Expr) bool {
 /// declaration order, the labelled value where the call names the field and
 /// `base.<field>` where it does not. No backend lowers a `..` argument, and each
 /// used to drop it and zip what was left (`Cfg(..b, r: 60)` built
-/// `Cfg(b, 60)`). `base` is read once per field it supplies, so it must be a
-/// name or a path of names; any other expression would be evaluated again for
-/// every field, and is refused — bind it with `val` first.
+/// `Cfg(b, 60)`). Residue: no source reaches it since decision 529 (3), and
+/// decision 864 (2) deleted its name-only refusal (`inferRecordSpread` evaluates
+/// any source once).
 fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) InferError!void {
     const call = c.kind.call;
     var base: ?*ast.Expr = null;
@@ -20219,13 +20221,6 @@ fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) Inf
         base = a.value;
     };
     const b = base orelse return;
-    if (!isNamePath(b.*)) {
-        env.lastError = TypeError.custom(
-            "the record a `..` update copies from must be a name",
-            "Bind it first — `val base = …; Name(..base, field: value)` — so it is evaluated once.",
-        ).withLoc(b.getLoc());
-        return error.TypeError;
-    }
     const args = try env.arena.alloc(ast.CallArg, fields.len);
     for (fields, 0..) |fd, fi| {
         const written: ?*ast.Expr = for (call.args) |a| {
@@ -24131,23 +24126,30 @@ fn inferTupleIndexExpr(
     return inferExprTyped(env, rewrite.*);
 }
 
-/// Infer type for call expressions (function/method invocations and pipelines)
-/// Decision 267 — the parameters a call's arguments bind (a method's `self`
-/// left out) when the last one is variadic; null for every other callee. A
-/// plain call reads the declaration by name (`calleeParams`), a method or an
-/// associated function the receiver's type's (`Env.getInherentMethodParams`).
-fn variadicCalleeParams(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?[]const ast.Param {
-    const params: []const ast.Param = if (typedReceiver) |tr| blk: {
-        // `Bag.of(…)`: a receiver naming a type calls its associated fn (the
-        // name's own binding is the constructor, typed as a function).
+/// The parameters of the callee a call names: a plain function's (or a
+/// constructor's), or — with the receiver typed — a method's, `self` left
+/// out, and an associated function's (`Bag.of(…)`: a receiver naming a type
+/// calls its associated fn; the name's own binding is the constructor, typed
+/// as a function).
+fn calleeParamsOf(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?[]const ast.Param {
+    if (typedReceiver) |tr| {
         const typeNamed: ?[]const u8 = if (call.receiver) |r|
             (if (r.* == .identifier and r.identifier.kind == .ident and env.lookupTypeDef(r.identifier.kind.ident) != null) r.identifier.kind.ident else null)
         else
             null;
         const owner = nominalName(tr.getType()) orelse typeNamed orelse return null;
         const ps = env.getInherentMethodParams(owner, call.callee) orelse return null;
-        break :blk if (ps.len > 0 and std.mem.eql(u8, ps[0].name, "self")) ps[1..] else ps;
-    } else calleeParams(env, call.callee) orelse return null;
+        return if (ps.len > 0 and std.mem.eql(u8, ps[0].name, "self")) ps[1..] else ps;
+    }
+    return calleeParams(env, call.callee);
+}
+
+/// Decision 267 — the parameters a call's arguments bind (a method's `self`
+/// left out) when the last one is variadic; null for every other callee. A
+/// plain call reads the declaration by name (`calleeParams`), a method or an
+/// associated function the receiver's type's (`Env.getInherentMethodParams`).
+fn variadicCalleeParams(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?[]const ast.Param {
+    const params = calleeParamsOf(env, call, typedReceiver) orelse return null;
     if (params.len == 0 or !params[params.len - 1].variadic) return null;
     return params;
 }
@@ -24229,33 +24231,37 @@ fn recordParamFields(env: *Env, p: ast.Param) ?[]const envMod.FieldDef {
 /// function, `R` a record, no name that is both a parameter and a field of
 /// `R`, and no variadic beside it. Each is refused at the declaration.
 fn checkRecordParams(env: *Env, f: ast.FnDecl) InferError!void {
+    return checkRecordParamList(env, f.name, f.params);
+}
+
+fn checkRecordParamList(env: *Env, name: []const u8, params: []const ast.Param) InferError!void {
     var first: ?usize = null;
-    for (f.params, 0..) |p, i| {
+    for (params, 0..) |p, i| {
         if (!p.recordParam) continue;
         if (first) |fi| {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` already takes `..{s}` as its record parameter — a function has at most one", .{ diagnostics.record_param_twice, f.name, f.params[fi].name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` already takes `..{s}` as its record parameter — a function has at most one", .{ diagnostics.record_param_twice, name, params[fi].name });
             env.lastError = TypeError.custom(msg, "Declare the second one as an ordinary parameter `name: R`, or merge the two records (`Type.merge`, decision 307).").withLoc(p.loc);
             return error.TypeError;
         }
         first = i;
     }
     const k = first orelse return;
-    const rp = f.params[k];
+    const rp = params[k];
     const fields = recordParamFields(env, rp) orelse {
         const shown = recordParamTypeName(rp) orelse "this type";
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `..{s}: {s}` — `{s}` is no record type, and only a record's fields can be a function's parameters from outside", .{ diagnostics.record_param_not_record, rp.name, shown, shown });
         env.lastError = TypeError.custom(msg, "Write a record type (or one derived by `Type.pick` / `Type.omit` / `Type.merge`, decision 307); a rest of positional values is `..values: T[]` (decision 267).").withLoc(rp.typeLoc);
         return error.TypeError;
     };
-    for (f.params, 0..) |p, i| {
+    for (params, 0..) |p, i| {
         if (i == k) continue;
         if (p.variadic) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes both `..{s}: R` and the variadic `..{s}` — a record parameter and a variadic do not share a function", .{ diagnostics.record_param_variadic, f.name, rp.name, p.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes both `..{s}: R` and the variadic `..{s}` — a record parameter and a variadic do not share a function", .{ diagnostics.record_param_variadic, name, rp.name, p.name });
             env.lastError = TypeError.custom(msg, "Pass the values in an array parameter `name: T[]`, or move them into a field of the record.").withLoc(p.loc);
             return error.TypeError;
         }
         for (fields) |fd| if (std.mem.eql(u8, fd.name, p.name)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is both a parameter of `{s}` and a field of `{s}`, the type of `..{s}`", .{ diagnostics.record_param_clash, p.name, f.name, recordParamTypeName(rp).?, rp.name });
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is both a parameter of `{s}` and a field of `{s}`, the type of `..{s}`", .{ diagnostics.record_param_clash, p.name, name, recordParamTypeName(rp).?, rp.name });
             env.lastError = TypeError.custom(msg, "A call passes both by label, so one name cannot stand for two: rename the parameter or the field.").withLoc(p.loc);
             return error.TypeError;
         };
@@ -24267,6 +24273,15 @@ fn checkRecordParams(env: *Env, f: ast.FnDecl) InferError!void {
 fn recordParamCalleeParams(env: *Env, call: anytype) ?[]const ast.Param {
     if (call.recordPacked or call.is_builtin or call.receiver != null or call.calleeExpr != null) return null;
     const ps = calleeParams(env, call.callee) orelse return null;
+    for (ps) |p| if (p.recordParam) return ps;
+    return null;
+}
+
+/// Decision 864 (5) — the same for a method (`x.m(title: "a")`) and an
+/// associated function (`T.make(..p)`), once the receiver is typed.
+fn recordParamMethodParams(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?[]const ast.Param {
+    if (typedReceiver == null or call.recordPacked or call.is_builtin or call.calleeExpr != null) return null;
+    const ps = calleeParamsOf(env, call, typedReceiver) orelse return null;
     for (ps) |p| if (p.recordParam) return ps;
     return null;
 }
@@ -24585,7 +24600,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decision 359 — a record spread (`Pessoa(..old, nome: n)`):
             // the complete constructor call it means, or `call-spread` at a
             // call that constructs no record.
-            for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label)) {
+            // A call with a receiver waits for the receiver's type: a method or an
+            // associated function with a record parameter packs the spread
+            // (decision 864 (5)); any other refuses it below.
+            for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label) and call.receiver == null) {
                 // A variadic callee refuses the spread by its own rule (267).
                 if (call.receiver == null and !call.variadicPacked and !call.is_builtin and call.calleeExpr == null) {
                     if (variadicCalleeParams(env, call, null)) |vps| _ = try packVariadicCall(env, c, vps, loc); // always refuses: the spread
@@ -24804,6 +24822,16 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // the arguments past its fixed ones as one array: the call is
             // typed with them packed into an array literal, and the program's
             // call is replaced by that packed call for the backends.
+            if (recordParamMethodParams(env, call, typedReceiver)) |rps| {
+                const packedCall = try packRecordParamCall(env, c, rps, loc);
+                return inferCallExprWith(env, packedCall, loc, typedReceiver);
+            }
+            if (call.receiver != null) for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, ast.record_spread_label)) {
+                if (!call.variadicPacked and !call.is_builtin and call.calleeExpr == null) {
+                    if (variadicCalleeParams(env, call, typedReceiver)) |vps| _ = try packVariadicCall(env, c, vps, loc); // always refuses: the spread
+                }
+                return inferRecordSpread(env, c, loc);
+            };
             if (!call.variadicPacked and !call.is_builtin and call.calleeExpr == null) {
                 if (variadicCalleeParams(env, call, typedReceiver)) |vps| {
                     const packedCall = try packVariadicCall(env, c, vps, loc);
