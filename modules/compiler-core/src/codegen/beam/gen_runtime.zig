@@ -189,6 +189,9 @@ pub const Helper = enum {
     every,
     /// `(It, F)` → the first `x` with `F(x)`, else `undefined`.
     find,
+    /// `(It, F)` → a generator of the items of each generator `F(x)` answers,
+    /// one inner step per outer `next`.
+    flat_map,
     /// `(V, T)` → whether `V` is of the run-time type token `T` (decision
     /// 758): not a generator helper, but the one other run-time helper the
     /// two targets share as one text. A token is `{'__bp_type', Id, Spec}`,
@@ -222,6 +225,7 @@ pub const Helper = enum {
             .some => "__bp_iter_some",
             .every => "__bp_iter_every",
             .find => "__bp_iter_find",
+            .flat_map => "__bp_iter_flat_map",
             .is_type => "__bp_is_type",
             .implements => "__bp_implements",
         };
@@ -230,7 +234,7 @@ pub const Helper = enum {
     pub fn arity(h: Helper) usize {
         return switch (h) {
             .gen_new, .gen_yield, .step, .close, .to_array => 1,
-            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find, .is_type, .implements => 2,
+            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find, .flat_map, .is_type, .implements => 2,
             .foldl, .reduce => 3,
         };
     }
@@ -285,6 +289,9 @@ pub const Helper = enum {
             .every => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++
                 consuming("fun WF() -> case Call(P, next) of [V] -> case __BpA1(V) of true -> WF(); _ -> Call(P, close), false end; [] -> true end end") ++
                 ";\nL -> lists:all(__BpA1, L)\nend",
+            .flat_map => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++
+                derived("fun() -> WI = fun(WX) -> case WX of {'__bp_gen', IP} -> try (fun WD() -> case Call(IP, next) of [IV] -> Yield(IV), WD(); [] -> ok end end)() catch IC:IR:IS -> Call(IP, close), erlang:raise(IC, IR, IS) end; WL -> lists:foreach(fun(WE) -> Yield(WE) end, WL) end end, WO = fun WF() -> case Call(P, next) of [V] -> WI(__BpA1(V)), WF(); [] -> ok end end, WO() end") ++
+                ";\nL -> lists:flatmap(__BpA1, L)\nend",
             .is_type => "case __BpA1 of\n" ++
                 "{'__bp_type', _, any} -> true;\n" ++
                 "{'__bp_type', _, string} -> erlang:is_binary(__BpA0);\n" ++
@@ -308,9 +315,10 @@ pub const Helper = enum {
     /// argument count, receiver first in the helper's parameters.
     pub fn ofMethod(method: []const u8, argc: usize) ?Helper {
         const table = [_]struct { []const u8, usize, Helper }{
-            .{ "take", 1, .take },     .{ "drop", 1, .drop },        .{ "map", 1, .map },
-            .{ "filter", 1, .filter }, .{ "toArray", 0, .to_array }, .{ "reduce", 2, .reduce },
-            .{ "some", 1, .some },     .{ "every", 1, .every },      .{ "find", 1, .find },
+            .{ "take", 1, .take },        .{ "drop", 1, .drop },        .{ "map", 1, .map },
+            .{ "filter", 1, .filter },    .{ "toArray", 0, .to_array }, .{ "reduce", 2, .reduce },
+            .{ "some", 1, .some },        .{ "every", 1, .every },      .{ "find", 1, .find },
+            .{ "flatMap", 1, .flat_map },
         };
         for (table) |row| if (argc == row[1] and std.mem.eql(u8, method, row[0])) return row[2];
         return null;

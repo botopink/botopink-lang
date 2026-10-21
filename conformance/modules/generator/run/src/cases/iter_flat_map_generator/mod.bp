@@ -1,0 +1,37 @@
+//// Decisions 105, 596 — `flatMap` over a generator is lazy: each `next` of the
+//// derived handle runs one step of the inner generator the function answered
+//// for the source's current item, and asks the source for another item only
+//// when the inner one is exhausted. An endless source is consumed by `take(3)`.
+
+import {io.terminal.print} from "std";
+
+iter fn naturals() -> Iter<i32> {
+    var n = 0;
+    while (true) {
+        yield n;
+        n = n + 1;
+    }
+}
+
+iter fn counted() -> Iter<i32> {
+    defer print("closed");
+    print("before");
+    yield 1;
+    print("after");
+    yield 2;
+    print("last");
+    yield 3;
+}
+
+iter fn twice(n: i32) -> Iter<i32> {
+    print("twice " + n);
+    yield n;
+    yield n * 10;
+}
+
+pub fn runCase() -> void {
+    for (naturals().flatMap({ n -> twice(n) }).take(3)) { x ->
+        print(x);
+    }
+    print(counted().flatMap({ n -> twice(n) }).take(3).toArray());
+}

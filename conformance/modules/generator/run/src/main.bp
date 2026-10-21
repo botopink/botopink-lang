@@ -12,4 +12,5 @@ pub fn main() -> void {
     cases.generator_to_array_printed.runCase();
     cases.generator_take_closes_source.runCase();
     cases.generator_walk_lazy.runCase();
+    cases.iter_flat_map_generator.runCase();
 }

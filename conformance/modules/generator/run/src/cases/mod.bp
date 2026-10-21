@@ -9,3 +9,4 @@ pub mod generator_item_untyped_lazy;
 pub mod generator_take_closes_source;
 pub mod generator_to_array_printed;
 pub mod generator_walk_lazy;
+pub mod iter_flat_map_generator;

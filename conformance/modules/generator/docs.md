@@ -10,3 +10,4 @@
 [refused/src/cases/generator_loop_break_outer/mod.bp](refused/src/cases/generator_loop_break_outer/mod.bp)
 [run/src/cases/generator_to_array_printed/mod.bp](run/src/cases/generator_to_array_printed/mod.bp)
 [run/src/cases/generator_walk_lazy/mod.bp](run/src/cases/generator_walk_lazy/mod.bp)
+[run/src/cases/iter_flat_map_generator/mod.bp](run/src/cases/iter_flat_map_generator/mod.bp)
