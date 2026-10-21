@@ -1994,13 +1994,13 @@ Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `m
 (the end of the block, reverse order), `modules/defer/run/src/cases/defer_scope_is_block` (a bare block runs its own), `modules/defer/run/src/cases/defer_reads_latest_value`
 (the expression is evaluated when it runs), `modules/value/cells/value_if_reassigns_var` (a `var` a value `if` reassigns in a branch, `else if` included, holds it after the `if`), `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s or `if`'s included, reaches the defer when the arm panics), `modules/defer/run/src/cases/defer_return_value_before_defers` (`return n` is computed before a defer
 that changes `n`), `modules/defer/run/src/cases/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
-`modules/defer/run/src/cases/defer_try_and_throw_propagate` (a propagating `try` and a `throw` out of a `@Result` fn),
+`modules/defer/run/src/cases/defer_try_catch_inside` (a `try … catch` region written in the body is handled there, decision 866),
 `modules/defer/run/src/cases/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),
 `modules/defer/cells/defer_async_after_awaits` (a `@Async` body: after its awaits) and `modules/defer/cells/defer_stream_consumer_stops` (a `@AsyncIter`: the
 consumer's `break` and the end of the stream both end in the same two lines, so a lazy producer and an eager one answer alike);
 the refusals, each located at the jump, are `modules/defer/refused/src/cases/defer_refuses_return` (`defer-return`), `defer_refuses_break`
 (`defer-break`), `defer_refuses_continue` (`defer-continue`), `defer_refuses_yield` (`defer-yield`) and `defer_refuses_await`
-(`defer-await`). `throw` and `try` in a defer body are not refused (539 (5) names neither).
+(`defer-await`), `defer_refuses_throw` (`defer-throw`) and `defer_refuses_try` (`defer-try`, a `try` whose region is not written in the body; decision 866).
 Decision 539 (6) (`Closeable` ambient, 144 B-96) adds `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/ambient_behavior_parameter` (`Closeable` and `Display`
 as a parameter's type and an array's element type with no import, each call answered by the implementer, on all four
 targets — refused `unknown type` on the parent), `modules/decisions-taken/defer_runs_at_block_end-539/cells/ambient_behavior_implement_missing_method` (an inline

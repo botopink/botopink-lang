@@ -565,11 +565,13 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/defer_refuses_break | modules/defer/refused/src/cases/defer_refuses_break |  |  | c |
 | modules/defer_refuses_continue | modules/defer/refused/src/cases/defer_refuses_continue |  |  | c |
 | modules/defer_refuses_return | modules/defer/refused/src/cases/defer_refuses_return |  |  | c |
+| modules/defer_refuses_throw | modules/defer/refused/src/cases/defer_refuses_throw |  |  | c |
+| modules/defer_refuses_try | modules/defer/refused/src/cases/defer_refuses_try |  |  | c |
 | modules/defer_refuses_yield | modules/defer/refused/src/cases/defer_refuses_yield |  |  | c |
 | modules/defer_return_value_before_defers | modules/defer/run/src/cases/defer_return_value_before_defers |  |  | c |
 | modules/defer_scope_is_block | modules/defer/run/src/cases/defer_scope_is_block |  |  | c |
 | modules/defer_stream_consumer_stops | modules/defer/cells/defer_stream_consumer_stops |  |  | c |
-| modules/defer_try_and_throw_propagate | modules/defer/run/src/cases/defer_try_and_throw_propagate |  |  | c |
+| modules/defer_try_catch_inside | modules/defer/run/src/cases/defer_try_catch_inside |  |  | c |
 | modules/dependency_files_order | modules/dependency/cells/dependency_files_order |  |  | c |
 | modules/dependency_imports_itself_with_from | modules/decisions-taken/package_imports_itself_by_path-309/cells/dependency_imports_itself_with_from | 309 |  | b |
 | modules/dependency_imports_undeclared_package | modules/decisions-taken/only_direct_dependency_importable-242/cells/dependency_imports_undeclared_package | 242 |  | b |

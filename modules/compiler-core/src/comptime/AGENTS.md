@@ -3163,9 +3163,10 @@ at (`deferLambdaDepth`, `deferAsyncDepth`, `deferGeneratorDepth`, `deferLabelFlo
 so a nested function, `async` block or generator loop — other paths — is not "the body" (`inDeferBody`).
 `refuseInDefer`, the first thing `inferJumpExpr` does in the body, refuses what would leave the path the deferred code
 runs on, located at the jump: `defer-return`, `defer-break` / `defer-continue` (only when the jump leaves the body: a loop
-wholly inside it may break, a label naming a loop outside it is refused), `defer-yield` and `defer-await`. `throw` and a
-propagating `try` are not refused (decision 539 (5) names neither), and the deferred value is discarded, never checked:
+wholly inside it may break, a label naming a loop outside it is refused), `defer-yield`, `defer-await`, `defer-throw` (a `catch throw`
+included) and `defer-try` (a `try` with no `try … catch` region written in the body: `enterDefer` clears `Env.tryRegion`
+and `leaveDefer` restores it, decision 866 on 595's region rule), and the deferred value is discarded, never checked:
 no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed statement. Cells
-`defer_refuses_return` / `_break` / `_continue` / `_yield` / `_await`.
+`defer_refuses_return` / `_break` / `_continue` / `_yield` / `_await` / `_throw` / `_try`, and `defer_try_catch_inside` (run).
 
 - `registerTypeDecl` (`infer.zig`) notes an imported type in `ownTypeDecls`, so a recursive imported `type Node` is not read as std's `compiler.Node` value; `locateInImported` (`comptime.zig`) locates a registration refusal in the declaring file.

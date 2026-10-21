@@ -2288,8 +2288,6 @@ Zig and Swift. Several run in reverse order, and each runs on every exit of the 
 
 <!-- example: modules/defer/run/src/cases/defer_in_loop_break_continue -->
 
-<!-- example: modules/defer/run/src/cases/defer_try_and_throw_propagate -->
-
 <!-- example: modules/defer/run/src/cases/defer_panic_attempt_catches -->
 
 The deferred expression is evaluated when it runs, not when `defer` is written (`var f = open("a");
@@ -2329,8 +2327,10 @@ the stream ends or its consumer stops (a `break` in `for await`):
 
 <!-- example: modules/defer/cells/defer_stream_consumer_stops -->
 
-Its body cannot leave the path it runs on: `return`, a `break` or `continue` that leaves it, `yield`
-and `await` in it are refused, located (a loop wholly inside the body may `break`). The value of the
+Its body cannot leave the path it runs on: `return`, a `break` or `continue` that leaves it, `yield`,
+`await` and `throw` in it (a `catch throw` included), and a `try` whose region is not written inside the body,
+are refused, located (a loop wholly inside the body may `break`; `defer { try f() catch { e -> … } }` handles the
+failure there, decision 866). The value of the
 deferred expression is discarded, and the compiler checks nothing about what is deferred: a value
 that is never closed compiles (decision 539 (6)).
 
@@ -2343,6 +2343,12 @@ that is never closed compiles (decision 539 (6)).
 <!-- example: modules/defer/refused/src/cases/defer_refuses_yield -->
 
 <!-- example: modules/defer/refused/src/cases/defer_refuses_await -->
+
+<!-- example: modules/defer/refused/src/cases/defer_refuses_throw -->
+
+<!-- example: modules/defer/refused/src/cases/defer_refuses_try -->
+
+<!-- example: modules/defer/run/src/cases/defer_try_catch_inside -->
 
 `botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
 `;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` and a `case` arm's last

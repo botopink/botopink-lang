@@ -14,7 +14,6 @@ out 1
 out in
 out inner
 out out
-out cleanup
-out boom
-out cleanup2
-out bad
+out body
+out handled boom
+out after

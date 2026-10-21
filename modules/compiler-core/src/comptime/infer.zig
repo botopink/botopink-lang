@@ -18597,6 +18597,7 @@ const DeferFrame = struct {
     breakScope: @TypeOf(@as(Env, undefined).breakScope),
 };
 
+    tryRegion: @TypeOf(@as(Env, undefined).tryRegion),
 /// Decision 539 — the statement `defer <expr>;` is inferred as a path of its
 /// own: no loop and no label outside it is a target, and `return`, `yield`
 /// and `await` are refused (`refuseInDefer`). Its value is discarded.
@@ -18611,7 +18612,10 @@ fn enterDefer(env: *Env) DeferFrame {
         .breakScope = env.breakScope,
     };
     env.deferActive = true;
+        .tryRegion = env.tryRegion,
     env.deferLambdaDepth = env.lambdaDepth;
+    // Decision 866 — a `try` region outside the body is not the body's.
+    env.tryRegion = null;
     env.deferAsyncDepth = env.asyncBlockDepth;
     env.deferGeneratorDepth = env.generatorLoopDepth;
     env.deferLabelFloor = env.labelStack.items.len;
@@ -18630,6 +18634,7 @@ fn leaveDefer(env: *Env, f: DeferFrame) void {
     env.breakScope = f.breakScope;
 }
 
+    env.tryRegion = f.tryRegion;
 /// Whether the position being inferred is the body of a `defer` itself, and
 /// not a function, async block or generator loop nested in it.
 fn inDeferBody(env: *const Env) bool {
@@ -18639,7 +18644,8 @@ fn inDeferBody(env: *const Env) bool {
 }
 
 /// Decision 539 (5) — the jumps a `defer` body cannot make: they would leave
-/// the path the deferred code runs on. `throw` and `try` are not named.
+/// the path the deferred code runs on. `throw` and, outside a `try … catch` region written in the body, `try` are
+/// refused too (decision 866, 595 (1)).
 fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
     const Hint = "A `defer` runs when its block ends, whichever way it ends; its body cannot choose another way out. Do that before the `defer` or after the block.";
     const code: []const u8, const what: []const u8 = switch (kind) {
@@ -18658,6 +18664,8 @@ fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
         .await_ => .{ diagnostics.defer_await, "`await`" },
         .@"break" => |b| blk: {
             if (b.label) |lbl| {
+        .throw_ => .{ diagnostics.defer_throw, "`throw`" },
+        .try_ => if (env.tryRegion == null) .{ diagnostics.defer_try, "`try`" } else return,
                 var i = env.labelStack.items.len;
                 while (i > 0) : (i -= 1) {
                     if (std.mem.eql(u8, env.labelStack.items[i - 1], lbl)) break;
@@ -18669,7 +18677,6 @@ fn refuseInDefer(env: *Env, kind: anytype, loc: ast.Loc) InferError!void {
             }
             break :blk .{ diagnostics.defer_break, "`break`" };
         },
-        else => return,
     };
     env.lastError = TypeError.custom(
         try std.fmt.allocPrint(env.arena, "{s}: {s} inside a `defer` leaves the path the deferred code runs on", .{ code, what }),

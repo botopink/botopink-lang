@@ -1,0 +1,16 @@
+import {io.terminal.print} from "std";
+
+fn fails() -> Result<i32, string> {
+    throw "boom";
+}
+
+pub fn f() -> Result<i32, string> {
+    defer {
+        try fails();
+    }
+    return 2;
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}

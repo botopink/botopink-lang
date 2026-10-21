@@ -7,5 +7,5 @@ pub fn main() -> void {
     cases.defer_reads_latest_value.runCase();
     cases.defer_return_value_before_defers.runCase();
     cases.defer_scope_is_block.runCase();
-    cases.defer_try_and_throw_propagate.runCase();
+    cases.defer_try_catch_inside.runCase();
 }

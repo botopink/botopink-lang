@@ -123,6 +123,10 @@ pub const defer_continue: []const u8 = "defer-continue";
 pub const defer_yield: []const u8 = "defer-yield";
 /// … `await`.
 pub const defer_await: []const u8 = "defer-await";
+/// … `throw` (a `catch throw` included, decision 866).
+pub const defer_throw: []const u8 = "defer-throw";
+/// … a `try` whose region is not written inside the body (decision 866).
+pub const defer_try: []const u8 = "defer-try";
 /// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
 pub const for_over_condition: []const u8 = "for-over-condition";
 /// `for` (not `for await`) over a `@AsyncIter`.
@@ -1001,6 +1005,8 @@ pub const all_codes = [_][]const u8{
     defer_continue,
     defer_yield,
     defer_await,
+    defer_throw,
+    defer_try,
     for_over_condition,
     for_over_stream,
     for_await_expects_stream,
