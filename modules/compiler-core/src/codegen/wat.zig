@@ -22063,6 +22063,25 @@ const Emitter = struct {
         return if (ix < cc.args.len) cc.args[ix].value.* else null;
     }
 
+    /// The lambda a call to a generic function answers the result of: the
+    /// function returns a bare type parameter `R` and a parameter `f: fn(…) -> R`
+    /// is given a lambda.
+    fn genericResultLambda(self: *Emitter, cc: anytype) ?*ast.Expr {
+        if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
+        const gf = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
+        const rt = gf.decl.returnType orelse return null;
+        if (rt != .named) return null;
+        for (gf.decl.genericParams) |gp| if (std.mem.eql(u8, gp.name, rt.named)) {
+            for (gf.decl.params, 0..) |p, i| {
+                if (p.typeRef != .function) continue;
+                const fr = p.typeRef.function.returnType.*;
+                if (fr != .named or !std.mem.eql(u8, fr.named, rt.named)) continue;
+                if (i < cc.args.len) if (lambdaArg(cc.args[i].value)) |lam| return lam;
+            }
+        };
+        return null;
+    }
+
     /// The receiver of `cc` is a namespace item, not a value: a plain name
     /// no local, global, type or extension block binds, and the callee is a
     /// function of the program (`fn_sigs`).
@@ -24786,6 +24805,8 @@ const Emitter = struct {
                     if (isUnwrapOr(cc)) break :blk self.isStringExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk false;
                     if (self.genericResultArg(cc)) |a| break :blk self.isStringExpr(a);
+                    // `apply(x, { h -> … })` over `-> R` with `f: fn(T) -> R`: the lambda's body.
+                    if (self.genericResultLambda(cc)) |lam| if (self.bodyIsString(lam.function.kind.body)) break :blk true;
                     if (cc.calleeExpr) |ce| if (inlineFnExpr(ce.*)) |inl| break :blk self.inlineCallIsString(inl.kind, cc);
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
