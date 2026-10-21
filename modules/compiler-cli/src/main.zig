@@ -68,6 +68,12 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
+    \\  --json                       Stdout is JSON lines, one event each, stderr as without it: {"event":"targets","target":T,"targets":[…]},
+    \\                               {"event":"build","text":L} (one per line a build body printed, in order),
+    \\                               {"event":"refused","module":M,"message":E,"at":P|null,"label":S|null,"from":[…]},
+    \\                               {"event":"runtime","path":F,"root":B} (per .bpr written by --emit-runtime), and last
+    \\                               {"event":"summary","ok":B,"exit":N,"refused":N}
     \\  --emit-resolved <dir>        Write the resolved program (no comptime left) one file per module, <dir>/<package>/<module>.bp, for reading
     \\  --emit-runtime <dir>         Write each package's resolved tree to <dir>/<package>.bpr, to build any target from later
     \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
@@ -77,6 +83,7 @@ const HELP =
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
     \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\  --                           Pass remaining args to the program
     \\
@@ -404,6 +411,11 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
             opts.cold = true;
+        } else if (std.mem.eql(u8, flag.name, "--json")) {
+            try noValue(flag, diag);
+            opts.json = true;
+        } else if (std.mem.eql(u8, flag.name, "--cache-root")) {
+            opts.cache_root = try dirValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--emit-resolved")) {
             opts.emit_resolved = try dirValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--emit-runtime")) {
@@ -458,6 +470,8 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
             opts.cold = true;
+        } else if (std.mem.eql(u8, flag.name, "--cache-root")) {
+            opts.cache_root = try dirValue(args, &i, flag, diag);
         } else if (isRuntimeFile(a) and opts.runtime_input == null) {
             opts.runtime_input = a;
         } else return reject(a, diag);

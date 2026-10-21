@@ -111,6 +111,10 @@ compiler-cli/
 │   ├── runtime_file/        ← its fixture: `app` (a decorator and a template of
 │   │                          `lib`, a top-level `comptime` block, a folded value,
 │   │                          `std/math`) and `lib`
+│   ├── build_json.sh        ← `build --json` and `--cache-root` (decision 798 (6),
+│   │                          B-161): a clean build (`targets`, `build`, `summary`),
+│   │                          a refused one (`refused` with `from`), `--emit-runtime`
+│   │                          (`runtime`), the cache filed under the directory given
 │   ├── resolved_file.sh     ← `--emit-resolved`'s files (decision 834, B-163): `app`
 │   │                          (modules `main`, `util`) over `lib` writes
 │   │                          `app/main.bp`, `app/util.bp`, `lib/root.bp`,
@@ -192,6 +196,7 @@ bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing an
 bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
 bash modules/compiler-cli/tests/runtime_file.sh      # every target built from a package's .bpr as built directly (805)
 bash modules/compiler-cli/tests/resolved_file.sh     # --emit-resolved writes one file per module (834)
+bash modules/compiler-cli/tests/build_json.sh        # build --json events and --cache-root (798 (6))
 bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and from the intermediate, the same answer (798 (5))
 ```
 

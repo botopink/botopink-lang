@@ -17,8 +17,14 @@ const std = @import("std");
 /// thread; nothing sets it concurrently.
 pub var sink: ?*std.Io.Writer = null;
 
+/// `botopink build --json` (decision 798 (6)): every message printed is also
+/// appended here, so the build can read its refusals back as events while its
+/// stderr stays as it is.
+pub var capture: ?*std.Io.Writer = null;
+
 /// Print to `sink` when it is set, else to stderr (`std.debug.print`).
 pub fn print(comptime fmt: []const u8, args: anytype) void {
+    if (capture) |c| c.print(fmt, args) catch {};
     if (sink) |w| {
         w.print(fmt, args) catch {};
     } else std.debug.print(fmt, args);

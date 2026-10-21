@@ -11,6 +11,7 @@ const otp = @import("./otp.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
 const build_stamp = @import("build_stamp");
+const refusals = @import("./refusals.zig");
 const runtime_file = bp.runtime_file;
 
 const Module = bp.Module;
@@ -38,6 +39,13 @@ pub const Options = struct {
     /// `botopink build <file>.bpr`: the program read back from its root
     /// package's `.bpr` and emitted with no comptime (decision 805 (3)).
     runtime_input: ?[]const u8 = null,
+    /// `--json`: stdout is JSON lines — `targets`, `build`, `refused`,
+    /// `runtime`, `summary` (decision 798 (6), `modules/compiler-cli/AGENTS.md`);
+    /// stderr is as without it.
+    json: bool = false,
+    /// `--cache-root <dir>`: the root the code cache's levels A and B file
+    /// under, instead of the project's or its workspace's.
+    cache_root: ?[]const u8 = null,
 };
 
 /// The hooks a build runs over its analysed session
@@ -105,6 +113,9 @@ const RuntimeSink = struct {
     root: []const u8,
     deps: []const []const u8,
     wasm_host: bp.ast.WasmHost,
+    /// `--json`: the `.bpr` paths written, root's flagged, for the `runtime` events.
+    written: ?*std.ArrayListUnmanaged(Written) = null,
+    keep: std.mem.Allocator = undefined,
 
     fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8) anyerror!void {
         const self: *RuntimeSink = @ptrCast(@alignCast(ctx));
@@ -155,9 +166,47 @@ const RuntimeSink = struct {
             // or the new one, never a part.
             try analysis_store.write(arena, self.io, path, bytes);
             reporter.print("  wrote {s}\n", .{path});
+            if (self.written) |w| try w.append(self.keep, .{ .path = try self.keep.dupe(u8, path), .root = is_root });
         }
     }
 };
+
+const Written = struct { path: []const u8, root: bool };
+
+// ── --json (decision 798 (6)) ────────────────────────────────────────────────
+
+/// One JSON line on stdout. `fields` is a struct whose first field is the event.
+fn jsonLine(arena: std.mem.Allocator, io: std.Io, value: anytype) void {
+    var w: std.Io.Writer.Allocating = .init(arena);
+    std.json.Stringify.value(value, .{}, &w.writer) catch return;
+    w.writer.writeByte('\n') catch return;
+    reporter.stdout(io, w.written());
+}
+
+/// What a `--json` build keeps for its closing events.
+const Json = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    written: std.ArrayListUnmanaged(Written) = .empty,
+    modules: usize = 0,
+};
+
+var json_state: ?*Json = null;
+
+fn jsonTargets(j: *Json, proj: config.ProjectConfig, target: config.Target) void {
+    const all = [_][]const u8{ "commonJS", "erlang", "beam", "wasm" };
+    const declared: []const []const u8 = proj.manifest.targets orelse &all;
+    jsonLine(j.arena, j.io, .{ .event = "targets", .target = target.toString(), .targets = declared });
+}
+
+fn jsonBuildLines(j: *Json, text: []const u8) void {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        // The text ends with its last newline: no event for the empty tail.
+        if (lines.peek() == null and line.len == 0) break;
+        jsonLine(j.arena, j.io, .{ .event = "build", .text = line });
+    }
+}
 
 /// `<dir>/<group>.bpr` (`std/io` → `<dir>/std/io.bpr`).
 fn runtimePath(arena: std.mem.Allocator, dir: []const u8, group: []const u8) ![]const u8 {
@@ -167,6 +216,49 @@ fn runtimePath(arena: std.mem.Allocator, dir: []const u8, group: []const u8) ![]
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn run(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    opts: Options,
+    env_map: libs.EnvMap,
+) !u8 {
+    if (opts.cache_root) |r| code_cache.root_override = r;
+    if (!opts.json) return runBuild(gpa, io, opts, env_map);
+
+    // `--json`: the build runs as without it (stderr unchanged, tee'd into
+    // `captured`); its stdout is events. The `refused` events are the
+    // refusals read back from what it printed (`refusals.refusalsOf`).
+    var arena_instance = std.heap.ArenaAllocator.init(gpa);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
+    var captured: std.Io.Writer.Allocating = .init(arena);
+    var state: Json = .{ .arena = arena, .io = io };
+    json_state = &state;
+    reporter.capture = &captured.writer;
+    defer {
+        json_state = null;
+        reporter.capture = null;
+    }
+    const code = runBuild(gpa, io, opts, env_map) catch |err| {
+        reporter.capture = null;
+        jsonLine(arena, io, .{ .event = "summary", .ok = false, .exit = @as(u8, 1), .refused = @as(usize, 0), .@"error" = @errorName(err) });
+        return err;
+    };
+    reporter.capture = null;
+    const text = try refusals.stripAnsi(arena, captured.written());
+    const found = try refusals.refusalsOf(arena, text);
+    var count: usize = 0;
+    for (found.keys(), found.values()) |module, sn| {
+        for (sn.refusals) |r| {
+            count += 1;
+            jsonLine(arena, io, .{ .event = "refused", .module = module, .message = r.message, .at = r.at, .label = r.label, .from = r.from });
+        }
+    }
+    for (state.written.items) |w| jsonLine(arena, io, .{ .event = "runtime", .path = w.path, .root = w.root });
+    jsonLine(arena, io, .{ .event = "summary", .ok = code == 0, .exit = code, .refused = count });
+    return code;
+}
+
+fn runBuild(
     gpa: std.mem.Allocator,
     io: std.Io,
     opts: Options,
@@ -195,6 +287,7 @@ pub fn run(
     // erlang and beam: the `erl` on PATH runs the OTP release the compiler
     // emits for, or nothing is built (decision 228, `otp.zig`).
     if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
+    if (json_state) |j| jsonTargets(j, proj, target);
 
     // Resolve declared external libs from disk (generic — `libs/<name>/`). The
     // core never names a lib; it only sees these as ordinary `Module[]` and
@@ -268,6 +361,10 @@ pub fn run(
     }
     if (opts.emit_runtime) |dir| {
         runtime_sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host };
+        if (json_state) |j| {
+            runtime_sink.written = &j.written;
+            runtime_sink.keep = j.arena;
+        }
         sinks.runtime = &runtime_sink;
     }
     const hook: ?bp.codegen.AnalysedHook = if (sinks.resolved != null or sinks.runtime != null)
@@ -295,7 +392,10 @@ pub fn run(
     // on stdout, module by module in build order; the CLI's own messages stay
     // on stderr. A cell check's in-process build (`reporter.sink` set) keeps
     // it out of its own output.
-    if (reporter.sink == null) for (outputs.items) |o| if (o.result.build_output.len > 0) reporter.stdout(io, o.result.build_output);
+    if (json_state) |j| {
+        j.modules = outputs.items.len;
+        for (outputs.items) |o| if (o.result.build_output.len > 0) jsonBuildLines(j, o.result.build_output);
+    } else if (reporter.sink == null) for (outputs.items) |o| if (o.result.build_output.len > 0) reporter.stdout(io, o.result.build_output);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Write what compiled; remove any previous artifact of a module that did not,

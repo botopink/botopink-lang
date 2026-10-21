@@ -23,6 +23,8 @@ pub const Options = struct {
     /// `botopink run --target <t> <file>.bpr`: the program read back from its
     /// root package's `.bpr`, emitted with no comptime and run (decision 805 (3)).
     runtime_input: ?[]const u8 = null,
+    /// `--cache-root <dir>`: the cache root of levels A and B (as `build`'s).
+    cache_root: ?[]const u8 = null,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ pub fn run(
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
+    if (opts.cache_root) |r| code_cache.root_override = r;
 
     if (opts.runtime_input) |file| return runRuntime(gpa, io, arena, opts, file, env_map);
 
