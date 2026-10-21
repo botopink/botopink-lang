@@ -13488,6 +13488,15 @@ const Emitter = struct {
                     Op.atom(try atomName(tag, &tag_buf)),
                 });
                 try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), at + 1, Dst.xr(dest));
+            } else if (self.dynamicFieldRead(loc, ia)) {
+                // The receiver's type is not placed (a lambda parameter typed
+                // by a generic call) and records are tagged tuples: the
+                // runtime helper answers a map, a record or `undefined`.
+                const helper = try self.ensureFieldHelper();
+                const hl = try self.fnLabelsFor(helper, 2);
+                try beamEmitter.writeMoveOp(self.out, Op.atom(member), Dst.xr(1));
+                try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = hl.entry }, 0);
+                if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
             } else {
                 try beamEmitter.writeTest(self.out, .is_map, undef_l, &.{Op.xr(0)});
                 try beamEmitter.writeGetMapElements(self.out, undef_l, Op.xr(0), member, Dst.xr(dest));
@@ -13838,7 +13847,7 @@ const Emitter = struct {
     /// program declares: the value answers it (decision 21) through
     /// `'-bp_field-'/2`, a call.
     fn dynamicFieldRead(self: *const Emitter, loc: ast.Loc, ia: anytype) bool {
-        if (ia.optional or tupleIndexMember(ia.member) != null) return false;
+        if (tupleIndexMember(ia.member) != null) return false;
         if (self.recordTypeOfReceiver(loc, ia.receiver.*, ia.member) != null) return false;
         if (std.mem.eql(u8, ia.member, "length")) return self.instanceLowering(loc, ia.receiver.*) == null;
         // A record the compiler splices into the module that uses it
