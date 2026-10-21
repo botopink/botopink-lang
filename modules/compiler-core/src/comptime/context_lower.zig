@@ -324,7 +324,10 @@ const Lowering = struct {
                     self.memo_count += 1;
                     try self.memo_slots.append(self.arena, name);
                     self.uses_hooks = true;
-                    e.* = (try self.callCarrying(memo_read_fn, &.{ try self.ident(name, uh.loc), make }, try self.typeRefOfType(t), uh.loc)).*;
+                    // A `Context<T>` is its `T` at run time (decision 379): the slot holds that value.
+                    const td = t.deref();
+                    const carried = if (td.* == .named and std.mem.eql(u8, td.named.name, "Context") and td.named.args.len >= 1) td.named.args[0] else t;
+                    e.* = (try self.callCarrying(memo_read_fn, &.{ try self.ident(name, uh.loc), make }, try self.typeRefOfType(carried), uh.loc)).*;
                     return true;
                 }
                 if (self.env.contextUses.get(uh.loc)) |use| {
