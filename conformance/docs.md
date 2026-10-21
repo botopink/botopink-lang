@@ -519,7 +519,7 @@ for a pipe, a file or `/dev/null`; `readChunk()` is the byte-level read, whateve
 <!-- example: modules/decisions-taken/std_cli_host_primitives-506/cells/std_io_stdin_eof -->
 
 `io.terminal` is the terminal. `stdoutIsTTY()` and `size()` (`#(columns, rows)`, `null` with no terminal) say what
-the output is; `setRaw(on)` answers `Result<void, TerminalError>` (`NotATerminal` when standard input is none) and
+the output is; `setRaw(on)` answers `Result<void, TerminalError>` (`NotATerminal` when standard input is none; `Unsupported` on erlang and beam off Linux, decision 856) and
 `keys()` is the `AsyncIter<Key>` of key presses (`Char`, `Ctrl`, `Alt`, `Enter`, `Tab`, `Backspace`, `Delete`,
 `Escape`, the arrows, `Home`, `End`, `PageUp`, `PageDown`, `Unknown`) that `parseKey(sequence)` decodes. With no
 terminal the non-terminal answers are the same on every target:

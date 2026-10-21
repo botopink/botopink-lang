@@ -19,6 +19,7 @@ fn rawText(on: bool) -> string {
         Ok(_) -> "raw ok";
         Error(e) -> case e {
             terminal.TerminalError.NotATerminal -> "NotATerminal";
+            terminal.TerminalError.Unsupported -> "Unsupported";
             terminal.TerminalError.Other(message) -> "Other";
         };
     };

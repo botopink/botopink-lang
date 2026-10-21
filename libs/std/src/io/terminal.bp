@@ -29,6 +29,8 @@ pub declare fn print(..values: unknown[]) -> void;
 pub type TerminalError {
     // Standard input is not a terminal: there is no mode to change.
     NotATerminal,
+    // Erlang and beam off Linux: `setRaw` needs `/proc` and `stty` (decision 856).
+    Unsupported,
     // Any other host failure; `message` is the host's text.
     Other(message: string),
 }
@@ -70,10 +72,11 @@ pub declare fn stdoutIsTTY() -> bool;
 // The terminal's size as `#(columns, rows)`, `null` when standard output is no terminal.
 // Node: `process.stdout.columns` / `rows`. Erlang: `io:columns/0` / `io:rows/0`, which answer once
 // the terminal driver runs (`shell:start_interactive({noshell, cooked})`, started here when standard
-// input is a terminal too), else Linux's `stty -F /proc/<pid>/fd/1 size`.
+// input is a terminal too), else Linux's `stty -F /proc/<pid>/fd/1 size`. Off Linux
+// (`os:type()`) on erlang and beam: `null` (decision 856).
 #[compiler.external(
     .JavaScript("""(require('tty').isatty(1) && process.stdout.columns > 0 && process.stdout.rows > 0 ? [process.stdout.columns, process.stdout.rows] : null)"""),
-    .Erlang("""(fun() -> case prim_tty:isatty(stdout) of true -> _ = case prim_tty:isatty(stdin) of true -> (catch shell:start_interactive({noshell, cooked})); _ -> ok end, case {io:columns(), io:rows()} of {{ok, __C}, {ok, __R}} -> {__C, __R}; _ -> case string:tokens(os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/1 size 2>/dev/null"), " \n") of [__R2, __C2] -> try {list_to_integer(__C2), list_to_integer(__R2)} catch _:_ -> undefined end; _ -> undefined end end; _ -> undefined end end)()"""),
+    .Erlang("""(fun() -> case {os:type() =:= {unix, linux}, prim_tty:isatty(stdout)} of {true, true} -> _ = case prim_tty:isatty(stdin) of true -> (catch shell:start_interactive({noshell, cooked})); _ -> ok end, case {io:columns(), io:rows()} of {{ok, __C}, {ok, __R}} -> {__C, __R}; _ -> case string:tokens(os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/1 size 2>/dev/null"), " \n") of [__R2, __C2] -> try {list_to_integer(__C2), list_to_integer(__R2)} catch _:_ -> undefined end; _ -> undefined end end; _ -> undefined end end)()"""),
 )]
 pub declare fn size() -> ?#(i32, i32);
 
@@ -82,10 +85,11 @@ pub declare fn size() -> ?#(i32, i32);
 // Node: `process.stdin.setRawMode(on)`.
 // Erlang: `shell:start_interactive({noshell, raw | cooked})` (OTP 26) with the echo off in raw, and
 // the terminal's `isig` cleared (`stty -F /proc/<pid>/fd/0 -isig`, Linux): the VM's raw mode keeps
-// it, so Ctrl-C would open the VM's break menu instead of arriving as a key.
+// it, so Ctrl-C would open the VM's break menu instead of arriving as a key. Off Linux
+// (`os:type()`) the erlang cell answers `Error(Unsupported)` before any of it (decision 856).
 #[compiler.external(
     .JavaScript("""(() => { if (!require('tty').isatty(0)) return { error: 'notatty|standard input is not a terminal' }; try { process.stdin.setRawMode($0); return { ok: 0 }; } catch (__e) { return { error: 'other|' + (__e && __e.message ? __e.message : String(__e)) } } })()"""),
-    .Erlang("""(fun(__On) -> case prim_tty:isatty(stdin) of true -> try _ = shell:start_interactive({noshell, case __On of true -> raw; false -> cooked end}), _ = io:setopts(standard_io, [{echo, not __On}, binary, {encoding, unicode}]), _ = os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/0 " ++ case __On of true -> "-isig"; false -> "isig" end ++ " 2>/dev/null"), {ok, 0} catch _:__E -> {error, iolist_to_binary([<<"other|">>, io_lib:format("~tp", [__E])])} end; _ -> {error, <<"notatty|standard input is not a terminal">>} end end)($0)"""),
+    .Erlang("""(fun(__On) -> case os:type() =:= {unix, linux} of false -> {error, <<"unsupported|setRaw is Linux's on erlang and beam">>}; true -> case prim_tty:isatty(stdin) of true -> try _ = shell:start_interactive({noshell, case __On of true -> raw; false -> cooked end}), _ = io:setopts(standard_io, [{echo, not __On}, binary, {encoding, unicode}]), _ = os:cmd("stty -F /proc/" ++ os:getpid() ++ "/fd/0 " ++ case __On of true -> "-isig"; false -> "isig" end ++ " 2>/dev/null"), {ok, 0} catch _:__E -> {error, iolist_to_binary([<<"other|">>, io_lib:format("~tp", [__E])])} end; _ -> {error, <<"notatty|standard input is not a terminal">>} end end end)($0)"""),
 )]
 declare fn rawSetRaw(on: bool) -> Result<i32, string>;
 
@@ -96,6 +100,7 @@ pub fn setRaw(on: bool) -> Result<void, TerminalError> {
         Ok(_) -> return;
         Error(m) {
             if (m.startsWith("notatty|")) throw TerminalError.NotATerminal;
+            if (m.startsWith("unsupported|")) throw TerminalError.Unsupported;
             throw TerminalError.Other(message: m.slice(m.indexOf("|") + 1));
         }
     }
