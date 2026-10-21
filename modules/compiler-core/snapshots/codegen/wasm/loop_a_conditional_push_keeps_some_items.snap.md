@@ -3,7 +3,7 @@
 fn main() -> void {
     val precosBrutos = [100, 250, 400];
     var apenasGrandes = [];
-    for valor in precosBrutos {
+    for (precosBrutos) { valor ->
         if (valor > 200) {
             apenasGrandes.push(valor);
         };

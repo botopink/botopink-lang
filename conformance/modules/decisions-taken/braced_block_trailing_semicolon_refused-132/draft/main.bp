@@ -5,7 +5,7 @@ import {io.terminal.print} from "std";
 fn describe(n: i32) -> void {
     if (n > 2) print("big");
     if (n == 3) print("three") else print("small");
-    for i in [1, 2] {
+    for ([1, 2]) { i ->
         print(i);
     }
     var left = n;

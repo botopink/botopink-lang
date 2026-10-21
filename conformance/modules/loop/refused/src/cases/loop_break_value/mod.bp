@@ -7,7 +7,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     var found = 0;
-    for x in [5, 8, 15, 20] {
+    for ([5, 8, 15, 20]) { x ->
         if (x > 10) { break x; }
     }
     print(found);

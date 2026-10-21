@@ -27,7 +27,7 @@ fn show(d: Display) -> string {
 pub fn runCase() -> void {
     shut(Door(name: "front"));
     val doors: Closeable[] = [Door(name: "back"), Door(name: "side")];
-    for d in doors {
+    for (doors) { d ->
         shut(d);
     }
     print(show(Money(cents: 7)));

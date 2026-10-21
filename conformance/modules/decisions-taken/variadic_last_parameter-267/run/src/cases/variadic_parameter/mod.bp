@@ -11,7 +11,7 @@ import {io.terminal.print} from "std";
 
 fn total(label: string, ..values: i32[]) -> string {
     var sum = 0;
-    for v in values {
+    for (values) { v ->
         sum = sum + v;
     }
     return "${label}: ${values.length()} -> ${sum}";

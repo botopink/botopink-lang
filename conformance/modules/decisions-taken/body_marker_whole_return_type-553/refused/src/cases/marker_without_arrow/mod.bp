@@ -10,7 +10,7 @@ pub fn main() -> void {
         yield 1;
         yield 2;
     };
-    for x in xs {
+    for (xs) { x ->
         print(x);
     }
 }

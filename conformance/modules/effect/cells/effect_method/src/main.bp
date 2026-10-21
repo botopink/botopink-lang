@@ -24,7 +24,7 @@ import {io.terminal.print} from "std";
 
 type Box(items: array<i32>) {
     iter fn each(self: Self) -> Iter<i32> {
-        for x in self.items {
+        for (self.items) { x ->
             yield x;
         }
     }
@@ -66,7 +66,7 @@ type Shape {
 
 fn digits(xs: Iter<i32>) -> i32 {
     var acc = 0;
-    for v in xs {
+    for (xs) { v ->
         acc = acc * 10 + v;
     }
     return acc;

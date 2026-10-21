@@ -9,7 +9,7 @@ fn firstOver(arr: i32[], limit: i32) -> i32 {
         if (x > limit) { break x; };
     };
     var out = 0;
-    for v in found { out = v; };
+    for (found) { v -> out = v; };
     return out;
 }
 ```
@@ -44,7 +44,7 @@ fn firstOver(arr: i32[], limit: i32) -> i32 {
           "source": "var out = 0;"
         },
         {
-          "source": "for v in found { out = v; };"
+          "source": "for (found) { v -> out = v; };"
         },
         {
           "source": "return out;"

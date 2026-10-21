@@ -572,7 +572,7 @@ test "parser: await ---- chained with try" {
 test "parser: loop await ---- async iteration" {
     try h.assertParser(std.testing.allocator, @src(),
         \\async fn consume(items: Int[]) -> Async<Int> {
-        \\    for await item in items {
+        \\    for await (items) { item ->
         \\        handle(item);
         \\    }
         \\}
@@ -582,7 +582,7 @@ test "parser: loop await ---- async iteration" {
 test "parser: loop ---- with label" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn collect(items: Int[]) -> void {
-        \\    for :acc item in items {
+        \\    for :acc (items) { item ->
         \\        yield :acc item;
         \\    }
         \\}
@@ -592,7 +592,7 @@ test "parser: loop ---- with label" {
 test "parser: yield ---- without label" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn collect(items: Int[]) -> void {
-        \\    for item in items {
+        \\    for (items) { item ->
         \\        yield item;
         \\    }
         \\}

@@ -2,7 +2,7 @@
 ```botopink
 fn sumEvens(arr: i32[]) -> i32[] {
     var out = [];
-    for x in arr {
+    for (arr) { x ->
         if (x % 2 != 0) { continue; };
         out.push(x);
     };

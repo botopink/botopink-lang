@@ -239,7 +239,7 @@ test "beam: a bare break in a for's body ends the loop" {
         \\fn main() -> void {
         \\    var doubled = 0;
         \\    var visited = 0;
-        \\    for x in [1, 2, 3] {
+        \\    for ([1, 2, 3]) { x ->
         \\        visited = visited + 1;
         \\        doubled = x * 2;
         \\        break;
@@ -247,14 +247,14 @@ test "beam: a bare break in a for's body ends the loop" {
         \\    print(visited);
         \\    print(doubled);
         \\    var found = 0;
-        \\    for y in [4, 5, 6, 7] {
+        \\    for ([4, 5, 6, 7]) { y ->
         \\        if (y > 5) {
         \\            found = y;
         \\            break;
         \\        }
         \\    }
         \\    print(found);
-        \\    for z in [8, 9] {
+        \\    for ([8, 9]) { z ->
         \\        print(z);
         \\        break;
         \\    }
@@ -441,7 +441,7 @@ test "beam: is ---- §4.1 × §4.2, one mark per value (a tuple type tests each 
         \\}
         \\fn marks(holds: bool[]) -> string {
         \\    var text = "";
-        \\    for h in holds {
+        \\    for (holds) { h ->
         \\        val mark = if (h) "T" else ".";
         \\        text = text + mark;
         \\    }
@@ -511,7 +511,7 @@ test "beam: a loop closure does not capture the register of an earlier `??`" {
         \\fn joined(texts: string[], parts: string[]) -> string {
         \\    var out = texts.at(0) ?? "";
         \\    var k = 0;
-        \\    for s in parts {
+        \\    for (parts) { s ->
         \\        out = out + s + texts.at(k + 1) ?? "";
         \\        k = k + 1;
         \\    }

@@ -14,7 +14,7 @@ async fn describe(f: fs.File, expected: string) -> Async<void> {
     print(digest == expected);
     val head = f.read(3).unwrapOr(bytes.fromUtf8("?"));
     print(encoding.hexEncodeBytes(head));
-    for await r in f.lines() {
+    for await (f.lines()) { r ->
         case r {
             Ok(line) -> print("line [" + line + "]");
             Error(e) -> print("error");

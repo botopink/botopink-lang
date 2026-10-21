@@ -11,7 +11,7 @@ pub fn check<T>(syntax decl: T, comptime message: string, syntax rule: fn(v: T) 
 pub fn validated<T>(syntax decl: T) -> void {
     compiler.addMember("validate", fn(self: T) -> string[] {
         var out: string[] = [];
-        for c in comptime compiler.typeInfo(T).metaAll(Check) {
+        for (comptime compiler.typeInfo(T).metaAll(Check)) { c ->
             if (!c.rule(self)) out.push(c.message);
         }
         return out;

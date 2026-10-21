@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 iter fn evens(xs: i32[]) -> Iter<i32> {
-    for x in xs {
+    for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
@@ -16,7 +16,7 @@ iter fn k(xs: i32[]) -> Iter<i32> {
 }
 
 pub fn main() -> void {
-    for x in k([1, 2]) {
+    for (k([1, 2])) { x ->
         print(x);
     }
 }

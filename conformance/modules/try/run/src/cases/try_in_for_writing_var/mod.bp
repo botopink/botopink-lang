@@ -14,7 +14,7 @@ fn check(x: i32) -> Result<i32, string> {
 
 fn count(xs: i32[]) -> Result<i32, string> {
     var i = 0;
-    for x in xs {
+    for (xs) { x ->
         try check(x);
         i = i + 1;
     }
@@ -23,7 +23,7 @@ fn count(xs: i32[]) -> Result<i32, string> {
 
 fn total(xs: i32[]) -> Result<i32, string> {
     var sum = 0;
-    for x in xs {
+    for (xs) { x ->
         val v = try check(x);
         sum = sum + v;
     }

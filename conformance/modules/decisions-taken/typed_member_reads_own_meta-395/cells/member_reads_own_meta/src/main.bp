@@ -22,7 +22,7 @@ fn check<T>(
 fn validated<T>(syntax decl: T) -> void {
     compiler.addMember("validate", fn(self: T) -> Violation[] {
         var out: Violation[] = [];
-        for c in comptime compiler.typeInfo(T).metaAll(Check) {
+        for (comptime compiler.typeInfo(T).metaAll(Check)) { c ->
             if (!c.rule(self))
                 out.push(Violation(field: "conta", message: c.message));
         }
@@ -53,7 +53,7 @@ pub fn main() -> void {
         confirm: "abd",
     ).validate();
     print(bad.length);
-    for v in bad {
+    for (bad) { v ->
         print(v.field + ": " + v.message);
     }
 }

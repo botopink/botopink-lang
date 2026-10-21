@@ -18,7 +18,7 @@ pub fn main() -> void {
         i = i + 1;
     }
     print(total);
-    for x in [10, 20] {
+    for ([10, 20]) { x ->
         print(bump(x));
     }
 }

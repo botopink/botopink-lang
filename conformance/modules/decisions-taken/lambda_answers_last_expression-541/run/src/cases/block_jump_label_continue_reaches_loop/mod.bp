@@ -5,8 +5,8 @@ import {io.terminal.print} from "std";
 
 fn sumSkippingRows(xs: i32[], ys: i32[]) -> i32 {
     var s = 0;
-    for :outer x in xs {
-        for y in ys {
+    for :outer (xs) { x ->
+        for (ys) { y ->
             if (y == x + 1) continue :outer;
             s = s + x * 10 + y;
         }
@@ -17,8 +17,8 @@ fn sumSkippingRows(xs: i32[], ys: i32[]) -> i32 {
 
 fn countUntilFive(xs: i32[], ys: i32[]) -> i32 {
     var n = 0;
-    for :outer x in xs {
-        for y in ys {
+    for :outer (xs) { x ->
+        for (ys) { y ->
             case x + y {
                 5 {
                     continue :outer;

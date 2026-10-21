@@ -22,10 +22,10 @@ iter fn naturals() -> Iter<i32> {
 }
 
 pub fn runCase() -> void {
-    for x in counted() {
+    for (counted()) { x ->
         print(x);
     }
-    for x in naturals().take(3) {
+    for (naturals().take(3)) { x ->
         print(x);
     }
 
@@ -36,7 +36,7 @@ pub fn runCase() -> void {
         yield 2;
         break;
     };
-    for x in looped {
+    for (looped) { x ->
         print(x);
     }
     var k = 10;
@@ -44,7 +44,7 @@ pub fn runCase() -> void {
         yield k;
         k = k + 1;
     };
-    for x in endless.take(3) {
+    for (endless.take(3)) { x ->
         print(x);
     }
 
@@ -54,7 +54,7 @@ pub fn runCase() -> void {
         print("lambda after");
         yield 2;
     };
-    for x in marked() {
+    for (marked()) { x ->
         print(x);
     }
     val ones: fn() -> Iter<i32> = { iter ->
@@ -62,7 +62,7 @@ pub fn runCase() -> void {
             yield 1;
         }
     };
-    for x in ones().take(3) {
+    for (ones().take(3)) { x ->
         print(x);
     }
 }

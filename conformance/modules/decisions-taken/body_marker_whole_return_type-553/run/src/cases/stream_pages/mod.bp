@@ -33,7 +33,7 @@ async iter fn pages(url: string) -> AsyncIter<Result<array<string>, string>> {
 
 async fn countUsers(url: string) -> Async<Result<i32, string>> {
     var n = 0;
-    for await batch in pages(url) {
+    for await (pages(url)) { batch ->
         val users = try batch;
         n = n + users.length;
     }
@@ -41,7 +41,7 @@ async fn countUsers(url: string) -> Async<Result<i32, string>> {
 }
 
 async fn walk(url: string) -> Async<void> {
-    for await r in pages(url) {
+    for await (pages(url)) { r ->
         case r {
             Ok(users) -> print("batch " + users.join(","));
             Error(e) -> print("error " + e);

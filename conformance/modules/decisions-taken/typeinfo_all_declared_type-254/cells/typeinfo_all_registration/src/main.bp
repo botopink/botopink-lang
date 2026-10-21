@@ -19,12 +19,12 @@ pub type Local(id: i32)
 
 pub fn main() -> void {
     val routes = @TypeInfo.all(with: route);
-    for r in routes {
+    for (routes) { r ->
         val path = r.meta(Route)?.path ?? "";
         print(r.module + " " + r.name + " " + path);
     }
     val parts = @TypeInfo.all(with: component, member: "describe");
-    for c in parts {
+    for (parts) { c ->
         print(c.module + " " + c.name);
     }
     print(@TypeInfo.all(with: unused).length);

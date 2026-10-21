@@ -5,8 +5,8 @@ import {io.terminal.print} from "std";
 
 fn firstPair(xs: i32[], ys: i32[]) -> i32 {
     var found = 0;
-    for :outer x in xs {
-        for y in ys {
+    for :outer (xs) { x ->
+        for (ys) { y ->
             case x + y {
                 5 {
                     found = x * 10 + y;
@@ -21,8 +21,8 @@ fn firstPair(xs: i32[], ys: i32[]) -> i32 {
 
 fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
     var s = 0;
-    for :outer x in xs {
-        for y in ys {
+    for :outer (xs) { x ->
+        for (ys) { y ->
             { if (y == 2) break :outer }
             s = s + x * y;
         }

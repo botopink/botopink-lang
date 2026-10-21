@@ -2,13 +2,13 @@
 ```botopink
 fn total(xs: i32[]) -> i32 {
     var sum = 0;
-    for x in xs { sum = sum + x; }
+    for (xs) { x -> sum = sum + x; }
     return sum;
 }
 
 fn longest(names: string[]) -> i32 {
     var best = 0;
-    for n in names { if (n.length() > best) { best = n.length(); } }
+    for (names) { n -> if (n.length() > best) { best = n.length(); } }
     return best;
 }
 
@@ -1373,7 +1373,7 @@ import {io.terminal.print} from "std";
     )
     local.get $out
   )
-  (data $__d0 "integer overflow: + on i32 at main.bp:3:29")
+  (data $__d0 "integer overflow: + on i32 at main.bp:3:31")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "[")
   (global $__s1 (mut (ref null $str)) (ref.null $str))

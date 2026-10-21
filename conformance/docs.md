@@ -94,7 +94,7 @@ and `interface` are gone, and so are `auto`, `derive`, `get`, `macro`,
 identifiers now (`opaque` right before `type` is the modifier of decision 811,
 § `opaque` types). An anonymous group of values is a tuple, `#(…)`, which
 replaces the old anonymous record. Repetition is three keywords with one meaning
-each — `for x in xs { … }`, `while (cond) { … }`, `loop { … }` — and `loop (…)`
+each — `for (xs) { x -> … }`, `while (cond) { … }`, `loop { … }` — and `loop (…)`
 reports an error naming `for` and `while`. A host template numbers its parameters
 positionally (`$0`, `$1`, …). A function's effect is its return type — `Result`,
 `Async`, `Component`, `Iter`, `AsyncIter` — and the effect annotations are gone
@@ -3325,7 +3325,7 @@ The quick reference:
 | a task in the middle of a function | `async { … }` | pass it along, `await` it |
 | a `Component` read with `use` | `fn h() -> Component<T>` (`T` not `Renderable`) | `use h()`, at the top level of a `Component` body |
 | a component, page or layout | `fn C() -> Component<Element>` | `C()`, an ordinary call |
-| a sequence | `fn g() -> Iter<T>` | `for x in g() { … }`, in any function |
+| a sequence | `fn g() -> Iter<T>` | `for (g()) { x -> … }`, in any function |
 | a sequence of items that fail | `fn g() -> Iter<Result<T, E>>` | `for` + `try r` or `case` |
 | an asynchronous sequence | `fn g() -> AsyncIter<T>` | `for await`, with an await channel |
 | an iterator or a stream in the middle of a function | `iter …` · `stream …` | `for` · `for await` |
@@ -4715,7 +4715,7 @@ type of that name declared there is `import-name-collision` at the annotation.
 In the member, `compiler.typeInfo(T)` of the decorator's type parameter reads the
 annotated type's typed meta (decision 395): typed in the decorator's body,
 answered where the member joins the type, the list written under `comptime`
-(`for c in comptime compiler.typeInfo(T).metaAll(Check) { … }`). A method or a field
+(`for (comptime compiler.typeInfo(T).metaAll(Check)) { c -> … }`). A method or a field
 read on a `syntax` parameter (`rule.text()`) is `expr-param-method` (370 (3)).
 The other channel is typed meta whose record holds a tree filled from a `syntax`
 parameter (§ Typed meta below).
@@ -6605,7 +6605,7 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `#[@context]` / `@Context<B, R>` as an effect | `-> Component<R>` |
 | `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator` | `Iter<Result<…>>` / `AsyncIter<Result<…>>` |
 | `Iterable`, `IteratorStep`, `Yield<T, R>` | `YieldStep<T>` |
-| `loop (xs) { x -> }` · `loop (cond)` · `loop await` | `for x in xs { }` · `while (cond)` · `for await` |
+| `loop (xs) { x -> }` · `loop (cond)` · `loop await` | `for (xs) { x -> }` · `while (cond)` · `for await` |
 | `-> Element` on a component that uses a hook | `-> Component<Element>` |
 | `Component<C, R>` (decision 128's base) | `Component<R>` (decision 354) |
 | `type T(…) implement @Context<C>` | `type T(…) implement Renderable` |
@@ -6656,7 +6656,7 @@ the four backends agree on it), `val assert <pattern> = <expr>;` (binding its
 names, and fatal when the match fails), a `//` comment inside a loop body, a
 **parameter default applied at the call site** on all four backends, an
 **effect on a record method** (`fn iter(self: Self) -> Iter<i32>` in a
-`type … { … }` body is a generator method, walked by `for x in b.iter() { … }`),
+`type … { … }` body is a generator method, walked by `for (b.iter()) { x -> … }`),
 and `await` inside a `Component` body (an `async function` on commonJS, awaited
 by every caller; a `Component` whose hooks node is synchronous is a plain
 `function`, decision 375).

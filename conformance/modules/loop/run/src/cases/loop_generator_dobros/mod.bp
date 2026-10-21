@@ -11,7 +11,7 @@ pub fn runCase() -> void {
         if (contador == 10) break contador * 2;
         yield contador * 2;
     };
-    for d in dobros {
+    for (dobros) { d ->
         print(d);
     }
     print(contador);

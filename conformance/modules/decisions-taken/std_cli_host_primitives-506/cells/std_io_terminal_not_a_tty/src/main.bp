@@ -32,7 +32,7 @@ async fn scenario() -> Async<void> {
     print(rawText(true));
     print(rawText(false));
     var seen = 0;
-    for await k in terminal.keys() {
+    for await (terminal.keys()) { k ->
         seen = seen + 1;
     }
     print("keys " + seen.toString());

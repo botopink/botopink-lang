@@ -17,7 +17,7 @@ pub fn runCase() -> void {
     val ws = "  alpha\tbeta  gamma\n".words();
     print(ws);
     print(ws.at(1));
-    for w in ws {
+    for (ws) { w ->
         print(w.length());
     }
     print("  ".words());

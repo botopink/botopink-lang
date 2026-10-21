@@ -7,8 +7,8 @@ import {compiler} from "std";
 
 pub fn described(syntax decl: unknown) -> void {
     var names = "";
-    for m in compiler.methods(decl) {
-        for p in m.params {
+    for (compiler.methods(decl)) { m ->
+        for (m.params) { p ->
             names = names + m.name + "." + p.name + ";";
         }
     }

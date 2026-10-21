@@ -13,7 +13,7 @@ pub type Orders(total: i32)
 pub type Registry(entries: unknown[]) {
     pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
         var n = 0;
-        for e in self.entries {
+        for (self.entries) { e ->
             if (e is t) n = n + 1;
         }
         return n;

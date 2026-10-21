@@ -26,7 +26,7 @@ pub type Users(n: i32) implement Module {
 }
 
 pub fn main() -> void {
-    for d in @TypeInfo.all(with: module) {
+    for (@TypeInfo.all(with: module)) { d ->
         print(d.value.make().start());
     }
 }

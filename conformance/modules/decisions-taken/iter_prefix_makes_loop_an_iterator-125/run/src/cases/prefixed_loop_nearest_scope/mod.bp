@@ -9,7 +9,7 @@
 import {io.terminal.print} from "std";
 
 iter fn evens(xs: i32[]) -> Iter<i32> :out {
-    for :inner x in xs {
+    for :inner (xs) { x ->
         if (x % 2 == 1) continue;
         yield :out x;
     }
@@ -17,7 +17,7 @@ iter fn evens(xs: i32[]) -> Iter<i32> :out {
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for x in it {
+    for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;
@@ -25,8 +25,8 @@ fn line(it: Iter<i32>) -> string {
 
 pub fn runCase() -> void {
     val flat = iter loop {
-        for x in [1, 2] {
-            for y in [10, 20] {
+        for ([1, 2]) { x ->
+            for ([10, 20]) { y ->
                 yield x * y;
             }
         }

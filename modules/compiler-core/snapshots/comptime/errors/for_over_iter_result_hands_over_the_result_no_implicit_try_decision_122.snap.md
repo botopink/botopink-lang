@@ -4,16 +4,16 @@ iter fn upTo(n: i32) -> Iter<Result<i32, string>> {
 }
 fn total(n: i32) -> i32 {
     var acc = 0;
-    for x in upTo(n) { acc = acc + x; };
+    for (upTo(n)) { x -> acc = acc + x; };
     return acc;
 }
 
 ----- ERROR
 error: type mismatch
-  ┌─ main.bp:6:36
+  ┌─ main.bp:6:38
   │
-6 │     for x in upTo(n) { acc = acc + x; };
-  │                                    ^
+6 │     for (upTo(n)) { x -> acc = acc + x; };
+  │                                      ^
 
   expected: i32
   found:    Result<i32,string>

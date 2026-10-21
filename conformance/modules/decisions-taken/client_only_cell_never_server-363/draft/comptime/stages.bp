@@ -11,9 +11,9 @@ fn marked(annotations: compiler.DeclAnnotation[], syntax marker: unknown) -> boo
 }
 
 pub fn page(syntax decl: unknown) -> void {
-    for n in compiler.hooks(decl) {
+    for (compiler.hooks(decl)) { n ->
         val island = marked(compiler.annotations(n.function), client);
-        for u in n.uses {
+        for (n.uses) { u ->
             if (!island && marked(u.annotations, clientOnly))
                 compiler.fail("a #[clientOnly] hook is read only inside a #[client] component", span: u.at);
         }

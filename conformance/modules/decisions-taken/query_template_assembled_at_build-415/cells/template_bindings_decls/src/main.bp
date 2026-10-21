@@ -17,8 +17,8 @@ fn helper(n: i32) -> i32 {
 fn named(syntax q: string) -> string {
     val all = compiler.bindings(q);
     var text = all.length.toString();
-    for want in ["City", "User", "helper"] {
-        for d in all {
+    for (["City", "User", "helper"]) { want ->
+        for (all) { d ->
             if (d.name == want) text = text + " " + d.name + "@" + d.module;
         }
     }

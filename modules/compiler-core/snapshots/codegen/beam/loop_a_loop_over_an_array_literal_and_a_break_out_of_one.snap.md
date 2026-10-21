@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    for x in [1, 2, 3] { print(x); };
+    for ([1, 2, 3]) { x -> print(x); };
     var first = 0;
-    for x in [1, 2, 3] { if (x == 2) { first = x * 10; break; }; };
+    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
     print(first);
 }
 
@@ -391,7 +391,7 @@ import {io.terminal.print} from "std";
     {test, is_ge, {f, 41}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 42}}.
   {label, 41}.
-    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:4:50">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:4:52">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 42}.
     {move, {x, 0}, {y, 1}}.

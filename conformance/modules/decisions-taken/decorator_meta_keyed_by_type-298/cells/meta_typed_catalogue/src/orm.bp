@@ -20,9 +20,9 @@ pub fn index(syntax decl: unknown, comptime column: string) -> void {
 
 pub fn describe(ds: Declared<Model>[]) -> string {
     var parts: string[] = [];
-    for d in ds {
+    for (ds) { d ->
         var columns: string[] = [];
-        for i in d.metaAll(Index) {
+        for (d.metaAll(Index)) { i ->
             columns.push(i.column);
         }
         parts.push(d.name + "(" + columns.join(",") + ")");

@@ -15,10 +15,10 @@ pub fn main() -> void {
     print(digit(9));
     print(digit(10));
 
-    for i in 0..3 {
+    for (0..3) { i ->
         print(i);
     }
-    for i in 0...3 {
+    for (0...3) { i ->
         print(i);
     }
 

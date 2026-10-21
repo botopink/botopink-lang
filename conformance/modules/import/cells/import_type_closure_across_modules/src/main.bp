@@ -16,7 +16,7 @@ pub fn main() -> void {
     val c = make();
     print(c.count());
     print(c.origin.y);
-    for o in c.outlines {
+    for (c.outlines) { o ->
         print(o.first().x);
     }
 }

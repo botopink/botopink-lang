@@ -3,15 +3,15 @@
 fn column(syntax decl: unknown, comptime name: string) -> void { }
 fn describe(syntax decl: unknown, comptime label: string) -> void {
     var out = compiler.name(decl)! + "[" + label + "]";
-    for a in compiler.annotations(decl) { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
-    for f in compiler.fields(decl) {
+    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+    for (compiler.fields(decl)) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
-        for a in f.annotations { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for v in compiler.variants(decl) { out = out + " variant " + v.name; };
-    for m in compiler.methods(decl) {
+    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
+    for (compiler.methods(decl)) { m ->
         var ps = "";
-        for p in m.params { ps = ps + p.name + ":" + p.typeName + ";"; };
+        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
     @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
@@ -113,16 +113,16 @@ pub fn describeMode() -> string {
           "source": "var out = compiler.name(decl)! + \"[\" + label + \"]\";"
         },
         {
-          "source": "for a in compiler.annotations(decl) { out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
+          "source": "for (compiler.annotations(decl)) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"
         },
         {
-          "source": "for f in compiler.fields(decl) {"
+          "source": "for (compiler.fields(decl)) { f ->"
         },
         {
-          "source": "for v in compiler.variants(decl) { out = out + \" variant \" + v.name; };"
+          "source": "for (compiler.variants(decl)) { v -> out = out + \" variant \" + v.name; };"
         },
         {
-          "source": "for m in compiler.methods(decl) {"
+          "source": "for (compiler.methods(decl)) { m ->"
         },
         {
           "source": "@emit(\"pub fn describe\" + compiler.name(decl)! + \"() -> string { return \\\"\\\"\\\"\" + out + \"\\\"\\\"\\\"; }\");"

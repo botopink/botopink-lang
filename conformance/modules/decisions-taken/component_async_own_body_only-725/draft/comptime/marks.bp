@@ -4,7 +4,7 @@ pub type Marks(nodes: string[])
 
 pub fn marks(syntax decl: unknown) -> void {
     var nodes: string[] = [];
-    for n in compiler.hooks(decl) {
+    for (compiler.hooks(decl)) { n ->
         val mark = if (n.async) "async" else "direct";
         nodes.push(compiler.name(n.function)! + ": " + mark);
     }

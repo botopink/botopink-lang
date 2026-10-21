@@ -33,7 +33,7 @@ pub fn main() -> void {
     print(a.toString());
     print("a=" + a);
     var m: i64 = 1;
-    for i in 0..40 {
+    for (0..40) { i ->
         m = m * 2;
     }
     print(m);

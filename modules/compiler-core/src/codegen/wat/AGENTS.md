@@ -1556,7 +1556,7 @@ order, so a module that never prints one renders exactly as it did before.
 
 **A loop's and a HOF's element parameter carries the element's record type**
 (`lowerCollectionLoop`, `lowerArrayHof`, both through `elemRecordOf`). The
-binder is one ELEMENT, so `for e in es { @print(e.key) }` and
+binder is one ELEMENT, so `for (es) { e -> @print(e.key) }` and
 `es.filter({ e -> e.n > 1 })` need the record type or the field read falls to
 the unique-field guess and prints the field's ADDRESS — `284` for `"abc"`, exit
 0. Two `local_types` registrations, at the two binders.
@@ -2318,12 +2318,12 @@ each fixed where the shape is decided:
 
 | Written | Was | Is | Where |
 |---|---|---|---|
-| `@print([true, false])`, `bs.reverse()`, `for b in bs { @print(b) }` | `[1, 0]`, `1` | `[true, false]`, `true` | `printShapeOf` answers `[b` for an array of bools (a literal, a written `bool[]`); `arrayElemOpt` boxes the element as a bool (`bs.at(0)` → `true`); `elemIsBool` marks a loop's and a HOF's binder |
+| `@print([true, false])`, `bs.reverse()`, `for (bs) { b -> @print(b) }` | `[1, 0]`, `1` | `[true, false]`, `true` | `printShapeOf` answers `[b` for an array of bools (a literal, a written `bool[]`); `arrayElemOpt` boxes the element as a bool (`bs.at(0)` → `true`); `elemIsBool` marks a loop's and a HOF's binder |
 | `rows.at(1)`, `rows[0]`, `ps[1]` over `[[1, 2], [3]]` / `[#(1, "a"), …]` | `280`, `268`, `376` | `[3]`, `[1, 2]`, `#(2, "b")` | `OptInfo.shape`: a `?T` whose payload is an array or a tuple prints `null` or by its shape (`lowerPrintArg`) |
 | `[[1], [2]].reverse()`, `bs.filter(…)` | the rows' addresses | `[[2], [1]]` | `printShapeOf` reads a `keepsElements` method's receiver |
 | `var names: string[] = []; names.push("a")`, `var rows: i32[][] = []` | `[256]`, `[280]` | `["a"]`, `[[1]]` | `noteAnnotatedArray`: a written array type decides a local's shape, element kind and record over what the initialiser suggested — `[]` says nothing. It moved std's `Dict.display` (`var parts: string[] = []` … `parts.join(", ")`) from `$__arr_join_i32` to `_str`: three `std_package_*` wasm snapshots' text, no RUN LOG |
 | `xs.map({ x -> x > 1 })` | `[0, 1]` | `[false, true]` | `newArrShape`'s `map` arm |
-| `[3, "abcd"]`, `val ys: (i32 \| string)[] = [2, "b", 3]`, `xs[1]`, `xs.at(7)`, `for x in xs { size(x) }` | `[3, 256]`, a trap in `$__print_unknown_raw` | `[3, "abcd"]`, `abcd`, `null`, `7` | decision 150: an array literal whose elements disagree (`unionArrayLitTypeRef`, numbers alone widen instead) or that stands where a union array is written (`expected_union_array`: a `val`'s annotation, a parameter, the return) holds each element in `lowerAsUnknown`'s box; its shape is `[U`, which `$__print_shaped_raw` prints by the box (`print_shaped_unknown`, a marker group as `bigint` is); an element read (`xs[i]`, `at`, `first`, `last`, `pop`) is the union's box, `0` absent (`elemIsPointer`). `conformance/modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union_elements` |
+| `[3, "abcd"]`, `val ys: (i32 \| string)[] = [2, "b", 3]`, `xs[1]`, `xs.at(7)`, `for (xs) { x -> size(x) }` | `[3, 256]`, a trap in `$__print_unknown_raw` | `[3, "abcd"]`, `abcd`, `null`, `7` | decision 150: an array literal whose elements disagree (`unionArrayLitTypeRef`, numbers alone widen instead) or that stands where a union array is written (`expected_union_array`: a `val`'s annotation, a parameter, the return) holds each element in `lowerAsUnknown`'s box; its shape is `[U`, which `$__print_shaped_raw` prints by the box (`print_shaped_unknown`, a marker group as `bigint` is); an element read (`xs[i]`, `at`, `first`, `last`, `pop`) is the union's box, `0` absent (`elemIsPointer`). `conformance/modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union_elements` |
 
 `snapshots/codegen/wasm/index_a_nested_index_a_slice_s_length_and_a_tuple_element`
 recorded `304` and `376` for `rows[1]` and `ps[1]`; it records `[3, 4]` and

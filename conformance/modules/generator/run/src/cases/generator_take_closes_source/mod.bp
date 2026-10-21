@@ -13,7 +13,7 @@ iter fn counted() -> Iter<i32> {
 
 pub fn runCase() -> void {
     print(counted().take(1).toArray());
-    for x in counted().take(2) {
+    for (counted().take(2)) { x ->
         print(x);
     }
     print("end");

@@ -2,23 +2,23 @@ import {io.terminal.print} from "std";
 
 iter fn evens(xs: i32[]) -> Iter<i32> {
     // an iterator: it yields
-    for x in xs {
+    for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
 
 fn evensOf(xs: i32[]) -> Iter<i32> {
     // a factory: it returns one
-    return iter for x in xs {
+    return iter for (xs) { x ->
         if (x % 2 == 0) yield x;
     };
 }
 
 pub fn runCase() -> void {
-    for x in evens([1, 2, 3, 4]) {
+    for (evens([1, 2, 3, 4])) { x ->
         print(x);
     } // 2, 4
-    for x in evensOf([5, 6, 7, 8]) {
+    for (evensOf([5, 6, 7, 8])) { x ->
         print(x);
     } // 6, 8
 }

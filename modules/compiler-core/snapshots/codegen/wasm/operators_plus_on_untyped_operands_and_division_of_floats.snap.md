@@ -3,7 +3,7 @@
 fn average(xs: array<f64>) -> f64 {
     var total = 0.0;
     var n = 0.0;
-    for x in xs {
+    for (xs) { x ->
         total = total + x;
         n = n + 1.0;
     };

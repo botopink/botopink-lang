@@ -376,7 +376,7 @@ test "infer error: yield targets an unknown label" {
 test "infer error: for await on a non-@AsyncIter value" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\async fn bad() -> Async<i32> {
-        \\    for await x in 5 {
+        \\    for await (5) { x ->
         \\        ping(x);
         \\    }
         \\}

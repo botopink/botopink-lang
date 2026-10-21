@@ -16,7 +16,7 @@ fn quoted(text: string) -> string {
 fn css(syntax q: string) -> string {
     var code = "\"\"";
     var first = true;
-    for piece in compiler.text(q).split("\${") {
+    for (compiler.text(q).split("\${")) { piece ->
         if (first) {
             code = code + " + " + quoted(piece);
             first = false;

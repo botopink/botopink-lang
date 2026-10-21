@@ -5,9 +5,9 @@ async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
     val t = async { return 1; };
     val all = async.allOf([t]);
     val a = iter loop { yield 1; break; };
-    val b = iter for :outer x in xs { if (x > 1) { break :outer; }; yield x; };
+    val b = iter for :outer (xs) { x -> if (x > 1) { break :outer; }; yield x; };
     val c = stream while (true) { yield 1; };
-    val d = stream for await x in s { yield x; };
+    val d = stream for await (s) { x -> yield x; };
     val stream = 1;
     val iter = g.iter();
     val body = http.stream(stream);
@@ -50,15 +50,14 @@ async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   (5,12) +4  keyword  "iter"
   (5,17) +3  keyword  "for"
   (5,22) +5  keyword  "outer"
-  (5,28) +1  variable  "x"
-  (5,30) +2  keyword  "in"
-  (5,33) +2  parameter  "xs"
-  (5,38) +2  keyword  "if"
-  (5,42) +1  variable  "x"
-  (5,51) +5  keyword  "break"
-  (5,58) +5  keyword  "outer"
-  (5,68) +5  keyword  "yield"
-  (5,74) +1  variable  "x"
+  (5,29) +2  parameter  "xs"
+  (5,35) +1  variable  "x"
+  (5,40) +2  keyword  "if"
+  (5,44) +1  variable  "x"
+  (5,53) +5  keyword  "break"
+  (5,60) +5  keyword  "outer"
+  (5,70) +5  keyword  "yield"
+  (5,76) +1  variable  "x"
   (6,4) +3  keyword  "val"
   (6,8) +1  variable [declaration]  "c"
   (6,12) +6  keyword  "stream"
@@ -70,11 +69,10 @@ async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   (7,12) +6  keyword  "stream"
   (7,19) +3  keyword  "for"
   (7,23) +5  keyword  "await"
-  (7,29) +1  variable  "x"
-  (7,31) +2  keyword  "in"
-  (7,34) +1  variable  "s"
-  (7,38) +5  keyword  "yield"
-  (7,44) +1  variable  "x"
+  (7,30) +1  variable  "s"
+  (7,35) +1  variable  "x"
+  (7,40) +5  keyword  "yield"
+  (7,46) +1  variable  "x"
   (8,4) +3  keyword  "val"
   (8,8) +6  variable [declaration]  "stream"
   (9,4) +3  keyword  "val"
@@ -124,9 +122,8 @@ async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   0 4 4 9 0
   0 5 3 9 0
   0 5 5 9 0
+  0 7 2 6 0
   0 6 1 7 0
-  0 2 2 9 0
-  0 3 2 6 0
   0 5 2 9 0
   0 4 1 7 0
   0 9 5 9 0
@@ -144,10 +141,9 @@ async fn f(xs: i32[], g: Grid, http: Http) -> Async<i32> {
   0 4 6 9 0
   0 7 3 9 0
   0 4 5 9 0
-  0 6 1 7 0
-  0 2 2 9 0
-  0 3 1 7 0
-  0 4 5 9 0
+  0 7 1 7 0
+  0 5 1 7 0
+  0 5 5 9 0
   0 6 1 7 0
   1 4 3 9 0
   0 4 6 7 1

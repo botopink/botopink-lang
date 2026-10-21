@@ -29,7 +29,7 @@ component fn Page() -> Component<View> {
 async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
     val r = await c.run(scope);
     var out = r.value.text;
-    for k in r.value.kids {
+    for (r.value.kids) { k ->
         val inner = await render(k, r.scope);
         out = out + " " + inner;
     }

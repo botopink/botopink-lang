@@ -11,4 +11,4 @@ iter fn old(n: i32) -> Iter<i32, string> {
     yield n;
 }
 
-pub fn main() -> void { for x in old(1) { print(x); } }
+pub fn main() -> void { for (old(1)) { x -> print(x); } }

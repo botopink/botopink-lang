@@ -28,7 +28,7 @@ pub fn runCase() -> void {
     print(acc, s);
 
     val t = {
-        for x in [1, 2] {
+        for ([1, 2]) { x ->
             acc = acc + x;
         }
         acc * 10

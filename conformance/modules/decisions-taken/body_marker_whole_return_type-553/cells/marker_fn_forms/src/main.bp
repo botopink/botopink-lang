@@ -23,7 +23,7 @@ pub async fn double(x: i32) -> Async<i32> {
 }
 
 async iter fn doubled(n: i32) -> AsyncIter<i32> {
-    for x in upTo(n) {
+    for (upTo(n)) { x ->
         yield await double(x);
     }
 }
@@ -41,14 +41,14 @@ component fn Page() -> Component<View> {
 
 type Grid(cells: i32[]) {
     iter fn each(self: Self) -> Iter<i32> {
-        for c in self.cells {
+        for (self.cells) { c ->
             yield c * 10;
         }
     }
 
     async fn total(self: Self) -> Async<i32> {
         var acc = 0;
-        for c in self.cells {
+        for (self.cells) { c ->
             acc = acc + await double(c);
         }
         return acc;
@@ -56,17 +56,17 @@ type Grid(cells: i32[]) {
 }
 
 pub async fn main() -> Async<void> {
-    for x in upTo(3) {
+    for (upTo(3)) { x ->
         print(x);
     }
     print(await double(21));
-    for await x in doubled(3) {
+    for await (doubled(3)) { x ->
         print(x);
     }
     val page = (await Page().run(RenderScope.root())).value;
     print(page.text);
     val g = Grid(cells: [1, 2]);
-    for c in g.each() {
+    for (g.each()) { c ->
         print(c);
     }
     print(await g.total());

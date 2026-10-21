@@ -2,7 +2,7 @@ import {io.terminal.print} from "std";
 
 type Grid(cells: i32[]) {
     iter fn iter(self: Self) -> Iter<i32> {
-        for c in self.cells {
+        for (self.cells) { c ->
             yield c;
         }
     }
@@ -10,7 +10,7 @@ type Grid(cells: i32[]) {
 
 fn main() -> void {
     val g = Grid(cells: [1, 2, 3]);
-    for c in g.iter() {
+    for (g.iter()) { c ->
         print(c);
     }
 }

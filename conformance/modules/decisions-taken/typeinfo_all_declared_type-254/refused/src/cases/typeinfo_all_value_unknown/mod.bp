@@ -12,7 +12,7 @@ fn route(syntax decl: unknown) -> void {
 pub fn home() -> string { return "home"; }
 
 pub fn main() -> void {
-    for r in @TypeInfo.all(with: route) {
+    for (@TypeInfo.all(with: route)) { r ->
         val page: fn() -> string = r.value;
         print(page());
     }

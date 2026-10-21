@@ -142,7 +142,7 @@ block that reads something between the `{` and its first statement — a prologu
 | `comptime { … }`, `async { … }` | — | `requiredExceptLast`, `markTail`, `bracedTail`; the tail wrapped in the block's `break` / `return` (`jumpTail`) |
 | `case` arm `p { … }` / `p -> { … }` | an optional `n ->` binder (`parseLambdaBody`) | `optional` / `requiredExceptLast`, the tail marked (`markBlockTail`), a braced `if` / `case` at the end included; both forms read the arm through `parseBlockBody`, so a `//` comment between statements is kept; a `//` comment after a bare tail (no `;`) is a comment after it, never the end of the block's value (`closesAfterComments`; `ast.lastRealIndex` is the tail's index for the checker and the commonJS / wasm backends) |
 | trailing lambda `f { a -> … }`, `f { -> … }` | an optional `label:` and the parameter list; neither parameters nor `->` is a block (`TrailingLambda.isBlock`, refused by the checker) | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b), `markTail` |
-| `for x in … { … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) |
+| `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) |
 | `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) |
 
 **A body's tail (decision 409).** `markTail` marks a function body's last

@@ -14,17 +14,17 @@ iter fn fibonacci(limit: i32) -> Iter<i32> {
 }
 
 iter fn firstNegative(xs: i32[]) -> Iter<i32> {
-    for x in xs {
+    for (xs) { x ->
         if (x < 0) break x; // emits the negative and ends
         yield x;
     }
 }
 
 fn main() -> void {
-    for n in fibonacci(10) {
+    for (fibonacci(10)) { n ->
         print(n);
     } // an ordinary function may iterate
-    for n in firstNegative([1, -2, 3]) {
+    for (firstNegative([1, -2, 3])) { n ->
         print(n);
     } // 1, then -2
 }

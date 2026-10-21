@@ -2,7 +2,7 @@
 ```botopink
 fn find(arr: i32[]) -> i32 {
     var found = 0;
-    for x in arr {
+    for (arr) { x ->
         if (x > 10) { found = x; break; };
     };
     return found;

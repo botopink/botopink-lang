@@ -8,7 +8,7 @@ fn render(words: array<string>) -> string {
         count = count + 1;
     };
     emit("start");
-    for w in words { emit(w); };
+    for (words) { w -> emit(w); };
     return out + " " + count.toString();
 }
 fn main() -> void {

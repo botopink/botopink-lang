@@ -12,5 +12,5 @@ pub fn main() -> void {
         if (n > 3) { throw "stop"; }
         yield n;
     };
-    for r in g { print(r.unwrapOr(0)); }
+    for (g) { r -> print(r.unwrapOr(0)); }
 }

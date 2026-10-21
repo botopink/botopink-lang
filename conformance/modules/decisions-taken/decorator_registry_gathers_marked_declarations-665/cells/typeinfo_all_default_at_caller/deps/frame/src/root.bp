@@ -15,7 +15,7 @@ pub fn frameCore() -> string {
 }
 
 fn show(all: Declared<unknown>[]) -> void {
-    for d in all {
+    for (all) { d ->
         val run = d.value;
         val said = if (run is fn() -> string) run() else "?";
         print(

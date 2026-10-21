@@ -16,7 +16,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     val all = @TypeInfo.all(with: entity);
-    for d in all {
+    for (all) { d ->
         val e = d.meta(Entity);
         print(
             d.name

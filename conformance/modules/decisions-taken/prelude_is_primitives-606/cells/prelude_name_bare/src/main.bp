@@ -25,7 +25,7 @@ iter fn upTo(n: i32) -> Iter<i32> {
 
 fn joined(it: Iter<i32>) -> string {
     var acc = "";
-    for x in it {
+    for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;

@@ -20,19 +20,19 @@ iter fn computed() -> Iter<i32> {
 
 pub fn runCase() -> void {
     val a = literals();
-    for x in a {
+    for (a) { x ->
         print(x);
     }
-    for x in a {
+    for (a) { x ->
         print(x);
     }
     print("fn literals done");
 
     val b = computed();
-    for x in b {
+    for (b) { x ->
         print(x);
     }
-    for x in b {
+    for (b) { x ->
         print(x);
     }
     print("fn computed done");
@@ -42,10 +42,10 @@ pub fn runCase() -> void {
         yield 2;
         break;
     };
-    for x in c {
+    for (c) { x ->
         print(x);
     }
-    for x in c {
+    for (c) { x ->
         print(x);
     }
     print("loop done");

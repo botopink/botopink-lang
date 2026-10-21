@@ -42,7 +42,7 @@ fn positions(n: i32) -> Result<i32, string> {
         }
     };
     print(word);
-    for x in try items(n) {
+    for (try items(n)) { x ->
         total = total + x;
     }
     total = try parse(total);

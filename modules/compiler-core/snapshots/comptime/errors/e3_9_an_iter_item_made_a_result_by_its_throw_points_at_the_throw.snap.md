@@ -1,20 +1,20 @@
 ----- SOURCE CODE
 fn count(xs: string[]) -> i32 {
-    val items = iter for x in xs {
+    val items = iter for (xs) { x ->
         if (x == "stop") { throw "stopped"; };
         yield 1;
     };
     var acc = 0;
-    for r in items { acc = acc + r; };
+    for (items) { r -> acc = acc + r; };
     return acc;
 }
 
 ----- ERROR
 error: type mismatch
-  ┌─ main.bp:7:34
+  ┌─ main.bp:7:36
   │
-7 │     for r in items { acc = acc + r; };
-  │                                  ^
+7 │     for (items) { r -> acc = acc + r; };
+  │                                    ^
 
   expected: i32
   found:    Result<i32,string>

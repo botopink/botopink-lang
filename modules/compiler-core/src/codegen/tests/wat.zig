@@ -3737,13 +3737,13 @@ test "wat: gc ---- arrays: a literal, an index, a loop, push, length and equalit
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn total(xs: i32[]) -> i32 {
         \\    var sum = 0;
-        \\    for x in xs { sum = sum + x; }
+        \\    for (xs) { x -> sum = sum + x; }
         \\    return sum;
         \\}
         \\
         \\fn longest(names: string[]) -> i32 {
         \\    var best = 0;
-        \\    for n in names { if (n.length() > best) { best = n.length(); } }
+        \\    for (names) { n -> if (n.length() > best) { best = n.length(); } }
         \\    return best;
         \\}
         \\
@@ -3823,7 +3823,7 @@ test "wat: gc ---- tuples: their elements, their printed text, an array of them 
         \\    print(t == u);
         \\    val rs = [Pair(a: 1, b: "p"), Pair(a: 2, b: "q")];
         \\    print(rs);
-        \\    for r in rs { print(r.b); }
+        \\    for (rs) { r -> print(r.b); }
         \\    val ts = [#(1, "a"), #(2, "b")];
         \\    print(ts);
         \\    print(ts[0]);
@@ -4267,7 +4267,7 @@ test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and 
         \\}
         \\
         \\pub fn main() -> void {
-        \\    for v in evens(7) { print(v); }
+        \\    for (evens(7)) { v -> print(v); }
         \\    print(parse("abc").map({ n -> n * 10 }).unwrapOr(-1));
         \\    print(parse("").map({ n -> n * 10 }).unwrapOr(-1));
         \\    print(parse("ab").flatMap({ n -> parse("xyz") }).unwrapOr(-1));

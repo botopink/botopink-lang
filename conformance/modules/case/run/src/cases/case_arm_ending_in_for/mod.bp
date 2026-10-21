@@ -10,11 +10,11 @@ type Node {
 
 fn flatten(ns: Node[]) -> i32[] {
     var out: i32[] = [];
-    for n in ns {
+    for (ns) { n ->
         case n {
             Many(vs) {
                 val items: i32[] = vs;
-                for k in items {
+                for (items) { k ->
                     out.push(k);
                 }
             }
@@ -31,12 +31,12 @@ fn tagged(n: i32) -> string[] {
     case n {
         1 {
             out.push("one");
-            for k in [1, 2] {
+            for ([1, 2]) { k ->
                 out.push(k.toString());
             }
         }
         2 {
-            for k in [3] {
+            for ([3]) { k ->
                 out.push(k.toString());
             }
         }

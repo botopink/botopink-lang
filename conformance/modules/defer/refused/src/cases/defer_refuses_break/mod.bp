@@ -1,7 +1,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    for i in [1, 2] {
+    for ([1, 2]) { i ->
         defer {
             break;
         }

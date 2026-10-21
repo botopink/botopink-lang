@@ -20,22 +20,22 @@ pub fn runCase() -> void {
         Brk(id: 2, label: "b", active: true, image: true),
     ];
     val ys = xs.map({ b -> Brk(..b, active: false) });
-    for b in ys {
+    for (ys) { b ->
         print(show(b));
     }
     val zs = xs.map({ b -> if (b.image) b else Brk(..b, label: "z") });
-    for b in zs {
+    for (zs) { b ->
         print(show(b));
     }
     val twice = xs.map({ b -> Brk(..b, id: b.id * 10, active: false) });
-    for b in twice {
+    for (twice) { b ->
         print(show(b));
     }
     val blocks = xs.map({ b ->
         val n = b.id + 100;
         Brk(..b, id: n)
     });
-    for b in blocks {
+    for (blocks) { b ->
         print(show(b));
     }
 }

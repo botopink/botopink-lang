@@ -13,7 +13,7 @@ fn bump(n: i32) -> i32 {
 }
 
 fn each(xs: i32[], f: fn(i32)) -> void {
-    for x in xs {
+    for (xs) { x ->
         f(x);
     }
 }

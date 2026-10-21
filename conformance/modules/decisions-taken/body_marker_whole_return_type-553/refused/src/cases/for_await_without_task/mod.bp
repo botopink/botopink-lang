@@ -13,7 +13,7 @@ async iter fn numbers() -> AsyncIter<i32> {
 
 fn total() -> i32 {
     var n = 0;
-    for await x in numbers() { n = n + x; }
+    for await (numbers()) { x -> n = n + x; }
     return n;
 }
 

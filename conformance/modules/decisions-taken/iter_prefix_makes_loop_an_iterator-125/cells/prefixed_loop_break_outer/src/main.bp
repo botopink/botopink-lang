@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     var n = 0;
-    for :outer x in [1, 2, 3] {
+    for :outer ([1, 2, 3]) { x ->
         val g = iter loop {
             n = n + 1;
             if (n > 2) { break :outer; }

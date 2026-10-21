@@ -28,7 +28,7 @@ pub fn runCase() -> void {
     print(xs[1]);
     print(xs.at(5));
     var total = 0n;
-    for x in xs {
+    for (xs) { x ->
         total += x;
     }
     print(total);

@@ -2,7 +2,7 @@ import {compiler, compiler.Field} from "std";
 
 pub fn stub<T>(comptime t: type<T>, comptime answer: string) -> T {
     val M = compiler.buildTypeInline(fields: [Field("__id", string)], implements: [t]);
-    for m in compiler.methods(t) {
+    for (compiler.methods(t)) { m ->
         compiler.addMember(M, compiler.name(m)!, fn(self: Self, name: string) -> string {
             return answer + " " + name;
         });

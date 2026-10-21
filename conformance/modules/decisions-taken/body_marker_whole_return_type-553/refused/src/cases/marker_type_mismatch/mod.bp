@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 async fn total(xs: i32[]) -> i32 {
     var acc = 0;
-    for x in xs {
+    for (xs) { x ->
         acc = acc + x;
     }
     return acc;

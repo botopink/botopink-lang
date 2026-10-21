@@ -2,7 +2,7 @@
 ```botopink
 fn sumTo(n: i32) -> i32 {
     var sum = 0;
-    for i in 0..n {
+    for (0..n) { i ->
         sum = sum + i;
     };
     return sum;
@@ -29,7 +29,7 @@ fn sumTo(n: i32) -> i32 {
           "source": "var sum = 0;"
         },
         {
-          "source": "for i in 0..n {"
+          "source": "for (0..n) { i ->"
         },
         {
           "source": "return sum;"

@@ -2,13 +2,13 @@
 ```botopink
 fn total(xs: i32[]) -> i32 {
     var sum = 0;
-    for x in xs { sum = sum + x; }
+    for (xs) { x -> sum = sum + x; }
     return sum;
 }
 
 fn longest(names: string[]) -> i32 {
     var best = 0;
-    for n in names { if (n.length() > best) { best = n.length(); } }
+    for (names) { n -> if (n.length() > best) { best = n.length(); } }
     return best;
 }
 
@@ -139,7 +139,7 @@ function __bp_eq_Array_i32(a, b) {
 function total(xs) {
     let sum = 0;
     for (const x of xs) {
-    sum = __bp_int((sum + x), -2147483648, 2147483647, "+ on i32 at main.bp:3:29");
+    sum = __bp_int((sum + x), -2147483648, 2147483647, "+ on i32 at main.bp:3:31");
 }
     return sum;
 }

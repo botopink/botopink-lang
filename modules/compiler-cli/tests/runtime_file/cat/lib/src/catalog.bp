@@ -6,7 +6,7 @@ import {marks.job};
 pub fn names() -> string {
     var out = "";
     val all: Declared<unknown>[] = @TypeInfo.all(with: job);
-    for d in all {
+    for (all) { d ->
         out = out + d.name + ";";
     }
     return out;

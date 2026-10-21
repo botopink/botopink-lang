@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 pub fn main() -> void {
     val base = [100, 250];
     var taxed = [];
-    for v in base {
+    for (base) { v ->
         taxed.push(v * 1.5);
     }
     print(taxed.length);

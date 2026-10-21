@@ -45,7 +45,7 @@ fn tagged(syntax q: string) -> anyvalue {
 fn sums(syntax q: string) -> anyvalue {
     val parts = compiler.text(q).split(",");
     var items: Binary[] = [];
-    for p in parts {
+    for (parts) { p ->
         items.push(Binary(op: "+", lhs: Lit(p.length()), rhs: Unary(op: "-", operand: Lit(1))));
     }
     return compiler.ast(List(items));

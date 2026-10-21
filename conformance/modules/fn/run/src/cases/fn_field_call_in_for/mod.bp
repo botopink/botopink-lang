@@ -11,7 +11,7 @@ pub fn runCase() -> void {
         Op(name: "inc", run: { x -> x + 1 }),
         Op(name: "dbl", run: { x -> x * 2 }),
     ];
-    for op in ops {
+    for (ops) { op ->
         print(op.name + "=" + op.run(5).toString());
     }
 }

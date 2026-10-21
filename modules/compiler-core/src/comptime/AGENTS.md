@@ -2983,7 +2983,7 @@ either: a field read off it, a `val` bound from it, a chain starting at it.
 What that cost was one backend, not the checker's own answer. commonJS records the `.length()` →
 native `length` PROPERTY rename only for a receiver inference resolved as a named `string` or
 `array`, so an untyped receiver kept its call parens and the emitted module called a number:
-`for x in xs { x.length() }` over an `Array<string>` was `TypeError: x.length is not a function`
+`for (xs) { x -> x.length() }` over an `Array<string>` was `TypeError: x.length is not a function`
 at exit 1, while erlang — which needs no receiver type to lower a primitive method — printed the
 length. Measured by a consuming library while it wrote a configuration reader; pinned by
 `conformance/modules/loop/run/src/cases/loop_item_method`, which asserts the VALUE.
@@ -2993,7 +2993,7 @@ The parameter binds the collection's element: `array` gives its type argument, a
 counts a range in integers; `a...b` is the same node with `inclusive` set), `for await` keeps the
 `@AsyncIter<T>` item it already resolved, and an iterated expression still a type variable
 keeps the fresh one, where a fresh one is exactly right. There is no second parameter since decision
-105: the index is `for i in 0..xs.length { }`.
+105: the index is `for (0..xs.length) { i -> }`.
 
 ## `.length()` through ONE optional layer
 

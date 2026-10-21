@@ -30,7 +30,7 @@ iter fn twice(n: i32) -> Iter<i32> {
 }
 
 pub fn runCase() -> void {
-    for x in (naturals().flatMap({ n -> twice(n) }).take(3)) {
+    for (naturals().flatMap({ n -> twice(n) }).take(3)) { x ->
         print(x);
     }
     print(counted().flatMap({ n -> twice(n) }).take(3).toArray());

@@ -55,7 +55,7 @@
                   "identifier": {
                     "loc": {
                       "line": 2,
-                      "col": 23
+                      "col": 16
                     },
                     "kind": {
                       "ident": "items"
@@ -68,7 +68,7 @@
                 ],
                 "paramsLoc": {
                   "line": 2,
-                  "col": 15
+                  "col": 25
                 },
                 "condition": false,
                 "body": [

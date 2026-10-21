@@ -17,7 +17,7 @@ type Profile(
 
 pub fn main() -> void {
     val lines = comptime compiler.typeInfo(Profile).meta(Defaults)!.lines;
-    for line in lines {
+    for (lines) { line ->
         terminal.print(line);
     }
     val p = Profile(email: "a@b.c");

@@ -19,7 +19,7 @@ iter fn parsed() -> Iter<Result<i32, string>> {
 }
 
 iter fn sugared(xs: i32[]) -> Iter<Result<i32, string>> {
-    for x in xs {
+    for (xs) { x ->
         print("sugared " + x.toString());
         val v = try check(x);
         yield v;
@@ -27,7 +27,7 @@ iter fn sugared(xs: i32[]) -> Iter<Result<i32, string>> {
 }
 
 iter fn thrown(xs: i32[]) -> Iter<Result<i32, string>> {
-    for x in xs {
+    for (xs) { x ->
         print("thrown before " + x.toString());
         if (x < 0) throw "stop at " + x.toString();
         yield x;
@@ -43,13 +43,13 @@ fn show(r: Result<i32, string>) -> void {
 }
 
 pub fn runCase() -> void {
-    for r in parsed() {
+    for (parsed()) { r ->
         show(r);
     }
-    for r in sugared([1, -2, 3]) {
+    for (sugared([1, -2, 3])) { r ->
         show(r);
     }
-    for r in thrown([1, -2, 3]) {
+    for (thrown([1, -2, 3])) { r ->
         show(r);
     }
     val looped = iter loop {
@@ -58,7 +58,7 @@ pub fn runCase() -> void {
         print("loop after");
         throw "loop end";
     };
-    for r in looped {
+    for (looped) { r ->
         show(r);
     }
 }

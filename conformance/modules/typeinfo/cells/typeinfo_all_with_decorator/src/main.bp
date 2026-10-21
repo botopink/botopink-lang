@@ -10,8 +10,8 @@ pub fn about() -> string {
 }
 
 fn main() -> void {
-    for r in @TypeInfo.all(with: route) {
-        for m in r.metaAll(Route) {
+    for (@TypeInfo.all(with: route)) { r ->
+        for (r.metaAll(Route)) { m ->
             print(r.name + " " + m.path); // about /about
         }
     }

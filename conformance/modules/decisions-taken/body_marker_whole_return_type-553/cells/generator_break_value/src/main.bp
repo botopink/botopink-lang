@@ -38,7 +38,7 @@ iter fn last() -> Iter<i32> {
 // A plain `fn` iterates a `Iter<T>`.
 fn plainDigits(g: Iter<i32>) -> string {
     var acc = "";
-    for x in g {
+    for (g) { x ->
         acc = acc + x.toString();
     }
     return acc;

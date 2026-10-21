@@ -3,7 +3,7 @@
 fn main() -> void {
     val precosBrutos = [100, 250, 400];
     var precosComTaxa = [];
-    for valor in precosBrutos {
+    for (precosBrutos) { valor ->
         val taxa = valor * 0.15;
         precosComTaxa.push(valor + taxa);
     };

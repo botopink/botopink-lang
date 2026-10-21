@@ -3,11 +3,11 @@ import {io.terminal.print} from "std";
 pub fn runCase() -> void {
     val xs = [1, 2, 3];
 
-    for item in xs {
+    for (xs) { item ->
         print(item);
     }
 
-    for i in 1...3 {
+    for (1...3) { i ->
         print(i);
     }
 

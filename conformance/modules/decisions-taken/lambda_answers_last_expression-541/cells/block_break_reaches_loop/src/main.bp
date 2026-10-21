@@ -5,7 +5,7 @@ import {io.terminal.print} from "std";
 
 fn firstBig(xs: i32[]) -> i32 {
     var found = 0;
-    for x in xs {
+    for (xs) { x ->
         {
             if (x > 2) {
                 found = x;

@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 fn sumSkippingFives(xs: i32[]) -> i32 {
     var s = 0;
-    for x in xs {
+    for (xs) { x ->
         case x {
             5 {
                 continue;
@@ -20,7 +20,7 @@ fn sumSkippingFives(xs: i32[]) -> i32 {
 
 fn countOdd(xs: i32[]) -> i32 {
     var n = 0;
-    for x in xs {
+    for (xs) { x ->
         { if (x % 2 == 0) continue }
         n = n + 1;
     }

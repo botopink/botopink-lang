@@ -13,7 +13,7 @@ iter fn h() -> Iter<i32> {
 }
 
 pub fn main() -> void {
-    for x in h() {
+    for (h()) { x ->
         print(x);
     }
 }

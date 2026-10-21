@@ -30,13 +30,13 @@ pub fn runCase() -> void {
     print(xs.at(1));
     print(xs.at(7));
     var sum = 0;
-    for x in xs {
+    for (xs) { x ->
         print(x);
         sum = sum + size(x);
     }
     print(sum);
     val ys: (i32 | string)[] = [2, "b", 3];
-    for y in ys {
+    for (ys) { y ->
         print(y);
     }
     print(ys);

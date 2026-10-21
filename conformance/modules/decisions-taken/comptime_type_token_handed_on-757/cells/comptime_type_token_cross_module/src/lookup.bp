@@ -1,6 +1,6 @@
 // The first entry that is a `T` — specialised per type argument (757).
 pub fn firstOf<T>(comptime t: type<T>, entries: unknown[]) -> ?T {
-    for e in entries {
+    for (entries) { e ->
         if (e is t) return e;
     }
     return null;
@@ -13,7 +13,7 @@ fn bump(n: i32) -> i32 {
 // A private helper of this module, called from the copy in the caller.
 pub fn countOf<T>(comptime t: type<T>, entries: unknown[]) -> i32 {
     var n = 0;
-    for e in entries {
+    for (entries) { e ->
         if (e is t) n = bump(n);
     }
     return n;

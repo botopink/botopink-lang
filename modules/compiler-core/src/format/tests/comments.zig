@@ -367,7 +367,7 @@ test "format: comments ---- a loop body keeps a blank line and a comment" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn f(xs: Array<i32>) -> i32 {
         \\    var n = 0;
-        \\    for x in xs {
+        \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // the second half
@@ -408,7 +408,7 @@ test "format: comments ---- all three blocks of one `if`/`loop` keep theirs at o
         \\        // else-branch
         \\        n = 4;
         \\    }
-        \\    for x in xs {
+        \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // loop body

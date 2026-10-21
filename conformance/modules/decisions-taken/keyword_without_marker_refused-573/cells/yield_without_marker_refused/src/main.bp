@@ -6,13 +6,13 @@
 import {io.terminal.print} from "std";
 
 fn evens(xs: i32[]) -> Iter<i32> {
-    for x in xs {
+    for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
 
 pub fn main() -> void {
-    for x in evens([1, 2, 3, 4]) {
+    for (evens([1, 2, 3, 4])) { x ->
         print(x);
     }
 }

@@ -13,7 +13,7 @@ pub fn main() -> void {
     print(t == u);
     val rs = [Pair(a: 1, b: "p"), Pair(a: 2, b: "q")];
     print(rs);
-    for r in rs { print(r.b); }
+    for (rs) { r -> print(r.b); }
     val ts = [#(1, "a"), #(2, "b")];
     print(ts);
     print(ts[0]);

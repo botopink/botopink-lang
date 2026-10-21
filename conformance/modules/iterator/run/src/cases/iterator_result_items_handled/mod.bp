@@ -6,7 +6,7 @@ fn port(n: i32) -> Result<i32, string> {
 }
 
 iter fn ports(xs: i32[]) -> Iter<Result<i32, string>> {
-    for x in xs {
+    for (xs) { x ->
         yield try port(x);
     } // a failed `try` emits Error(e) and ends
 }
@@ -14,7 +14,7 @@ iter fn ports(xs: i32[]) -> Iter<Result<i32, string>> {
 // stop at the first error: an explicit try, under a Result return
 fn sumPorts(xs: i32[]) -> Result<i32, string> {
     var total = 0;
-    for r in ports(xs) {
+    for (ports(xs)) { r ->
         val p = try r; // the explicit try: an Error rises from here
         total = total + p;
     }
@@ -23,7 +23,7 @@ fn sumPorts(xs: i32[]) -> Result<i32, string> {
 
 // carry on past the error: a case, in any function
 fn printPorts(xs: i32[]) -> void {
-    for r in ports(xs) {
+    for (ports(xs)) { r ->
         case r {
             Ok(p) -> print(p);
             Error(e) -> print("error: " + e);

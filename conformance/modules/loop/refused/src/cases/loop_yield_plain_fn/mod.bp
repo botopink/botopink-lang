@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    for x in [1, 2, 3] {
+    for ([1, 2, 3]) { x ->
         yield x * 2;
     }
     print(1);

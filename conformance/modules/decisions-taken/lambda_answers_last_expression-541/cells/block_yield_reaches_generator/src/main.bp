@@ -15,5 +15,5 @@ iter fn items() -> Iter<i32> {
 }
 
 pub fn main() -> void {
-    for v in items() { print(v); }
+    for (items()) { v -> print(v); }
 }

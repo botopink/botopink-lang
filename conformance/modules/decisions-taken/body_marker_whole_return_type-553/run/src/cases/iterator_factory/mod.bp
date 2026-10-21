@@ -10,27 +10,27 @@
 import {io.terminal.print} from "std";
 
 iter fn evens(xs: i32[]) -> Iter<i32> {
-    for x in xs {
+    for (xs) { x ->
         if (x % 2 == 0) yield x;
     }
 }
 
 fn evensOf(xs: i32[]) -> Iter<i32> {
-    return iter for x in xs {
+    return iter for (xs) { x ->
         if (x % 2 == 0) yield x;
     };
 }
 
 fn pick(up: bool, xs: i32[]) -> Iter<i32> {
     if (up) return evens(xs);
-    return iter for x in xs {
+    return iter for (xs) { x ->
         yield x * 10;
     };
 }
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for x in it {
+    for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;

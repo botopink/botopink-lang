@@ -19,7 +19,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     val made = @TypeInfo.all(with: service, member: "make");
-    for e in made {
+    for (made) { e ->
         print(e.module + " " + e.name);
     }
     print(Widget.make().name());

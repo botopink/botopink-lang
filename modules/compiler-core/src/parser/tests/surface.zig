@@ -519,7 +519,7 @@ test "surface: an annotation block on a loop is refused — a loop takes `iter` 
     try expectError("fn f() { val g = #[custom] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
     // the removed effect annotations name the prefix instead (decision 125)
     try expectError("fn f() { val g = #[@future] loop { break; }; }", .effectAnnotationRemovedLoop, 1, 20);
-    try expectError("fn f() { val g = #[@generator] for x in [1] { yield x; }; }", .effectAnnotationRemovedLoop, 1, 20);
+    try expectError("fn f() { val g = #[@generator] for ([1]) { x -> yield x; }; }", .effectAnnotationRemovedLoop, 1, 20);
     try expectError("fn f() { val g = #[@generator] while (true) { break; }; }", .effectAnnotationRemovedLoop, 1, 20);
 }
 
@@ -527,10 +527,10 @@ test "surface: the prefixed loop carries its kind and the three forms their keyw
     var parsed = try parse(
         \\fn f(xs: i32[]) -> void {
         \\    val g = iter loop :gen { yield 1; break 2; };
-        \\    val r = iter for x in xs { yield x; };
+        \\    val r = iter for (xs) { x -> yield x; };
         \\    val fg = stream loop { yield 1; };
-        \\    for :outer x in xs { x; };
-        \\    for await x in fg { x; };
+        \\    for :outer (xs) { x -> x; };
+        \\    for await (fg) { x -> x; };
         \\    while :w (true) { break :w; };
         \\    loop { break; };
         \\    val sw = stream while (true) { yield 1; };

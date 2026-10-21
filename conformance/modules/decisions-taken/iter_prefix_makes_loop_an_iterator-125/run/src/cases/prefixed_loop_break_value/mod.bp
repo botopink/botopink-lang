@@ -9,7 +9,7 @@ import {io.terminal.print} from "std";
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for x in it {
+    for (it) { x ->
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;
@@ -25,7 +25,7 @@ pub fn runCase() -> void {
     print(line(tens));
     print(n);
 
-    val untilNegative = iter for x in [5, -1, 7] {
+    val untilNegative = iter for ([5, -1, 7]) { x ->
         if (x < 0) break x;
         yield x;
     };

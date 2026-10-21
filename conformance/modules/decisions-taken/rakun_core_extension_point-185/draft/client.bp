@@ -12,7 +12,7 @@ fn epochsOf(tags: string[]) -> i32[] {
 
 pub fn get(url: string, tags: string[]) -> string {
     val now = epochsOf(tags);
-    for s in stored {
+    for (stored) { s ->
         if (s._0 == url && s._2 == now) return "hit " + s._1;
     }
     fetches = fetches + 1;

@@ -15,11 +15,11 @@ fn two() -> i32 {
 
 fn narrowed(xs: unknown[], ys: unknown[]) -> i32 {
     var n = 0;
-    for x in xs {
+    for (xs) { x ->
         val v = x;
         if (v is fn() -> i32) n = n + v();
     }
-    for y in ys {
+    for (ys) { y ->
         val v = y;
         if (v is fn() -> i32) n = n + v() * 10;
     }
@@ -35,11 +35,11 @@ fn reassigned() -> i32 {
 
 fn siblings() -> i32 {
     var total = 0;
-    for k in [1, 2] {
+    for ([1, 2]) { k ->
         val f: fn() -> i32 = { -> k };
         total = total + f();
     }
-    for k in [3] {
+    for ([3]) { k ->
         val f: fn() -> i32 = { -> k * 10 };
         total = total + f();
     }

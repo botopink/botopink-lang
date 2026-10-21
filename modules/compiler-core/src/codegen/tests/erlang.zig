@@ -296,7 +296,7 @@ test "erlang: a block reassigning an enclosing `var` answers it beside its value
         \\    var seen = 0;
         \\    var hit = -1;
         \\    val found = {
-        \\        for x in xs {
+        \\        for (xs) { x ->
         \\            seen = seen + 1;
         \\            if (hit < 0 && x > limit) {
         \\                hit = x;
@@ -485,8 +485,8 @@ test "erlang: a bare return in a yielding case arm ends the generator" {
         \\}
         \\
         \\pub fn main() -> void {
-        \\    for v in items(0) { print(v); }
-        \\    for v in items(1) { print(v); }
+        \\    for (items(0)) { v -> print(v); }
+        \\    for (items(1)) { v -> print(v); }
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -497,8 +497,8 @@ test "erlang: a labelled break leaves the outer loop from an inner one" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
         \\    var s = 0;
-        \\    for :outer x in xs {
-        \\        for y in ys {
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
         \\            case y {
         \\                2 { break :outer; }
         \\                _ { }
@@ -521,8 +521,8 @@ test "erlang: a labelled continue starts the outer loop's next round from a case
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn run(xs: i32[], ys: i32[]) -> i32 {
         \\    var s = 0;
-        \\    for :outer x in xs {
-        \\        for y in ys {
+        \\    for :outer (xs) { x ->
+        \\        for (ys) { y ->
         \\            case x * 10 + y {
         \\                12 { continue :outer; }
         \\                _ { }

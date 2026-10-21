@@ -20,7 +20,7 @@ pub type Registry(entries: unknown[]) {
 
     pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
         var k = 0;
-        for e in self.entries {
+        for (self.entries) { e ->
             if (e is t) k = k + 1;
         }
         return k;

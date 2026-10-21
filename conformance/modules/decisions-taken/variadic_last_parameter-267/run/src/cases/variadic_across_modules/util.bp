@@ -2,7 +2,7 @@
 
 pub fn sum(..values: i32[]) -> i32 {
     var t = 0;
-    for v in values {
+    for (values) { v ->
         t = t + v;
     }
     return t;

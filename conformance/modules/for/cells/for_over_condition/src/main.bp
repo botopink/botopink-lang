@@ -5,7 +5,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     val running = true;
-    for x in running {
+    for (running) { x ->
         print(x);
     }
 }

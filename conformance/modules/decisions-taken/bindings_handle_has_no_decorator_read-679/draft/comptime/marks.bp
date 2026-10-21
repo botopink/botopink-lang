@@ -10,7 +10,7 @@ pub fn raw(syntax decl: unknown, comptime reason: string) -> void {
 
 pub fn kinds(syntax q: string) -> string {
     var out: string[] = [];
-    for d in compiler.bindings(q) {
+    for (compiler.bindings(q)) { d ->
         val m = compiler.meta(d, RawBody);
         out.push(compiler.name(d)! + " " + (m?.reason ?? "plain"));
     }

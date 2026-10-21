@@ -19,7 +19,7 @@ type Signup(password: string, confirm: string)
 
 fn main() -> void {
     val s = Signup(password: "a", confirm: "b");
-    for c in comptime compiler.typeInfo(Signup).metaAll(Check) {
+    for (comptime compiler.typeInfo(Signup).metaAll(Check)) { c ->
         if (!c.rule(s)) print(c.message); // the passwords differ
     }
 }

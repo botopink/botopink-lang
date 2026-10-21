@@ -23,7 +23,7 @@ fn about() -> string {
 }
 
 pub fn runCase() -> void {
-    for m in all() {
+    for (all()) { m ->
         print(m.name + " " + m.lifecycle + " " + m.make());
     }
 }

@@ -25,7 +25,7 @@ fn discard(layer: string, rule: Rule) -> void {}
 component fn computed(name: string, parts: Rule[]) -> Component<Rule> {
     val sheet = use context(sheetContext);
     var text = name;
-    for r in parts {
+    for (parts) { r ->
         text = text + "+" + r.text;
     }
     val out = Rule(name: name, text: text);

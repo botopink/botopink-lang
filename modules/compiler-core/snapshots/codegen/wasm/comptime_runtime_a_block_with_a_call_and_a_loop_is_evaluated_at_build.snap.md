@@ -13,7 +13,7 @@ fn main() -> void {
     print(a);
     val d = comptime {
         var d = 0;
-        for b in [1, 2, 3] { d = add(d, b); }
+        for ([1, 2, 3]) { b -> d = add(d, b); }
         d
     };
     print(d);
@@ -1240,7 +1240,7 @@ import {io.terminal.print} from "std";
   call $rt_bin
   i64.const 14
   call $rt_int
-  i64.const 34
+  i64.const 36
   call $rt_int
   local.get $V___BpF0
   call $bp_comptime_decorator:__bp_push/4

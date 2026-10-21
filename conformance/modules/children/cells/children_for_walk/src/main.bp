@@ -9,7 +9,7 @@ pub type El(tag: string, children: Children)
 
 pub fn render(e: El) -> string {
     var inner = "";
-    for c in e.children {
+    for (e.children) { c ->
         inner = inner + render(c);
     }
     return "<" + e.tag + ">" + inner + "</" + e.tag + ">";

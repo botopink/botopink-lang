@@ -166,7 +166,7 @@
                   "identifier": {
                     "loc": {
                       "line": 4,
-                      "col": 14
+                      "col": 10
                     },
                     "kind": {
                       "ident": "xs"
@@ -179,7 +179,7 @@
                 ],
                 "paramsLoc": {
                   "line": 4,
-                  "col": 9
+                  "col": 16
                 },
                 "condition": false,
                 "body": [
@@ -188,7 +188,7 @@
                       "binding": {
                         "loc": {
                           "line": 4,
-                          "col": 19
+                          "col": 21
                         },
                         "kind": {
                           "assign": {
@@ -200,14 +200,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 4,
-                                  "col": 29
+                                  "col": 31
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "identifier": {
                                     "loc": {
                                       "line": 4,
-                                      "col": 25
+                                      "col": 27
                                     },
                                     "kind": {
                                       "ident": "acc"
@@ -218,7 +218,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 4,
-                                      "col": 31
+                                      "col": 33
                                     },
                                     "kind": {
                                       "ident": "x"

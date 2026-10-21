@@ -2,7 +2,7 @@
 ```botopink
 fn doubles(arr: i32[]) -> i32[] {
     var out = [];
-    for x in arr {
+    for (arr) { x ->
         out.push(x * 2);
     };
     return out;

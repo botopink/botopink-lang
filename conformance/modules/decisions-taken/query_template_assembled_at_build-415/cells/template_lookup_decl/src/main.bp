@@ -28,7 +28,7 @@ fn describe(syntax q: string) -> string {
     if (d.kind == DeclKind.Behavior) kind = "behavior";
     if (d.kind == DeclKind.Fn) kind = "fn";
     var text = d.name + " " + kind + " " + d.module;
-    for f in d.fields {
+    for (d.fields) { f ->
         text = text + " " + f.name + ":" + f.typeName;
     }
     return compiler.build("\"" + text + "\"");

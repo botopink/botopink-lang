@@ -4,7 +4,7 @@ fn pick(xs: array<string>) -> string {
     var first = "";
     var last = "";
     var i = 0;
-    for x in xs {
+    for (xs) { x ->
         if (i == 0) { first = x; };
         last = x;
         i = i + 1;
@@ -13,7 +13,7 @@ fn pick(xs: array<string>) -> string {
 }
 fn weigh(xs: array<i32>) -> i32 {
     var total = 0;
-    for i in 0..xs.length {
+    for (0..xs.length) { i ->
         total = total + (xs[i] ?? 0) * (i + 1);
     };
     return total;

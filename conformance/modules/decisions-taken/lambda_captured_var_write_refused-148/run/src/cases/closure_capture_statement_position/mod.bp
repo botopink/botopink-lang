@@ -20,7 +20,7 @@ pub fn runCase() -> void {
         n = n + 10;
     };
     bump();
-    for i in [1, 2] {
+    for ([1, 2]) { i ->
         bump();
     }
     [5].forEach({ v -> bump() });

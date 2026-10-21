@@ -15,7 +15,7 @@ fn pass(t: Async<i32>) -> Async<i32> {
 
 async fn total(ts: Async<i32>[]) -> Async<i32> {
     var acc = 0;
-    for t in ts {
+    for (ts) { t ->
         val v = await t;
         acc = acc + v;
     }
@@ -32,7 +32,7 @@ async fn settle(t: Async<i32>) -> Async<i32> {
 pub async fn main() -> Async<void> {
     val tasks = [double(1), double(2), double(3)];
     var sum = 0;
-    for t in tasks {
+    for (tasks) { t ->
         val v = await t;
         print(v);
         sum = sum + v;

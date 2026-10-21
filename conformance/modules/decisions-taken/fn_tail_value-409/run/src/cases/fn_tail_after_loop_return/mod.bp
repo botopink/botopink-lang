@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 fn firstNegative(xs: i32[]) -> i32 {
-    for x in xs {
+    for (xs) { x ->
         if (x < 0) return x;
     }
     0

@@ -17,14 +17,14 @@ fn check(n: i32) -> Result<i32, string> {
 }
 
 iter fn parseAll(xs: i32[]) -> Iter<Result<i32, string>> {
-    for x in xs {
+    for (xs) { x ->
         yield check(x);
     }
 }
 
 fn sum(xs: i32[]) -> Result<i32, string> {
     var total = 0;
-    for r in parseAll(xs) {
+    for (parseAll(xs)) { r ->
         val v = try r;
         total = total + v;
     }
@@ -32,7 +32,7 @@ fn sum(xs: i32[]) -> Result<i32, string> {
 }
 
 fn printAll(xs: i32[]) -> void {
-    for r in parseAll(xs) {
+    for (parseAll(xs)) { r ->
         case r {
             Ok(v) -> print(v);
             Error(e) -> print("error: " + e);

@@ -11,7 +11,7 @@ async fn double(x: i32) -> Async<i32> {
 
 async fn drain(n: i32, f: fn(n: i32) -> AsyncIter<i32>) -> Async<i32> {
     var acc = 0;
-    for await x in f(n) {
+    for await (f(n)) { x ->
         acc = acc + x;
     }
     return acc;
@@ -22,7 +22,7 @@ pub async fn main() -> Async<void> {
         yield await double(n);
         yield await double(n + 1);
     };
-    for await x in ticks(1) {
+    for await (ticks(1)) { x ->
         print(x);
     }
     val total = drain(3) { async iter n ->

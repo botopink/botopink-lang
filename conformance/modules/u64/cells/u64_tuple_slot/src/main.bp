@@ -39,7 +39,7 @@ pub fn main() -> void {
     print(first(#(top, "q")));
     val rows: array<#(u64, string)> = [#(top, "a"), #(three, "b")];
     print(rows);
-    for r in rows {
+    for (rows) { r ->
         print(r.1, r.0);
     }
     print(rows.map({ r -> r.0.toString() }));

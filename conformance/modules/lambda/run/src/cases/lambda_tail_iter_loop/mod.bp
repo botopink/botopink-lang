@@ -4,7 +4,7 @@
 import {io.terminal.print} from "std";
 
 fn walk(f: fn() -> Iter<i32>) -> void {
-    for x in f() {
+    for (f()) { x ->
         print(x);
     }
 }

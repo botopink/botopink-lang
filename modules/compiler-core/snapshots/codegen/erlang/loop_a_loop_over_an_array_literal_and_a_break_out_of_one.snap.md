@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    for x in [1, 2, 3] { print(x); };
+    for ([1, 2, 3]) { x -> print(x); };
     var first = 0;
-    for x in [1, 2, 3] { if (x == 2) { first = x * 10; break; }; };
+    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
     print(first);
 }
 
@@ -27,7 +27,7 @@ main() ->
                 [X@1 | __BpRest1] ->
                     First@3 = case (X@1 =:= 2) of
                         true ->
-                            First@2 = '__bp_int'((X@1 * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:50">>),
+                            First@2 = '__bp_int'((X@1 * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:52">>),
                             erlang:throw({'__bp_cond_break', First@2}),
                             First@2;
                         _ ->

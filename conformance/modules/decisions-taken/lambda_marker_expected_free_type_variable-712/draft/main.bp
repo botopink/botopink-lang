@@ -15,7 +15,7 @@ pub async fn main() -> Async<void> {
         yield 1;
         yield 2;
     });
-    for x in it {
+    for (it) { x ->
         print(x);
     }
     print(run(fn() -> i32 {

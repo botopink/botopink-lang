@@ -19,7 +19,7 @@ fn css(syntax q: string) -> string {
     var holes: CustomNode[] = [];
     var at = 0;
     var first = true;
-    for piece in compiler.text(q).split("\${") {
+    for (compiler.text(q).split("\${")) { piece ->
         if (first) {
             code = code + " + " + quoted(piece);
             at = piece.length;

@@ -43,7 +43,7 @@ fn sql(syntax q: string) -> string {
         + size
         + " tags="
         + t.tags.join(",");
-    for i in compiler.metaAll(decl, Index) {
+    for (compiler.metaAll(decl, Index)) { i ->
         text = text + " index=" + i.column;
     }
     return compiler.build("\"" + text + "\"");

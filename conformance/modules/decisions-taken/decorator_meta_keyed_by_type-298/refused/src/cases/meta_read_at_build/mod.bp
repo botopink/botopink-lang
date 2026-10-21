@@ -11,7 +11,7 @@ fn entity(syntax decl: unknown) -> void {
 }
 
 fn audit(syntax decl: unknown) -> void {
-    for h in compiler.hooks(decl) {
+    for (compiler.hooks(decl)) { h ->
         if (h.function.meta(Entity) == null)
             compiler.fail("no entity", at: decl);
     }

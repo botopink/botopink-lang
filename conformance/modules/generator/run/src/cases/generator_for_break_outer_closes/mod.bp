@@ -13,8 +13,8 @@ iter fn counted() -> Iter<i32> {
 }
 
 pub fn runCase() -> void {
-    for :outer n in [1, 2] {
-        for x in counted() {
+    for :outer ([1, 2]) { n ->
+        for (counted()) { x ->
             print(n * 10 + x);
             if (x == 1) break :outer;
         }

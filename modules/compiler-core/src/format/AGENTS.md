@@ -223,7 +223,7 @@ form has always done that); whether it should is a question, recorded in
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
 - **Blank lines and comments in every block** — including an `if` **then**-branch and a lambda
-  body, which is every `for x in … { … }` body. Those two were the last blocks whose statements
+  body, which is every `for (…) { x -> … }` body. Those two were the last blocks whose statements
   came from an inlined loop in `parser/exprs.zig` that recorded no `emptyLinesBefore` and made a
   `//` there a parse error; `15-language-surface`'s `28e447e` routed them through
   `parseStmtListInBraces`, and this printer has read the field all along (one `fmtStmtSeq` for every

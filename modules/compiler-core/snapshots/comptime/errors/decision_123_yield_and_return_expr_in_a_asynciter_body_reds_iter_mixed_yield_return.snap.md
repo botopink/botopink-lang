@@ -11,4 +11,4 @@ error: iter-mixed-yield-return: this body yields, so it is an iterator — and `
 3 │     return 42;
   │     ^
 
-  hint: Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for x in xs { … };`).
+  hint: Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for (xs) { x -> … };`).
