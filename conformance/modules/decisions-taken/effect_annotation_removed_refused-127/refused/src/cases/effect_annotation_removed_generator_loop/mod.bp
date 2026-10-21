@@ -13,5 +13,5 @@ pub fn main() -> void {
         if (n > 3) { break; }
         yield n;
     };
-    for (g) { x -> print(x); }
+    for x in g { print(x); }
 }

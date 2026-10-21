@@ -11,4 +11,4 @@ iter fn nums(n: i32) -> Iter<i32> {
     while (i < n) { yield i; i = i + 1; }
 }
 
-pub fn main() -> void { for (nums(2)) { x -> print(x); } }
+pub fn main() -> void { for x in nums(2) { print(x); } }

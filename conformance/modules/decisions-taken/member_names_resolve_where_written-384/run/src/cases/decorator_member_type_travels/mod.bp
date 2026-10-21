@@ -11,7 +11,7 @@ import {io.terminal.print} from "std";
 pub fn runCase() -> void {
     val vs = Signup(password: "a", confirm: "b").validate();
     print(vs.length);
-    for (vs) { v ->
+    for v in vs {
         print(v.field + ": " + v.message);
     }
 }

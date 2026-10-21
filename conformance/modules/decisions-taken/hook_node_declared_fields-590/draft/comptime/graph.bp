@@ -4,9 +4,9 @@ pub type Graph(lines: string[])
 
 pub fn graph(syntax decl: unknown) -> void {
     var lines: string[] = [];
-    for (compiler.hooks(decl)) { n ->
+    for n in compiler.hooks(decl) {
         val owner = compiler.name(n.function)!;
-        for (n.uses) { u ->
+        for u in n.uses {
             val ctx = u.context;
             val read = if (ctx == null) "-" else compiler.name(ctx)!;
             lines.push(owner + " uses " + read);

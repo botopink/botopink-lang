@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() -> void {
-    for ([1, 2, 3]) { x -> print(x); };
+    for x in [1, 2, 3] { print(x); };
     var first = 0;
-    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
+    for x in [1, 2, 3] { if (x == 2) { first = x * 10; break; }; };
     print(first);
 }
 
@@ -615,7 +615,7 @@ import {io.terminal.print} from "std";
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: * on i32 at main.bp:4:52")
+  (data $__d0 "integer overflow: * on i32 at main.bp:4:50")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs

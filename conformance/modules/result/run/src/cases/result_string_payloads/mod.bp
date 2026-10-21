@@ -41,7 +41,7 @@ fn describe(r: Result<i32, string>) -> string {
 }
 
 fn each(rs: Result<i32, string>[]) -> void {
-    for (rs) { x ->
+    for x in rs {
         case x {
             Ok(v) -> print(v.toString());
             Error(e) -> print(e);

@@ -403,8 +403,8 @@ test "commonJS: a labelled break leaves the outer loop from a case arm of an inn
     try h.assertJsRunLog(std.testing.allocator,
         \\fn sumBeforeTwo(xs: i32[], ys: i32[]) -> i32 {
         \\    var s = 0;
-        \\    for :outer (xs) { x ->
-        \\        for (ys) { y ->
+        \\    for :outer x in xs {
+        \\        for y in ys {
         \\            case y {
         \\                2 { break :outer; }
         \\                _ { }
@@ -438,8 +438,8 @@ test "commonJS: a bare return in a yielding case arm ends the generator" {
         \\}
         \\
         \\pub fn main() -> void {
-        \\    for (items(0)) { v -> print(v); }
-        \\    for (items(1)) { v -> print(v); }
+        \\    for v in items(0) { print(v); }
+        \\    for v in items(1) { print(v); }
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -450,8 +450,8 @@ test "commonJS: a labelled continue starts the outer loop's next round from a ca
     try h.assertJsRunLog(std.testing.allocator,
         \\fn run(xs: i32[], ys: i32[]) -> i32 {
         \\    var s = 0;
-        \\    for :outer (xs) { x ->
-        \\        for (ys) { y ->
+        \\    for :outer x in xs {
+        \\        for y in ys {
         \\            case x * 10 + y {
         \\                12 { continue :outer; }
         \\                _ { }

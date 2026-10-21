@@ -8,9 +8,9 @@ pub fn serverOnly(syntax decl: unknown) -> void {}
 
 pub fn page(syntax decl: unknown) -> void {
     var dynamic = false;
-    for (compiler.hooks(decl)) { n ->
-        for (n.uses) { u ->
-            for (u.annotations) { a ->
+    for n in compiler.hooks(decl) {
+        for u in n.uses {
+            for a in u.annotations {
                 if (compiler.same(a.decorator, serverOnly)) dynamic = true;
             }
         }

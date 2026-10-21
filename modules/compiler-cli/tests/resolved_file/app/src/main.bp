@@ -34,7 +34,7 @@ pub fn main() -> void {
     print(greet());
     print(clamp(9.5, 0.0, 2.5).toString());
     val jobs: Declared<unknown>[] = @TypeInfo.all(with: job);
-    for (jobs) { d ->
+    for d in jobs {
         print(d.name);
     }
 }

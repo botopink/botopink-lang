@@ -32,7 +32,7 @@ pub component fn Page(slot: Slot) -> Component<Element> {
 
 fn render(e: Element) -> string {
     var out = e.tag;
-    for (e.kids) { k ->
+    for k in e.kids {
         out = out + "," + render(k);
     }
     return out;

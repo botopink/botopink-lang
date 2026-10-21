@@ -4,7 +4,7 @@ import {io.terminal.print} from "std";
 
 fn total(xs: bigint[]) -> bigint {
     var sum = 0n;
-    for (xs) { x ->
+    for x in xs {
         sum = sum + x;
     }
     return sum;

@@ -7,7 +7,7 @@ import {compiler} from "std";
 pub fn tag(syntax q: string) -> string {
     val words = compiler.text(q).split(" ");
     var args: string[] = [];
-    for (words.slice(1, words.length)) { w ->
+    for w in words.slice(1, words.length) {
         val kv = w.split("=");
         args.push(kv.slice(0, 1).join("")
             + ": \""

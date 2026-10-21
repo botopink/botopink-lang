@@ -11,7 +11,7 @@ fn joined(first: ?string, parts: string[], sep: ?string) -> string {
         v ->
         out = v;
     }
-    for (parts) { s ->
+    for s in parts {
         if (sep) {
             v ->
             out = out + v;

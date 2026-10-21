@@ -36,7 +36,7 @@ type Box(items: array<R>, sizes: array<i32>) {
     pub fn pairs(self: Self) -> i32 {
         val ps = self.sizes.map({ s -> #(s, s * 10) });
         var total = 0;
-        for (self.sizes) { s ->
+        for s in self.sizes {
             val p = ps.at(0) ?? #(0, 0);
             total = total + p.1;
         }

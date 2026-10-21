@@ -24,7 +24,7 @@ pub fn runCase() -> void {
     print(markup @`<div id="x" #[cls("a")]>hi</div>`);
     print(markup @`<Badge #[cls("c")]>new</Badge>`);
     print(Badge());
-    for (comptime compiler.typeInfo(Card).metaAll(ClassName)) { c ->
+    for c in comptime compiler.typeInfo(Card).metaAll(ClassName) {
         print("Card: " + c.names.join(" "));
     }
 }

@@ -18,7 +18,7 @@ pub type Users() implement Service {
 }
 
 pub fn runCase() -> void {
-    for (all()) { e ->
+    for e in all() {
         print(e);
     }
 }

@@ -1,7 +1,7 @@
 import {io.terminal.print} from "std";
 
 pub fn runCase() -> void {
-    for ([1, 2, 3]) { i ->
+    for i in [1, 2, 3] {
         defer print("end " + i.toString());
         if (i == 2) continue;
         if (i == 3) break;

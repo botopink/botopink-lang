@@ -5,7 +5,7 @@ import {compiler, io.terminal.print} from "std";
 
 pub fn main() -> void {
     val lines: string[] = comptime compiler.typeInfo(App).meta(Graph)?.lines ?? [];
-    for (lines) { line ->
+    for line in lines {
         print(line);
     }
 }

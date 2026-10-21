@@ -29,7 +29,7 @@ async fn check(n: i32) -> Async<Result<i32, string>> {
 
 async fn sumTo<T>(xs: array<T>, f: fn(x: T) -> Async<i32>) -> Async<i32> {
     var total = 0;
-    for (xs) { x ->
+    for x in xs {
         val got = await f(x);
         total = total + got;
     }
@@ -56,7 +56,7 @@ async fn loopy() -> Async<string> {
         out = out + c.toString();
         i = i + 1;
     }
-    for (0..2) { k ->
+    for k in 0..2 {
         if (k == 1) {
             val s = await delay(1, "k");
             out = out + s;

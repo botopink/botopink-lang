@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn countdown(n: i32) -> void {
-    for (0..n) { i ->
+    for i in 0..n {
         print(n - i);
     };
 }

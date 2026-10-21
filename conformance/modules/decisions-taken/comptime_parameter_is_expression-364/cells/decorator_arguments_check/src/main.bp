@@ -48,7 +48,7 @@ fn passwordNotHandle(a: Account) -> bool {
 }
 
 pub fn main() -> void {
-    for (comptime compiler.typeInfo(Account).metaAll(Check)) { c ->
+    for c in comptime compiler.typeInfo(Account).metaAll(Check) {
         print(c.message + " (" + c.kind + ")");
     }
     print(comptime compiler.typeInfo(passwordNotHandle).meta(Check)?.message ?? "none");

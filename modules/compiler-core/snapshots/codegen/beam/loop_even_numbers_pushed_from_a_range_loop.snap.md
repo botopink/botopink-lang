@@ -2,7 +2,7 @@
 ```botopink
 fn main() -> void {
     var processamento = [];
-    for (0..10) { i ->
+    for i in 0..10 {
         if (i % 2 == 0) {
             processamento.push(i);
         };

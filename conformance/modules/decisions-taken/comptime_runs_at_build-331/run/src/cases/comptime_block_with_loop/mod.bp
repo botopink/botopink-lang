@@ -21,7 +21,7 @@ pub fn runCase() -> void {
     print(a);
     val d = comptime {
         var d = 0;
-        for ([1, 2, 3]) { b ->
+        for b in [1, 2, 3] {
             d = add(d, b);
         }
         d
@@ -29,7 +29,7 @@ pub fn runCase() -> void {
     print(d);
     val words = comptime {
         var out: string[] = [];
-        for (["a", "bc", "def"]) { w ->
+        for w in ["a", "bc", "def"] {
             out.push(w + w.length().toString());
         }
         out

@@ -23,7 +23,7 @@ pub type Signup(password: string, confirm: string)
 pub fn runCase() -> void {
     val vs = Signup(password: "a", confirm: "b").validate();
     print(vs.length);
-    for (vs) { v ->
+    for v in vs {
         print(v.field + ": " + v.message);
     }
     print(Signup(password: "a", confirm: "a").validate().length);

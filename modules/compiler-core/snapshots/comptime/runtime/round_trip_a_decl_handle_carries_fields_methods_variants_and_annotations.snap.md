@@ -3,15 +3,15 @@
 fn column(syntax decl: unknown, comptime name: string) -> void { }
 fn describe(syntax decl: unknown, comptime label: string) -> void {
     var out = compiler.name(decl)! + "[" + label + "]";
-    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
-    for (compiler.fields(decl)) { f ->
+    for a in compiler.annotations(decl) { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+    for f in compiler.fields(decl) {
         out = out + " field " + f.name + ":" + f.typeName;
-        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        for a in f.annotations { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
-    for (compiler.methods(decl)) { m ->
+    for v in compiler.variants(decl) { out = out + " variant " + v.name; };
+    for m in compiler.methods(decl) {
         var ps = "";
-        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
+        for p in m.params { ps = ps + p.name + ":" + p.typeName + ";"; };
         out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
     };
     @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");
@@ -485,7 +485,7 @@ import {compiler} from "std";
   call $rt_bin
   i64.const 4
   call $rt_int
-  i64.const 79
+  i64.const 77
   call $rt_int
   local.get $V___BpF1
   call $bp_comptime_decorator:__bp_push/4
@@ -785,7 +785,7 @@ import {compiler} from "std";
   call $rt_bin
   i64.const 7
   call $rt_int
-  i64.const 70
+  i64.const 68
   call $rt_int
   local.get $V___BpF3
   call $bp_comptime_decorator:__bp_push/4
@@ -1868,7 +1868,7 @@ import {compiler} from "std";
   call $rt_bin
   i64.const 4
   call $rt_int
-  i64.const 79
+  i64.const 77
   call $rt_int
   local.get $V___BpF1
   call $bp_comptime_decorator:__bp_push/4
@@ -2168,7 +2168,7 @@ import {compiler} from "std";
   call $rt_bin
   i64.const 7
   call $rt_int
-  i64.const 70
+  i64.const 68
   call $rt_int
   local.get $V___BpF3
   call $bp_comptime_decorator:__bp_push/4

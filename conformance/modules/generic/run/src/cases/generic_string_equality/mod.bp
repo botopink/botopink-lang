@@ -39,7 +39,7 @@ fn differ<T>(a: T, b: T) -> bool {
 
 fn contains<T>(xs: T[], x: T) -> bool {
     var found = false;
-    for (xs) { e ->
+    for e in xs {
         if (e == x) found = true;
     }
     return found;

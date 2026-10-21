@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn validate(items: i32) -> Result<i32, string> {
-    for (0..items) { i ->
+    for i in 0..items {
         if (i > 2) { throw "too many"; };
     };
     return items;

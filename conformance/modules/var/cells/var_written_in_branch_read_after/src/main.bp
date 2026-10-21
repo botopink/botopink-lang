@@ -16,7 +16,7 @@ type Cell {
 fn caseArms(xs: i32[]) -> i32 {
     var total = 0;
     var seen = 0;
-    for (xs) { x ->
+    for x in xs {
         case x {
             1 {
                 total = total + 10;
@@ -62,7 +62,7 @@ fn ifReturnElse(n: i32) -> string {
 
 fn siblingVars(xs: i32[]) -> i32 {
     var sum = 0;
-    for (xs) { x ->
+    for x in xs {
         if (x > 2) {
             var k = x;
             k = k * 2;
@@ -103,7 +103,7 @@ fn binderNamedLikeVal(c: Cell) -> i32 {
         Leaf(v) -> [v];
     };
     var n = 0;
-    for (kids) { k ->
+    for k in kids {
         n = n + k;
     }
     return n + kids.length;

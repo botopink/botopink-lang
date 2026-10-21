@@ -19,11 +19,11 @@ iter fn items(n: i32) -> Iter<i32> {
 }
 
 pub fn runCase() -> void {
-    for (items(0)) { v ->
+    for v in items(0) {
         print(v);
     }
     print("--");
-    for (items(1)) { v ->
+    for v in items(1) {
         print(v);
     }
 }

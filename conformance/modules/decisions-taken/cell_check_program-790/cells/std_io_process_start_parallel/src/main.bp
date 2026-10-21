@@ -21,7 +21,7 @@ async fn scenario() -> Async<void> {
         { -> runOne("fast", 10, 2) },
         { -> runOne("mid", 100, 0) },
     ]);
-    for (all) { r ->
+    for r in all {
         print(r.stdout + " " + r.stderr + " " + r.status.toString());
     }
 }

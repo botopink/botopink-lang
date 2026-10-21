@@ -39,8 +39,8 @@ pub type Db(url: string) implement Module {
 
 fn describe(ds: Declared<Module>[]) -> string {
     var parts: string[] = [];
-    for (ds) { d ->
-        for (d.metaAll(ModuleOrder)) { m ->
+    for d in ds {
+        for m in d.metaAll(ModuleOrder) {
             parts.push(d.name + "#" + m.order.toString());
         }
     }

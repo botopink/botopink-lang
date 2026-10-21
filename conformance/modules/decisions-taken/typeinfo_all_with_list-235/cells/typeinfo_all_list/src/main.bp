@@ -36,17 +36,17 @@ type Orders(table: string)
 type Billing(rate: i32)
 
 pub fn main() -> void {
-    for (@TypeInfo.all(with: [repository, service], member: "make")) { d ->
+    for d in @TypeInfo.all(with: [repository, service], member: "make") {
         var meta: string[] = [];
-        for (d.metaAll(Service)) { m ->
+        for m in d.metaAll(Service) {
             meta.push("role=" + m.role);
         }
-        for (d.metaAll(Store)) { m ->
+        for m in d.metaAll(Store) {
             meta.push("store=" + m.store);
         }
         print(d.name + " " + meta.join(","));
     }
-    for (@TypeInfo.all(with: [service, audited], member: "make")) { d ->
+    for d in @TypeInfo.all(with: [service, audited], member: "make") {
         print(
             d.name
                 + " "

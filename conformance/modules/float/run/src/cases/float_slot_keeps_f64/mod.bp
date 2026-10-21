@@ -27,7 +27,7 @@ pub fn runCase() -> void {
     print(xs.first());
     print(xs.map({ x -> x * 3.0 }));
     print(xs.fold(0.0, { a, x -> a + x }));
-    for (xs) { x ->
+    for x in xs {
         print(x);
     }
     print(xs.indexOf(2.2));

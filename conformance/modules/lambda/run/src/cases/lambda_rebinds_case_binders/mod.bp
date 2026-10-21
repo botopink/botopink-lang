@@ -35,15 +35,15 @@ pub fn runCase() -> void {
         Ok(v) -> print(v.toString());
         Error(e) -> print(e);
     }
-    for ([check(1), check(-7)]) { x ->
+    for x in [check(1), check(-7)] {
         case x {
             Ok(v) -> print(v.toString());
             Error(e) -> print(e);
         }
     }
-    for ([2, 3]) { n ->
+    for n in [2, 3] {
         val v = n * 10;
-        for ([v, v + 1]) { e ->
+        for e in [v, v + 1] {
             print(e.toString());
         }
     }

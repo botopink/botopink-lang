@@ -26,7 +26,7 @@ pub fn db() -> string {
 }
 
 fn boot(comptime modules: Declared<unknown>[]) -> void {
-    for (modules) { d ->
+    for d in modules {
         if (d.value is fn() -> string) say("starting " + d.name);
     }
 }

@@ -17,7 +17,7 @@ fn describe(t: Token) -> string {
 
 pub fn main() -> void {
     val tokens: Token[] = [Token.Text(v: "hi"), Token.Num(n: 3), Token.Eof];
-    for (tokens) { t ->
+    for t in tokens {
         val numeric: bool = t is Token.Num;
         terminal.print(numeric);
         terminal.print(describe(t));

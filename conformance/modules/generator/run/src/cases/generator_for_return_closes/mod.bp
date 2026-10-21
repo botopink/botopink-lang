@@ -13,14 +13,14 @@ iter fn counted() -> Iter<i32> {
 }
 
 fn firstFrom(n: i32) -> i32 {
-    for (counted()) { x ->
+    for x in counted() {
         if (x >= n) return x;
     }
     return 0;
 }
 
 fn firstWithDefer() -> i32 {
-    for (counted()) { x ->
+    for x in counted() {
         defer print("iteration");
         return x;
     }

@@ -2,13 +2,13 @@
 ```botopink
 fn total(xs: i32[]) -> i32 {
     var sum = 0;
-    for (xs) { x -> sum = sum + x; }
+    for x in xs { sum = sum + x; }
     return sum;
 }
 
 fn longest(names: string[]) -> i32 {
     var best = 0;
-    for (names) { n -> if (n.length() > best) { best = n.length(); } }
+    for n in names { if (n.length() > best) { best = n.length(); } }
     return best;
 }
 
@@ -47,7 +47,7 @@ import {io.terminal.print} from "std";
 total(Xs) ->
     Sum = 0,
     Sum@3 = lists:foldl(fun(X, Sum@1) ->
-        Sum@2 = '__bp_int'((Sum@1 + X), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:3:31">>),
+        Sum@2 = '__bp_int'((Sum@1 + X), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:3:29">>),
         Sum@2
     end, Sum, Xs),
     Sum@3.

@@ -92,9 +92,9 @@ test "semanticTokens: contextual async / iter / stream and loop labels" {
         \\    val t = async { return 1; };
         \\    val all = async.allOf([t]);
         \\    val a = iter loop { yield 1; break; };
-        \\    val b = iter for :outer (xs) { x -> if (x > 1) { break :outer; }; yield x; };
+        \\    val b = iter for :outer x in xs { if (x > 1) { break :outer; }; yield x; };
         \\    val c = stream while (true) { yield 1; };
-        \\    val d = stream for await (s) { x -> yield x; };
+        \\    val d = stream for await x in s { yield x; };
         \\    val stream = 1;
         \\    val iter = g.iter();
         \\    val body = http.stream(stream);

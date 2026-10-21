@@ -25,10 +25,10 @@ fn shape(syntax q: string) -> string {
         + compiler.text(q)
         + "` is not in scope", at: q);
     var text = compiler.name(d)!;
-    for (compiler.variants(d)) { v ->
+    for v in compiler.variants(d) {
         text = text + " " + v.name;
     }
-    for (compiler.methods(d)) { m ->
+    for m in compiler.methods(d) {
         text = text
             + " "
             + m.name
@@ -37,7 +37,7 @@ fn shape(syntax q: string) -> string {
             + ")->"
             + m.returnType;
     }
-    for (compiler.params(d)) { p ->
+    for p in compiler.params(d) {
         text = text + " " + p.name + ":" + p.typeName;
     }
     return compiler.build("\"" + text + "\"");

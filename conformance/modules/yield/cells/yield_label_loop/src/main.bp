@@ -5,7 +5,7 @@
 import {io.terminal.print} from "std";
 
 iter fn doubled(xs: i32[]) -> Iter<i32> :out {
-    for :inner (xs) { x ->
+    for :inner x in xs {
         yield :inner x * 2;
     }
 }

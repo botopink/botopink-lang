@@ -22,7 +22,7 @@ type Orders() {
 pub fn ping() -> void {}
 
 pub fn main() -> void {
-    for (registry.all()) { q ->
+    for q in registry.all() {
         terminal.print(q._0, "->", q._1);
     }
 }

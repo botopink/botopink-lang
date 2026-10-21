@@ -623,7 +623,7 @@ test "chain error: `yield` inside a loop still needs a generator scope (decision
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\async fn collected() -> Async<i32> {
         \\    var n = 0;
-        \\    for ([1, 2, 3]) { x -> yield x * 2; };
+        \\    for x in [1, 2, 3] { yield x * 2; };
         \\    return n;
         \\}
     );
@@ -695,12 +695,12 @@ test "decision 122: a type exposes a fn iter answering @Iter<@Result<…>> and a
     try h.assertInfersOk(std.testing.allocator,
         \\type Bag(items: i32[]) {
         \\    iter fn iter(self: Self) -> Iter<Result<i32, string>> {
-        \\        for (self.items) { x -> yield x; };
+        \\        for x in self.items { yield x; };
         \\    }
         \\}
         \\fn total(b: Bag) -> Result<i32, string> {
         \\    var acc = 0;
-        \\    for (b.iter()) { r -> val v = try r; acc = acc + v; };
+        \\    for r in b.iter() { val v = try r; acc = acc + v; };
         \\    return acc;
         \\}
     );
@@ -716,7 +716,7 @@ test "chain error: `for` over @Iter<@Result<…>> hands over the @Result — no 
         \\}
         \\fn total(n: i32) -> i32 {
         \\    var acc = 0;
-        \\    for (upTo(n)) { x -> acc = acc + x; };
+        \\    for x in upTo(n) { acc = acc + x; };
         \\    return acc;
         \\}
     );
@@ -756,12 +756,12 @@ test "chain error: E3.9 — an async block made a @Result by its `try` points at
 test "chain error: E3.9 — an iter item made a @Result by its `throw` points at the `throw`" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn count(xs: string[]) -> i32 {
-        \\    val items = iter for (xs) { x ->
+        \\    val items = iter for x in xs {
         \\        if (x == "stop") { throw "stopped"; };
         \\        yield 1;
         \\    };
         \\    var acc = 0;
-        \\    for (items) { r -> acc = acc + r; };
+        \\    for r in items { acc = acc + r; };
         \\    return acc;
         \\}
     );
@@ -774,7 +774,7 @@ test "chain: a plain fn iterates a @Iter<T> — infallible, no level needed" {
         \\}
         \\fn total(n: i32) -> i32 {
         \\    var acc = 0;
-        \\    for (upTo(n)) { x -> acc = acc + x; };
+        \\    for x in upTo(n) { acc = acc + x; };
         \\    return acc;
         \\}
     );

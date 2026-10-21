@@ -12,7 +12,7 @@ fn runCase(comptime name: string) -> void {
         + "/mod.bp") catch { r ->
         compiler.init({ ->
             print("== " + name);
-            for (r.diagnostics) { d ->
+            for d in r.diagnostics {
                 print("refused error: " + d.message);
                 print("at "
                     + d.file

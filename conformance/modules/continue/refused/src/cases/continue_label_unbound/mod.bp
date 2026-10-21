@@ -1,7 +1,7 @@
 import {io.terminal.print} from "std";
 
 pub fn main() -> void {
-    for ([1, 2]) { x ->
+    for x in [1, 2] {
         if (x == 1) continue :nope;
         print(x);
     }

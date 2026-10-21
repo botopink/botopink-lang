@@ -11,7 +11,7 @@ async fn double(x: i32) -> Async<i32> {
 
 fn sum(f: fn(n: i32) -> Iter<i32>, n: i32) -> i32 {
     var acc = 0;
-    for (f(n)) { x ->
+    for x in f(n) {
         acc = acc + x;
     }
     return acc;
@@ -25,7 +25,7 @@ pub async fn main() -> Async<void> {
             i = i + 1;
         }
     };
-    for (upTo(3)) { x ->
+    for x in upTo(3) {
         print(x);
     }
     print(sum({ iter n ->
@@ -36,7 +36,7 @@ pub async fn main() -> Async<void> {
         yield await double(n);
         yield await double(n + 1);
     };
-    for await (ticks(1)) { x ->
+    for await x in ticks(1) {
         print(x);
     }
 }

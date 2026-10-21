@@ -12,7 +12,7 @@ pub type Col(name: string)
 
 pub type Cache(entries: unknown[]) {
     pub fn get<T>(self: Self, t: type<T>, key: string) -> ?T {
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) return e;
         }
         return null;
@@ -20,7 +20,7 @@ pub type Cache(entries: unknown[]) {
 
     pub fn all<T>(self: Self, t: type<T>, key: string) -> T[] {
         var out: T[] = [];
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) out.push(e);
         }
         return out;

@@ -34,7 +34,7 @@ pub fn runCase() -> void {
     val ps: array<Plugin> = [A(n: 1), B(s: "x")];
     ps.forEach({ p -> print(p.name()) });
     val qs: Plugin[] = [B(s: "y"), A(n: 2)];
-    for (qs) { q ->
+    for q in qs {
         print(q.name());
     }
     print(names([A(n: 3), B(s: "z")]));

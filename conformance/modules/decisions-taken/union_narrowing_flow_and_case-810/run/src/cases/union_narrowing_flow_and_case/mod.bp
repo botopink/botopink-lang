@@ -41,7 +41,7 @@ fn viaLocals(s: Dot | Circle | Square) -> string {
 
 fn sides(shapes: (Dot | Square)[]) -> i32 {
     var total = 0;
-    for (shapes) { s ->
+    for s in shapes {
         if (s is Dot) continue;
         total = total + s.side;
     }

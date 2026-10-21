@@ -124,7 +124,7 @@ test "surface R3: the range and the float forms are unchanged" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> f64 {
         \\    var s = 0;
-        \\    for (0..4) { i -> s = s + i; };
+        \\    for i in 0..4 { s = s + i; };
         \\    val a = 1.5;
         \\    val b = 1_000;
         \\    val c = 1e10;
@@ -163,7 +163,7 @@ test "surface R4: a comment and a blank line inside an if branch" {
 test "surface R4: a comment inside a loop body and a lambda body" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> i32 {
-        \\    for ([1, 2]) { x ->
+        \\    for x in [1, 2] {
         \\        // a loop body is not a lambda body — it has its own block
         \\        println("a");
         \\
@@ -241,7 +241,7 @@ test "surface R5: an array literal is still an array literal" {
         \\    val xs = [1, 2];
         \\    val n = g([1, 2]);
         \\    var s = 0;
-        \\    for (0..4) { i -> s = s + i; };
+        \\    for i in 0..4 { s = s + i; };
         \\    return n + s;
         \\}
     );
@@ -533,7 +533,7 @@ test "surface R11: a one-line trailing lambda body needs no `;`" {
         \\fn f(xs: i32[]) -> i32 {
         \\    val ys = xs.map { x -> x + 1 };
         \\    var acc = 0;
-        \\    for (xs) { x -> acc = acc + x };
+        \\    for x in xs { acc = acc + x };
         \\    xs.forEach { x -> print(x.toString()) };
         \\    val z = calcular(fator: 2) { a, b -> a + b };
         \\    val w = memo { -> 42 };
@@ -571,7 +571,7 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\        n = 1;
         \\        n = 2;
         \\    };
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (x > 1) { n = n + x; n = n - 1; };
         \\        n = n + x;
         \\    };
@@ -593,7 +593,7 @@ test "surface C-13: a braced if / loop / case statement takes its `;` or not, to
         \\        n = 1;
         \\        n = 2;
         \\    }
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (x > 1) { n = n + x; n = n - 1; }
         \\        n = n + x;
         \\    }

@@ -27,8 +27,8 @@ fn start(m: unknown) -> void {
 }
 
 pub fn boot(comptime modules: Declared<unknown>[] = @TypeInfo.all(with: module)) -> void {
-    for (1...modules.length) { rank ->
-        for (modules) { d ->
+    for rank in 1...modules.length {
+        for d in modules {
             if (d.meta.any({ m -> m.key == "order" && m.value == rank.toString() })) {
                 say("starting " + d.name);
                 start(d.value);

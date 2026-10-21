@@ -10,7 +10,7 @@ component fn state(initial: i32) -> Component<i32> {
 
 component fn Widget(xs: i32[]) -> Component<Element> {
     var total = 0;
-    for (xs) { x ->
+    for x in xs {
         val v = use state(x);
         total = total + v;
     }

@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 pub fn main() -> void {
     val firstTwo: fn(xs: i32[]) -> Iter<i32> = { iter xs ->
         var n = 0;
-        for (xs) { x ->
+        for x in xs {
             if (x < 0) continue;
             if (n == 2) return;
             yield x;
@@ -16,10 +16,10 @@ pub fn main() -> void {
         }
         yield 99;
     };
-    for (firstTwo([1, -1, 2, 3, 4])) { x ->
+    for x in firstTwo([1, -1, 2, 3, 4]) {
         print(x);
     }
-    for (firstTwo([5])) { x ->
+    for x in firstTwo([5]) {
         print(x);
     }
 }

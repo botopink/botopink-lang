@@ -18,7 +18,7 @@ fn sayBody(line: string) -> void {
 type Box(n: i32)
 
 fn banner(comptime rows: i32) -> void {
-    for (0..rows) { row ->
+    for row in 0..rows {
         say("row " + row.toString());
     }
 }

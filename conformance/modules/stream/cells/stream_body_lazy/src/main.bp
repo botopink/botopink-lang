@@ -27,10 +27,10 @@ async iter fn ticks() -> AsyncIter<i32> {
 async fn run() -> Async<void> {
     val s = counted();
     print("made");
-    for await (s) { x ->
+    for await x in s {
         print(x);
     }
-    for await (ticks()) { x ->
+    for await x in ticks() {
         print(x);
     }
     var k = 0;
@@ -40,7 +40,7 @@ async fn run() -> Async<void> {
         if (k > 2) break;
         yield k;
     };
-    for await (looped) { x ->
+    for await x in looped {
         print(x);
     }
 }

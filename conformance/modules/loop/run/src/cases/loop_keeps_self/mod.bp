@@ -26,7 +26,7 @@ type Counter(start: i32, step: i32) {
     }
 
     fn scaled(self: Self, xs: i32[]) -> Iter<i32> {
-        return iter for (xs) { x ->
+        return iter for x in xs {
             yield x * self.step;
         };
     }
@@ -34,7 +34,7 @@ type Counter(start: i32, step: i32) {
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for (it) { x ->
+    for x in it {
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;

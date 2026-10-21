@@ -13,7 +13,7 @@ iter fn upTo(n: i32) -> Iter<Result<i32, string>> {
 
 fn total(n: i32) -> Result<i32, string> {
     var acc = 0;
-    for (upTo(n)) { r ->
+    for r in upTo(n) {
         acc = acc + r;
     }
     return acc;

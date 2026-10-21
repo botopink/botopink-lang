@@ -46,7 +46,7 @@
                   "identifier": {
                     "loc": {
                       "line": 2,
-                      "col": 10
+                      "col": 17
                     },
                     "kind": {
                       "ident": "items"
@@ -59,7 +59,7 @@
                 ],
                 "paramsLoc": {
                   "line": 2,
-                  "col": 19
+                  "col": 9
                 },
                 "condition": false,
                 "body": [

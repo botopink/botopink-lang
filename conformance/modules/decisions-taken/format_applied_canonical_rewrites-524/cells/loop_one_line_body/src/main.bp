@@ -16,7 +16,7 @@ fn f(x: i32) -> i32 {
 pub fn main() -> void {
     val xs = [1, 2];
     var acc = 0;
-    for (xs) { x ->
+    for x in xs {
         acc = acc + f(x);
     }
     val ys = xs.map { x -> f(x) };

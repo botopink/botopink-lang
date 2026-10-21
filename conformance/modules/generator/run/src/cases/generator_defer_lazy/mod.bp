@@ -14,10 +14,10 @@ iter fn counted() -> Iter<i32> {
 }
 
 pub fn runCase() -> void {
-    for (counted()) { x ->
+    for x in counted() {
         print(x);
     }
-    for (counted()) { x ->
+    for x in counted() {
         print(x);
         if (x == 1) break;
     }

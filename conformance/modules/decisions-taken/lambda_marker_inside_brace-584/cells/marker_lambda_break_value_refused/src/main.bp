@@ -9,7 +9,7 @@ pub fn main() -> void {
         yield 1;
         break 2;
     };
-    for (last()) { x ->
+    for x in last() {
         print(x);
     }
 }

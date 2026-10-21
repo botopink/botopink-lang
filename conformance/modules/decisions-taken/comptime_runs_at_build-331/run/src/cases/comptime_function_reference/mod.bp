@@ -22,7 +22,7 @@ pub fn runCase() -> void {
         d = d.insert("four", { -> two() + two() });
         d
     };
-    for (fs.keys()) { k ->
+    for k in fs.keys() {
         val f = fs[k];
         if (f) {
             g ->

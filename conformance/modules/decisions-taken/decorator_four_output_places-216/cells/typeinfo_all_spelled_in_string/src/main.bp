@@ -11,7 +11,7 @@ import {io.terminal.print} from "std";
 
 pub fn main() -> void {
     print(usage());
-    for (@TypeInfo.all(with: tagged)) { e ->
+    for e in @TypeInfo.all(with: tagged) {
         print(e.module + " " + e.name);
     }
 }

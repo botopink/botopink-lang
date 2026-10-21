@@ -6,14 +6,14 @@ import {io.terminal.print} from "std";
 
 pub fn runCase() -> void {
     val words = iter loop {
-        for (["a", "b"]) { s ->
+        for s in ["a", "b"] {
             print("before " + s);
             yield s;
             print("after " + s);
         }
         break;
     };
-    for (words) { w ->
+    for w in words {
         print(w);
     }
 }

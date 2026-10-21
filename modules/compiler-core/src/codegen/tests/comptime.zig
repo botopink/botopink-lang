@@ -198,7 +198,7 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    for (COMMANDS) { cmd ->
+        \\    for cmd in COMMANDS {
         \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
@@ -219,7 +219,7 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    for (COMMANDS) { cmd ->
+        \\    for cmd in COMMANDS {
         \\        if (cmd == slug) {
         \\            if (cmd == "calc") {
         \\                output = input * 2;
@@ -244,7 +244,7 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    for (COMMANDS) { cmd ->
+        \\    for cmd in COMMANDS {
         \\        if (cmd == slug) {
         \\            output = case cmd {
         \\                "calc" -> input * 2;
@@ -269,7 +269,7 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    for (COMMANDS) { cmd ->
+        \\    for cmd in COMMANDS {
         \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
@@ -457,7 +457,7 @@ test "js: comptime runtime ---- a block with a call and a loop is evaluated at b
         \\    print(a);
         \\    val d = comptime {
         \\        var d = 0;
-        \\        for ([1, 2, 3]) { b -> d = add(d, b); }
+        \\        for b in [1, 2, 3] { d = add(d, b); }
         \\        d
         \\    };
         \\    print(d);

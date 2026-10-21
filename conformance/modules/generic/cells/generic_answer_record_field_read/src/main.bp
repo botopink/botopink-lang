@@ -7,7 +7,7 @@ import {io.terminal.print} from "std";
 type Post(title: string, n: i32)
 
 fn firstOf<T>(xs: T[], keep: fn(T) -> bool) -> ?T {
-    for (xs) { x ->
+    for x in xs {
         if (keep(x)) return x;
     }
     return null;

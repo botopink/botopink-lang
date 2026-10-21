@@ -6,7 +6,7 @@ import {io.terminal.print} from "std";
 
 fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
     var out: R[] = [];
-    for (items) { it ->
+    for it in items {
         out.push(f(it));
     }
     return out;

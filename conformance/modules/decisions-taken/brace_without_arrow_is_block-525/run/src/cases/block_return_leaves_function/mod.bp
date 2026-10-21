@@ -42,7 +42,7 @@ fn nested(n: i32) -> i32 {
 
 fn skipTwo() -> i32 {
     var total = 0;
-    for ([1, 2, 3]) { x ->
+    for x in [1, 2, 3] {
         val v = {
             if (x == 2) return 100 + total;
             x

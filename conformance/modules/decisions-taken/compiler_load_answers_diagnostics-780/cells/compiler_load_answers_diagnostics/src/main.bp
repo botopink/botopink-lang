@@ -19,7 +19,7 @@ pub fn main() -> void {
     // A type error: one refusal, its message naming no code, no label.
     try comptime compiler.load("src/cases/broken.bp") catch { r ->
         print(r.diagnostics.length);
-        for (r.diagnostics) { d ->
+        for d in r.diagnostics {
             show(d);
         }
         r.module
@@ -27,7 +27,7 @@ pub fn main() -> void {
     // A parse error: its code and the label beside its caret.
     try comptime compiler.load("src/cases/unclosed.bp") catch { r ->
         print(r.diagnostics.length);
-        for (r.diagnostics) { d ->
+        for d in r.diagnostics {
             show(d);
         }
         r.module
@@ -36,7 +36,7 @@ pub fn main() -> void {
     // `helper.bp` is located there.
     try comptime compiler.load("src/cases/two_modules/main.bp") catch { r ->
         print(r.diagnostics.length);
-        for (r.diagnostics) { d ->
+        for d in r.diagnostics {
             show(d);
         }
         r.module

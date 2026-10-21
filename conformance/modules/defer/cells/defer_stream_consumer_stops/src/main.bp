@@ -7,7 +7,7 @@ async iter fn nums() -> AsyncIter<i32> {
 }
 
 pub async fn main() -> Async<void> {
-    for await (nums()) { n ->
+    for await n in nums() {
         if (n == 1) break;
     }
     print("done");

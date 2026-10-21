@@ -7,14 +7,14 @@ import {io.terminal.print} from "std";
 
 fn sum(n: i32, f: fn(n: i32) -> Iter<i32>) -> i32 {
     var acc = 0;
-    for (f(n)) { x ->
+    for x in f(n) {
         acc = acc + x;
     }
     return acc;
 }
 
 fn each(f: fn() -> Iter<string>) -> void {
-    for (f()) { s ->
+    for s in f() {
         print(s);
     }
 }
@@ -27,7 +27,7 @@ pub fn main() -> void {
             i = i + 1;
         }
     };
-    for (upTo(3)) { x ->
+    for x in upTo(3) {
         print(x);
     }
     print(sum(2) { iter n ->

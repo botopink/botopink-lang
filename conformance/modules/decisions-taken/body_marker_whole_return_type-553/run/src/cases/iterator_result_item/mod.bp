@@ -15,7 +15,7 @@ fn check(n: i32) -> Result<i32, string> {
 }
 
 iter fn checked(xs: i32[]) -> Iter<Result<i32, string>> {
-    for (xs) { x ->
+    for x in xs {
         yield try check(x);
     }
 }
@@ -36,7 +36,7 @@ iter fn asIs() -> Iter<Result<i32, string>> {
 }
 
 fn walk(name: string, it: Iter<Result<i32, string>>) -> void {
-    for (it) { r ->
+    for r in it {
         case r {
             Ok(v) -> print(name + " ok " + v.toString());
             Error(e) -> print(name + " error " + e);

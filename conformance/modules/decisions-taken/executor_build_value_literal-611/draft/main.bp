@@ -15,7 +15,7 @@ pub fn cleanup() -> string {
 }
 
 pub fn main() -> void {
-    for (registry.all()) { e ->
+    for e in registry.all() {
         terminal.print(e._0, e._1());
     }
 }

@@ -10,4 +10,4 @@ iter fn g() -> Iter<i32> {
     throw "x";
 }
 
-pub fn main() -> void { for (g()) { x -> print(x); } }
+pub fn main() -> void { for x in g() { print(x); } }

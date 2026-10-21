@@ -1,6 +1,6 @@
 // The value of `rows` that is a `S`, as the `S` the caller names (668).
 pub fn findAs<S>(t: type<S>, rows: unknown[]) -> ?S {
-    for (rows) { r ->
+    for r in rows {
         if (r is t) return r;
     }
     return null;
@@ -8,7 +8,7 @@ pub fn findAs<S>(t: type<S>, rows: unknown[]) -> ?S {
 
 pub fn allAs<S>(t: type<S>, rows: unknown[]) -> S[] {
     var out: S[] = [];
-    for (rows) { r ->
+    for r in rows {
         if (r is t) out.push(r);
     }
     return out;

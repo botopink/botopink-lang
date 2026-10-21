@@ -17,7 +17,7 @@ fn sayBody(line: string) -> void {
 }
 
 fn banner(comptime rows: i32) -> void {
-    for (1...rows) { row ->
+    for row in 1...rows {
         say("row " + row.toString() + " of " + rows.toString());
     }
 }

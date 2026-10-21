@@ -16,7 +16,7 @@ async iter fn pages(count: i32) -> AsyncIter<Result<i32[], string>> {
 
 async fn countRows() -> Async<Result<i32, string>> {
     var n = 0;
-    for await (pages(3)) { batch ->
+    for await batch in pages(3) {
         val rows = try batch; // `n + (try batch).length` is refused
         n = n + rows.length;
     }

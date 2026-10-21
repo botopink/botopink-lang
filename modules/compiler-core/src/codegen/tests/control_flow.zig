@@ -162,7 +162,7 @@ test "js: loop ---- side-effect print in iterator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
         \\    val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-        \\    for (messages) { msg ->
+        \\    for msg in messages {
         \\        print(msg);
         \\    };
         \\}
@@ -181,7 +181,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
         \\    var first = "";
         \\    var last = "";
         \\    var i = 0;
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (i == 0) { first = x; };
         \\        last = x;
         \\        i = i + 1;
@@ -190,7 +190,7 @@ test "js: loop ---- an indexed loop threads reassigned vars out" {
         \\}
         \\fn weigh(xs: array<i32>) -> i32 {
         \\    var total = 0;
-        \\    for (0..xs.length) { i ->
+        \\    for i in 0..xs.length {
         \\        total = total + (xs[i] ?? 0) * (i + 1);
         \\    };
         \\    return total;
@@ -285,7 +285,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
         \\        count = count + 1;
         \\    };
         \\    emit("start");
-        \\    for (words) { w -> emit(w); };
+        \\    for w in words { emit(w); };
         \\    return out + " " + count.toString();
         \\}
         \\fn main() -> void {
@@ -299,7 +299,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
-        \\    for (0..10) { i ->
+        \\    for i in 0..10 {
         \\        print(i);
         \\    };
         \\}
@@ -322,7 +322,7 @@ test "js: loop ---- a var pushed to in a loop body (add tax)" {
         \\fn main() -> void {
         \\    val precosBrutos = [100, 250, 400];
         \\    var precosComTaxa = [];
-        \\    for (precosBrutos) { valor ->
+        \\    for valor in precosBrutos {
         \\        val taxa = valor * 0.15;
         \\        precosComTaxa.push(valor + taxa);
         \\    };
@@ -338,7 +338,7 @@ test "js: loop ---- a conditional push keeps some items" {
         \\fn main() -> void {
         \\    val precosBrutos = [100, 250, 400];
         \\    var apenasGrandes = [];
-        \\    for (precosBrutos) { valor ->
+        \\    for valor in precosBrutos {
         \\        if (valor > 200) {
         \\            apenasGrandes.push(valor);
         \\        };
@@ -366,7 +366,7 @@ test "js: loop ---- even numbers pushed from a range loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
         \\    var processamento = [];
-        \\    for (0..10) { i ->
+        \\    for i in 0..10 {
         \\        if (i % 2 == 0) {
         \\            processamento.push(i);
         \\        };
@@ -568,9 +568,9 @@ test "js: case ---- nested case in block arm" {
 test "js: loop ---- a loop over an array literal, and a break out of one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {
-        \\    for ([1, 2, 3]) { x -> print(x); };
+        \\    for x in [1, 2, 3] { print(x); };
         \\    var first = 0;
-        \\    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
+        \\    for x in [1, 2, 3] { if (x == 2) { first = x * 10; break; }; };
         \\    print(first);
         \\}
         \\
@@ -584,7 +584,7 @@ test "js: loop ---- a search ends at break with its answer in a var" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn find(arr: i32[]) -> i32 {
         \\    var found = 0;
-        \\    for (arr) { x ->
+        \\    for x in arr {
         \\        if (x > 10) { found = x; break; };
         \\    };
         \\    return found;
@@ -646,7 +646,7 @@ test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumEvens(arr: i32[]) -> i32[] {
         \\    var out = [];
-        \\    for (arr) { x ->
+        \\    for x in arr {
         \\        if (x % 2 != 0) { continue; };
         \\        out.push(x);
         \\    };
@@ -659,7 +659,7 @@ test "js: loop ---- a var accumulates what a body pushes" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn doubles(arr: i32[]) -> i32[] {
         \\    var out = [];
-        \\    for (arr) { x ->
+        \\    for x in arr {
         \\        out.push(x * 2);
         \\    };
         \\    return out;
@@ -926,7 +926,7 @@ test "js: try ---- catch preserves surrounding bindings" {
 test "js: throw ---- inside loop body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn validate(items: i32) -> Result<i32, string> {
-        \\    for (0..items) { i ->
+        \\    for i in 0..items {
         \\        if (i > 2) { throw "too many"; };
         \\    };
         \\    return items;
@@ -1342,7 +1342,7 @@ test "beam: a non-ASCII string literal is its UTF-8 bytes" {
 test "erlang: a return inside a loop's body leaves the function" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn firstUnder(n: i32, limit: i32) -> i32 {
-        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  for k in 0..3 { if (n + k > limit) { return firstUnder(n - 1, limit); }; };
         \\  return n;
         \\}
         \\fn find(xs: array<i32>, t: i32) -> i32 {
@@ -1362,7 +1362,7 @@ test "erlang: a return inside a loop's body leaves the function" {
         \\  print(find([4, 5, 6], 9));
         \\  print(firstBad(5).unwrapOr(-1));
         \\  print(firstBad(9).unwrapOr(-1));
-        \\  print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\  print([1, 2].map({ x -> for k in 0..2 { if (k == 1) { return x * 10; }; }; return x; }));
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -1372,7 +1372,7 @@ test "erlang: a return inside a loop's body leaves the function" {
 test "beam: a return inside a loop's body leaves the function" {
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn firstUnder(n: i32, limit: i32) -> i32 {
-        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  for k in 0..3 { if (n + k > limit) { return firstUnder(n - 1, limit); }; };
         \\  return n;
         \\}
         \\fn find(xs: array<i32>, t: i32) -> i32 {
@@ -1392,7 +1392,7 @@ test "beam: a return inside a loop's body leaves the function" {
         \\  print(find([4, 5, 6], 9));
         \\  print(firstBad(5).unwrapOr(-1));
         \\  print(firstBad(9).unwrapOr(-1));
-        \\  print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\  print([1, 2].map({ x -> for k in 0..2 { if (k == 1) { return x * 10; }; }; return x; }));
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -1473,7 +1473,7 @@ test "erlang: a bare break at a generator's own level ends it" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\iter fn ends() -> Iter<i32> { yield 1; break; yield 2; }
         \\iter fn upto(n: i32) -> Iter<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
-        \\fn digits(g: Iter<i32>) -> string { var acc = ""; for (g) { x -> acc = acc + x.toString(); }; return acc; }
+        \\fn digits(g: Iter<i32>) -> string { var acc = ""; for x in g { acc = acc + x.toString(); }; return acc; }
         \\fn main() -> void {
         \\  print(digits(ends()));
         \\  print(digits(upto(3)));
@@ -1697,7 +1697,7 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
         \\        if (n == 4) { break n * 10; };
         \\        yield n * 10;
         \\    };
-        \\    for (g) { x -> print(x); };
+        \\    for x in g { print(x); };
         \\    print(n);
         \\}
         \\
@@ -1708,13 +1708,13 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
 test "js: generator loop ---- break v inside a for ends the whole generator" {
     try h.assertJsRunLog(std.testing.allocator,
         \\iter fn firstOver(xs: i32[], limit: i32) -> Iter<i32> {
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (x > limit) { break x; };
         \\        yield 0;
         \\    };
         \\}
         \\fn main() -> void {
-        \\    for (firstOver([1, 5, 9, 12], 4)) { v -> print(v); };
+        \\    for v in firstOver([1, 5, 9, 12], 4) { print(v); };
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -1737,7 +1737,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
         \\}
         \\async fn total(limit: i32) -> Async<i32> {
         \\    var sum = 0;
-        \\    for await (ticks(limit).gen) { v -> sum = sum + v; };
+        \\    for await v in ticks(limit).gen { sum = sum + v; };
         \\    print(sum);
         \\    return sum;
         \\}
@@ -1750,8 +1750,8 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
 test "js: range ---- a...b includes its end" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() -> void {
-        \\    for (1..4) { i -> print(i); };
-        \\    for (1...4) { i -> print(i); };
+        \\    for i in 1..4 { print(i); };
+        \\    for i in 1...4 { print(i); };
         \\}
         \\
         \\import {io.terminal.print} from "std";
@@ -1810,10 +1810,10 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\}
         \\fn main() -> void {
         \\  var acc = "";
-        \\  for (nums(3)) { x -> acc = acc + x.toString(); };
+        \\  for x in nums(3) { acc = acc + x.toString(); };
         \\  print(acc);
         \\  var runs = 0;
-        \\  for (nums(0)) { x -> runs = runs + 1; };
+        \\  for x in nums(0) { runs = runs + 1; };
         \\  print(runs);
         \\}
         \\
@@ -1828,7 +1828,7 @@ test "erlang: generator ---- a bare-yield body is a generator too" {
         \\iter fn two() -> Iter<i32> { yield 1; yield 2; }
         \\fn main() -> void {
         \\  var a = "";
-        \\  for (two()) { x -> a = a + x.toString(); };
+        \\  for x in two() { a = a + x.toString(); };
         \\  print(a);
         \\}
         \\
@@ -1938,7 +1938,7 @@ test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
 test "js: self tail call ---- one inside the function's own loop is labelled" {
     const src =
         \\fn firstUnder(n: i32, limit: i32) -> i32 {
-        \\    for (0..3) { k ->
+        \\    for k in 0..3 {
         \\        if (n + k > limit) { return firstUnder(n - 1, limit); };
         \\    };
         \\    return n;

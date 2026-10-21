@@ -21,7 +21,7 @@ pub behavior Users {
 
 pub fn main() -> void {
     val lines: string[] = comptime compiler.typeInfo(Users).meta(Statements)?.lines ?? [];
-    for (lines) { line ->
+    for line in lines {
         print(line);
     }
 }

@@ -14,7 +14,7 @@ fn quoted(text: string) -> string {
 fn spliced(text: string) -> string {
     var code = "\"\"";
     var first = true;
-    for (text.split("\${")) { piece ->
+    for piece in text.split("\${") {
         if (first) {
             code = code + " + " + quoted(piece);
             first = false;

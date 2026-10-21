@@ -2837,7 +2837,7 @@ test "a block's tail becomes the value function's return; a loop's break stays" 
     var lx = lexerMod.Lexer.init(
         \\val x = comptime {
         \\    var d = 0;
-        \\    for ([1, 2]) { b -> if (b > 1) { break; } }
+        \\    for b in [1, 2] { if (b > 1) { break; } }
         \\    d
         \\};
     );

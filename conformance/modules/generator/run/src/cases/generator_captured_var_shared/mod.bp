@@ -14,7 +14,7 @@ pub fn runCase() -> void {
         if (k >= 2) break;
     };
     k = 0;
-    for (reads) { x ->
+    for x in reads {
         print(x);
     }
     print(k);
@@ -25,7 +25,7 @@ pub fn runCase() -> void {
         yield n;
         if (n > 20) break;
     };
-    for (counter) { x ->
+    for x in counter {
         print(x);
         n = n + 10;
     }
@@ -38,7 +38,7 @@ pub fn runCase() -> void {
         if (total >= 4) break;
     };
     val before: fn() -> i32 = { -> total };
-    for (adds) { x ->
+    for x in adds {
         print(x);
     }
     print(total);

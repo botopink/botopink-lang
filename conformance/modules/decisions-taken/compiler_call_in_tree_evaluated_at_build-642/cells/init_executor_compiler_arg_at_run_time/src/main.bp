@@ -8,7 +8,7 @@ import {compiler, io.terminal.print} from "std";
 
 fn registered(syntax decl: unknown) -> void {
     compiler.init({ ->
-        for (["a"]) { s ->
+        for s in ["a"] {
             print(compiler.typeInfo(s));
         }
     });

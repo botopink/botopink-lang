@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 iter fn doubles(arr: i32[]) -> Iter<i32> {
-    for (arr) { x ->
+    for x in arr {
         yield x * 2;
     };
 }
@@ -24,7 +24,7 @@ iter fn doubles(arr: i32[]) -> Iter<i32> {
       "return_type": "Iter<i32>",
       "body": [
         {
-          "source": "for (arr) { x ->"
+          "source": "for x in arr {"
         }
       ]
     }

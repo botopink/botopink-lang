@@ -170,15 +170,15 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
         \\fn column(syntax decl: unknown, comptime name: string) -> void { }
         \\fn describe(syntax decl: unknown, comptime label: string) -> void {
         \\    var out = compiler.name(decl)! + "[" + label + "]";
-        \\    for (compiler.annotations(decl)) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
-        \\    for (compiler.fields(decl)) { f ->
+        \\    for a in compiler.annotations(decl) { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\    for f in compiler.fields(decl) {
         \\        out = out + " field " + f.name + ":" + f.typeName;
-        \\        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\        for a in f.annotations { out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
         \\    };
-        \\    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
-        \\    for (compiler.methods(decl)) { m ->
+        \\    for v in compiler.variants(decl) { out = out + " variant " + v.name; };
+        \\    for m in compiler.methods(decl) {
         \\        var ps = "";
-        \\        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
+        \\        for p in m.params { ps = ps + p.name + ":" + p.typeName + ";"; };
         \\        out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
         \\    };
         \\    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \"\"\"" + out + "\"\"\"; }");

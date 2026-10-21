@@ -9,7 +9,7 @@ pub fn main() -> void {
         if (n % 2 == 0) continue;
         yield n;
     };
-    for (odds(3)) { x ->
+    for x in odds(3) {
         print(x);
     }
 }

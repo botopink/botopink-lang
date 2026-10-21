@@ -619,7 +619,7 @@ test "format: a loop body keeps each statement's semicolon" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (x == "a") a = a + x;
         \\        val y = x;
         \\        a = a + y;
@@ -634,14 +634,14 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
         \\    var b = "";
-        \\    for (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { b = b + x; }; };
+        \\    for x in xs { if (x == "a") { a = a + x; }; if (x == "b") { b = b + x; }; };
         \\    return a + b;
         \\}
     ,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
         \\    var b = "";
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        if (x == "a") a = a + x;
         \\        if (x == "b") b = b + x;
         \\    }
@@ -651,7 +651,7 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
     try h.assertIdempotent(std.testing.allocator,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
-        \\    for (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { a = a + x; }; };
+        \\    for x in xs { if (x == "a") { a = a + x; }; if (x == "b") { a = a + x; }; };
         \\    return a;
         \\}
     );
@@ -662,16 +662,16 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn f(xs: i32[], gen: AsyncIter<i32>) -> void {
-        \\    for :outer (xs) { x ->
+        \\    for :outer x in xs {
         \\        if (x == 2) break :outer;
         \\    }
-        \\    for (0..xs.length) { i ->
+        \\    for i in 0..xs.length {
         \\        print(i);
         \\    }
-        \\    for (1...3) { i ->
+        \\    for i in 1...3 {
         \\        print(i);
         \\    }
-        \\    for await (gen) { v ->
+        \\    for await v in gen {
         \\        print(v);
         \\    }
         \\    var n = 0;
@@ -712,14 +712,14 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\        i = i + 1;
         \\        yield i;
         \\    };
-        \\    val c = iter for (xs) { x ->
+        \\    val c = iter for x in xs {
         \\        yield x * 2;
         \\    };
         \\    val sw = stream while (i > 0) {
         \\        i = i - 1;
         \\        yield await load(i);
         \\    };
-        \\    val sf = stream for (xs) { x ->
+        \\    val sf = stream for x in xs {
         \\        yield x;
         \\    };
         \\    val n = try await load(2);
@@ -728,7 +728,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\}
         \\
         \\iter fn g(xs: i32[]) -> Iter<i32> :out {
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        yield :out x;
         \\    }
         \\}
@@ -738,7 +738,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
 test "format: an empty loop body prints on one line and a body breaks" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) -> void {
-        \\    for (xs) { x -> }
+        \\    for x in xs { }
         \\    while (true) { }
         \\    loop {
         \\        break;
@@ -751,6 +751,7 @@ test "format: an empty loop body prints on one line and a body breaks" {
 
 test "format: 105's parenthesised for prints as for x in xs (decision 950)" {
     try h.assertFormatAs(std.testing.allocator,
+        \\// 105's spelling, which the formatter rewrites (decision 950)
         \\async fn f(xs: i32[], gen: AsyncIter<i32>) -> Async<void> {
         \\    for (xs) { x -> print(x); }
         \\    for :outer (0..xs.length) { i ->
@@ -758,9 +759,9 @@ test "format: 105's parenthesised for prints as for x in xs (decision 950)" {
         \\    }
         \\    for await (gen) { v -> print(v); }
         \\    val c = iter for (xs) { x -> yield x * 2; };
-        \\    for (xs.map { v -> v + 1 }) { y -> print(y); }
         \\}
     ,
+        \\// 105's spelling, which the formatter rewrites (decision 950)
         \\async fn f(xs: i32[], gen: AsyncIter<i32>) -> Async<void> {
         \\    for x in xs {
         \\        print(x);
@@ -774,18 +775,18 @@ test "format: 105's parenthesised for prints as for x in xs (decision 950)" {
         \\    val c = iter for x in xs {
         \\        yield x * 2;
         \\    };
-        \\    for y in (xs.map { v -> v + 1 }) {
-        \\        print(y);
-        \\    }
         \\}
     );
 }
 
 test "format: a for pattern binder prints back as written (decision 950)" {
     try h.assertFormat(std.testing.allocator,
-        \\fn f(ps: #(string, i32)[]) -> void {
+        \\fn f(ps: #(string, i32)[], xs: i32[]) -> void {
         \\    for #(k, v) in ps {
         \\        print(k);
+        \\    }
+        \\    for y in (xs.map { v -> v + 1 }) {
+        \\        print(y);
         \\    }
         \\    for _ in 0..2 {
         \\        print(1);
@@ -1460,7 +1461,7 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\fn f(c: bool, xs: i32[]) -> i32 {
         \\    var n = 0;
         \\    if (c) { n = 1; n = 2; };
-        \\    for (xs) { x -> n = n + x; n = n - 1; };
+        \\    for x in xs { n = n + x; n = n - 1; };
         \\    while (n > 100) { n = n - 1; };
         \\    loop { break; };
         \\    case n { 1 -> print("one"); _ -> print("other"); };
@@ -1476,7 +1477,7 @@ test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
         \\        n = 1;
         \\        n = 2;
         \\    }
-        \\    for (xs) { x ->
+        \\    for x in xs {
         \\        n = n + x;
         \\        n = n - 1;
         \\    }
@@ -1645,8 +1646,8 @@ test "format: catch ---- a region and its handler block print back (595)" {
 test "format: a label on continue prints as on break" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) -> void {
-        \\    for :outer (xs) { x ->
-        \\        for (xs) { y ->
+        \\    for :outer x in xs {
+        \\        for y in xs {
         \\            if (y == 2) continue :outer;
         \\            if (y == 3) break :outer;
         \\            continue;

@@ -23,13 +23,13 @@ fn passes() -> Result<void, compiler.Refused> {
 pub fn main() -> void {
     // Handled in the region.
     try comptime compiler.load("src/cases/broken.bp") catch { r ->
-        for (r.diagnostics) { d ->
+        for d in r.diagnostics {
             print("handled " + d.file + ":" + d.line.toString());
         }
         r.module
     }
     try checked() catch { r ->
-        for (r.diagnostics) { d ->
+        for d in r.diagnostics {
             print("propagated " + d.file + ":" + d.line.toString());
         }
     }

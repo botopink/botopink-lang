@@ -18,11 +18,11 @@ type Entry(key: string, value: string)
 
 pub fn runCase() -> void {
     val es = [Entry(key: "aa", value: "x"), Entry(key: "b", value: "yy")];
-    for (es) { e ->
+    for e in es {
         print(e.key.length());
     }
     val words = ["alpha", "be"];
-    for (words) { w ->
+    for w in words {
         val t = w.trim();
         print(w.length());
         print(t.length());

@@ -18,14 +18,14 @@ pub type Shape {
 pub type Registry(entries: unknown[]) {
     pub fn count<T>(self: Self, t: type<T>) -> i32 {
         var n = 0;
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) n = n + 1;
         }
         return n;
     }
 
     pub fn first<T>(self: Self, t: type<T>) -> ?T {
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) return e;
         }
         return null;

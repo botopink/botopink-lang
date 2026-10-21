@@ -4,7 +4,7 @@ The reference text this cell shows (from `conformance/docs.md`, § Loops):
 
 > A plain loop is a statement: bare `break` leaves it and `continue` starts its
 > next round, in all three. `for` binds the item only — the index is
-> `for (0..xs.length) { i -> … }`. The parentheses stay (`while (cond) {`), as
+> `for i in 0..xs.length { … }`. The parentheses stay (`while (cond) {`), as
 > they do on `if`: without them `while x {` could not tell the body from a record
 > literal. `loop (…)` is an error naming `for` and `while`.
 >

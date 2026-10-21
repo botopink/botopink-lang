@@ -5,7 +5,7 @@ import {compiler, io.terminal.print} from "std";
 
 pub fn main() -> void {
     val nodes: string[] = comptime compiler.typeInfo(Page).meta(Marks)?.nodes ?? [];
-    for (nodes) { line ->
+    for line in nodes {
         print(line);
     }
 }

@@ -26,7 +26,7 @@ fn ticks(limit: i32) -> Ticker {
 }
 
 async fn run() -> Async<void> {
-    for await (ticks(3).s) { v ->
+    for await v in ticks(3).s {
         print(v);
     }
     print("done");

@@ -207,8 +207,8 @@ codegen/
   against a `null` literal); two operands of one composite type call that type's
   generated `__bp_eq_<T>`; any other pair asks the run-time `__bp_eq`. The rows and
   the generic-`T` answer are in [`js/AGENTS.md`](./js/AGENTS.md#structural-equality-decision-210).
-- **Loops are statements** (decision 105, front 22): `for (xs) { x -> … }` is
-  `for (const x of xs)`, `for await (gen) { x -> … }` is `for await (const x of
+- **Loops are statements** (decision 105, front 22): `for x in xs { … }` is
+  `for (const x of xs)`, `for await x in gen { … }` is `for await (const x of
   gen)`, `while (cond) { … }` and `loop { … }` are `while` — every one built by
   `buildLoopStmt` under `LoopCtx.stmt`, where `break;` / `continue;` are the
   native statements. No loop has a value: the comprehension, the search and
@@ -684,8 +684,8 @@ codegen/
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`,
   `a...b` the same with `b + 1` (decision 105: inclusive); an open-ended `a..`
   is the lazy `__bp_range_from(a)` prelude generator (`function*` counting up
-  forever), so `for (x..) { i -> … break; }` runs. There is no index binder
-  (decision 105): `for (0..xs.length) { i -> }` is the spelling.
+  forever), so `for i in x.. { … break; }` runs. There is no index binder
+  (decision 105): `for i in 0..xs.length { }` is the spelling.
 - **Enum methods**: variant values carry no methods (a payload variant is a
   plain `{ tag, … }` object, a nullary one its name). A method whose first
   parameter is `self` or typed `Self` takes the value as a real first parameter
@@ -776,7 +776,7 @@ codegen/
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — it is declarative.
   Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
-  `for (xs) { x -> yield x; }` becomes `for…of`.
+  `for x in xs { yield x; }` becomes `for…of`.
 - **A labelled argument claims its slot**: `conformance/docs.md` § Parameters with defaults
   — "a parameter the call names by label keeps the argument it was given,
   whichever position it is in". `labelledArgs` places the arguments of a
@@ -1407,7 +1407,7 @@ codegen/
   `if` / `case` whose arm is a block (`val s = if (c) { "a" } else { "b" }`, `conformance/docs.md`
   § If / else) is a `case` whose arms end in their value.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
-  `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
+  `if` / `for x in xs { … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
   values instead of binding them inside a `case` arm or `fun`:
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
@@ -1690,7 +1690,7 @@ codegen/
   `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
   null test `(X =/= undefined)`, not a boolean test (`condNode`).
 - **Loops are statements** (decision 105, front 22), lowered by shape:
-  - `for (xs) { x -> … }` → `lists:foreach`; one that reassigns outer variables →
+  - `for x in xs { … }` → `lists:foreach`; one that reassigns outer variables →
     `lists:foldl` threading them (`mutatingFoldExpr`); one that `break`s or
     `continue`s → a named fun that walks the list (`[X | Rest]`) and recurses
     (`recursiveLoopCall`, the condition loop's machinery), because a fold cannot
@@ -2544,7 +2544,7 @@ codegen/
   made `make_fun3` read an unassigned `{y, N}`, which `erlc +from_asm` refuses
   (`modules/lambda/run/src/cases/lambda_rebinds_case_binders`).
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
-  `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
+  `for x in xs { … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
@@ -2584,7 +2584,7 @@ codegen/
   as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
-- **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
+- **Loops are statements** (decision 105). `for x in xs { … }` is a
   `lists:foreach` fun (`lowerLoop`) — `for await` too — and one over an
   `@Iter` / `@AsyncIter` (`stepsSequence`) the generator runtime's
   `'__bp_iter_foreach'/2` (144 B-128), so one that reassigns outer names is the
@@ -2786,7 +2786,7 @@ codegen/
   same AST and tables in both passes. Under-counting is not a wrong value, it is
   a module the assembler refuses (`{invalid_store, {y, N}}`, "Internal
   consistency check failed"), and `beam_export_audit.sh` cannot find it unless a
-  snapshot carries the shape: `for ([1, 2, 3]) { x -> … }`, a loop over a
+  snapshot carries the shape: `for x in [1, 2, 3] { … }`, a loop over a
   literal rather than over a name, had no cell and counted nothing until
   `tests/control_flow.zig`'s "a loop over an array literal" fixture.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +

@@ -8,7 +8,7 @@ import {io.terminal.print} from "std";
 
 pub fn countWhere(xs: string[], gone: fn(name: string) -> bool) -> i32 {
     var n = 0;
-    for (xs) { x ->
+    for x in xs {
         if (gone(x)) n = n + 1;
     }
     return n;

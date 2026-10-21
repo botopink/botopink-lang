@@ -29,11 +29,11 @@ fn pick(flag: bool) -> i32 {
 
 fn loops() -> i32 {
     var total = 0;
-    for ([1, 2]) { x ->
+    for x in [1, 2] {
         val step = x * 10;
         total = total + step;
     }
-    for ([3, 4]) { x ->
+    for x in [3, 4] {
         val step = x * 100;
         total = total + step;
     }

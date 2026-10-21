@@ -32,7 +32,7 @@ pub fn health() -> string {
 pub val motto = "ship it";
 
 pub fn main() -> void {
-    for (all()) { e ->
+    for e in all() {
         print(e.name + ": " + e.make());
     }
     print(make());

@@ -9,7 +9,7 @@ type Orders(id: i32)
 type Registry(entries: unknown[]) {
     // The way out: the type travels as a `comptime` token.
     pub fn get<T>(self: Self, comptime t: type<T>) -> ?T {
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) return e;
         }
         return null;
@@ -18,7 +18,7 @@ type Registry(entries: unknown[]) {
 
 // Refused: `T` is erased at run time.
 fn firstOf<T>(xs: unknown[], fallback: T) -> T {
-    for (xs) { x ->
+    for x in xs {
         if (x is T) return x;
     }
     return fallback;

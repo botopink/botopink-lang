@@ -40,7 +40,7 @@ pub type Signup(handle: string, password: string, confirm: string)
 
 fn violations(s: Signup) -> string[] {
     var out: string[] = [];
-    for (comptime compiler.typeInfo(Signup).metaAll(Check)) { c ->
+    for c in comptime compiler.typeInfo(Signup).metaAll(Check) {
         if (!c.rule(s)) out.push(c.message);
     }
     return out;
@@ -54,7 +54,7 @@ pub fn main() -> void {
         Signup(handle: "admin", password: "abc", confirm: "abd"),
     );
     print(bad.length);
-    for (bad) { m ->
+    for m in bad {
         print(m);
     }
     print(calls);

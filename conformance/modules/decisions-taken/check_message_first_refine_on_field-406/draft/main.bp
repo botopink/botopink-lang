@@ -25,7 +25,7 @@ pub type Account(handle: string, password: string, confirm: string, #[refine(isE
 fn violations(a: Account) -> string[] {
     val checks: Check<Account>[] = comptime compiler.typeInfo(Account).metaAll(Check);
     var out: string[] = [];
-    for (checks) { c ->
+    for c in checks {
         val rule = c.rule;
         if (rule != null && !rule!(a)) {
             out.push(c.field + ": " + c.message);

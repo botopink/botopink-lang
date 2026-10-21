@@ -10,7 +10,7 @@ type Field(name: string, inner: ?Field)
 
 fn depth(e: Element) -> i32 {
     var most = 0;
-    for (e.children) { c ->
+    for c in e.children {
         val d = depth(c);
         if (d > most) most = d;
     }

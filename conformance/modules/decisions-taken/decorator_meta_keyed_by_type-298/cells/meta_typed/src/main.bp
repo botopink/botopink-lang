@@ -71,7 +71,7 @@ pub fn main() -> void {
     }
     val indexes = comptime compiler.typeInfo(City).metaAll(Index);
     print(indexes.length);
-    for (indexes) { i ->
+    for i in indexes {
         val kind = if (i.unique) "unique" else "shared";
         print(i.column + " " + i.order.toString() + " " + kind);
     }

@@ -43,7 +43,7 @@ fn postHead(p: BlogParams, d: Post) -> Head {
 
 pub fn runCase() -> void {
     print(comptime compiler.typeInfo(blogPage).meta(Page)?.seg ?? "none");
-    for (allPosts()) { pair ->
+    for pair in allPosts() {
         print(blogPage(Route(params: pair._0, data: pair._1)).html);
         print(postHead(pair._0, pair._1).title);
     }

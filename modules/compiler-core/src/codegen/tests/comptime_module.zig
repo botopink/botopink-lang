@@ -100,7 +100,7 @@ test "comptime module: a counted loop folds the counter through lists:foldl" {
         \\fn pick(syntax decl: unknown) -> void {
         \\    var first = "";
         \\    var idx = 0;
-        \\    for (compiler.fields(decl)) { f ->
+        \\    for f in compiler.fields(decl) {
         \\        if (idx == 0) { first = f.name; };
         \\        idx = idx + 1;
         \\    };

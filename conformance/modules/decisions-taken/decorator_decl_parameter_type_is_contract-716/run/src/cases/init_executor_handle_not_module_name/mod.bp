@@ -20,7 +20,7 @@ pub type Users() {
 }
 
 pub fn runCase() -> void {
-    for (all()) { e ->
+    for e in all() {
         print(e.name + " " + e.make());
     }
     print(make());

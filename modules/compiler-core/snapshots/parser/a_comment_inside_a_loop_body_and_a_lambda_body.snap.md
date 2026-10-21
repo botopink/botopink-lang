@@ -33,7 +33,7 @@
                   "collection": {
                     "loc": {
                       "line": 2,
-                      "col": 10
+                      "col": 14
                     },
                     "kind": {
                       "arrayLit": {
@@ -42,7 +42,7 @@
                             "literal": {
                               "loc": {
                                 "line": 2,
-                                "col": 11
+                                "col": 15
                               },
                               "kind": {
                                 "numberLit": "1"
@@ -53,7 +53,7 @@
                             "literal": {
                               "loc": {
                                 "line": 2,
-                                "col": 14
+                                "col": 18
                               },
                               "kind": {
                                 "numberLit": "2"
@@ -76,7 +76,7 @@
                 ],
                 "paramsLoc": {
                   "line": 2,
-                  "col": 20
+                  "col": 9
                 },
                 "condition": false,
                 "body": [

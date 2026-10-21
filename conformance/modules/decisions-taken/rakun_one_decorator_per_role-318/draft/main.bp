@@ -20,7 +20,7 @@ pub type Orders(clock: Clock) {
 }
 
 pub fn main() -> void {
-    for (registry.all()) { entry ->
+    for entry in registry.all() {
         print(entry);
     }
 }

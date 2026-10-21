@@ -20,7 +20,7 @@ val VERBOSE = false;
 val PREFIX = "> ";
 
 fn show(comptime lines: string[]) -> void {
-    for (lines) { line ->
+    for line in lines {
         if (VERBOSE) say("verbose: " + line) else say(PREFIX + line);
     }
 }

@@ -19,7 +19,7 @@ fn both(first: View, second: Component<Element>) -> View[] {
 }
 
 async fn run() -> Async<void> {
-    for (both(Badge("new"), Card("home"))) { c ->
+    for c in both(Badge("new"), Card("home")) {
         val tree = await c.run(RenderScope.root());
         print(tree.value.text);
     }

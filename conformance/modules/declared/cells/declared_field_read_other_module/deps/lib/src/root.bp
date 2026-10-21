@@ -14,7 +14,7 @@ fn nameOf(d: Declared<unknown>) -> string {
 pub fn show(all: Declared<unknown>[]) -> void {
     print(all.map({ d -> d.name }).join(","));
     print(all.map({ d -> nameOf(d) }).join(","));
-    for (all) { d ->
+    for d in all {
         print(d.module + " " + d.name);
     }
 }

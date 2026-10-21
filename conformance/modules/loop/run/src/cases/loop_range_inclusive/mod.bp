@@ -5,14 +5,14 @@
 import {io.terminal.print} from "std";
 
 pub fn runCase() -> void {
-    for (1..4) { i ->
+    for i in 1..4 {
         print(i);
     }
-    for (1...4) { i ->
+    for i in 1...4 {
         print(i);
     }
     var n = 0;
-    for (3...2) { i ->
+    for i in 3...2 {
         n = n + 1;
     }
     print(n);

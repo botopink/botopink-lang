@@ -20,7 +20,7 @@ pub async fn item(s: string) -> Async<Piece> {
 component fn joined(texts: string[], parts: string[]) -> Component<string> {
     var out = texts.at(0) ?? "";
     var k = 0;
-    for (parts) { s ->
+    for s in parts {
         val p = await item(s);
         out = out + p.text + texts.at(k + 1) ?? "";
         k = k + 1;

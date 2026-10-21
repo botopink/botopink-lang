@@ -2,7 +2,7 @@
 ```botopink
 fn main() -> void {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-    for (messages) { msg ->
+    for msg in messages {
         print(msg);
     };
 }

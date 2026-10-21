@@ -24,13 +24,13 @@ pub fn main() -> void {
     val s = Signup(password: "a", confirm: "b");
     val checks = comptime compiler.typeInfo(Signup).metaAll(Check);
     print(checks.length);
-    for (checks) { c ->
+    for c in checks {
         print(c.rule(s));
         print(c.message);
     }
     print(comptime compiler.typeInfo(Signup).meta(Note)?.text ?? "none");
-    for (@TypeInfo.all(with: note)) { d ->
-        for (d.metaAll(Note)) { n ->
+    for d in @TypeInfo.all(with: note) {
+        for n in d.metaAll(Note) {
             print(d.name + ": " + n.text);
         }
     }

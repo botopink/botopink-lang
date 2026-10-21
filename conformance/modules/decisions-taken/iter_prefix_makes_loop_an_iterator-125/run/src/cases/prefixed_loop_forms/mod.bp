@@ -10,7 +10,7 @@ import {io.terminal.print} from "std";
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for (it) { x ->
+    for x in it {
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;
@@ -18,7 +18,7 @@ fn line(it: Iter<i32>) -> string {
 
 fn sum(it: Iter<i32>) -> i32 {
     var total = 0;
-    for (it) { x ->
+    for x in it {
         total = total + x;
     }
     return total;
@@ -40,14 +40,14 @@ pub fn runCase() -> void {
     };
     print(line(countdown));
 
-    val evens = iter for ([1, 2, 3, 4]) { x ->
+    val evens = iter for x in [1, 2, 3, 4] {
         if (x % 2 == 0) yield x;
     };
     print(line(evens));
 
     print(
         sum(
-            iter for ([1, 2, 3]) { x ->
+            iter for x in [1, 2, 3] {
                 yield x * x;
             },
         ),

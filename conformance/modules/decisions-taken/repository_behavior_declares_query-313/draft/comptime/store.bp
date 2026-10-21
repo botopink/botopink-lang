@@ -14,7 +14,7 @@ pub fn nativeQuery(syntax decl: unknown, comptime sql: string) -> void {
 
 pub fn repository(syntax decl: unknown) -> void {
     var lines: string[] = [];
-    for (compiler.methods(decl)) { m ->
+    for m in compiler.methods(decl) {
         val sql = compiler.meta(m, Sql);
         if (sql == null) {
             compiler.fail("a repository method declares its query: #[query @`…`] or #[nativeQuery(…)]", at: m);

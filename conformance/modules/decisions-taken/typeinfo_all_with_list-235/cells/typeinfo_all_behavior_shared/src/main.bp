@@ -33,7 +33,7 @@ pub type Orders(table: string) implement Bean {
 
 pub fn main() -> void {
     val all: Declared<Bean>[] = @TypeInfo.all(with: [service, repository]);
-    for (all) { d ->
+    for d in all {
         print(d.name
             + " "
             + d.metaAll(BeanRole).map({ m -> m.role }).join(","));

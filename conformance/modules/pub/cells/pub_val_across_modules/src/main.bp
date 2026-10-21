@@ -30,7 +30,7 @@ pub fn main() -> void {
     print(Box(n: 1).fill());
     print(modeName());
     print(sizes.length);
-    for (sizes) { s ->
+    for s in sizes {
         print(s);
     }
     print(maxItems);

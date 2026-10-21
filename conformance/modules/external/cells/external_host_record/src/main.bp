@@ -63,7 +63,7 @@ pub fn main() -> void {
     val ps = hostPoints();
     print(ps.length);
     var total = 0;
-    for (ps) { q ->
+    for q in ps {
         total = total + sum(q);
     }
     print(total);

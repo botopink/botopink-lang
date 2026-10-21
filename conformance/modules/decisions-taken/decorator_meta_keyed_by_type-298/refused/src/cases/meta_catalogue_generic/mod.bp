@@ -24,7 +24,7 @@ pub fn home() -> string {
 }
 
 pub fn main() -> void {
-    for (@TypeInfo.all(with: mark)) { d ->
+    for d in @TypeInfo.all(with: mark) {
         print(d.metaAll(Check).length);
     }
 }

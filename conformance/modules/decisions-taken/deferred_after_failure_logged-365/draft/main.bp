@@ -19,7 +19,7 @@ fn logError(name: string, correlationId: string, line: string) -> void {
 // Runs every deferred function; one that raises is reported through the
 // logger with the request's id, never dropped.
 fn drainAfter(req: Request) -> void {
-    for (req.deferred) { d ->
+    for d in req.deferred {
         case attempt(d.run) {
             Ok(value: _) {}
             Error(error: f) {

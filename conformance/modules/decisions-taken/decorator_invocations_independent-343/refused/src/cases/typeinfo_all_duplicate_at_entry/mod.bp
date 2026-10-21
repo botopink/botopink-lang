@@ -23,8 +23,8 @@ fn release() -> i32 {
 fn uniqueCommands(entries: Declared<unknown>[]) -> i32 {
     var seen: string[] = [];
     var owners: string[] = [];
-    for (entries) { d ->
-        for (d.meta) { m ->
+    for d in entries {
+        for m in d.meta {
             var i = 0;
             while (i < seen.length) {
                 if (seen.at(i) == m.value)

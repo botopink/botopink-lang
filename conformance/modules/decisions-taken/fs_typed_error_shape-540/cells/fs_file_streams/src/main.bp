@@ -23,7 +23,7 @@ fn describe(e: fs.FsError) -> string {
 }
 
 async fn printChunks(f: fs.File, size: i32) -> Async<void> {
-    for await (f.chunks(size)) { r ->
+    for await r in f.chunks(size) {
         case r {
             Ok(b) -> print("chunk " + encoding.hexEncodeBytes(b));
             Error(e) -> print("error " + describe(e));
@@ -33,7 +33,7 @@ async fn printChunks(f: fs.File, size: i32) -> Async<void> {
 }
 
 async fn printLines(f: fs.File) -> Async<void> {
-    for await (f.lines()) { r ->
+    for await r in f.lines() {
         case r {
             Ok(line) -> print("line [" + line + "]");
             Error(e) -> print("error " + describe(e));

@@ -10,7 +10,7 @@ pub fn runCase() -> void {
     print(h.kind);
     print(h.detail == null);
     val kinds = ["panic", "host", "crash"];
-    for (kinds) { k ->
+    for k in kinds {
         val f = failure.Failure(message: "x", kind: k);
         print(f.kind + ":" + f.message);
     }

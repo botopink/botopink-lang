@@ -26,7 +26,7 @@ iter fn fibonacci(limit: i32) -> Iter<i32> {
 }
 
 iter fn firstNegative(xs: i32[]) -> Iter<i32> {
-    for (xs) { x ->
+    for x in xs {
         if (x < 0) break x;
         yield x;
     }
@@ -34,7 +34,7 @@ iter fn firstNegative(xs: i32[]) -> Iter<i32> {
 
 fn line(it: Iter<i32>) -> string {
     var acc = "";
-    for (it) { x ->
+    for x in it {
         if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
     }
     return acc;

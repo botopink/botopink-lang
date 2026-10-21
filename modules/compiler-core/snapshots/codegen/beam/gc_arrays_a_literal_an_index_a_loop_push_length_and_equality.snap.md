@@ -2,13 +2,13 @@
 ```botopink
 fn total(xs: i32[]) -> i32 {
     var sum = 0;
-    for (xs) { x -> sum = sum + x; }
+    for x in xs { sum = sum + x; }
     return sum;
 }
 
 fn longest(names: string[]) -> i32 {
     var best = 0;
-    for (names) { n -> if (n.length() > best) { best = n.length(); } }
+    for n in names { if (n.length() > best) { best = n.length(); } }
     return best;
 }
 
@@ -295,7 +295,7 @@ import {io.terminal.print} from "std";
     {test, is_ge, {f, 14}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 15}}.
   {label, 14}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:3:31">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:3:29">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 15}.
     {move, {x, 0}, {y, 1}}.

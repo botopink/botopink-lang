@@ -39,7 +39,7 @@ pub fn runCase() -> void {
     print(describe(Route.Page(slug: "b")));
     print(describe(Route.Home));
     val rs: array<Req> = [Route.Home, Route.Page(slug: "c")];
-    for (rs) { r ->
+    for r in rs {
         print(r.path());
     }
 }

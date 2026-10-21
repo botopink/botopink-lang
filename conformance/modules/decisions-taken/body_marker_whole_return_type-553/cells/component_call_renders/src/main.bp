@@ -31,7 +31,7 @@ pub async fn main() -> Async<void> {
     val r = await Page().run(RenderScope.root());
     val page = r.value;
     print(page.tag);
-    for (page.kids) { k ->
+    for k in page.kids {
         if (k is Element) print("node") else print("component");
     }
 }

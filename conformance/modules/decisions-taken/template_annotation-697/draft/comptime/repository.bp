@@ -10,7 +10,7 @@ pub fn query(syntax decl: unknown, comptime sql: string) -> void {
 
 pub fn repository(syntax decl: unknown) -> void {
     var out: string[] = [];
-    for (compiler.methods(decl)) { m ->
+    for m in compiler.methods(decl) {
         val q = compiler.meta(m, Query);
         if (q != null) out.push(compiler.name(m)! + ": " + q.sql);
     }

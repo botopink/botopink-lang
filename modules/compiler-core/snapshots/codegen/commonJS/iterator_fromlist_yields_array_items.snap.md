@@ -1,14 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 iter fn fromList<T>(xs: array<T>) -> Iter<T> {
-    for (xs) { item ->
+    for item in xs {
         yield item;
     };
 }
 
 fn toList<T>(iter: Iter<T>) -> array<T> {
     var out = [];
-    for (iter) { item ->
+    for item in iter {
         out.push(item);
     };
     return out;

@@ -26,7 +26,7 @@ iter fn upto(n: i32) -> Iter<Result<i32, string>> {
 // The iterating body reads each `Result`; `try r` propagates.
 fn digits(n: i32) -> Result<string, string> {
     var acc = "";
-    for (upto(n)) { r ->
+    for r in upto(n) {
         val v = try r;
         acc = acc + v.toString();
     }
@@ -44,7 +44,7 @@ iter fn nums(n: i32) -> Iter<i32> {
 // A plain `fn` iterates an iterator.
 fn total(n: i32) -> i32 {
     var acc = 0;
-    for (nums(n)) { x ->
+    for x in nums(n) {
         acc = acc + x;
     }
     return acc;

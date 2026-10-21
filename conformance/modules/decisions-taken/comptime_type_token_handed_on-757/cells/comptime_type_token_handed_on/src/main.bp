@@ -13,7 +13,7 @@ pub type Orders(total: i32)
 pub type Registry(entries: unknown[]) {
     pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
         var n = 0;
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) n = n + 1;
         }
         return n;
@@ -21,7 +21,7 @@ pub type Registry(entries: unknown[]) {
 
     pub fn get<T>(self: Self, comptime t: type<T>) -> ?T {
         if (self.count(t) == 0) return null;
-        for (self.entries) { e ->
+        for e in self.entries {
             if (e is t) return e;
         }
         return null;

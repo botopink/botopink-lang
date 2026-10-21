@@ -22,7 +22,7 @@ pub fn greet(name: string) -> string {
 
 pub fn main() -> void {
     val all: Declared<unknown>[] = @TypeInfo.all(with: job);
-    for (all) { d ->
+    for d in all {
         print(d.name + " " + d.module + " " + d.returnTypeName);
     }
 }

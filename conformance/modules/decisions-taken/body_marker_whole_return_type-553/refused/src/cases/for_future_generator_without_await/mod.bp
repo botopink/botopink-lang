@@ -13,7 +13,7 @@ async iter fn ticks(n: i32) -> AsyncIter<i32> {
 
 async fn total() -> Async<i32> {
     var acc = 0;
-    for (ticks(3)) { v ->
+    for v in ticks(3) {
         acc = acc + v;
     }
     return acc;

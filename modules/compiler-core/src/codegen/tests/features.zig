@@ -736,7 +736,7 @@ test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumTo(n: i32) -> i32 {
         \\    var sum = 0;
-        \\    for (0..n) { i ->
+        \\    for i in 0..n {
         \\        sum = sum + i;
         \\    };
         \\    return sum;
@@ -747,7 +747,7 @@ test "js: range ---- iterate over range" {
 test "js: range ---- open-ended range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countUp(x: i32) -> void {
-        \\    for (x..) { i ->
+        \\    for i in x.. {
         \\        if (i > 100) {
         \\          break;
         \\        };
@@ -995,14 +995,14 @@ test "js: iterator fromList yields array items" {
     // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\iter fn fromList<T>(xs: array<T>) -> Iter<T> {
-        \\    for (xs) { item ->
+        \\    for item in xs {
         \\        yield item;
         \\    };
         \\}
         \\
         \\fn toList<T>(iter: Iter<T>) -> array<T> {
         \\    var out = [];
-        \\    for (iter) { item ->
+        \\    for item in iter {
         \\        out.push(item);
         \\    };
         \\    return out;

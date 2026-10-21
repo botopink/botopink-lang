@@ -7,12 +7,12 @@
 import {io.terminal.print} from "std";
 
 fn count(xs: string[]) -> i32 {
-    val items = iter for (xs) { x ->
+    val items = iter for x in xs {
         if (x == "stop") { throw "stopped"; }
         yield 1;
     };
     var acc = 0;
-    for (items) { r -> acc = acc + r; }
+    for r in items { acc = acc + r; }
     return acc;
 }
 

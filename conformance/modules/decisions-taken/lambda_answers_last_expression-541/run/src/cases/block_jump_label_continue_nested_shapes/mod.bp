@@ -5,7 +5,7 @@ import {io.terminal.print} from "std";
 
 fn whileUnderLabel(xs: i32[]) -> i32 {
     var s = 0;
-    for :outer (xs) { x ->
+    for :outer x in xs {
         var j = 0;
         while (j < 3) {
             j = j + 1;
@@ -19,9 +19,9 @@ fn whileUnderLabel(xs: i32[]) -> i32 {
 
 fn twoLabels(xs: i32[], ys: i32[], zs: i32[]) -> i32 {
     var n = 0;
-    for :a (xs) { x ->
-        for :b (ys) { y ->
-            for (zs) { z ->
+    for :a x in xs {
+        for :b y in ys {
+            for z in zs {
                 if (z == 2) continue :b;
                 if (y == 2) continue :a;
                 n = n + 1;

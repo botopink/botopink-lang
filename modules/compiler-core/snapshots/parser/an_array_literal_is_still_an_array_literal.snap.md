@@ -278,7 +278,7 @@
                   "collection": {
                     "loc": {
                       "line": 6,
-                      "col": 11
+                      "col": 15
                     },
                     "kind": {
                       "range": {
@@ -286,7 +286,7 @@
                           "literal": {
                             "loc": {
                               "line": 6,
-                              "col": 10
+                              "col": 14
                             },
                             "kind": {
                               "numberLit": "0"
@@ -297,7 +297,7 @@
                           "literal": {
                             "loc": {
                               "line": 6,
-                              "col": 13
+                              "col": 17
                             },
                             "kind": {
                               "numberLit": "4"
@@ -315,7 +315,7 @@
                 ],
                 "paramsLoc": {
                   "line": 6,
-                  "col": 18
+                  "col": 9
                 },
                 "condition": false,
                 "body": [
@@ -324,7 +324,7 @@
                       "binding": {
                         "loc": {
                           "line": 6,
-                          "col": 23
+                          "col": 21
                         },
                         "kind": {
                           "assign": {
@@ -336,14 +336,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 6,
-                                  "col": 29
+                                  "col": 27
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "identifier": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 27
+                                      "col": 25
                                     },
                                     "kind": {
                                       "ident": "s"
@@ -354,7 +354,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 31
+                                      "col": 29
                                     },
                                     "kind": {
                                       "ident": "i"

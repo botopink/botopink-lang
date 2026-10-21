@@ -1128,7 +1128,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
         \\pub fn pairs(syntax q: string) -> string {
         \\    val items: #(kind: string, n: i32)[] = [#(compiler.text(q), 1), #("z", 2)];
         \\    var out = "";
-        \\    for (items) { it ->
+        \\    for it in items {
         \\        out = out + it.kind + it.n.toString() + ";";
         \\    };
         \\    return compiler.build("\"" + out + kindOf(#("w", 7)) + "\"");

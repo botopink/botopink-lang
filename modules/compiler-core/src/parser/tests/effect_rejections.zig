@@ -122,7 +122,7 @@ test "effect-annotation-removed — before a loop the fix-it is `iter` / `stream
     , .effectAnnotationRemovedLoop);
     try expectKind(
         \\fn f(xs: i32[]) -> void {
-        \\    val ys = #[@resultGenerator] for (xs) { x -> yield x; };
+        \\    val ys = #[@resultGenerator] for x in xs { yield x; };
         \\}
     , .effectAnnotationRemovedLoop);
 }
@@ -168,7 +168,7 @@ test "the return is the effect — FnDecl.effect, and a factory has none" {
     const src =
         \\async fn a() -> Async<i32> { return 0; }
         \\iter fn b() -> Iter<i32> { yield 0; }
-        \\fn c(xs: i32[]) -> Iter<i32> { return iter for (xs) { x -> yield x; }; }
+        \\fn c(xs: i32[]) -> Iter<i32> { return iter for x in xs { yield x; }; }
         \\component fn d() -> Component<i32> { return 0; }
         \\fn e() -> i32 { return 0; }
     ;
@@ -188,10 +188,10 @@ test "`iter` / `stream` prefix the three loops, as a value and as an argument" {
         \\fn f(xs: i32[]) -> void {
         \\    val a = iter loop { yield 1; break 2; };
         \\    val b = iter while (true) { yield 1; break; };
-        \\    val c = iter for (xs) { x -> yield x * 2; };
+        \\    val c = iter for x in xs { yield x * 2; };
         \\    val d = stream loop { yield 1; break; };
-        \\    val e = stream for (xs) { x -> yield x; };
-        \\    g(iter for (xs) { x -> yield x; });
+        \\    val e = stream for x in xs { yield x; };
+        \\    g(iter for x in xs { yield x; });
         \\}
     );
 }
@@ -246,7 +246,7 @@ test "decision 137: `try` / `await` parse wherever an expression begins" {
         \\    if (try ok()) { b = 1; }
         \\    while (await more()) { b = 2; }
         \\    case try g() { 0 { b = 3; } _ { b = 4; } }
-        \\    for (try items()) { x -> b = x; }
+        \\    for x in try items() { b = x; }
         \\    val c = try g() catch 0;
         \\    k(try g() catch 0);
         \\    return try g();

@@ -21,7 +21,7 @@ fn query(syntax q: string, syntax decl: unknown) -> string {
     var first = true;
     // The text's `${…}` holes are the template's own syntax (decision 577
     // (1)): each one's expression is a parameter.
-    for (compiler.text(q).split("\${")) { piece ->
+    for piece in compiler.text(q).split("\${") {
         if (first) {
             text = piece;
             first = false;
@@ -58,7 +58,7 @@ fn query(syntax q: string, syntax decl: unknown) -> string {
 
 fn repository(syntax decl: unknown) -> void {
     var lines: string[] = [];
-    for (compiler.methods(decl)) { m ->
+    for m in compiler.methods(decl) {
         val found = m.meta(Query);
         if (found != null) {
             val names = m.params.map({ p -> p.name }).join(", ");

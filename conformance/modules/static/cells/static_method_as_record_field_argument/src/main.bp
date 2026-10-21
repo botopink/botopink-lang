@@ -24,7 +24,7 @@ fn exec() -> void {
 val _x = exec();
 
 pub fn main() -> void {
-    for (entries) { e ->
+    for e in entries {
         print(e.name + " " + e.make());
     }
     print(make());
