@@ -7,7 +7,12 @@ Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for th
 WAT backend, `test_units.zig` for decision 513 — on every target a module's
 production bytes are equal under `build` and `test`, and only a module of the
 package under test has a test unit, `externals.zig` for `#[@external(.<Target>(…))]` FFI declarations,
-`comptime_module.zig` for `erlang.emitComptimeModule`, `beam_templates.zig` for
+`comptime_module.zig` for `erlang.emitComptimeModule`, `resolved_print.zig` for
+decision 798 (5)'s oracle over the resolved program's printer — each cell of its list (single-file
+cells of `conformance/modules`) printed, the printing lexed with no `comptime` / `syntax` word and
+analysed with no fold, expansion, decorator or build output, then built on every target and its
+answer compared with the cell's (it sets `reserved_names.accept_compiler_names`, the printing's names
+being the compiler's), `beam_templates.zig` for
 decision 141's audit — every `#[@external(.Erlang(…))]` template std, its
 `primitives.bp` and the bundled libraries ship lowers for beam, through
 `beam_asm.templateBody` / `templateModuleText` / `lowerTemplateText`, the

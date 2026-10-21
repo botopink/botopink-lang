@@ -41,7 +41,20 @@ pub const Options = struct {
     /// `erl` or `wasmtime` spawn, no runtime-cache entry, no side effect at
     /// build time).
     execute: bool,
+    /// Called once with the analysed session, before the emit: the hook
+    /// `--emit-resolved` prints the resolved program through (decision 798
+    /// (2), `comptime/resolved_print.zig`).
+    on_analysed: ?AnalysedHook = null,
 };
+
+/// A driver's look at the analysed modules (`Options.on_analysed`).
+pub const AnalysedHook = struct {
+    ctx: *anyopaque,
+    call: *const fn (ctx: *anyopaque, outputs: []const ComptimeOutput) anyerror!void,
+};
+
+/// Decision 798 (1) — the resolved program's printer.
+pub const resolvedPrint = @import("./comptime/resolved_print.zig");
 
 /// The codegen snapshot harness's entry (`codegen/tests/helpers.zig`): emit
 /// **and execute** every module. Drivers call `generateWith` with
@@ -172,6 +185,7 @@ pub fn generateWith(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
+    if (options.on_analysed) |hook| try hook.call(hook.ctx, session.outputs.items);
     // The code cache's level B CODE (144 B-60 S4): a dependency module whose
     // entry holds its unit is not emitted again, and an entry without one is
     // staged again with it. `botopink test` too: a dependency gets no test

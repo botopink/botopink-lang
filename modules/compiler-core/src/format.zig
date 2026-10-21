@@ -107,6 +107,46 @@ pub const Formatter = struct {
     /// value, and `botopink format` writes each arm's last expression as the
     /// arm's tail (without `;`).
     nextCaseIsStatement: bool = false,
+    /// Decision 798 — printing the resolved program
+    /// (`comptime/resolved_print.zig`), null for `botopink format`.
+    resolved: ?*Resolved = null,
+
+    /// What the resolved program's printing changes in the text: the tree is
+    /// the compiler's own after comptime, so the forms it holds that no person
+    /// writes are spelled back in the language.
+    pub const Resolved = struct {
+        /// Whether an annotation is printed: what the compiler reads at emit
+        /// is, a decorator that already ran is not.
+        keepAnnotation: *const fn (a: ast.Annotation) bool,
+        /// Set when a call of std's `print` / `panic` was printed by its name
+        /// (the checker marks it `is_builtin`, decision 606 (2)): the printer
+        /// then writes the import it needs.
+        used_print: bool = false,
+        used_panic: bool = false,
+    };
+
+    /// A name as the resolved program spells it: a specialised copy's
+    /// `name_$N` between backticks (decision 805 (5)).
+    fn nameText(this: *Formatter, name: []const u8) !*const Doc {
+        if (this.resolved != null and std.mem.indexOfScalar(u8, name, '$') != null and !std.mem.startsWith(u8, name, "`"))
+            return this.text(try std.fmt.allocPrint(this.arena, "`{s}`", .{name}));
+        return this.text(name);
+    }
+
+    /// A call of std's `print` / `panic` the checker marked `is_builtin`,
+    /// printed by its name in the resolved program (decision 606 (2)).
+    fn resolvedStdCall(this: *Formatter, callee: []const u8) bool {
+        const r = this.resolved orelse return false;
+        if (std.mem.eql(u8, callee, "print")) {
+            r.used_print = true;
+            return true;
+        }
+        if (std.mem.eql(u8, callee, "panic")) {
+            r.used_panic = true;
+            return true;
+        }
+        return false;
+    }
 
     pub fn init(arena: std.mem.Allocator) Formatter {
         return .{ .arena = arena };
@@ -369,6 +409,10 @@ pub const Formatter = struct {
             // Decision 575 (4) — `comptime x: T` / `syntax x: T`: the tree type
             // the parser read them as prints as the `T` written.
             try this.fmtTypeRef(arrivalType(p))
+        else if (p.inlineFields != null and this.resolved != null)
+            // The resolved program holds the record the inline type became
+            // (`inline_types.zig`), its calls building it: the parameter names it.
+            try this.fmtTypeRef(p.typeRef)
         else if (p.inlineFields) |fs|
             // Decision 207 — an inline parameter type prints as written.
             try this.concat(try this.text("type"), try this.fmtFieldList(fs, false))
@@ -384,7 +428,10 @@ pub const Formatter = struct {
             this.nil();
         // Decision 267 — a variadic parameter keeps its `..`.
         const nameDoc = if (p.variadic or p.recordParam) try this.text(try std.mem.concat(this.arena, u8, &.{ "..", p.name })) else try this.text(p.name);
-        return switch (p.modifier) {
+        // Decision 798 — the resolved program has no comptime left: a
+        // parameter the specialiser kept is a plain one.
+        const modifier = if (this.resolved != null) .none else p.modifier;
+        return switch (modifier) {
             .none => this.concatAll(&.{
                 nameDoc,
                 try this.text(": "),
@@ -751,7 +798,7 @@ pub const Formatter = struct {
                 },
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |name| this.text(name),
+                .ident => |name| this.nameText(name),
                 .dotIdent => |name| this.text(
                     try std.fmt.allocPrint(this.arena, ".{s}", .{name}),
                 ),
@@ -1678,7 +1725,12 @@ pub const Formatter = struct {
             // Decision 8 §1.3 (01-checker) — explicit type arguments at a use,
             // `Box<i32>(value: 1)`, printed back adjacent to the name.
             try this.concat(
-                try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee),
+                if (is_builtin and this.resolvedStdCall(c.callee))
+                    try this.text(c.callee)
+                else if (is_builtin)
+                    try this.text(try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}))
+                else
+                    try this.nameText(c.callee),
                 try this.typeArgsDoc(if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null),
             );
 
@@ -2506,7 +2558,17 @@ pub const Formatter = struct {
     /// comments between blocks and inside an open list where they were. A list
     /// written with a comma before its `]` (or holding a comment) prints one
     /// annotation per line with the trailing comma.
-    fn fmtAnnotations(this: *Formatter, annotations: []const ast.Annotation) !*const Doc {
+    /// The annotations printed: under `resolved`, those the compiler reads at
+    /// emit (`Resolved.keepAnnotation`).
+    fn keptAnnotations(this: *Formatter, written: []const ast.Annotation) ![]const ast.Annotation {
+        const r = this.resolved orelse return written;
+        var kept: std.ArrayList(ast.Annotation) = .empty;
+        for (written) |a| if (r.keepAnnotation(a)) try kept.append(this.arena, a);
+        return kept.items;
+    }
+
+    fn fmtAnnotations(this: *Formatter, written: []const ast.Annotation) !*const Doc {
+        const annotations = try this.keptAnnotations(written);
         if (annotations.len == 0) return this.nil();
         var docs: std.ArrayList(*const Doc) = .empty;
         defer docs.deinit(this.arena);
@@ -2559,7 +2621,8 @@ pub const Formatter = struct {
     /// A field's or parameter's annotations on its own line: `#[a] #[b, c] `
     /// — each block flat, one space after. Comments among them (rare) take
     /// the stacked form of `fmtAnnotations`, which ends in a line break.
-    fn fmtInlineAnnotations(this: *Formatter, annotations: []const ast.Annotation) !*const Doc {
+    fn fmtInlineAnnotations(this: *Formatter, written: []const ast.Annotation) !*const Doc {
+        const annotations = try this.keptAnnotations(written);
         if (annotations.len == 0) return this.nil();
         for (annotations) |a| {
             const w = a.written;
@@ -3136,7 +3199,7 @@ pub const Formatter = struct {
             return this.concatAll(&.{
                 try this.fmtAnnotations(f.annotations),
                 prefix,
-                try this.text(f.name),
+                try this.nameText(f.name),
                 try this.fmtGenericParams(f.genericParams),
                 try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam)),
                 try this.text(";"),
@@ -3156,7 +3219,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.fmtAnnotations(f.annotations),
             prefix,
-            try this.text(f.name),
+            try this.nameText(f.name),
             try this.fmtGenericParams(f.genericParams),
             try this.fmtSignature(
                 f.params,
@@ -3298,11 +3361,14 @@ pub const Formatter = struct {
                 else
                     try this.join(argDocs, try this.text(", "));
                 // A bare builtin type (`@Expr`) round-trips without `<>`.
+                // The resolved program writes a prelude type as a program does,
+                // bare (decision 606 (1)), whatever spelling the tree carries.
+                const bare = b.bare or this.resolved != null;
                 if (b.is_builtin and b.args.len == 0) {
-                    if (b.bare) break :blk try this.text(b.name);
+                    if (bare) break :blk try this.text(b.name);
                     break :blk this.concat(try this.text("@"), try this.text(b.name));
                 }
-                break :blk if (b.is_builtin and !b.bare)
+                break :blk if (b.is_builtin and !bare)
                     this.concatAll(&.{
                         try this.text("@"),
                         try this.text(b.name),
@@ -3690,6 +3756,18 @@ pub fn format(allocator: std.mem.Allocator, program: ast.Program) ![]u8 {
     defer arena.deinit();
 
     var fmt = Formatter.init(arena.allocator());
+    const doc = try fmt.fmtProgram(program);
+    return render(allocator, doc, LINE_WIDTH);
+}
+
+/// `format`, printing the resolved program (`comptime/resolved_print.zig`,
+/// decision 798): see `Formatter.Resolved`.
+pub fn formatResolved(allocator: std.mem.Allocator, program: ast.Program, resolved: *Formatter.Resolved) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var fmt = Formatter.init(arena.allocator());
+    fmt.resolved = resolved;
     const doc = try fmt.fmtProgram(program);
     return render(allocator, doc, LINE_WIDTH);
 }

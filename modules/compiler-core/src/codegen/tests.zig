@@ -9,6 +9,7 @@ test {
     _ = @import("tests/aggregates.zig");
     _ = @import("tests/control_flow.zig");
     _ = @import("tests/comptime.zig");
+    _ = @import("tests/resolved_print.zig");
     _ = @import("tests/builtins.zig");
     _ = @import("tests/dispatch.zig");
     _ = @import("tests/features.zig");

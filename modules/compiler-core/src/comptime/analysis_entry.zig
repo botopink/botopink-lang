@@ -225,10 +225,13 @@ pub const Skip = struct {
 ///   * `TypedBinding.typedExpr` — the typed tree inference built; the
 ///     transformed AST and the binding's type carry what a consumer reads;
 ///   * `OkData.custom_ast` — `@ExprCustom` reference trees, the language
-///     server's read-only view of a module it is editing (never a dependency's).
+///     server's read-only view of a module it is editing (never a dependency's);
+///   * `OkData.resolved` — the resolved program `--emit-resolved` prints, kept
+///     only when a driver asks for it (`comptime.keep_resolved`).
 pub const default_skips = [_]Skip{
     .{ .T = infer.TypedBinding, .field = "typedExpr" },
     .{ .T = comptimeMod.ComptimeOutput.OkData, .field = "custom_ast" },
+    .{ .T = comptimeMod.ComptimeOutput.OkData, .field = "resolved" },
 };
 
 fn skipped(comptime skips: []const Skip, comptime T: type, comptime field: []const u8) bool {

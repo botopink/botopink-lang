@@ -25,6 +25,38 @@ pub const Options = struct {
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5), `code_cache.zig`).
     cold: bool = false,
+    /// `--emit-resolved <dir>`: the resolved program of the package written to
+    /// `<dir>/<pkg>.bp`, for reading (decision 798 (2), (3)).
+    emit_resolved: ?[]const u8 = null,
+};
+
+/// `--emit-resolved`'s hook (`codegen.Options.on_analysed`).
+const ResolvedSink = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    package: []const u8,
+    paths: []const []const u8,
+
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+        const self: *ResolvedSink = @ptrCast(@alignCast(ctx));
+        const text = bp.codegen.resolvedPrint.print(self.gpa, outputs, self.paths) catch |err| switch (err) {
+            // A refused analysis has no resolved program; its diagnostic is the build's.
+            error.NotResolved => return,
+            else => return err,
+        };
+        defer self.gpa.free(text);
+        std.Io.Dir.cwd().createDirPath(self.io, self.dir) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+        const name = try std.fmt.allocPrint(self.gpa, "{s}.bp", .{self.package});
+        defer self.gpa.free(name);
+        const path = try std.fs.path.join(self.gpa, &.{ self.dir, name });
+        defer self.gpa.free(path);
+        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = text });
+        reporter.print("  wrote {s}\n", .{path});
+    }
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -119,7 +151,15 @@ pub fn run(
     };
 
     // Run the compiler. `build` emits only: the program is not executed.
-    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
+    var sink: ResolvedSink = undefined;
+    const hook: ?bp.codegen.AnalysedHook = if (opts.emit_resolved) |dir| blk: {
+        const paths = try arena.alloc([]const u8, project_modules.len);
+        for (project_modules, paths) |m, *p| p.* = m.path;
+        sink = .{ .gpa = gpa, .io = io, .dir = dir, .package = proj.name, .paths = paths };
+        bp.comptime_pipeline.keep_resolved = true;
+        break :blk .{ .ctx = &sink, .call = ResolvedSink.call };
+    } else null;
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false, .on_analysed = hook }) catch |err| {
         reporter.errMsg("compilation failed");
         reporter.print("  {s}\n", .{@errorName(err)});
         return 1;

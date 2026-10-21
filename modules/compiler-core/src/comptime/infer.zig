@@ -7114,7 +7114,7 @@ fn executorSource(
     const name = try std.fmt.allocPrint(env.arena, "__bp_executor_{d}", .{k});
     const rendered = memberFn.render(env.arena, name, asFn, splices, typeArgs, "", renames) catch return error.OutOfMemory;
     const text = if (std.mem.startsWith(u8, rendered, "pub ")) rendered["pub ".len..] else rendered;
-    return std.fmt.allocPrint(env.arena, "{s}\nval _bp_init_{d} = {s}();", .{ text, k, name });
+    return std.fmt.allocPrint(env.arena, "{s}\nval __bp_init_{d} = {s}();", .{ text, k, name });
 }
 
 /// Decisions 310, 603 — an argument of a decorator declared in another module,

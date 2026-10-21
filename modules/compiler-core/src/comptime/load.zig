@@ -13,8 +13,8 @@
 //!   program never sees the modules. Each refused module is one `Diagnostic`,
 //!   in the order `botopink build` prints them, with the text and the place it
 //!   prints (decision 780 (2), 781).
-//! - The answer is code (`rewrite`): `__bp_loaded(Bp_LoadModule(…),
-//!   [Bp_LoadDiagnostic(…), …])`, a call of the function `withLoadHelper`
+//! - The answer is code (`rewrite`): `__bp_loaded(Bp__LoadModule(…),
+//!   [Bp__LoadDiagnostic(…), …])`, a call of the function `withLoadHelper`
 //!   declares in the module that loads (`Ok(m)` for `[]`, `Error(Refused(m,
 //!   ds))` otherwise, decisions 782, 786), std's `compiler.Module`,
 //!   `compiler.Refused` and `compiler.Diagnostic` imported under names no
@@ -48,11 +48,11 @@ const blockEval = @import("block_eval.zig");
 /// `Error(Refused(m, ds))` otherwise.
 pub const helper_fn = "__bp_loaded";
 /// The local name of std's `compiler.Diagnostic` in a module that loads.
-pub const diagnostic_alias = "Bp_LoadDiagnostic";
+pub const diagnostic_alias = "Bp__LoadDiagnostic";
 /// The local name of std's `compiler.Module` in a module that loads.
-pub const module_alias = "Bp_LoadModule";
+pub const module_alias = "Bp__LoadModule";
 /// The local name of std's `compiler.Refused` in a module that loads.
-pub const refused_alias = "Bp_LoadRefused";
+pub const refused_alias = "Bp__LoadRefused";
 
 /// The fields of the records the answer builds, in the order `rewrite`
 /// writes them — std's `compiler.Module`, `compiler.Refused` and
@@ -303,8 +303,8 @@ pub const Loaded = struct {
     }
 };
 
-/// The call a read at `loc` is rewritten to: `__bp_loaded(Bp_LoadModule(…),
-/// […])`, one `Bp_LoadDiagnostic(…)` per refusal, on a line of its own.
+/// The call a read at `loc` is rewritten to: `__bp_loaded(Bp__LoadModule(…),
+/// […])`, one `Bp__LoadDiagnostic(…)` per refusal, on a line of its own.
 pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!*ast.Expr {
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.appendSlice(arena, "fn __bp_load_rewrite() { " ++ helper_fn ++ "(");
@@ -407,7 +407,7 @@ pub fn fnReads(arena: std.mem.Allocator, fd: ast.FnDecl) !bool {
 }
 
 /// The answer of a read in a body that runs at build, as code the comptime
-/// runtime builds: `Ok(Bp_LoadModule(…))`, or `Error(Bp_LoadRefused(module:
+/// runtime builds: `Ok(Bp__LoadModule(…))`, or `Error(Bp__LoadRefused(module:
 /// …, diagnostics: […]))` — the records are the runtime's maps
 /// (`decorator_eval`'s host records), no target (decision 805 (4)).
 pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!ast.Expr {
@@ -506,7 +506,7 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
 /// file (`withRunImports`).
 pub const attempt_alias = "__bp_run_attempt";
 /// The local name of std's `compiler.RunFailure` in a module that loads.
-pub const run_failure_alias = "Bp_RunFailure";
+pub const run_failure_alias = "Bp__RunFailure";
 /// The function a `run()` is rewritten to call (decision 806): std's
 /// `attempt` over the loaded package's `loaded_main_fn`, its answer read as
 /// a `RunFailure` — `.Failed` with the text of the `Error` the loaded `main`
@@ -528,10 +528,10 @@ const run_fn_src =
 pub const run_alias_prefix = "__bp_run__";
 
 /// The path of the `Module` a `run()` is called on, read off the receiver as
-/// an executor holds it (`recordSource`): `Bp_LoadModule(…, path: "…", …)`,
-/// or `Bp_LoadRefused(module: …, …).module`. Null for any other receiver.
+/// an executor holds it (`recordSource`): `Bp__LoadModule(…, path: "…", …)`,
+/// or `Bp__LoadRefused(module: …, …).module`. Null for any other receiver.
 pub fn receiverPath(arena: std.mem.Allocator, written: *const ast.Expr) !?[]const u8 {
-    // A splice stands parenthesised: `(Bp_LoadModule(…)).run()`.
+    // A splice stands parenthesised: `(Bp__LoadModule(…)).run()`.
     var e = written;
     while (e.* == .collection and e.collection.kind == .grouped) e = e.collection.kind.grouped;
     switch (e.*) {
@@ -810,7 +810,7 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
     return out;
 }
 
-/// `Bp_LoadModule(name: …, path: …)`.
+/// `Bp__LoadModule(name: …, path: …)`.
 fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded) !void {
     try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
         try blockEval.stringLexeme(arena, loaded.name()),

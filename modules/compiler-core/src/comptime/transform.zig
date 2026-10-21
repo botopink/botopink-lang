@@ -58,6 +58,10 @@ pub const OptionalNullCases = std.AutoHashMap(ast.Loc, []const u8);
 /// Aggregator: collects specialization info during scan/rewrite phases.
 const Aggregator = struct {
     spec_cache: specialize.SpecCache,
+    /// Decision 798 (1) — the transform of the resolved program
+    /// (`Mode.resolved`): what is written stays as written where a backend
+    /// alone needs it changed (a number's suffix).
+    keep_written: bool = false,
     /// Builtin `@Result`/`@Option` method lowerings keyed by call loc.
     method_lowerings: *const MethodLowerings,
     /// Template-call expansions keyed by call loc (expr-templates F6).
@@ -181,6 +185,10 @@ const Aggregator = struct {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/// Whom the transform writes for: every backend, or the resolved program's
+/// printer (decision 798 (1), `comptime/resolved_print.zig`).
+pub const Mode = enum { backends, resolved };
+
 pub fn transform(
     allocator: std.mem.Allocator,
     program: ast.Program,
@@ -200,6 +208,7 @@ pub fn transform(
     namespaces: *const envMod.NamespaceImports,
     local_callee_calls: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     embed_call_args: *const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg),
+    mode: Mode,
 ) !ast.Program {
     var agg = Aggregator.init(allocator, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
@@ -217,6 +226,8 @@ pub fn transform(
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
     var src_agg = Aggregator.init(allocator, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
+    agg.keep_written = mode == .resolved;
+    src_agg.keep_written = mode == .resolved;
     agg.result_patterns = result_patterns;
     src_agg.result_patterns = result_patterns;
     agg.namespaces = namespaces;
@@ -881,6 +892,7 @@ fn qualifyResultPattern(agg: *Aggregator, pattern: *ast.Pattern, at: ast.Loc) Sc
 /// the suffix leaves the program here, as `env.indexRewrites` takes it off a
 /// literal expression.
 fn stripPatternSuffixes(agg: *Aggregator, pattern: *ast.Pattern) ScanError!void {
+    if (agg.keep_written) return;
     const arena = agg.spec_cache.arena;
     switch (pattern.*) {
         .numberLit => |text| pattern.* = .{ .numberLit = lexerMod.numberBackendText(arena, text) catch return ScanError.OutOfMemory },
@@ -975,7 +987,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // `Warm.Red` under the node's loc, so every backend sees the qualified
     // form. Only an identifier replaces an identifier; a call at the same loc
     // is the index/leading-dot call rewrite below.
-    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .dotIdent) {
+    if (!agg.keep_written and expr_ptr.* == .identifier and expr_ptr.identifier.kind == .dotIdent) {
         if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
             if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
         }
@@ -983,7 +995,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // Decision 150 (§3.2) — an integer literal joined into an `f64[]`
     // (`[1, 2.5]`): inference recorded its float spelling under its loc. Only
     // a number literal replaces a number literal.
-    if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+    if (!agg.keep_written and expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
         if (agg.index_rewrites.get(expr_ptr.literal.loc)) |rewrite| {
             if (rewrite.* == .literal and rewrite.literal.kind == .numberLit) expr_ptr.* = rewrite.*;
         }
@@ -992,7 +1004,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // parameter's default, a template hole), the suffix leaves the program
     // before a backend prints it. Inference strips the ones it types; this
     // is the one place that covers the rest. Idempotent.
-    if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+    if (!agg.keep_written and expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
         const text = expr_ptr.literal.kind.numberLit;
         expr_ptr.literal.kind = .{ .numberLit = lexerMod.numberBackendText(agg.spec_cache.arena, text) catch return ScanError.OutOfMemory };
     }
@@ -1000,7 +1012,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // position (`D` in `D.empty()`, a bare `P`): inference recorded the
     // declared name under the alias's loc. Only a plain name replaces a plain
     // name.
-    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .ident) {
+    if (!agg.keep_written and expr_ptr.* == .identifier and expr_ptr.identifier.kind == .ident) {
         if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
             if (rewrite.* == .identifier and rewrite.identifier.kind == .ident) expr_ptr.* = rewrite.*;
         }
@@ -1086,7 +1098,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
             // A lifted number carries its type's suffix (`7l`); the backends
             // read the digits (decision 247), as for a written literal above.
-            if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+            if (!agg.keep_written and expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
                 expr_ptr.literal.kind = .{ .numberLit = lexerMod.numberBackendText(agg.spec_cache.arena, expr_ptr.literal.kind.numberLit) catch return ScanError.OutOfMemory };
             }
         }
@@ -1133,6 +1145,9 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .call and rewrite.call.kind == .call and isTwinOf(rewrite.call.kind.call.callee, expr_ptr.call.kind.call.callee)) {
                 expr_ptr.* = rewrite.*;
+            } else if (agg.keep_written) {
+                // The resolved program keeps the call as written: only the
+                // twin is comptime's choice (decision 297).
             } else if (rewrite.* == .call and rewrite.call.kind == .call and rewrite.call.kind.call.variadicPacked and
                 !expr_ptr.call.kind.call.variadicPacked)
             {
@@ -1148,7 +1163,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             }
         }
     }
-    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and
+    if (!agg.keep_written and expr_ptr.* == .call and expr_ptr.call.kind == .call and
         (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null or
             isPathReceiver(expr_ptr.call.kind.call.receiver)))
     {
@@ -1159,7 +1174,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // 01 — a component called inside a component body renders there: the
     // `await` inference spliced around it. Its operand is the rewrite's own
     // copy of the call, which is not wrapped a second time.
-    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+    if (!agg.keep_written and expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .jump and rewrite.jump.kind == .await_ and rewrite.jump.kind.await_ != expr_ptr) {
                 expr_ptr.* = rewrite.*;
@@ -1201,7 +1216,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     }
     // Decision 525 — a trailing lambda is the call's last argument from here
     // on, the shape inference checked, so no backend meets a trailing lambda.
-    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+    if (!agg.keep_written and expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         _ = ast.lowerTrailingLambdas(agg.spec_cache.arena, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
     }
     switch (expr_ptr.*) {
@@ -1379,6 +1394,8 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
 /// hit) and record / struct / enum-variant constructor calls (`ctorParams`
 /// hit) — same `[]ast.Param` shape on both sides, same helper.
 fn expandTrailingDefaultsWithParams(agg: *Aggregator, params: []const ast.Param, c: anytype) !void {
+    // The resolved program leaves a default to the call as written.
+    if (agg.keep_written) return;
     if (c.args.len >= params.len) return;
     // Every missing trailing param must have a default — otherwise the call
     // is malformed and we leave the original args slice alone (inference will
@@ -1480,6 +1497,7 @@ fn pipelineIsCall(agg: *Aggregator, p: anytype, loc: ast.Loc) bool {
 /// every backend already lowers. A `.multi` pattern (`case a, b`) gets one
 /// binder per bool element.
 fn boolLiteralArm(agg: *Aggregator, arm: *ast.CaseArm) !void {
+    if (agg.keep_written) return;
     const arena = agg.spec_cache.arena;
     var guard: ?ast.Expr = arm.guard;
     const loc = arm.patternLoc;
@@ -1516,6 +1534,7 @@ fn boolLiteralArm(agg: *Aggregator, arm: *ast.CaseArm) !void {
 /// `lhs |> f(a)` → `f(lhs, a)` and `lhs |> f` → `f(lhs)`, keeping the
 /// pipeline's loc (the key its fill was recorded under).
 fn pipelineAsCall(agg: *Aggregator, expr_ptr: *ast.Expr) !void {
+    if (agg.keep_written) return;
     const p = expr_ptr.call.kind.pipeline;
     const arena = agg.spec_cache.arena;
     const callee: []const u8, const rest: []const ast.CallArg = switch (p.rhs.*) {

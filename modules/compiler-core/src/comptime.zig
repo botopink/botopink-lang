@@ -202,8 +202,19 @@ pub const ComptimeOutput = struct {
         /// (`Env.beamMemoryAt`), refused at emit off the BEAM
         /// (`codegen/target_check.zig`).
         beam_memory_at: ?envMod.TargetSite = null,
+        /// Decision 798 (1) — the resolved program: the module as written once
+        /// comptime has run (folded values spliced, template expansions and
+        /// specialised copies in place, the decorators' contributions merged,
+        /// the functions expanded at their calls gone), before any backend
+        /// lowering. Kept only under `keep_resolved` (`--emit-resolved`,
+        /// `comptime/resolved_print.zig`); null otherwise.
+        resolved: ?ast.Program = null,
     };
 };
+
+/// Decision 798 (2) — set by a driver that prints the resolved program
+/// (`--emit-resolved`): each analysed module keeps `OkData.resolved`.
+pub var keep_resolved: bool = false;
 
 /// Collect the `@ExprCustom` reference-AST entries recorded during inference of
 /// one module into the read-only slice surfaced on `OkData.custom_ast`.
@@ -314,6 +325,44 @@ fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const 
 fn declaresExpandedFn(arena: std.mem.Allocator, decls: []const ast.DeclKind) bool {
     for (decls) |d| if (d == .@"fn") if (hooksMod.isExpandedFn(arena, d.@"fn") catch false) return true;
     return false;
+}
+
+/// Decision 798 (1) — `OkData.resolved`: the transform with what comptime
+/// decided alone — the specialised copies (`fn_decls`, `comptime_arrays`; a
+/// call of a local named like a function is none, `localCalleeCalls`), the
+/// template expansions, the folded values' splices (`srcRewrites`) and decision
+/// 297's twin calls (`indexRewrites`, read for those alone) — and
+/// none of the backends' lowerings (method, index, enum section, default
+/// fills, namespaces …), so the tree is still the language as written.
+fn resolvedProgram(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    fn_decls: std.StringHashMap(ast.FnDecl),
+    comptime_arrays: std.StringHashMap([]const ast.TypedExpr),
+    env: *const envMod.Env,
+) !ast.Program {
+    const ml = transform.MethodLowerings.init(arena);
+    const rj = transform.ResultJumpLowerings.init(arena);
+    const sa = transform.StdArrayLowerings.init(arena);
+    const es = transform.EnumSectionRewrites.init(arena);
+    const onc = transform.OptionalNullCases.init(arena);
+    const di = transform.DefaultInjections.init(arena);
+    const rp: std.AutoHashMapUnmanaged(ast.Loc, envMod.PatternNote) = .empty;
+    const ns: envMod.NamespaceImports = .{};
+    const ec: std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = .empty;
+    // The transform rewrites nodes in place, and the backends' own transform
+    // reads the same declarations: this one works on copies.
+    const copied = try context_lower.deepCopy(ast.Program, arena, program);
+    var decls = std.StringHashMap(ast.FnDecl).init(arena);
+    var it = fn_decls.iterator();
+    while (it.next()) |e| try decls.put(e.key_ptr.*, try context_lower.deepCopy(ast.FnDecl, arena, e.value_ptr.*));
+    const erased = try syntax_param.eraseProgram(arena, try withoutExpandedFns(arena, copied), infer.isDecoratorParams);
+    const t = try transform.transform(arena, erased, decls, comptime_arrays, &ml, &env.templateExpansions, &env.srcRewrites, &rj, &sa, &es, &env.indexRewrites, &onc, std.StringHashMap([]const ast.Param).init(arena), &di, &rp, &ns, &env.localCalleeCalls, &ec, .resolved);
+    // What expanded code and folded values name that the module does not
+    // declare: the template's imports, the prelude records a value is built
+    // from (`SourceLocation`, `Declared`, `Asset`, `__Source`).
+    const hygienic = try withTemplateHygiene(arena, t, env, try sharesPrivates(arena, program.decls, env), program.decls);
+    return withAssetDecl(arena, try withDeclaredDecls(arena, try withSourceRecordDecl(arena, try withSourceLocationDecl(arena, hygienic, env), env), env), env);
 }
 
 /// Decision 562 — `prog` without the functions expanded at their call
@@ -765,6 +814,10 @@ const AnalysisResult = union(enum) {
         bindings: []const infer.TypedBinding,
         env: envMod.Env,
         program: ast.Program,
+        /// Under `keep_resolved`: a copy of `program` taken before inference,
+        /// which rewrites some of its nodes in place for the backends (a
+        /// pipeline's call, a default's fill) — the resolved program's base.
+        written: ?ast.Program = null,
     },
     validationError: struct {
         info: ComptimeError,
@@ -999,7 +1052,7 @@ fn spliceContributions(arena: std.mem.Allocator, source: []const u8, contributio
 /// from `LedgerSec` — another type's code, silently.
 ///
 /// Decision 580 — an executor's declarations (its function and the
-/// `val _bp_init_<k>` that runs it) are a statement of the module's body at
+/// `val __bp_init_<k>` that runs it) are a statement of the module's body at
 /// the annotated declaration's position: placed right after that declaration
 /// (`anchors`, indices of the pass-1 module, moved past the `prepended`
 /// imports), after the executors placed there before, so the module's body
@@ -1670,6 +1723,7 @@ fn analyzeMerged(
         else => return err,
     };
     const program = try adoptDefaults.expand(arena, with_expansions, try behaviorsReached(arena, &env.importedBehaviorDecls, typeDeclRegistry));
+    const written: ?ast.Program = if (keep_resolved) try context_lower.deepCopy(ast.Program, arena, program) else null;
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -1679,7 +1733,7 @@ fn analyzeMerged(
         else => return err,
     };
 
-    return .{ .success = .{ .bindings = bindings, .env = env, .program = program } };
+    return .{ .success = .{ .bindings = bindings, .env = env, .program = program, .written = written } };
 }
 
 /// Analyze one module's `source`. On the first pass (`skip_invoke == false`) a
@@ -1979,6 +2033,7 @@ fn analyzeSource(
         env.deinit();
         return .{ .typeError = te };
     }
+    const written: ?ast.Program = if (keep_resolved) try context_lower.deepCopy(ast.Program, arena, program) else null;
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -2121,7 +2176,7 @@ fn analyzeSource(
         return reanalysis;
     }
 
-    return .{ .success = .{ .bindings = bindings, .env = env, .program = program } };
+    return .{ .success = .{ .bindings = bindings, .env = env, .program = program, .written = written } };
 }
 
 /// The "std" package: stdlib impl modules importable via `import {…} from "std";`.
@@ -4695,6 +4750,7 @@ pub fn compileTypesOnly(
                         &succ.env.namespaces,
                         &succ.env.localCalleeCalls,
                         &succ.env.embedCallArgs,
+                        .backends,
                     ) catch break :blk_t program_for_transform;
                     const t = type_token.apply(arena_alloc, t0, &succ.env) catch t0;
                     const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true, program_for_transform.decls) catch break :blk_t t;
@@ -5123,9 +5179,11 @@ fn compileOnce(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
+                // Before the lowering transform, which rewrites nodes in place.
+                const resolved: ?ast.Program = if (keep_resolved) try resolvedProgram(arena_alloc, succ.written orelse succ.program, fn_decls, comptime_arrays, &succ.env) else null;
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs, .backends), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
@@ -5139,6 +5197,7 @@ fn compileOnce(
                     .src = mod.source,
                     .srcPath = mod.srcPath,
                     .outcome = .{ .ok = .{
+                        .resolved = resolved,
                         .bindings = succ.bindings,
                         .comptime_script = ct.comptime_script,
                         .transformed = transformed,

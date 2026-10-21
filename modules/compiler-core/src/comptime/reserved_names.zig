@@ -4,7 +4,7 @@
 //! or with `Bp__` (a type) is refused at the name, `reserved-name`.
 //!
 //! The walk reads the module's parse, before any expansion adds what the
-//! compiler writes (`__bp_tpl_`, `__bp_ns_`, `__bp_loaded*`, `Bp_Load*`, …), so
+//! compiler writes (`__bp_tpl_`, `__bp_ns_`, `__bp_loaded*`, `Bp__Load*`, …), so
 //! only the names a person wrote are checked.
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -112,7 +112,14 @@ pub const Walker = struct {
 
 /// The refusal for the first reserved name `program` (a module as written)
 /// declares (`source` is its text), or null.
+/// The resolved program's oracle (`comptime/resolved_print.zig`, decision
+/// 798 (5)) reads back the compiler's own printing, whose names are the
+/// compiler's: set only by that test, never by a driver — the compiler never
+/// takes `--emit-resolved`'s text back (798 (2)).
+pub var accept_compiler_names: bool = false;
+
 pub fn check(arena: std.mem.Allocator, source: []const u8, program: ast.Program) Error!?TypeError {
+    if (accept_compiler_names) return null;
     var w = Walker{ .arena = arena, .source = source };
     for (program.decls) |*d| {
         try w.walk(ast.DeclKind, d);

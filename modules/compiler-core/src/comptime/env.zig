@@ -1746,7 +1746,7 @@ pub const Env = struct {
     /// Decision 580 — the `compiler.init` executors among `contributions`:
     /// each one's index there and the index in the module's declarations of
     /// the declaration it annotates (the type that owns an annotated member).
-    /// The re-analysis places the executor's `val _bp_init_<k>` right after
+    /// The re-analysis places the executor's `val __bp_init_<k>` right after
     /// that declaration, so the module's body runs it in source order.
     executorAnchors: std.ArrayListUnmanaged(ExecutorAnchor) = .empty,
     /// The index in the module's declarations of the declaration

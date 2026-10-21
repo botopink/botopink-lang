@@ -67,6 +67,7 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  --emit-resolved <dir>        Write the resolved program (no comptime left) to <dir>/<package>.bp, for reading
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
@@ -350,6 +351,8 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
             opts.cold = true;
+        } else if (std.mem.eql(u8, flag.name, "--emit-resolved")) {
+            opts.emit_resolved = try flagValue(args, &i, flag, diag);
         } else return reject(args[i], diag);
     }
     return opts;
@@ -538,6 +541,14 @@ test "C11: build accepts --target=erlang as well as --target erlang" {
     const sp = try parseBuildOpts(argv(&.{ "--target", "erlang", "--out", "out-sp" }), &d);
     try std.testing.expectEqual(cfg.Target.erlang, sp.target.?);
     try std.testing.expectEqualStrings("out-sp", sp.out_dir);
+}
+
+test "B-163: build takes --emit-resolved <dir>, and the flag needs its directory (decision 798 (3))" {
+    var d: ArgDiag = .{};
+    try std.testing.expectEqualStrings("res", (try parseBuildOpts(argv(&.{ "--emit-resolved", "res" }), &d)).emit_resolved.?);
+    try std.testing.expectEqualStrings("res", (try parseBuildOpts(argv(&.{"--emit-resolved=res"}), &d)).emit_resolved.?);
+    try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{"--emit-resolved"}), &d));
+    try std.testing.expect((try parseBuildOpts(argv(&.{}), &d)).emit_resolved == null);
 }
 
 test "C11: an empty --flag= value and a trailing flag both need a value" {
