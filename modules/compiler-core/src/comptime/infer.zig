@@ -19038,12 +19038,12 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         try env.componentReturns.put(env.arena, rv.getLoc(), c.named.args[0]);
                         try unifyAt(env, target, c.named.args[0], rv.getLoc());
                     } else {
-                    if (!passthrough) try refuseBareValueInUnmarked(env, target, vp.getType(), rv.getLoc());
-                    if (whole) |w| {
-                        try unifyAt(env, w, vp.getType(), rv.getLoc());
-                    } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
-                        try unifyAt(env, target, vp.getType(), rv.getLoc());
-                    }
+                        if (!passthrough) try refuseBareValueInUnmarked(env, target, vp.getType(), rv.getLoc());
+                        if (whole) |w| {
+                            try unifyAt(env, w, vp.getType(), rv.getLoc());
+                        } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
+                            try unifyAt(env, target, vp.getType(), rv.getLoc());
+                        }
                     }
                 } else if (env.returnBareIsVoid) {
                     try unifyAt(env, target, try env.namedType("void"), loc);
