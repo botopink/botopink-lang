@@ -304,14 +304,19 @@ pub type Diagnostic(
 // run anew, just before `main`; what the build folded is not recomputed.
 // `Ok` when `main` returns, `Error(RunFailure)` otherwise — nothing the
 // package runs propagates out of `run()`. The `Module` of a `Refused` is
-// `run-module-refused`, a file with no `main` `load-no-main`. The checker
-// answers the call (`comptime/infer.zig` `inferModuleRun`): it is no method
-// of the record, whose signature would name `RunFailure` in every module
-// that reads a `Module`.
+// `run-module-refused`, a file with no `main` `load-no-main`. The method is
+// declared here and typed by this signature in every module that reads a
+// `Module`; each call is lowered by the checker (`comptime/infer.zig`
+// `inferModuleRun`) to the loaded package's `main`, so the body below never
+// runs.
 pub type Module(
     name: string,
     path: string,
-)
+) {
+    pub fn run(self: Self) -> Result<void, RunFailure> {
+        throw RunFailure(kind: .Abort, message: "Module.run: every call is lowered to the loaded main");
+    }
+}
 
 // What `m.run()` answers on its `Error` side (decision 806): `.Failed` when
 // the loaded `main` returns `Error(e)`, `message` the text `print` writes for

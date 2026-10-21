@@ -1,0 +1,3 @@
+pub type Tag(label: string)
+
+pub type Missing(what: string)

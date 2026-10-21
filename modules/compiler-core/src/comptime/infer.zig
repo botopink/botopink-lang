@@ -13528,7 +13528,7 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         // The body that runs at build, checked before its executor is: the
         // `Module` is a local of the body there, its file known once the
         // executor holds it (`load.recordSource`).
-        if (env.initArgDepth > 0) return try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null)).*);
+        if (env.initArgDepth > 0) return try declaredModuleRun(env, try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null)).*), loc);
         env.lastError = TypeError.custom(
             diagnostics.run_module_untraced ++ ": `run()` is called on a `Module` that no `compiler.load` of the body answered",
             "Call `run()` on the `Module` the body's `compiler.load` answered, captured by the init body or a `val` bound to it (decisions 787, 792 (4)).",
@@ -13549,7 +13549,16 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
     const present = env.lookup(alias) != null;
     const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null);
     try env.srcRewrites.put(loc, rewrite);
-    return try inferExprTyped(env, rewrite.*);
+    return try declaredModuleRun(env, try inferExprTyped(env, rewrite.*), loc);
+}
+
+/// The lowered `m.run()` answers what `compiler.bp` declares `Module.run` to
+/// answer, `Result<void, RunFailure>` (decision 806).
+fn declaredModuleRun(env: *Env, typed: TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+    const sig = env.getInherentMethodType("Module", "run") orelse return typed;
+    const f = sig.deref();
+    if (f.* == .func) try unifyAt(env, f.func.ret, typed.getType(), loc);
+    return typed;
 }
 
 /// Whether `ty` is the builtin `Asset` (decision 519).

@@ -1,0 +1,15 @@
+import {tags.Tag, tags.Missing};
+
+pub type Shop(name: string) {
+    pub fn tag(self: Self) -> Tag {
+        return Tag(label: "shop " + self.name);
+    }
+
+    pub fn missing(self: Self, what: Tag) -> Missing {
+        return Missing(what: what.label + " of " + self.name);
+    }
+}
+
+pub fn corner() -> Shop {
+    return Shop(name: "corner");
+}

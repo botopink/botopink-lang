@@ -1,0 +1,19 @@
+//// A method of an imported type is typed by its signature as the type's own module reads it:
+//// `Shop`'s methods name `Tag` and `Missing` in their parameters and their answers, names
+//// `shop` imports from `tags` and this module never imports — the calls resolve them in
+//// `shop`, whether the importer names `Shop` or only reaches it through `corner()`'s answer,
+//// as `compiler.Module`'s `run` answers `RunFailure` in a module that imports only `compiler`.
+
+mod tags;
+mod shop;
+
+import {shop.Shop, shop.corner};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val s = Shop(name: "stall");
+    print(s.tag().label);
+    print(s.missing(s.tag()).what);
+    val c = corner();
+    print(c.missing(c.tag()).what);
+}
