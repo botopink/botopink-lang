@@ -11717,7 +11717,18 @@ const HygieneResolver = struct {
             self.env.bodyScope = null;
             defer self.env.bodyScope = scope;
             // Decision 310 — renamed as an imported value's type is.
-            try self.env.bind(alias, try renameImportedType(self.env, ty, self.owner));
+            const renamed = try renameImportedType(self.env, ty, self.owner);
+            try self.env.bind(alias, renamed);
+            // The types its signature names come with it, as types only
+            // (01 R2), as an import's do: a built tree's chain over the
+            // writer's `Query<T>` types each link here, so a backend
+            // dispatches `.toArray()` on the type and not the iterator shim.
+            if (self.env.typeDeclRegistry) |reg| if (reg.get(self.owner)) |decls| {
+                registerImportedSignatureClosure(self.env, decls, renamed) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    else => {}, // best effort: an unregistered type keeps the untyped lowering
+                };
+            };
         }
         return alias;
     }
@@ -22591,6 +22602,11 @@ fn checkOpaqueCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
 fn checkOpaqueMethodCall(env: *Env, typed: TypedExpr, c: ast.CallExprOf(.untyped)) InferError!void {
     if (typed != .call or typed.call.kind != .call) return;
     const call = typed.call.kind.call;
+    // A call that expanded (a template, a `syntax` function) answers the
+    // expansion's root: its own calls were checked as the tree was typed, each
+    // by the tree's author (`dsl_hygiene.zig` marks the library's), not by
+    // the call that stands for them here.
+    if (typed.call.loc.expansion != c.loc.expansion) return;
     const recv = call.receiver orelse return;
     const name = nominalName(recv.getType()) orelse return;
     const lowering = c.kind == .call and c.kind.call.lowering;

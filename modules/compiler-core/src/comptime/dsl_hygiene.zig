@@ -152,6 +152,14 @@ fn Ctx(comptime Resolver: type) type {
             return try self.resolver.aliasFor(name);
         }
 
+        /// The library's own call: a method it wrote without `pub` is reached
+        /// from its tree as from its module (decision 859), marked as 830's
+        /// compiler-written calls are. Always true, so it chains in the test.
+        fn markWritten(self: *Self, loc: ast.Loc, lowering: *bool) bool {
+            if (self.all or self.libraryWrote(loc)) lowering.* = true;
+            return true;
+        }
+
         fn visitExpr(self: *Self, e: *ast.Expr) Error!void {
             switch (e.*) {
                 .identifier => |*id| switch (id.kind) {
@@ -161,7 +169,7 @@ fn Ctx(comptime Resolver: type) type {
                     else => {},
                 },
                 .call => |*c| switch (c.kind) {
-                    .call => |*cc| if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
+                    .call => |*cc| if (self.markWritten(c.loc, &cc.lowering) and cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
                         if (try self.rename(cc.callee, c.loc)) |alias| cc.callee = alias;
                     } else if (comptime @hasDecl(Resolver, "aliasForMember")) if (cc.receiver) |recv| if (cc.calleeExpr == null and !cc.is_builtin) {
                         // Decisions 170, 578 — `ns.f(…)` through a namespace
