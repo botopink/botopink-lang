@@ -1,5 +1,146 @@
-//// `cell check` as a botopink program (decision 790). Only the records module
-//// (`records.bp`) is written yet; `main` finds, builds, runs and compares
-//// nothing until the next piece of B-161 lands.
+//// `cell check` as a botopink program (decision 790): `main <cell|directory>… [--jobs <N>]` checks
+//// every cell under the paths given — as `botopink cell check` does, its report byte for byte the
+//// CLI's — and exits 1 when one fails. Each package is built and run through the `botopink` CLI
+//// (`$BOTOPINK_BIN`, else `botopink` on `PATH`): `observe.bp`. `--jobs <N>` packages are checked at
+//// once (default: the machine's jobs, as `cell.zig`'s `defaultJobs`); the report is printed in the
+//// cells' order, whatever order they finish in.
 
-pub fn main() -> void {}
+import {async} from "std";
+import {discover.discover};
+import {observe.Ctx};
+import {report.Verdict, report.checkCell, report.summary};
+import {host.writeOut, host.writeErr, host.setExitCode, host.cwd, host.resolve, host.isDir, host.envVar, host.args, host.cpuCount, host.memAvailableKb};
+
+/// The next cell a worker takes (the workers share one queue).
+var next = 0;
+
+/// One verdict, at the index of its cell.
+type Placed(index: i32, verdict: Verdict)
+
+async fn worker(ctx: Ctx, cells: string[]) -> Async<Placed[]> {
+    var done: Placed[] = [];
+    while (next < cells.length) {
+        val i = next;
+        next = next + 1;
+        val v = await checkCell(ctx, cells.at(i) ?? "");
+        done.push(Placed(index: i, verdict: v));
+    }
+    return done;
+}
+
+/// Default cells at once (decision 468): one job per CPU bounded by `MemAvailable / 768 MiB`, a job
+/// counted as ~2 runnable threads, so half of that, at least 1.
+fn defaultJobs() -> i32 {
+    var jobs = cpuCount();
+    val kb = memAvailableKb();
+    if (kb >= 0) {
+        val byMemory = kb / (768 * 1024);
+        val bounded = if (byMemory < 1) 1 else byMemory;
+        if (bounded < jobs) jobs = bounded;
+    }
+    val half = jobs / 2;
+    return if (half < 1) 1 else half;
+}
+
+fn refuse(message: string) -> void {
+    writeErr("error: " + message + "\n");
+    setExitCode(1);
+}
+
+/// `BOTOPINK_LIB_ROOTS` with each relative entry made absolute against `home`: every build runs in
+/// its package's directory, where a relative root would name another one.
+fn envOf(home: string) -> string[] {
+    val roots = envVar("BOTOPINK_LIB_ROOTS");
+    if (roots) {
+        value ->
+        val entries = value
+            .split(":")
+            .filter({ e -> e != "" })
+            .map({ e -> if (e.startsWith("/")) e else resolve([home, e]) });
+        return ["BOTOPINK_LIB_ROOTS=" + entries.join(":")];
+    }
+    return [];
+}
+
+async fn checkAll() -> Async<void> {
+    val home = cwd();
+    var paths: string[] = [];
+    var jobs = 0;
+    val argv = args();
+    var a = 0;
+    while (a < argv.length) {
+        val arg = argv.at(a) ?? "";
+        a = a + 1;
+        if (arg == "--jobs") {
+            jobs = (argv.at(a) ?? "").parseInt().unwrapOr(0).toI32();
+            a = a + 1;
+        } else if (arg.startsWith("--jobs="))
+            jobs = arg.slice("--jobs=".length).parseInt().unwrapOr(0).toI32()
+        else if (arg.startsWith("-"))
+            return refuse("unknown flag '"
+                + arg
+                + "' — cell check takes <cell|directory>… and --jobs <N>")
+        else
+            paths.push(arg);
+    }
+    if (paths.length == 0)
+        return refuse("cell check needs a cell or a directory of cells");
+
+    var cells: string[] = [];
+    for (paths) { path ->
+        if (cells.length >= 0) {
+            val root = resolve([home, path]);
+            if (!isDir(root)) return refuse(path + " is not a directory");
+            val found = discover(root);
+            if (found.refused.length > 0) {
+                for (found.refused) { why ->
+                    writeErr("error: " + why + "\n");
+                }
+                setExitCode(1);
+                return;
+            }
+            if (found.cells.length == 0)
+                return refuse("no cell under "
+                    + path
+                    + " — a cell is a directory holding src/main.bp");
+            for (found.cells) { c ->
+                if (!cells.contains(c)) cells.push(c);
+            }
+        }
+    }
+
+    val ctx = Ctx(home: home, bin: envVar("BOTOPINK_BIN") ?? "botopink", env: envOf(home));
+    val wanted = if (jobs > 0) jobs else defaultJobs();
+    val n = if (wanted < cells.length) wanted else cells.length;
+    var workers: array<fn() -> Async<Placed[]>> = [];
+    var w = 0;
+    while (w < n) {
+        workers.push({ -> worker(ctx, cells) });
+        w = w + 1;
+    }
+    val shares = await async.runAll(workers);
+    var verdicts: array<?Verdict> = cells.map({ c -> null });
+    for (shares) { share ->
+        for (share) { p ->
+            verdicts = verdicts
+                .slice(0, p.index)
+                .append([p.verdict])
+                .append(verdicts.slice(p.index + 1));
+        }
+    }
+    var out = "";
+    var passed = 0;
+    for (verdicts) { v ->
+        if (v) {
+            x ->
+            out = out + x.text;
+            if (x.ok) passed = passed + 1;
+        }
+    }
+    writeOut(out + summary(cells.length, passed));
+    setExitCode(if (passed == cells.length) 0 else 1);
+}
+
+pub fn main() -> void {
+    checkAll();
+}

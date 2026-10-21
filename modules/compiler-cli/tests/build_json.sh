@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Decision 798 (6) — `botopink build --json` and `--cache-root <dir>` against the real CLI.
-#   • a clean build: stdout is JSON lines only — `targets` (the target built and the
-#     manifest's `"targets"`), one `build` per line a build body printed (in order),
+#   • a clean build: stdout is JSON lines only — `targets` (the target built, the
+#     manifest's `"targets"` and `held`, the targets the package holds — decision 770:
+#     its own, else its dependencies'), one `build` per line a build body printed (in order),
 #     a `summary` last (`ok` true, `exit` 0); stderr is what it is without `--json`
 #     (`Compiling …`, `Compiled …`);
 #   • a refused build: one `refused` per refusal (`module`, `message`, `at`, `label`,
 #     `from`), the `called from` lines of a raise at build in `from`, `summary` `ok`
 #     false and `exit` 1; stderr still holds the rendering;
+#   • a manifest's own located refusal (printed by the manifest module, not the CLI's
+#     reporter) is a `refused` event too, located at `botopink.json`;
+#   • a package that writes no `"targets"` holds its path dependency's: `held` names them;
 #   • `--emit-runtime <dir>`: a `runtime` event with the path of each `.bpr` written,
 #     the root package's flagged;
 #   • `--cache-root <dir>`: the level-B cache is filed under <dir>, not the project.
@@ -93,7 +97,7 @@ set -e
 expect_eq "exit status" 0 "$CODE"
 only_json "$WORK/clean.out" && ok "stdout is JSON lines only" || fail "stdout holds a line that is no JSON"
 expect_eq "event order" $'targets\nbuild\nbuild\nsummary' "$(order "$WORK/clean.out")"
-expect_eq "targets" '{"event": "targets", "target": "commonJS", "targets": ["commonJS", "erlang"]}' "$(events "$WORK/clean.out" targets)"
+expect_eq "targets" '{"event": "targets", "held": ["commonJS", "erlang"], "target": "commonJS", "targets": ["commonJS", "erlang"]}' "$(events "$WORK/clean.out" targets)"
 expect_eq "build prints" $'{"event": "build", "text": "first"}\n{"event": "build", "text": "second"}' "$(events "$WORK/clean.out" build)"
 expect_eq "summary" '{"event": "summary", "exit": 0, "ok": true, "refused": 0}' "$(events "$WORK/clean.out" summary)"
 grep -q "Compiling" "$WORK/clean.err" && ok "stderr keeps the CLI's messages" || fail "stderr lost 'Compiling'"
@@ -139,6 +143,38 @@ assert any(x["from"] for x in es), es
 PY
 expect_eq "summary is red" '{"event": "summary", "exit": 1, "ok": false, "refused": '"$(wc -l <"$WORK/refused.events" | tr -d ' ')"'}' "$(events "$WORK/refused.out" summary)"
 grep -q "error" "$WORK/refused.err" && ok "stderr keeps the rendering" || fail "stderr lost the rendering"
+
+# ── a manifest's refusal ──────────────────────────────────────────────────────
+echo "==> a manifest's located refusal is a refused event"
+P="$WORK/badmanifest"
+mkdir -p "$P/src"
+printf '{ "name": "badmanifest", "version": "0.1.0", "dependencies": ["x"] }\n' >"$P/botopink.json"
+printf 'pub fn main() -> void {}\n' >"$P/src/main.bp"
+set +e
+( cd "$P" && "$BP_BIN" build --json --target commonJS ) >"$WORK/badmanifest.out" 2>"$WORK/badmanifest.err"
+CODE=$?
+set -e
+expect_eq "exit status" 1 "$CODE"
+python3 -I - "$WORK/badmanifest.out" <<'PY' && ok "the manifest's refusal, located at botopink.json" || fail "no refused event located at botopink.json: $(cat "$WORK/badmanifest.out")"
+import json, sys
+es = [json.loads(l) for l in open(sys.argv[1])]
+r = [e for e in es if e["event"] == "refused"]
+assert r and r[0]["message"].startswith("error") and (r[0]["at"] or "").startswith("botopink.json:"), es
+PY
+
+# ── held targets ──────────────────────────────────────────────────────────────
+echo "==> held: a package that writes no targets holds its dependency's"
+P="$WORK/holder"
+mkproj "$WORK/narrow" narrow '["commonJS", "wasm"]'
+printf 'pub fn one() -> i32 {\n    return 1;\n}\n' >"$WORK/narrow/src/root.bp"
+mkdir -p "$P/src"
+printf '{ "name": "holder", "version": "0.1.0", "dependencies": { "narrow": { "path": "../narrow" } } }\n' >"$P/botopink.json"
+printf 'pub fn main() -> void {}\n' >"$P/src/main.bp"
+( cd "$P" && "$BP_BIN" build --json --target commonJS ) >"$WORK/holder.out" 2>"$WORK/holder.err" || true
+expect_eq "held" '["commonJS", "wasm"]' "$(python3 -I -c 'import json,sys
+for l in open(sys.argv[1]):
+    e = json.loads(l)
+    if e["event"] == "targets": print(json.dumps(e["held"]))' "$WORK/holder.out")"
 
 # ── --emit-runtime ────────────────────────────────────────────────────────────
 echo "==> --emit-runtime: the path of the intermediate"

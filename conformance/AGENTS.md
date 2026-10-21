@@ -52,6 +52,7 @@ conformance/
 | `modules/<cell>/` | a cell: `botopink cell check <cell>` builds and runs it in process on every target its manifest declares (`modules/compiler-cli/AGENTS.md` § Cells) | every module's answer on every target is its accepted snapshot — `snapshot/targets/<t>/<m>.snap` where it exists, else `snapshot/output/<m>.snap`, else empty — and every target its `"targets"` leaves out refuses it on a host binding (§ Narrowing a cell) |
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` in a scratch project on commonJS, erlang, wasm and beam (a single file declares no narrowing, decision 536: a suite that narrows its targets is a project suite below) | every test reports `ok` |
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |
+| `check/` | `cell check` as a botopink program (decision 790), no cell: its own tests, run by `botopink test --target commonJS --json` (the one target its manifest declares, so a run without commonJS has none of it); results keyed `check::<test>` | every test reports `ok` |
 
 A cell's `.snap` (`compiler-cli/src/cli/cell_snap.zig`, decision 475 (2)): `botopink-cell 1`, then
 `refused <the compiler's error… line>` / `at <file>:<line>:<col>` / `label <text>` / `from <file>:<line>:<col>` (decision 485: the text the

@@ -12,6 +12,7 @@ const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
 const build_stamp = @import("build_stamp");
 const refusals = @import("./refusals.zig");
+const manifest = @import("manifest");
 const runtime_file = bp.runtime_file;
 
 const Module = bp.Module;
@@ -193,10 +194,23 @@ const Json = struct {
 
 var json_state: ?*Json = null;
 
-fn jsonTargets(j: *Json, proj: config.ProjectConfig, target: config.Target) void {
+/// `held`: the targets the package holds (decision 770, `libs.heldTargets`) —
+/// its own `"targets"`, else its workspace's and its dependencies'; null when
+/// the closure does not resolve (the build then refuses, and that refusal is
+/// its answer). Resolved with nothing printed or captured: the build prints the
+/// closure's refusal itself, once.
+fn jsonTargets(j: *Json, gpa: std.mem.Allocator, proj: config.ProjectConfig, target: config.Target, env_map: libs.EnvMap) void {
     const all = [_][]const u8{ "commonJS", "erlang", "beam", "wasm" };
     const declared: []const []const u8 = proj.manifest.targets orelse &all;
-    jsonLine(j.arena, j.io, .{ .event = "targets", .target = target.toString(), .targets = declared });
+    var discard: std.Io.Writer.Discarding = .init(&.{});
+    const saved = .{ reporter.capture, reporter.sink, manifest.capture, manifest.sink };
+    reporter.capture = null;
+    manifest.capture = null;
+    reporter.sink = &discard.writer;
+    manifest.sink = &discard.writer;
+    const held: ?[]const []const u8 = libs.heldTargets(gpa, j.io, j.arena, proj, env_map) catch null;
+    reporter.capture, reporter.sink, manifest.capture, manifest.sink = saved;
+    jsonLine(j.arena, j.io, .{ .event = "targets", .target = target.toString(), .targets = declared, .held = held });
 }
 
 fn jsonBuildLines(j: *Json, text: []const u8) void {
@@ -233,17 +247,23 @@ pub fn run(
     var captured: std.Io.Writer.Allocating = .init(arena);
     var state: Json = .{ .arena = arena, .io = io };
     json_state = &state;
+    // A manifest's, a dependency's and a sidecar's located refusal is printed
+    // by the manifest module (`Located.print`), beside `reporter.print`.
     reporter.capture = &captured.writer;
+    manifest.capture = &captured.writer;
     defer {
         json_state = null;
         reporter.capture = null;
+        manifest.capture = null;
     }
     const code = runBuild(gpa, io, opts, env_map) catch |err| {
         reporter.capture = null;
+        manifest.capture = null;
         jsonLine(arena, io, .{ .event = "summary", .ok = false, .exit = @as(u8, 1), .refused = @as(usize, 0), .@"error" = @errorName(err) });
         return err;
     };
     reporter.capture = null;
+    manifest.capture = null;
     const text = try refusals.stripAnsi(arena, captured.written());
     const found = try refusals.refusalsOf(arena, text);
     var count: usize = 0;
@@ -287,7 +307,7 @@ fn runBuild(
     // erlang and beam: the `erl` on PATH runs the OTP release the compiler
     // emits for, or nothing is built (decision 228, `otp.zig`).
     if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
-    if (json_state) |j| jsonTargets(j, proj, target);
+    if (json_state) |j| jsonTargets(j, gpa, proj, target, env_map);
 
     // Resolve declared external libs from disk (generic — `libs/<name>/`). The
     // core never names a lib; it only sees these as ordinary `Module[]` and

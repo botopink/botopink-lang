@@ -1,0 +1,423 @@
+//// Build and run one package on every target its manifest declares (decisions 789, 790, 798 (6),
+//// 838 (4)) — what `cell.zig`'s `Scratch.observe` / `audit` answer, through the `botopink` CLI:
+////
+////   1. `botopink build --json --emit-runtime <scratch>/rt --out <scratch>/out-build
+////      --cache-root <the cell's cache root>` with the package's directory as the working directory:
+////      the comptime phase, once — its `build` lines, the targets the package holds, and the
+////      intermediate (`<root>.bpr`) when every module analysed;
+////   2. per declared target, from the intermediate: `botopink build --json --target <t>` (the
+////      target's own refusals, decided at emit) and, when it builds, `botopink run --target <t>`
+////      (the program's stdout, stderr and status; past `RUN_TIMEOUT_S` it is killed);
+////   3. a package the comptime phase refuses (no intermediate) is built directly on each target,
+////      as `cell check` built every cell: its refusals are each target's answer;
+////   4. on wasm, unless the manifest names its host, the `browser` build too (decision 334): the
+////      manifest's text with `"wasm": { "host": "browser" }` added last, for the one build that
+////      reads it, then put back; the two hosts must answer alike;
+////   5. a target the manifest's `"targets"` leaves out is audited: a direct build must refuse the
+////      package on a host binding (`HOST_BINDING_REFUSALS`).
+////
+//// Every build and run of a package works in the package's own directory, one after another; the
+//// scratch directory holds what they write (the intermediate, each target's output) and is the
+//// caller's to remove.
+
+import {async, io.process, json, json.Json} from "std";
+import {records.Snap, records.Refusal, records.render};
+import {answer.Answer, answer.ModuleSnap, answer.find, answer.put};
+import {refusals.refusalsOf, refusals.firstErrorLine};
+import {manifest.srcDirOf};
+import {scratch, scratch.Scratch};
+import {host.stripAnsi, host.readText, host.writeText, host.truncate, host.startTimer, host.timerDone, host.stopTimer, host.trimEndOf};
+
+/// A program that runs longer is a failed cell, never a skipped one.
+pub val RUN_TIMEOUT_S: i32 = 300;
+
+/// The texts a narrowing stands on (`conformance/AGENTS.md` § Narrowing a cell).
+val HOST_BINDING_REFUSALS: string[] = ["has no implementation for the ", "std-unsupported-on-target:", "error[dependency-target-missing]:"];
+
+/// The refusal `botopink run` prints for an entry module with no `fn main` (decision 517).
+val NO_MAIN: string = "error: the package's entry module declares no `fn main`, so there is nothing to run";
+
+/// What every spawn shares: the directory the command started in, the compiler, the environment
+/// added to the program's own.
+pub type Ctx(home: string, bin: string, env: string[])
+
+/// One spawned `botopink`: its status, stdout and stderr; `started` false (and `why`) when it could
+/// not be started, `timedOut` when it was killed past its time.
+pub type Ran(
+    status: i32 = -1,
+    stdout: string = "",
+    stderr: string = "",
+    started: bool = true,
+    timedOut: bool = false,
+    why: string = "",
+)
+
+async fn exitOf(c: process.Captured) -> Async<?process.Exit> {
+    val e = await c.wait();
+    return e;
+}
+
+async fn expiry(timer: unknown) -> Async<?process.Exit> {
+    await timerDone(timer);
+    return null;
+}
+
+fn whyNotStarted(e: process.ProcessError) -> string {
+    return case e {
+        process.ProcessError.NotFound(command) -> "not found";
+        process.ProcessError.PermissionDenied(command) -> "permission denied";
+        process.ProcessError.NoSuchProcess(pid) -> "no such process";
+        process.ProcessError.Unsupported(message) -> message;
+        process.ProcessError.Other(message) -> message;
+    };
+}
+
+/// `botopink <args>` in `cwd`; killed after `seconds` when `seconds` is positive.
+pub async fn spawn(ctx: Ctx, args: string[], cwd: string, seconds: i32) -> Async<Ran> {
+    val started = process.start(ctx.bin, args, cwd, ctx.env);
+    return case started {
+        Ok(c) -> await waitFor(c, seconds);
+        Error(e) -> Ran(started: false, why: whyNotStarted(e));
+    };
+}
+
+async fn waitFor(c: process.Captured, seconds: i32) -> Async<Ran> {
+    if (seconds <= 0) {
+        val e = await c.wait();
+        return Ran(status: e.status, stdout: e.stdout, stderr: e.stderr);
+    }
+    val timer = startTimer(seconds * 1000);
+    val got = await async.race([exitOf(c), expiry(timer)]);
+    stopTimer(timer);
+    if (got) {
+        e ->
+        return Ran(status: e.status, stdout: e.stdout, stderr: e.stderr);
+    }
+    c.kill(process.Signal.Term);
+    return Ran(timedOut: true);
+}
+
+// ── a build's events (`botopink build --json`) ────────────────────────────────
+
+/// What one `botopink build --json` answered: its exit status (`summary`), the target it built and
+/// the targets the package holds (`targets`), the lines its build bodies printed (`build`), its
+/// refusals by module (`refused`), the root package's intermediate (`runtime`), and its stderr.
+pub type Built(
+    exit: i32 = 1,
+    summary: bool = false,
+    target: string = "",
+    held: ?string[] = null,
+    build: string[] = [],
+    refused: ModuleSnap[] = [],
+    root: ?string = null,
+    stderr: string = "",
+    ran: Ran = Ran(),
+)
+
+fn str(v: Json, key: string) -> string {
+    return (v.field(key) ?? Json.Null).str();
+}
+
+fn optStr(v: Json, key: string) -> ?string {
+    val f = v.field(key) ?? Json.Null;
+    return case f {
+        Json.Str(value: s) -> s;
+        _ -> null;
+    };
+}
+
+fn isTrue(v: Json, key: string) -> bool {
+    return case v.field(key) ?? Json.Null {
+        Json.Bool(value: b) -> b;
+        _ -> false;
+    };
+}
+
+fn strings(v: Json) -> string[] {
+    return v.items().map({ x -> x.str() });
+}
+
+fn parseBuilt(ran: Ran) -> Built {
+    var b = Built(stderr: ran.stderr, ran: ran);
+    var exit = 1;
+    var summary = false;
+    var target = "";
+    var held: ?string[] = null;
+    var build: string[] = [];
+    var refused: ModuleSnap[] = [];
+    var root: ?string = null;
+    for (ran.stdout.split("\n")) { line ->
+        if (line.startsWith("{"))
+            case json.decode(line) {
+                Ok(e) {
+                    val event = str(e, "event");
+                    if (event == "targets") {
+                        target = str(e, "target");
+                        val h = e.field("held") ?? Json.Null;
+                        held = case h {
+                            Json.Arr(items: _) -> strings(h);
+                            _ -> null;
+                        };
+                    } else if (event == "build")
+                        build = build.append([str(e, "text")])
+                    else if (event == "refused") {
+                        val module = str(e, "module");
+                        val r = Refusal(message: str(e, "message"), at: optStr(e, "at"), label: optStr(e, "label"), frames: strings(e.field("from") ?? Json.Null));
+                        val before = find(refused, module) ?? Snap();
+                        refused = put(refused, module, Snap(refusals: before.refusals.append([r])));
+                    } else if (event == "runtime") {
+                        if (isTrue(e, "root")) root = str(e, "path");
+                    } else if (event == "summary") {
+                        summary = true;
+                        exit = case e.field("exit") ?? Json.Null {
+                            Json.Num(value: n) -> truncate(n);
+                            _ -> 1;
+                        };
+                    }
+                }
+                Error(_) {}
+            }
+    }
+    return Built(exit: exit, summary: summary, target: target, held: held, build: build, refused: refused, root: root, stderr: ran.stderr, ran: ran);
+}
+
+/// `botopink build --json <args>` in `cwd`.
+pub async fn build(ctx: Ctx, cwd: string, args: string[]) -> Async<Built> {
+    val ran = await spawn(ctx, ["build", "--json"].append(args), cwd, 0);
+    return parseBuilt(ran);
+}
+
+// ── one target's answer ───────────────────────────────────────────────────────
+
+/// What one target answered: the answer (its build lines apart, `buildLines`), or why it gave none.
+pub type Observed {
+    Answered(answer: Answer, buildLines: string[]),
+    ToolError(message: string, detail: string),
+}
+
+/// The answer a refused build gives: its refusals, or the tool's failure when it named none.
+fn refusedAnswer(b: Built, lines: string[]) -> Observed {
+    if (!b.ran.started)
+        return Observed.ToolError(message: "`botopink` could not be run: "
+            + b.ran.why, detail: "");
+    if (b.refused.length == 0)
+        return Observed.ToolError(message: "the build failed and named no refusal", detail: stripAnsi(b.stderr));
+    return Observed.Answered(answer: Answer(modules: b.refused), buildLines: lines);
+}
+
+/// Run the program the intermediate `bpr` holds on `t` in `cwd`, its output into `out`.
+async fn runFrom(ctx: Ctx, cwd: string, cell: string, t: string, bpr: string, out: string, buildLines: string[]) -> Async<Observed> {
+    val r = await spawn(ctx, ["run", "--target", t, "--out", out, bpr], cwd, RUN_TIMEOUT_S);
+    return answerOfRun(r, cell, buildLines);
+}
+
+/// A run's answer: what the program printed and whether it aborted — or, when `run` refused the
+/// entry module before any program started, that refusal.
+fn answerOfRun(r: Ran, cell: string, buildLines: string[]) -> Observed {
+    if (!r.started)
+        return Observed.ToolError(message: "`botopink` could not be run: "
+            + r.why, detail: "");
+    if (r.timedOut)
+        return Observed.ToolError(message: "the program ran past "
+            + RUN_TIMEOUT_S.toString()
+            + " s", detail: "");
+    val err = stripAnsi(r.stderr);
+    // The entry module declares no `fn main`: `run` refuses before any program starts, located at
+    // the intermediate — `cell check`'s refusal is located at the entry module's file.
+    if (r.status != 0 && r.stdout == "" && firstErrorLine(err) == NO_MAIN) {
+        val text = NO_MAIN + "\n  --> " + srcDirOf(cell) + "/main.bp:1:1\n";
+        return Observed.Answered(answer: Answer(modules: refusalsOf(text)), buildLines: buildLines);
+    }
+    val main = Snap(stdout: r.stdout, abort: r.status != 0);
+    return Observed.Answered(answer: Answer(modules: [ModuleSnap(name: "main", snap: main)], stderr: err), buildLines: buildLines);
+}
+
+/// `t`'s answer in the copy `cwd` (its scratch root `root`): from the comptime phase's intermediate
+/// when it wrote one, else built directly.
+async fn buildAndRun(ctx: Ctx, cwd: string, root: string, cell: string, cacheRoot: string, first: Built, t: string, out: string) -> Async<Observed> {
+    if (first.root) {
+        bpr ->
+        // The comptime phase built `t` already: its refusals are `t`'s (decided at emit).
+        if (first.target == t) {
+            if (first.exit != 0) return refusedAnswer(first, first.build);
+            return await runFrom(ctx, cwd, cell, t, bpr, out, first.build);
+        }
+        // `run` builds `t` from the intermediate first: a run that ends well was built well. One
+        // that does not is asked again with `--json` whether the build refused it at emit (its
+        // refusals are `t`'s answer) or the program aborted.
+        val r = await spawn(ctx, ["run", "--target", t, "--out", out, bpr], cwd, RUN_TIMEOUT_S);
+        if (r.started && !r.timedOut && r.status == 0)
+            return answerOfRun(r, cell, first.build);
+        val b = await build(ctx, cwd, ["--target", t, "--out", out, bpr]);
+        if (b.exit != 0) return refusedAnswer(b, first.build);
+        return answerOfRun(r, cell, first.build);
+    }
+    val b = if (first.target == t)
+        first
+    else
+        await build(ctx, cwd, ["--target", t, "--emit-runtime", root
+            + "/rt-"
+            + t, "--out", out, "--cache-root", cacheRoot]);
+    return await answerOfDirect(ctx, cwd, cell, b, t, out);
+}
+
+async fn answerOfDirect(ctx: Ctx, cwd: string, cell: string, b: Built, t: string, out: string) -> Async<Observed> {
+    if (b.exit != 0) return refusedAnswer(b, b.build);
+    if (b.root) {
+        bpr ->
+        return await runFrom(ctx, cwd, cell, t, bpr, out, b.build);
+    }
+    return Observed.ToolError(message: "the build wrote no intermediate", detail: stripAnsi(b.stderr));
+}
+
+/// `t`'s answer, in a fresh copy of the cell; on wasm both hosts unless the manifest names one, and
+/// two hosts that answer differently are a tool error.
+pub async fn observe(ctx: Ctx, cell: string, cacheRoot: string, first: Built, t: string) -> Async<Observed> {
+    val s = scratch.open(ctx.home, cell);
+    val here = Ctx(home: ctx.home, bin: ctx.bin, env: s.env);
+    val o = await observeIn(here, s, cell, cacheRoot, first, t);
+    scratch.close(s);
+    return o;
+}
+
+async fn observeIn(ctx: Ctx, s: Scratch, cell: string, cacheRoot: string, first: Built, t: string) -> Async<Observed> {
+    val wasi = await buildAndRun(ctx, s.dir, s.root, cell, cacheRoot, first, t, "out-"
+        + t);
+    if (t != "wasm" || s.manifest.contains("\"wasm\"")) return wasi;
+    val firstAnswer = case wasi {
+        Observed.Answered(answer: a, buildLines: _) -> a;
+        Observed.ToolError(message: _, detail: _) -> null;
+    };
+    if (firstAnswer == null) return wasi;
+    val brace = s.manifest.lastIndexOf("}");
+    if (brace < 0) return wasi;
+    // The host goes in last, before the closing brace, so every line and column of the manifest —
+    // where a refusal of it is located — is the same in the two builds.
+    val manifestPath = s.dir + "/botopink.json";
+    val browserManifest = trimEndOf(s.manifest.slice(0, brace), " \t\r\n")
+        + ", \"wasm\": { \"host\": \"browser\" } "
+        + s.manifest.slice(brace);
+    writeText(manifestPath, browserManifest);
+    val b = await build(ctx, s.dir, ["--target", "wasm", "--emit-runtime", s.root
+        + "/rt-browser", "--out", "out-wasm-browser", "--cache-root", cacheRoot]);
+    val browser = await answerOfDirect(ctx, s.dir, cell, b, "wasm", "out-wasm-browser");
+    writeText(manifestPath, s.manifest);
+    return case browser {
+        Observed.ToolError(message: m, detail: d) -> Observed.ToolError(message: "the browser host: "
+            + m, detail: d);
+        Observed.Answered(answer: second, buildLines: lines) -> agreeing(wasi, firstAnswer, second, lines);
+    };
+}
+
+fn agreeing(wasi: Observed, x: Answer, y: Answer, yLines: string[]) -> Observed {
+    val xLines = case wasi {
+        Observed.Answered(answer: _, buildLines: l) -> l;
+        Observed.ToolError(message: _, detail: _) -> [];
+    };
+    if (!sameAnswer(x, y))
+        return Observed.ToolError(message: "the wasm hosts disagree", detail: "wasi (wasmtime):\n"
+            + describe(x)
+            + "browser (node):\n"
+            + describe(y));
+    if (!sameLines(xLines, yLines))
+        return Observed.ToolError(message: "the wasm hosts' builds printed other lines — the build phase answers once (decision 789 (3))", detail: "wasi:\n"
+            + indented(xLines)
+            + "browser:\n"
+            + indented(yLines));
+    return wasi;
+}
+
+pub fn sameLines(a: string[], b: string[]) -> bool {
+    if (a.length != b.length) return false;
+    var i = 0;
+    while (i < a.length) {
+        if ((a.at(i) ?? "") != (b.at(i) ?? "")) return false;
+        i = i + 1;
+    }
+    return true;
+}
+
+pub fn indented(lines: string[]) -> string {
+    var out = "";
+    for (lines) { l ->
+        out = out + "  " + l + "\n";
+    }
+    return out;
+}
+
+/// Whether the two wasm hosts answered alike: the same text — or, when both refuse the program,
+/// the same modules refused at the same places (a refusal may name the host it was built for).
+fn sameAnswer(x: Answer, y: Answer) -> bool {
+    if (describe(x) == describe(y)) return true;
+    if (!refusesOnly(x)
+        || !refusesOnly(y)
+        || x.modules.length != y.modules.length)
+        return false;
+    for (x.modules) { m ->
+        val ys = find(y.modules, m.name);
+        if (ys == null) return false;
+        val yr = ys.refusals;
+        val xr = m.snap.refusals;
+        if (xr.length != yr.length) return false;
+        var i = 0;
+        while (i < xr.length) {
+            val a = (xr.at(i) ?? Refusal(message: "")).at;
+            val b = (yr.at(i) ?? Refusal(message: "")).at;
+            if (a != b) return false;
+            i = i + 1;
+        }
+    }
+    return true;
+}
+
+fn refusesOnly(ans: Answer) -> bool {
+    if (ans.modules.length == 0) return false;
+    return ans.modules.all({ m -> m.snap.refusals.length > 0 });
+}
+
+/// Every module's `.snap` text of an answer, one after the other.
+pub fn describe(ans: Answer) -> string {
+    var out = "";
+    for (ans.modules) { m ->
+        out = out + "  " + m.name + ".snap:\n";
+        for (trimEndOf(render(m.snap), "\n").split("\n")) { l ->
+            out = out + "    " + l + "\n";
+        }
+    }
+    return out;
+}
+
+// ── an excluded target ────────────────────────────────────────────────────────
+
+/// A target the manifest's `"targets"` leaves out: its build must refuse the package on a host
+/// binding — or on a dependency's missing target (decision 676). Null when it does; else what is
+/// wrong.
+pub async fn audit(ctx: Ctx, cell: string, cacheRoot: string, first: Built, t: string) -> Async<?string> {
+    if (first.target == t) return auditOf(first, t);
+    val s = scratch.open(ctx.home, cell);
+    val here = Ctx(home: ctx.home, bin: ctx.bin, env: s.env);
+    val b = await build(here, s.dir, ["--target", t, "--out", "out-"
+        + t, "--cache-root", cacheRoot]);
+    scratch.close(s);
+    return auditOf(b, t);
+}
+
+fn auditOf(b: Built, t: string) -> ?string {
+    if (b.exit == 0)
+        return "excluded by \"targets\", but `botopink build --target "
+            + t
+            + "` accepts the cell — a narrowing stands on a host-binding refusal: let it run on "
+            + t;
+    val text = stripAnsi(b.stderr);
+    for (HOST_BINDING_REFUSALS) { phrase ->
+        if (text.contains(phrase)) return null;
+    }
+    val firstLine = firstErrorLine(text) ?? "no error line";
+    return "excluded by \"targets\", and "
+        + t
+        + " refuses it for another reason than a host binding ("
+        + firstLine
+        + ") — let it run there, its refusal answered in snapshot/targets/"
+        + t
+        + "/";
+}

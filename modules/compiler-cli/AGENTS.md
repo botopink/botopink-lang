@@ -113,7 +113,9 @@ compiler-cli/
 │   │                          `std/math`) and `lib`
 │   ├── build_json.sh        ← `build --json` and `--cache-root` (decision 798 (6),
 │   │                          B-161): a clean build (`targets`, `build`, `summary`),
-│   │                          a refused one (`refused` with `from`), `--emit-runtime`
+│   │                          a refused one (`refused` with `from`), a manifest's
+│   │                          located refusal (`refused` at `botopink.json`), `held`
+│   │                          (a dependency's targets, 770), `--emit-runtime`
 │   │                          (`runtime`), the cache filed under the directory given
 │   ├── resolved_file.sh     ← `--emit-resolved`'s files (decision 834, B-163): `app`
 │   │                          (modules `main`, `util`) over `lib` writes

@@ -18,7 +18,7 @@
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
 #   --only      run one cell or suite (e.g. modules/case/run,
-#               test/case_arms.bp, test/pub_val_in_a_test); may repeat
+#               test/case_arms.bp, test/pub_val_in_a_test, check); may repeat
 #   --jobs      parallel jobs; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel jobs below
 #   --list      print the plan and run nothing: one `<path>\t<target>\t<run|audit>`
@@ -38,7 +38,7 @@
 #               cells' dependencies is not read (decision 509 (5)); `scripts/gate.sh
 #               --cold` passes it
 #
-# Three kinds, every job (a share of cells, § run) in its own scratch directory:
+# Four kinds, every job (a share of cells, § run) in its own scratch directory:
 #   modules/<m>/run/, modules/<m>/refused/, modules/<m>/cells/<c>/  a module's packages of
 #                      cases and its cells (decision 779; 765's `cases/<c>/` while one remains);
 #                      `--only modules/<m>` stands for all of them
@@ -54,6 +54,9 @@
 #                      (modules/compiler-cli/AGENTS.md § Cells).
 #   test/<name>.bp     `test "…" { … assert … }` blocks: `botopink test --target
 #                      <t> --json` in a scratch project; every test must pass
+#   check/             `cell check` as a botopink program (decision 790), no cell: its
+#                      own tests, `botopink test --target commonJS --json` (the one
+#                      target its manifest declares), keyed check::<test>
 #   test/<name>/       a whole project with a `test/` tree: `botopink test
 #                      --target <t> --json`, keyed <name>::<test>. `"targets"`
 #                      in its botopink.json narrows it, audited — § the targets
@@ -326,6 +329,8 @@ if [ ${#only[@]} -gt 0 ]; then
     files=("${only[@]}")
 else
     while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ modules/*/ 2>/dev/null | sed 's:/$::'; } | sort)
+    # `check/`, the program of decision 790, is no cell: its own tests are a suite of the run.
+    [ ! -f "$here/check/botopink.json" ] || files+=(check)
 fi
 # A module (decisions 765, 779) is not a cell: its packages `run/` and `refused/`, its
 # `cells/<c>` and a 765 `cases/<c>` are, one job each. A path naming a module stands for them.
@@ -474,7 +479,7 @@ run_one() { # <path> <target>
             project "$dir"
             cp "$here/$path" "$dir/test/$(basename "$path")"
             test_project "$dir" "$path" "$t" "$out" ;;
-        test/*)
+        test/*|check)
             cp -R "$here/$path" "$dir"
             test_project "$dir" "$path" "$t" "$out" ;;
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under modules/ or test/" >"$out" ;;
@@ -602,7 +607,13 @@ for f in "${files[@]}"; do
                     case " $TEST_TARGETS " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac
                 done
             fi ;;
-        *) echo "run.sh: not a cell or a suite (modules/<cell>, test/<name>.bp, test/<project>): $f" >&2; exit 2 ;;
+        # `check/` (decision 790): a commonJS program, its tests run on commonJS alone — the one
+        # target its manifest declares; a run without commonJS has none of it to run.
+        check)
+            for t in "${targets[@]}"; do
+                [ "$t" != commonJS ] || printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"
+            done ;;
+        *) echo "run.sh: not a cell or a suite (modules/<cell>, test/<name>.bp, test/<project>, check): $f" >&2; exit 2 ;;
     esac
 done
 # `--list`: the plan is the answer — one line per job, nothing spawned.

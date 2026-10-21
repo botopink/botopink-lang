@@ -164,7 +164,13 @@ pub const Located = struct {
 /// `reporter.sink`. The CLI is one thread; nothing sets it concurrently.
 pub var sink: ?*std.Io.Writer = null;
 
+/// `botopink build --json` (decision 798 (6)): every located refusal printed is
+/// also appended here, as `reporter.capture` holds the CLI's own messages, so
+/// the build reads a manifest's refusal back as a `refused` event too.
+pub var capture: ?*std.Io.Writer = null;
+
 fn emit(comptime fmt: []const u8, args: anytype) void {
+    if (capture) |c| c.print(fmt, args) catch {};
     if (sink) |w| {
         w.print(fmt, args) catch {};
     } else std.debug.print(fmt, args);

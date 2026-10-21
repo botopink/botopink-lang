@@ -1,0 +1,173 @@
+//// One cell's check and its report section, as `cell.zig`'s `checkCell` prints it: `ok   <cell>`,
+//// or `FAIL <cell>` and the lines under it — the cell's layout refused, a target that gave no
+//// answer, a narrowing that does not stand, or the candidates `compare` wrote with their diffs —, and
+//// the run's last line, `cells: <N> checked — <P> passed, <F> failed`.
+////
+//// The `build` lines (decision 789) are the package's: the comptime phase prints them once for every
+//// target (789 (3)), and they are recorded in `main`'s answer (`withBuild`); a target whose build
+//// printed other lines fails the cell, with no candidate.
+
+import {records.Snap};
+import {answer.Answer, answer.find, answer.put};
+import {manifest.ALL, manifest.readTargets, manifest.writesTargets, manifest.cacheRootOf};
+import {compare.rel, compare.readAccepted, compare.removeCandidates, compare.compare};
+import {observe.Ctx, observe.Built, observe.Observed, observe.build, observe.observe, observe.audit, observe.sameLines, observe.indented};
+import {scratch};
+import {host.exists, host.trimEndOf};
+
+/// A cell's verdict and its section of the report.
+pub type Verdict(ok: bool, text: string)
+
+fn fail(rel: string, why: string) -> Verdict {
+    return Verdict(ok: false, text: "FAIL " + rel + "\n  " + why + "\n");
+}
+
+fn indentDetail(detail: string) -> string {
+    val text = trimEndOf(detail, "\n");
+    if (text == "") return "";
+    var out = "";
+    for (text.split("\n")) { l ->
+        out = out + "\n      " + l;
+    }
+    return out;
+}
+
+/// `ans` with the package's build lines in `main`'s answer — the one place they are filed.
+pub fn withBuild(ans: Answer, lines: string[]) -> Answer {
+    if (lines.length == 0) return ans;
+    val main = find(ans.modules, "main") ?? Snap();
+    val filed = Snap(refusals: main.refusals, build: lines, stdout: main.stdout, abort: main.abort, stderr: main.stderr);
+    return Answer(modules: put(ans.modules, "main", filed), stderr: ans.stderr);
+}
+
+pub async fn checkCell(ctx: Ctx, cell: string) -> Async<Verdict> {
+    val r = rel(ctx.home, cell);
+    if (!exists(cell + "/src/main.bp"))
+        return fail(r, "a cell holds src/main.bp — its entry, `pub fn main`");
+    if (!exists(cell + "/botopink.json"))
+        return fail(r, "a cell holds botopink.json — its own manifest, a project like any other (decision 475)");
+    if (exists(cell + "/targets"))
+        return fail(r, r
+            + "/targets: a cell is narrowed by its manifest's \"targets\" (decision 475), never by a `targets` file");
+    val written = case readTargets(cell) {
+        Ok(ts) -> ts;
+        Error(why) -> null;
+    };
+    if (written == null) {
+        val why = case readTargets(cell) {
+            Ok(_) -> "";
+            Error(w) -> w;
+        };
+        return fail(r, r + "/botopink.json \"targets\": " + why);
+    }
+    val writes = writesTargets(cell);
+    removeCandidates(cell + "/snapshot");
+    // The comptime phase, once, in a copy of the cell of its own: its intermediate serves every
+    // target, each run in a fresh copy (`observe`).
+    val s = scratch.open(ctx.home, cell);
+    val cacheRoot = cacheRootOf(cell);
+    val first = await build(Ctx(home: ctx.home, bin: ctx.bin, env: s.env), s.dir, ["--emit-runtime", s.root
+        + "/rt", "--out", "out-build", "--cache-root", cacheRoot]);
+    val verdict = await checkBuilt(ctx, cell, r, written, writes, cacheRoot, first);
+    scratch.close(s);
+    return verdict;
+}
+
+async fn checkBuilt(ctx: Ctx, cell: string, r: string, written: string[], writes: bool, cacheRoot: string, first: Built) -> Async<Verdict> {
+    // A cell that writes no `"targets"` holds its dependencies' (decision 770).
+    val held = first.held ?? written;
+    val declared = if (writes)
+        written
+    else
+        ALL.filter({ t -> held.contains(t) });
+    val accepted = readAccepted(ctx.home, cell, declared);
+    val acc = case accepted {
+        Ok(a) -> a;
+        Error(_) -> null;
+    };
+    if (acc == null) {
+        val why = case accepted {
+            Ok(_) -> "";
+            Error(w) -> w;
+        };
+        return Verdict(ok: false, text: "FAIL " + r + "\n  " + why + "\n");
+    }
+
+    var observed: Answer[] = [];
+    var lines: string[][] = [];
+    var toolErrors: string[] = [];
+    var audits: string[] = [];
+    var ti = 0;
+    while (ti < ALL.length) {
+        val t = ALL.at(ti) ?? "";
+        ti = ti + 1;
+        val runs = declared.contains(t);
+        if (runs) {
+            val o = await observe(ctx, cell, cacheRoot, first, t);
+            case o {
+                Observed.Answered(answer: a, buildLines: l) {
+                    observed.push(a);
+                    lines.push(l);
+                }
+                Observed.ToolError(message: m, detail: d) {
+                    observed.push(Answer());
+                    lines.push([]);
+                    toolErrors.push(t + ": " + m + indentDetail(d));
+                }
+            }
+        } else if (declared.length != ALL.length) {
+            val problem = await audit(ctx, cell, cacheRoot, first, t);
+            if (problem) {
+                p ->
+                audits.push(t + ": " + p);
+            }
+        }
+    }
+    // The build phase answers once for every target (789 (3)): a target whose build printed other
+    // lines is a defect, never a departure.
+    var i = 1;
+    while (i < declared.length) {
+        val these = lines.at(i) ?? [];
+        val firstLines = lines.at(0) ?? [];
+        if (!sameLines(these, firstLines))
+            toolErrors.push((declared.at(i) ?? "")
+                + ": the build printed other lines than on "
+                + (declared.at(0) ?? "")
+                + " — the build phase answers once for every target (decision 789 (3))"
+                + indentDetail(indented(these)));
+        i = i + 1;
+    }
+    if (toolErrors.length > 0 || audits.length > 0) {
+        var text = "FAIL " + r + "\n";
+        for (toolErrors) { e ->
+            text = text + "  " + e + "\n";
+        }
+        for (audits) { e ->
+            text = text + "  " + e + "\n";
+        }
+        return Verdict(ok: false, text: text);
+    }
+    var filed: Answer[] = [];
+    var k = 0;
+    while (k < observed.length) {
+        filed.push(withBuild(observed.at(k) ?? Answer(), lines.at(k) ?? []));
+        k = k + 1;
+    }
+    val section = compare(ctx.home, cell, declared, acc, filed);
+    if (section) {
+        text ->
+        return Verdict(ok: false, text: text);
+    }
+    return Verdict(ok: true, text: "ok   " + r + "\n");
+}
+
+/// The run's last line.
+pub fn summary(checked: i32, passed: i32) -> string {
+    return "cells: "
+        + checked.toString()
+        + " checked — "
+        + passed.toString()
+        + " passed, "
+        + (checked - passed).toString()
+        + " failed\n";
+}
