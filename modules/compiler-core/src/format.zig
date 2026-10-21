@@ -1562,6 +1562,16 @@ pub const Formatter = struct {
             });
         }
 
+        // `#[key(k)] x` — decision 818 (3), as `@#key(x, k)`.
+        if (std.mem.eql(u8, c.callee, ast.key_builtin_name) and c.args.len == 2) {
+            return try this.concatAll(&.{
+                try this.text("#[key("),
+                try this.fmtExpr(c.args[1].value.*),
+                try this.text(")] "),
+                try this.fmtExpr(c.args[0].value.*),
+            });
+        }
+
         // `x!` — decision 330 (5), as `@!(x)`.
         if (std.mem.eql(u8, c.callee, ast.non_null_builtin_name) and c.args.len == 1 and c.args[0].label == null) {
             return try this.concat(try this.fmtExpr(c.args[0].value.*), try this.text("!"));

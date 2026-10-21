@@ -1,0 +1,10 @@
+//// Decision 818 (3) — `#[key(k)]` is written before an expression answering a
+//// `Component<T>`; before any other it is refused at the `#`,
+//// `key-not-component`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val n = #[key("a")] 1;
+    print(n);
+}

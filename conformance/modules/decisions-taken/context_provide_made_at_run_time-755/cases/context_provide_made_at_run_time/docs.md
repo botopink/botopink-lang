@@ -10,5 +10,5 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 >   or `val c = comptime createContext(Theme(mode: "dark"));` then `use
 >   provide(c);`, or, for a value known only at run time, `val c = use memo({ ->
 >   createContext(Theme(mode: mode)) });` then `use provide(c);` (made on the
->   component instance's first render and kept for it) — and `use
+>   first render of the memo's cell and kept while it stands) — and `use
 >   provide(themeContext)` gives the declared default again.

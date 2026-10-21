@@ -1,0 +1,58 @@
+//// Decision 818 — a component's identity is the call that made it: a branch
+//// change between `Item("on")` and `Item("off")` resets; `#[key(n)] Item(n)`
+//// keeps each item's state when the list is reordered; `Mostra([1])` and
+//// `Mostra(["a", "b"])` at two sites keep two cells, no type argument in the
+//// identity.
+
+import {context.run, context.resolve, context.Place, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+component fn Mostra<T>(xs: T[]) -> Component<View> {
+    val n = use memo({ ->
+        print("made mostra " + xs.length.toString());
+        xs.length
+    });
+    return View(text: "mostra " + n.toString());
+}
+
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+// Runs each of `cs` under `scope`, in order, by hand.
+fn runEach(cs: Component<View>[], scope: Scope) -> string {
+    return cs.map({ c -> textOf(resolve(c, scope, Place.none())) }).join(",");
+}
+
+component fn App(on: bool, order: string[]) -> Component<View> {
+    val shown = if (on) Item("on") else Item("off");
+    val s = use shown;
+    val items = order.map({ n -> #[key(n)] Item(n) });
+    val list: Component<string> = { scope -> runEach(items, scope) };
+    val l = use list;
+    val a = use Mostra([1]);
+    val b = use Mostra(["a", "b"]);
+    return View(text: s.text + " | " + l + " | " + a.text + " " + b.text);
+}
+
+async fn render(root: Scope, on: bool, order: string[]) -> Async<string> {
+    return (await run(App(on, order), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, true, ["x", "y"]));
+    print(await render(root, true, ["y", "x"]));
+    print(await render(root, false, ["y", "x"]));
+}

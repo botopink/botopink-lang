@@ -1,0 +1,62 @@
+//// Decision 819 — a `Composition` takes its place with its scope and opens its
+//// own cell from them: `if (logged) Painel() else Login()` never share a cell;
+//// `Item(n)(scope, Place.key(n))` called by hand keeps each item's state across
+//// a reorder; two siblings with one key fail at run time, `key-duplicate`.
+
+import {context.run, context.Place, context.Scope, failure.attemptTask, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+component fn Painel() -> Component<View> {
+    val n = use memo({ ->
+        print("made painel");
+        1
+    });
+    return View(text: "painel " + n.toString());
+}
+
+component fn Login() -> Component<View> {
+    val n = use memo({ ->
+        print("made login");
+        2
+    });
+    return View(text: "login " + n.toString());
+}
+
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+component fn App(logged: bool, order: string[]) -> Component<View> {
+    val shown = if (logged) Painel() else Login();
+    val s = use shown;
+    val list: Component<string> = { scope -> order.map({ n -> textOf(Item(n)(scope, Place.key(n))) }).join(",") };
+    val l = use list;
+    return View(text: s.text + " | " + l);
+}
+
+async fn render(root: Scope, logged: bool, order: string[]) -> Async<string> {
+    return (await run(App(logged, order), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, true, ["x", "y"]));
+    print(await render(root, false, ["y", "x"]));
+    print(await render(root, true, ["y", "x"]));
+    val twice = await attemptTask({ -> render(root, true, ["x", "x"]) });
+    case twice {
+        Ok(t) -> print(t);
+        Error(f) -> print(f.message);
+    }
+}

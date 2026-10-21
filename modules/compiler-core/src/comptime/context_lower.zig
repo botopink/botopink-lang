@@ -27,14 +27,21 @@
 //! and a body that ends without a `return` answers `answer(null)`. A `use
 //! provide` writes the cell where it is written, so what the body resolves
 //! after it reads it and what it resolved before does not (812 (3)).
-//! Decisions 755, 771 — each `use memo(make)` position of the body is a slot
-//! made with the component's value, before its function, and read in the
-//! body:
 //!
-//!   fn Page(…) -> … { val bpMemoSlot__N = bpMemoNew__(); return { bpScope__, bpKey__ -> … bpMemoRead__(bpMemoSlot__N, make) … }; }
+//! Decisions 820, 821 — each written call answering a component stamps its
+//! place on the value, numbered in written order within the nearest
+//! `component` body, the lambdas written in it counted with it:
 //!
-//! so one `Page(…)` call is one instance: its first render fills the slot
-//! (`read` runs `make`), a later render of the same value reads it.
+//!   Item(p)              →  bpStamp__(Item(p), bpCell__N, <n>)            — in a component body
+//!   Item(p)              →  bpStampPlain__(Item(p), bpCount__N, <n>)      — in a plain function
+//!   #[key(k)] Item(p)    →  bpStampKeyed__(Item(p), <n>, k)               — 818 (3)
+//!   itens.map(Card)      →  itens.map({ a -> bpStamp__(Card(a), bpCell__N, <n>) })
+//!
+//! A plain function that stamps opens `val bpCount__N = bpCountNew__();
+//! defer bpCountEnd__(bpCount__N);`, its counter reset at each entry; a value
+//! made outside every function carries no stamp (820 (3)). Decisions 816,
+//! 818 (1) — `use memo(make)` is a call of the body like the others, its
+//! slot its own child cell's: `bpMemoIn__(bpCell__N, <n>, make)`.
 //! A `{ component x -> body }` lambda (decision 574, `Env.componentLambdas`)
 //! is lowered the same way, its tail made its `return`:
 //! `{ x -> return { bpScope__, bpKey__ -> body' }; }` — its parameters and
@@ -80,9 +87,22 @@ pub const find_fn = "bpScopeFind__";
 pub const answer_fn = "bpScopeAnswer__";
 pub const nowhere_fn = "bpScopeNowhere__";
 pub const root_fn = "bpScopeRoot__";
-/// std's `hooks.slot` / `hooks.read` (decision 771), imported under these.
+/// Decision 771's slot functions, gone with 816 (a slot belongs to a cell):
+/// no lowering writes them; the names stay for the wasm backend's list.
 pub const memo_new_fn = "bpMemoNew__";
 pub const memo_read_fn = "bpMemoRead__";
+/// std's `context.memoIn` (816, 818 (1)): `use memo` over its own child cell.
+pub const memo_in_fn = "bpMemoIn__";
+/// std's `context.stamp` / `stampPlain` / `stampKeyed` (820, 821, 818 (3))
+/// and the plain function's counter, `countNew` / `countEnd`.
+pub const stamp_fn = "bpStamp__";
+pub const stamp_plain_fn = "bpStampPlain__";
+pub const stamp_keyed_fn = "bpStampKeyed__";
+pub const count_new_fn = "bpCountNew__";
+pub const count_end_fn = "bpCountEnd__";
+/// The column a stamp's call is written at past the call it wraps: its loc
+/// keys none of the checker's plans of the wrapped call (`ast.optional_synthetic_col`'s reason).
+const stamp_col: usize = 3_000_000;
 /// The type argument a run's call carries (`(c)(cell, place)`): its one
 /// argument is the `R` the run answers (decision 504, `wat/scope_carry.zig`).
 pub const run_mark = "bpRun__";
@@ -91,13 +111,13 @@ pub const run_mark = "bpRun__";
 /// (`bpRecv__<n>`).
 const cell_prefix = "bpCell__";
 const recv_prefix = "bpRecv__";
-/// A `use memo` position's slot (`bpMemoSlot__<n>`).
-const memo_slot_prefix = "bpMemoSlot__";
+/// A plain function's counter (`bpCount__<n>`).
+const count_prefix = "bpCount__";
 /// The inner closure's answer, in a body that keeps a bare `try`.
 const result_local = "bpScopeResult__";
 
 /// The lowering's functions, as `wat.zig` refuses them.
-pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn };
+pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn, memo_in_fn, stamp_fn, stamp_plain_fn, stamp_keyed_fn, count_new_fn, count_end_fn };
 
 const Frame = struct {
     /// The cell this body opened.
@@ -120,6 +140,19 @@ const Frame = struct {
     sync: bool = false,
 };
 
+/// Decisions 820, 821 — the body whose calls a stamp numbers: the nearest
+/// `component` body (its cell) or plain function (its counter); a lambda
+/// counts with the body it is written in.
+const StampScope = struct {
+    kind: enum { body, plain },
+    /// The cell's name (`bpCell__N`) or the counter's (`bpCount__N`).
+    name: []const u8,
+    /// The body's frame, which names its cell once a stamp reads it.
+    frame: usize = 0,
+    /// The calls numbered so far.
+    calls: usize = 0,
+};
+
 const Lowering = struct {
     arena: std.mem.Allocator,
     env: *Env,
@@ -128,11 +161,74 @@ const Lowering = struct {
     frames: std.ArrayListUnmanaged(?Frame) = .empty,
     body_count: usize = 0,
     uses_std: bool = false,
-    /// Decision 771 — the slots of the `use memo` positions of the bodies
-    /// being walked; a component body takes the ones its walk added.
-    memo_slots: std.ArrayListUnmanaged([]const u8) = .empty,
-    memo_count: usize = 0,
-    uses_hooks: bool = false,
+    /// One entry per component body or plain function being walked.
+    stamps: std.ArrayListUnmanaged(StampScope) = .empty,
+    count_count: usize = 0,
+    /// The lowering functions the module calls: only these are imported, so
+    /// a target reaches no other of std's lowering code.
+    used: std.StringHashMapUnmanaged(void) = .empty,
+
+    /// The next call's number in the nearest stamping body, and the
+    /// expression that body counts its items by (the cell or the counter);
+    /// null outside every function.
+    fn nextStamp(self: *Lowering, loc: ast.Loc) !?struct { n: usize, kind: @TypeOf(@as(StampScope, undefined).kind), by: *ast.Expr } {
+        if (self.stamps.items.len == 0) return null;
+        const top = &self.stamps.items[self.stamps.items.len - 1];
+        top.calls += 1;
+        if (top.kind == .body) if (self.frames.items[top.frame]) |*f| {
+            f.uses_cell = true;
+        };
+        return .{ .n = top.calls, .kind = top.kind, .by = try self.ident(top.name, loc) };
+    }
+
+    fn int(self: *Lowering, n: usize, loc: ast.Loc) !*ast.Expr {
+        const e = try self.arena.create(ast.Expr);
+        e.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = try std.fmt.allocPrint(self.arena, "{d}", .{n}) } } };
+        return e;
+    }
+
+    /// The loc a stamp's call is written at.
+    fn stampLoc(loc: ast.Loc) ast.Loc {
+        var l = loc;
+        l.col += stamp_col;
+        return l;
+    }
+
+    /// Whether the checker typed the call at `loc` as a component.
+    fn makesComponent(self: *Lowering, e: *const ast.Expr) bool {
+        if (e.* != .call or e.call.kind != .call) return false;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin) return false;
+        const ty = self.env.componentCalls.get(e.call.loc) orelse return false;
+        if (componentOf(ty) == null) return false;
+        if (self.env.hostCalls.contains(e.call.loc)) return false;
+        return true;
+    }
+
+    /// The fields of `ptr` walked, `ptr` itself not intercepted.
+    fn walkChildren(self: *Lowering, comptime N: type, ptr: *N) anyerror!void {
+        if (comptime !mayHoldExpr(N)) return;
+        switch (@typeInfo(N)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                try self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) {
+                switch (ptr.*) {
+                    inline else => |*payload| try self.walk(@TypeOf(payload.*), payload),
+                }
+            },
+            .optional => |o| if (ptr.*) |*inner| try self.walk(o.child, inner),
+            .pointer => |pi| switch (pi.size) {
+                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") {
+                    try self.walk(pi.child, @constCast(ptr.*));
+                },
+                .slice => for (ptr.*) |*e| try self.walk(pi.child, @constCast(e)),
+                else => {},
+            },
+            else => {},
+        }
+    }
 
     fn current(self: *const Lowering) ?Frame {
         if (self.frames.items.len == 0) return null;
@@ -166,6 +262,7 @@ const Lowering = struct {
     /// A call of one of std's lowering functions.
     fn call(self: *Lowering, callee: []const u8, args: []const *ast.Expr, loc: ast.Loc) !*ast.Expr {
         self.uses_std = true;
+        try self.used.put(self.arena, callee, {});
         const e = try self.arena.create(ast.Expr);
         e.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
             .receiver = null,
@@ -284,8 +381,18 @@ const Lowering = struct {
     /// not, decision 375).
     fn syncAt(self: *Lowering, operand: *const ast.Expr, useLoc: ?ast.Loc) bool {
         if (useLoc) |l| if (self.env.syncCalls.contains(l)) return true;
+        if (stampedValue(operand)) |inner| return self.syncAt(inner, null);
         if (operand.* == .call) return self.env.syncCalls.contains(operand.call.loc);
         return false;
+    }
+
+    /// The value a stamp's call wraps, or null for any other expression.
+    fn stampedValue(e: *const ast.Expr) ?*const ast.Expr {
+        if (e.* != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.receiver != null or cc.args.len == 0) return null;
+        if (!std.mem.eql(u8, cc.callee, stamp_fn) and !std.mem.eql(u8, cc.callee, stamp_plain_fn) and !std.mem.eql(u8, cc.callee, stamp_keyed_fn)) return null;
+        return cc.args[0].value;
     }
 
     /// `use provide(ctx)` as a whole statement: the body's cell holds the
@@ -336,6 +443,61 @@ const Lowering = struct {
                 return true;
             }
         }
+        if (e.* == .call and e.call.kind == .call) {
+            const cc = e.call.kind.call;
+            const loc = e.call.loc;
+            // Decision 818 (3) — `#[key(k)] x`: the key in the item's stead
+            // of the place the value carries.
+            if (cc.is_builtin and std.mem.eql(u8, cc.callee, ast.key_builtin_name) and cc.args.len == 2) {
+                const value = cc.args[0].value;
+                const key = cc.args[1].value;
+                const st = try self.nextStamp(loc);
+                try self.walk(ast.Expr, key);
+                if (self.makesComponent(value)) try self.walkChildren(ast.Expr, value) else try self.walk(ast.Expr, value);
+                e.* = (try self.call(stamp_keyed_fn, &.{ value, try self.int(if (st) |x| x.n else 0, loc), key }, stampLoc(loc))).*;
+                return true;
+            }
+            // Decisions 820 (1), 821 — a written call answering a component
+            // answers its value carrying its place, numbered in written
+            // order: the call before its arguments.
+            if (self.makesComponent(e)) {
+                const st = try self.nextStamp(loc);
+                const made = try self.arena.create(ast.Expr);
+                made.* = e.*;
+                try self.walkChildren(ast.Expr, made);
+                if (st) |x| {
+                    e.* = (try self.call(if (x.kind == .body) stamp_fn else stamp_plain_fn, &.{ made, x.by, try self.int(x.n, loc) }, stampLoc(loc))).*;
+                } else e.* = made.*;
+                return true;
+            }
+        }
+        // Decision 821 (3) — `itens.map(Card)`: numbered where it is
+        // written, each value it makes stamped and counted on that number:
+        // `{ a… -> stamp(Card(a…), <cell>, n) }`.
+        if (e.* == .identifier and e.identifier.kind == .ident) if (self.env.componentFnValues.get(e.identifier.loc)) |arity| {
+            const loc = e.identifier.loc;
+            if (try self.nextStamp(loc)) |st| {
+                const params = try self.arena.alloc([]const u8, arity);
+                const args = try self.arena.alloc(*ast.Expr, arity);
+                for (0..arity) |i| {
+                    params[i] = try std.fmt.allocPrint(self.arena, "bpArg__{d}", .{i});
+                    args[i] = try self.ident(params[i], loc);
+                }
+                const made = try self.arena.create(ast.Expr);
+                made.* = .{ .call = .{ .loc = stampLoc(stampLoc(loc)), .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = e.identifier.kind.ident,
+                    .is_builtin = false,
+                    .args = try self.callArgs(args),
+                    .trailing = &.{},
+                } } } };
+                const stampedCall = try self.call(if (st.kind == .body) stamp_fn else stamp_plain_fn, &.{ made, st.by, try self.int(st.n, loc) }, stampLoc(loc));
+                const body = try self.arena.alloc(ast.Stmt, 1);
+                body[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = stampedCall } } } };
+                e.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
+            }
+            return true;
+        };
         switch (e.*) {
             .useHook => |uh| {
                 // Decisions 755, 771 — `use memo(make)` reads the slot of its
@@ -346,15 +508,16 @@ const Lowering = struct {
                     const args = inner.call.kind.call.args;
                     if (args.len != 1) return error.ContextLowering;
                     const make = args[0].value;
+                    // Decisions 816, 818 (1) — the hook is a call of the
+                    // body, numbered with the rest; its slot its own child
+                    // cell's.
+                    const st = try self.nextStamp(uh.loc) orelse return error.ContextLowering;
+                    if (st.kind != .body) return error.ContextLowering;
                     try self.walk(ast.Expr, make);
-                    const name = try std.fmt.allocPrint(self.arena, memo_slot_prefix ++ "{d}", .{self.memo_count});
-                    self.memo_count += 1;
-                    try self.memo_slots.append(self.arena, name);
-                    self.uses_hooks = true;
                     // A `Context<T>` is its `T` at run time (decision 379): the slot holds that value.
                     const td = t.deref();
                     const carried = if (td.* == .named and std.mem.eql(u8, td.named.name, "Context") and td.named.args.len >= 1) td.named.args[0] else t;
-                    e.* = (try self.callCarrying(memo_read_fn, &.{ try self.ident(name, uh.loc), make }, try self.typeRefOfType(carried), uh.loc)).*;
+                    e.* = (try self.callCarrying(memo_in_fn, &.{ st.by, try self.int(st.n, uh.loc), make }, try self.typeRefOfType(carried), uh.loc)).*;
                     return true;
                 }
                 if (self.env.contextUses.get(uh.loc)) |use| {
@@ -384,11 +547,12 @@ const Lowering = struct {
             },
             .jump => |*j| switch (j.kind) {
                 .@"return" => |value| if (self.current()) |f| if (f.wraps_returns) {
+                    const returned: ?*T.Type = if (value) |rv| self.env.componentReturns.get(rv.getLoc()) else null;
                     if (value) |v| try self.walk(ast.Expr, v);
                     var v = value orelse try self.nullLit(j.loc);
                     // Decisions 809 (4), 816 (6) — a returned component is
                     // resolved under a child cell of the body's first.
-                    if (value) |rv| if (self.env.componentReturns.get(rv.getLoc())) |r| {
+                    if (value) |rv| if (returned) |r| {
                         const awaited = if (rv.* == .call) !self.syncAt(rv, null) else !f.sync;
                         const ran = try self.arena.create(ast.Expr);
                         ran.* = try self.run(rv, awaited, r, j.loc);
@@ -433,34 +597,28 @@ const Lowering = struct {
         if (N == ast.Expr) {
             if (try self.visitExpr(ptr)) return;
         }
-        if (comptime !mayHoldExpr(N)) return;
-        switch (@typeInfo(N)) {
-            .@"struct" => |st| inline for (st.fields) |f| {
-                if (f.is_comptime) continue;
-                try self.walk(f.type, &@field(ptr.*, f.name));
-            },
-            .@"union" => |u| if (u.tag_type != null) {
-                switch (ptr.*) {
-                    inline else => |*payload| try self.walk(@TypeOf(payload.*), payload),
-                }
-            },
-            .optional => |o| if (ptr.*) |*inner| try self.walk(o.child, inner),
-            .pointer => |pi| switch (pi.size) {
-                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") {
-                    try self.walk(pi.child, @constCast(ptr.*));
-                },
-                .slice => for (ptr.*) |*e| try self.walk(pi.child, @constCast(e)),
-                else => {},
-            },
-            else => {},
-        }
+        return self.walkChildren(N, ptr);
     }
 
-    /// Walk a body that is no component's (a plain function, a test).
-    fn lowerPlainBody(self: *Lowering, body: []ast.Stmt) !void {
+    /// Walk a body that is no component's (a plain function, a test). One
+    /// that stamps a value opens its counter at its entry and ends it on
+    /// every exit (821 (2)): `val bpCount__N = countNew(); defer
+    /// countEnd(bpCount__N);`.
+    fn lowerPlainBody(self: *Lowering, body: []ast.Stmt, loc: ast.Loc) ![]ast.Stmt {
+        const name = try std.fmt.allocPrint(self.arena, count_prefix ++ "{d}", .{self.count_count});
+        self.count_count += 1;
         try self.frames.append(self.arena, null);
-        defer _ = self.frames.pop();
+        try self.stamps.append(self.arena, .{ .kind = .plain, .name = name });
         for (body) |*s| try self.walk(ast.Stmt, s);
+        const stamped_any = self.stamps.items[self.stamps.items.len - 1].calls > 0;
+        _ = self.stamps.pop();
+        _ = self.frames.pop();
+        if (!stamped_any) return body;
+        const out = try self.arena.alloc(ast.Stmt, body.len + 2);
+        out[0] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = try self.call(count_new_fn, &.{}, loc), .mutable = false } } } } };
+        out[1] = .{ .expr = (try self.call(count_end_fn, &.{try self.ident(name, loc)}, loc)).*, .deferred = true };
+        @memcpy(out[2..], body);
+        return out;
     }
 
     /// A component's body as its function: `[return { bpScope__, bpKey__ ->
@@ -481,14 +639,14 @@ const Lowering = struct {
         const cell = try std.fmt.allocPrint(self.arena, cell_prefix ++ "{d}", .{n});
         const recv = try std.fmt.allocPrint(self.arena, recv_prefix ++ "{d}", .{n});
         try self.frames.append(self.arena, Frame{ .cell = cell, .recv = recv, .wraps_returns = !inner_closure, .renders = renders, .sync = sync });
-        const memo_start = self.memo_slots.items.len;
+        // Decision 821 (1) — the calls of the body and of the lambdas written
+        // in it are numbered here, their items counted in the body's cell.
+        try self.stamps.append(self.arena, .{ .kind = .body, .name = cell, .frame = self.frames.items.len - 1 });
         for (body) |*s| try self.walk(ast.Stmt, s);
+        _ = self.stamps.pop();
         const reads = self.current().?.reads;
         const uses_cell = reads or self.current().?.uses_cell;
         _ = self.frames.pop();
-        // Decision 771 — this body's `use memo` slots, made with the value.
-        const slots = try self.arena.dupe([]const u8, self.memo_slots.items[memo_start..]);
-        self.memo_slots.shrinkRetainingCapacity(memo_start);
         const rest: []ast.Stmt = if (inner_closure) blk: {
             var split: usize = 0;
             for (body, 0..) |st, i| if (st.expr == .call and st.expr.call.kind == .call and
@@ -542,12 +700,8 @@ const Lowering = struct {
         ptypes[0] = .{ .named = ast.unknown_type_name };
         ptypes[1] = .{ .named = ast.unknown_type_name };
         lambda.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = inner, .paramTypes = ptypes } } };
-        const out = try self.arena.alloc(ast.Stmt, slots.len + 1);
-        for (slots, 0..) |name, i| {
-            const made = try self.call(memo_new_fn, &.{}, loc);
-            out[i] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = made, .mutable = false } } } } };
-        }
-        out[slots.len] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = lambda } } } };
+        const out = try self.arena.alloc(ast.Stmt, 1);
+        out[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = lambda } } } };
         return out;
     }
 
@@ -719,7 +873,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentLambdas.count() > 0 or env.lambdaPads.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
+        env.componentLambdas.count() > 0 or env.lambdaPads.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.keyedExprs.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,
@@ -761,13 +915,17 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         .@"fn" => |*f| {
             for (f.params) |*p| if (p.default) |*dv| try low.walk(ast.Expr, dv);
             if (f.body.len == 0) continue;
-            if (writesComponent(f.returnType)) {
+            // Decision 570 — only a `component fn` is a component body; an
+            // unmarked one answering `Component<R>` is a plain function
+            // returning the whole value (`fn linha(p) -> Component<E> {
+            // return Item(p); }`, 821 (2)).
+            if (writesComponent(f.returnType) and f.marker == .component) {
                 f.body = try low.lowerComponentBody(f.body, writtenRenders(f.returnType), env.syncFns.contains(f.name), f.nameLoc);
                 f.returnType = try low.lambdaType();
                 f.effect = null;
-            } else try low.lowerPlainBody(f.body);
+            } else f.body = try low.lowerPlainBody(f.body, f.nameLoc);
         },
-        .@"test" => |*t| try low.lowerPlainBody(t.body),
+        .@"test" => |*t| t.body = try low.lowerPlainBody(t.body, t.loc),
         .val => |*v| try low.walk(ast.Expr, v.value),
         .type_ => |*t| {
             const methods = try arena.dupe(ast.BehaviorMethod, t.methods);
@@ -779,7 +937,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
             for (methods) |*m| {
                 if (implementMethodComponent(env, program, im.*, m.name)) |rt| {
                     m.body = try low.lowerComponentBody(m.body, writtenRenders(rt), false, m.loc);
-                } else try low.lowerPlainBody(m.body);
+                } else m.body = try low.lowerPlainBody(m.body, m.loc);
             }
             im.methods = methods;
         },
@@ -800,12 +958,23 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         .{ "context", "answer", answer_fn },
         .{ "context", "nowhere", nowhere_fn },
         .{ "context", "root", root_fn },
-        .{ "hooks", "slot", memo_new_fn },
-        .{ "hooks", "read", memo_read_fn },
+        .{ "context", "memoIn", memo_in_fn },
+        .{ "context", "stamp", stamp_fn },
+        .{ "context", "stampPlain", stamp_plain_fn },
+        .{ "context", "stampKeyed", stamp_keyed_fn },
+        .{ "context", "countNew", count_new_fn },
+        .{ "context", "countEnd", count_end_fn },
     };
-    const count = if (low.uses_hooks) names.len else names.len - 2;
+    var count: usize = 0;
+    for (names) |n| if (low.used.contains(n[2])) {
+        count += 1;
+    };
     const items = try arena.alloc(ast.ImportPath, count);
-    for (names[0..count], 0..) |n, i| items[i] = .{ .segments = try arena.dupe([]const u8, &.{ n[0], n[1] }), .alias = n[2] };
+    var i: usize = 0;
+    for (names) |n| if (low.used.contains(n[2])) {
+        items[i] = .{ .segments = try arena.dupe([]const u8, &.{ n[0], n[1] }), .alias = n[2] };
+        i += 1;
+    };
     const grown = try arena.alloc(ast.DeclKind, decls.len + 1);
     grown[0] = .{ .use = .{ .imports = items, .source = .{ .module = "std" } } };
     @memcpy(grown[1..], decls);
@@ -828,5 +997,5 @@ fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
     const body = m.body orelse return;
     if (component) {
         m.body = try low.lowerComponentBody(body, renders, false, m.returnTypeLoc);
-    } else try low.lowerPlainBody(body);
+    } else m.body = try low.lowerPlainBody(body, m.returnTypeLoc);
 }

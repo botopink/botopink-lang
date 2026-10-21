@@ -1,0 +1,31 @@
+//// Decision 815 — `Composition<T>` is a function over the scope and the place:
+//// a lambda of that type is a component without hooks — `run` resolves it —
+//// and may be called by hand with a scope and a place; a function answering
+//// `View` fits where one answering `View | Async<View>` is expected.
+
+import {context.run, context.Place, context.Scope, io.terminal.print} from "std";
+
+type View(text: string)
+
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+fn viewOf(make: fn() -> View | Async<View>) -> string {
+    return textOf(make());
+}
+
+fn member() -> View {
+    return View(text: "member");
+}
+
+pub async fn main() -> Async<void> {
+    val plain: Component<View> = { scope, key -> View(text: "plain") };
+    print((await run(plain)).text);
+    val byHand: Composition<View> = { scope, key -> View(text: "by hand") };
+    val root = Scope.root();
+    print(textOf(byHand(root, Place.none())));
+    root.close();
+    print(viewOf(member));
+}
