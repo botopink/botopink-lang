@@ -156,6 +156,8 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
     }
     if (!std.mem.eql(u8, module, "std/context")) return;
     const leaf = imp.leaf();
+    // Decision 827 — std's `context.all`, lowered where it is `use`d.
+    if (std.mem.eql(u8, leaf, "all")) return env.stdAllNames.put(env.arena, local, {});
     const which: envMod.StdContextName = if (std.mem.eql(u8, leaf, "Context"))
         .context_type
     else if (std.mem.eql(u8, leaf, "createContext"))
@@ -22389,6 +22391,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteMemoUse(env, uh.kind.inner.*, valTyped, loc);
     try noteHookUse(env, uh.kind.inner.*, valTyped, loc);
+    try noteAllUse(env, uh.kind.inner.*, valTyped, loc);
     // Decision 723 — `use context(ctx)` answers `T`, the type of the
     // `Context<T>` it names; `use inject(R)` answers `R` (416).
     const srcTy = if (env.contextUses.get(loc)) |cu| (if (cu.kind == .read or cu.kind == .inject) cu.value_type else bindingSourceType(valTyped.getType())) else bindingSourceType(valTyped.getType());
@@ -22504,6 +22507,35 @@ fn isStdMemoCall(env: *Env, c: ast.CallExprOf(.untyped)) bool {
     }
     if (env.localBindDepth(call.callee) != null) return false;
     return env.stdMemoNames.contains(call.callee);
+}
+
+/// Decision 827 — whether `c` calls std's `context.all`: a name a leaf import
+/// binds to it, or `context.all(…)` through the module's handle.
+fn isStdAllCall(env: *Env, c: ast.CallExprOf(.untyped)) bool {
+    if (c.kind != .call) return false;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return false;
+    if (call.receiver) |r| {
+        if (r.* != .identifier or r.identifier.kind != .ident) return false;
+        const handle = r.identifier.kind.ident;
+        if (env.localBindDepth(handle) != null) return false;
+        const module = env.stdImports.get(handle) orelse return false;
+        return std.mem.eql(u8, module, "context") and std.mem.eql(u8, call.callee, "all");
+    }
+    if (env.localBindDepth(call.callee) != null) return false;
+    return env.stdAllNames.contains(call.callee);
+}
+
+/// Decision 827 — a `use all(cs)`: recorded with the `T[]` it answers, so the
+/// scope lowering runs each entry under `all`'s cell. Its entries are
+/// components the checker cannot follow, any of which may answer a task, so
+/// the node is asynchronous (375's hooks list).
+fn noteAllUse(env: *Env, operand: ast.Expr, typed: TypedExpr, loc: ast.Loc) InferError!void {
+    if (operand != .call or !isStdAllCall(env, operand.call)) return;
+    const d = typed.getType().deref();
+    const answered = if (d.* == .named and std.mem.eql(u8, d.named.name, "Component") and d.named.args.len == 1) d.named.args[0] else typed.getType();
+    try env.allUses.put(env.arena, loc, answered);
+    if (env.hookBuilder) |b| b.is_async = true;
 }
 
 /// Decisions 755, 771 — a `use memo(make)`: recorded with the `T` it answers,

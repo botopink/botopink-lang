@@ -3096,6 +3096,21 @@ function — is `key-type`. Two siblings with one key fail at run time,
 
 <!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_type -->
 
+`use all(cs)` (decision 827) resolves a run-time list of components under one
+`use`: `all`'s cell stands at the call's place and entry `i` runs under it with
+`Place.index(i)`, in order, and the `use` answers `T[]` — awaited when an
+entry answered a task, its node asynchronous. An index fills an item half
+that is absent or a plain function's count and keeps a body's count and a key
+(decisions 884, 891), so a keyed list keeps each item by its key, a list a
+body built keeps each item by its count, and only an entry no body counted
+follows its position.
+
+<!-- example: modules/decisions-taken/use_all_resolves_a_list-827/cells/use_all_resolves_a_list -->
+
+<!-- example: modules/decisions-taken/all_entries_by_index-884/cells/all_entries_by_index -->
+
+<!-- example: modules/decisions-taken/index_keeps_body_count-891/cells/index_keeps_body_count -->
+
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
 alone, and the message names `use c` and `c` placed in the tree as a child.

@@ -1,0 +1,36 @@
+//// Decision 827 — std's `all<T>(cs: Component<T>[]) -> Component<T[]>` resolves
+//// a run-time list of components under one `use`, in order: a list of
+//// synchronous components, one with a component that awaits among them, and
+//// the empty list.
+
+import {context.all, context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Label(text: string) -> Component<View> {
+    return View(text: text);
+}
+
+component fn Slow(text: string) -> Component<View> {
+    val t = await later(text);
+    return View(text: t);
+}
+
+async fn later(text: string) -> Async<string> {
+    return text + "!";
+}
+
+component fn Sheet(names: string[]) -> Component<View> {
+    val labels = use all(names.map({ n -> Label(n) }));
+    val mixed = use all([Label("a"), Slow("b"), Label("c")]);
+    val none = use all([]);
+    return View(text: labels.map({ v -> v.text }).join(",")
+        + " | "
+        + mixed.map({ v -> v.text }).join(",")
+        + " | "
+        + none.length.toString());
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Sheet(["x", "y"]))).text);
+}

@@ -1185,6 +1185,12 @@ pub const Env = struct {
     /// the `T` it answers. The scope lowering gives each one a slot made with
     /// the component's value (`context_lower.zig`).
     memoUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 827 — the local names a leaf import of std's `context` module
+    /// binds to `all` (`import {context.all} from "std"`).
+    stdAllNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 827 — each `use all(cs)`, by the `use`'s location: the `T[]`
+    /// it answers. `context_lower.zig` lowers it to std's `context.allIn`.
+    allUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 357 — the construct enclosing the position being inferred
     /// that makes a `use` there conditional or repeated (an `if` / `else`,
     /// a loop, a lambda, …): a `use` is written at the top level of a

@@ -87,6 +87,17 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
+// Decision 827 — the components `cs` resolved in order under one `use`:
+// `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+// stands at the `use`'s place and entry `i` runs under it at
+// `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+// body counted its count, and any other entry its position. It answers
+// `T[]`, or the task of it when an entry answered a task; the `use` awaits
+// it. Lowered where it is `use`d; this body never runs.
+pub component fn all<T>(cs: Component<T>[]) -> Component<T[]> {
+    panic("`use all` is lowered where it is written; this body never runs");
+}
+
 // ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
 // Where a component stands among its siblings (819 (2)): the number of the
@@ -552,6 +563,38 @@ pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
     panic("a component is run with a `Scope` (decision 819)");
 }
 
+// `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+// under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+// a list, or the task of the list once each settled in order when an entry
+// answered a task.
+pub fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        var answers: unknown[] = [];
+        var waits = false;
+        for (0..cs.length) { i ->
+            val r = resolve(cs[i]!, child, Place.index(i));
+            if (r is Async<unknown>) waits = true;
+            answers = answers.append([r]);
+        }
+        if (waits) return settled(answers);
+        return answers;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// Each of `answers` awaited in order where it is a task.
+async fn settled(answers: unknown[]) -> Async<unknown[]> {
+    var out: unknown[] = [];
+    for (answers) { r ->
+        if (r is Async<unknown>) {
+            val v = await r;
+            out = out.append([v]);
+        } else out = out.append([r]);
+    }
+    return out;
+}
+
 // A plain function entry's counter of the values each of its calls made
 // (821 (2)).
 pub fn countNew() -> unknown {
@@ -744,6 +787,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
   ;; inject(Deps)`). `T` is a record; a behavior is read with `use context`.
   ;; `createContext(value, Behavior)` keys a context by the behavior its value
   ;; implements, so a field typed by the behavior reads it.
+  ;; Decision 827 — the components `cs` resolved in order under one `use`:
+  ;; `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+  ;; stands at the `use`'s place and entry `i` runs under it at
+  ;; `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+  ;; body counted its count, and any other entry its position. It answers
+  ;; `T[]`, or the task of it when an entry answered a task; the `use` awaits
+  ;; it. Lowered where it is `use`d; this body never runs.
   ;; ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
   ;; Where a component stands among its siblings (819 (2)): the number of the
   ;; call that made it, and its item half — absent, a count the call's
@@ -832,6 +882,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
   ;; `c` carrying `mine`.
   ;; `use memo(make)` written as call `callNo` of a body: the slot of its own
   ;; child cell (818 (1)), filled on that cell's first render.
+  ;; `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+  ;; under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+  ;; a list, or the task of the list once each settled in order when an entry
+  ;; answered a task.
+  ;; Each of `answers` awaited in order where it is a task.
   ;; A plain function entry's counter of the values each of its calls made
   ;; (821 (2)).
   ;; The entry's counter gone: on erlang and beam its process-dictionary entry.
@@ -865,7 +920,7 @@ component fn Counter() -> Component<Element> {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: the wasm backend cannot box this value as `unknown`: nothing gives it a static type here — in another module's code this line reaches
+error: `is Async<unknown>`: the wasm backend has no run-time test for this type (no value of it carries a descriptor) — in another module's code this line reaches
   ┌─ :0:0
   │
 0 │ }

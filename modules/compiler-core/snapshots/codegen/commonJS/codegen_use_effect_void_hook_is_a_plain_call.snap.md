@@ -87,6 +87,17 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
+// Decision 827 — the components `cs` resolved in order under one `use`:
+// `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+// stands at the `use`'s place and entry `i` runs under it at
+// `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+// body counted its count, and any other entry its position. It answers
+// `T[]`, or the task of it when an entry answered a task; the `use` awaits
+// it. Lowered where it is `use`d; this body never runs.
+pub component fn all<T>(cs: Component<T>[]) -> Component<T[]> {
+    panic("`use all` is lowered where it is written; this body never runs");
+}
+
 // ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
 // Where a component stands among its siblings (819 (2)): the number of the
@@ -552,6 +563,38 @@ pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
     panic("a component is run with a `Scope` (decision 819)");
 }
 
+// `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+// under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+// a list, or the task of the list once each settled in order when an entry
+// answered a task.
+pub fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        var answers: unknown[] = [];
+        var waits = false;
+        for (0..cs.length) { i ->
+            val r = resolve(cs[i]!, child, Place.index(i));
+            if (r is Async<unknown>) waits = true;
+            answers = answers.append([r]);
+        }
+        if (waits) return settled(answers);
+        return answers;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// Each of `answers` awaited in order where it is a task.
+async fn settled(answers: unknown[]) -> Async<unknown[]> {
+    var out: unknown[] = [];
+    for (answers) { r ->
+        if (r is Async<unknown>) {
+            val v = await r;
+            out = out.append([v]);
+        } else out = out.append([r]);
+    }
+    return out;
+}
+
 // A plain function entry's counter of the values each of its calls made
 // (821 (2)).
 pub fn countNew() -> unknown {
@@ -681,6 +724,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 ----- JAVASCRIPT -- std/context.js
 ```javascript
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
+
 function __bp_eq(a, b, d) {
     if (Object.is(a, b)) {
         return true;
@@ -763,6 +808,155 @@ function __bp_eq_PlaceItem(a, b) {
     if (a.tag !== b.tag) return false;
     return true;
 }
+
+// behavior array
+//   length: i32
+//   fn at(...)
+//   fn push(...)
+//   fn pop(...)
+//   default fn slice(...)
+//   fn join(...)
+//   fn reverse(...)
+//   fn indexOf(...)
+//   default fn lastIndexOf(...)
+//   fn forEach(...)
+//   fn map(...)
+//   fn filter(...)
+//   fn zip(...)
+//   fn range(...)
+//   fn repeat(...)
+//   default fn isEmpty(...)
+//   default fn contains(...)
+//   default fn first(...)
+//   default fn rest(...)
+//   default fn take(...)
+//   default fn drop(...)
+//   default fn fold(...)
+//   default fn find(...)
+//   default fn count(...)
+//   default fn all(...)
+//   default fn any(...)
+//   default fn append(...)
+//   default fn prepend(...)
+//   default fn flatten(...)
+//   default fn flatMap(...)
+//   default fn toList(...)
+//   default fn some(...)
+//   default fn every(...)
+//   default fn flat(...)
+//   default fn findIndex(...)
+//   default fn fill(...)
+//   default fn chunked(...)
+//   default fn sliding(...)
+//   default fn unique(...)
+Array.range = function(start, stop) { return ((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))(start, stop); };
+Array.repeat = function(value, times) { return ((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))(value, times); };
+Array.prototype.slice = function(start, end) {
+    if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); }
+};
+Array.prototype.indexOf = function(item) { return this.findIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.lastIndexOf = function(item) { return this.findLastIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.zip = function(other) { return this.map((__x, __i) => [__x, (other)[__i]]).slice(0, Math.min(this.length, (other).length)); };
+Array.prototype.isEmpty = function() {
+    return (this.length === 0);
+};
+Array.prototype.contains = function(x) {
+    return (this.indexOf(x) !== (-1));
+};
+Array.prototype.first = function() {
+    return __bp_array_at(this, 0);
+};
+Array.prototype.rest = function() {
+    return this.slice(1, this.length);
+};
+Array.prototype.take = function(n) {
+    return this.slice(0, n);
+};
+Array.prototype.drop = function(n) {
+    return this.slice(n, this.length);
+};
+Array.prototype.fold = function(initial, f) {
+    let acc = initial;
+    this.forEach((x) => {
+    acc = f(acc, x);
+});
+    return acc;
+};
+Array.prototype.count = function(pred) {
+    return this.filter(pred).length;
+};
+Array.prototype.all = function(pred) {
+    return (this.filter(pred).length === this.length);
+};
+Array.prototype.any = function(pred) {
+    return (this.filter(pred).length !== 0);
+};
+Array.prototype.prepend = function(item) {
+    let out = [item];
+    this.forEach((x) => {
+    return out.push(x);
+});
+    return out;
+};
+Array.prototype.flatten = function() {
+    let out = [];
+    this.forEach((inner) => {
+    out = out.concat(inner);
+});
+    return out;
+};
+Array.prototype.toList = function() {
+    return this;
+};
+Array.prototype.some = function(pred) {
+    return this.any(pred);
+};
+Array.prototype.every = function(pred) {
+    return this.all(pred);
+};
+Array.prototype.flat = function() {
+    return this.flatten();
+};
+Array.prototype.findIndex = function(pred) {
+    let out = (-1);
+    let i = 0;
+    this.forEach((x) => {
+    (() => { if ((out === (-1))) { return (() => { if (pred(x)) { return out = i; } })(); } })();
+    i = (i + 1);
+});
+    return out;
+};
+Array.prototype.fill = function(value) {
+    return Array.repeat(value, this.length);
+};
+Array.prototype.chunked = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const len = this.length;
+    for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
+    (() => { if ((((k % n) + 0) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
+}
+    return out;
+};
+Array.prototype.sliding = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const windows = ((this.length - n) + 1);
+    if ((windows <= 0)) { return out; }
+    for (const k of Array.from({length: Math.max(0, (windows) - (0))}, (_, __i) => (0) + __i)) {
+    out = out.concat([this.slice(k, (k + n))]);
+}
+    return out;
+};
+Array.prototype.unique = function() {
+    let out = [];
+    this.forEach((x) => {
+    return (() => { if ((!out.any((y) => {
+    return __bp_eq(y, x, 0);
+}))) { return out = out.concat([x]); } })();
+});
+    return out;
+};
 
 //// Contexts (decisions 354, 378, 379) — what a component's body reads from
 
@@ -911,6 +1105,25 @@ function inject(t) {
     (() => { throw Object.defineProperty(new Error("`use inject` is lowered where it is written; this body never runs"), '__bp_panic', { value: true }) })();
 }
 exports.inject = inject;
+
+// Decision 827 — the components `cs` resolved in order under one `use`:
+
+// `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+
+// stands at the `use`'s place and entry `i` runs under it at
+
+// `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+
+// body counted its count, and any other entry its position. It answers
+
+// `T[]`, or the task of it when an entry answered a task; the `use` awaits
+
+// it. Lowered where it is `use`d; this body never runs.
+
+function all(cs) {
+    (() => { throw Object.defineProperty(new Error("`use all` is lowered where it is written; this body never runs"), '__bp_panic', { value: true }) })();
+}
+exports.all = all;
 
 // ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
@@ -1187,10 +1400,10 @@ function openChild(store, owner, carried, parent, key) {
     const p = cellOf(treeCells(t), parent);
     const frames = entryFrames(p);
     const found = linkAt(treeLinks(t), parent, key);
-    if (found instanceof PlaceLink) { const l = found; /* Two siblings with one key in one render (819 (5)); the root's */ /* children are each run's own. */ (() => { if ((((parent !== 0) && (l.linkSeen === p.cellGen)) && __bp_eq_PlaceItem(key.item, PlaceItem.Key))) { return (() => { throw Object.defineProperty(new Error((("key-duplicate: two siblings carry the key " + keyText(placeKey(key))) + " (decision 819 (5))")), '__bp_panic', { value: true }) })(); } })(); /* Met in the parent's previous render or in this one: the same cell, */ /* its contexts taken anew and its counts reset (816 (2), 817 (5)). */ if (((parent === 0) || (l.linkSeen >= __bp_int((p.cellGen - 1), -2147483648, 2147483647, "- on i32 at src/context.bp:295:52")))) { const c = cellOf(treeCells(t), l.linkChild); const kept = withCell(t, new CellEntry(c.cellNo, frames, __bp_int((c.cellGen + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:298:17"), entrySlot(c), c.cellFilled, null, null)); ((__s, __v) => { __s.v = __v; return undefined; })(store, new ScopeTree(false, kept.treeCount, treeCells(kept), new PlaceLink(parent, key, l.linkChild, p.cellGen, treeLinks(kept)))); return l.linkChild; } }
+    if (found instanceof PlaceLink) { const l = found; /* Two siblings with one key in one render (819 (5)); the root's */ /* children are each run's own. */ (() => { if ((((parent !== 0) && (l.linkSeen === p.cellGen)) && __bp_eq_PlaceItem(key.item, PlaceItem.Key))) { return (() => { throw Object.defineProperty(new Error((("key-duplicate: two siblings carry the key " + keyText(placeKey(key))) + " (decision 819 (5))")), '__bp_panic', { value: true }) })(); } })(); /* Met in the parent's previous render or in this one: the same cell, */ /* its contexts taken anew and its counts reset (816 (2), 817 (5)). */ if (((parent === 0) || (l.linkSeen >= __bp_int((p.cellGen - 1), -2147483648, 2147483647, "- on i32 at src/context.bp:306:52")))) { const c = cellOf(treeCells(t), l.linkChild); const kept = withCell(t, new CellEntry(c.cellNo, frames, __bp_int((c.cellGen + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:309:17"), entrySlot(c), c.cellFilled, null, null)); ((__s, __v) => { __s.v = __v; return undefined; })(store, new ScopeTree(false, kept.treeCount, treeCells(kept), new PlaceLink(parent, key, l.linkChild, p.cellGen, treeLinks(kept)))); return l.linkChild; } }
     // A place not met in the parent's previous render: a fresh cell.;
     const id = t.treeCount;
-    ((__s, __v) => { __s.v = __v; return undefined; })(store, new ScopeTree(false, __bp_int((id + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:306:9"), new CellEntry(id, frames, 1, null, false, null, treeCells(t)), new PlaceLink(parent, key, id, p.cellGen, treeLinks(t))));
+    ((__s, __v) => { __s.v = __v; return undefined; })(store, new ScopeTree(false, __bp_int((id + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:317:9"), new CellEntry(id, frames, 1, null, false, null, treeCells(t)), new PlaceLink(parent, key, id, p.cellGen, treeLinks(t))));
     return id;
 }
 
@@ -1246,7 +1459,7 @@ function countAt(store, owner, carried, id, callNo) {
     const t = treeOf(store, owner, carried);
     const c = cellOf(treeCells(t), id);
     const n = countIn(entryCounts(c), callNo);
-    ((__s, __v) => { __s.v = __v; return undefined; })(store, withCell(t, new CellEntry(id, entryFrames(c), c.cellGen, entrySlot(c), c.cellFilled, new PlaceCount(callNo, __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:362:9"), entryCounts(c)), null)));
+    ((__s, __v) => { __s.v = __v; return undefined; })(store, withCell(t, new CellEntry(id, entryFrames(c), c.cellGen, entrySlot(c), c.cellFilled, new PlaceCount(callNo, __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:373:9"), entryCounts(c)), null)));
     return n;
 }
 
@@ -1485,6 +1698,34 @@ function memoIn(cell, callNo, make) {
 }
 exports.memoIn = memoIn;
 
+// `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+
+// under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+
+// a list, or the task of the list once each settled in order when an entry
+
+// answered a task.
+
+function allIn(cell, callNo, cs) {
+    if (cell instanceof Scope) { const child = cell.childAt(new Place(callNo, PlaceItem.Body, countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), null, true)); let answers = []; let waits = false; for (const i of Array.from({length: Math.max(0, (cs.length) - (0))}, (_, __i) => (0) + __i)) {
+    const r = resolve((() => { const __bp_opt_574_34 = __bp_array_at(cs, i); if (__bp_opt_574_34 != null) { return __bp_opt_574_34; } else { return (() => { throw Object.defineProperty(new Error("value is null — cs[i]! at src/context.bp:574:29"), '__bp_panic', { value: true }) })(); } })(), child, Place.index(i));
+    (() => { if (r instanceof Promise) { return waits = true; } })();
+    answers = answers.concat([r]);
+} if (waits) { return settled(answers); } return answers; }
+    (() => { throw Object.defineProperty(new Error("a component is run with a `Scope` (decision 819)"), '__bp_panic', { value: true }) })();
+}
+exports.allIn = allIn;
+
+// Each of `answers` awaited in order where it is a task.
+
+async function settled(answers) {
+    let out = [];
+    for (const r of answers) {
+    await (async () => { if (r instanceof Promise) { const v = await __bp_await(r); return out = out.concat([v]); } else { return out = out.concat([r]); } })();
+}
+    return out;
+}
+
 // A plain function entry's counter of the values each of its calls made
 
 // (821 (2)).
@@ -1506,7 +1747,7 @@ exports.countEnd = countEnd;
 function countNext(counter, callNo) {
     const counts = (() => { if ((counter.v !== undefined)) { return counter.v; } else { return null; } })();
     const n = countIn(counts, callNo);
-    ((__s, __v) => { __s.v = __v; return undefined; })(counter, new PlaceCount(callNo, __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:569:9"), counts));
+    ((__s, __v) => { __s.v = __v; return undefined; })(counter, new PlaceCount(callNo, __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/context.bp:612:9"), counts));
     return n;
 }
 
@@ -1562,7 +1803,7 @@ function sameKey(a, b) {
 
 // ownerForeign: per-call template (see annotation)
 
-Object.defineProperty(exports, "__bp_priv__", { value: { Context, createContext, provide, context, inject, Place, PlaceItem, PlaceItem$Absent, PlaceItem$Body, PlaceItem$Plain, PlaceItem$Index, PlaceItem$Key, samePlace, placeKey, Scope, ScopeTree, Carried, CellEntry, PlaceLink, PlaceCount, storeOf, treeOf, treeCells, treeLinks, withCell, cellOf, openChild, linkAt, linkSelf, linkNext, keyText, framesAt, carriedFrames, provideAt, countAt, countIn, countRest, slotAt, closeStore, entryFrames, entrySlot, entryCounts, entryNext, resolve, run, Frame, enter, received, provideIn, find, answer, nowhere, root, stamp, stampPlain, stampKeyed, placed, memoIn, countNew, countEnd, countNext, frameValue, frameParent, sameKey } });
+Object.defineProperty(exports, "__bp_priv__", { value: { Context, createContext, provide, context, inject, all, Place, PlaceItem, PlaceItem$Absent, PlaceItem$Body, PlaceItem$Plain, PlaceItem$Index, PlaceItem$Key, samePlace, placeKey, Scope, ScopeTree, Carried, CellEntry, PlaceLink, PlaceCount, storeOf, treeOf, treeCells, treeLinks, withCell, cellOf, openChild, linkAt, linkSelf, linkNext, keyText, framesAt, carriedFrames, provideAt, countAt, countIn, countRest, slotAt, closeStore, entryFrames, entrySlot, entryCounts, entryNext, resolve, run, Frame, enter, received, provideIn, find, answer, nowhere, root, stamp, stampPlain, stampKeyed, placed, memoIn, allIn, settled, countNew, countEnd, countNext, frameValue, frameParent, sameKey } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/context.d.ts
@@ -1583,6 +1824,9 @@ export declare function context<T>(ctx: Context<T>): T;
 
 
 export declare function inject(t: any): unknown;
+
+
+export declare function all<T>(cs: Promise<T>[]): T[];
 
 
 export declare class Place {
@@ -1760,6 +2004,11 @@ export declare function stampKeyed(c: Promise<unknown>, callNo: number, k: unkno
 
 
 export declare function memoIn(cell: unknown, callNo: number, make: () => unknown): unknown;
+
+
+export declare function allIn(cell: unknown, callNo: number, cs: Promise<unknown>[]): unknown;
+
+
 
 
 export declare function countNew(): unknown;

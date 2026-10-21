@@ -93,6 +93,8 @@ pub const memo_new_fn = "bpMemoNew__";
 pub const memo_read_fn = "bpMemoRead__";
 /// std's `context.memoIn` (816, 818 (1)): `use memo` over its own child cell.
 pub const memo_in_fn = "bpMemoIn__";
+/// std's `context.allIn` (827, 884): `use all(cs)` over its own child cell.
+pub const all_in_fn = "bpAllIn__";
 /// std's `context.stamp` / `stampPlain` / `stampKeyed` (820, 821, 818 (3))
 /// and the plain function's counter, `countNew` / `countEnd`.
 pub const stamp_fn = "bpStamp__";
@@ -117,7 +119,7 @@ const count_prefix = "bpCount__";
 const result_local = "bpScopeResult__";
 
 /// The lowering's functions, as `wat.zig` refuses them.
-pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn, memo_in_fn, stamp_fn, stamp_plain_fn, stamp_keyed_fn, count_new_fn, count_end_fn };
+pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn, memo_in_fn, all_in_fn, stamp_fn, stamp_plain_fn, stamp_keyed_fn, count_new_fn, count_end_fn };
 
 const Frame = struct {
     /// The cell this body opened.
@@ -520,6 +522,22 @@ const Lowering = struct {
                     e.* = (try self.callCarrying(memo_in_fn, &.{ st.by, try self.int(st.n, uh.loc), make }, try self.typeRefOfType(carried), uh.loc)).*;
                     return true;
                 }
+                // Decisions 827, 884 — `use all(cs)`: `all`'s cell opened at
+                // the call's place, entry `i` run under it at
+                // `Place.index(i)`; awaited, its node asynchronous.
+                if (self.env.allUses.get(uh.loc)) |t| {
+                    const inner = uh.kind.inner;
+                    if (inner.* != .call or inner.call.kind != .call) return error.ContextLowering;
+                    const args = inner.call.kind.call.args;
+                    if (args.len != 1) return error.ContextLowering;
+                    const cs = args[0].value;
+                    const st = try self.nextStamp(uh.loc) orelse return error.ContextLowering;
+                    if (st.kind != .body) return error.ContextLowering;
+                    try self.walk(ast.Expr, cs);
+                    const ran = try self.callCarrying(all_in_fn, &.{ st.by, try self.int(st.n, uh.loc), cs }, try self.typeRefOfType(t), uh.loc);
+                    e.* = .{ .jump = .{ .loc = uh.loc, .kind = .{ .await_ = ran } } };
+                    return true;
+                }
                 if (self.env.contextUses.get(uh.loc)) |use| {
                     if (use.kind == .provide) return error.ContextLowering; // a statement of its own
                     if (use.kind == .inject) {
@@ -873,7 +891,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentLambdas.count() > 0 or env.lambdaPads.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.keyedExprs.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
+        env.componentLambdas.count() > 0 or env.lambdaPads.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.allUses.count() > 0 or env.keyedExprs.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,
@@ -959,6 +977,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         .{ "context", "nowhere", nowhere_fn },
         .{ "context", "root", root_fn },
         .{ "context", "memoIn", memo_in_fn },
+        .{ "context", "allIn", all_in_fn },
         .{ "context", "stamp", stamp_fn },
         .{ "context", "stampPlain", stamp_plain_fn },
         .{ "context", "stampKeyed", stamp_keyed_fn },

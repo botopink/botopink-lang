@@ -87,6 +87,17 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
+// Decision 827 — the components `cs` resolved in order under one `use`:
+// `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+// stands at the `use`'s place and entry `i` runs under it at
+// `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+// body counted its count, and any other entry its position. It answers
+// `T[]`, or the task of it when an entry answered a task; the `use` awaits
+// it. Lowered where it is `use`d; this body never runs.
+pub component fn all<T>(cs: Component<T>[]) -> Component<T[]> {
+    panic("`use all` is lowered where it is written; this body never runs");
+}
+
 // ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
 // Where a component stands among its siblings (819 (2)): the number of the
@@ -552,6 +563,38 @@ pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
     panic("a component is run with a `Scope` (decision 819)");
 }
 
+// `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+// under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+// a list, or the task of the list once each settled in order when an entry
+// answered a task.
+pub fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        var answers: unknown[] = [];
+        var waits = false;
+        for (0..cs.length) { i ->
+            val r = resolve(cs[i]!, child, Place.index(i));
+            if (r is Async<unknown>) waits = true;
+            answers = answers.append([r]);
+        }
+        if (waits) return settled(answers);
+        return answers;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// Each of `answers` awaited in order where it is a task.
+async fn settled(answers: unknown[]) -> Async<unknown[]> {
+    var out: unknown[] = [];
+    for (answers) { r ->
+        if (r is Async<unknown>) {
+            val v = await r;
+            out = out.append([v]);
+        } else out = out.append([r]);
+    }
+    return out;
+}
+
 // A plain function entry's counter of the values each of its calls made
 // (821 (2)).
 pub fn countNew() -> unknown {
@@ -682,7 +725,39 @@ declare fn ownerForeign(owner: unknown) -> bool;
 ----- ERLANG -- std/context.erl
 ```erlang
 -module(std@context).
--export([createContext/1, provide/1, context/1, inject/1, resolve/3, run/2, enter/2, received/1, provideIn/3, find/3, answer/1, nowhere/0, root/0, stamp/3, stampPlain/3, stampKeyed/3, memoIn/3, countNew/0, countEnd/1, storeOf/1, openChild/5, closeStore/1, framesAt/4, '__bp_priv__samePlace'/2, '__bp_priv__placeKey'/1, '__bp_priv__treeOf'/3, '__bp_priv__treeCells'/1, '__bp_priv__treeLinks'/1, '__bp_priv__withCell'/2, '__bp_priv__cellOf'/2, '__bp_priv__linkAt'/3, '__bp_priv__linkSelf'/1, '__bp_priv__linkNext'/1, '__bp_priv__keyText'/1, '__bp_priv__carriedFrames'/1, '__bp_priv__provideAt'/6, '__bp_priv__countAt'/5, '__bp_priv__countIn'/2, '__bp_priv__countRest'/1, '__bp_priv__slotAt'/5, '__bp_priv__entryFrames'/1, '__bp_priv__entrySlot'/1, '__bp_priv__entryCounts'/1, '__bp_priv__entryNext'/1, '__bp_priv__placed'/2, '__bp_priv__countNext'/2, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1, '__bp_priv__sameKey'/2]).
+-export([createContext/1, provide/1, context/1, inject/1, all/1, resolve/3, run/2, enter/2, received/1, provideIn/3, find/3, answer/1, nowhere/0, root/0, stamp/3, stampPlain/3, stampKeyed/3, memoIn/3, allIn/3, countNew/0, countEnd/1, storeOf/1, openChild/5, closeStore/1, framesAt/4, '__bp_priv__array_range'/2, '__bp_priv__array_repeat'/2, '__bp_priv__samePlace'/2, '__bp_priv__placeKey'/1, '__bp_priv__treeOf'/3, '__bp_priv__treeCells'/1, '__bp_priv__treeLinks'/1, '__bp_priv__withCell'/2, '__bp_priv__cellOf'/2, '__bp_priv__linkAt'/3, '__bp_priv__linkSelf'/1, '__bp_priv__linkNext'/1, '__bp_priv__keyText'/1, '__bp_priv__carriedFrames'/1, '__bp_priv__provideAt'/6, '__bp_priv__countAt'/5, '__bp_priv__countIn'/2, '__bp_priv__countRest'/1, '__bp_priv__slotAt'/5, '__bp_priv__entryFrames'/1, '__bp_priv__entrySlot'/1, '__bp_priv__entryCounts'/1, '__bp_priv__entryNext'/1, '__bp_priv__placed'/2, '__bp_priv__settled'/1, '__bp_priv__countNext'/2, '__bp_priv__frameValue'/1, '__bp_priv__frameParent'/1, '__bp_priv__sameKey'/2]).
+
+%% behavior array
+
+array_range(Start, Stop) ->
+    case ((Stop - Start) =< 0) of
+        true ->
+            [];
+        false ->
+            case ((Stop - Start) =:= 1) of
+                true ->
+                    [Start];
+                false ->
+                    Count = (Stop - Start),
+                    Low = array_range(Start, (Start + (Count div 2))),
+                    High = array_range((Start + (Count div 2)), Stop),
+                    '__bp_prim_append'(Low, High)
+            end
+    end.
+
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Half = array_repeat(Value, (Times div 2)),
+            case ((Times rem 2) =:= 0) of
+                true ->
+                    '__bp_prim_append'(Half, Half);
+                false ->
+                    '__bp_prim_append'('__bp_prim_append'(Half, Half), [Value])
+            end
+    end.
 
 %%% Contexts (decisions 354, 378, 379) — what a component's body reads from
 
@@ -817,6 +892,23 @@ context(Ctx) ->
 
 inject(T) ->
     erlang:error({panic, <<"`use inject` is lowered where it is written; this body never runs">>}).
+
+% Decision 827 — the components `cs` resolved in order under one `use`:
+
+% `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+
+% stands at the `use`'s place and entry `i` runs under it at
+
+% `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+
+% body counted its count, and any other entry its position. It answers
+
+% `T[]`, or the task of it when an entry answered a task; the `use` awaits
+
+% it. Lowered where it is `use`d; this body never runs.
+
+all(Cs) ->
+    erlang:error({panic, <<"`use all` is lowered where it is written; this body never runs">>}).
 
 % ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
@@ -1020,10 +1112,10 @@ openChild(Store, Owner, Carried, Parent, Key) ->
                 end,
                 % Met in the parent's previous render or in this one: the same cell,
                 % its contexts taken anew and its counts reset (816 (2), 817 (5)).
-                case ((Parent =:= 0) orelse (erlang:element(5, L) >= '__bp_int'((erlang:element(4, P) - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/context.bp:295:52">>))) of
+                case ((Parent =:= 0) orelse (erlang:element(5, L) >= '__bp_int'((erlang:element(4, P) - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/context.bp:306:52">>))) of
                     true ->
                         C = cellOf(treeCells(T), erlang:element(4, L)),
-                        Kept = withCell(T, {std@context@@CellEntry, erlang:element(2, C), Frames, '__bp_int'((erlang:element(4, C) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:298:17">>), entrySlot(C), erlang:element(6, C), undefined, undefined}),
+                        Kept = withCell(T, {std@context@@CellEntry, erlang:element(2, C), Frames, '__bp_int'((erlang:element(4, C) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:309:17">>), entrySlot(C), erlang:element(6, C), undefined, undefined}),
                         (fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)(Store, {std@context@@ScopeTree, false, erlang:element(3, Kept), treeCells(Kept), {std@context@@PlaceLink, Parent, Key, erlang:element(4, L), erlang:element(4, P), treeLinks(Kept)}}),
                         erlang:throw({'__bp_try', erlang:element(4, L)});
                     _ -> ok
@@ -1032,7 +1124,7 @@ openChild(Store, Owner, Carried, Parent, Key) ->
         end,
         % A place not met in the parent's previous render: a fresh cell.
         Id = erlang:element(3, T),
-        (fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)(Store, {std@context@@ScopeTree, false, '__bp_int'((Id + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:306:9">>), {std@context@@CellEntry, Id, Frames, 1, undefined, false, undefined, treeCells(T)}, {std@context@@PlaceLink, Parent, Key, Id, erlang:element(4, P), treeLinks(T)}}),
+        (fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)(Store, {std@context@@ScopeTree, false, '__bp_int'((Id + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:317:9">>), {std@context@@CellEntry, Id, Frames, 1, undefined, false, undefined, treeCells(T)}, {std@context@@PlaceLink, Parent, Key, Id, erlang:element(4, P), treeLinks(T)}}),
         Id
     catch
         throw:{'__bp_try', __BpTryR} -> __BpTryR
@@ -1110,7 +1202,7 @@ countAt(Store, Owner, Carried, Id, CallNo) ->
     T = treeOf(Store, Owner, Carried),
     C = cellOf(treeCells(T), Id),
     N = countIn(entryCounts(C), CallNo),
-    (fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)(Store, withCell(T, {std@context@@CellEntry, Id, entryFrames(C), erlang:element(4, C), entrySlot(C), erlang:element(6, C), {std@context@@PlaceCount, CallNo, '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:362:9">>), entryCounts(C)}, undefined})),
+    (fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)(Store, withCell(T, {std@context@@CellEntry, Id, entryFrames(C), erlang:element(4, C), entrySlot(C), erlang:element(6, C), {std@context@@PlaceCount, CallNo, '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:373:9">>), entryCounts(C)}, undefined})),
     N.
 
 % The latest count of call `callNo` in `counts`, else 0.
@@ -1404,6 +1496,66 @@ memoIn(Cell, CallNo, Make) ->
             erlang:error({panic, <<"a component is run with a `Scope` (decision 819)">>})
     end.
 
+% `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+
+% under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+
+% a list, or the task of the list once each settled in order when an entry
+
+% answered a task.
+
+allIn(Cell, CallNo, Cs) ->
+    case ((erlang:is_tuple(Cell) andalso (erlang:tuple_size(Cell) =:= 5)) andalso (erlang:element(1, Cell) =:= std@context@@Scope)) of
+        true ->
+            Child = std@context@@Scope:childAt(Cell, {std@context@@Place, CallNo, std@context@@PlaceItem__v__body, countAt(std@context@@Scope:storeRef(Cell), std@context@@Scope:ownerRef(Cell), std@context@@Scope:carriedRef(Cell), std@context@@Scope:cellId(Cell), CallNo), undefined, true}),
+            Answers = [],
+            Waits = false,
+            {Waits@4, Answers@3} = lists:foldl(fun(I, {Waits@1, Answers@1}) ->
+                R = resolve(case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Cs, I) of
+                    undefined ->
+                        erlang:error({panic, <<"value is null \x{E2}\x{80}\x{94} cs[i]! at src/context.bp:574:29">>});
+                    __bp_opt_574_34 ->
+                        __bp_opt_574_34
+                end, Child, std@context@@Place:index(I)),
+                Waits@3 = case false of
+                    true ->
+                        Waits@2 = true,
+                        Waits@2;
+                    _ ->
+                        Waits@1
+                end,
+                Answers@2 = (Answers@1 ++ [R]),
+                {Waits@3, Answers@2}
+            end, {Waits, Answers}, lists:seq(0, (erlang:length(Cs)) - 1)),
+            case Waits@4 of
+                true ->
+                    settled(Answers@3);
+                _ ->
+                    Answers@3
+            end;
+        _ ->
+            erlang:error({panic, <<"a component is run with a `Scope` (decision 819)">>})
+    end.
+
+% Each of `answers` awaited in order where it is a task.
+
+%% @Async — eager lowering
+settled(Answers) ->
+    Out = [],
+    Out@5 = lists:foldl(fun(R, Out@1) ->
+        Out@4 = case false of
+            true ->
+                V = R,
+                Out@2 = (Out@1 ++ [V]),
+                Out@2;
+            _ ->
+                Out@3 = (Out@1 ++ [R]),
+                Out@3
+        end,
+        Out@4
+    end, Out, Answers),
+    Out@5.
+
 % A plain function entry's counter of the values each of its calls made
 
 % (821 (2)).
@@ -1426,7 +1578,7 @@ countNext(Counter, CallNo) ->
             undefined
     end,
     N = countIn(Counts, CallNo),
-    (fun(__S, __V) -> erlang:put({bp_count, __S}, __V), undefined end)(Counter, {std@context@@PlaceCount, CallNo, '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:569:9">>), Counts}),
+    (fun(__S, __V) -> erlang:put({bp_count, __S}, __V), undefined end)(Counter, {std@context@@PlaceCount, CallNo, '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/context.bp:612:9">>), Counts}),
     N.
 
 frameValue(F) ->
@@ -1478,6 +1630,11 @@ sameKey(A, B) ->
 
 %% external fn ownerForeign -> erlang template
 
+'__bp_prim_append'(Recv, Arg0) when erlang:is_list(Recv) ->
+    (Recv ++ Arg0);
+'__bp_prim_append'(Recv, _) ->
+    erlang:error({bp_unsupported_method, <<"append">>, 1, Recv}).
+
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
 '__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
@@ -1525,6 +1682,10 @@ end,
 false -> false
 end.
 
+'__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
+
+'__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
+
 '__bp_priv__samePlace'(A0, A1) -> samePlace(A0, A1).
 
 '__bp_priv__placeKey'(A0) -> placeKey(A0).
@@ -1568,6 +1729,8 @@ end.
 '__bp_priv__entryNext'(A0) -> entryNext(A0).
 
 '__bp_priv__placed'(A0, A1) -> placed(A0, A1).
+
+'__bp_priv__settled'(A0) -> settled(A0).
 
 '__bp_priv__countNext'(A0, A1) -> countNext(A0, A1).
 
