@@ -695,11 +695,13 @@ pub fn build(b: *std.Build) void {
     // bytes on every target), and the same over real libraries — a few
     // conformance cells of rakun's packages `rakun`, `rakun-bpp` and
     // `rakun-stylesheet`, the checkout's sibling workspace (`analysis_equivalence.sh`, also `test-analysis-equivalence`,
-    // guard 2). The language
+    // guard 2), and the build's intermediate (`runtime_file.sh`, decision 805:
+    // every target built from a package's `.bpr` the same bytes as built
+    // directly, and its refusals). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

@@ -20,6 +20,9 @@ pub const Options = struct {
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5)).
     cold: bool = false,
+    /// `botopink run --target <t> <file>.bpr`: the program read back from its
+    /// root package's `.bpr`, emitted with no comptime and run (decision 805 (3)).
+    runtime_input: ?[]const u8 = null,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -33,6 +36,8 @@ pub fn run(
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
+
+    if (opts.runtime_input) |file| return runRuntime(gpa, io, arena, opts, file, env_map);
 
     // Load config to determine target.
     const proj = config.load(arena, io) catch |err| {
@@ -62,6 +67,25 @@ pub fn run(
     return spawnWait(arena, io, full.items);
 }
 
+/// `run` over a `.bpr`: `build_cmd.runRuntime` writes the program into
+/// `out_dir`, which then runs as a build's does. The entry module's `fn main`
+/// is looked for in the tree the file holds (decision 517).
+fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts: Options, file: []const u8, env_map: libs.EnvMap) !u8 {
+    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir }, file, env_map, opts.module);
+    if (built.exit != 0) return built.exit;
+    const target = opts.target.?;
+    if (!built.has_main) {
+        reporter.print("{s}\n", .{try refusalText(arena, file)});
+        return 1;
+    }
+    const proj: config.ProjectConfig = .{ .name = built.root };
+    const argv = try programArgvFor(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
+    var full = std.ArrayListUnmanaged([]const u8).empty;
+    try full.appendSlice(arena, argv);
+    for (opts.extra_args) |arg| try full.append(arena, arg);
+    return spawnWait(arena, io, full.items);
+}
+
 /// The command line that runs the program `build` wrote into `out_dir` on
 /// `target`, entry `module` — after the step erlang and BEAM need first
 /// (every emitted `.erl` / `.S` compiled into `out_dir`). Null when that step
@@ -79,6 +103,18 @@ pub fn programArgv(
     // A package whose entry module declares no `fn main` has nothing to run:
     // one located refusal on every target and host (decision 517).
     if (try refuseWithoutMain(arena, io, proj, module)) return null;
+    return programArgvFor(arena, io, proj, target, out_dir, module);
+}
+
+/// `programArgv` with no look for `fn main`: the caller made it.
+fn programArgvFor(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    target: config.Target,
+    out_dir: []const u8,
+    module: []const u8,
+) !?[]const []const u8 {
 
     // Resolve the entry-point file path. erlang and BEAM artifacts are named by
     // the module ATOM under `out/<target>/`; commonJS and wasm keep the mirrored

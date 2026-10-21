@@ -10,6 +10,8 @@ const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
+const build_stamp = @import("build_stamp");
+const runtime_file = bp.runtime_file;
 
 const Module = bp.Module;
 
@@ -28,6 +30,26 @@ pub const Options = struct {
     /// `--emit-resolved <dir>`: the resolved program of the package written to
     /// `<dir>/<pkg>.bp`, for reading (decision 798 (2), (3)).
     emit_resolved: ?[]const u8 = null,
+    /// `--emit-runtime <dir>`: the resolved tree of every package of the
+    /// program written to `<dir>/<group>.bpr`, to build any target from later
+    /// (decision 805 (1)).
+    emit_runtime: ?[]const u8 = null,
+    /// `botopink build <file>.bpr`: the program read back from its root
+    /// package's `.bpr` and emitted with no comptime (decision 805 (3)).
+    runtime_input: ?[]const u8 = null,
+};
+
+/// The hooks a build runs over its analysed session
+/// (`codegen.Options.on_analysed`): `--emit-resolved`'s and `--emit-runtime`'s.
+const AnalysedSinks = struct {
+    resolved: ?*ResolvedSink = null,
+    runtime: ?*RuntimeSink = null,
+
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+        const self: *AnalysedSinks = @ptrCast(@alignCast(ctx));
+        if (self.resolved) |r| try ResolvedSink.call(r, outputs);
+        if (self.runtime) |r| try RuntimeSink.call(r, outputs);
+    }
 };
 
 /// `--emit-resolved`'s hook (`codegen.Options.on_analysed`).
@@ -59,6 +81,79 @@ const ResolvedSink = struct {
     }
 };
 
+/// The compiler a `.bpr` is written and read by (decision 805 (2)): the hash
+/// of the sources this binary is built from, which covers the analysis's
+/// types the file's encoding follows.
+pub fn runtimeStamp() runtime_file.Stamp {
+    var out: runtime_file.Stamp = undefined;
+    std.crypto.hash.sha2.Sha256.hash("botopink .bpr\x00" ++ build_stamp.source_hash, &out, .{});
+    return out;
+}
+
+/// `--emit-runtime`'s hook: one `<dir>/<group>.bpr` per package of the
+/// analysed program (decision 805 (1)) — a dependency's, a loaded file's, each
+/// embedded std module's, then the root package's, which alone names the
+/// program (`runtime_file.Meta.program`). A program one of whose modules did
+/// not analyse writes none: its diagnostic is the build's.
+const RuntimeSink = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    root: []const u8,
+    deps: []const []const u8,
+
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+        const self: *RuntimeSink = @ptrCast(@alignCast(ctx));
+        for (outputs) |o| if (o.outcome != .ok) return;
+        var arena_inst = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena_inst.deinit();
+        const arena = arena_inst.allocator();
+
+        // The groups in the order their first module comes, each its modules.
+        var groups: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(bp.codegen.ComptimeOutput)) = .empty;
+        const program = try arena.alloc(runtime_file.Placed, outputs.len);
+        for (outputs, program) |o, *p| {
+            const g = runtime_file.groupOf(o.name, self.root, self.deps);
+            const slot = try groups.getOrPut(arena, g);
+            if (!slot.found_existing) slot.value_ptr.* = .empty;
+            try slot.value_ptr.append(arena, o);
+            p.* = .{ .group = g, .module = o.name };
+        }
+        std.Io.Dir.cwd().createDirPath(self.io, self.dir) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+        const stamp = runtimeStamp();
+        var it = groups.iterator();
+        while (it.next()) |g| {
+            const mods = g.value_ptr.items;
+            const names = try arena.alloc([]const u8, mods.len);
+            for (mods, names) |m, *n| n.* = m.name;
+            const is_root = std.mem.eql(u8, g.key_ptr.*, self.root);
+            const meta: runtime_file.Meta = .{
+                .group = g.key_ptr.*,
+                .modules = names,
+                .program = if (is_root) program else &.{},
+                .root = if (is_root) self.root else "",
+                .deps = if (is_root) self.deps else &.{},
+            };
+            const bytes = try runtime_file.write(self.gpa, stamp, meta, mods);
+            defer self.gpa.free(bytes);
+            const path = try runtimePath(arena, self.dir, g.key_ptr.*);
+            // Whole or not at all (`analysis_store.write`): a build reading a
+            // dependency's `.bpr` another build is writing reads the old file
+            // or the new one, never a part.
+            try analysis_store.write(arena, self.io, path, bytes);
+            reporter.print("  wrote {s}\n", .{path});
+        }
+    }
+};
+
+/// `<dir>/<group>.bpr` (`std/io` → `<dir>/std/io.bpr`).
+fn runtimePath(arena: std.mem.Allocator, dir: []const u8, group: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ std.mem.trimEnd(u8, dir, "/"), group, runtime_file.EXT });
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn run(
@@ -71,6 +166,7 @@ pub fn run(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cold) code_cache.cold = true;
+    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null)).exit;
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
@@ -153,13 +249,23 @@ pub fn run(
 
     // Run the compiler. `build` emits only: the program is not executed.
     var sink: ResolvedSink = undefined;
-    const hook: ?bp.codegen.AnalysedHook = if (opts.emit_resolved) |dir| blk: {
+    var runtime_sink: RuntimeSink = undefined;
+    var sinks: AnalysedSinks = .{};
+    if (opts.emit_resolved) |dir| {
         const paths = try arena.alloc([]const u8, project_modules.len);
         for (project_modules, paths) |m, *p| p.* = m.path;
         sink = .{ .gpa = gpa, .io = io, .dir = dir, .package = proj.name, .paths = paths };
         bp.comptime_pipeline.keep_resolved = true;
-        break :blk .{ .ctx = &sink, .call = ResolvedSink.call };
-    } else null;
+        sinks.resolved = &sink;
+    }
+    if (opts.emit_runtime) |dir| {
+        runtime_sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps };
+        sinks.runtime = &runtime_sink;
+    }
+    const hook: ?bp.codegen.AnalysedHook = if (sinks.resolved != null or sinks.runtime != null)
+        .{ .ctx = &sinks, .call = AnalysedSinks.call }
+    else
+        null;
     var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false, .on_analysed = hook }) catch |err| {
         reporter.errMsg("compilation failed");
         reporter.print("  {s}\n", .{@errorName(err)});
@@ -213,6 +319,147 @@ pub fn run(
 
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
+}
+
+/// What a build from a `.bpr` answers `run` (`run.zig`): its exit status, the
+/// program's root package and whether its entry module declares `fn main`.
+pub const RuntimeBuild = struct {
+    exit: u8,
+    root: []const u8 = "",
+    has_main: bool = false,
+};
+
+/// `botopink build --target <t> <file>.bpr` (decision 805 (1), (3)): the
+/// program the root package's `.bpr` names, each module read from its
+/// package's file beside it, emitted for `--target` — no lexer, parser, check
+/// or comptime, and nothing of the build phase printed (798 (4)). `--target`
+/// is required: a `.bpr` has no manifest. `entry` names the module `run`
+/// starts (its `fn main` is looked for), null for a build.
+pub fn runRuntime(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    opts: Options,
+    file: []const u8,
+    env_map: libs.EnvMap,
+    entry: ?[]const u8,
+) !RuntimeBuild {
+    const target = opts.target orelse {
+        reporter.errCode(runtime_codes.target_required, "a .bpr has no manifest; write --target <commonJS|erlang|beam|wasm>");
+        return .{ .exit = 1 };
+    };
+    if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return .{ .exit = 1 };
+
+    const stamp = runtimeStamp();
+    const root_file = readRuntime(arena, io, file, stamp, null) orelse return .{ .exit = 1 };
+    const meta = root_file.meta;
+    if (meta.program.len == 0) {
+        reporter.errCode(runtime_codes.not_a_program, try std.fmt.allocPrint(arena, "{s} is the .bpr of `{s}`, a package another one depends on; build the .bpr of the program's own package", .{ file, meta.group }));
+        return .{ .exit = 1 };
+    }
+
+    // Each package's file once, beside the root's.
+    const dir = std.fs.path.dirname(file) orelse ".";
+    var files: std.StringHashMapUnmanaged(runtime_file.Decoded) = .empty;
+    try files.put(arena, meta.group, root_file);
+    const outputs = try arena.alloc(bp.codegen.ComptimeOutput, meta.program.len);
+    for (meta.program, outputs) |placed, *out| {
+        const decoded = files.get(placed.group) orelse blk: {
+            const path = try runtimePath(arena, dir, placed.group);
+            const d = readRuntime(arena, io, path, stamp, file) orelse return .{ .exit = 1 };
+            try files.put(arena, placed.group, d);
+            break :blk d;
+        };
+        out.* = for (decoded.outputs) |o| {
+            if (std.mem.eql(u8, o.name, placed.module)) break o;
+        } else {
+            reporter.errCode(runtime_codes.unreadable, try std.fmt.allocPrint(arena, "the .bpr of `{s}` holds no module `{s}`, which {s} names; run the build again", .{ placed.group, placed.module, file }));
+            return .{ .exit = 1 };
+        };
+    }
+
+    // Read before the emit, which may rewrite a tree in place.
+    const has_main = if (entry) |name| declaresMain(outputs, name) else false;
+    const proj: config.ProjectConfig = .{ .name = meta.root };
+    const cfg = bp.codegen.Config{
+        .targetSource = targetSource(target),
+        .typeDefLanguage = if (opts.typescript) .typescript else null,
+        .build_root = ".botopinkbuild",
+        .packages = .{ .root = meta.root, .deps = meta.deps },
+        .wasm_artifact = true,
+    };
+    var emitted = try bp.codegen.emit(gpa, outputs, cfg);
+    defer {
+        for (emitted.items) |*o| o.result.deinit(gpa);
+        emitted.deinit(gpa);
+    }
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items);
+    writeOutputs(gpa, io, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map) catch |err| switch (err) {
+        error.SidecarRefused => return .{ .exit = 1 },
+        else => return err,
+    };
+    removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
+    const erl_ok = if (target == .erlang)
+        try checkErlang(arena, io, emitted.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj))
+    else
+        true;
+    if (failed.len > 0) {
+        diagnostics.reportFailedModules(arena, failed);
+        return .{ .exit = 1, .root = meta.root };
+    }
+    if (!erl_ok) return .{ .exit = 1, .root = meta.root };
+
+    return .{ .exit = 0, .root = meta.root, .has_main = has_main };
+}
+
+/// Whether the analysed module `name` of `outputs` declares a top-level
+/// `fn main` (decision 517, read from the tree a `.bpr` holds).
+fn declaresMain(outputs: []const bp.codegen.ComptimeOutput, name: []const u8) bool {
+    for (outputs) |o| {
+        if (!std.mem.eql(u8, o.name, name)) continue;
+        for (o.outcome.ok.transformed.decls) |d| switch (d) {
+            .@"fn" => |f| if (std.mem.eql(u8, f.name, "main")) return true,
+            else => {},
+        };
+        return false;
+    }
+    return false;
+}
+
+/// The codes of a refused `.bpr` (decision 805 (2), (3)).
+pub const runtime_codes = struct {
+    /// `build` / `run` over a `.bpr` without `--target`.
+    pub const target_required = "runtime-target-required";
+    /// A `.bpr` another compiler wrote.
+    pub const other_compiler = "runtime-other-compiler";
+    /// A file that is no `.bpr`, or one of this compiler that does not read back whole.
+    pub const unreadable = "runtime-unreadable";
+    /// A package's `.bpr` the root's names, not beside it.
+    pub const missing = "runtime-missing";
+    /// A dependency's `.bpr` handed as the program.
+    pub const not_a_program = "runtime-not-a-program";
+};
+
+/// The `.bpr` at `path`, decoded — else its refusal printed and null.
+/// `named_by` is the root's file when `path` is a package's it names.
+fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: runtime_file.Stamp, named_by: ?[]const u8) ?runtime_file.Decoded {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch |err| {
+        const msg = if (named_by) |root|
+            std.fmt.allocPrint(arena, "{s} is not there, and {s} needs it; run the build again", .{ path, root }) catch "a .bpr is missing"
+        else
+            std.fmt.allocPrint(arena, "cannot read {s} ({s})", .{ path, @errorName(err) }) catch "cannot read the .bpr";
+        reporter.errCode(runtime_codes.missing, msg);
+        return null;
+    };
+    return runtime_file.read(arena, bytes, stamp) catch |err| {
+        const msg = switch (err) {
+            error.OtherCompiler => std.fmt.allocPrint(arena, "{s} was built by another compiler; run the build again", .{path}),
+            error.NotRuntimeFile, error.Malformed => std.fmt.allocPrint(arena, "{s} is not a .bpr this compiler reads whole; run the build again", .{path}),
+            error.OutOfMemory => std.fmt.allocPrint(arena, "out of memory reading {s}", .{path}),
+        } catch "the .bpr is refused";
+        reporter.errCode(if (err == error.OtherCompiler) runtime_codes.other_compiler else runtime_codes.unreadable, msg);
+        return null;
+    };
 }
 
 /// Compile every `.erl` this build wrote with the OTP compiler, in one `erl`

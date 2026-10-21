@@ -22,6 +22,8 @@ pub const analysis_entry = @import("./comptime/analysis_entry.zig");
 /// The code cache's level B inside a compile (144 B-60 S2): the store a
 /// driver hands `codegen.Config.analysis_store` / `compileWith`.
 pub const level_b = @import("./comptime/level_b.zig");
+/// Decision 805 — the `.bpr` a `--emit-runtime` build writes and `build` / `run` read back.
+pub const runtime_file = @import("./comptime/runtime_file.zig");
 /// Decisions 780–783 — `compiler.load(path)`: the paths a program's reads
 /// write (`literalPaths`), which the CLI's resolver leaves out of the
 /// package's module tree.

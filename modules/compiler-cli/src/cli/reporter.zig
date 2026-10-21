@@ -74,6 +74,11 @@ pub fn errMsg(msg: []const u8) void {
     print("{s}{s}error{s}: {s}\n", .{ bold, red, reset, msg });
 }
 
+/// `error[<code>]: <msg>` — an unlocated refusal that carries its code.
+pub fn errCode(code: []const u8, msg: []const u8) void {
+    print("{s}{s}error[{s}]{s}: {s}\n", .{ bold, red, code, reset, msg });
+}
+
 pub fn hintMsg(msg: []const u8) void {
     print(" {s}hint{s}: {s}\n", .{ yellow, reset, msg });
 }

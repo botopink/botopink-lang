@@ -68,12 +68,15 @@ const HELP =
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled
     \\  --emit-resolved <dir>        Write the resolved program (no comptime left) to <dir>/<package>.bp, for reading
+    \\  --emit-runtime <dir>         Write each package's resolved tree to <dir>/<package>.bpr, to build any target from later
+    \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required)
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required)
     \\  --                           Pass remaining args to the program
     \\
     \\Options for `test`:
@@ -353,9 +356,27 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             opts.cold = true;
         } else if (std.mem.eql(u8, flag.name, "--emit-resolved")) {
             opts.emit_resolved = try flagValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--emit-runtime")) {
+            opts.emit_runtime = try flagValue(args, &i, flag, diag);
+        } else if (isRuntimeFile(args[i]) and opts.runtime_input == null) {
+            opts.runtime_input = args[i];
         } else return reject(args[i], diag);
     }
+    // A `.bpr` is built, never written again: the resolved tree it holds
+    // keeps no printing and is already the intermediate.
+    if (opts.runtime_input != null) {
+        if (opts.emit_runtime != null or opts.emit_resolved != null) {
+            diag.token = if (opts.emit_runtime != null) "--emit-runtime" else "--emit-resolved";
+            return error.UnexpectedArgument;
+        }
+    }
     return opts;
+}
+
+/// A positional naming a `.bpr` — the program `build` and `run` read back
+/// (decision 805 (3)); no other positional is taken.
+fn isRuntimeFile(a: []const u8) bool {
+    return !isFlag(a) and std.mem.endsWith(u8, a, ".bpr");
 }
 
 fn parseCheckOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!check_cmd.Options {
@@ -387,6 +408,8 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
             opts.cold = true;
+        } else if (isRuntimeFile(a) and opts.runtime_input == null) {
+            opts.runtime_input = a;
         } else return reject(a, diag);
     }
     opts.extra_args = try extra.toOwnedSlice(arena);
@@ -562,6 +585,21 @@ test "C11: an unsupported target is rejected with the token named" {
     var d: ArgDiag = .{};
     try std.testing.expectError(error.InvalidTarget, parseRunOpts(std.testing.allocator, argv(&.{ "--target", "frobnicate" }), &d));
     try std.testing.expectEqualStrings("frobnicate", d.token);
+}
+
+test "B-163: build takes --emit-runtime <dir> and one .bpr to build; run takes one .bpr (decision 805 (1), (3))" {
+    var d: ArgDiag = .{};
+    try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{ "--emit-runtime", "rt" }), &d)).emit_runtime.?);
+    try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{"--emit-runtime=rt"}), &d)).emit_runtime.?);
+    try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{"--emit-runtime"}), &d));
+    const b = try parseBuildOpts(argv(&.{ "--target", "wasm", "rt/app.bpr" }), &d);
+    try std.testing.expectEqualStrings("rt/app.bpr", b.runtime_input.?);
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "rt/app.bpr", "rt/lib.bpr" }), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "rt/app.bpr", "--emit-runtime", "x" }), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"src/main.bp"}), &d));
+    const r = try parseRunOpts(std.testing.allocator, argv(&.{ "rt/app.bpr", "--target", "beam" }), &d);
+    defer std.testing.allocator.free(r.extra_args);
+    try std.testing.expectEqualStrings("rt/app.bpr", r.runtime_input.?);
 }
 
 test "C11: build and test reject positional arguments" {

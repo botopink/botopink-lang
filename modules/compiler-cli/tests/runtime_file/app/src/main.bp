@@ -1,0 +1,27 @@
+//// The program `runtime_file.sh` builds directly and from its `.bpr`: a
+//// decorator and a template of its dependency, a top-level `comptime` block
+//// a folded value and a std module.
+
+import {compiler, io.terminal.print, math.clamp} from "std";
+import {tools.entity, tools.shout, tools.label} from "lib";
+
+fn twice(comptime n: string) -> void {
+    print("build " + n);
+    compiler.init({ -> print("init " + n) });
+}
+
+comptime {
+    twice("a");
+}
+
+#[entity("cities")]
+type City(name: string, people: i32)
+
+pub val loud = shout @`hello world`;
+
+pub fn main() -> void {
+    print(City.table());
+    print(loud);
+    print(label(City(name: "Recife", people: 3).name, comptime 6 * 7));
+    print(clamp(9.5, 0.0, 2.5).toString());
+}

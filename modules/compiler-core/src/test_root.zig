@@ -12,5 +12,6 @@ test {
     _ = @import("./comptime/tests.zig");
     _ = @import("./comptime/analysis_entry.zig");
     _ = @import("./comptime/level_b.zig");
+    _ = @import("./comptime/runtime_file.zig");
     _ = @import("./codegen/tests.zig");
 }

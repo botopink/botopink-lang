@@ -11,7 +11,7 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
-├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all five
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all eight
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus a type
 │   │                          error's `= hint:` under its excerpt from `check`
 │   │                          and `build`, plus the
@@ -90,6 +90,19 @@ compiler-cli/
 │   │                          (here, in level_b.sh and test_tooling.sh): ext4 reuses a
 │   │                          freed inode at once, so an entry written twice could land
 │   │                          on the inode it was read at
+│   ├── runtime_file.sh      ← the build's intermediate (decision 805, B-163): `app`
+│   │                          built with `--emit-runtime` writes `app.bpr`, `lib.bpr`
+│   │                          and `std/math.bpr`; on commonJS (+ `.d.ts`), erlang,
+│   │                          beam and wasm the build from `app.bpr` writes every
+│   │                          file of the direct build byte for byte, `run` from it
+│   │                          answers the direct run's without the build phase, a
+│   │                          dependency's `.bpr` is the same bytes from every build;
+│   │                          the refusals `runtime-target-required`,
+│   │                          `runtime-other-compiler`, `runtime-not-a-program`,
+│   │                          `runtime-missing`
+│   ├── runtime_file/        ← its fixture: `app` (a decorator and a template of
+│   │                          `lib`, a top-level `comptime` block, a folded value,
+│   │                          `std/math`) and `lib`
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —
@@ -136,7 +149,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all seven scripts, in order, against the installed CLI
+zig build test-cli      # all eight scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in test-cli)
@@ -150,6 +163,7 @@ bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
 bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
 bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
+bash modules/compiler-cli/tests/runtime_file.sh      # every target built from a package's .bpr as built directly (805)
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime
