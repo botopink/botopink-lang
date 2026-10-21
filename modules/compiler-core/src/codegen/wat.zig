@@ -6413,6 +6413,13 @@ const Emitter = struct {
             };
             return out.items;
         }
+        // Decision 823 (3) — `v is Async<unknown>`: whether `v` is a task,
+        // the runtime's `$task`, settled or not; its state is not read.
+        if (isTaskTypeRef(t)) {
+            const only = try self.arena().alloc(ValType, 1);
+            only[0] = self.gcTy(.task);
+            return only;
+        }
         const name = switch (t) {
             .named => |n| n,
             .generic => |g| g.name,
@@ -6980,7 +6987,7 @@ const Emitter = struct {
         if (self.typeRefOf(value)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "bytes")) return self.gcFail("bytes as an unknown");
         if (value == .literal and value.literal.kind == .bytesLit) return self.gcFail("bytes as an unknown");
         const as_is = (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) or
-            self.isUnknownExpr(value) or self.isTaggedValue(value) or self.gcIsUnknownRepr(value);
+            self.isUnknownExpr(value) or self.isTaggedValue(value) or self.gcIsUnknownRepr(value) or self.gcIsTaskRepr(value);
         const Kind = enum { i32_, f64_, bool_, str, ref };
         const hinted: ?Kind = if (as_is) .ref else if (hint) |h| switch (self.elemBoxOfTypeRef(h)) {
             .as_is => .ref,
@@ -7031,6 +7038,14 @@ const Emitter = struct {
                 try self.lowerCoerced(value, r);
             },
         }
+    }
+
+    /// A task in a GC module (a call answering `Async<T>`): an `unknown`
+    /// holds the `$task` reference as it is (decision 823).
+    fn gcIsTaskRepr(self: *Emitter, value: ast.Expr) bool {
+        if (self.mode != .gc) return false;
+        const r = self.wasmTypeOf(value);
+        return r == .ref and r.ref == .task;
     }
 
     /// A value already an `unknown` in a GC module (a record's `unknown`
@@ -19354,6 +19369,7 @@ const Emitter = struct {
     fn lowerAwait(self: *Emitter, operand_in: ast.Expr) anyerror!void {
         if (runCallOf(operand_in)) |rc| return self.lowerRun(rc.call.kind.call, true);
         const operand = innerClosureBlock(operand_in) orelse operand_in;
+        if (self.mode == .gc and self.isMaybeTaskExpr(operand)) return self.gcAwaitMaybeTask(operand);
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
         const read: Settled = if (self.mode == .gc)
             .{ .gc = try self.gcAwaitedRead(operand) }
@@ -19375,6 +19391,56 @@ const Emitter = struct {
         try self.lowerCoerced(operand, task_r);
         const op_seq = self.seal(&op_c, .{ .value = self.vtOf(task_r) });
         return self.emitSuspension(lo, op_seq, null, read);
+    }
+
+    /// Whether `e` is a `T | Async<T>` — a union one of whose members is a
+    /// task (decision 823 (4)): what the `await` that `use c` lowers to reads.
+    fn isMaybeTaskExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        const members = t.unionMembers() orelse return false;
+        for (members) |m| if (isTaskTypeRef(m)) return true;
+        return false;
+    }
+
+    /// Decision 823 (4) — `await v` over a `T | Async<T>` in a GC module:
+    /// the `unknown` holding `v` is tested with `ref.test (ref $task)`, the
+    /// task's state not read; a task is awaited (suspending the machine while
+    /// it is pending, run until it settles outside one) and its settled value
+    /// read as the `unknown` it holds, any other value answered as it is.
+    fn gcAwaitMaybeTask(self: *Emitter, operand: ast.Expr) anyerror!void {
+        const ra = self.reg_arena.allocator();
+        const k = self.loop_seq;
+        self.loop_seq += 1;
+        const v = try std.fmt.allocPrint(ra, "__mtv{d}", .{k});
+        const mk = try std.fmt.allocPrint(ra, "__mtm{d}", .{k});
+        try self.declareLocal(v, .{ .ref = .unknown });
+        try self.declareLocal(mk, .i32);
+        const raw: Settled = .{ .gc = .{ .repr = .{ .ref = .unknown }, .raw = true } };
+        const lo: u32 = if (self.machine) |m| m.next else 0;
+        var op_c: Capture = .{};
+        self.open(&op_c);
+        try self.lowerCoerced(operand, .{ .ref = .unknown });
+        try self.emit(.{ .local_tee = v });
+        try self.emit(.{ .ref_test = self.gcTy(.task) });
+        try self.emit(.{ .local_set = mk });
+        try self.emit(.{ .local_get = v });
+        const op_seq = self.seal(&op_c, .{ .value = .anyref });
+        if (self.machine != null and self.gen_item == null) return self.emitSuspension(lo, op_seq, mk, raw);
+        for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+        try self.emit(.drop);
+        try self.emit(.{ .local_get = mk });
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emit(.{ .local_get = v });
+        try self.emit(.{ .ref_cast = self.gcTy(.task) });
+        try self.emit(self.builder().helper(.task_block_on));
+        try self.emitSettledRead(raw);
+        const then_seq = self.seal(&then_c, .{ .value = .anyref });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = v });
+        const else_seq = self.seal(&else_c, .{ .value = .anyref });
+        try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
     }
 
     /// How an `await` reads the value a settled task holds: in linear memory
