@@ -1,41 +1,31 @@
 //// Decision 584 (1), 574 — `{ component -> … }` is a lambda marked
 //// `component`, a `component fn`: bound to a `val` typed by the function type
 //// it is written for (147), and in the trailing form,
-//// `List(names) { component name -> … }`. Each runs where it is rendered:
-//// `Badge` outside every body, with `RenderScope.root()` (the declared
-//// default), and each item with the scope `List`'s run answered (its `>`).
+//// `List(names) { component name -> … }`. `Badge` runs at a root of its own
+//// (the declared default), and each item inside `List`'s body after its `use
+//// provide` (decision 908: `use all`), reading its `>`.
 
-import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.all, context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string, kids: Component<View>[])
+type View(text: string)
 
 pub val prefixContext = comptime createContext("");
 
 component fn List(names: string[], item: fn(name: string) -> Component<View>) -> Component<View> {
     use provide(createContext(">"));
-    return View(text: "list", kids: names.map(item));
-}
-
-// Run `c` with `scope`, then each child with the scope `c`'s run answered.
-async fn render(c: Component<View>, scope: RenderScope) -> Async<string> {
-    val r = await c.run(scope);
-    var out = r.value.text;
-    for (r.value.kids) { k ->
-        val inner = await render(k, r.scope);
-        out = out + " " + inner;
-    }
-    return out;
+    val items = use all(names.map(item));
+    return View(text: "list " + items.map({ v -> v.text }).join(" "));
 }
 
 pub async fn main() -> Async<void> {
     val Badge: fn() -> Component<View> = { component ->
         val p = use context(prefixContext);
-        View(text: p + "badge", kids: [])
+        View(text: p + "badge")
     };
-    print(await render(Badge(), RenderScope.root()));
+    print((await run(Badge())).text);
     val page = List(["a", "b"]) { component name ->
         val p = use context(prefixContext);
-        View(text: p + name, kids: [])
+        View(text: p + name)
     };
-    print(await render(page, RenderScope.root()));
+    print((await run(page)).text);
 }

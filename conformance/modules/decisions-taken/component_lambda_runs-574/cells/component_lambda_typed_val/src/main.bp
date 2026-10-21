@@ -1,9 +1,9 @@
 //// Decision 574 — a lambda marked `component`, bound to a `val` typed by
 //// the function type it is written for (147), is a `component fn`: calling
 //// it only makes the component (`made` prints before any `ran`), and the
-//// component runs where it is rendered — outside every body with
-//// `RenderScope.root()` (`a` reads the declared default), and with the scope
-//// `Shell`'s run answered (`b` reads `Shell`'s `#`). Its parameter and the
+//// component runs where it is resolved — at a root of its own (`a` reads
+//// the declared default), and by a `use` inside `Shell`'s body, after its
+//// `use provide` (`b` reads `Shell`'s `#`, decision 908). Its parameter and the
 //// `suffix` it captures reach the body. The body answers its last
 //// expression.
 
@@ -13,9 +13,10 @@ type View(text: string)
 
 pub val prefixContext = comptime createContext("");
 
-component fn Shell() -> Component<View> {
+component fn Shell(inner: Component<View>) -> Component<View> {
     use provide(createContext("#"));
-    return View(text: "shell");
+    val v = use inner;
+    return v;
 }
 
 pub async fn main() -> Async<void> {
@@ -29,7 +30,6 @@ pub async fn main() -> Async<void> {
     print("made");
     val v = await run(c);
     print(v.text);
-    val r = await run(Shell());
-    val m = await Card("b").run(r.scope);
-    print(m.value.text);
+    val r = await run(Shell(Card("b")));
+    print(r.text);
 }
