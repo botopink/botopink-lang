@@ -210,6 +210,9 @@ iter fn counter() -> Iter<i32> {
     i32.le_s
     (if
       (then
+    local.get $g
+    struct.get $gen $src
+    call $__gen_close ;; the count is reached: its source
     i32.const 0
     return
       )
@@ -300,6 +303,34 @@ iter fn counter() -> Iter<i32> {
       )
     )
     unreachable
+  )
+  (func $__gen_close (param $g (ref null $gen))
+    local.get $g
+    ref.is_null
+    (if
+      (then
+    return
+      )
+    )
+    local.get $g
+    struct.get $gen $kind
+    i32.const 5
+    i32.lt_u
+    (if
+      (then
+    local.get $g
+    struct.get $gen $src
+    call $__gen_close ;; its source
+      )
+      (else
+      )
+    )
+    local.get $g
+    i32.const 1
+    struct.set $gen $state ;; ended
+    local.get $g
+    ref.null struct
+    struct.set $gen $frame ;; its frame dropped
   )
   (@custom "botopink.needs" "gc\0a")
 )

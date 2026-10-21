@@ -88,6 +88,12 @@ out after
 out [1, 2]
 out before
 out [1]
+out closed
+out [1]
+out 1
+out 2
+out closed
+out end
 out before
 out 1
 out after

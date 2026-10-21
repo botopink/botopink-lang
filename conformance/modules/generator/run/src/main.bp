@@ -10,5 +10,6 @@ pub fn main() -> void {
     cases.generator_handle_stateful.runCase();
     cases.generator_item_untyped_lazy.runCase();
     cases.generator_to_array_printed.runCase();
+    cases.generator_take_closes_source.runCase();
     cases.generator_walk_lazy.runCase();
 }

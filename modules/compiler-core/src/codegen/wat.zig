@@ -26758,6 +26758,7 @@ const Emitter = struct {
             try self.emit(.{ .br = continue_label });
             const loop_seq = self.seal(&loop_c, .terminated);
             try self.emitLoopBlockPlain(loop_seq);
+            try self.emitGenClose(base);
             try self.emit(.{ .local_get = acc });
             return true;
         }
@@ -27124,6 +27125,10 @@ const Emitter = struct {
             try self.emit(opOf(.i32, "le_s"));
             var d: Capture = .{};
             self.open(&d);
+            // The count reached: the source is closed, its pending defers run.
+            self.gen_close_used = true;
+            try self.genGet(gen_fld.src);
+            try self.emitC(.{ .call = "__gen_close" }, "the count is reached: its source");
             try self.emit(zero);
             try self.emit(.@"return");
             const done = self.seal(&d, .terminated);

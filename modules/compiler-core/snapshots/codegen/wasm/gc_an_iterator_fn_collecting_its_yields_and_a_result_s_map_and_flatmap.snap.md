@@ -453,6 +453,9 @@ import {io.terminal.print} from "std";
     i32.le_s
     (if
       (then
+    local.get $g
+    struct.get $gen $src
+    call $__gen_close ;; the count is reached: its source
     i32.const 0
     return
       )
