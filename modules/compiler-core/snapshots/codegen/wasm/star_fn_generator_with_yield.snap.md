@@ -24,7 +24,7 @@ iter fn counter() -> Iter<i32> {
     struct.new_default $frame0 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 4 ;; counter__body
+    i32.const 5 ;; counter__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -290,7 +290,7 @@ iter fn counter() -> Iter<i32> {
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then

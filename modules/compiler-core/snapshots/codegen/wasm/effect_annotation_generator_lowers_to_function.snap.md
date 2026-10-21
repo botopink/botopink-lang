@@ -29,7 +29,7 @@ iter fn range(a: i32, b: i32) -> Iter<i32> {
     local.get $b
     struct.set $frame0 $s1
     i32.const 0 ;; live
-    i32.const 4 ;; range__body
+    i32.const 5 ;; range__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -275,7 +275,7 @@ iter fn range(a: i32, b: i32) -> Iter<i32> {
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then

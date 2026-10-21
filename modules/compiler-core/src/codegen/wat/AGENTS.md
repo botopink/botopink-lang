@@ -434,12 +434,17 @@ stateful (a second `for` over an exhausted one reads nothing).
 - **The consumers**: `for (g)` (`lowerGenFor`: `$__gen_next` per iteration, the item unboxed into the binder;
   re-entering a machine inside an iteration takes no step), `g.next()` (`Yield(item)` / `Done`, the item
   in the erased payload's box), `toArray()`, and `take(n)` / `drop(n)` / `map(f)` / `filter(f)` (a derived
-  `$gen` over `src`: `left` the count, `aux` the closure, called as `(closure, anyref) -> anyref`).
+  `$gen` over `src`: `left` the count, `aux` the closure, called as `(closure, anyref) -> anyref`), and
+  `flatMap(f)` (144 B-142: the same derived `$gen`, the inner generator `f` answered for the source's last
+  item held in `frame` and stepped while it lasts; closing it closes the inner one, then the source).
   `$__gen_next(g)` answers `0` once the sequence ended and drops the frame; `$__gen_resume` (`genResumeFunc`)
-  dispatches by `kind`: `0`–`3` the derived iterators, `gen_body_base` + i each body of `gen_kinds`.
-- **The walks** (144 B-142): `forEach(f)`, `some(f)`, `every(f)` and `reduce(f, init)` step the handle in
-  place (`lowerGenWalk`), the closure called on each item through the table; `some` / `every` stop at the item
-  that answered. `g.toArray()` printed directly prints by its item's shape (`printShapeOf`).
+  dispatches by `kind`: `0`–`4` the derived iterators (`GenKind`), `gen_body_base` (5) + i each body of
+  `gen_kinds`.
+- **The walks** (144 B-142): `forEach(f)`, `some(f)`, `every(f)`, `reduce(f, init)` and `find(f)` step the
+  handle in place (`lowerGenWalk`), the closure called on each item through the table; `some` / `every` / `find`
+  stop at the item that answered, `find`'s answer the `?T` of the item (the item's box as it is, a reference
+  cast to its type; `optInfoOf` reads it off the item). A generator method is lowered before the dispatch,
+  which would read `find` / `flatMap` as another type's. `g.toArray()` printed directly prints by its item's shape (`printShapeOf`).
 - **A `@Result` item** (decision 122): the transform already wrote `yield v` as `yield __bp_ok(v)` and
   `throw e` as `break __bp_error(e)`; a failing `try` stores its `Error` in `value`, runs the defers, marks
   the handle ended and answers `1` — no resume point, so the expression holding the `try` is never entered
@@ -460,7 +465,7 @@ stateful (a second `for` over an exhausted one reads nothing).
   task to its end where the step is taken (`$__task_block_on`, `lowerAwait`): the machine suspends at its
   `yield`s only.
 - **What keeps a module in linear memory**, where an iterator is still the eager array: an item whose type
-  nothing here tells, a method over a handle not listed above (`find`, `flatMap`, …). A `yield :l` naming an
+  nothing here tells, a method over a handle not listed above. A `yield :l` naming an
   enclosing generator scope still has no machine (`genLabelsOwn`); the checker refuses every such program
   today (`yield-label-unbound`), so no module reaches it.
 

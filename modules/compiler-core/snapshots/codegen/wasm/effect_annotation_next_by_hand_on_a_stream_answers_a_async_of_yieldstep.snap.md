@@ -53,7 +53,7 @@ import {io.terminal.print} from "std";
     local.get $n
     struct.set $frame0 $s0
     i32.const 0 ;; live
-    i32.const 4 ;; countdown__body
+    i32.const 5 ;; countdown__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -464,7 +464,7 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then

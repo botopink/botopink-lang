@@ -41,7 +41,7 @@ import {io.terminal.print} from "std";
     struct.new_default $frame0 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 4 ;; two__body
+    i32.const 5 ;; two__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -372,7 +372,7 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then

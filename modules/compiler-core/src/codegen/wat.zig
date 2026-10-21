@@ -3052,6 +3052,7 @@ const Emitter = struct {
     gen_closable: std.ArrayListUnmanaged(u32) = .empty,
     gen_map_used: bool = false,
     gen_filter_used: bool = false,
+    gen_flat_map_used: bool = false,
     /// The item a generator machine's body yields (its `yield`s are its
     /// suspension points, `emitGenYield`); null outside one.
     gen_item: ?GenItem = null,
@@ -12498,11 +12499,12 @@ const Emitter = struct {
                         // `n.abs()`), lowered with the width known.
                         if (cc.receiver == null) if (preludeCache.widthMemberOf(cc.callee)) |wm| return self.lowerWidthMember(wm.width, wm.method, cc);
                         if (try self.lowerGenSyncedCall(e, cc)) return;
-                        if (try self.lowerDispatchCall(cc, c.loc)) return;
                         // Decision 105 (144 B-128) — a method over a generator
-                        // handle (§ generators).
+                        // handle (§ generators), before the dispatch, which
+                        // would read `find` / `flatMap` as another type's.
+                        if (self.mode == .gc) if (try self.lowerGenMethod(e)) return;
+                        if (try self.lowerDispatchCall(cc, c.loc)) return;
                         if (self.mode == .gc) {
-                            if (try self.lowerGenMethod(e)) return;
                             if (cc.receiver) |recv| if (self.isGenExpr(recv.*)) return self.gcFail("a method over a generator this backend does not step");
                         }
                         if (self.instance_lowerings.get(c.loc)) |il| if (il == .sequence_next) {
@@ -23432,6 +23434,14 @@ const Emitter = struct {
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         if (self.genericResultOf(e)) |a| return self.optInfoOf(a);
+        // 144 B-142 — a generator's `find` answers the `?T` of its item.
+        if (self.genMethodOf(e)) |m| if (m == .find) {
+            const yitem = (self.genItemOf(e.call.kind.call.receiver.?.*) catch return null) orelse return null;
+            const it = reprTypeRef(yitem) orelse return null;
+            const inner = self.arena().create(ast.TypeRef) catch return null;
+            inner.* = it;
+            return self.optInfoOfTypeRef(.{ .optional = inner });
+        };
         // `xs?.[k]`: the link's own optional, flattened (decision 330).
         if (optOperatorParts(e)) |op| if (!op.bang) {
             // Over an optional array of records the link is the record's own
@@ -25801,8 +25811,8 @@ const Emitter = struct {
     const gen_handle = "__gen";
     /// The `kind`s of the derived iterators; a body's is `gen_body_base` +
     /// its index in `gen_kinds`.
-    const GenKind = enum(u32) { take, drop, map, filter };
-    const gen_body_base: u32 = 4;
+    const GenKind = enum(u32) { take, drop, map, filter, flat_map };
+    const gen_body_base: u32 = 5;
     /// The fields of `$gen`.
     const gen_fld = struct {
         const state = 0;
@@ -25833,11 +25843,16 @@ const Emitter = struct {
         some,
         every,
         reduce,
+        // 144 B-142 — `find` a walk that stops at the item that answered;
+        // `flatMap` a derived handle stepping the generator its closure
+        // answers for each item of its source.
+        find,
+        flat_map,
 
         /// Whether the method answers a derived handle.
         fn derives(m: GenMethod) bool {
             return switch (m) {
-                .take, .drop, .map, .filter => true,
+                .take, .drop, .map, .filter, .flat_map => true,
                 else => false,
             };
         }
@@ -25928,6 +25943,10 @@ const Emitter = struct {
             .every
         else if (eq(u8, cc.callee, "reduce") and argc == 2)
             .reduce
+        else if (eq(u8, cc.callee, "find") and argc == 1)
+            .find
+        else if (eq(u8, cc.callee, "flatMap") and argc == 1)
+            .flat_map
         else
             return null;
         if (!self.isGenExpr(recv.*)) return null;
@@ -25954,9 +25973,10 @@ const Emitter = struct {
             const cc = e.call.kind.call;
             if (!m.derives() and m != .to_array and m != .next) return null;
             const src = (try self.genItemOf(cc.receiver.?.*)) orelse return null;
-            if (m != .map) return src;
+            if (m != .map and m != .flat_map) return src;
             const lam = genMethodLambda(cc) orelse return null;
             if (lam.params.len != 1) return null;
+            if (m == .flat_map) return self.lambdaGenItemOver(lam.params[0], src, lam.body);
             return self.lambdaAnswerOver(lam.params[0], src, lam.body);
         }
         if (self.typeRefOf(e)) |t0| {
@@ -25980,6 +26000,16 @@ const Emitter = struct {
 
     /// The item a `map`'s lambda answers, its parameter the source's item.
     fn lambdaAnswerOver(self: *Emitter, param: []const u8, src: GenItem, body: []const ast.Stmt) anyerror!?GenItem {
+        return self.lambdaOver(param, src, body, false);
+    }
+
+    /// 144 B-142 — the item of the generator a `flatMap`'s lambda answers,
+    /// its parameter the source's item.
+    fn lambdaGenItemOver(self: *Emitter, param: []const u8, src: GenItem, body: []const ast.Stmt) anyerror!?GenItem {
+        return self.lambdaOver(param, src, body, true);
+    }
+
+    fn lambdaOver(self: *Emitter, param: []const u8, src: GenItem, body: []const ast.Stmt, gen_item: bool) anyerror!?GenItem {
         if (body.len == 0) return null;
         const prev = self.locals.get(param);
         const had_str = self.str_locals.contains(param);
@@ -25994,6 +26024,7 @@ const Emitter = struct {
         }
         const last = body[ast.lastRealIndex(body)].expr;
         const v: ast.Expr = if (last == .jump and last.jump.kind == .@"return") (if (last.jump.kind.@"return") |r| r.* else return null) else last;
+        if (gen_item) return self.genItemOf(v);
         return self.genValueItem(v, &.{}, 0);
     }
 
@@ -26695,7 +26726,7 @@ const Emitter = struct {
             return true;
         }
         switch (m) {
-            .for_each, .some, .every, .reduce => {
+            .for_each, .some, .every, .reduce, .find => {
                 try self.lowerGenWalk(e, m);
                 return true;
             },
@@ -26735,6 +26766,7 @@ const Emitter = struct {
             .drop => .drop,
             .map => .map,
             .filter => .filter,
+            .flat_map => .flat_map,
             else => unreachable,
         };
         try self.emit(zero);
@@ -26747,7 +26779,7 @@ const Emitter = struct {
                 try self.emit(.{ .ref_null = .anyref });
                 try self.lowerCoerced(cc.args[0].value.*, .i32);
             },
-            .map, .filter => {
+            .map, .filter, .flat_map => {
                 const src = (try self.genItemOf(recv)) orelse return self.gcFail("a map or filter over a generator whose yitem type is not known");
                 const lam = genMethodLambda(cc) orelse return self.gcFail("a map or filter over a generator of no lambda written at the call");
                 if (lam.params.len != 1) return self.gcFail("a map or filter over a generator of a lambda of no one parameter");
@@ -26762,6 +26794,11 @@ const Emitter = struct {
                     const out = (try self.lambdaAnswerOver(lam.params[0], src, lam.body)) orelse return self.gcFail("a map over a generator whose answer is not known");
                     l.ret_seen = if (out.repr == .bool) .i32 else out.repr;
                     self.gen_map_used = true;
+                } else if (kind == .flat_map) {
+                    // The closure answers the generator stepped for the item.
+                    _ = (try self.lambdaGenItemOver(lam.params[0], src, lam.body)) orelse return self.gcFail("a flatMap over a generator whose function answers no generator of a known item");
+                    l.ret_seen = gen_r;
+                    self.gen_flat_map_used = true;
                 } else {
                     l.ret_seen = .i32;
                     self.gen_filter_used = true;
@@ -26804,9 +26841,12 @@ const Emitter = struct {
         const argc: usize = if (m == .reduce) 2 else 1;
         if (lam.params.len != argc) return self.gcFail("a walk over a generator of a lambda of another arity");
         if (m == .reduce and wa.init == null) return self.gcFail("a reduce over a generator with no initial value");
-        const acc_r: Repr = if (m == .reduce) self.wasmTypeOf(wa.init.?) else .i32;
-        const acc_vr: Repr = if (acc_r == .bool) .i32 else acc_r;
         const pr: Repr = if (src.repr == .bool) .i32 else src.repr;
+        // `find` answers the `?T` of the item (`gcOptRepr`: a reference as
+        // itself, a scalar in its box); its closure a bool, as `some`'s.
+        const acc_r: Repr = if (m == .reduce) self.wasmTypeOf(wa.init.?) else if (m == .find) gcOptRepr(src.repr) else .i32;
+        const acc_vr: Repr = if (acc_r == .bool) .i32 else acc_r;
+        const ret_vr: Repr = if (m == .find) .i32 else acc_vr;
         self.gen_used = true;
 
         const base = try self.gcTemp(gen_r);
@@ -26816,6 +26856,8 @@ const Emitter = struct {
         try self.emit(.{ .local_set = base });
         if (m == .reduce) {
             try self.lowerCoerced(wa.init.?, acc_vr);
+        } else if (m == .find) {
+            try self.emit(.{ .ref_null = self.vtOf(acc_vr) });
         } else try self.emit(if (m == .every) one else zero);
         try self.emit(.{ .local_set = acc });
 
@@ -26832,7 +26874,7 @@ const Emitter = struct {
             if (l.param_seen.len > item_at) l.param_seen[item_at] = pr;
             if (l.param_known.len > item_at) l.param_known[item_at] = true;
             if (l.param_str.len > item_at and pr.isStr()) l.param_str[item_at] = true;
-            l.ret_seen = acc_vr;
+            l.ret_seen = ret_vr;
         }
         self.uses_table = true;
         try self.emit(.{ .local_set = clo });
@@ -26850,7 +26892,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = base });
         try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.value } });
         try self.gcEmitIndirect(clo, argc);
-        try self.gcUnbox(acc_vr);
+        try self.gcUnbox(ret_vr);
         switch (m) {
             .reduce => try self.emit(.{ .local_set = acc }),
             .for_each => try self.emit(.drop),
@@ -26861,6 +26903,17 @@ const Emitter = struct {
                 try self.emit(if (m == .some) one else zero);
                 try self.emit(.{ .local_set = acc });
                 try self.emitC(.{ .br = break_label }, "answered: no further step");
+                const hit_seq = self.seal(&hit, .terminated);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+            },
+            .find => {
+                var hit: Capture = .{};
+                self.open(&hit);
+                try self.emit(.{ .local_get = base });
+                try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.value } });
+                if (self.vtOf(acc_vr) != .anyref) try self.emit(.{ .ref_cast = self.vtOf(acc_vr) });
+                try self.emit(.{ .local_set = acc });
+                try self.emitC(.{ .br = break_label }, "found: no further step");
                 const hit_seq = self.seal(&hit, .terminated);
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
             },
@@ -26940,6 +26993,19 @@ const Emitter = struct {
         {
             var d: Capture = .{};
             self.open(&d);
+            if (self.gen_flat_map_used) {
+                // A flatMap closes the inner generator it rests in first.
+                try self.genGet(gen_fld.kind);
+                try self.emit(try self.constInt(@intFromEnum(GenKind.flat_map)));
+                try self.emit(opOf(.i32, "eq"));
+                var fm: Capture = .{};
+                self.open(&fm);
+                try self.genGet(gen_fld.frame);
+                try self.emit(.{ .ref_cast = ValType.def(gi) });
+                try self.emitC(.{ .call = "__gen_close" }, "its inner generator");
+                const fm_seq = self.seal(&fm, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = fm_seq } } });
+            }
             try self.genGet(gen_fld.src);
             try self.emitC(.{ .call = "__gen_close" }, "its source");
             const derived = self.seal(&d, .none);
@@ -27123,6 +27189,53 @@ const Emitter = struct {
             try self.emit(.@"unreachable");
             try self.genCase(&k, @intFromEnum(GenKind.filter));
         }
+        // 144 B-142 — flatMap: the inner generator in `frame` stepped while
+        // it lasts; once it ends, the source's next item mapped by `aux` to
+        // the next inner one.
+        if (self.gen_flat_map_used) {
+            var k: Capture = .{};
+            self.open(&k);
+            var lc: Capture = .{};
+            self.open(&lc);
+            try self.genGet(gen_fld.frame);
+            try self.emit(.ref_is_null);
+            try self.emit(opOf(.i32, "eqz"));
+            {
+                var inner_c: Capture = .{};
+                self.open(&inner_c);
+                try self.genGet(gen_fld.frame);
+                try self.emit(.{ .ref_cast = ValType.def(gi) });
+                try self.emit(.{ .local_tee = "i" });
+                try self.emit(.{ .call = "__gen_next" });
+                {
+                    var y: Capture = .{};
+                    self.open(&y);
+                    var v: Capture = .{};
+                    self.open(&v);
+                    try self.emit(.{ .local_get = "i" });
+                    try self.emit(.{ .struct_get = .{ .ty = gi, .field = gen_fld.value } });
+                    try self.genAnswer(self.seal(&v, .{ .value = .anyref }));
+                    const yes = self.seal(&y, .terminated);
+                    try self.emit(.{ .@"if" = .{ .then = .{ .seq = yes } } });
+                }
+                try self.emit(.{ .local_get = "g" });
+                try self.emit(.{ .ref_null = .structref });
+                try self.emitC(.{ .struct_set = .{ .ty = gi, .field = gen_fld.frame } }, "the inner one ended");
+                const inner_seq = self.seal(&inner_c, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = inner_seq } } });
+            }
+            try self.genStepSrcOrEnd();
+            try self.emit(.{ .local_get = "g" });
+            const mapped = try self.genSrcValue(true);
+            for (mapped.lines) |l| try self.cur.?.append(self.arena(), l);
+            try self.emit(.{ .ref_cast = ValType.def(gi) });
+            try self.emitC(.{ .struct_set = .{ .ty = gi, .field = gen_fld.frame } }, "the next inner one");
+            try self.emit(.{ .br = continue_label });
+            const lseq = self.seal(&lc, .terminated);
+            try self.emitLoopBlockPlain(lseq);
+            try self.emit(.@"unreachable");
+            try self.genCase(&k, @intFromEnum(GenKind.flat_map));
+        }
         for (self.gen_kinds.items, 0..) |bname, i| {
             var k: Capture = .{};
             self.open(&k);
@@ -27137,7 +27250,9 @@ const Emitter = struct {
             .name = "__gen_resume",
             .params = &.{wat.Builder.param("g", ValType.def(gi))},
             .result = .i32,
-            .locals = if (self.gen_map_used or self.gen_filter_used)
+            .locals = if (self.gen_flat_map_used)
+                try self.builder().localLines(&.{ .{ .name = "k", .ty = .i32 }, .{ .name = "f", .ty = self.gcTy(.closure) }, .{ .name = "i", .ty = ValType.def(gi) } })
+            else if (self.gen_map_used or self.gen_filter_used)
                 try self.builder().localLines(&.{ .{ .name = "k", .ty = .i32 }, .{ .name = "f", .ty = self.gcTy(.closure) } })
             else
                 try self.builder().localLines(&.{.{ .name = "k", .ty = .i32 }}),
@@ -27638,6 +27753,13 @@ const Emitter = struct {
                 switch (m) {
                     .some, .every => return .bool,
                     .for_each => return .i32,
+                    .find => {
+                        const yitem = (self.genItemOf(e.call.kind.call.receiver.?.*) catch null) orelse {
+                            self.gcGap("a find over a generator whose item type is not known");
+                            return .i32;
+                        };
+                        return gcOptRepr(yitem.repr);
+                    },
                     .reduce => return self.wasmTypeOf(genWalkArgs(e.call.kind.call).init.?),
                     else => {},
                 }

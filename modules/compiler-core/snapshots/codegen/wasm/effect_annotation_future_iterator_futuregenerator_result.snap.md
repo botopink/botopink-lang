@@ -90,7 +90,7 @@ fn parse(n: i32) -> Result<i32, string> {
     struct.new_default $frame1 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 4 ;; counter__body
+    i32.const 5 ;; counter__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -200,7 +200,7 @@ fn parse(n: i32) -> Result<i32, string> {
     struct.new_default $frame2 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 5 ;; stream__body
+    i32.const 6 ;; stream__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -410,7 +410,7 @@ fn parse(n: i32) -> Result<i32, string> {
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then
@@ -420,7 +420,7 @@ fn parse(n: i32) -> Result<i32, string> {
       )
     )
     local.get $k
-    i32.const 5
+    i32.const 6
     i32.eq
     (if
       (then

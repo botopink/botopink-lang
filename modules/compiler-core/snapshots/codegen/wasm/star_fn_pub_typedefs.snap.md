@@ -85,7 +85,7 @@ pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
     struct.new_default $frame1 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 4 ;; count__body
+    i32.const 5 ;; count__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -155,7 +155,7 @@ pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
     struct.new_default $frame2 ;; the frame: the resume index, then every local
     local.set $__fr
     i32.const 0 ;; live
-    i32.const 5 ;; pulses__body
+    i32.const 6 ;; pulses__body
     local.get $__fr
     ref.null any
     ref.null $gen
@@ -343,7 +343,7 @@ pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
       )
     )
     local.get $k
-    i32.const 4
+    i32.const 5
     i32.eq
     (if
       (then
@@ -353,7 +353,7 @@ pub async iter fn pulses() -> AsyncIter<Result<i32, string>> {
       )
     )
     local.get $k
-    i32.const 5
+    i32.const 6
     i32.eq
     (if
       (then

@@ -42,6 +42,17 @@ out 1
 out closed
 out done
 out before
+out after
+out closed
+out 2
+out before
+out after
+out last
+out closed
+out -1
+out long
+out none
+out before
 out 11
 out closed
 out left
