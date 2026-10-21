@@ -25,7 +25,7 @@ async iter fn stream(n: i32) -> AsyncIter<Result<i32, string>> {
 
 async fn collect(n: i32) -> Async<Result<string, string>> {
     var acc = "";
-    for await (stream(n)) { x ->
+    for await x in stream(n) {
         val v = try x;
         acc = acc + v.toString();
     }

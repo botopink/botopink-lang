@@ -41,7 +41,7 @@ test "decision 121 a Async body holds the `try` its Result value grants" {
 
 test "decision 121 an iterator body holds the `try` its Result item grants" {
     var acc = "";
-    for (upTo(3)) { r ->
+    for r in upTo(3) {
         val v = try r catch 0;
         acc = acc + v.toString();
     }

@@ -23,7 +23,7 @@ fn ticks(limit: i32) -> Ticker {
 
 async fn total(limit: i32) -> Async<i32> {
     var sum = 0;
-    for await (ticks(limit).gen) { v ->
+    for await v in ticks(limit).gen {
         sum = sum + v;
     }
     return sum;

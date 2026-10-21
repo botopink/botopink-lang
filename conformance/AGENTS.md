@@ -1548,7 +1548,7 @@ did not parse.
 
 ### `loop_*` (decision 105)
 
-Front 22 of 1.0.10-beta: `loop { }` / `while (c) { }` / `for (xs) { x -> }` / `for await (g) { x -> }`
+Front 22 of 1.0.10-beta: `loop { }` / `while (c) { }` / `for x in xs { }` / `for await x in g { }`
 are statements, and `#[@generator] loop { }` (with `#[@resultGenerator]` / `#[@futureGenerator]`) is the one
 loop that is a value — a generator whose body is a closed generator scope.
 
@@ -1607,7 +1607,7 @@ body), `list_spread_not_last` (`[..a, 3]`), `list_spread_dot_dot_dot` (`[...a]`)
 `implement_clause_for` (`implement A for P` after a bodyless `type P(…)`) and `tuple_literal_label`
 (`#(x: 1, y: 2)`). Two cells for forms that were parse errors and now run on all four
 targets: `decorator_negative_argument` (`#[mark(-20)]` — the decorator receives the number) and
-`loop_one_line_body` (a one-statement body in `for (xs) { x -> … }` and in a trailing lambda needs
+`loop_one_line_body` (a one-statement body in `for x in xs { … }` and in a trailing lambda needs
 no `;` before its `}`).
 
 ### The `modules/` kind
@@ -2418,7 +2418,7 @@ stderr, which no `snapshot/output/` answer sees. node answers `1` and wasmtime `
 `abort` (§ What a cell's answer is made of), never by a number.
 
 **Four backends agreeing is not evidence.** A decision can make a green cell red: decision 55 once
-turned `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`, which every backend printed because they
+turned `for x in [1, 2, 3] { break x * 2; }` → `[2, 4, 6]`, which every backend printed because they
 shared one accumulator shape, into a red cell on all four (and decision 105 later deleted value loops
 altogether). The cell is written to the language; the backends follow.
 

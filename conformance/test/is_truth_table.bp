@@ -28,7 +28,7 @@ fn values() -> unknown[] {
 
 fn marks(holds: bool[]) -> string {
     var text = "";
-    for (holds) { h ->
+    for h in holds {
         val mark = if (h) "T" else ".";
         text = text + mark;
     }

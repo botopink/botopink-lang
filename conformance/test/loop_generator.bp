@@ -8,7 +8,7 @@ iter fn upToThree() -> Iter<i32> {
 
 test "§10 loop over a generator receives each yielded value" {
     var sum = 0;
-    for (upToThree()) { x ->
+    for x in upToThree() {
         sum = sum + x;
     }
     assert sum == 6;

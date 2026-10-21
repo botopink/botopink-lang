@@ -11,7 +11,7 @@ iter fn nums(n: i32) -> Iter<i32> {
 
 test "§9 a generator yields its elements in order" {
     var acc = "";
-    for (nums(3)) { x ->
+    for x in nums(3) {
         acc = acc + x.toString();
     }
     assert acc == "012";
@@ -19,7 +19,7 @@ test "§9 a generator yields its elements in order" {
 
 test "§9 an empty generator runs no iteration" {
     var runs = 0;
-    for (nums(0)) { x ->
+    for x in nums(0) {
         runs = runs + 1;
     }
     assert runs == 0;
