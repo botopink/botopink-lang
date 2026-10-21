@@ -249,6 +249,9 @@ pub const ComptimeSession = struct {
     /// into the program (`compileWith`): their sources, which the outputs
     /// read, live as long as the session.
     loaded: ?*std.heap.ArenaAllocator = null,
+    /// The paths of the modules that read `@TypeInfo.all` (`orderReaders`):
+    /// their answer is the whole program's. In `arena`.
+    readers: []const []const u8 = &.{},
 
     pub fn deinit(self: *ComptimeSession, allocator: std.mem.Allocator) void {
         self.outputs.deinit(allocator);
@@ -5223,6 +5226,12 @@ fn compileOnce(
         if (lb) |l| try l.end(mod, idx, session.outputs.items[session.outputs.items.len - 1], regs, if (snapshot) |*sn| sn else null, tree);
     }
 
+    {
+        const readers = try arena_alloc.alloc([]const u8, reflection.readers.count());
+        var it = reflection.readers.keyIterator();
+        for (readers) |*r| r.* = it.next().?.*;
+        session.readers = readers;
+    }
     return .{ .session = session, .reflection = reflection };
 }
 

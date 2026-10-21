@@ -1,0 +1,14 @@
+//// Program `b` over the shared `lib`: `runtime_file.sh` emits both into one
+//// directory and builds each from its own `.bpr`.
+
+import {io.terminal.print} from "std";
+import {marks.job, catalog.names} from "lib";
+
+#[job]
+pub fn greet() -> i32 {
+    return 1;
+}
+
+pub fn main() -> void {
+    print(names());
+}

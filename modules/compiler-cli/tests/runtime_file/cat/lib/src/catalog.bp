@@ -1,0 +1,13 @@
+//// A dependency's module reading `@TypeInfo.all`: its answer is the whole
+//// program's, so the program's `.bpr` files it.
+
+import {marks.job};
+
+pub fn names() -> string {
+    var out = "";
+    val all: Declared<unknown>[] = @TypeInfo.all(with: job);
+    for (all) { d ->
+        out = out + d.name + ";";
+    }
+    return out;
+}

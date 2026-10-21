@@ -50,7 +50,8 @@ pub const Options = struct {
 /// A driver's look at the analysed modules (`Options.on_analysed`).
 pub const AnalysedHook = struct {
     ctx: *anyopaque,
-    call: *const fn (ctx: *anyopaque, outputs: []const ComptimeOutput) anyerror!void,
+    /// `readers`: the paths of the modules that read `@TypeInfo.all`.
+    call: *const fn (ctx: *anyopaque, outputs: []const ComptimeOutput, readers: []const []const u8) anyerror!void,
 };
 
 /// Decision 798 (1) — the resolved program's printer.
@@ -185,7 +186,7 @@ pub fn generateWith(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
-    if (options.on_analysed) |hook| try hook.call(hook.ctx, session.outputs.items);
+    if (options.on_analysed) |hook| try hook.call(hook.ctx, session.outputs.items, session.readers);
     // The code cache's level B CODE (144 B-60 S4): a dependency module whose
     // entry holds its unit is not emitted again, and an entry without one is
     // staged again with it. `botopink test` too: a dependency gets no test

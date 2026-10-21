@@ -45,10 +45,10 @@ const AnalysedSinks = struct {
     resolved: ?*ResolvedSink = null,
     runtime: ?*RuntimeSink = null,
 
-    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8) anyerror!void {
         const self: *AnalysedSinks = @ptrCast(@alignCast(ctx));
-        if (self.resolved) |r| try ResolvedSink.call(r, outputs);
-        if (self.runtime) |r| try RuntimeSink.call(r, outputs);
+        if (self.resolved) |r| try ResolvedSink.call(r, outputs, readers);
+        if (self.runtime) |r| try RuntimeSink.call(r, outputs, readers);
     }
 };
 
@@ -60,7 +60,7 @@ const ResolvedSink = struct {
     package: []const u8,
     paths: []const []const u8,
 
-    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, _: []const []const u8) anyerror!void {
         const self: *ResolvedSink = @ptrCast(@alignCast(ctx));
         const text = bp.codegen.resolvedPrint.print(self.gpa, outputs, self.paths) catch |err| switch (err) {
             // A refused analysis has no resolved program; its diagnostic is the build's.
@@ -103,7 +103,7 @@ const RuntimeSink = struct {
     deps: []const []const u8,
     wasm_host: bp.ast.WasmHost,
 
-    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
+    fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8) anyerror!void {
         const self: *RuntimeSink = @ptrCast(@alignCast(ctx));
         for (outputs) |o| if (o.outcome != .ok) return;
         var arena_inst = std.heap.ArenaAllocator.init(self.gpa);
@@ -114,7 +114,12 @@ const RuntimeSink = struct {
         var groups: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(bp.codegen.ComptimeOutput)) = .empty;
         const program = try arena.alloc(runtime_file.Placed, outputs.len);
         for (outputs, program) |o, *p| {
-            const g = runtime_file.groupOf(o.name, self.root, self.deps);
+            // A module reading `@TypeInfo.all` answers for the whole program
+            // (805 (1)): the root's file holds it, whatever its package.
+            const reads = for (readers) |r| {
+                if (std.mem.eql(u8, r, o.name)) break true;
+            } else false;
+            const g = if (reads) self.root else runtime_file.groupOf(o.name, self.root, self.deps);
             const slot = try groups.getOrPut(arena, g);
             if (!slot.found_existing) slot.value_ptr.* = .empty;
             try slot.value_ptr.append(arena, o);

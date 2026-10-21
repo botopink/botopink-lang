@@ -16,6 +16,11 @@
 #     `web/`, a `"host": "browser"` project, the wasm build from the `.bpr` is
 #     the direct build byte for byte (the `.mjs` loader included) and `run` from
 #     it goes through the loader under node, answering the direct run;
+#   • a module reading `@TypeInfo.all` is filed in the root's `.bpr`, whatever
+#     its package (805 (1)): over `cat/`, two programs `a` and `b` over one
+#     `lib` whose module reads the catalogue, both emitted into one directory,
+#     each builds from its own `.bpr` as its direct build does and `lib.bpr`
+#     holds no such module and is the same bytes after both;
 #   • refused: `build` / `run` over a `.bpr` without `--target`
 #     (`runtime-target-required`), a `.bpr` of another compiler
 #     (`runtime-other-compiler`), a dependency's `.bpr` as the program
@@ -126,6 +131,33 @@ else
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
     || { fail "web: the run from web.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
 fi
+
+# A catalogue reader's file: two programs over one `lib` whose `catalog` reads
+# `@TypeInfo.all`, both emitted into one directory.
+CAT="$WORK/cat"
+for prog in a b; do
+  if ! bpin "$CAT/$prog" "$WORK/direct.log" build --target commonJS --out "$WORK/direct-cat-$prog" --emit-runtime "$WORK/rt-cat"; then
+    fail "cat/$prog: the direct build failed"; sed 's/^/      /' "$WORK/direct.log" >&2; continue
+  fi
+  cp "$WORK/rt-cat/lib.bpr" "$WORK/lib-$prog.bpr"
+  grep -aq 'src/catalog.bp' "$WORK/lib-$prog.bpr" && fail "cat/$prog: lib.bpr holds the module reading @TypeInfo.all"
+  grep -aq 'src/catalog.bp' "$WORK/rt-cat/$prog.bpr" || fail "cat/$prog: $prog.bpr does not hold the module reading @TypeInfo.all"
+done
+cmp -s "$WORK/lib-a.bpr" "$WORK/lib-b.bpr" || fail "cat: lib.bpr differs between the two programs"
+cmp -s "$WORK/lib-b.bpr" "$WORK/rt-cat/lib.bpr" || fail "cat: lib.bpr differs after both"
+for prog in a b; do
+  [[ -f "$WORK/rt-cat/$prog.bpr" ]] || continue
+  if ! bpin "$CAT/$prog" "$WORK/bpr.log" build --target commonJS --out "$WORK/bpr-cat-$prog" "$WORK/rt-cat/$prog.bpr"; then
+    fail "cat/$prog: the build from $prog.bpr failed"; sed 's/^/      /' "$WORK/bpr.log" >&2; continue
+  fi
+  diff -r "$WORK/direct-cat-$prog" "$WORK/bpr-cat-$prog" > "$WORK/diff.log" \
+    || { fail "cat/$prog: built from $prog.bpr differs from the direct build"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+  bpin "$CAT/$prog" "$WORK/run-direct.out" run --target commonJS --out "$WORK/run-direct-cat-$prog" || fail "cat/$prog: the direct run failed"
+  grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
+  bpin "$CAT/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-cat-$prog" "$WORK/rt-cat/$prog.bpr" || fail "cat/$prog: the run from $prog.bpr failed"
+  diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
+    || { fail "cat/$prog: the run from $prog.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+done
 
 if (( failures > 0 )); then
   echo "runtime_file.sh: $failures failure(s)" >&2

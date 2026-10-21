@@ -101,7 +101,9 @@ compiler-cli/
 │   │                          `runtime-other-compiler`, `runtime-not-a-program`,
 │   │                          `runtime-missing`; `web` (a browser-host manifest)
 │   │                          built and run from its `.bpr` as directly (the
-│   │                          loader included)
+│   │                          loader included), and `cat` (`a` and `b` over one
+│   │                          `lib` whose module reads `@TypeInfo.all`) emitted
+│   │                          into one directory, `lib.bpr` holding no reader
 │   ├── runtime_file/        ← its fixture: `app` (a decorator and a template of
 │   │                          `lib`, a top-level `comptime` block, a folded value,
 │   │                          `std/math`) and `lib`

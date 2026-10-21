@@ -1,0 +1,14 @@
+//// The decorator the programs mark their functions with.
+
+import {compiler} from "std";
+
+pub fn job(syntax decl: unknown) -> void {
+    compiler.setMeta(Job(kind: "job"));
+}
+
+pub type Job(kind: string)
+
+#[job]
+pub fn libJob() -> i32 {
+    return 0;
+}
