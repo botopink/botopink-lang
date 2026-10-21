@@ -3,7 +3,7 @@
 `opaque`, written before `type` (`[pub] opaque type X(…) { … }`), closes a record to everything outside its own
 methods: `X(…)` is written only inside them and a field is read only there — not elsewhere in the type's module
 either (decision 814 (1)); a method written without `pub` is called anywhere in the type's module and from no other
-(814 (2)), the compiler's own lowering reaching one from any module under a name no source spells. Outside, an `X`
+(814 (2)), the compiler's own lowering reaching one from any module by a mark on the call it writes (decision 830; the cells `lowering_call_marked`, `adopted_default_builds_opaque`). Outside, an `X`
 is named, passed, stored, compared with `==` and tested with `is` — the cell `opaque_type_through_methods`, on the
 four targets, makes a `Token` through `Token.of`, reads it through its `pub` methods (one sharing a field's name),
 calls its method without `pub` from a function of its module, keeps two in an array, compares them and tests one

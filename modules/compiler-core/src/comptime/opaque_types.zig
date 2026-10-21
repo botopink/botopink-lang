@@ -11,8 +11,8 @@
 //! "Inside `X`'s own methods" is `Env.opaqueOwner`, set by `inferTypeMethods`
 //! while it checks a method body of `X`; "`X`'s module" is `Env.ownDecls`. The
 //! compiler's own lowering may build an `X` and call a method of `X` written
-//! without `pub` from any module (`byLowering`): the code a lowering writes
-//! stands on lines no source reaches.
+//! without `pub` from any module: a call node the lowering marked
+//! (`CallExpr.lowering`, decision 830) is admitted, never a line range.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -22,18 +22,6 @@ const TypeError = @import("error.zig").TypeError;
 const diagnostics = @import("diagnostics.zig");
 
 const InferError = error{ TypeError, OutOfMemory };
-
-/// The first line of the code the compiler's own lowering writes and parses
-/// (`load.zig`'s helper of a `compiler.load` read, decision 811 (4)): a call
-/// located there is the compiler's, and may build an opaque type or name a
-/// method of one written without `pub`. No source file reaches it.
-pub const lowering_first_line: usize = 3_000_000;
-
-/// The hook of decision 811 (1): true when the call at `loc` is one the
-/// compiler's own lowering wrote, never a program's.
-pub fn byLowering(loc: ast.Loc) bool {
-    return loc.line >= lowering_first_line;
-}
 
 /// The opaque record `name` names, or null.
 pub fn opaqueRecord(env: *Env, name: []const u8) ?envMod.TypeDef.Record {
@@ -53,9 +41,9 @@ fn inside(env: *Env, r: envMod.TypeDef.Record) bool {
 /// `X(…)` written for the opaque record `name` (the declared name, an import
 /// alias already read through): refused outside `X`'s methods, naming the
 /// `pub` methods that make one.
-pub fn refuseConstruction(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+pub fn refuseConstruction(env: *Env, name: []const u8, loc: ast.Loc, lowering: bool) InferError!void {
     const r = opaqueRecord(env, name) orelse return;
-    if (inside(env, r) or byLowering(loc)) return;
+    if (inside(env, r) or lowering) return;
     const madeBy = try makersText(env, r);
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an opaque type — `{s}(…)` is written only inside its own methods (decisions 811, 814)", .{ diagnostics.opaque_construction, r.name, r.name });
     const hint = if (madeBy.len > 0)
@@ -92,11 +80,11 @@ pub fn refusePattern(env: *Env, name: []const u8) InferError!void {
 
 /// `x.m(…)` / `X.m(…)` calling `name`'s method `method`: a method written
 /// without `pub` is called only in `X`'s module (decision 814 (2)) and by the
-/// compiler's lowering.
-pub fn refuseMethod(env: *Env, name: []const u8, method: []const u8, loc: ast.Loc) InferError!void {
+/// compiler's lowering (a marked call).
+pub fn refuseMethod(env: *Env, name: []const u8, method: []const u8, loc: ast.Loc, lowering: bool) InferError!void {
     const r = opaqueRecord(env, name) orelse return;
     const m = env.getInherentMethodDecl(r.name, method) orelse return;
-    if (m.isPub or inside(env, r) or env.ownDecls.contains(r.name) or byLowering(loc)) return;
+    if (m.isPub or inside(env, r) or env.ownDecls.contains(r.name) or lowering) return;
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is written without `pub` — a method of the opaque type `{s}` without `pub` is called only in its own module (decisions 811, 814)", .{ diagnostics.opaque_method, r.name, method, r.name });
     const madeBy = try makersText(env, r);
     const hint = if (madeBy.len > 0)
@@ -135,9 +123,4 @@ pub fn makers(arena: std.mem.Allocator, t: ast.TypeDecl) ![]const []const u8 {
         if (std.mem.eql(u8, a, t.name) or std.mem.eql(u8, a, "Self")) try out.append(arena, m.name);
     }
     return out.items;
-}
-
-test "byLowering: the lowering's lines only" {
-    try std.testing.expect(!byLowering(.{ .line = 12, .col = 3 }));
-    try std.testing.expect(byLowering(.{ .line = lowering_first_line, .col = 1 }));
 }

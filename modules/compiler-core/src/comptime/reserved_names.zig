@@ -1,7 +1,8 @@
 //! Decision 805 (6), 144 B-163 — the names the compiler keeps for itself. A
 //! hand-written declaration whose name holds `$` (the specialiser's
 //! `name_$N`), starts with `__bp_` (a value, a function, a parameter, a field)
-//! or with `Bp__` (a type) is refused at the name, `reserved-name`.
+//! or with `Bp__` (a type) is refused at the name, `reserved-name`; so is a
+//! hand-written call of a `__bp_` name (decision 830).
 //!
 //! The walk reads the module's parse, before any expansion adds what the
 //! compiler writes (`__bp_tpl_`, `__bp_ns_`, `__bp_loaded*`, `Bp__Load*`, …), so
@@ -60,6 +61,12 @@ pub const Walker = struct {
         if (T == ast.TypeDecl) try self.note(ptr.name, .type_, ptr.loc);
         if (T == ast.TypeAliasDecl) try self.note(ptr.name, .type_, ptr.loc);
         if (T == ast.ImportDecl) return;
+        // Decision 830 — a hand-written call of a `__bp_` name: the lowering's
+        // calls are never in the module as written.
+        if (T == ast.Expr) if (ptr.* == .call and ptr.call.kind == .call) {
+            const cc = ptr.call.kind.call;
+            if (!cc.is_builtin and cc.receiver == null) try self.note(cc.callee, .value, ptr.call.loc);
+        };
         switch (@typeInfo(T)) {
             .@"struct" => |s| {
                 if (comptime hasField(s.fields, "loc") and fieldIs(s.fields, "loc", ast.Loc)) {

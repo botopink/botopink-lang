@@ -76,11 +76,6 @@ pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
 const helper_first_line: usize = 3_000_000;
 /// Where each rewrite's line is: one line per call, from its location.
 const rewrite_first_line: usize = 4_000_000;
-// Decision 811 (4) — the helper (`module_fn`) is the compiler's own lowering,
-// which calls `Module.of`: its lines are past `opaque_types.lowering_first_line`.
-comptime {
-    std.debug.assert(helper_first_line >= @import("opaque_types.zig").lowering_first_line);
-}
 
 /// The caller build's modules, for the dependencies a loaded file's package
 /// shares with its caller (the caller's manifest): set by `comptime.compile`
@@ -278,6 +273,7 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     else
         base;
     const helper = try parseShifted(arena, src, helper_first_line, null);
+    markLowering(ast.Program, @constCast(&helper));
     // Both first: an alias of an imported type names it in a signature only
     // of a function declared after the import and before its callers.
     const decls = try arena.alloc(ast.DeclKind, program.decls.len + helper.decls.len);
@@ -286,6 +282,31 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     var out = program;
     out.decls = decls;
     return out;
+}
+
+/// Decision 830 (811-c) — every call of `ptr` (the parsed helper) marked as
+/// the compiler's own lowering (`CallExpr.lowering`): the opaque checks admit
+/// a marked call to build an opaque type or name a method without `pub`.
+fn markLowering(comptime T: type, ptr: *T) void {
+    if (T == ast.Expr) if (ptr.* == .call and ptr.call.kind == .call) {
+        ptr.call.kind.call.lowering = true;
+    };
+    if (comptime !mayHoldExpr(T)) return;
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| inline for (st.fields) |fl| {
+            if (!fl.is_comptime) markLowering(fl.type, &@field(ptr.*, fl.name));
+        },
+        .@"union" => |un| if (un.tag_type != null) switch (ptr.*) {
+            inline else => |*payload| markLowering(@TypeOf(payload.*), payload),
+        },
+        .optional => |o| if (ptr.*) |*inner| markLowering(o.child, inner),
+        .pointer => |p| switch (p.size) {
+            .one => if (@typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque") markLowering(p.child, @constCast(ptr.*)),
+            .slice => for (ptr.*) |*e| markLowering(p.child, @constCast(e)),
+            else => {},
+        },
+        else => {},
+    }
 }
 
 /// `src` parsed with every token moved to line `first + its line - 1` (and,

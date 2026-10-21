@@ -17500,7 +17500,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             if (try contextReadCall(env, c)) |typed| break :blk typed;
             try noteTypeTokenHandOns(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
-            try checkOpaqueMethodCall(env, typedCall);
+            try checkOpaqueMethodCall(env, typedCall, c);
             try noteComponentCall(env, c, typedCall);
             try noteHostCall(env, c);
             try noteTypeTokenArgs(env, c, typedCall);
@@ -22344,21 +22344,21 @@ fn checkOpaqueCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
         const raw = recv.identifier.kind.ident;
         if (env.localBindDepth(raw) != null) return;
         const name = env.importedTypeAliases.get(raw) orelse raw;
-        return opaqueTypes.refuseMethod(env, name, call.callee, c.loc);
+        return opaqueTypes.refuseMethod(env, name, call.callee, c.loc, call.lowering);
     }
     if (env.localBindDepth(call.callee) != null) return;
     const name = env.importedTypeAliases.get(call.callee) orelse call.callee;
-    return opaqueTypes.refuseConstruction(env, name, c.loc);
+    return opaqueTypes.refuseConstruction(env, name, c.loc, call.lowering);
 }
 
 /// Decision 811 (1) — `x.m(…)` on a value of an opaque type, `m` written
 /// without `pub`, outside the type's own methods.
-fn checkOpaqueMethodCall(env: *Env, typed: TypedExpr) InferError!void {
+fn checkOpaqueMethodCall(env: *Env, typed: TypedExpr, c: ast.CallExprOf(.untyped)) InferError!void {
     if (typed != .call or typed.call.kind != .call) return;
     const call = typed.call.kind.call;
     const recv = call.receiver orelse return;
     const name = nominalName(recv.getType()) orelse return;
-    return opaqueTypes.refuseMethod(env, name, call.callee, typed.call.loc);
+    return opaqueTypes.refuseMethod(env, name, call.callee, typed.call.loc, c.kind == .call and c.kind.call.lowering);
 }
 
 fn refuseContextHookWithoutUse(env: *Env, name: []const u8, loc: ast.Loc) InferError {

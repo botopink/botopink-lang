@@ -1365,9 +1365,16 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// call so it is not packed again. False on every call the parser
             /// builds, and then left out of the AST dump.
             recordPacked: bool = false,
+            /// Decision 830 (811-c) — the call is one the compiler's own
+            /// lowering wrote (`comptime/load.zig` marks the calls of the
+            /// parsed `__bp_load_module` helper): the opaque checks admit it
+            /// to build an opaque type or name a method without `pub`. False
+            /// on every call a program writes, and then left out of the AST
+            /// dump.
+            lowering: bool = false,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "templateText" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "lowering", "templateText" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain

@@ -1,0 +1,10 @@
+//// Decision 830 (811-c) — the compiler's own lowering calls are marked on the call node, not
+//// found by a line range: a program that calls the lowering's `__bp_load_module` by hand is
+//// `reserved-name` at the call.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val m = __bp_load_module(name: "a", path: "b");
+    print(m.name());
+}
