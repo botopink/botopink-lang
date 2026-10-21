@@ -7669,6 +7669,14 @@ fn metaReadType(env: *Env, call: anytype, loc: ast.Loc) InferError!MetaReadType 
             return error.TypeError;
         }
     }.at;
+    // Decision 840 (2) — `compiler.meta(d, m)` is called as declared: with
+    // the type argument `m` missing (`compiler.meta<Entity>(d)`, explicit type
+    // arguments pinning nothing more) the call gets the ordinary
+    // missing-argument refusal, the handle `d` counted as the first.
+    if (call.args.len == 0 and call.trailing.len == 0) {
+        env.lastError = TypeError.arityMismatch(call.callee, 2, 1).withLoc(loc);
+        return error.TypeError;
+    }
     if (call.args.len != 1 or call.trailing.len != 0 or call.args[0].label != null) return fail(env, loc, call.callee);
     const arg = call.args[0].value.*;
     const target = reflectedDecl(env, arg) orelse return fail(env, arg.getLoc(), call.callee);
@@ -11533,6 +11541,18 @@ fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u
 fn applyAstHygiene(env: *Env, tfn: ast.FnDecl, root: *ast.Expr) InferError!void {
     const owner = env.comptimeOwnerOf(tfn);
     if (std.mem.eql(u8, owner, env.modulePath)) return;
+    // Decisions 170, 578, 669 — the `print` / `panic` the owner's std imports
+    // bind (`import {io.terminal.print} from "std"`, dropped from its module
+    // by `std_calls.expand`) are read where the tree was written: rewritten
+    // into the call node `std_calls` writes, whatever the caller imports.
+    std_calls_rewrite: {
+        const r = env.reflection orelse break :std_calls_rewrite;
+        const prefix = try reflectionMod.Reflection.scopeKey(env.arena, owner, "");
+        var items: std.ArrayListUnmanaged(stdCallsMod.Item) = .empty;
+        var it = r.stdCalls.iterator();
+        while (it.next()) |e| if (std.mem.startsWith(u8, e.key_ptr.*, prefix)) try items.append(env.arena, e.value_ptr.*);
+        try stdCallsMod.rewriteWith(env.arena, items.items, ast.Expr, root);
+    }
     const exports = env.templateOwnerExports.get(owner) orelse return;
     try dslHygiene.applyAll(env.arena, root, HygieneResolver{ .env = env, .owner = owner, .exports = exports });
 }
