@@ -18838,6 +18838,9 @@ const Emitter = struct {
                     // `mapAll(xs, { x -> x.toString() })` over `-> R[]`: the
                     // element is what the function argument answers.
                     if (cc.receiver == null) if (self.genericFnArgElem(cc)) |k| break :blk k.kind();
+                    // `apply(h, { v -> [v.name, "z"] })` over `-> R` with `f: fn(T) -> R`:
+                    // the array type the lambda answers.
+                    if (cc.receiver == null) if (self.genericRetByFnArg(cc) catch null) |t| if (arrayElemOfTypeRef(t)) |k| break :blk k;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.get(sym) orelse .i32;
                     if (self.valueCallTypeRef(cc)) |t| if (arrayElemOfTypeRef(t)) |k| break :blk k;
                     break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
@@ -22063,25 +22066,6 @@ const Emitter = struct {
         return if (ix < cc.args.len) cc.args[ix].value.* else null;
     }
 
-    /// The lambda a call to a generic function answers the result of: the
-    /// function returns a bare type parameter `R` and a parameter `f: fn(…) -> R`
-    /// is given a lambda.
-    fn genericResultLambda(self: *Emitter, cc: anytype) ?*ast.Expr {
-        if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
-        const gf = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
-        const rt = gf.decl.returnType orelse return null;
-        if (rt != .named) return null;
-        for (gf.decl.genericParams) |gp| if (std.mem.eql(u8, gp.name, rt.named)) {
-            for (gf.decl.params, 0..) |p, i| {
-                if (p.typeRef != .function) continue;
-                const fr = p.typeRef.function.returnType.*;
-                if (fr != .named or !std.mem.eql(u8, fr.named, rt.named)) continue;
-                if (i < cc.args.len) if (lambdaArg(cc.args[i].value)) |lam| return lam;
-            }
-        };
-        return null;
-    }
-
     /// The receiver of `cc` is a namespace item, not a value: a plain name
     /// no local, global, type or extension block binds, and the callee is a
     /// function of the program (`fn_sigs`).
@@ -22159,6 +22143,7 @@ const Emitter = struct {
         const rt = f.returnType orelse return null;
         const ar = self.reg_arena.allocator();
         var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var ctx: std.ArrayListUnmanaged(TypeSub) = .empty;
         var pi: usize = 0;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
@@ -22169,7 +22154,7 @@ const Emitter = struct {
             // the argument answers — a `@Result` or any other type included.
             if (p.typeRef == .function) {
                 const want = p.typeRef.function.returnType.*;
-                const got = self.fnArgReturn(cc.args[pi].value.*) orelse continue;
+                const got = self.fnArgReturnTyped(cc.args[pi].value.*, p.typeRef, f.genericParams, ctx.items) orelse continue;
                 const w = if (isTaskTypeRef(want)) (taskValueTypeRef(want) orelse continue) else want;
                 const a = if (isTaskTypeRef(want)) (taskValueTypeRef(got) orelse continue) else got;
                 if (w == .named and isGenericParamName(w.named, f.genericParams, &.{}))
@@ -22177,6 +22162,8 @@ const Emitter = struct {
                 continue;
             }
             if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
+            // The argument's own type types a later lambda's parameters.
+            if (self.typeRefOf(cc.args[pi].value.*)) |at| try ctx.append(ar, .{ .name = p.typeRef.named, .to = at }) else if (self.concreteTypeOf(cc.args[pi].value.*)) |c| try ctx.append(ar, .{ .name = p.typeRef.named, .to = .{ .named = c } });
             const ft = (try self.fnRefTypeRef(cc.args[pi].value.*)) orelse continue;
             try subs.append(ar, .{ .name = p.typeRef.named, .to = ft });
         }
@@ -22222,6 +22209,133 @@ const Emitter = struct {
         if (thunkTail(arg)) |tail| return self.typeRefOf(tail);
         const t = self.typeRefOf(arg) orelse return null;
         return if (t == .function) t.function.returnType.* else null;
+    }
+
+    /// What the per-name shape maps held for a name a read binds for a while
+    /// (`lambdaResultTypeRef`): `take` clears the name, `restore` puts it back.
+    const ParamScope = struct {
+        locals: ?Repr,
+        typerefs: ?ast.TypeRef,
+        types: ?[]const u8,
+        alias: ?[]const u8,
+        str: bool,
+        boolean: bool,
+        arr: bool,
+        arr_elem: ?ElemKind,
+        arr_rec: ?[]const u8,
+        result_shape: ?ResultShape,
+
+        fn take(em: *Emitter, n: []const u8) ParamScope {
+            const sv: ParamScope = .{
+                .locals = em.locals.get(n),
+                .typerefs = em.local_typerefs.get(n),
+                .types = em.local_types.get(n),
+                .alias = em.aliases.get(n),
+                .str = em.str_locals.contains(n),
+                .boolean = em.bool_locals.contains(n),
+                .arr = em.arr_locals.contains(n),
+                .arr_elem = em.arr_elem_locals.get(n),
+                .arr_rec = em.arr_elem_recs.get(n),
+                .result_shape = em.result_shape_locals.get(n),
+            };
+            _ = em.locals.remove(n);
+            _ = em.local_typerefs.remove(n);
+            _ = em.local_types.remove(n);
+            _ = em.aliases.remove(n);
+            _ = em.str_locals.remove(n);
+            _ = em.bool_locals.remove(n);
+            _ = em.arr_locals.remove(n);
+            _ = em.arr_elem_locals.remove(n);
+            _ = em.arr_elem_recs.remove(n);
+            _ = em.result_shape_locals.remove(n);
+            return sv;
+        }
+
+        fn restore(sv: ParamScope, em: *Emitter, n: []const u8) void {
+            _ = take(em, n);
+            if (sv.locals) |v| em.locals.put(n, v) catch {};
+            if (sv.typerefs) |v| em.local_typerefs.put(n, v) catch {};
+            if (sv.types) |v| em.local_types.put(n, v) catch {};
+            if (sv.alias) |v| em.aliases.put(n, v) catch {};
+            if (sv.str) em.str_locals.put(n, {}) catch {};
+            if (sv.boolean) em.bool_locals.put(n, {}) catch {};
+            if (sv.arr) em.arr_locals.put(n, {}) catch {};
+            if (sv.arr_elem) |v| em.arr_elem_locals.put(n, v) catch {};
+            if (sv.arr_rec) |v| em.arr_elem_recs.put(n, v) catch {};
+            if (sv.result_shape) |v| em.result_shape_locals.put(n, v) catch {};
+        }
+    };
+
+    /// Whether `t` names one of the type parameters `gps`.
+    fn typeRefMentionsParam(t: ast.TypeRef, gps: []const ast.GenericParam) bool {
+        return switch (t) {
+            .named => |n| isGenericParamName(n, gps, &.{}),
+            .array => |i| typeRefMentionsParam(i.*, gps),
+            .optional => |i| typeRefMentionsParam(i.*, gps),
+            .tuple_ => |ts| for (ts) |x| {
+                if (typeRefMentionsParam(x, gps)) break true;
+            } else false,
+            .generic => |g| for (g.args) |x| {
+                if (typeRefMentionsParam(x, gps)) break true;
+            } else false,
+            .function => |f| blk: {
+                for (f.params) |x| if (typeRefMentionsParam(x, gps)) break :blk true;
+                break :blk typeRefMentionsParam(f.returnType.*, gps);
+            },
+            else => false,
+        };
+    }
+
+    /// `fnArgReturn` for the argument of a parameter written `want` (a
+    /// function type) of a generic function: a lambda that takes parameters
+    /// is read with them typed by `want`'s parameter types, the type
+    /// parameters `subs` already binds written in (`apply(h, { v -> v.name })`
+    /// over `f: fn(T) -> R` with `T = Holder` answers `string`).
+    fn fnArgReturnTyped(self: *Emitter, arg: ast.Expr, want: ast.TypeRef, gps: []const ast.GenericParam, subs: []const TypeSub) ?ast.TypeRef {
+        if (want == .function and arg == .function and arg.function.kind.syntax == .lambda and arg.function.kind.params.len > 0) {
+            const ar = self.reg_arena.allocator();
+            const fp = want.function.params;
+            const pts = ar.alloc(ast.TypeRef, fp.len) catch return null;
+            for (fp, 0..) |t, i| pts[i] = substTypeParams(ast.TypeRef, ar, t, subs) catch return null;
+            return self.lambdaResultTypeRef(arg, pts, gps);
+        }
+        return self.fnArgReturn(arg);
+    }
+
+    /// What a lambda with parameters answers when its parameters have the
+    /// types `ptypes` (the written `fn(T) -> R` parameter types with the
+    /// type parameters already bound written in): its last expression's
+    /// type, read with each parameter a local of its type. Null when a
+    /// parameter's type is still a type parameter or the body says nothing.
+    fn lambdaResultTypeRef(self: *Emitter, arg: ast.Expr, ptypes: []const ast.TypeRef, gps: []const ast.GenericParam) ?ast.TypeRef {
+        if (arg != .function or arg.function.kind.syntax != .lambda) return null;
+        const lam = arg.function.kind;
+        if (lam.params.len == 0 or lam.params.len > ptypes.len or lam.body.len == 0) return null;
+        for (ptypes[0..lam.params.len]) |pt| if (typeRefMentionsParam(pt, gps)) return null;
+        var saved: [8]ParamScope = undefined;
+        if (lam.params.len > saved.len) return null;
+        // Each parameter is a local of its type for the length of the read.
+        var bound: usize = 0;
+        defer for (lam.params[0..bound], saved[0..bound]) |pn, sv| sv.restore(self, pn);
+        for (lam.params, 0..) |pn, i| {
+            saved[i] = ParamScope.take(self, pn);
+            bound += 1;
+            self.locals.put(pn, self.memberRepr(ptypes[i])) catch return null;
+            self.noteTypedBinder(pn, ptypes[i]) catch return null;
+        }
+        const tail = lam.body[ast.lastRealIndex(lam.body)].expr;
+        const e = if (tail == .jump and tail.jump.kind == .@"return") (tail.jump.kind.@"return" orelse return null).* else tail;
+        if (self.typeRefOf(e)) |t| if (!typeRefMentionsParam(t, gps)) return t;
+        if (self.concreteTypeOf(e)) |c| return ast.TypeRef{ .named = c };
+        // `[v.name, "z"]`: an array of what its first element is.
+        if (e == .collection and e.collection.kind == .arrayLit and e.collection.kind.arrayLit.elems.len > 0) {
+            const first = e.collection.kind.arrayLit.elems[0];
+            const et: ast.TypeRef = self.typeRefOf(first) orelse (if (self.concreteTypeOf(first)) |c| ast.TypeRef{ .named = c } else return null);
+            const inner = self.reg_arena.allocator().create(ast.TypeRef) catch return null;
+            inner.* = et;
+            return .{ .array = inner };
+        }
+        return null;
     }
 
     /// Each type parameter of `gps` the written type `pt` names, bound to the
@@ -22455,7 +22569,7 @@ const Emitter = struct {
             // or a parameter of that function type: every type parameter its
             // answer binds (std's `async.retry`).
             if (p.typeRef == .function) {
-                if (self.fnArgReturn(cc.args[pi].value.*)) |at| {
+                if (self.fnArgReturnTyped(cc.args[pi].value.*, p.typeRef, f.genericParams, subs.items)) |at| {
                     const before = subs.items.len;
                     try bindByShape(ar, p.typeRef.function.returnType.*, at, f.genericParams, &subs);
                     for (subs.items[before..]) |sub| {
@@ -24805,8 +24919,6 @@ const Emitter = struct {
                     if (isUnwrapOr(cc)) break :blk self.isStringExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk false;
                     if (self.genericResultArg(cc)) |a| break :blk self.isStringExpr(a);
-                    // `apply(x, { h -> … })` over `-> R` with `f: fn(T) -> R`: the lambda's body.
-                    if (self.genericResultLambda(cc)) |lam| if (self.bodyIsString(lam.function.kind.body)) break :blk true;
                     if (cc.calleeExpr) |ce| if (inlineFnExpr(ce.*)) |inl| break :blk self.inlineCallIsString(inl.kind, cc);
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
