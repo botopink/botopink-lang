@@ -716,9 +716,9 @@ calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`
 `Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
 on all four targets (wasm trapped: the copy did not substitute `Self<T>`; beam aborted on `ys.all(…)`
 over a `Self<T>` parameter until a program's default read its recorded lowering). Decision 799's own
-cells: `modules/primitive_member_by_contract` (`"a+b".tailShout()` is `a+b!`, a contract of another
-module, `array<T>`'s `second`, four targets), `modules/primitive_behavior_named_like_type_refused`
-(`behavior string`, `primitive-type-redeclared` at the name) and `modules/primitive_extend_refused`
+cells: `modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_member_by_contract` (`"a+b".tailShout()` is `a+b!`, a contract of another
+module, `array<T>`'s `second`, four targets), `modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_behavior_named_like_type_refused`
+(`behavior string`, `primitive-type-redeclared` at the name) and `modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_extend_refused`
 (`extend string` keeps its refusal, naming `implement <Behavior> for string`; green on the parent
 binary, the kept rule). All but the last refused by the parent binary.
 Decision 641 (every primitive type lowercase, a capitalised name a contract several types share)

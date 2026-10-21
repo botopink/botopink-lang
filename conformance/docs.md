@@ -863,13 +863,13 @@ expression at its `fn`), `fn-return-missing`, `write -> void, or the type it ans
 read off its `return`s or its tail. An untyped `fn(x) { … }` is a lambda (§ Lambdas) and takes its type
 from its position.
 
-<!-- example: modules/fn_return_missing -->
+<!-- example: modules/decisions-taken/function_return_type_written-622/cells/fn_return_missing -->
 
-<!-- example: modules/fn_return_missing_main -->
+<!-- example: modules/decisions-taken/function_return_type_written-622/cells/fn_return_missing_main -->
 
-<!-- example: modules/fn_return_missing_method -->
+<!-- example: modules/decisions-taken/function_return_type_written-622/cells/fn_return_missing_method -->
 
-<!-- example: modules/fn_return_missing_fn_expr -->
+<!-- example: modules/decisions-taken/function_return_type_written-622/cells/fn_return_missing_fn_expr -->
 
 A declaration with no body says what it answers: `fn f(x: string);` with no `-> R` is `bodyless-fn-needs-return-type`, whose label suggests `-> void` or a body.
 
@@ -1008,13 +1008,13 @@ extension block, decision 684). A lowercase `behavior string { … }` is a behav
 named like a literal's type, `primitive-type-redeclared`, and `extend string { … }`
 adds no member, naming `implement <Behavior> for string`:
 
-<!-- example: modules/primitive_member_by_contract -->
+<!-- example: modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_member_by_contract -->
 
 <!-- example: modules/program/cells/program_primitive_behavior_redeclares_std -->
 
-<!-- example: modules/primitive_behavior_named_like_type_refused -->
+<!-- example: modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_behavior_named_like_type_refused -->
 
-<!-- example: modules/primitive_extend_refused -->
+<!-- example: modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_extend_refused -->
 
 Neither `Pair` nor `Function` is a name of the prelude (decision 738): a pair is
 the tuple `#(A, B)`, and the combinators `identity`, `compose`, `flip` and
@@ -1339,15 +1339,15 @@ and defaults are free; there is no variance — a contract's `-> ?string` is not
 met by `-> string`. A difference is refused at the member,
 `implement-signature-differs`, naming both signatures:
 
-<!-- example: modules/implement_signature_differs -->
+<!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_differs -->
 
-<!-- example: modules/implement_signature_differs_default_fn -->
+<!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_differs_default_fn -->
 
-<!-- example: modules/implement_signature_differs_extension_block -->
+<!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_differs_extension_block -->
 
-<!-- example: modules/implement_signature_differs_no_variance -->
+<!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_differs_no_variance -->
 
-<!-- example: modules/implement_signature_same -->
+<!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_same -->
 
 Identical is over types, not spellings (decision 871): `array<T>` and `T[]`, an
 alias and its target, are one type, and under `implement Mappable<i32>` a
