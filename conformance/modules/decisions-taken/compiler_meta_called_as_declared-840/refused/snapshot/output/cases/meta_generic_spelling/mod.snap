@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: typeinfo-meta-type: `meta(T)` takes one record type of this module or its imports — `meta(Entity)`, `meta(orm.Entity)`
+at src/cases/meta_generic_spelling/mod.bp:10:22
