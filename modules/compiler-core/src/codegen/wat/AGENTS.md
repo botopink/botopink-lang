@@ -400,8 +400,10 @@ gives it back (`gc_task_host_poll_wasi`). `try r catch h` over a `$result` is `g
 - **Memo cells** (decision 771, std's `hooks`; `memo_cell`): a `use memo` slot
   is a heap cell `[filled, value]` — `wasi: .CellNew` `() -> unknown` (empty),
   `.CellFilled` `(unknown) -> bool`, `.CellGet` `(unknown) -> unknown`,
-  `.CellSet` `(unknown, unknown) -> void`. The group has no GC form
-  (`gcItems`), so a module that reaches it is lowered in linear memory. The
+  `.CellSet` `(unknown, unknown) -> void`. In a GC module the
+  cell is the struct `$cell {filled: mut i32, value: mut anyref}` (`GcTy.heap_cell`,
+  `GcSlot.cell`; `gc_memo_cell_*` over `anyref`, an empty cell answers `filled` 0), so
+  a module that reaches it stays in GC. The
   slot's value is read back through `scope_carry.zig`'s `bpScopeRaw__memo<n>`
   wrapper, declared to answer the `T` the `read` carries.
 

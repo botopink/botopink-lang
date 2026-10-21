@@ -3333,6 +3333,43 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
     try std.testing.expectEqual(@as(usize, 1), needs.count());
 }
 
+// Decision 771 — a module binding std's memo cells (`wasi: .CellNew` …, `use
+// memo`) keeps the WasmGC lowering: the cell is a `$cell` struct, not a
+// linear-memory word.
+test "wat: needs ---- a use memo module stays WasmGC" {
+    const needs = try wasmNeedsOfSource(std.testing.allocator,
+        \\import {context.RenderScope, hooks.memo, io.terminal.print} from "std";
+        \\
+        \\type Element(text: string) implement Renderable
+        \\
+        \\component fn Page(name: string) -> Component<Element> {
+        \\    val label = use memo({ ->
+        \\        print("label " + name);
+        \\        "page " + name
+        \\    });
+        \\    val count = use memo({ ->
+        \\        print("count " + name);
+        \\        name.length + 1
+        \\    });
+        \\    return Element(text: label + " " + count.toString());
+        \\}
+        \\
+        \\pub async fn main() -> Async<void> {
+        \\    val a = Page("a");
+        \\    val b = Page("bb");
+        \\    val first = (await a.run(RenderScope.root())).value;
+        \\    print(first.text);
+        \\    val again = (await a.run(RenderScope.root())).value;
+        \\    print(again.text);
+        \\    val other = (await b.run(RenderScope.root())).value;
+        \\    print(other.text);
+        \\    val last = (await a.run(RenderScope.root())).value;
+        \\    print(last.text);
+        \\}
+    );
+    try std.testing.expect(needs.contains(.gc));
+}
+
 // ... and a call of `attempt` asks for `Exceptions`.
 test "wat: needs ---- a call of attempt asks for Exceptions" {
     const needs = try wasmNeedsOfSource(std.testing.allocator,

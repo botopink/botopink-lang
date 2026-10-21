@@ -5180,6 +5180,8 @@ const Emitter = struct {
         waiter,
         hostn,
         exn,
+        /// A std `use memo` / hook cell (`wasi:cell_*`): `filled`, `value`.
+        heap_cell,
         frame: u32,
         /// Decision 105 on wasm (144 B-128) — a generator handle: `state`
         /// (0 live, 1 ended), `kind` (`$__gen_resume` dispatches on it),
@@ -5204,7 +5206,7 @@ const Emitter = struct {
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
                 .env => |n| n == b.env,
                 .frame => |n| n == b.frame,
-                .task, .waiter, .hostn, .exn, .gen => true,
+                .task, .waiter, .hostn, .exn, .heap_cell, .gen => true,
             };
         }
     };
@@ -5238,6 +5240,7 @@ const Emitter = struct {
             .box_i32 => .{ .box = .i32 },
             .result => .result,
             .exn => .exn,
+            .cell => .heap_cell,
         };
     }
 
@@ -5729,6 +5732,12 @@ const Emitter = struct {
                     fs[1] = .{ .name = "h", .ty = .i32 };
                     fs[2] = .{ .name = "t", .ty = self.gcTy(.task) };
                     try defs.append(ar, .{ .name = "hostn", .kind = .{ .@"struct" = fs } });
+                },
+                .heap_cell => {
+                    const fs = try ar.alloc(wat.Field, 2);
+                    fs[0] = .{ .name = "filled", .ty = .i32, .mutable = true };
+                    fs[1] = .{ .name = "value", .ty = .anyref, .mutable = true };
+                    try defs.append(ar, .{ .name = "cell", .kind = .{ .@"struct" = fs } });
                 },
                 .exn => {
                     const fs = try ar.alloc(wat.Field, 2);

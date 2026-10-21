@@ -2111,8 +2111,7 @@ const task_gate_open = func("__task_gate_open", &.{"g"}, null, i32s(&.{ "n", "r"
 });
 
 /// `wasi:cell_new` — a `use memo` slot (decision 771, std's `hooks`): a heap
-/// cell `[filled, value]`, empty. No GC form: a module that holds one is
-/// lowered in linear memory (`gcItems`).
+/// cell `[filled, value]`, empty. A GC module has its own form (`gc_memo_cell_*`).
 const memo_cell_new = func("__memo_cell_new", &.{}, .i32, i32s(&.{"p"}), &.{
     c32(8),   call("__alloc"), set("p"),
     get("p"), c32(0),          store(0),
@@ -2416,7 +2415,7 @@ const gc_panic_fail = typedFunc("__panic_fail", &.{pref("msg")}, null, i32s(&.{ 
 // the other holds it back as a waiter until it settles.
 
 /// The types the GC forms name by slot.
-pub const GcSlot = enum(u16) { task, waiter, hostn, closure, arr_any, box_i32, result, exn };
+pub const GcSlot = enum(u16) { task, waiter, hostn, closure, arr_any, box_i32, result, exn, cell };
 /// The first slot index: far above any index a module's group reaches.
 pub const gc_slot_base: u16 = 0xF000;
 
@@ -2805,6 +2804,22 @@ const gc_task_gate_await = typedFunc("__task_gate_await", &.{ .{ .name = "g", .t
     call("__task_listen"), get("r"),
 }));
 
+/// `wasi:cell_new` in a GC module — a `use memo` slot: a `$cell`
+/// `{filled, value}`, empty.
+const gc_memo_cell_new = typedFunc("__memo_cell_new", &.{}, gref(.cell), &.{}, &.{ c32(0), null_any, snew(.cell) });
+
+/// `wasi:cell_filled` — whether cell `c` holds a value.
+const gc_memo_cell_filled = typedFunc("__memo_cell_filled", &.{.{ .name = "c", .ty = .anyref }}, .i32, &.{}, &.{ get("c"), rcast(.cell), sget(.cell, 0) });
+
+/// `wasi:cell_get` — the value cell `c` holds.
+const gc_memo_cell_get = typedFunc("__memo_cell_get", &.{.{ .name = "c", .ty = .anyref }}, .anyref, &.{}, &.{ get("c"), rcast(.cell), sget(.cell, 1) });
+
+/// `wasi:cell_set` — cell `c` holds `v`.
+const gc_memo_cell_set = typedFunc("__memo_cell_set", &.{ .{ .name = "c", .ty = .anyref }, .{ .name = "v", .ty = .anyref } }, null, &.{}, &.{
+    get("c"), rcast(.cell), get("v"), sset(.cell, 1),
+    get("c"), rcast(.cell), c32(1),   sset(.cell, 0),
+});
+
 /// The program's exception tag in a GC module (decision 518): its one value
 /// an `$exn`, as an `anyref`.
 pub const gc_panic_tag = ast.Tag{ .name = "__bp_panic", .params = &.{.anyref} };
@@ -2893,6 +2908,7 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .task_race_of => &.{.{ .func = gc_task_race_of }},
         .task_spawn_all => &.{.{ .func = gc_task_spawn_all }},
         .task_gate => &.{ .{ .func = gc_task_host_cancel }, .{ .func = gc_task_gate_new }, .{ .func = gc_task_gate_open }, .{ .func = gc_task_gate_await } },
+        .memo_cell => &.{ .{ .func = gc_memo_cell_new }, .{ .func = gc_memo_cell_filled }, .{ .func = gc_memo_cell_get }, .{ .func = gc_memo_cell_set } },
         .panic_raise => &.{.{ .func = gc_panic_raise }},
         .wasi_attempt => &.{.{ .func = gc_wasi_attempt }},
         else => null,
@@ -2903,7 +2919,7 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
 /// resolves each of their items for the module (`gcRemapItem`).
 pub fn gcSlotted(g: ast.HelperGroup) bool {
     return switch (g) {
-        .task, .task_host, .task_delay, .task_race, .task_race_of, .task_spawn_all, .task_gate, .panic_raise, .wasi_attempt => true,
+        .task, .task_host, .task_delay, .task_race, .task_race_of, .task_spawn_all, .task_gate, .memo_cell, .panic_raise, .wasi_attempt => true,
         else => false,
     };
 }
