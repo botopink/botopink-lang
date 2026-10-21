@@ -161,6 +161,13 @@ pub type Json {
         };
     }
 
+    pub fn isString(self: Self) -> bool {
+        return case self {
+            Str(value: _) -> true;
+            _ -> false;
+        };
+    }
+
     // An object's members in document order; `[]` for any other kind.
     pub fn members(self: Self) -> array<#(string, Json)> {
         return case self {
@@ -1682,6 +1689,11 @@ test "Json.kindName names each variant" {
 test "Json.isObject is true for an object and for nothing else" {
     assert everyKind().map({ v -> v.isObject().toString() }).join(",")
         == "false,false,false,false,false,true";
+}
+
+test "Json.isString is true for a string and for nothing else" {
+    assert everyKind().map({ v -> v.isString().toString() }).join(",")
+        == "false,false,false,true,false,false";
 }
 
 test "Json.members answers an object's members in order and none for the rest" {
