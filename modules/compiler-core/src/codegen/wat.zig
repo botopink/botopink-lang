@@ -3965,6 +3965,17 @@ const Emitter = struct {
         return null;
     }
 
+    /// The record a `?.` link reads off an optional array of records: the
+    /// tail of `xs?.[i]` / `xs?.at(i)` / `xs?.first()`, `cond` being `xs`.
+    fn optLinkElemRecord(self: *Emitter, cond: ast.Expr, tail: ast.Expr) ?[]const u8 {
+        if (tail != .call or tail.call.kind != .call) return null;
+        const cc = tail.call.kind.call;
+        if (self.indexArgs(cc)) |ix| {
+            if (ix.is_slice) return null;
+        } else if (!(cc.receiver != null and !cc.is_builtin and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))) return null;
+        return self.elemRecordOf(cond);
+    }
+
     /// Best-effort record-type name for an expression — drives `recv.field`
     /// offset lookup. Recovers from common shapes: `self`, locals bound to a
     /// record_ctor or a known-record-returning fn call, chained `recv.a.b`
@@ -3982,6 +3993,10 @@ const Emitter = struct {
                 .generic => |g| return self.resolveRecordName(g.name),
                 else => {},
             };
+        };
+        // `xs?.[i]` over an optional array of records: the element's record.
+        if (optOperatorParts(e)) |op| if (!op.bang) {
+            if (self.optLinkElemRecord(op.cond.*, op.tail)) |r| return r;
         };
         return switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -23106,7 +23121,13 @@ const Emitter = struct {
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         if (self.genericResultOf(e)) |a| return self.optInfoOf(a);
         // `xs?.[k]`: the link's own optional, flattened (decision 330).
-        if (optOperatorParts(e)) |op| if (!op.bang) return self.optInfoOf(op.tail) orelse self.optLinkBoxInfo(op.cond.*, op.tail);
+        if (optOperatorParts(e)) |op| if (!op.bang) {
+            // Over an optional array of records the link is the record's own
+            // pointer, `0` absent, and names the record a `!` / `?.` read of
+            // it needs (`first!.title` read its field by no type).
+            if (self.optLinkElemRecord(op.cond.*, op.tail)) |r| return .{ .boxed = false, .rec = r };
+            return self.optInfoOf(op.tail) orelse self.optLinkBoxInfo(op.cond.*, op.tail);
+        };
         switch (e) {
             // An `if` with no `else` in value position: absent when the
             // condition is false (its value when false is the language

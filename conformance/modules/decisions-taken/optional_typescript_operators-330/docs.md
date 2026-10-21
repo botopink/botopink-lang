@@ -16,6 +16,7 @@
 [cells/optional_enum_method_absent_receiver/src/main.bp](cells/optional_enum_method_absent_receiver/src/main.bp)
 [run/src/cases/optional_enum_method_call/mod.bp](run/src/cases/optional_enum_method_call/mod.bp)
 [cells/optional_enum_method_imported/src/main.bp](cells/optional_enum_method_imported/src/main.bp)
+[cells/optional_index_record_field/src/main.bp](cells/optional_index_record_field/src/main.bp)
 [run/src/cases/optional_float_function_value/mod.bp](run/src/cases/optional_float_function_value/mod.bp)
 [refused/src/cases/optional_has_no_methods/mod.bp](refused/src/cases/optional_has_no_methods/mod.bp)
 [run/src/cases/optional_if_null_initializer/mod.bp](run/src/cases/optional_if_null_initializer/mod.bp)
