@@ -9,6 +9,7 @@
 [run/src/cases/generic_fn_and_type/mod.bp](run/src/cases/generic_fn_and_type/mod.bp)
 [cells/generic_fn_result_array_string_bool/src/main.bp](cells/generic_fn_result_array_string_bool/src/main.bp)
 [cells/generic_method_array_join/src/main.bp](cells/generic_method_array_join/src/main.bp)
+[cells/generic_method_optional_answer/src/main.bp](cells/generic_method_optional_answer/src/main.bp)
 [run/src/cases/generic_method_lambda_param_typed/mod.bp](run/src/cases/generic_method_lambda_param_typed/mod.bp)
 [cells/generic_method_map/src/main.bp](cells/generic_method_map/src/main.bp)
 [refused/src/cases/generic_missing_argument/mod.bp](refused/src/cases/generic_missing_argument/mod.bp)

@@ -1098,6 +1098,16 @@ const LastHook = struct {
 /// enclosing binding (`prev` the alias it had before).
 const Shadow = struct { name: []const u8, prev: ?[]const u8, aliased: bool };
 
+/// A method answering a bare type parameter of its own, `T` or `?T` (`first<T>(…) -> ?T`):
+/// a copy per record bound to `T` hands the record back, not a boxed scalar.
+fn answersOwnTypeParam(m: ast.BehaviorMethod) bool {
+    const rt0 = m.returnType orelse return false;
+    const rt = if (rt0 == .optional) rt0.optional.* else rt0;
+    if (rt != .named) return false;
+    for (m.genericParams) |gp| if (std.mem.eql(u8, gp.name, rt.named)) return true;
+    return false;
+}
+
 const GenericMethod = struct {
     owner: []const u8,
     tparams: []const ast.GenericParam,
@@ -1879,7 +1889,7 @@ fn emitWatPass(
         // is one in a GC module too, whose one body holds `T` as an `unknown`
         // (front 164 s2 P3).
         .type_ => |t| for (try em.methodsWithDefaults(t)) |m| {
-            if (t.genericParams.len == 0 and !(plan.mode == .gc and m.genericParams.len > 0)) continue;
+            if (t.genericParams.len == 0 and !(plan.mode == .gc and m.genericParams.len > 0) and !answersOwnTypeParam(m)) continue;
             if (m.body == null or m.is_declare or m.isExternal()) continue;
             const sym = try std.fmt.allocPrint(ar0, "{s}_{s}", .{ t.name, m.name });
             try em.generic_methods.put(em.alloc, sym, .{
@@ -4084,7 +4094,10 @@ const Emitter = struct {
                             // `Money_max` returns `Self` — so a chained
                             // `.min(hi)` finds its owner.
                             if (cc.receiver != null) if (self.recordMethodSym(cc, c.loc)) |sym| {
-                                const tn = self.fn_return_types.get(sym) orelse break :blk null;
+                                // A copy of a generic method (`first__T_Counter`) answering `?T`
+                                // has its written return type only in `fn_ret_typerefs`.
+                                const tn = self.fn_return_types.get(sym) orelse
+                                    (if (self.fn_ret_typerefs.get(sym)) |tr| typeRefName(tr) else break :blk null);
                                 break :blk self.resolveRecordName(tn);
                             };
                             // A local holding a function value (`val m =
@@ -23896,11 +23909,19 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, gm.tparams, m.genericParams) orelse continue;
+            // `fallback: ?T` binds `T` as a `T` argument does.
+            const pty = if (p.typeRef == .optional and p.typeRef.optional.* == .named) p.typeRef.optional.* else p.typeRef;
+            const bnd = self.bindParam(pty, cc.args[pi].value.*, &isGenericParamName, gm.tparams, m.genericParams) orelse continue;
             try params_of.append(ar, p.name);
             if (Local.has(subs.items, bnd.name)) continue;
             try subs.append(ar, .{ .name = bnd.name, .to = .{ .named = bnd.ty } });
             if (std.mem.eql(u8, bnd.ty, "string") or std.mem.eql(u8, bnd.ty, "bool") or bnd.ty[0] == 'f') needed = true;
+            // A record bound to the type parameter the method answers (`-> ?T`): the one
+            // body would hand the pointer back as a boxed scalar.
+            if (self.records.contains(bnd.ty)) if (m.returnType) |rt0| {
+                const rt1 = if (rt0 == .optional) rt0.optional.* else rt0;
+                if (rt1 == .named and std.mem.eql(u8, rt1.named, bnd.name)) needed = true;
+            };
             if (self.records.contains(bnd.ty) and comparesValues(ast.BehaviorMethod, m)) needed = true;
         }
         if (subs.items.len == 0) return null;

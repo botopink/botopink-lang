@@ -1,0 +1,27 @@
+//// A generic method answering `?T` hands back the value: `?.count` on a record `T` and
+//// `?? default` on a scalar `T` read it on every target (wasm kept the `?T` slot unmonomorphised
+//// and printed an address).
+
+import {io.terminal.print} from "std";
+
+type Counter(count: i32, name: string)
+
+type Bag(size: i32) {
+    pub fn first<T>(self: Self, keep: fn(unknown) -> bool, fallback: ?T) -> ?T {
+        return fallback;
+    }
+}
+
+pub fn main() -> void {
+    val bag = Bag(size: 2);
+    val c = bag.first({ u -> true }, Counter(count: 7, name: "seven"));
+    print(c?.count);
+    print(c?.name);
+    val n = bag.first({ u -> true }, 41);
+    print(n ?? 0);
+    val s = bag.first({ u -> true }, "text");
+    print(s ?? "none");
+    val none: ?Counter = null;
+    val m = bag.first({ u -> true }, none);
+    print(m?.count ?? -1);
+}
