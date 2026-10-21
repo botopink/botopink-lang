@@ -169,7 +169,7 @@ pub async fn allOf<T, E>(
     tasks: array<Async<Result<T, E>>>,
 ) -> Async<Result<array<T>, E>> {
     var out: array<T> = [];
-    for t in tasks {
+    for (tasks) { t ->
         val v = try await t;
         out.push(v);
     }
@@ -179,7 +179,7 @@ pub async fn allOf<T, E>(
 // The values of every Async, in input order — the infallible `allOf`.
 pub async fn all<T>(tasks: array<Async<T>>) -> Async<array<T>> {
     var out: array<T> = [];
-    for t in tasks {
+    for (tasks) { t ->
         val v = await t;
         out.push(v);
     }

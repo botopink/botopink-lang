@@ -1068,7 +1068,7 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// `.while_` / `.for_` for the desugared forms (whose `body[0]` is the
         /// written loop). Null on an unprefixed loop.
         prefixedKeyword: ?LoopKeyword = null,
-        /// `for param in iter { body }`: the collection, range or generator
+        /// `for (iter) { param -> body }`: the collection, range or generator
         /// iterated; `while (iter) { … }`: the condition. A `loop { … }` is the
         /// condition loop over the literal `true`.
         iter: *ExprOf(phase),
@@ -1095,16 +1095,11 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// top-level `continue` is `continue-outside-loop` and a
         /// `break <value>` is refused. Dumped only when set.
         markedLambda: bool = false,
-        /// Decision 950 — `for <pattern> in xs { … }`: `body[0]` is the
-        /// `val <pattern> = <params[0]>;` the parser wrote, the item being
-        /// named by the loop. The formatter prints the pattern as the binder.
-        /// Dumped only when set.
-        binderDestruct: bool = false,
 
         /// `prefixedKeyword` is left out of the AST dump when null, so the
         /// slot moved no snapshot of an unprefixed loop.
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{"type_"}, &.{ "prefixedKeyword", "markedLambda", "binderDestruct" });
+            return stringifyOmitting(this, jws, &.{"type_"}, &.{ "prefixedKeyword", "markedLambda" });
         }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {

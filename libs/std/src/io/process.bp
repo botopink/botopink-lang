@@ -206,7 +206,7 @@ pub type Child(pid: i32, handle: unknown) {
     // ends on them; it ends when the child does (`wait`).
     pub fn forwardSignals(self: Self) -> Result<void, ProcessError> {
         val h = self.handle;
-        for s in [Signal.Int, Signal.Term, Signal.Hup, Signal.Winch] {
+        for ([Signal.Int, Signal.Term, Signal.Hup, Signal.Winch]) { s ->
             val name = signalName(s);
             case rawOnSignal(name, { -> rawKill(h, name); }) {
                 Ok(_) {}

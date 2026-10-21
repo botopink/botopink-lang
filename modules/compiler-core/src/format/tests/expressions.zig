@@ -747,53 +747,6 @@ test "format: an empty loop body prints on one line and a body breaks" {
     );
 }
 
-// ── decision 950: the formatter rewrites 105's `for (xs) { x -> … }` ─────────
-
-test "format: 105's parenthesised for prints as for x in xs (decision 950)" {
-    try h.assertFormatAs(std.testing.allocator,
-        \\async fn f(xs: i32[], gen: AsyncIter<i32>) -> Async<void> {
-        \\    for (xs) { x -> print(x); }
-        \\    for :outer (0..xs.length) { i ->
-        \\        print(i);
-        \\    }
-        \\    for await (gen) { v -> print(v); }
-        \\    val c = iter for (xs) { x -> yield x * 2; };
-        \\    for (xs.map { v -> v + 1 }) { y -> print(y); }
-        \\}
-    ,
-        \\async fn f(xs: i32[], gen: AsyncIter<i32>) -> Async<void> {
-        \\    for x in xs {
-        \\        print(x);
-        \\    }
-        \\    for :outer i in 0..xs.length {
-        \\        print(i);
-        \\    }
-        \\    for await v in gen {
-        \\        print(v);
-        \\    }
-        \\    val c = iter for x in xs {
-        \\        yield x * 2;
-        \\    };
-        \\    for y in (xs.map { v -> v + 1 }) {
-        \\        print(y);
-        \\    }
-        \\}
-    );
-}
-
-test "format: a for pattern binder prints back as written (decision 950)" {
-    try h.assertFormat(std.testing.allocator,
-        \\fn f(ps: #(string, i32)[]) -> void {
-        \\    for #(k, v) in ps {
-        \\        print(k);
-        \\    }
-        \\    for _ in 0..2 {
-        \\        print(1);
-        \\    }
-        \\}
-    );
-}
-
 // ── calling what a call returned (decision 14) ────────────────────────────────
 // `adder(3)(4)` has no name to put in `callee`, so the callee travels as an
 // expression (`ast.CallExpr.call.calleeExpr`) and `callee` is `""`. The printer

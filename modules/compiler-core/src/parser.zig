@@ -213,19 +213,15 @@ pub const ParseErrorType = enum {
     /// block is written `{ … }`.
     removedBlockBuiltin,
     /// `loop (…) { … }` — decision 105: `loop` takes no parenthesis; a
-    /// collection is `for x in xs { … }` (950), a condition `while (cond) { … }`.
+    /// collection is `for (xs) { x -> … }`, a condition `while (cond) { … }`.
     removedLoopParenthesised,
     /// `while (cond) { x -> … }` / `loop { x -> … }` — neither binds a name
     /// (decision 105); only `for` takes `{ x -> … }`.
     loopBindsNothing,
-    /// `for { … }` / `for in xs` — a `for` binds the item it iterates
-    /// (decision 950: `for x in xs { … }`).
+    /// `for (xs) { … }` without `x ->` — a `for` binds the item it iterates.
     forWithoutBinder,
-    /// Decision 950 — `for (xs) { x -> … }`: 105's parenthesised form; the
-    /// collection loop is `for x in xs { … }`. Refused at the `(`.
-    forParenthesised,
-    /// `for x, i in xs` — a `for` binds one name; the index is
-    /// `for i in 0..xs.length { … }` (decisions 105, 950).
+    /// `for (xs) { x, i -> … }` — a `for` binds one name; the index is
+    /// `for (0..xs.length) { i -> }` (decision 105).
     forBindsOneName,
     /// `#[…] loop` with an annotation that is not a generator effect, or a
     /// generator annotation on `for` / `while` — only `loop` takes the
@@ -504,9 +500,6 @@ pub const Parser = struct {
     /// `fn(..) -> R` (a function of any parameters) is a pattern written there
     /// alone (`anyParamsOutsideDecl` anywhere else).
     inDeclPattern: bool = false,
-    /// Decision 950 — how many `for <pattern> in …` bodies enclose the
-    /// cursor: each such loop's item is named `__bp_for_item<depth>`.
-    forDestructDepth: u8 = 0,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
         behavior: u32 = 0,

@@ -2626,30 +2626,16 @@ them into an iterator or a stream (decision 125):
 |---|---|---|
 | `loop { … }` | repeats until `break` | no |
 | `while (cond) { … }` | repeats while `cond` holds | no |
-| `for x in coll { … }` | walks a collection, a range or an `Iter` | no |
-| `for await x in s { … }` | walks a `AsyncIter`, where the body has an await channel | no |
+| `for (coll) { x -> … }` | walks a collection, a range or an `Iter` | no |
+| `for await (s) { x -> … }` | walks a `AsyncIter`, where the body has an await channel | no |
 | `iter loop` · `iter while` · `iter for` | the loop is an iterator: `yield v` / `break v` emit | **yes** — `Iter<T>` |
 | `stream loop` · `stream while` · `stream for` · `stream for await` | the same, and the body may `await` | **yes** — `AsyncIter<T>` |
 
 A plain loop is a statement: bare `break` leaves it and `continue` starts its
-next round, in all three. **The collection loop names its item before `in`**
-(decision 950): `for x in xs { … }`, `for await x in s { … }`, the body a block —
-a loop body, never a lambda. The binder is a name, `_`, or a pattern bound as a
-`val` binds it (738): `for #(k, v) in d.entries() { … }`. `for` binds the item
-only — the index is `for i in 0..xs.length { … }`. The iterable ends at the
-body's `{`, so it takes no trailing lambda: `for y in (xs.map { x -> f(x) }) {`
-writes the parentheses. `for x in try e { … }` reads the iterable through a
-propagating `try`. The parentheses stay on `while (cond) {`, as they do on `if`:
-without them `while x {` could not tell the body from a record literal.
-`loop (…)` is an error naming `for` and `while`.
-
-105's parenthesised `for (xs) { x -> … }` and `for await (s) { x -> … }` are
-`for-parenthesised`, refused at the `(` naming the new form; `botopink format`
-rewrites them. A `for` with no binder before `in` is `for-without-binder`, and
-two names (`for x, i in xs`) are `for-binds-one-name`.
-
-<!-- example: modules/decisions-taken/for_in_loop-950/cells/for_in_loop -->
-<!-- example: modules/decisions-taken/for_in_loop-950/cells/for_parenthesised_refused -->
+next round, in all three. `for` binds the item only — the index is
+`for (0..xs.length) { i -> … }`. The parentheses stay (`while (cond) {`), as
+they do on `if`: without them `while x {` could not tell the body from a record
+literal. `loop (…)` is an error naming `for` and `while`.
 
 `loop (xs) { x -> … }` and `loop (cond)` are `removed-loop-parenthesised`, naming `for` and `while`. `while` and `loop` bind nothing, so a binder on one is `loop-binds-nothing`, refused at the binder. `loop await` does not exist either: a stream is walked with `for await`, and the parser refuses the `await` after `loop`, located at it.
 
@@ -2658,8 +2644,8 @@ two names (`for x, i in xs`) are `for-binds-one-name`.
 <!-- example: modules/decisions-taken/effect_annotation_removed_refused-127/refused/src/cases/loop_condition_parenthesised -->
 <!-- example: modules/loop/refused/src/cases/loop_parenthesised -->
 
-A range `a..b` excludes its end and `a...b` includes it: `for i in 1..4` visits
-`1 2 3`, `for i in 1...4` visits `1 2 3 4`. A range is not a value — there is no
+A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
+`1 2 3`, `for (1...4)` visits `1 2 3 4`. A range is not a value — there is no
 `Range` and no `.rev()`; a countdown is a `while` or `xs.reverse()`.
 
 <!-- example: modules/loop/run/src/cases/loop_forms -->
@@ -2704,7 +2690,7 @@ channel (a `Async`, `Component` or `AsyncIter` return, an `async { }` block or a
 `stream` loop) and is otherwise `await-without-async`. `for` over a
 `bool` is refused naming `while`.
 
-Labels go on all three: `for :outer x in xs { … }`, `while :w (…) { … }`,
+Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
 `loop :l { … }`, then `break :outer`, `continue :outer`. A `continue :outer` from a nested loop's body or from a
 `case` arm's block ends the inner loops and starts the named loop's next round; a label no enclosing loop carries is
 `break-label-unbound`, on `continue` as on `break`. A bare `continue` from a block or a `case` arm in a loop's

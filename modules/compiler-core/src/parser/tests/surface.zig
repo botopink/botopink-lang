@@ -476,42 +476,12 @@ test "surface: while and loop bind nothing — a binder is loop-binds-nothing at
     try expectError("fn f() { loop { x -> x; }; }", .loopBindsNothing, 1, 17);
 }
 
-test "surface: a for without a binder is for-without-binder at the token after `for`" {
-    try expectError("fn f(xs: i32[]) { for xs { print(1); }; }", .forWithoutBinder, 1, 23);
-    try expectError("fn f() { for x [1, 2] { print(1); }; }", .forWithoutBinder, 1, 14);
+test "surface: a for without a binder is for-without-binder at the body's first token" {
+    try expectError("fn f() { for ([1, 2]) { @print(1); }; }", .forWithoutBinder, 1, 25);
 }
 
 test "surface: a for with two binders is for-binds-one-name at the second" {
-    try expectError("fn f() { for x, i in [1, 2] { x; }; }", .forBindsOneName, 1, 17);
-}
-
-test "surface: 105's parenthesised for is for-parenthesised at its `(` (decision 950)" {
-    try expectError("fn f() { for ([1, 2]) { x -> x; }; }", .forParenthesised, 1, 14);
-    try expectError("fn f() { for await (s) { x -> x; }; }", .forParenthesised, 1, 20);
-    try expectError("fn f() { for :l ([1]) { x -> x; }; }", .forParenthesised, 1, 17);
-}
-
-test "surface: for x in xs binds the item before `in`; a pattern opens the body (decision 950)" {
-    var parsed = try parse(
-        \\fn f(xs: i32[], ps: #(i32, i32)[]) -> void {
-        \\    for x in xs { x; };
-        \\    for #(a, b) in ps { a; };
-        \\    for _ in 0..3 { };
-        \\    for y in (xs.map { v -> v }) { y; };
-        \\}
-    );
-    defer parsed.deinit();
-    const body = parsed.program.decls[0].@"fn".body;
-    const f = body[0].expr.loop;
-    try std.testing.expectEqualStrings("x", f.params[0]);
-    try std.testing.expect(!f.binderDestruct);
-    try std.testing.expectEqual(@as(usize, 1), f.body.len);
-    const d = body[1].expr.loop;
-    try std.testing.expect(d.binderDestruct);
-    try std.testing.expectEqual(@as(usize, 2), d.body.len);
-    try std.testing.expectEqualStrings(d.params[0], d.body[0].expr.binding.kind.localBindDestruct.value.identifier.kind.ident);
-    try std.testing.expectEqualStrings("_", body[2].expr.loop.params[0]);
-    try std.testing.expect(body[3].expr.loop.iter.* == .collection);
+    try expectError("fn f() { for ([1, 2]) { x, i -> x; }; }", .forBindsOneName, 1, 28);
 }
 
 test "surface: an annotation block on a loop is refused — a loop takes `iter` / `stream`" {
