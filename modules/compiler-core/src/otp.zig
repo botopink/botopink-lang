@@ -51,8 +51,9 @@ pub fn guardedEval(arena: std.mem.Allocator, call: []const u8) ![]const u8 {
     , .{call});
 }
 
-/// The JavaScript a node VM that runs a program loads first (`--import`, a
-/// `data:` URL of `node_abort_import`): an uncaught abort — a throw out of
+/// The JavaScript the browser `.mjs` loader keeps loading first until 164 s2c
+/// (`--import`, a `data:` URL of `node_abort_import`; commonJS carries its own,
+/// `cjs_abort_handler`, decision 870): an uncaught abort — a throw out of
 /// `main`, a rejected promise nobody awaited — writes one line to stderr,
 /// `<kind>: <message>`, and exits 1: the `Failure` std's `attempt` answers
 /// for the same raise (decision 535; `libs/std/src/failure.bp`'s Node form
@@ -69,6 +70,16 @@ pub const node_abort_source =
     "[e!=null&&e.__bp_host===true?\"host\":\"crash\",e instanceof Error?e.message:String(e)];" ++
     "const a=(e)=>{const[x,m]=k(e);writeSync(2,x+\": \"+m+\"\\n\");process.exit(1)};" ++
     "process.on(\"uncaughtException\",a);process.on(\"unhandledRejection\",a);";
+
+/// The abort handler a commonJS entry module installs in its
+/// `require.main === module` branch, before `main` (decision 870): the same
+/// text `node_abort_source` carries, as the statements the entry emits — a
+/// program run by plain `node` aborts with the text `botopink run` shows.
+pub const cjs_abort_handler = [_][]const u8{
+    "const __bp_abort = (e) => { const k = (e != null && e.__bp_panic != null) ? [\"panic\", (typeof e.__bp_panic === \"string\") ? e.__bp_panic : e.message] : (e != null && typeof e.__bp_assert_loc === \"string\") ? [\"panic\", e.message] : [(e != null && e.__bp_host === true) ? \"host\" : \"crash\", (e instanceof Error) ? e.message : String(e)]; globalThis.process.stderr.write(k[0] + \": \" + k[1] + \"\\n\", () => globalThis.process.exit(1)); }",
+    "globalThis.process.on(\"uncaughtException\", __bp_abort)",
+    "globalThis.process.on(\"unhandledRejection\", __bp_abort)",
+};
 
 /// `node_abort_source` as the `data:` URL `node --import` takes: every byte
 /// outside `[A-Za-z0-9]` percent-encoded.

@@ -613,7 +613,7 @@ fn emitProgramOptsX(
             } } },
             .{ .if_ = .{
                 .cond = .{ .name = "require.main === module" },
-                .then = try ptrTo(arena_alloc, js.Stmt{ .expr = try em.b.call(.{ .name = "_botopink_main" }, &.{}) }),
+                .then = try ptrTo(arena_alloc, js.Stmt{ .block = .{ .stmts = try entryStmts(arena_alloc, try em.b.call(.{ .name = "_botopink_main" }, &.{})) } }),
             } },
         }) });
     }
@@ -8719,4 +8719,18 @@ fn isResultPath(name: []const u8) bool {
     if (!std.mem.startsWith(u8, name, "Result.")) return false;
     const bare = name["Result.".len..];
     return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
+}
+
+/// The entry branch's statements (decision 870): the abort handler of
+/// `otp.cjs_abort_handler`, then the call of `main`.
+fn entryStmts(alloc: std.mem.Allocator, call_main: js.Expr) ![]const js.Stmt {
+    const handler = @import("../otp.zig").cjs_abort_handler;
+    const out = try alloc.alloc(js.Stmt, handler.len + 1);
+    for (handler, 0..) |text, i| {
+        const parts = try alloc.alloc(js.HostPart, 1);
+        parts[0] = .{ .text = text };
+        out[i] = .{ .expr = .{ .host = parts } };
+    }
+    out[handler.len] = .{ .expr = call_main };
+    return out;
 }

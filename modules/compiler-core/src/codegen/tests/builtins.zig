@@ -468,7 +468,7 @@ test "codegen: test runner excluded from normal build" {
         \\import {io.terminal.print} from "std";
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"function add"});
-    try h.assertJsNotContains(std.testing.allocator, src, &.{ "__bp_test", "__bp_assert", "__bp_run_tests" });
+    try h.assertJsNotContains(std.testing.allocator, src, &.{ "__bp_test", "__bp_assert(", "__bp_run_tests" });
 }
 
 // Semantics decision 4 (1.0.2-beta): `assert` outside test mode is always

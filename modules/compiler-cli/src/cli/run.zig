@@ -152,8 +152,9 @@ fn programArgvFor(
     // exceptions by default).
     switch (target) {
         // An uncaught abort writes the `Failure` an `attempt` would answer
-        // (decision 535): `--import` loads the guard before the program.
-        .commonJS => try argv.appendSlice(arena, &.{ "node", "--import", bp.otp.node_abort_import }),
+        // (decision 535); on commonJS the program's own entry installs the
+        // handler (decision 870), so node runs it bare.
+        .commonJS => try argv.append(arena, "node"),
         .wasm => if (browser) try argv.append(arena, "node") else {
             try argv.appendSlice(arena, &.{ "wasmtime", "run" });
             try argv.appendSlice(arena, try wasmtimeFlags(arena, io, entry_path));

@@ -317,7 +317,7 @@ evaluated outside the thunk and only the host's raise is marked; a host-backed m
 `__bp_assert_loc`) and an already marked raise as they are, makes an `Error` of any other thrown
 value, marks it, and marks the rejection of a Promise the host answers (not a botopink task). std's
 own bindings are not marked (495 audits each), nor is a program's `emit`ted code: `std/failure`'s
-Node forms and the abort guard (`otp.node_abort_source`) answer `host` for a marked raise and `crash`
+Node forms and the abort handler (`otp.cjs_abort_handler`, installed by the entry in its `require.main === module` branch before `main`, decision 870) answer `host` for a marked raise and `crash`
 for any other raise that is not a panic.
 
 ## Layout quirks kept for byte-identity
