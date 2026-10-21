@@ -1,5 +1,4 @@
 botopink-cell 1
 out 1
-out page
 out scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))
 out 0

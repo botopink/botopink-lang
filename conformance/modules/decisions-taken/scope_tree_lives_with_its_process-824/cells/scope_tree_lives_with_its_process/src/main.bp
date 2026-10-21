@@ -1,15 +1,15 @@
 //// Decision 824 — on erlang and beam a root's tree is one entry of the
 //// process dictionary of the process that made it: one open root, one
-//// `{bp_scope, _}` entry, gone at `close()`. A scope crosses a process only
-//// as `scope.detach()` — a fresh root over its contexts, which the other
-//// process reads —; read there undetached it fails `scope-foreign`.
+//// `{bp_scope, _}` entry, gone at `close()`; read undetached in another
+//// process it fails `scope-foreign`. Erlang and beam only (`.targets`): the
+//// entry count is a process-dictionary read, and only there does
+//// `async.runAll` run a task in a process of its own.
 
 import {context.run, context.Scope, async, compiler, failure.attemptTask, io.terminal.print} from "std";
 
 type View(text: string)
 
 #[compiler.external(
-    .JavaScript("""0"""),
     .Erlang("""length([K || {{bp_scope, _} = K, _} <- erlang:get()])"""),
 )]
 declare fn scopeEntries() -> i32;
@@ -21,15 +21,11 @@ component fn Page() -> Component<View> {
 pub async fn main() -> Async<void> {
     val root = Scope.root();
     print(scopeEntries());
-    val detached = root.detach();
-    val crossed = await async.runAll([{ -> run(Page(), detached) }]);
-    print(crossed.map({ v -> v.text }).join(","));
     val foreign = await attemptTask({ -> async.runAll([{ -> run(Page(), root) }]) });
     case foreign {
         Ok(vs) -> print(vs.map({ v -> v.text }).join(","));
         Error(f) -> print(f.message);
     }
     root.close();
-    detached.close();
     print(scopeEntries());
 }
