@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 fn plain(a: i32) -> i32 { return a; }
 fn fails(a: i32) -> Result<i32, string> { return a; }
 async fn waits<T>(a: T) -> Async<T> { return a; }
@@ -18,8 +18,6 @@ type Box(v: i32) {
   (0,0) +3  keyword  "val"
   (0,4) +7  type [declaration]  "Element"
   (0,14) +4  keyword  "type"
-  (0,21) +9  keyword  "implement"
-  (0,31) +10  type [defaultLibrary]  "Renderable"
   (1,0) +2  keyword  "fn"
   (1,3) +5  function [declaration]  "plain"
   (1,9) +1  parameter  "a"
@@ -99,8 +97,6 @@ type Box(v: i32) {
   0 0 3 9 0
   0 4 7 0 1
   0 10 4 9 0
-  0 7 9 9 0
-  0 10 10 0 4
   1 0 2 9 0
   0 3 5 4 1
   0 6 1 6 0

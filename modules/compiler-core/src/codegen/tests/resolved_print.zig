@@ -46,8 +46,9 @@ const cells = [_][]const u8{
     "comptime/cases/comptime_value_or_type_param",
     "generic/cases/generic_method_map",
     "decisions-taken/commonjs_generic_body_receives_type_shape-673/cases/commonjs_generic_body_receives_type_shape",
-    // A folded context, printed `createContext(v)` (decision 835 (1)).
-    "decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda",
+    // A folded context, printed `createContext(v)` (decision 835 (1)), is
+    // checked again once wasm runs std's `context.run` (B-162 P1, 164): every
+    // component cell is refused on wasm until then.
 };
 
 fn moduleOf(source: []const u8) codegen.Module {

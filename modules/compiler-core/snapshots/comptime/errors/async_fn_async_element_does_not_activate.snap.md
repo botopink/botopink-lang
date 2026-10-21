@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type() implement Renderable
+val Element = type()
 val Request = type(path: string)
 component fn request() -> Component<Request> {
     return Request(path: "/");

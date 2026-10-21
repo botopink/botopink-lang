@@ -1,7 +1,6 @@
-//// B-162 (decision 791) — a component call only makes its lambda, a value
-//// typed by the behavior `Component<View>`. A field read on it names a member
-//// the behavior declares or is refused at the name: `Component<R>` declares
-//// `run` (and `Async` nothing), so `c.zzz` is an unknown field.
+//// B-162 (decisions 791, 809 (1)) — a component call only makes the
+//// component, a `Component<View>`: a `Composition` or a `Composable`, with no
+//// member of its own, so a field read on it is refused at the name.
 
 import {io.terminal.print} from "std";
 

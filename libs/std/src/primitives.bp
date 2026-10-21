@@ -1913,19 +1913,15 @@ pub behavior Slice<V> {
 // `use` is written in a body marked `component` (decision 553); a component
 // is called (`Card()`), which only makes it (decision 791 (1)), and inside a
 // component body `use Card()` resolves it with a child cell of the body's
-// (791 (3), 812 (1)); `use f()` takes a hook too, so hooks compose. A
-// `Component<R>` whose `R` implements the marker `Renderable` is still what
-// the checker calls a component's body for `use provide` (354) until 804 (2)
-// takes the marker out. `throw` / `try` in a `Component` body follow decision
-// 121: legal only when `R` is a `Result`.
+// (791 (3), 812 (1)); `use f()` takes a hook too, so hooks compose — a hook
+// and a component are one thing (804 (3)). `throw` / `try` in a `Component`
+// body follow decision 121: legal only when `R` is a `Result`.
 //
 // What a body reads from above it is a context: std's `context` module
 // declares `Context<T>` and the hooks `provide(ctx)` and `context(ctx) -> T`
 // (`use` only, inside a render tree — never in a decorator body, a template
 // body or a `comptime { … }`). std's `context.resolve(c, scope, key)` runs a
 // component (809 (6)), and a root runs with `await run(App())` (822, 825).
-
-pub behavior Renderable {}
 
 // The function a component is at run time: it opens its cell under `scope`
 // at `key` and answers its value, or the task of a body that awaits.

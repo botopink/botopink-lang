@@ -17,9 +17,9 @@
 ////     val theme = use context(themeContext);             // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
-//// only in a component's body (a `Component<R>` whose `R` implements
-//// `@Renderable`), in the order written: what the body resolves after it
-//// reads it, what it resolved before does not (decision 812 (3)). `use` exists only where there
+//// only in a `component` body answering `Component<R>`, in the order
+//// written: what the body resolves after it reads it, what it resolved
+//// before does not (decision 812 (3)). `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
 //// `comptime { … }` have none (`use-outside-render-tree`). A read naming a
 //// bare type (`use context(Theme)`) is refused at the argument
@@ -100,7 +100,7 @@ pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
     }
 
     // `k` in the item's stead, the call's number kept (819 (3)).
-    pub fn key(k: unknown) -> Place {
+    pub fn key<K>(k: K) -> Place {
         return Place(callNo: 0, item: PlaceItem.Key, itemNo: 0, keyValue: k);
     }
 
@@ -115,10 +115,11 @@ pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
     // function's count and keeps a body's count and a key; `Place.none()`
     // keeps it whole.
     pub fn with(self: Self, key: Place) -> Place {
-        if (key.item == PlaceItem.Key) return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue);
-        if (key.item == PlaceItem.Index) {
-            if (self.item == PlaceItem.Absent || self.item == PlaceItem.Plain) return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null);
-        }
+        if (key.item == PlaceItem.Key)
+            return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue);
+        if (key.item == PlaceItem.Index)
+            if (self.item == PlaceItem.Absent || self.item == PlaceItem.Plain)
+                return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null);
         return self;
     }
 }
@@ -204,15 +205,15 @@ fn storeOf(frames: unknown) -> unknown {
 // The root's tree, live and in its own process; a detached root's starts in
 // each process that reads it from the contexts it carries.
 fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
-    if (ownerForeign(owner)) panic("scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))");
-    if (!storeLive(store)) {
+    if (ownerForeign(owner))
+        panic("scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))");
+    if (!storeLive(store))
         if (carried is Carried) {
             val c: Carried = carried;
             val t = ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: carriedFrames(c), cellNext: null));
             storeSet(store, t);
             return t;
         }
-    }
     if (storeLive(store)) {
         val raw = storeGet(store);
         if (raw is ScopeTree) {
@@ -227,7 +228,8 @@ fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
 fn grow(store: unknown, owner: unknown, carried: unknown, parent: i32) -> i32 {
     val t = treeOf(store, owner, carried);
     val id = t.treeCount;
-    storeSet(store, ScopeTree(treeClosed: false, treeCount: id + 1, treeCells: CellEntry(cellNo: id, cellFrames: framesOf(t.treeCells, parent), cellNext: t.treeCells)));
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: id
+        + 1, treeCells: CellEntry(cellNo: id, cellFrames: framesOf(t.treeCells, parent), cellNext: t.treeCells)));
     return id;
 }
 
@@ -325,7 +327,8 @@ pub fn enter(scope: unknown, key: unknown) -> unknown {
 
 // The contexts `cell` holds now — what a body's `use context` reads.
 pub fn received(cell: unknown) -> unknown {
-    if (cell is Scope) return framesAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId());
+    if (cell is Scope)
+        return framesAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId());
     panic("a component is run with a `Scope` (decision 819)");
 }
 

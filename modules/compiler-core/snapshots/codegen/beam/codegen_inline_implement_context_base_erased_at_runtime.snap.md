@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 fn render() -> Element {
     return Element();
 }
@@ -35,9 +35,9 @@ fn render() -> Element {
 ----- BEAM ASSEMBLY -- test@main@@Element.S
 ```erlang
 {module, test@main@@Element}.
-{exports, [{'__bp_format', 1}, {'__bp_behaviors', 0}]}.
+{exports, [{'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 6}.
+{labels, 4}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
@@ -51,14 +51,6 @@ fn render() -> Element {
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Element">>}, {y, 1}]}}.
     {deallocate, 2}.
-    return.
-
-{function, '__bp_behaviors', 0, 5}.
-  {label, 4}.
-    {line, [{location, "test@main@@Element.erl", 1}]}.
-    {func_info, {atom, test@main@@Element}, {atom, '__bp_behaviors'}, 0}.
-  {label, 5}.
-    {move, {literal, ['Renderable']}, {x, 0}}.
     return.
 ```
 
