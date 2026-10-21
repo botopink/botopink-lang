@@ -8,7 +8,7 @@ pub mod clock;
 import {clock.Clock};
 import {context.run, context.createContext, context.provide, context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 type Deps(clock: Clock)
 

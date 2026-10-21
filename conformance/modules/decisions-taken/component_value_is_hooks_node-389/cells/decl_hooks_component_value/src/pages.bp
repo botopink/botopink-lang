@@ -12,7 +12,7 @@ import {compiler} from "std";
 
 type Item(name: string)
 
-type View(text: string, kids: Component<View>[]) implement Renderable
+type View(text: string, kids: Component<View>[])
 
 type Slot(view: fn(item: Item) -> Component<View>)
 

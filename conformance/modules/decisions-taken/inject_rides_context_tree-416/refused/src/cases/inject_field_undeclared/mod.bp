@@ -4,7 +4,7 @@
 
 import {context.run, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 type Clock(now: string)
 

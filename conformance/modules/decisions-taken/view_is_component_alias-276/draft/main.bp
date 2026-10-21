@@ -2,7 +2,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-pub type Element(text: string) implement Renderable
+pub type Element(text: string)
 
 pub type View = Component<Element>;
 

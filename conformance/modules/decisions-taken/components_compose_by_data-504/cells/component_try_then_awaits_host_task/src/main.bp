@@ -5,7 +5,7 @@
 
 import {context.run, async.delay, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 fn parse(s: string) -> Result<i32, string> {
     if (s == "") throw "empty";

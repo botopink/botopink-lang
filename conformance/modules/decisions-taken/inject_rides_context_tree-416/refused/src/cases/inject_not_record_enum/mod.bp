@@ -4,7 +4,7 @@
 
 import {context.inject, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 type Mode {
     Light,

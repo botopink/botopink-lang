@@ -5,7 +5,7 @@
 
 import {context.RenderScope, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 type Module(name: string, make: fn() -> Component<View>)
 

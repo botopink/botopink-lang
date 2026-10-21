@@ -82,8 +82,8 @@ test "surface: type Stack<T>(items) with a method is a generic record" {
     try std.testing.expect(t.methods[0].isPub);
 }
 
-test "surface: type Element(tag) implement @Renderable {} keeps the implement clause" {
-    var parsed = try parse("type Element(tag: string) implement @Renderable { }");
+test "surface: type Element(tag) {} keeps the implement clause" {
+    var parsed = try parse("type Element(tag: string) implement Display { }");
     defer parsed.deinit();
     const t = try onlyType(parsed);
     try std.testing.expect(t.isRecord());

@@ -2,7 +2,7 @@
 
 import {comptime.stages.serverOnly, comptime.stages.page};
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 #[serverOnly]
 component fn searchParams() -> Component<string> {

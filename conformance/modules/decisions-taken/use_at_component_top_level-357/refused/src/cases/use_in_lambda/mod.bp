@@ -2,7 +2,7 @@
 //// it is called, if ever: a `use` in it is refused at the `use`, naming the
 //// lambda. The value a handler needs is read at the top level and captured.
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn state(initial: i32) -> Component<i32> {
     return initial;

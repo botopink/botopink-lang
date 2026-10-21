@@ -2774,16 +2774,6 @@ fn typeRefToString(arena: std.mem.Allocator, ref: ast.TypeRef) ![]const u8 {
     return buf.toOwnedSlice(arena);
 }
 
-/// True when any of `impls` is the marker `@Renderable` (decision 354): a
-/// `@Component<R>` whose `R` implements it is a component.
-fn implementsRenderable(impls: []const ast.TypeRef) bool {
-    for (impls) |im| switch (im) {
-        .generic => |g| if (g.is_builtin and std.mem.eql(u8, g.name, "Renderable")) return true,
-        else => {},
-    };
-    return false;
-}
-
 /// Derive the `use` capability of a function from its declared return type
 /// (decisions 102, 104, 128 and 354): `-> @Component<R>` grants `use`, for a
 /// hook and a component alike, and nothing is unwrapped to find it.
@@ -2807,14 +2797,6 @@ fn baseNameOfType(ty: *T.Type) ?[]const u8 {
         .named => |n| n.name,
         else => null,
     };
-}
-
-/// True when `ty` is a hook: `@Component<R>` whose `R` does not implement
-/// `@Renderable` (decision 354). A component, a plain value — is not.
-fn isHookType(env: *Env, ty: *T.Type) bool {
-    const t = ty.deref();
-    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 1) return false;
-    return !isComponentType(env, ty);
 }
 
 /// Decision 8 §1.3 — `Box<i32>(value: 1)`, `first<string>([])`: type
@@ -3064,21 +3046,11 @@ fn refuseComponentAwaits(env: *Env) InferError!void {
     }
 }
 
-/// True when `ty` is a component: `@Component<R>` whose `R` implements
-/// `@Renderable` (decision 354). A hook's `R` does not.
-fn isComponentType(env: *Env, ty: *T.Type) bool {
+/// True when `ty` is a component, `Component<R>` — a hook's and a
+/// component's alike (decision 804 (3)).
+fn isComponentType(ty: *T.Type) bool {
     const t = ty.deref();
-    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 1) return false;
-    return isRenderableType(env, t.named.args[0]);
-}
-
-/// True when `ty` names a type that implements `@Renderable`.
-fn isRenderableType(env: *Env, ty: *T.Type) bool {
-    const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if (env.lookupTypeDef(n.name)) |td| td.isRenderable() else false,
-        else => false,
-    };
+    return t.* == .named and std.mem.eql(u8, t.named.name, "Component") and t.named.args.len >= 1;
 }
 
 /// The type a `use` binding destructures from: the `R` of the hook's
@@ -3132,7 +3104,6 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
         .genericDefaults = genericDefaults,
         .fields = fields,
         .implements = implNames,
-        .renderable = implementsRenderable(r.implement),
         .opaque_ = r.isOpaque,
         .makers = if (r.isOpaque) try opaqueTypes.makers(env.arena, r) else &.{},
     } });
@@ -3477,7 +3448,6 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
         .genericDefaults = genericDefaults,
         .variants = variants,
         .implements = implNames,
-        .renderable = implementsRenderable(e.implement),
     } });
     // Bind the enum name itself so `inferDecl` can look it up.
     const enumInstance = try env.namedType(e.name);
@@ -9475,9 +9445,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedDecoratorBody = env.decoratorBody;
     env.decoratorBody = if (env.inDecoratorFn or memberFn.isTemplateAnnotation(f)) f.body else null;
     defer env.decoratorBody = savedDecoratorBody;
-    // Decision 354 — a component's body (its `R` implements `@Renderable`)
-    // may `use provide`; where it first renders a child is tracked per body.
-    if (env.fnContext) |*fc| fc.renderable = f.effect == .component and isComponentType(env, retType);
+    // Decisions 354, 804 (3) — a `component` body answering `Component<R>`
+    // may `use provide` (812 (3): in the order written).
+    if (env.fnContext) |*fc| fc.component_body = f.effect == .component and isComponentType(retType);
     // Decision 357 — each body starts at its own top level.
     const savedUseConstruct = env.useConstruct;
     env.useConstruct = null;
@@ -10369,7 +10339,7 @@ pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl,
 
 /// Register a nominal type (record/struct/enum) imported from another module.
 /// The export registry carries the full declaration so the importing module can
-/// rebuild the `TypeDef` — its `implements` / `renderable` and fields, not just
+/// rebuild the `TypeDef` — its `implements` and fields, not just
 /// the constructor value binding. Without this, an imported type's `implement`
 /// clause is invisible here (e.g. the `use`-legality check `contextInfoFromReturn`
 /// looks up `env.lookupTypeDef` and would find nothing). This mirrors the
@@ -12371,7 +12341,7 @@ fn locateLast(env: *Env, err: InferError, loc: ast.Loc) InferError {
 fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // `Children` coercion — applied before unification since `unifyAt` is
     // always called target-first (`unifyAt(param, arg)`).
-    if (childrenCoercion(env, a, b)) return;
+    if (childrenCoercion(a, b)) return;
     // Decision 8 §6 T7 — read before `unify` links anything.
     const ta = a.deref();
     const tb = b.deref();
@@ -12516,18 +12486,16 @@ fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferErr
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
 /// parameter (the builder children model a markup DSL's `div { … }` needs)
 /// accepts another `Children`, any array (`Element[]` — the list form), a
-/// `string` (→ a text child), or a single value implementing `@Renderable` (an
-/// `Element` → a one-element list). Coercion is one-directional: it only fires
+/// or a `string` (→ a text child). Coercion is one-directional: it only fires
 /// when the *declared* type (`target`) is `Children`, never the reverse.
-fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
+fn childrenCoercion(target: *T.Type, source: *T.Type) bool {
     const t = target.deref();
     if (t.* != .named or !std.mem.eql(u8, t.named.name, "Children")) return false;
     const s = source.deref();
     return switch (s.*) {
         .named => |n| std.mem.eql(u8, n.name, "Children") or
             std.mem.eql(u8, n.name, "array") or
-            std.mem.eql(u8, n.name, "string") or
-            isRenderableType(env, source),
+            std.mem.eql(u8, n.name, "string"),
         else => false,
     };
 }
@@ -14138,7 +14106,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@Result<R, E>`                             → 2
 ///   - `@Component<R>`                             → 1 (decision 354: the base
 ///     parameter is gone; the parser refuses `@Component<R>` at `C`)
-///   - `@Renderable`                               → 0 (the bare marker)
+///   - `Composition<T>`                            → 1 (decision 826)
 ///   - `@Expr<T>` / `@ExprCustom<T>`               → 1
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
@@ -14148,7 +14116,6 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Component")) return 1;
     if (eq(u8, name, "Composition")) return 1;
-    if (eq(u8, name, "Renderable")) return 0;
     if (eq(u8, name, ast.expr_type_name)) return 1;
     if (eq(u8, name, ast.expr_custom_type_name)) return 1;
     return null;
@@ -19044,32 +19011,22 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (vt.* == .named and env.throwContext == .result and std.mem.eql(u8, vt.named.name, "Result")) break :blk true;
                         break :blk false;
                     };
-                    // B-162 (decision 791) — a body written `-> Component<R>`
-                    // answers `R`: a returned component (`return mk(1)`, its
-                    // `R` a `Renderable`) is a lambda, not its answer, and the
-                    // types differ. `use` resolves it. A hook handing over
-                    // another hook whole keeps the rule below.
-                    if (env.returnWhole) |w| {
+                    // Decisions 809 (4), 816 (6) — a component body answering a
+                    // `Component<X>` (`return div([…])`, `return state(start)`)
+                    // resolves it with a child cell before it returns: the body
+                    // answers `X`, so `Component<Component<T>>` never arises.
+                    // Recorded for the lowering (`Env.componentReturns`).
+                    const resolved: ?*T.Type = blk: {
+                        const w = env.returnWhole orelse break :blk null;
                         const wd = w.deref();
                         const vt = vp.getType().deref();
-                        if (w != target and wd.* == .named and std.mem.eql(u8, wd.named.name, "Component") and
-                            isComponentType(env, vt))
-                        {
-                            const rName = try snapshotMod.typeNameOf(env.arena, target.deref());
-                            const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected {s}, got {s} — a body written `-> {s}` answers `{s}`, and a component call only makes its lambda: resolve it with `use` (decision 791)", .{
-                                rName,
-                                try snapshotMod.typeNameOf(env.arena, vt),
-                                try snapshotMod.typeNameOf(env.arena, wd),
-                                rName,
-                            });
-                            env.lastError = TypeError.custom(msg, "Resolve the component with `use` and return its answer (`val v = use c; return v;`), or place it in the tree as a child (decision 791 (3)).").withLoc(rv.getLoc());
-                            return error.TypeError;
-                        }
-                    }
-                    // A value that is already the declared wrapper (`return
-                    // state(start)` in a `-> Component<X>` hook) unifies with
-                    // the whole declared return type.
+                        if (w != target and wd.* == .named and std.mem.eql(u8, wd.named.name, "Component") and isComponentType(vt)) break :blk vt;
+                        break :blk null;
+                    };
+                    // A value that is already another declared wrapper unifies
+                    // with the whole declared return type.
                     const whole: ?*T.Type = blk: {
+                        if (resolved != null) break :blk null;
                         const w = env.returnWhole orelse break :blk null;
                         const wd = w.deref();
                         const vt = vp.getType().deref();
@@ -19077,11 +19034,16 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                             std.mem.eql(u8, wd.named.name, vt.named.name)) break :blk w;
                         break :blk null;
                     };
+                    if (resolved) |c| {
+                        try env.componentReturns.put(env.arena, rv.getLoc(), c.named.args[0]);
+                        try unifyAt(env, target, c.named.args[0], rv.getLoc());
+                    } else {
                     if (!passthrough) try refuseBareValueInUnmarked(env, target, vp.getType(), rv.getLoc());
                     if (whole) |w| {
                         try unifyAt(env, w, vp.getType(), rv.getLoc());
                     } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
                         try unifyAt(env, target, vp.getType(), rv.getLoc());
+                    }
                     }
                 } else if (env.returnBareIsVoid) {
                     try unifyAt(env, target, try env.namedType("void"), loc);
@@ -22424,13 +22386,11 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` operand is a `Component<R>`: a hook (`R` does not
-/// implement `@Renderable`, decisions 104, 354) or a component, which `use`
-/// resolves inside a component body (decision 791 (3)); anything else is not
-/// a hook at all.
+/// Verify a `use` operand is a `Component<R>`, a hook's or a component's
+/// alike (decisions 104, 354, 804 (3)), which `use` resolves inside a
+/// component body (decision 791 (3)); anything else is not a hook at all.
 fn validateUseOperand(env: *Env, valTy: *T.Type, loc: ast.Loc) InferError!void {
-    if (isHookType(env, valTy)) return;
-    if (isComponentType(env, valTy)) return;
+    if (isComponentType(valTy)) return;
     const disp = baseNameOfType(valTy) orelse "value";
     env.lastError = TypeError.useNotContext(disp).withLoc(loc);
     return error.TypeError;
@@ -22697,8 +22657,8 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
             ).withLoc(loc);
             return error.TypeError;
         }
-        if (!fc.renderable) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` in '{s}', which returns '{s}' — a provider gives its value to what a COMPONENT renders below it, and this body is no component (its `R` does not implement `@Renderable`)", .{ diagnostics.context_provide_outside_component, fc.fnName, fc.returnDisplay });
+        if (!fc.component_body) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` in '{s}', which returns '{s}' — a provider gives its value to what a component resolves below it, and this body is no `component` body answering `Component<R>`", .{ diagnostics.context_provide_outside_component, fc.fnName, fc.returnDisplay });
             env.lastError = TypeError.custom(msg, "Provide the context in the component that renders the children which read it (`component fn App() -> Component<Element> { use provide(…); … }`).").withLoc(loc);
             return error.TypeError;
         }
@@ -27405,9 +27365,18 @@ fn inferFunctionExprExpectedInner(
     env: *Env,
     func: ast.FunctionExprOf(.untyped),
     loc: ast.Loc,
-    expected: ?*T.Type,
+    expected_in: ?*T.Type,
     params_only: bool,
 ) InferError!TypedExpr {
+    // Decisions 815 (2), 826 (4) — a plain lambda where a `Component<T>` is
+    // expected is its `Composition<T>`: a function over the scope and the place.
+    const expected: ?*T.Type = if (expected_in) |e| blk: {
+        const d = e.deref();
+        if (func.kind.marker == null and func.kind.syntax == .lambda and d.* == .named and
+            std.mem.eql(u8, d.named.name, "Component") and d.named.args.len == 1)
+            break :blk try compositionType(env, d.named.args[0]);
+        break :blk e;
+    } else null;
     // Decision 357 — a lambda runs when it is called, if ever: no `use` in it.
     const prevUseConstruct = enterUseConstruct(env, "a lambda");
     defer env.useConstruct = prevUseConstruct;
@@ -27542,7 +27511,7 @@ fn inferFunctionExprExpectedInner(
             .returnDisplay = try snapshotMod.typeSignatureOf(env.arena, whole),
             .annotated = true,
             .fnName = "a `component` lambda",
-            .renderable = isComponentType(env, whole),
+            .component_body = isComponentType(whole),
         };
         env.hookBuilder = null;
         env.aliasWrapper = null;
@@ -27553,18 +27522,32 @@ fn inferFunctionExprExpectedInner(
     // -> R = { a, b -> ... }` bind the params to A/B before the body is inferred.
     var expParams: ?[]*T.Type = null;
     var expRet: ?*T.Type = null;
+    // Decision 888 — an untyped lambda may write fewer parameters than the
+    // function type it meets: the omitted ones are trailing and unnamed, and
+    // the lambda takes the type's arity (`{ _ -> v }` as a
+    // `fn(scope: Scope, key: Place) -> …`), so every backend emits it.
+    var allParams: []const []const u8 = fk.params;
     if (expected) |e| {
         const d = e.deref();
-        if (d.* == .func and d.func.params.len == fk.params.len) {
+        const padded = d.* == .func and d.func.params.len > fk.params.len and
+            fk.syntax == .lambda and fk.paramTypes.len == 0 and fk.returnType == null;
+        if (d.* == .func and (d.func.params.len == fk.params.len or padded)) {
             expParams = d.func.params;
             if (!params_only) expRet = d.func.ret;
+        }
+        if (padded) {
+            const names = try env.arena.alloc([]const u8, d.func.params.len);
+            @memcpy(names[0..fk.params.len], fk.params);
+            for (fk.params.len..names.len) |i| names[i] = try std.fmt.allocPrint(env.arena, "_bpOmitted{d}__", .{i});
+            allParams = names;
+            try env.lambdaPads.put(env.arena, loc, names);
         }
     }
 
     const withoutExpected = env.lambdaWithoutExpected;
     env.lambdaWithoutExpected = false;
-    const params = try env.arena.alloc(*T.Type, fk.params.len);
-    for (fk.params, 0..) |p, i| {
+    const params = try env.arena.alloc(*T.Type, allParams.len);
+    for (allParams, 0..) |p, i| {
         params[i] = if (expParams) |ep| ep[i] else blk: {
             const v = try env.freshVar();
             // A lambda passed where a parameter receives it is typed by that
@@ -27658,19 +27641,21 @@ fn inferFunctionExprExpectedInner(
         try env.componentLambdas.put(env.arena, loc, r);
         return TypedExpr{ .function = .{ .loc = loc, .type_ = try env.funcType(params, componentWhole.?), .kind = .{
             .syntax = fk.syntax,
-            .params = fk.params,
+            .params = allParams,
             .body = bodyTyped,
         } } };
     }
     if (!typedFn) if (expRet) |er| {
         // A lambda whose last expression ends with `;` answers nothing: say
         // what the position expected, then what the lambda answers.
-        if (bodyTyped.len != fk.body.len) try unifyAt(env, er, retType, loc) else try unifyAt(env, retType, er, loc);
+        // Decision 815 (4) — a lambda answering a member of an expected union
+        // fits: the member goes into the union, returns only.
+        if (bodyTyped.len != fk.body.len or er.deref().* == .union_) try unifyAt(env, er, retType, loc) else try unifyAt(env, retType, er, loc);
     };
     const funcType = try env.funcType(params, retType);
     return TypedExpr{ .function = .{ .loc = loc, .type_ = funcType, .kind = .{
         .syntax = fk.syntax,
-        .params = fk.params,
+        .params = allParams,
         .body = bodyTyped,
     } } };
 }

@@ -8,7 +8,7 @@
 
 import {context.run, context.RenderScope} from "std";
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 type Request(code: i32)
 

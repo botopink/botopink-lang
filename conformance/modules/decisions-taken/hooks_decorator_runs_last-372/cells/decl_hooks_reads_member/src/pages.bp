@@ -6,7 +6,7 @@
 
 import {compiler} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 // Reads `decl.hooks`: each node as `fn(uses: […])`.
 fn graph(syntax decl: unknown) -> void {

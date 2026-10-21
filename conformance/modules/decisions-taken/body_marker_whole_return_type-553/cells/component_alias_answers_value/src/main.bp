@@ -8,7 +8,7 @@
 
 import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Styled(className: string) implement Renderable
+type Styled(className: string)
 
 type StyledView = Component<Styled>;
 
