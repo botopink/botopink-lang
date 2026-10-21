@@ -2,3 +2,4 @@ pub mod type_token_handed_on_run_time;
 pub mod type_token_run_time_value;
 pub mod type_token_imported_type;
 pub mod type_token_method_call;
+pub mod type_token_labelled_field;

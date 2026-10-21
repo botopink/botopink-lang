@@ -15889,7 +15889,9 @@ fn noteTypeTokenArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
         const handed = typeTokenHandOn(env, arg.value.*);
         // Decision 758 — a type written where a run-time token is taken
         // crosses to run time as the type's identity (`__bp_type_token`).
-        if (arg.label == null and i < params.len and runtimeTokenParam(params, params[i].name) != null) {
+        // A labelled argument lands in the parameter its label names.
+        const rtAt: usize = if (arg.label) |l| labelledParamIndex(params, l) orelse params.len else i;
+        if (rtAt < params.len and runtimeTokenParam(params, params[rtAt].name) != null) {
             if (arg.value.* == .identifier and arg.value.identifier.kind == .ident) {
                 const n = arg.value.identifier.kind.ident;
                 if (runtimeTokenParam(env.bodyParams, n) == null and (isPrimitiveTypeName(n) or env.lookupTypeDef(importedTypeAliasTarget(env, n) orelse n) != null))
@@ -15924,6 +15926,12 @@ fn noteTypeTokenArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
         .names = try names.toOwnedSlice(env.arena),
         .owner = owner,
     });
+}
+
+/// The index of the parameter a label names.
+fn labelledParamIndex(params: []const ast.Param, label: []const u8) ?usize {
+    for (params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) return i;
+    return null;
 }
 
 /// The parameters (after `self`) of the ordinary function or method `call`
@@ -24985,14 +24993,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 @memset(tokenTyped, false);
             }
             for (call.args, 0..) |arg, i| {
-                if (tokCallee) |tc| if (arg.label == null) {
-                    const pi = if (call.receiver == null) (if (argParamIndex) |slots| (if (i < slots.len) slots[i] else tc.params.len) else i) else i;
+                if (tokCallee) |tc| {
+                    const pi = if (arg.label) |l| (labelledParamIndex(tc.params, l) orelse tc.params.len) else if (call.receiver == null) (if (argParamIndex) |slots| (if (i < slots.len) slots[i] else tc.params.len) else i) else i;
                     if (try typeTokenArgType(env, tc, pi, arg.value.*)) |ty| {
                         typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, TypedExpr{ .identifier = .{ .loc = arg.value.identifier.loc, .type_ = ty, .kind = .{ .ident = arg.value.identifier.kind.ident } } }) };
                         tokenTyped[i] = true;
                         continue;
                     }
-                };
+                }
                 if (call.receiver == null and !call.is_builtin and call.calleeExpr == null) if (declParamsAst) |dps| {
                     const pi = if (argParamIndex) |slots| (if (i < slots.len) slots[i] else dps.len) else i;
                     if (pi < dps.len) {
