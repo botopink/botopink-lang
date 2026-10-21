@@ -2623,7 +2623,14 @@ copy's `adoptedBy` making the redeclaration `behavior-member-redeclared` at the 
 copy keeps the `.prim` lowerings its body records (`inferBehaviorDefaultBodies`, lines past
 `adopt_defaults.first_line`), so a primitive receiver beside `self` (`ys.all(…)`) is lowered as one;
 and `validateImplement` takes a member the primitive already has (`primitiveAnswers`) as meeting the
-contract's required one. A lowercase `behavior string { … }` is refused at the name,
+contract's required one. A method the block writes for the primitive itself (`StringShout implement
+Shout for string { fn label(self: Self) … }`, `"d".label()`) is dispatched as an identifier receiver's is:
+`primBlockSymbol` records the block in `dispatchRewrites` at the call (the typed-primitive branch of the
+method-call inference), so every backend calls the block's `'<target>_label'`; beam reads that rewrite inside
+an adopted copy too (`self_prim_from_prelude` false), and wasm registers the block methods' declared
+`string` / `bool` / array results (`registerMethodSigs`) and types `self` as the primitive
+(`modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_block_method_on_primitive`).
+A lowercase `behavior string { … }` is refused at the name,
 `primitive-type-redeclared` (`refuseTypesNamedLikeLiterals`). Cells:
 `test/program_primitive_behavior_extends_std`, `modules/program/run` (its two cases),
 `modules/program/cells/program_primitive_behavior_redeclares_std`, `modules/primitive_member_by_contract`,

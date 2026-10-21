@@ -3679,13 +3679,14 @@ const Emitter = struct {
                 .result = if (methodHasResult(m.body)) .i32 else null,
             });
             // The shape the method answers, under the symbol its call emits:
-            // `@print` picks its printer from it, and a block's method (an
-            // imported one, `print(Tag(name: "b").shout())`) printed a
-            // string's pointer without it (decision 872).
+            // `@print` and `+` pick their printer from it, and a block's method
+            // (`print(Tag(name: "b").shout())`, `"d".label()` over `StringShout`)
+            // printed a string's pointer without it (decisions 799, 872).
             if (m.returnType) |rt| {
                 try self.fn_ret_typerefs.put(sym, rt);
                 if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                 if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
+                if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
             }
         }
     }
@@ -10263,6 +10264,10 @@ const Emitter = struct {
                 try self.locals.put(sym, .i32);
                 if (std.mem.eql(u8, p.name, "self")) {
                     if (self.self_type) |st| try self.local_types.put("self", st);
+                    // A block for a primitive (`StringShout implement Shout for
+                    // string`): `self` is that primitive, so `"s:" + self` is a
+                    // concatenation and not an addition of two words.
+                    if (primKindOfName(target) != null) try self.noteParamShape(sym, .{ .named = target });
                 } else {
                     const tn = typeRefName(p.typeRef);
                     if (self.resolveRecordName(tn)) |rty|
@@ -25086,6 +25091,11 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (self.primAssocHelper(cc) != null) break :blk true;
                     if (self.isTupleToString(cc)) break :blk true;
+                    // A method an extension block writes for a primitive
+                    // (`"d".label()` over `StringShout`): the call is the block's
+                    // function (`lowerDispatchCall`), whose declared result says
+                    // what it answers — not the primitive's member table.
+                    if (self.rewrites.get(c.loc)) |sym| if (self.extMangledName(&self.sym_buf, sym, cc.callee)) |m| break :blk self.str_fns.contains(m);
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .str;
                     if (isStrSlice(cc) and !self.answeredByValue(cc, c.loc)) break :blk true;
                     // `s[i]` / `s[a..b]` (decision 30) answer a string; an
