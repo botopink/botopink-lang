@@ -11,7 +11,7 @@ pub type Answer(modules: ModuleSnap[] = [], stderr: string = "")
 
 /// The answer of `name` in `modules`, or null.
 pub fn find(modules: ModuleSnap[], name: string) -> ?Snap {
-    for (modules) { m ->
+    for m in modules {
         if (m.name == name) return m.snap;
     }
     return null;
@@ -21,7 +21,7 @@ pub fn find(modules: ModuleSnap[], name: string) -> ?Snap {
 pub fn put(modules: ModuleSnap[], name: string, snap: Snap) -> ModuleSnap[] {
     var out: ModuleSnap[] = [];
     var placed = false;
-    for (modules) { m ->
+    for m in modules {
         if (m.name == name) {
             out.push(ModuleSnap(name: name, snap: snap));
             placed = true;

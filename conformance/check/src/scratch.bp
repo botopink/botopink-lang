@@ -138,7 +138,7 @@ fn outsideLinkTarget(src: string, cellReal: string) -> ?string {
 /// Copy `from` into `to`: at the top level `snapshot/` and `docs.md` stay behind, hidden entries at
 /// every level.
 fn copyTree(source: string, to: string, top: bool, cellReal: string) -> void {
-    for (childNames(source, "all")) { name ->
+    for name in childNames(source, "all") {
         val skip = name.startsWith(".")
             || (top && (name == "snapshot" || name == "docs.md"));
         if (!skip) {
@@ -167,7 +167,7 @@ fn libRoots(home: string, cell: string, ws: ?Workspace) -> string[] {
     val env = envVar("BOTOPINK_LIB_ROOTS");
     if (env) {
         value ->
-        for (value.split(":")) { e ->
+        for e in value.split(":") {
             if (e != "")
                 roots.push(if (e.startsWith("/")) e else resolve([home, e]));
         }

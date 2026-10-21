@@ -24,7 +24,7 @@ pub fn rel(home: string, path: string) -> string {
 }
 
 fn fileOf(files: SnapFile[], key: string) -> ?SnapFile {
-    for (files) { f ->
+    for f in files {
         if (f.key == key) return f;
     }
     return null;
@@ -33,7 +33,7 @@ fn fileOf(files: SnapFile[], key: string) -> ?SnapFile {
 fn putFile(files: SnapFile[], f: SnapFile) -> SnapFile[] {
     var out: SnapFile[] = [];
     var placed = false;
-    for (files) { g ->
+    for g in files {
         if (g.key == f.key) {
             out.push(f);
             placed = true;
@@ -44,7 +44,7 @@ fn putFile(files: SnapFile[], f: SnapFile) -> SnapFile[] {
 }
 
 fn targetFiles(acc: Accepted, t: string) -> SnapFile[] {
-    for (acc.targets) { tf ->
+    for tf in acc.targets {
         if (tf.target == t) return tf.files;
     }
     return [];
@@ -52,7 +52,7 @@ fn targetFiles(acc: Accepted, t: string) -> SnapFile[] {
 
 /// Delete every `*.snap.new` under `dir`: the candidates are this run's output.
 pub fn removeCandidates(dir: string) -> void {
-    for (childNames(dir, "all")) { name ->
+    for name in childNames(dir, "all") {
         val p = dir + "/" + name;
         if (isDir(p))
             removeCandidates(p)
@@ -63,7 +63,7 @@ pub fn removeCandidates(dir: string) -> void {
 
 fn readSnaps(home: string, dir: string, prefix: string, into: SnapFile[]) -> Result<SnapFile[], string> {
     var files = into;
-    for (childNames(dir, "all")) { name ->
+    for name in childNames(dir, "all") {
         val p = dir + "/" + name;
         val key = if (prefix == "") name else prefix + "/" + name;
         if (isDir(p)) files = try readSnaps(home, p, key, files) else {
@@ -92,12 +92,12 @@ pub fn readAccepted(home: string, cell: string, declared: string[]) -> Result<Ac
     var output: SnapFile[] = [];
     var targets: TargetFiles[] = [];
     val dir = cell + "/snapshot";
-    for (childNames(dir, "all")) { name ->
+    for name in childNames(dir, "all") {
         val p = dir + "/" + name;
         if (name == "output" && isDir(p))
             output = try readSnaps(home, p, "", output)
         else if (name == "targets" && isDir(p))
-            for (childNames(p, "all")) { tname ->
+            for tname in childNames(p, "all") {
                 val tp = p + "/" + tname;
                 if (!TARGETS.contains(tname))
                     throw rel(home, tp)
@@ -112,7 +112,7 @@ pub fn readAccepted(home: string, cell: string, declared: string[]) -> Result<Ac
                 + ": snapshot/ holds output/ and targets/<target>/ only";
     }
     var count = output.length;
-    for (targets) { tf ->
+    for tf in targets {
         count = count + tf.files.length;
     }
     return Accepted(output: output, targets: targets, count: count);
@@ -154,7 +154,7 @@ type Group(text: string, members: i32[])
 fn addToGroup(groups: Group[], text: string, i: i32) -> Group[] {
     var out: Group[] = [];
     var placed = false;
-    for (groups) { g ->
+    for g in groups {
         if (g.text == text) {
             out.push(Group(text: text, members: g.members.append([i])));
             placed = true;
@@ -178,7 +178,7 @@ fn reportCandidate(home: string, on: string, module: string, path: string, befor
         + "\n    candidate "
         + rel(home, path)
         + "\n";
-    for (trimEndOf(diff(before, after), "\n").split("\n")) { l ->
+    for l in trimEndOf(diff(before, after), "\n").split("\n") {
         out = out + "      " + l + "\n";
     }
     return out;
@@ -216,21 +216,21 @@ pub fn compare(home: string, cell: string, declared: string[], acc: Accepted, ob
     var ti = 0;
     while (ti < declared.length) {
         val t = declared.at(ti) ?? "";
-        for ((observed.at(ti) ?? Answer()).modules) { m ->
+        for m in (observed.at(ti) ?? Answer()).modules {
             if (!names.contains(m.name)) names = names.append([m.name]);
         }
-        for (targetFiles(acc, t)) { f ->
+        for f in targetFiles(acc, t) {
             if (!names.contains(f.key)) names = names.append([f.key]);
         }
         ti = ti + 1;
     }
-    for (acc.output) { f ->
+    for f in acc.output {
         if (!names.contains(f.key)) names = names.append([f.key]);
     }
     val sorted = sortStrings(names);
 
     val n = declared.length;
-    for (sorted) { m ->
+    for m in sorted {
         var ok: bool[] = [];
         var cand: string[] = [];
         var eff: array<?SnapFile> = [];
@@ -285,7 +285,7 @@ pub fn compare(home: string, cell: string, declared: string[], acc: Accepted, ob
 
         if (!newCell && outFile != null && anyHeld) {
             // `output/` holds on some targets: the others depart from it.
-            for (onOutput) { k ->
+            for k in onOutput {
                 if (!(ok.at(k) ?? false))
                     report = report
                         + writeCandidate(home, cell, declared.at(k) ?? "", m, cand.at(k) ?? "", outputText, "departs from the accepted output — a departure to review");
@@ -296,7 +296,7 @@ pub fn compare(home: string, cell: string, declared: string[], acc: Accepted, ob
         // No target holds `output/` (or there is none yet): the answer is the one the targets agree
         // on, or the majority's; else a person chooses.
         var groups: Group[] = [];
-        for (onOutput) { k ->
+        for k in onOutput {
             groups = addToGroup(groups, cand.at(k) ?? "", k);
         }
         if (groups.length == 0) continue;
@@ -332,13 +332,13 @@ pub fn compare(home: string, cell: string, declared: string[], acc: Accepted, ob
             gi = 0;
             while (gi < groups.length) {
                 if (gi != best)
-                    for ((groups.at(gi) ?? Group(text: "", members: [])).members) { k ->
+                    for k in (groups.at(gi) ?? Group(text: "", members: [])).members {
                         report = report
                             + writeCandidate(home, cell, declared.at(k) ?? "", m, cand.at(k) ?? "", majorityText, "departs from the majority — a departure to review");
                     }
                 gi = gi + 1;
             }
-        } else for (onOutput) { k ->
+        } else for k in onOutput {
             report = report
                 + writeCandidate(home, cell, declared.at(k) ?? "", m, cand.at(k) ?? "", outputText, "no majority — a person chooses which answer is the language's (snapshot/output/) and which targets depart");
         }

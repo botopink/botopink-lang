@@ -47,7 +47,7 @@ pub type Workspace(dir: string, text: string, manifest: Json)
 fn listsMember(ws: Workspace, cell: string) -> bool {
     if (!cell.startsWith(ws.dir + "/")) return false;
     val rel = cell.slice(ws.dir.length + 1).split("/");
-    for ((ws.manifest.field("workspaces") ?? Json.Null).items()) { entry ->
+    for entry in (ws.manifest.field("workspaces") ?? Json.Null).items() {
         val glob = entry.str().split("/").filter({ s -> s != "" && s != "." });
         if (glob.length == rel.length) {
             var i = 0;
@@ -143,7 +143,7 @@ pub fn readTargets(cell: string) -> Result<string[], string> {
     if (field == null) return ALL;
     if (!isArray(value)) throw "is not an array of target names";
     var list: string[] = [];
-    for (value.items()) { item ->
+    for item in value.items() {
         if (!isString(item)) throw "is not an array of target names";
         val name = item.str();
         if (!isTarget(name))
