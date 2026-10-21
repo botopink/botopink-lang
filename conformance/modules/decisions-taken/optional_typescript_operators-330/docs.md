@@ -32,3 +32,4 @@
 [cells/optional_chain_lambda_generic/src/main.bp](cells/optional_chain_lambda_generic/src/main.bp)
 [cells/optional_chain_absent_array_length/src/main.bp](cells/optional_chain_absent_array_length/src/main.bp)
 [cells/optional_chain_present_array_length/src/main.bp](cells/optional_chain_present_array_length/src/main.bp)
+[cells/optional_call_param_wasm/src/main.bp](cells/optional_call_param_wasm/src/main.bp)

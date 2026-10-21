@@ -1,0 +1,21 @@
+//// Decision 330 — `f?.(args)` on an optional function parameter answers the
+//// call when a function is held and is absent on `null`, in a plain function
+//// and in a lambda, on every target.
+
+import {io.terminal.print} from "std";
+
+fn call(f: ?fn(i32) -> i32) -> i32 {
+    return f?.(3) ?? -1;
+}
+
+fn through(f: ?fn(i32) -> i32, g: fn(?fn(i32) -> i32) -> i32) -> i32 {
+    return g(f);
+}
+
+pub fn main() -> void {
+    val inc: fn(i32) -> i32 = { n -> n + 1 };
+    print(call(inc));
+    print(call(null));
+    print(through(inc, { f -> f?.(3) ?? -1 }));
+    print(through(null, { f -> f?.(3) ?? -1 }));
+}

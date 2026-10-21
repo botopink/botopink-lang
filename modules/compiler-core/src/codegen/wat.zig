@@ -21424,6 +21424,9 @@ const Emitter = struct {
         } else {
             for (l.params, 0..) |p, i| {
                 if (i < l.param_tref.len) if (l.param_tref[i]) |t| try self.local_typerefs.put(p, t);
+                // An optional function the slot types (`f: ?fn(i32) -> i32`): `f?.(3)`
+                // reads the type of what it answers off it (decision 330).
+                if (i < l.param_ft.len) if (l.param_ft[i]) |t| if (t == .optional and t.optional.* == .function) try self.local_typerefs.put(p, t);
                 const cell: Cell = if (i < l.param_cell.len) l.param_cell[i] else .none;
                 if (cell != .none) {
                     // The argument is its cell's address: the parameter is a
