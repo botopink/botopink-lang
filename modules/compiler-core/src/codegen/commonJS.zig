@@ -3477,7 +3477,7 @@ const Emitter = struct {
 
     /// `display()` of a section wrapper variant (decision 601): the enum's
     /// printed name, the section's name and the inner value's text without its
-    /// own head, so `Token.Color(_inner: __Token__Color.White)` prints
+    /// own head, so `Token.Color(_inner: Bp__Token__Color.White)` prints
     /// `Token.Color.White`. A nested wrapper answers the same shape and the
     /// head of each is stripped in turn.
     fn sectionDisplay(self: *Emitter, e: ast.TypeDecl, v: ast.EnumVariant, existing: []const js.Class.ClassMember) ![]const js.Class.ClassMember {

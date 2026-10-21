@@ -856,7 +856,7 @@ pub const TypeContribution = struct {
 };
 
 /// The top-level name an associated type is declared under: `City.Columns`
-/// is `City__Columns`. Not an enum section's `__Token__Text`: the backends
+/// is `City__Columns`. Not an enum section's `Bp__Token__Text`: the backends
 /// read that mangling as "a section of the enum `Token`" and take the outer
 /// enum's module for the value's tag (`erlang.zig` `typeOwnerPath`), which an
 /// associated type of a `behavior` does not have. A module declaring the
@@ -1139,7 +1139,7 @@ pub const Env = struct {
     embedRewrites: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
     /// Decision 519 — the functions of this module whose `@embed` reads a
     /// `comptime` parameter's value, with those parameters: each is emitted
-    /// with one more parameter per name, `__embed_<p>: Asset`
+    /// with one more parameter per name, `__bp_embed_<p>: Asset`
     /// (`comptime.zig` `withEmbedParams`).
     embedParamFns: std.StringHashMapUnmanaged([]const []const u8) = .empty,
     /// Decision 519 — the `Asset` arguments a call of such a function passes
@@ -1406,7 +1406,7 @@ pub const Env = struct {
     /// declared parameter, the body's return target, an array literal's element
     /// type. Read by `tryResolveEnumSectionPath` to choose among the enums whose
     /// section tree carries the same path (`.Color.Red.500` on both `Token` and
-    /// `__Token__Border`) — the choice used to fall out of `typeDefs`' hash
+    /// `Bp__Token__Border`) — the choice used to fall out of `typeDefs`' hash
     /// order. Nothing is unified from here: the site that set the expectation
     /// still unifies the inferred type itself.
     expectedType: ?*T.Type = null,
@@ -1477,7 +1477,7 @@ pub const Env = struct {
     /// function is expected).
     blockLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 297 — the functions a call of this module passed a type to
-    /// (`pick(User)` → `pick__type()`, `value_or_type.zig`): an import of one
+    /// (`pick(User)` → `__bp_pick__type()`, `value_or_type.zig`): an import of one
     /// brings its type form along (`value_or_type.withTwinImports`).
     typeArgTwins: std.StringHashMapUnmanaged(void) = .empty,
     /// How `throw` is checked in the function body currently being inferred.
@@ -1551,19 +1551,21 @@ pub const Env = struct {
     /// call site). Populated alongside `inherentMethods` during registration.
     inherentMethodTypes: std.StringHashMap(std.StringHashMap(*T.Type)),
     /// §enum-sections F4 — synthesised inner enum declarations, keyed by mangled
-    /// name (`__<EnumName>__<SectionPath>`). Built during F1 desugar alongside
+    /// name (`Bp__<EnumName>__<SectionPath>`). Built during F1 desugar alongside
     /// the type-def registration; consumed by the post-inference
     /// `withSynthesisedEnumDecls` pass which prepends them to `program.decls`
     /// so codegen emits each one as a top-level enum (the user-written outer
-    /// enum already names its section wrappers via `_inner: __Enum__Section`
+    /// enum already names its section wrappers via `_inner: Bp__Enum__Section`
     /// payload type — these decls bind the referenced names).
-    synthesisedEnumDecls: std.StringHashMap(ast.TypeDecl),
+    /// In registration order (an outer section before its nested ones), so
+    /// the emitted order never hangs on how the mangled names hash.
+    synthesisedEnumDecls: std.StringArrayHashMapUnmanaged(ast.TypeDecl) = .empty,
     /// §enum-sections F2 — untyped AST rewrites for a path-access expression
     /// (`.Color.Red.500`). The F2 resolver in `infer.zig` populates this map
     /// keyed by the outermost identAccess loc when the chain matches an
     /// enum-section path; the post-inference `withEnumSectionRewrites` pass
     /// (in `comptime.zig`) walks `program.decls` and substitutes each match
-    /// with its qualified-ctor form (`Token.Color(__Token__Color.Red(…))`),
+    /// with its qualified-ctor form (`Token.Color(Bp__Token__Color.Red(…))`),
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
@@ -2171,7 +2173,6 @@ pub const Env = struct {
             .activations = std.StringHashMap(void).init(arena),
             .inherentMethods = std.StringHashMap(std.StringHashMap(void)).init(arena),
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -2272,7 +2273,7 @@ pub const Env = struct {
             .activations = try tmpl.activations.cloneWithAllocator(arena),
             .inherentMethods = try cloneNestedSet(tmpl.inherentMethods, arena),
             .inherentMethodTypes = try cloneNestedTypeMap(tmpl.inherentMethodTypes, arena),
-            .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
+            .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.clone(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -2375,7 +2376,7 @@ pub const Env = struct {
         self.inherentMethodDecls.deinit();
         self.typeOnlyCtors.deinit();
         self.typeGuardFns.deinit();
-        self.synthesisedEnumDecls.deinit();
+        self.synthesisedEnumDecls.deinit(self.arena);
         self.enumSectionRewrites.deinit();
         self.indexRewrites.deinit();
         self.optionalNullCases.deinit();
@@ -2835,16 +2836,14 @@ pub const Env = struct {
 
     /// Resolve a string type name (from AST) to a *Type.
     /// Generic parameters are looked up in `genericMap` first.
-    /// N28 — `Token.Text.Size` → `__Token__Text__Size`, the name
-    /// `registerEnumSection` files a section's typedef under. The dotted form is
-    /// what the author writes; the mangled one never appears in source.
+    /// N28 — `Token.Text.Size` → `Bp__Token__Text__Size`, the name
+    /// `registerEnumSection` files a section's typedef under (decision 836:
+    /// the reserved space). The dotted form is what the author writes; the
+    /// mangled one never appears in source.
     pub fn mangleSectionPath(self: *Env, path: []const u8) ![]const u8 {
         var buf: std.ArrayList(u8) = .empty;
-        var it = std.mem.splitScalar(u8, path, '.');
-        while (it.next()) |seg| {
-            try buf.appendSlice(self.arena, "__");
-            try buf.appendSlice(self.arena, seg);
-        }
+        try buf.appendSlice(self.arena, ast.section_type_prefix);
+        try buf.appendSlice(self.arena, try std.mem.replaceOwned(u8, self.arena, path, ".", "__"));
         return buf.toOwnedSlice(self.arena);
     }
 
@@ -2855,11 +2854,11 @@ pub const Env = struct {
         var it = self.typeDefs.iterator();
         while (it.next()) |e| {
             const key = e.key_ptr.*;
-            if (!std.mem.startsWith(u8, key, "__")) continue;
+            const path = ast.sectionTypePath(key) orelse continue;
             var run: std.ArrayList(u8) = .empty;
             defer run.deinit(self.arena);
             var dotted: std.ArrayList(u8) = .empty;
-            var segs = std.mem.splitSequence(u8, key[2..], "__");
+            var segs = std.mem.splitSequence(u8, path, "__");
             var first = true;
             while (segs.next()) |seg| {
                 try run.appendSlice(self.arena, seg);
@@ -2867,9 +2866,9 @@ pub const Env = struct {
                 try dotted.appendSlice(self.arena, seg);
                 first = false;
             }
-            // A one-segment internal name (`__Source`, decision 576 (13)) is
-            // no section: a section is `__Owner__Leaf`.
-            if (!first and std.mem.indexOf(u8, key[2..], "__") != null and std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
+            // A section is `Bp__Owner__Leaf` (`ast.sectionTypePath`: two
+            // segments at least).
+            if (!first and std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
             dotted.deinit(self.arena);
         }
         return null;
@@ -2938,7 +2937,7 @@ pub const Env = struct {
         }
         // N28 — a section of an enum-shaped `type` is named by its path
         // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
-        // typedef is registered under the mangled `__Token__Text` form by
+        // typedef is registered under the mangled `Bp__Token__Text` form by
         // `registerEnumSection`; the dotted spelling is the written one.
         if (std.mem.indexOfScalar(u8, name, '.') != null) {
             const mangled = try self.mangleSectionPath(name);

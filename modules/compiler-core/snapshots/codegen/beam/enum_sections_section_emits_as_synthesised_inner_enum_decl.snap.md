@@ -16,44 +16,44 @@ type Token {
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- test@main@@__Token__Text.S
+----- BEAM ASSEMBLY -- test@main@@Bp__Token__Text.S
 ```erlang
-{module, test@main@@__Token__Text}.
+{module, test@main@@Bp__Token__Text}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 7}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "test@main@@__Token__Text.erl", 1}]}.
-    {func_info, {atom, test@main@@__Token__Text}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Bp__Token__Text.erl", 1}]}.
+    {func_info, {atom, test@main@@Bp__Token__Text}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, test@main@@__Token__Text__v__bold}]}.
+    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, test@main@@Bp__Token__Text__v__bold}]}.
     {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Text.Bold">>}, nil]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Bp__Token__Text.Bold">>}, nil]}}.
     {deallocate, 2}.
     return.
   {label, 4}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 5}, [{x, 0}, {atom, test@main@@__Token__Text__v__italic}]}.
+    {test, is_eq_exact, {f, 5}, [{x, 0}, {atom, test@main@@Bp__Token__Text__v__italic}]}.
     {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Text.Italic">>}, nil]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Bp__Token__Text.Italic">>}, nil]}}.
     {deallocate, 2}.
     return.
   {label, 5}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 6}, [{x, 0}, {atom, test@main@@__Token__Text__v__underline}]}.
+    {test, is_eq_exact, {f, 6}, [{x, 0}, {atom, test@main@@Bp__Token__Text__v__underline}]}.
     {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Text.Underline">>}, nil]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Bp__Token__Text.Underline">>}, nil]}}.
     {deallocate, 2}.
     return.
   {label, 6}.
     {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Text">>}, nil]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Bp__Token__Text">>}, nil]}}.
     {deallocate, 2}.
     return.
 ```

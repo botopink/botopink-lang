@@ -583,6 +583,13 @@ pub fn assocTypesShown(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
         }
         var j = i;
         while (j < raw.len and isWordChar(raw[j])) j += 1;
+        if (ast.sectionTypePath(raw[i..j]) != null) {
+            // Decision 836 — a section's inner enum (`Bp__Token__Color`) is
+            // shown as its path too: the prefix dropped, the rest joined.
+            const k = ast.section_type_prefix.len;
+            std.mem.copyForwards(u8, raw[i..], raw[i + k ..]);
+            return assocTypesShown(gpa, try gpa.realloc(raw, raw.len - k));
+        }
         if (isAssocTypeWord(raw[i..j])) {
             // `A__B` → `A.B`: one byte shorter per joint, rewritten in place.
             var w: usize = i;
@@ -629,9 +636,9 @@ fn isAssocTypeWord(w: []const u8) bool {
 
 test "an associated type is shown under its owner's path" {
     const gpa = std.testing.allocator;
-    const out = try assocTypesShown(gpa, try gpa.dupe(u8, "unknown field 'nope' on type 'City__Columns' (A__B__C, __bp_x, BpInline__x)"));
+    const out = try assocTypesShown(gpa, try gpa.dupe(u8, "unknown field 'nope' on type 'City__Columns' (A__B__C, __bp_x, BpInline__x, Bp__Tok__Pad)"));
     defer gpa.free(out);
-    try std.testing.expectEqualStrings("unknown field 'nope' on type 'City.Columns' (A.B.C, __bp_x, BpInline__x)", out);
+    try std.testing.expectEqualStrings("unknown field 'nope' on type 'City.Columns' (A.B.C, __bp_x, BpInline__x, Tok.Pad)", out);
 }
 
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
@@ -681,7 +688,7 @@ fn typeLabelImpl(gpa: std.mem.Allocator, ty: *T.Type, full: bool) ![]const u8 {
         const n = t.named;
         // The spellings a source writes, not the checker's internal names:
         // `?T` (decision 2 — "optional" is no spelling), `T[]`, and a
-        // section's path (`Token.Text`, not `__Token__Text`).
+        // section's path (`Token.Text`, not `Bp__Token__Text`).
         if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
             const inner = try typeLabelImpl(gpa, n.args[0], full);
             defer gpa.free(inner);
@@ -691,6 +698,9 @@ fn typeLabelImpl(gpa: std.mem.Allocator, ty: *T.Type, full: bool) ![]const u8 {
             const inner = try typeLabelImpl(gpa, n.args[0], full);
             defer gpa.free(inner);
             return std.fmt.allocPrint(gpa, "{s}[]", .{inner});
+        }
+        if (ast.sectionTypePath(n.name)) |path| {
+            return std.mem.replaceOwned(u8, gpa, path, "__", ".");
         }
         if (std.mem.startsWith(u8, n.name, "__") and n.name.len > 2) {
             return std.mem.replaceOwned(u8, gpa, n.name[2..], "__", ".");

@@ -794,7 +794,7 @@ pub fn decodeAtom(alloc: std.mem.Allocator, atom: []const u8) (std.mem.Allocator
         const vsep = QUALIFIER_SEP ++ VARIANT_TAG ++ QUALIFIER_SEP;
         // The LAST `__v__`: `variantAtom` collapses a variant's `_` runs, so
         // the variant half never holds `__`, while a declaration keeps its
-        // underscores (`__Token__Color`).
+        // underscores (`Bp__Token__Color`).
         if (std.mem.lastIndexOf(u8, decl_half, vsep)) |v| {
             const decl = decl_half[0..v];
             const variant = decl_half[v + vsep.len ..];
@@ -1724,7 +1724,7 @@ test "typeAtom: the type's identity is the `<package>@<path>@@<Decl>` module of 
     try expectTypeAtom("std@dict@@Dict", "std/dict", "Dict");
     // A name that needs escaping: only a character outside `[A-Za-z0-9_]`
     // folds to `_`; underscores and case stay, so the atom decodes back.
-    try expectTypeAtom("myapp@main@@__Token__Color", "main", "__Token__Color");
+    try expectTypeAtom("myapp@main@@Bp__Token__Color", "main", "Bp__Token__Color");
     try expectTypeAtom("myapp@main@@Http2_Server", "main", "Http2-Server");
     // The `val` an `implement` block is bound to is a declaration like any other.
     try expectTypeAtom("myapp@pond@@PatoNada", "pond", "PatoNada");

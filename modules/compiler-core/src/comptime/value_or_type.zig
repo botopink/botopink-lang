@@ -10,7 +10,9 @@
 //! - the function keeps the value form: the parameter's type is the value
 //!   member (`Box<T>`), `Param.typeArgOf` names `T`, and every `source is type`
 //!   is folded to `false` — an `if` on it keeps its `else` branch;
-//! - a twin `<name>__type` is declared for the type form: the parameter is
+//! - a twin `__bp_<name>__type` (decision 836: in the compiler's reserved
+//!   space, so a hand-written `<name>__type` is a free name) is declared for
+//!   the type form: the parameter is
 //!   gone (a type has no value, so a read of `source` there is the ordinary
 //!   unbound name), `source is type` is `true` and an `if` on it keeps its
 //!   `then` branch. It carries no annotation (a decorator runs once).
@@ -22,8 +24,25 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 
-/// The suffix of the type-form twin of a function.
+/// The prefix and the suffix of the type-form twin of a function (decision
+/// 836): `pick` → `__bp_pick__type`.
+pub const twin_prefix = "__bp_";
 pub const twin_suffix = "__type";
+
+/// The type-form twin's name of the function `name` binds (`pick` →
+/// `__bp_pick__type`); a qualified name keeps its qualifier.
+pub fn twinName(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    const at = if (std.mem.lastIndexOfScalar(u8, name, '.')) |i| i + 1 else 0;
+    return std.fmt.allocPrint(arena, "{s}{s}{s}{s}", .{ name[0..at], twin_prefix, name[at..], twin_suffix });
+}
+
+/// The function a type-form twin's name is the twin of (`__bp_pick__type`
+/// → `pick`), or null for any other name.
+pub fn twinOf(name: []const u8) ?[]const u8 {
+    if (name.len <= twin_prefix.len + twin_suffix.len) return null;
+    if (!std.mem.startsWith(u8, name, twin_prefix) or !std.mem.endsWith(u8, name, twin_suffix)) return null;
+    return name[twin_prefix.len .. name.len - twin_suffix.len];
+}
 
 /// The value member and the type parameter of a `comptime x: V | type<T>`
 /// parameter (one `type<T>` member naming one of `generics`), else null.
@@ -87,7 +106,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
         out.items[out.items.len - 1] = .{ .@"fn" = value };
 
         var twin = f;
-        twin.name = try std.fmt.allocPrint(arena, "{s}{s}", .{ f.name, twin_suffix });
+        twin.name = try twinName(arena, f.name);
         twin.annotations = &.{};
         twin.isDefault = false;
         twin.anonymousDefault = false;
@@ -110,8 +129,9 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
 
 /// The transformed program's imports with each item that binds a function
 /// `twins` names (a call of this module passed it a type) followed by its type
-/// form: `import {m.pick};` → `import {m.pick, m.pick__type};`, an alias
-/// aliased the same way (`pick as p` → `pick__type as p__type`).
+/// form: `import {m.pick};` → `import {m.pick, m.__bp_pick__type};`, an
+/// alias aliased the same way (`pick as p` → `__bp_pick__type as
+/// __bp_p__type`).
 pub fn withTwinImports(arena: std.mem.Allocator, program: ast.Program, twins: *const std.StringHashMapUnmanaged(void)) !ast.Program {
     if (twins.count() == 0) return program;
     var decls: ?[]ast.DeclKind = null;
@@ -124,9 +144,9 @@ pub fn withTwinImports(arena: std.mem.Allocator, program: ast.Program, twins: *c
             if (imp.activate or !twins.contains(imp.name())) continue;
             var twin = imp;
             const segs = try arena.dupe([]const u8, imp.segments);
-            segs[segs.len - 1] = try std.fmt.allocPrint(arena, "{s}{s}", .{ imp.leaf(), twin_suffix });
+            segs[segs.len - 1] = try twinName(arena, imp.leaf());
             twin.segments = segs;
-            if (imp.alias) |al| twin.alias = try std.fmt.allocPrint(arena, "{s}{s}", .{ al, twin_suffix });
+            if (imp.alias) |al| twin.alias = try twinName(arena, al);
             try items.append(arena, twin);
             added = true;
         }
@@ -272,7 +292,7 @@ test "the value form folds `x is type` to false and keeps the else branch" {
     try std.testing.expectEqualStrings("T", value.params[0].typeArgOf.?);
     try std.testing.expect(value.params[0].typeRef == .generic);
     const twin = program.decls[2].@"fn";
-    try std.testing.expectEqualStrings("pick__type", twin.name);
+    try std.testing.expectEqualStrings("__bp_pick__type", twin.name);
     try std.testing.expectEqual(@as(usize, 0), twin.params.len);
 }
 

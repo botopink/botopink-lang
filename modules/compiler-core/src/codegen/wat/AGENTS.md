@@ -1890,7 +1890,7 @@ absent. A literal trapped and a name printed the ordinal
 **A `case` reads a bare or dot-shorthand arm in its subject's enum**
 (`enumOfSubject` → `subject_enums` → `case_enum_hint`, read by
 `findVariant`): a parameter, a local, a call typed by the enum, `self`, and a
-section written as a path (`Token.Layout.Break` → `__Token__Layout__Break`).
+section written as a path (`Token.Layout.Break` → `Bp__Token__Layout__Break`).
 Set for the WHOLE subject only — a payload's own pattern keeps the
 program-wide lookup. One flat table answered the first enum declaring the name
 (`modules/variant/run/src/cases/variant_leading_dot_two_enums_case`,
@@ -2270,7 +2270,7 @@ answered, and each was a red wasm cell of `conformance`:
   (`enumReturnedBy`, `namedShapeOf`, `isTaggedValue`): `@print(stop())` over
   a linked module's `fn stop() -> Signal` printed the value's address.
 - **A variant reached through its enum is the enum's** (`callKind`):
-  `__Token__Layout.Size(…)` — what a section path desugars to — built the
+  `Bp__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`
   answered the section's first arm (`display:block`).
 - **A `_`-named top-level statement runs at module load**, in `$__init_globals`

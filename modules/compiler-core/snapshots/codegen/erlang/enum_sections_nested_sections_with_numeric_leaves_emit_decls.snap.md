@@ -12,11 +12,11 @@ type Token {
 ```erlang
 -module(test@main).
 
-%% type __Token__Color
+%% type Bp__Token__Color
 %%   Hex(value)
 %%   Red(_inner)
 
-%% type __Token__Color__Red
+%% type Bp__Token__Color__Red
 %%   __100
 %%   __500
 
@@ -24,15 +24,15 @@ type Token {
 %%   Color(_inner)
 ```
 
------ ERLANG -- test@main@@__Token__Color.erl
+----- ERLANG -- test@main@@Bp__Token__Color.erl
 ```erlang
--module(test@main@@__Token__Color).
+-module(test@main@@Bp__Token__Color).
 -export(['__bp_format'/1]).
 
-'__bp_format'({test@main@@__Token__Color__v__hex, F0}) -> {variant, "__Token__Color.Hex", [{"value", F0}]};
-'__bp_format'({test@main@@__Token__Color__v__red, F0}) ->
+'__bp_format'({test@main@@Bp__Token__Color__v__hex, F0}) -> {variant, "Bp__Token__Color.Hex", [{"value", F0}]};
+'__bp_format'({test@main@@Bp__Token__Color__v__red, F0}) ->
     [_, Rest] = string:split('__bp_show'(F0, false), "."),
-    {text, ["__Token__Color.Red", ".", Rest]}.
+    {text, ["Bp__Token__Color.Red", ".", Rest]}.
 
 '__bp_show'(V, true) when erlang:is_binary(V) -> V;
 '__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
@@ -54,13 +54,13 @@ type Token {
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 ```
 
------ ERLANG -- test@main@@__Token__Color__Red.erl
+----- ERLANG -- test@main@@Bp__Token__Color__Red.erl
 ```erlang
--module(test@main@@__Token__Color__Red).
+-module(test@main@@Bp__Token__Color__Red).
 -export(['__bp_format'/1]).
 
-'__bp_format'(test@main@@__Token__Color__Red__v__100) -> {variant, "__Token__Color__Red.__100", []};
-'__bp_format'(test@main@@__Token__Color__Red__v__500) -> {variant, "__Token__Color__Red.__500", []}.
+'__bp_format'(test@main@@Bp__Token__Color__Red__v__100) -> {variant, "Bp__Token__Color__Red.__100", []};
+'__bp_format'(test@main@@Bp__Token__Color__Red__v__500) -> {variant, "Bp__Token__Color__Red.__500", []}.
 ```
 
 ----- ERLANG -- test@main@@Token.erl

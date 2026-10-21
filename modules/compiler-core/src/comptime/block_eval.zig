@@ -372,7 +372,7 @@ pub const Rewrites = struct {
 /// value is applied — `comptime/transform.zig`'s reading of the same
 /// channels: a section path (`.Pad.All.4`, an `identAccess` at the chain's
 /// outer location) is the qualified constructor (`Tok.Pad(_inner:
-/// __Tok__Pad.All(_inner: __Tok__Pad__All.__4))`); a call takes the
+/// Bp__Tok__Pad.All(_inner: Bp__Tok__Pad__All.__4))`); a call takes the
 /// rewrite's callee, and its arguments when the rewrite carries any (a tuple
 /// element called by its label, a record update); a leading-dot variant
 /// (`.Bold`), a leading-dot constructor (`.Hover(…)`) and a section's payload
@@ -1518,7 +1518,7 @@ fn readTypeRef(arena: std.mem.Allocator, names: *std.StringHashMapUnmanaged(void
 fn readTypeShape(arena: std.mem.Allocator, names: *std.StringHashMapUnmanaged(void), decl: ast.TypeDecl) Error!void {
     switch (decl.shape) {
         .record => |fields| for (fields) |f| try readTypeRef(arena, names, f.typeRef),
-        // A payload's types — a section wrapper's `__Tok__Pad` among them.
+        // A payload's types — a section wrapper's `Bp__Tok__Pad` among them.
         .enum_ => |e| for (e.variants) |v| for (v.fields) |f| try readTypeRef(arena, names, f.typeRef),
     }
 }
@@ -1595,16 +1595,15 @@ fn externalPreludeType(arena: std.mem.Allocator, name: []const u8) ?ast.TypeDecl
 }
 
 /// A section of an enum (`conformance/docs.md` § Sections of an enum) is a type of its
-/// own, `__<Enum>__<Section>[__<Sub>…]` — the name inference registers it
+/// own, `Bp__<Enum>__<Section>[__<Sub>…]` — the name inference registers it
 /// under (`infer.registerEnumSection`) and the rewrites construct
-/// (`__Tok__Pad.All(…)`). No module declares it: it is built here from the
+/// (`Bp__Tok__Pad.All(…)`). No module declares it: it is built here from the
 /// enum's declaration, with the `__` prefix on a numeric leaf (`__4`) and
-/// a wrapper variant `<Sub>(_inner: __<Enum>__<Section>__<Sub>)` per
+/// a wrapper variant `<Sub>(_inner: Bp__<Enum>__<Section>__<Sub>)` per
 /// sub-section, as `comptime.zig` `withSynthesisedEnumDecls` gives the
 /// backends.
 fn sectionType(env: *Env, name: []const u8) ?FoundType {
-    if (name.len < 3 or !std.mem.startsWith(u8, name, "__")) return null;
-    var segs = std.mem.splitSequence(u8, name[2..], "__");
+    var segs = std.mem.splitSequence(u8, ast.sectionTypePath(name) orelse return null, "__");
     const outer_name = segs.next() orelse return null;
     if (outer_name.len == 0) return null;
     const outer = findDeclared(env, outer_name) orelse return null;
@@ -1630,7 +1629,7 @@ fn sectionType(env: *Env, name: []const u8) ?FoundType {
     };
 }
 
-/// `decl` with a wrapper variant `<Section>(_inner: __<Enum>__<Section>)` per
+/// `decl` with a wrapper variant `<Section>(_inner: Bp__<Enum>__<Section>)` per
 /// section of its body (`comptime.zig` `enrichEnumWithSectionWrappers`): the
 /// emitter places a section's tag only through it.
 fn withSectionWrappers(arena: std.mem.Allocator, decl: ast.TypeDecl) Error!ast.TypeDecl {
@@ -1639,7 +1638,7 @@ fn withSectionWrappers(arena: std.mem.Allocator, decl: ast.TypeDecl) Error!ast.T
     const variants = decl.variants();
     const merged = try arena.alloc(ast.EnumVariant, variants.len + sections.len);
     @memcpy(merged[0..variants.len], variants);
-    const prefix = try std.fmt.allocPrint(arena, "__{s}", .{decl.name});
+    const prefix = try std.fmt.allocPrint(arena, ast.section_type_prefix ++ "{s}", .{decl.name});
     for (sections, 0..) |sec, i| merged[variants.len + i] = try sectionWrapper(arena, prefix, sec.name);
     var out = decl;
     out.shape = .{ .enum_ = .{ .variants = merged } };
@@ -2221,7 +2220,7 @@ const Lifter = struct {
     /// An enum's payload variant — `{Tag, F1, …}` in the untyped module — as
     /// its constructor call, `Tok.Tag(f1: …)`, when the expected type is an
     /// enum declaring `Tag` with that many fields. A section is its wrapper
-    /// variant (`Tok.Pad(_inner: __Tok__Pad.All(_inner: __Tok__Pad__All.__4))`,
+    /// variant (`Tok.Pad(_inner: Bp__Tok__Pad.All(_inner: Bp__Tok__Pad__All.__4))`,
     /// the shape inference's rewrite of `.Pad.All.4` builds), each payload
     /// lifted against its field's type. Null when the hint names no such
     /// variant: the tuple is a tuple.
@@ -2244,10 +2243,10 @@ const Lifter = struct {
     }
 
     /// The enum a variant is written through: a section's own name
-    /// (`__Tok__Pad`, which no import names), else the declared name
+    /// (`Bp__Tok__Pad`, which no import names), else the declared name
     /// (`constructorName`).
     fn enumReceiver(self: *Lifter, name: []const u8) Error!*ast.Expr {
-        const spelled = if (std.mem.startsWith(u8, name, "__")) name else try self.constructorName(name);
+        const spelled = if (ast.sectionTypePath(name) != null) name else try self.constructorName(name);
         return try self.node(.{ .identifier = .{ .loc = self.nextLoc(), .kind = .{ .ident = spelled } } });
     }
 

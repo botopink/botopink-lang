@@ -12,7 +12,7 @@ type Token {
 ```erlang
 -module(test@main).
 
-%% type __Token__Text
+%% type Bp__Token__Text
 %%   Bold
 %%   Italic
 %%   Underline
@@ -22,14 +22,14 @@ type Token {
 %%   Text(_inner)
 ```
 
------ ERLANG -- test@main@@__Token__Text.erl
+----- ERLANG -- test@main@@Bp__Token__Text.erl
 ```erlang
--module(test@main@@__Token__Text).
+-module(test@main@@Bp__Token__Text).
 -export(['__bp_format'/1]).
 
-'__bp_format'(test@main@@__Token__Text__v__bold) -> {variant, "__Token__Text.Bold", []};
-'__bp_format'(test@main@@__Token__Text__v__italic) -> {variant, "__Token__Text.Italic", []};
-'__bp_format'(test@main@@__Token__Text__v__underline) -> {variant, "__Token__Text.Underline", []}.
+'__bp_format'(test@main@@Bp__Token__Text__v__bold) -> {variant, "Bp__Token__Text.Bold", []};
+'__bp_format'(test@main@@Bp__Token__Text__v__italic) -> {variant, "Bp__Token__Text.Italic", []};
+'__bp_format'(test@main@@Bp__Token__Text__v__underline) -> {variant, "Bp__Token__Text.Underline", []}.
 ```
 
 ----- ERLANG -- test@main@@Token.erl

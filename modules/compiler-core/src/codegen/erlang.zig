@@ -3025,7 +3025,7 @@ fn isModuleRef(name: []const u8) bool {
     if (name.len == 0) return false;
     if (std.ascii.isUpper(name[0])) return true;
     // §enum-sections F4 — synthesised inner enums carry the F1 mangling
-    // `__<EnumName>__<SectionPath>` (double underscore + uppercase enum
+    // `Bp__<EnumName>__<SectionPath>` (double underscore + uppercase enum
     // letter). Recognise them as module refs so the codegen's enum_names
     // lookup matches and the qualified-ctor lowering fires.
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
@@ -3040,16 +3040,10 @@ fn isTypeRefIn(this: anytype, name: []const u8) bool {
         this.type_owner_path.contains(name) or this.imported_types.contains(name);
 }
 
-/// The OUTER enum of a synthesised inner enum's F1 mangling:
-/// `__Token__Color` → `Token`, `__Token__Color__Shade` → `Token`. Null for
-/// every other name.
-fn sectionOuterEnum(name: []const u8) ?[]const u8 {
-    if (name.len < 3 or name[0] != '_' or name[1] != '_' or !std.ascii.isUpper(name[2])) return null;
-    const rest = name[2..];
-    const sep = std.mem.indexOf(u8, rest, "__") orelse return null;
-    if (sep == 0) return null;
-    return rest[0..sep];
-}
+/// The OUTER enum of a synthesised inner enum's F1 mangling (decision 836):
+/// `Bp__Token__Color` → `Token`, `Bp__Token__Color__Shade` → `Token`. Null
+/// for every other name.
+const sectionOuterEnum = ast.sectionOuterEnum;
 
 /// Module atom for a type-like name (`List` → `list`), allocated by the caller's
 /// allocator.
@@ -10495,10 +10489,13 @@ const Emitter = struct {
         const written = this.local_types.get(name) orelse return null;
         if (this.enum_names.contains(written)) return written;
         // A section path is WRITTEN dotted (`Token.Bg`) and DECLARED under the
-        // F1 mangling (`__Token__Bg`), which is the name `enum_names` holds.
+        // F1 mangling (`Bp__Token__Bg`, decision 836), which is the name
+        // `enum_names` holds.
         if (std.mem.indexOfScalar(u8, written, '.') != null) {
             var buf: [256]u8 = undefined;
-            var len: usize = 0;
+            // `Bp` then `__<seg>` per segment: `Bp__Token__Bg`.
+            @memcpy(buf[0..2], ast.section_type_prefix[0..2]);
+            var len: usize = 2;
             var it = std.mem.splitScalar(u8, written, '.');
             while (it.next()) |seg| {
                 if (len + 2 + seg.len > buf.len) return null;
@@ -10803,10 +10800,10 @@ const Emitter = struct {
     /// arrived through an import. Both of half 3's tags render from it, so an
     /// imported type constructed here carries the owner's atom.
     fn typeOwnerPath(this: *const Emitter, type_name: []const u8) []const u8 {
-        // §enum-sections F4: a synthesised inner enum (`__Token__Color`) is
+        // §enum-sections F4: a synthesised inner enum (`Bp__Token__Color`) is
         // re-synthesised in EVERY module that writes the section path, so its
         // own declaration is not its identity — the OUTER enum's owner is.
-        // Without this, a consumer builds `main@@__Token__Color__v__white` for
+        // Without this, a consumer builds `main@@Bp__Token__Color__v__white` for
         // a value the owner's `case` reads as `emilia@tokens@@…`, and the
         // arm answers `case_clause` (measured on `emilia-cascade`).
         if (sectionOuterEnum(type_name)) |outer| return this.typeOwnerPath(outer);
@@ -10818,7 +10815,7 @@ const Emitter = struct {
         return this.module_name;
     }
 
-    /// True for a synthesised inner enum (`__Token__Color`) whose outer enum
+    /// True for a synthesised inner enum (`Bp__Token__Color`) whose outer enum
     /// another module declares: that module emits its type module.
     fn isForeignSectionEnum(this: *const Emitter, type_name: []const u8) bool {
         if (sectionOuterEnum(type_name) == null) return false;
@@ -12238,7 +12235,7 @@ const Emitter = struct {
         // A synthesised inner enum re-synthesised here for an imported outer
         // enum (§enum-sections F4) is the owner's type: its values carry the
         // owner's tags, so `'__bp_tagged'` and method dispatch reach the
-        // owner's `<owner>@@__Token__Color` module, and a copy here is dead.
+        // owner's `<owner>@@Bp__Token__Color` module, and a copy here is dead.
         if (this.isForeignSectionEnum(e.name)) return;
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "type {s}", .{e.name})) });
         for (e.variants()) |v| {

@@ -3831,9 +3831,12 @@ const Emitter = struct {
                     if (tdecl.genericParams.len > 0) try self.enum_generics.put(ra, tdecl.name, tdecl.genericParams);
                     if (tdecl.displayName) |shown| {
                         try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
+                    } else if (try ast.sectionTypeShown(ra, tdecl.name)) |shown| {
+                        // An enum section's inner enum (`Bp__Token__Color`, decision
+                        // 836) prints as the section's path, `Token.Color` (decision 601).
+                        try self.printed_names.put(ra, tdecl.name, shown);
                     } else if (std.mem.startsWith(u8, tdecl.name, "__")) {
-                        // An enum section's inner enum (`__Token__Color`) prints as
-                        // the section's path, `Token.Color` (decision 601).
+                        // A prelude's internal enum (`__DeclKind`) prints without its `__`.
                         const shown = try std.mem.replaceOwned(u8, ra, tdecl.name[2..], "__", ".");
                         try self.printed_names.put(ra, tdecl.name, shown);
                     }
@@ -10643,7 +10646,7 @@ const Emitter = struct {
 
     fn callKind(self: *Emitter, cc: anytype) CallKind {
         if (cc.is_builtin) return .builtin;
-        // A variant reached through its enum (`__Token__Layout.Size(…)`, what a
+        // A variant reached through its enum (`Bp__Token__Layout.Size(…)`, what a
         // section path desugars to) is that enum's, even when a record of the
         // same name is in scope (`type Size(px: i32)`): it used to build the
         // record, and `.Layout.Size.Large` answered the section's first arm.
@@ -15085,7 +15088,7 @@ const Emitter = struct {
     /// a parameter, a local, a field or a call typed by the enum, `self`
     /// inside the enum's own method, and a section written as a path
     /// (`Token.Layout.Break`), declared under the F1 mangling
-    /// (`__Token__Layout__Break`).
+    /// (`Bp__Token__Layout__Break`, decision 836).
     fn enumOfSubject(self: *Emitter, subject: ast.Expr) ?[]const u8 {
         const written: []const u8 = blk: {
             if (subject == .identifier and subject.identifier.kind == .ident and
@@ -15102,13 +15105,10 @@ const Emitter = struct {
         };
         if (self.enums.contains(written)) return written;
         if (std.mem.indexOfScalar(u8, written, '.') == null) return null;
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        var it = std.mem.splitScalar(u8, written, '.');
-        while (it.next()) |seg| {
-            buf.appendSlice(self.arena(), "__") catch return null;
-            buf.appendSlice(self.arena(), seg) catch return null;
-        }
-        if (self.enums.getKey(buf.items)) |declared| return declared;
+        const mangled = std.fmt.allocPrint(self.arena(), ast.section_type_prefix ++ "{s}", .{
+            std.mem.replaceOwned(u8, self.arena(), written, ".", "__") catch return null,
+        }) catch return null;
+        if (self.enums.getKey(mangled)) |declared| return declared;
         return null;
     }
 

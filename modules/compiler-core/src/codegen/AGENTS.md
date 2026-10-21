@@ -1958,9 +1958,9 @@ codegen/
   declaration carries a one-parameter `display` (decision 8 §7's `Display`)
   formats as `{text, display(V)}`.
 - **An enum section's inner enum has one module, the owner's**: a synthesised
-  `__Token__Color` is re-synthesised in every module that writes the section
+  `Bp__Token__Color` is re-synthesised in every module that writes the section
   path, but its values carry the outer enum's owner's tags (`typeOwnerPath`),
-  so `'__bp_tagged'` and method dispatch reach `<owner>@@__Token__Color` alone.
+  so `'__bp_tagged'` and method dispatch reach `<owner>@@Bp__Token__Color` alone.
   `enumForms` (and beam's `emitEnum`) skip an inner enum whose outer enum
   another module declares (`isForeignSectionEnum`) — emilia's ~680 inner enums
   were written once per importing module before.

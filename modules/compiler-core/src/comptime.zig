@@ -682,7 +682,7 @@ fn withAssetDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod
 
 /// Decision 519 — each function whose `@embed` reads a `comptime`
 /// parameter's value (`env.embedParamFns`) takes one more parameter per such
-/// `p`, `__embed_<p>: Asset`, last — its specialisations (`<name>_$<n>`)
+/// `p`, `__bp_embed_<p>: Asset`, last — its specialisations (`<name>_$<n>`)
 /// too: the `Asset` each call passes, read in the caller's package
 /// (`Env.embedCallArgs`).
 fn withEmbedParams(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
@@ -795,16 +795,17 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
 }
 
 /// §enum-sections F4 — synthesise the section-wrapper variants for a parent
-/// enum `TypeDecl` so codegen sees `Color(_inner: __Enum__Color)` alongside the
+/// enum `TypeDecl` so codegen sees `Color(_inner: Bp__Enum__Color)` alongside the
 /// user-written variants. The parent's `sections()` carry the section
 /// names; the wrapper payload's type-ref points at the mangled inner enum
-/// name (matching `registerEnumSection`'s `__<Enum>__<Path>` convention).
+/// name (matching `registerEnumSection`'s `Bp__<Enum>__<Path>` convention,
+/// decision 836).
 /// Returns a new enum TypeDecl with its variants set to (original variants ++
 /// synthesised wrappers).
 fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.TypeDecl) !ast.TypeDecl {
     const wrappers = try arena.alloc(ast.EnumVariant, e.sections().len);
     for (e.sections(), 0..) |sec, i| {
-        const mangled = try std.fmt.allocPrint(arena, "__{s}__{s}", .{ e.name, sec.name });
+        const mangled = try std.fmt.allocPrint(arena, ast.section_type_prefix ++ "{s}__{s}", .{ e.name, sec.name });
         const fields = try arena.alloc(ast.Field, 1);
         fields[0] = .{
             .name = "_inner",

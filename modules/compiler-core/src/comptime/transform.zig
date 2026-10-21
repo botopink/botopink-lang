@@ -114,7 +114,7 @@ const Aggregator = struct {
     /// aggregators.
     local_callee_calls: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
     /// Decision 519 — the `Asset` arguments a call of a function reading
-    /// `@embed(p.value)` passes for its `__embed_<p>` parameters
+    /// `@embed(p.value)` passes for its `__bp_embed_<p>` parameters
     /// (`Env.embedCallArgs`), appended after the call's own.
     embed_call_args: ?*const std.AutoHashMapUnmanaged(ast.Loc, []const ast.CallArg) = null,
     /// `Env.namespaces`: `jwt.sign(x)` through a namespace import is written
@@ -1140,7 +1140,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // the qualified constructor chain inference resolved.
     // Decision 297 — a call whose argument is a type calls the function's type
     // form (`value_or_type.zig`), that argument removed: inference recorded
-    // the call to `<name>__type` under the call's loc.
+    // the call to `__bp_<name>__type` under the call's loc.
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call and !expr_ptr.call.kind.call.is_builtin) {
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .call and rewrite.call.kind == .call and isTwinOf(rewrite.call.kind.call.callee, expr_ptr.call.kind.call.callee)) {
@@ -1202,7 +1202,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
         }
-        // Decision 519 — the `Asset`s the callee's `__embed_<p>` parameters
+        // Decision 519 — the `Asset`s the callee's `__bp_embed_<p>` parameters
         // take, after every argument of its own (a trailing default filled
         // first, so the `Asset` lands in its parameter's place).
         if (agg.embed_call_args) |eca| if (eca.get(expr_ptr.call.loc)) |extra| {
@@ -1813,10 +1813,11 @@ fn extractComptimeLiteral(e: anytype) ?[]const u8 {
     };
 }
 
-/// Decision 297 — `twin` is `callee`'s type form (`<callee>__type`).
+/// Decision 297 — `twin` is `callee`'s type form (`__bp_<callee>__type`,
+/// decision 836).
 fn isTwinOf(twin: []const u8, callee: []const u8) bool {
-    const suffix = @import("value_or_type.zig").twin_suffix;
-    return twin.len == callee.len + suffix.len and std.mem.startsWith(u8, twin, callee) and std.mem.endsWith(u8, twin, suffix);
+    const of = @import("value_or_type.zig").twinOf(twin) orelse return false;
+    return std.mem.eql(u8, of, callee);
 }
 
 /// 01 step 12 — a call receiver written as a path (`.Color`, `Token.Color`):

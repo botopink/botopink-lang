@@ -69,17 +69,17 @@ function __bp_text(v, s) {
     return __bp_show(v, s == null ? null : s, true, a).replace(/%[sO]/g, () => String(a[i++]));
 }
 
-class __Token__Color {
+class Bp__Token__Color {
     static Red(_inner) {
-        return new __Token__Color$Red(_inner);
+        return new Bp__Token__Color$Red(_inner);
     }
 
     toString() {
         return __bp_text(this);
     }
 }
-__Token__Color.prototype.__bp = "__Token__Color";
-class __Token__Color$Red extends __Token__Color {
+Bp__Token__Color.prototype.__bp = "Bp__Token__Color";
+class Bp__Token__Color$Red extends Bp__Token__Color {
     constructor(_inner) {
         super();
         this._inner = _inner;
@@ -87,25 +87,25 @@ class __Token__Color$Red extends __Token__Color {
 
     display() {
         const t = __bp_text(this._inner);
-        return ("__Token__Color.Red." + t.slice((t.indexOf(".") + 1)));
+        return ("Bp__Token__Color.Red." + t.slice((t.indexOf(".") + 1)));
     }
 }
-__Token__Color$Red.prototype.tag = "Red";
+Bp__Token__Color$Red.prototype.tag = "Red";
 
-class __Token__Color__Red {
+class Bp__Token__Color__Red {
     toString() {
         return __bp_text(this);
     }
 }
-__Token__Color__Red.prototype.__bp = "__Token__Color__Red";
-class __Token__Color__Red$__100 extends __Token__Color__Red {
+Bp__Token__Color__Red.prototype.__bp = "Bp__Token__Color__Red";
+class Bp__Token__Color__Red$__100 extends Bp__Token__Color__Red {
 }
-__Token__Color__Red$__100.prototype.tag = "__100";
-class __Token__Color__Red$__500 extends __Token__Color__Red {
+Bp__Token__Color__Red$__100.prototype.tag = "__100";
+class Bp__Token__Color__Red$__500 extends Bp__Token__Color__Red {
 }
-__Token__Color__Red$__500.prototype.tag = "__500";
-__Token__Color__Red.__100 = new __Token__Color__Red$__100();
-__Token__Color__Red.__500 = new __Token__Color__Red$__500();
+Bp__Token__Color__Red$__500.prototype.tag = "__500";
+Bp__Token__Color__Red.__100 = new Bp__Token__Color__Red$__100();
+Bp__Token__Color__Red.__500 = new Bp__Token__Color__Red$__500();
 
 class Token {
     static Color(_inner) {
@@ -131,10 +131,10 @@ class Token$Color extends Token {
 Token$Color.prototype.tag = "Color";
 
 function red500() {
-    return Token.Color(__Token__Color.Red(__Token__Color__Red.__500));
+    return Token.Color(Bp__Token__Color.Red(Bp__Token__Color__Red.__500));
 }
 
-Object.defineProperty(exports, "__bp_priv__", { value: { __Token__Color, __Token__Color$Red, __Token__Color__Red, __Token__Color__Red$__100, __Token__Color__Red$__500, Token, Token$Color, red500 } });
+Object.defineProperty(exports, "__bp_priv__", { value: { Bp__Token__Color, Bp__Token__Color$Red, Bp__Token__Color__Red, Bp__Token__Color__Red$__100, Bp__Token__Color__Red$__500, Token, Token$Color, red500 } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

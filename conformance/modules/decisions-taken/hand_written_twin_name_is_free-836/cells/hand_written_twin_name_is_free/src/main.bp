@@ -1,0 +1,56 @@
+//// Decision 836 — a name the compiler writes beside a person's lives in the reserved space:
+//// a value-or-type function's type form is `__bp_<f>__type`, an enum section's inner enum
+//// `Bp__<Enum>__<Section>`, the parameter that carries the `Asset` of an `@embed` reading a
+//// `comptime` parameter `p` is `__bp_embed_<p>`. A hand-written `pick__type`, `__Color__Warm`
+//// and `__embed_path` are then free names, beside the compiler's own forms. The parent binary
+//// emitted a second `pick__type` beside the twin (the OTP compiler refused the module), refused
+//// `.Warm.Red` once the type `__Color__Warm` stood where the section's inner enum is filed, and
+//// gave `load` two parameters `__embed_path` (wasm refused the module, erlang crashed, commonJS
+//// and beam printed the `Asset` where the body read the string).
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+type User(name: string)
+
+fn pick<T>(comptime s: Box<T> | type<T>) -> string {
+    return if (s is anytype) "type" else "value";
+}
+
+fn pick__type() -> string {
+    return "hand-written pick__type";
+}
+
+type Color {
+    Warm {
+        Red,
+        Orange,
+    }
+    Blue,
+}
+
+type __Color__Warm(label: string)
+
+fn load(comptime path: string, __embed_path: string) -> Asset {
+    print(__embed_path);
+    return @embed(path);
+}
+
+pub fn main() -> void {
+    print(pick(Box(value: 1)));
+    print(pick(User));
+    print(pick__type());
+    val c: Color = .Warm.Red;
+    print(
+        case c {
+            Warm(_inner) -> "warm";
+            Blue -> "blue";
+        },
+    );
+    val w = __Color__Warm(label: "hand-written __Color__Warm");
+    print(w.label);
+    print(w);
+    val note = load("assets/note.txt", "hand-written __embed_path");
+    print(note.bytes.toUtf8().unwrapOr("?"));
+}

@@ -80,7 +80,7 @@ pub fn asset(arena: std.mem.Allocator, loc: ast.Loc, path_lexeme: []const u8, by
 // `fn load(comptime p: @Expr<string>) -> Asset { return @embed(p.value); }`:
 // the path is the caller's, so the file is the caller's package's (decision
 // 519). The function is emitted with one more parameter per such `p`,
-// `__embed_<p>: Asset` (`hiddenName`), last; its `@embed(p.value)` reads that
+// `__bp_embed_<p>: Asset` (`hiddenName`), last; its `@embed(p.value)` reads that
 // parameter; and each call reads the file where it is written and passes the
 // `Asset` as that argument (`Env.defaultInjections`).
 
@@ -102,9 +102,10 @@ pub fn paramOfArg(arg: ast.Expr, params: []const ast.Param) ?[]const u8 {
     return null;
 }
 
-/// The parameter a function reads `@embed(p.value)` through.
+/// The parameter a function reads `@embed(p.value)` through, in the
+/// compiler's reserved space (decision 836): `__bp_embed_<p>`.
 pub fn hiddenName(arena: std.mem.Allocator, param: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(arena, "__embed_{s}", .{param});
+    return std.fmt.allocPrint(arena, "__bp_embed_{s}", .{param});
 }
 
 /// The `comptime` parameters of `f` an `@embed` in its body reads the path
@@ -161,7 +162,7 @@ const ParamWalk = struct {
 };
 
 /// Every `@embed(p.value)` / `@embed(p)` of `body` whose `p` is one of
-/// `names`, replaced in place by the read of its `__embed_<p>` parameter — the
+/// `names`, replaced in place by the read of its `__bp_embed_<p>` parameter — the
 /// specialised copies of a function too, which the transform clones from the
 /// body as written (`comptime.zig` `withEmbedParams`).
 pub fn readHiddenParams(arena: std.mem.Allocator, body: []const ast.Stmt, params: []const ast.Param, names: []const []const u8) !void {

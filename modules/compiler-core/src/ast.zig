@@ -2282,6 +2282,51 @@ pub fn comptimeBlockNameLen(text: []const u8) usize {
 
 pub const inline_type_prefix = "BpInline__";
 
+/// Decision 836 — the prefix of an enum section's inner enum, in the
+/// compiler's reserved space: `Token.Color` is declared as
+/// `Bp__Token__Color`, a nested section as `Bp__Token__Color__Shade`. A
+/// hand-written `__Token__Color` is then a free name.
+pub const section_type_prefix = "Bp__";
+
+/// The `<Enum>__<Section>[__<Sub>…]` path of a section's inner enum name
+/// (`Bp__Token__Color` → `Token__Color`): two or more segments after
+/// `section_type_prefix`, each starting with an uppercase letter. Null for
+/// any other name (`Bp__LoadModule`, a template's `Bp__bp_tpl_…`).
+pub fn sectionTypePath(name: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, name, section_type_prefix)) return null;
+    const rest = name[section_type_prefix.len..];
+    var parts = std.mem.splitSequence(u8, rest, "__");
+    var n: usize = 0;
+    while (parts.next()) |seg| {
+        if (seg.len == 0 or !std.ascii.isUpper(seg[0])) return null;
+        n += 1;
+    }
+    return if (n >= 2) rest else null;
+}
+
+/// The outer enum of a section's inner enum name (`Bp__Token__Color__Shade`
+/// → `Token`), or null for any other name.
+pub fn sectionOuterEnum(name: []const u8) ?[]const u8 {
+    const rest = sectionTypePath(name) orelse return null;
+    return rest[0 .. std.mem.indexOf(u8, rest, "__") orelse return null];
+}
+
+/// A section's written path (`Token.Color.Shade`) of its inner enum name, or
+/// null for any other name.
+pub fn sectionTypeShown(arena: std.mem.Allocator, name: []const u8) !?[]const u8 {
+    const rest = sectionTypePath(name) orelse return null;
+    return try std.mem.replaceOwned(u8, arena, rest, "__", ".");
+}
+
+test "a section's inner enum name" {
+    try std.testing.expectEqualStrings("Token__Color", sectionTypePath("Bp__Token__Color").?);
+    try std.testing.expectEqualStrings("Token", sectionOuterEnum("Bp__Token__Color__Shade").?);
+    try std.testing.expect(sectionTypePath("__Token__Color") == null);
+    try std.testing.expect(sectionTypePath("Bp__LoadModule") == null);
+    try std.testing.expect(sectionTypePath("Bp__bp_tpl_rows__Row") == null);
+    try std.testing.expect(sectionTypePath("Bp__Link__props") == null);
+}
+
 /// `the props of `Link`` for `BpInline__Link__props`; null for any other
 /// name.
 pub fn ownerOfInlineType(name: []const u8) ?struct { owner: []const u8, param: []const u8 } {

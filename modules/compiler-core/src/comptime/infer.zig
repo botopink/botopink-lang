@@ -2026,12 +2026,12 @@ fn sectionOwningLeaf(env: *Env, name: []const u8) InferError!?[]const u8 {
     var it = env.typeDefs.iterator();
     while (it.next()) |e| {
         const key = e.key_ptr.*;
-        if (!std.mem.startsWith(u8, key, "__")) continue;
+        const path = ast.sectionTypePath(key) orelse continue;
         const td = e.value_ptr.*;
         if (td != .enum_) continue;
         for (td.enum_.variants) |v| {
             if (!std.mem.eql(u8, v.name, name) or v.fields.len != 0) continue;
-            return try std.mem.replaceOwned(u8, env.arena, key[2..], "__", ".");
+            return try std.mem.replaceOwned(u8, env.arena, path, "__", ".");
         }
     }
     return null;
@@ -2099,10 +2099,10 @@ fn refuseBareVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc, pay
     if (!isCtor) return;
     const args: []const u8 = if (payload) "(…)" else "";
     var spellings: std.ArrayListUnmanaged(u8) = .empty;
-    // An enum whose name no source can spell (`__`-mangled, a prelude's
-    // internal one) is no spelling to offer.
+    // An enum whose name no source can spell (a section's `Bp__`-mangled
+    // one, a prelude's internal `__` one) is no spelling to offer.
     for (claims) |c| {
-        if (std.mem.startsWith(u8, c, "__")) continue;
+        if (std.mem.startsWith(u8, c, "__") or ast.sectionTypePath(c) != null) continue;
         if (spellings.items.len > 0) try spellings.appendSlice(env.arena, " or ");
         try spellings.print(env.arena, "`{s}.{s}{s}`", .{ c, name, args });
     }
@@ -2159,9 +2159,8 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         return TypeError.custom(msg, hint).withLoc(loc);
     }
     // Decision 297 — in the branch `x is type` takes, `x` is a type: the type
-    // form (`value_or_type.zig`'s `<f>__type`) has no parameter `x`.
-    if (std.mem.endsWith(u8, env.currentFnName, valueOrType.twin_suffix)) {
-        const original = env.currentFnName[0 .. env.currentFnName.len - valueOrType.twin_suffix.len];
+    // form (`value_or_type.zig`'s `__bp_<f>__type`) has no parameter `x`.
+    if (valueOrType.twinOf(env.currentFnName)) |original| {
         if (env.fnDecls.get(original)) |f| for (f.params) |p| {
             if (p.typeArgOf != null and std.mem.eql(u8, p.name, name)) {
                 const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type where `{s} is type` holds — a type has no value to read", .{ diagnostics.type_arg_read, name, name });
@@ -3385,8 +3384,8 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
     }
 
     // §enum-sections F1 — synthesise one inner enum per section under a mangled
-    // path-encoded name (`__<EnumName>__<SectionPath>`) and surface them on the
-    // parent as wrapper variants `Section(__EnumName__Section)`. The synthesised
+    // path-encoded name (`Bp__<EnumName>__<SectionPath>`) and surface them on the
+    // parent as wrapper variants `Section(Bp__EnumName__Section)`. The synthesised
     // enums live in the type-def table only — their constructor names are NOT
     // bound at the top level; path-access (`.Section.Inner.Leaf`) lowers to the
     // wrapped form during expression inference (F2).
@@ -3487,7 +3486,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
 /// sections first (depth-first), then composes the section's own variant list
 /// as: bare/payload variants from `sec.variants` (digit names get the `_`
 /// prefix codegen needs) + wrapper variants for each nested sub-section. The
-/// mangled name (`__<EnumName>__<Path>__<SectionName>`) is registered as a
+/// mangled name (`Bp__<EnumName>__<Path>__<SectionName>`) is registered as a
 /// `TypeDef.enum_` and returned for the caller to wrap.
 fn registerEnumSection(
     env: *Env,
@@ -3500,9 +3499,9 @@ fn registerEnumSection(
     for (parent_path, 0..) |p, i| path[i] = p;
     path[parent_path.len] = sec.name;
 
-    // mangled = "__" + enum_name + "__" + path.join("__")
+    // mangled = "Bp__" + enum_name + "__" + path.join("__") (decision 836)
     var mbuf: std.ArrayList(u8) = .empty;
-    try mbuf.appendSlice(env.arena, "__");
+    try mbuf.appendSlice(env.arena, ast.section_type_prefix);
     try mbuf.appendSlice(env.arena, enum_name);
     for (path) |seg| {
         try mbuf.appendSlice(env.arena, "__");
@@ -3510,6 +3509,9 @@ fn registerEnumSection(
     }
     const mangled = try mbuf.toOwnedSlice(env.arena);
 
+    // The section's slot before its sub-sections' (`synthesisedEnumDecls`
+    // keeps registration order): an outer section is declared first.
+    try env.synthesisedEnumDecls.put(env.arena, mangled, .{ .name = mangled, .isPub = false, .shape = .{ .enum_ = .{ .variants = &.{} } } });
     // Recurse into sub-sections first; collect their mangled names.
     var sub_wrappers = try env.arena.alloc(envMod.VariantDef, sec.sections.len);
     for (sec.sections, 0..) |sub, i| {
@@ -3546,10 +3548,10 @@ fn registerEnumSection(
     }
     for (sub_wrappers, 0..) |w, i| variants[sec.variants.len + i] = w;
     // 01 step 12 — each section variant's constructor under its qualified
-    // name (`__Token__Color.Hex`), so a leading-dot payload path resolves
+    // name (`Bp__Token__Color.Hex`), so a leading-dot payload path resolves
     // through the section and not through a flat bare name.
     const sectionTy = try env.namedType(mangled);
-    // The section enum's own name answers as a receiver (`__Token__Color.Hex(…)`
+    // The section enum's own name answers as a receiver (`Bp__Token__Color.Hex(…)`
     // is what a payload section path is spliced into), as a declared enum's
     // name does; no source can spell a `__`-mangled name.
     try env.bind(mangled, sectionTy);
@@ -3586,7 +3588,7 @@ fn registerEnumSection(
 /// decl carries the section's bare/payload variants (`sec.variants`, with the
 /// `_` prefix on numeric leaves matching the F1 mangling) followed by one
 /// wrapper variant per sub-section (`{ name: <SubSection>, fields: [{name:
-/// "_inner", typeRef: named "__Enum__Path__SubSection"}] }`). The decl lands
+/// "_inner", typeRef: named "Bp__Enum__Path__SubSection"}] }`). The decl lands
 /// in `env.synthesisedEnumDecls` keyed by `mangled` — a later post-pass
 /// inlines it into the program's top-level decls so codegen emits it normally.
 fn registerSynthesisedEnumDecl(
@@ -3638,7 +3640,7 @@ fn registerSynthesisedEnumDecl(
         .isPub = false,
         .shape = .{ .enum_ = .{ .variants = ast_variants } },
     };
-    try env.synthesisedEnumDecls.put(mangled, enum_decl);
+    try env.synthesisedEnumDecls.put(env.arena, mangled, enum_decl);
 }
 
 // ── §enum-sections F2 — path-access resolution ──────────────────────────────
@@ -3646,7 +3648,7 @@ fn registerSynthesisedEnumDecl(
 // A dot-shorthand chain rooted at a `.dotIdent` (`.Color.Red.500`) may resolve
 // as a section path on an enum carrying sections (F1 desugar). The first
 // segment is matched against every registered enum's variants — when a hit
-// names a section wrapper (the synthesised `Section(_inner: __Enum__Section)`
+// names a section wrapper (the synthesised `Section(_inner: Bp__Enum__Section)`
 // variant), the rest of the path walks through the inner enum's variants
 // recursively. Pure-digit leaves (`500`) are looked up under their
 // underscore-prefixed name (`_500`) to match the synthesised mangling.
@@ -3664,7 +3666,7 @@ fn registerSynthesisedEnumDecl(
 /// type (`env.expectedType`), never by the order `env.typeDefs` happens to
 /// hand the enums over: that map holds the synthesised section enums beside
 /// the declared ones, so `.Color.Red.500` is carried by emilia's `Token` and
-/// by `__Token__Border` alike and the winner used to change with the size of
+/// by `Bp__Token__Border` alike and the winner used to change with the size of
 /// the typedef set.
 fn tryResolveEnumSectionPath(
     env: *Env,
@@ -3832,7 +3834,7 @@ fn tryResolveEnumSectionPath(
 }
 
 /// 01 step 4 (d) — `Token.Text.Italic` where `Token.Text` is expected: the
-/// section enum's own variant (`__Token__Text.Italic`), recorded as the
+/// section enum's own variant (`Bp__Token__Text.Italic`), recorded as the
 /// path's rewrite. Null when the expectation is not the section the path's
 /// prefix names.
 fn sectionValueForExpected(env: *Env, owner: []const u8, path: []const []const u8, loc: ast.Loc) InferError!?TypedExpr {
@@ -3840,7 +3842,7 @@ fn sectionValueForExpected(env: *Env, owner: []const u8, path: []const []const u
     const want = (env.expectedType orelse return null).deref();
     if (want.* != .named) return null;
     var mbuf: std.ArrayList(u8) = .empty;
-    try mbuf.appendSlice(env.arena, "__");
+    try mbuf.appendSlice(env.arena, ast.section_type_prefix);
     try mbuf.appendSlice(env.arena, owner);
     for (path[0 .. path.len - 1]) |seg| {
         try mbuf.appendSlice(env.arena, "__");
@@ -3918,7 +3920,7 @@ fn raiseAmbiguousSectionPath(
 /// chain's outermost loc. The post-inference rewrite pass
 /// (`withEnumSectionRewrites` in `comptime.zig`) walks the untyped AST and
 /// swaps the original chain for it, so codegen — which reads the untyped AST —
-/// emits `Token.Color(__Token__Color.Red(…))` instead of the source text.
+/// emits `Token.Color(Bp__Token__Color.Red(…))` instead of the source text.
 fn resolveAndRecordSectionPath(
     env: *Env,
     en: envMod.TypeDef.Enum,
@@ -4116,7 +4118,7 @@ fn buildSectionPathRewrite(
 /// The lowered shape is fully qualified at every level — leaves are emitted
 /// as `identAccess(<EnumName>, <variant>)` and section wrappers as call
 /// expressions whose receiver names the enum — so the codegen produces the
-/// equivalent of the manually-written `Token.Color(__Token__Color.Red(…))`
+/// equivalent of the manually-written `Token.Color(Bp__Token__Color.Red(…))`
 /// form without needing to know which enum a bare `Color(...)` came from.
 fn resolveSectionPathInEnum(
     env: *Env,
@@ -4144,7 +4146,7 @@ fn resolveSectionPathInEnum(
 
     if (rest.len == 0) {
         // Leaf: unit variant ⇒ `<EnumName>.<variant>` identAccess so codegen
-        // emits the qualified form (`__Token__Color__Red._500` in JS). Bare
+        // emits the qualified form (`Bp__Token__Color__Red._500` in JS). Bare
         // `dotIdent(_500)` would lose the enum context the synthesised inner
         // enums need. Payload variants without a section-wrapper `_inner`
         // field can't terminate a section-path chain.
@@ -5189,7 +5191,7 @@ fn refuseUnboundTypeParams(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         // A value-or-type function's type form (`value_or_type.zig`'s twin):
         // the type argument its call removed binds the parameter.
-        .@"fn" => |f| if (!std.mem.endsWith(u8, f.name, valueOrType.twin_suffix)) {
+        .@"fn" => |f| if (valueOrType.twinOf(f.name) == null) {
             try refuseUnboundIn(env, f.name, f.genericParams, f.params, f.nameLoc);
         },
         .type_ => |t| for (t.methods) |m| {
@@ -13470,7 +13472,7 @@ fn embedRead(env: *Env, path: []const u8, argLoc: ast.Loc, loc: ast.Loc) InferEr
 /// Decision 519 — a call of a function whose `@embed` reads a `comptime`
 /// parameter's value (`embed.embedParams`, this module's or an imported
 /// one's): the path the call passes is read here, in the caller's package,
-/// and the `Asset` is the call's argument for `__embed_<p>`
+/// and the `Asset` is the call's argument for `__bp_embed_<p>`
 /// (`Env.embedCallArgs`, appended by the transform).
 fn noteEmbedCall(env: *Env, call: anytype, declParams: ?[]const ast.Param, argParamIndex: ?[]const usize, loc: ast.Loc) InferError!void {
     const callee: ast.FnDecl = if (env.fnDecls.get(call.callee)) |f| f else if (env.importedFnSupport.get(call.callee)) |closure|
@@ -15794,7 +15796,7 @@ fn freshNamesOf(env: *Env, ref: ast.TypeRef, map: *std.StringHashMap(*T.Type)) I
 }
 
 /// Decision 297 — a call whose argument is a type calls the function's type
-/// form (`value_or_type.zig`'s twin `<name>__type`) with that argument
+/// form (`value_or_type.zig`'s twin `__bp_<name>__type`) with that argument
 /// removed: recorded as the call's rewrite, and the callee's name noted so an
 /// import of it brings the twin along.
 fn noteTypeArgCall(env: *Env, c: ast.CallExprOf(.untyped), at: usize, loc: ast.Loc) InferError!void {
@@ -15804,7 +15806,7 @@ fn noteTypeArgCall(env: *Env, c: ast.CallExprOf(.untyped), at: usize, loc: ast.L
     @memcpy(args[0..at], call.args[0..at]);
     @memcpy(args[at..], call.args[at + 1 ..]);
     direct.kind.call.args = args;
-    direct.kind.call.callee = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ call.callee, valueOrType.twin_suffix });
+    direct.kind.call.callee = try valueOrType.twinName(env.arena, call.callee);
     const spliced = try env.arena.create(ast.Expr);
     spliced.* = .{ .call = direct };
     spliced.call.loc = loc;

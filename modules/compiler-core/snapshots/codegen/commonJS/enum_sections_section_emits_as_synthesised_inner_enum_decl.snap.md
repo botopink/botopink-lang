@@ -67,24 +67,24 @@ function __bp_text(v, s) {
     return __bp_show(v, s == null ? null : s, true, a).replace(/%[sO]/g, () => String(a[i++]));
 }
 
-class __Token__Text {
+class Bp__Token__Text {
     toString() {
         return __bp_text(this);
     }
 }
-__Token__Text.prototype.__bp = "__Token__Text";
-class __Token__Text$Bold extends __Token__Text {
+Bp__Token__Text.prototype.__bp = "Bp__Token__Text";
+class Bp__Token__Text$Bold extends Bp__Token__Text {
 }
-__Token__Text$Bold.prototype.tag = "Bold";
-class __Token__Text$Italic extends __Token__Text {
+Bp__Token__Text$Bold.prototype.tag = "Bold";
+class Bp__Token__Text$Italic extends Bp__Token__Text {
 }
-__Token__Text$Italic.prototype.tag = "Italic";
-class __Token__Text$Underline extends __Token__Text {
+Bp__Token__Text$Italic.prototype.tag = "Italic";
+class Bp__Token__Text$Underline extends Bp__Token__Text {
 }
-__Token__Text$Underline.prototype.tag = "Underline";
-__Token__Text.Bold = new __Token__Text$Bold();
-__Token__Text.Italic = new __Token__Text$Italic();
-__Token__Text.Underline = new __Token__Text$Underline();
+Bp__Token__Text$Underline.prototype.tag = "Underline";
+Bp__Token__Text.Bold = new Bp__Token__Text$Bold();
+Bp__Token__Text.Italic = new Bp__Token__Text$Italic();
+Bp__Token__Text.Underline = new Bp__Token__Text$Underline();
 
 class Token {
     static Hover(inner) {
@@ -120,7 +120,7 @@ class Token$Text extends Token {
 }
 Token$Text.prototype.tag = "Text";
 
-Object.defineProperty(exports, "__bp_priv__", { value: { __Token__Text, __Token__Text$Bold, __Token__Text$Italic, __Token__Text$Underline, Token, Token$Hover, Token$Text } });
+Object.defineProperty(exports, "__bp_priv__", { value: { Bp__Token__Text, Bp__Token__Text$Bold, Bp__Token__Text$Italic, Bp__Token__Text$Underline, Token, Token$Hover, Token$Text } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

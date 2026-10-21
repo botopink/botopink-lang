@@ -3316,7 +3316,7 @@ const Emitter = struct {
     }
 
     /// The module path that DECLARES `type_name`. A synthesised inner enum
-    /// (§enum-sections F4, `__Token__Color`) is re-synthesised in every module
+    /// (§enum-sections F4, `Bp__Token__Color`) is re-synthesised in every module
     /// that writes the section path, so the OUTER enum's owner is its identity.
     fn typeOwnerPath(self: *const Emitter, type_name: []const u8) []const u8 {
         if (sectionOuterEnum(type_name)) |outer| return self.typeOwnerPath(outer);
@@ -3328,7 +3328,7 @@ const Emitter = struct {
         return self.module_path;
     }
 
-    /// True for a synthesised inner enum (`__Token__Color`) whose outer enum
+    /// True for a synthesised inner enum (`Bp__Token__Color`) whose outer enum
     /// another module declares: that module emits its type module.
     fn isForeignSectionEnum(self: *const Emitter, type_name: []const u8) bool {
         if (sectionOuterEnum(type_name) == null) return false;
@@ -3364,10 +3364,12 @@ const Emitter = struct {
         const written = self.local_types.get(name) orelse return null;
         if (self.enum_names.contains(written)) return written;
         // A section path is WRITTEN dotted (`Token.Bg`) and DECLARED under the
-        // F1 mangling (`__Token__Bg`).
+        // F1 mangling (`Bp__Token__Bg`, decision 836).
         if (std.mem.indexOfScalar(u8, written, '.') != null) {
             var buf: [256]u8 = undefined;
-            var len: usize = 0;
+            // `Bp` then `__<seg>` per segment: `Bp__Token__Bg`.
+            @memcpy(buf[0..2], ast.section_type_prefix[0..2]);
+            var len: usize = 2;
             var it = std.mem.splitScalar(u8, written, '.');
             while (it.next()) |seg| {
                 if (len + 2 + seg.len > buf.len) return null;
@@ -4704,7 +4706,7 @@ const Emitter = struct {
         // A synthesised inner enum re-synthesised here for an imported outer
         // enum (§enum-sections F4) is the owner's type: its values carry the
         // owner's tags, so `'__bp_tagged'` and method dispatch reach the
-        // owner's `<owner>@@__Token__Color` module, and a copy here is dead.
+        // owner's `<owner>@@Bp__Token__Color` module, and a copy here is dead.
         if (self.isForeignSectionEnum(e.name)) return;
         const methods = try self.withAdoptedDefaults(e);
         defer if (methods.ptr != e.methods.ptr) self.alloc.free(methods);
@@ -7732,11 +7734,12 @@ const Emitter = struct {
             // prepended as an argument; trailing lambdas become fun arguments.
             if (recv_name) |rn| {
                 // §enum-sections F4 — synthesised inner enums carry the F1
-                // mangling `__<EnumName>__<Path>` (double underscore, third
-                // byte uppercase). Treat them as type-name receivers so a
-                // call like `__Token__Color.Red(_inner: …)` resolves to a
+                // mangling `Bp__<EnumName>__<Path>` (decision 836); a prelude's
+                // internal type `__<Name>`. Treat them as type-name receivers so a
+                // call like `Bp__Token__Color.Red(_inner: …)` resolves to a
                 // tagged tuple rather than the unresolved-method-call path.
-                const isSynthesisedTypeRecv = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
+                const isSynthesisedTypeRecv = ast.sectionTypePath(rn) != null or
+                    (rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]));
                 // Decision 641 — a primitive's static, called through the
                 // type's own lowercase name (`array.range(0, 3)`).
                 if (rn.len > 0 and rn.len <= 128 and
@@ -13240,7 +13243,7 @@ const Emitter = struct {
         // §enum-sections F4 — `<EnumName>.<UnitVariant>` resolves to the
         // variant atom (`'__500'`), not a map read on the type name. Detect
         // the shape syntactically: receiver is a bare ident, name is
-        // PascalCase or the synthesised `__<Enum>__<Path>` form, and the
+        // PascalCase or the synthesised `Bp__<Enum>__<Path>` form, and the
         // ident isn't a value-bound register/comptime val. Mirrors the
         // erlang backend's `enum_names` lookup without needing a separate
         // map (the receiver name alone tells the codegen this is a type).
@@ -13860,15 +13863,9 @@ fn writtenTypeName(ref: ast.TypeRef) ?[]const u8 {
     };
 }
 
-/// The OUTER enum of a synthesised inner enum's F1 mangling:
-/// `__Token__Color` → `Token`. The beam twin of `erlang.zig`'s.
-fn sectionOuterEnum(name: []const u8) ?[]const u8 {
-    if (name.len < 3 or name[0] != '_' or name[1] != '_' or !std.ascii.isUpper(name[2])) return null;
-    const rest = name[2..];
-    const sep = std.mem.indexOf(u8, rest, "__") orelse return null;
-    if (sep == 0) return null;
-    return rest[0..sep];
-}
+/// The OUTER enum of a synthesised inner enum's F1 mangling (decision 836):
+/// `Bp__Token__Color` → `Token`. The beam twin of `erlang.zig`'s.
+const sectionOuterEnum = ast.sectionOuterEnum;
 
 /// Render `name` as the inner text of an `{atom, _}` term — the shared BEAM
 /// rule: bare when valid, otherwise single-quoted and escaped. PascalCase enum

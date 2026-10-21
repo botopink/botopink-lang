@@ -648,7 +648,7 @@ const Builder = struct {
         // The sections' types, merged with the class: a signature writes
         // `Token.Layout.Break`, which `tsc` read as a namespace that did not
         // exist. Each section's runtime enum is a class no module exports
-        // (`__Token__Layout__Break`), so it is an `interface` here — a type,
+        // (`Bp__Token__Layout__Break`), so it is an `interface` here — a type,
         // promising no value.
         return .{ .group = try self.b.arena.dupe(js.TsDecl, &.{ class, .{ .namespace_ = .{
             .name = e.name,

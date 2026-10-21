@@ -71,7 +71,7 @@ val b = Border.Color.Red.500;
         "params": [
           {
             "name": "_inner",
-            "value": "__Token__Color"
+            "value": "Bp__Token__Color"
           }
         ],
         "return_type": "Token"
@@ -86,7 +86,7 @@ val b = Border.Color.Red.500;
         "params": [
           {
             "name": "_inner",
-            "value": "__Border__Color"
+            "value": "Bp__Border__Color"
           }
         ],
         "return_type": "Border"

@@ -402,7 +402,7 @@ test "@print: string interpolation argument" {
 
 // ── enum sections F1: comptime desugar registers synthesised inner enums ────
 // These tests pin that an enum carrying sections type-checks cleanly across
-// every backend driver — the synthesised inner enums (`__Token__Text`, …)
+// every backend driver — the synthesised inner enums (`Bp__Token__Text`, …)
 // live in the type-def table and are not emitted as user-visible AST decls,
 // so the public snapshot only carries `Token`. F2 will pin the path-access
 // resolution that makes those inner enums observable from expressions.
@@ -557,7 +557,7 @@ test "enum sections ES5: a path two enums carry, with nothing to say which, is r
 test "enum sections F3 ES4: path-access with bad tail raises focused error" {
     // The head segment `Color` matches Token's section wrapper, so the
     // resolver knows the user intended a section path — but `Bogus` isn't
-    // a variant of `__Token__Color`. F3 ES4 raises with the full chain
+    // a variant of `Bp__Token__Color`. F3 ES4 raises with the full chain
     // text and the owning enum name, instead of bubbling the generic
     // fall-through error from the regular identAccess path.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),

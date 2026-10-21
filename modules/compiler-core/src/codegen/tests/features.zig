@@ -1325,10 +1325,10 @@ test "beam template path: endsWith lowers via its @External.Erlang template" {
 //
 // F4 pins that an enum carrying sections emits byte-identically against the
 // manually-written enum-of-enum form. The F1 desugar registers a synthesised
-// inner enum per section under a mangled name (`__<Enum>__<SectionPath>`);
+// inner enum per section under a mangled name (`Bp__<Enum>__<SectionPath>`);
 // F4 (`withSynthesisedEnumDecls` in `comptime.zig`) prepends each as a
 // top-level AST decl so codegen emits them as ordinary enums. The parent
-// enum's section wrappers (`Section(_inner: __Enum__Section)`) then resolve
+// enum's section wrappers (`Section(_inner: Bp__Enum__Section)`) then resolve
 // against the synthesised decls at codegen time. F2 path-access
 // (`.Color.Red.500`) lowers to nested constructor calls that each backend
 // emits via the standard variant ctor path.
@@ -1357,8 +1357,8 @@ test "js: enum sections ---- nested sections with numeric leaves emit decls" {
 
 test "js: enum sections ---- path-access lowers to qualified ctor calls" {
     // F2 path-access (`.Color.Red.500`) rewrites at transform time to a
-    // qualified-ctor chain `Token.Color(_inner: __Token__Color.Red(_inner:
-    // __Token__Color__Red._500))` so codegen emits proper variant accesses
+    // qualified-ctor chain `Token.Color(_inner: Bp__Token__Color.Red(_inner:
+    // Bp__Token__Color__Red._500))` so codegen emits proper variant accesses
     // rather than the bare source-text fallback (`Color.Red.500`).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Token {
@@ -1374,7 +1374,7 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
 
 // An imported enum's synthesised inner enums are re-synthesised in every module
 // that writes the section path, and their values carry the OWNER's tags, so
-// `'__bp_tagged'` formats them through the owner's `<owner>@@__Token__Color`
+// `'__bp_tagged'` formats them through the owner's `<owner>@@Bp__Token__Color`
 // module. Only the owner emits that type module: before, erlang and beam wrote
 // one byte-identical copy per importing module (emilia's ~680 inner enums,
 // six times over).
@@ -1406,7 +1406,7 @@ const imported_section_modules = [_]Module{
     },
 };
 
-/// Every unit the program writes for `__Token__Color` is the owner's, once.
+/// Every unit the program writes for `Bp__Token__Color` is the owner's, once.
 fn expectOneInnerEnumUnit(cfg: config.Config) !void {
     var outputs = try h.generate(std.testing.allocator, &imported_section_modules, std.testing.io, cfg);
     defer {
@@ -1415,9 +1415,9 @@ fn expectOneInnerEnumUnit(cfg: config.Config) !void {
     }
     var inner: usize = 0;
     for (outputs.items) |o| for (o.result.units) |u| {
-        if (std.mem.endsWith(u8, u.atom, "@@__Token__Color")) {
+        if (std.mem.endsWith(u8, u.atom, "@@Bp__Token__Color")) {
             inner += 1;
-            try std.testing.expectEqualStrings("test@tok@@__Token__Color", u.atom);
+            try std.testing.expectEqualStrings("test@tok@@Bp__Token__Color", u.atom);
         }
     };
     try std.testing.expectEqual(@as(usize, 1), inner);

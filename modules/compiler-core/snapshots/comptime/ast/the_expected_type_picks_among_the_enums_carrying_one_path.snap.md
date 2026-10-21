@@ -127,7 +127,7 @@ val g = BoxB(tone: .Color.Red.100);
         "params": [
           {
             "name": "_inner",
-            "value": "__Token__Color"
+            "value": "Bp__Token__Color"
           }
         ],
         "return_type": "Token"
@@ -142,7 +142,7 @@ val g = BoxB(tone: .Color.Red.100);
         "params": [
           {
             "name": "_inner",
-            "value": "__Border__Color"
+            "value": "Bp__Border__Color"
           }
         ],
         "return_type": "Border"
