@@ -3413,7 +3413,10 @@ first three are now enforced by the model, not by discipline:
   An `AuxFile` whose `atom` is set is a per-`type`
   module (`GenerateResult.units`, policy 3): its NAME already is an atom, so it
   is written as it stands instead of being rendered a second time, which would
-  prepend the package a second time and lowercase the declaration half of `<package>@<path>@@<Decl>`. A `.wat` carries no module
+  prepend the package a second time and lowercase the declaration half of `<package>@<path>@@<Decl>`. A dependency's module
+  (`Config.packages.idOf` puts it in its own package) is handed with its own atom too
+  (`lib@tools`, decision 109), which `test_packages` would not give; the atom is part of
+  the run cache's key (`cacheKey`). A `.wat` carries no module
   atom, so its scratch file keeps the basename.
   Captured text is stdout with stderr appended after a newline (wasm: stdout
   then stderr, no separator).

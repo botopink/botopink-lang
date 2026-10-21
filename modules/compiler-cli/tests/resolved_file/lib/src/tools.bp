@@ -1,0 +1,26 @@
+//// A dependency's decorator and templates, run at the dependant's build.
+
+import {compiler} from "std";
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+fn wrap(text: string) -> string {
+    return "[" + text + "]";
+}
+
+// `#[entity("…")]` adds a `table()` member.
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.addMember("pub fn table() -> string { return " + quoted(table) + "; }");
+}
+
+// `shout @`…`` builds the upper-cased text at the call.
+pub fn shout(syntax q: string) -> string {
+    return compiler.build("(" + quoted(compiler.text(q)) + ").toUpper()");
+}
+
+// `boxed @`…`` calls this package's private `wrap` at run time.
+pub fn boxed(syntax q: string) -> string {
+    return compiler.build("wrap(" + quoted(compiler.text(q)) + ")");
+}

@@ -305,6 +305,12 @@ pub fn cacheKey(out: *[64]u8, target: []const u8, module_name: []const u8, code:
         std.mem.writeInt(u64, &lenbuf, a.code.len, .little);
         h.update(&lenbuf);
         h.update(a.code);
+        // The file an aux is written to is named by its atom.
+        if (a.atom) |atom| {
+            std.mem.writeInt(u64, &lenbuf, atom.len, .little);
+            h.update(&lenbuf);
+            h.update(atom);
+        }
     }
 
     var digest: [32]u8 = undefined;

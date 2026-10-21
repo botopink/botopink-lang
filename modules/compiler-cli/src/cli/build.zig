@@ -27,8 +27,9 @@ pub const Options = struct {
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5), `code_cache.zig`).
     cold: bool = false,
-    /// `--emit-resolved <dir>`: the resolved program of the package written to
-    /// `<dir>/<pkg>.bp`, for reading (decision 798 (2), (3)).
+    /// `--emit-resolved <dir>`: the resolved program written one file per
+    /// module, `<dir>/<pkg>/<module path>.bp`, for reading (decisions 798 (2),
+    /// (3), 834 (1)).
     emit_resolved: ?[]const u8 = null,
     /// `--emit-runtime <dir>`: the resolved tree of every package of the
     /// program written to `<dir>/<group>.bpr`, to build any target from later
@@ -52,32 +53,34 @@ const AnalysedSinks = struct {
     }
 };
 
-/// `--emit-resolved`'s hook (`codegen.Options.on_analysed`).
+/// `--emit-resolved`'s hook (`codegen.Options.on_analysed`): one
+/// `<dir>/<pkg>/<module path>.bp` per module of the program, grouped as the
+/// `.bpr` groups them (decision 834 (1), `resolvedPrint.files`).
 const ResolvedSink = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     dir: []const u8,
-    package: []const u8,
-    paths: []const []const u8,
+    root: []const u8,
+    deps: []const []const u8,
 
     fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, _: []const []const u8) anyerror!void {
         const self: *ResolvedSink = @ptrCast(@alignCast(ctx));
-        const text = bp.codegen.resolvedPrint.print(self.gpa, outputs, self.paths) catch |err| switch (err) {
+        const printed = bp.codegen.resolvedPrint.files(self.gpa, outputs, self.root, self.deps) catch |err| switch (err) {
             // A refused analysis has no resolved program; its diagnostic is the build's.
             error.NotResolved => return,
             else => return err,
         };
-        defer self.gpa.free(text);
-        std.Io.Dir.cwd().createDirPath(self.io, self.dir) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-        const name = try std.fmt.allocPrint(self.gpa, "{s}.bp", .{self.package});
-        defer self.gpa.free(name);
-        const path = try std.fs.path.join(self.gpa, &.{ self.dir, name });
-        defer self.gpa.free(path);
-        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = text });
-        reporter.print("  wrote {s}\n", .{path});
+        defer bp.codegen.resolvedPrint.freeFiles(self.gpa, printed);
+        for (printed) |f| {
+            const path = try std.fs.path.join(self.gpa, &.{ self.dir, f.path });
+            defer self.gpa.free(path);
+            if (std.fs.path.dirname(path)) |parent| std.Io.Dir.cwd().createDirPath(self.io, parent) catch |err| switch (err) {
+                error.PathAlreadyExists => {},
+                else => return err,
+            };
+            try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = f.text });
+            reporter.print("  wrote {s}\n", .{path});
+        }
     }
 };
 
@@ -259,9 +262,7 @@ pub fn run(
     var runtime_sink: RuntimeSink = undefined;
     var sinks: AnalysedSinks = .{};
     if (opts.emit_resolved) |dir| {
-        const paths = try arena.alloc([]const u8, project_modules.len);
-        for (project_modules, paths) |m, *p| p.* = m.path;
-        sink = .{ .gpa = gpa, .io = io, .dir = dir, .package = proj.name, .paths = paths };
+        sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps };
         bp.comptime_pipeline.keep_resolved = true;
         sinks.resolved = &sink;
     }

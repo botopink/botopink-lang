@@ -184,6 +184,9 @@ pub const Session = struct {
 
     /// Decode `g`'s entry when it is one for `paths`; true on a hit.
     fn readHit(self: *Session, g: []const u8, key: entry.Key, paths: []const []const u8) !bool {
+        // The entry holds no resolved program (`analysis_entry`): a build
+        // printing it (`--emit-resolved`) analyses every group again.
+        if (comptimeMod.keep_resolved) return false;
         const e = self.store.vtable.read(self.store.ctx, g, key) orelse return false;
         const decoded = entry.read(self.arena, e) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,

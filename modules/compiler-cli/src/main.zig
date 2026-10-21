@@ -68,7 +68,7 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled
-    \\  --emit-resolved <dir>        Write the resolved program (no comptime left) to <dir>/<package>.bp, for reading
+    \\  --emit-resolved <dir>        Write the resolved program (no comptime left) one file per module, <dir>/<package>/<module>.bp, for reading
     \\  --emit-runtime <dir>         Write each package's resolved tree to <dir>/<package>.bpr, to build any target from later
     \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\

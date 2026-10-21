@@ -1,0 +1,20 @@
+//// The program `resolved_file.sh` prints one file per module: a module of
+//// its own package, a dependency's decorator and templates, a std module, a
+//// folded context.
+
+import {context.createContext, io.terminal.print, math.clamp} from "std";
+import {tools.shout} from "lib";
+
+pub mod util;
+
+import {util.greet};
+
+pub val loud = shout @`hello`;
+
+pub val prefix = comptime createContext("#");
+
+pub fn main() -> void {
+    print(loud);
+    print(greet());
+    print(clamp(9.5, 0.0, 2.5).toString());
+}

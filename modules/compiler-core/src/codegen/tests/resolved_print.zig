@@ -45,6 +45,8 @@ const cells = [_][]const u8{
     "comptime/cells/comptime_value_or_type_param",
     "generic/cells/generic_method_map",
     "decisions-taken/commonjs_generic_body_receives_type_shape-673/cells/commonjs_generic_body_receives_type_shape",
+    // A folded context, printed `createContext(v)` (decision 835 (1)).
+    "decisions-taken/component_is_lambda_over_render_scope-388/cells/component_is_lambda",
 };
 
 fn moduleOf(source: []const u8) codegen.Module {
@@ -62,37 +64,53 @@ fn printed(gpa: std.mem.Allocator, io: std.Io, source: []const u8, cfg: codegen.
 
 /// The printing holds no comptime form, and its analysis runs none.
 fn expectNoComptime(gpa: std.mem.Allocator, io: std.Io, cell: []const u8, text: []const u8, cfg: codegen.Config) !void {
+    try expectNoComptimeIn(gpa, io, cell, &.{moduleOf(text)}, cfg);
+}
+
+/// Every module of `modules` lexes with no `comptime` / `syntax` word, and
+/// their analysis checks and runs no comptime.
+fn expectNoComptimeIn(gpa: std.mem.Allocator, io: std.Io, cell: []const u8, modules: []const codegen.Module, cfg: codegen.Config) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
-    var lx = Lexer.init(text);
-    const tokens = try lx.scanAll(arena.allocator());
-    for (tokens) |t| if (t.kind == .@"comptime" or std.mem.eql(u8, t.lexeme, "syntax")) {
-        std.debug.print("{s}: the printing writes `{s}` at line {d}\n{s}\n", .{ cell, t.lexeme, t.line, text });
-        return error.ComptimeLeft;
-    };
-    var session = try codegen.analyse(gpa, &.{moduleOf(text)}, io, cfg);
+    for (modules) |m| {
+        var lx = Lexer.init(m.source);
+        const tokens = try lx.scanAll(arena.allocator());
+        for (tokens) |t| if (t.kind == .@"comptime" or std.mem.eql(u8, t.lexeme, "syntax")) {
+            std.debug.print("{s}: the printing of {s} writes `{s}` at line {d}\n{s}\n", .{ cell, m.path, t.lexeme, t.line, m.source });
+            return error.ComptimeLeft;
+        };
+    }
+    var session = try codegen.analyse(gpa, modules, io, cfg);
     defer session.deinit(gpa);
+    var seen: usize = 0;
     for (session.outputs.items) |o| {
-        if (!std.mem.eql(u8, o.name, "main")) continue;
+        const printed_module = for (modules) |m| {
+            if (std.mem.eql(u8, m.path, o.name)) break m;
+        } else continue;
+        seen += 1;
         const ok = switch (o.outcome) {
             .ok => |ok| ok,
             else => {
-                std.debug.print("{s}: the printing does not check\n{s}\n", .{ cell, text });
+                std.debug.print("{s}: the printing of {s} does not check\n{s}\n", .{ cell, o.name, printed_module.source });
                 return error.PrintingRefused;
             },
         };
         if (ok.comptime_script != null or ok.comptime_traces.len > 0 or ok.template_expansions > 0 or ok.build_output.len > 0) {
-            std.debug.print("{s}: the printing still runs comptime\n{s}\n", .{ cell, text });
+            std.debug.print("{s}: the printing of {s} still runs comptime\n{s}\n", .{ cell, o.name, printed_module.source });
             return error.ComptimeLeft;
         }
-        return;
     }
-    return error.NoMainModule;
+    if (seen != modules.len) return error.NoMainModule;
 }
 
 /// What `source` prints when run on `cfg`'s target.
 fn answer(gpa: std.mem.Allocator, io: std.Io, source: []const u8, cfg: codegen.Config) ![]u8 {
-    var outputs = try codegen.generate(gpa, &.{moduleOf(source)}, io, cfg);
+    return answerOf(gpa, io, &.{moduleOf(source)}, cfg);
+}
+
+/// What the program of `modules` prints when run on `cfg`'s target.
+fn answerOf(gpa: std.mem.Allocator, io: std.Io, modules: []const codegen.Module, cfg: codegen.Config) ![]u8 {
+    var outputs = try codegen.generate(gpa, modules, io, cfg);
     defer {
         for (outputs.items) |*o| o.result.deinit(gpa);
         outputs.deinit(gpa);
@@ -132,6 +150,158 @@ test "resolved program: a cell's printing checks with no comptime left and answe
                 std.debug.print("{s} on {s}: the printing answers\n{s}\nthe cell\n{s}\nprinted:\n{s}\n", .{ cell, @tagName(cfg.targetSource), got, want, text });
                 return error.AnswerDiffers;
             }
+        }
+    }
+}
+
+// Decision 834 — a package of several modules and a dependency: one file per
+// module, the dependency's under its own directory; a template of the
+// dependency whose expansion calls the dependency's private `wrap` reaches it
+// through its hygiene alias, printed as the alias import, `wrap` declared in
+// the dependency's file; the decorators and templates that ran left out with
+// their imports.
+const lib_root = "pub mod tools;\n";
+const lib_tools =
+    \\import {compiler} from "std";
+    \\
+    \\fn quoted(text: string) -> string {
+    \\    return "\"" + text + "\"";
+    \\}
+    \\
+    \\fn wrap(text: string) -> string {
+    \\    return "[" + text + "]";
+    \\}
+    \\
+    \\pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    \\    compiler.addMember("pub fn table() -> string { return " + quoted(table) + "; }");
+    \\}
+    \\
+    \\pub fn shout(syntax q: string) -> string {
+    \\    return compiler.build("(" + quoted(compiler.text(q)) + ").toUpper()");
+    \\}
+    \\
+    \\pub fn boxed(syntax q: string) -> string {
+    \\    return compiler.build("wrap(" + quoted(compiler.text(q)) + ")");
+    \\}
+    \\
+    \\pub fn label(name: string, n: i32) -> string {
+    \\    return name + "#" + n.toString();
+    \\}
+    \\
+;
+const app_util =
+    \\import {tools.entity, tools.boxed, tools.label} from "lib";
+    \\
+    \\#[entity("towns")]
+    \\pub type Town(name: string)
+    \\
+    \\pub fn greet() -> string {
+    \\    return boxed @`hi` + Town.table() + label("n", comptime 6 * 7);
+    \\}
+    \\
+;
+const app_main =
+    \\import {io.terminal.print} from "std";
+    \\import {tools.shout} from "lib";
+    \\
+    \\pub mod util;
+    \\
+    \\import {util.greet};
+    \\
+    \\pub val loud = shout @`hello`;
+    \\
+    \\pub fn main() -> void {
+    \\    print(loud);
+    \\    print(greet());
+    \\}
+    \\
+;
+
+const project_packages: codegen.Config = blk: {
+    var c = h.configs[0];
+    c.packages = .{ .root = "test", .deps = &.{"lib"} };
+    break :blk c;
+};
+
+fn projectModules(lib_r: []const u8, lib_t: []const u8, util: []const u8, main: []const u8) [4]codegen.Module {
+    return .{
+        .{ .path = "lib/root", .package = "lib", .source = lib_r, .srcPath = "src/root.bp" },
+        .{ .path = "lib/tools", .package = "lib", .source = lib_t, .srcPath = "src/tools.bp" },
+        .{ .path = "util", .source = util, .srcPath = "src/util.bp" },
+        .{ .path = "main", .source = main, .srcPath = "src/main.bp", .root = true },
+    };
+}
+
+/// The printed text of module `name` among `files`.
+fn fileOf(files: []const resolvedPrint.File, name: []const u8) ![]const u8 {
+    var buf: [128]u8 = undefined;
+    const head = try std.fmt.bufPrint(&buf, "// module {s}\n", .{name});
+    for (files) |f| if (std.mem.startsWith(u8, f.text, head)) return f.text;
+    return error.ModuleNotPrinted;
+}
+
+test "resolved program: one file per module, a dependency's in its own directory, the printed tree answers as the project on every target (decision 834)" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    reservedNames.accept_compiler_names = true;
+    defer reservedNames.accept_compiler_names = false;
+    const written = projectModules(lib_root, lib_tools, app_util, app_main);
+    var cfg0 = project_packages;
+    cfg0.build_root = test_scratch.path(io, "codegen/resolved_print_project");
+
+    const files = blk: {
+        comptimeMod.keep_resolved = true;
+        defer comptimeMod.keep_resolved = false;
+        var session = try codegen.analyse(gpa, &written, io, cfg0);
+        defer session.deinit(gpa);
+        break :blk try resolvedPrint.files(gpa, session.outputs.items, "test", &.{"lib"});
+    };
+    defer resolvedPrint.freeFiles(gpa, files);
+
+    // Each module at `<pkg>/<module path>.bp`, opened by its `// module` line.
+    for ([_][2][]const u8{
+        .{ "lib/root.bp", "lib/root" },
+        .{ "lib/tools.bp", "lib/tools" },
+        .{ "test/util.bp", "util" },
+        .{ "test/main.bp", "main" },
+    }) |want| {
+        const f = for (files) |f| {
+            if (std.mem.eql(u8, f.path, want[0])) break f;
+        } else {
+            std.debug.print("no file {s}\n", .{want[0]});
+            return error.FileMissing;
+        };
+        var buf: [64]u8 = undefined;
+        try std.testing.expect(std.mem.startsWith(u8, f.text, try std.fmt.bufPrint(&buf, "// module {s}\n", .{want[1]})));
+    }
+    const util = try fileOf(files, "util");
+    const tools = try fileOf(files, "lib/tools");
+    const main = try fileOf(files, "main");
+    // The hygiene alias as its import, `wrap` declared in its own file.
+    try std.testing.expect(std.mem.indexOf(u8, util, "import {tools.wrap as __bp_tpl_lib_tools__wrap} from \"lib\";") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tools, "fn wrap(text: string) -> string") != null);
+    // What ran at build is gone with its import; the names are as written.
+    try std.testing.expect(std.mem.indexOf(u8, tools, "fn entity") == null);
+    try std.testing.expect(std.mem.indexOf(u8, util, "tools.entity") == null);
+    try std.testing.expect(std.mem.indexOf(u8, main, "tools.shout") == null);
+    try std.testing.expect(std.mem.indexOf(u8, main, "import {util.greet};") != null);
+
+    // The printed tree read back as the project: no comptime left, the same
+    // answer on every target.
+    const reread = projectModules(try fileOf(files, "lib/root"), tools, util, main);
+    try expectNoComptimeIn(gpa, io, "project", &reread, cfg0);
+    for (h.configs) |c| {
+        var cfg = c;
+        cfg.packages = cfg0.packages;
+        cfg.build_root = cfg0.build_root;
+        const want = try answerOf(gpa, io, &written, cfg);
+        defer gpa.free(want);
+        const got = try answerOf(gpa, io, &reread, cfg);
+        defer gpa.free(got);
+        if (!std.mem.eql(u8, want, got) or want.len == 0) {
+            std.debug.print("project on {s}: the printing answers\n{s}\nthe project\n{s}\n", .{ @tagName(cfg.targetSource), got, want });
+            for (files) |f| std.debug.print("{s}:\n{s}\n", .{ f.path, f.text });
+            return error.AnswerDiffers;
         }
     }
 }

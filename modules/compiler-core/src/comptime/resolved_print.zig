@@ -25,6 +25,8 @@ const format = @import("../format.zig");
 const comptimeMod = @import("../comptime.zig");
 const implementations = @import("../parser/implementations.zig");
 const mayHoldExpr = @import("std_namespace.zig").mayHoldExpr;
+const runtimeFile = @import("runtime_file.zig");
+const contextLower = @import("context_lower.zig");
 
 const ComptimeOutput = comptimeMod.ComptimeOutput;
 
@@ -58,6 +60,62 @@ pub fn print(allocator: std.mem.Allocator, outputs: []const ComptimeOutput, path
     return out.toOwnedSlice(allocator);
 }
 
+/// One file of the printed tree (decision 834 (1)): `path` relative to the
+/// directory `--emit-resolved` names, `text` the module opened by its
+/// `// module <name>` line.
+pub const File = struct {
+    path: []const u8,
+    text: []const u8,
+};
+
+/// Every module of the session in its own file, grouped as the `.bpr` groups
+/// them (decision 834 (1), `runtime_file.groupOf`): a root module `m` at
+/// `<root>/<m>.bp`, a dependency's or a loaded file's `<pkg>/<m>` at
+/// `<pkg>/<m>.bp`, std's `std/<m>` at `std/<m>.bp`; in the session's order.
+/// Free with `freeFiles`.
+pub fn files(gpa: std.mem.Allocator, outputs: []const ComptimeOutput, root: []const u8, deps: []const []const u8) ![]File {
+    var out: std.ArrayListUnmanaged(File) = .empty;
+    errdefer {
+        for (out.items) |f| {
+            gpa.free(f.path);
+            gpa.free(f.text);
+        }
+        out.deinit(gpa);
+    }
+    for (outputs) |o| {
+        const ok = switch (o.outcome) {
+            .ok => |ok| ok,
+            else => return error.NotResolved,
+        };
+        const program = ok.resolved orelse return error.NotResolved;
+        const path = try filePath(gpa, o.name, root, deps);
+        errdefer gpa.free(path);
+        const body = try module(gpa, program, outputs, o.name);
+        defer gpa.free(body);
+        const end: []const u8 = if (body.len > 0 and body[body.len - 1] != '\n') "\n" else "";
+        const text = try std.fmt.allocPrint(gpa, "// module {s}\n{s}{s}", .{ o.name, body, end });
+        errdefer gpa.free(text);
+        try out.append(gpa, .{ .path = path, .text = text });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+pub fn freeFiles(gpa: std.mem.Allocator, fs: []const File) void {
+    for (fs) |f| {
+        gpa.free(f.path);
+        gpa.free(f.text);
+    }
+    gpa.free(fs);
+}
+
+/// The file module `name` is printed to, relative to the directory: under
+/// its package's directory, a root module's path prefixed by the root's name.
+pub fn filePath(gpa: std.mem.Allocator, name: []const u8, root: []const u8, deps: []const []const u8) std.mem.Allocator.Error![]u8 {
+    const group = runtimeFile.groupOf(name, root, deps);
+    if (std.mem.eql(u8, group, root)) return std.fmt.allocPrint(gpa, "{s}/{s}.bp", .{ root, name });
+    return std.fmt.allocPrint(gpa, "{s}.bp", .{name});
+}
+
 /// One module's resolved program as botopink text.
 pub fn module(allocator: std.mem.Allocator, program: ast.Program, outputs: []const ComptimeOutput, self_name: []const u8) ![]u8 {
     var arena_state = std.heap.ArenaAllocator.init(allocator);
@@ -66,9 +124,18 @@ pub fn module(allocator: std.mem.Allocator, program: ast.Program, outputs: []con
 
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var blank: std.ArrayListUnmanaged(bool) = .empty;
-    for (program.decls, 0..) |d, i| {
+    // A folded value the language cannot write is printed as the run-time call
+    // that builds it (decision 835 (1)): a context, `createContext(v)`.
+    var builders: Builders = .{};
+    const copied = try contextLower.deepCopy(ast.Program, arena, program);
+    for (copied.decls) |*d| try builders.walk(ast.DeclKind, d);
+    for (copied.decls, 0..) |d, i| {
         if (dropped(d)) continue;
-        try decls.append(arena, d);
+        const kept = switch (d) {
+            .use => |u| (try keptImport(arena, u, outputs)) orelse continue,
+            else => d,
+        };
+        try decls.append(arena, kept);
         try blank.append(arena, if (i < program.blankLineBefore.len) program.blankLineBefore[i] else false);
     }
     // The module's `////` comments open it, before the imports an expansion
@@ -97,6 +164,8 @@ pub fn module(allocator: std.mem.Allocator, program: ast.Program, outputs: []con
     var items: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
     if (probe.used_print and !binds(decls.items, "print")) try items.append(arena, try stdItem(arena, &.{ "io", "terminal", "print" }));
     if (probe.used_panic and !binds(decls.items, "panic")) try items.append(arena, try stdItem(arena, &.{ "failure", "panic" }));
+    if (builders.create_context and !binds(decls.items, "createContext") and !std.mem.eql(u8, self_name, "std/context"))
+        try items.append(arena, try stdItem(arena, &.{ "context", "createContext" }));
     // A type a folded value or an expansion names that another module
     // declares (`Context` of `std/context`): imported from it.
     var names: Names = .{ .arena = arena };
@@ -118,6 +187,58 @@ pub fn module(allocator: std.mem.Allocator, program: ast.Program, outputs: []con
     var r: format.Formatter.Resolved = .{ .keepAnnotation = keepAnnotation };
     const body = try format.formatResolved(arena, .{ .decls = decls.items, .blankLineBefore = blank.items }, &r);
     return allocator.dupe(u8, body);
+}
+
+/// `u` without the items naming a declaration that ran at build — a
+/// decorator or a template of another module of the session, which its
+/// printing no longer holds; null when no item is left.
+fn keptImport(arena: std.mem.Allocator, u: ast.ImportDecl, outputs: []const ComptimeOutput) !?ast.DeclKind {
+    if (u.package != null or u.activationOnly) return .{ .use = u };
+    var items: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
+    for (u.imports) |item| {
+        if (try ranAtBuild(arena, u, item, outputs)) continue;
+        try items.append(arena, item);
+    }
+    if (items.items.len == u.imports.len) return .{ .use = u };
+    if (items.items.len == 0) return null;
+    var out = u;
+    out.imports = items.items;
+    return .{ .use = out };
+}
+
+/// Whether `item` names a declaration of a module of the session whose
+/// resolved program does not hold it.
+fn ranAtBuild(arena: std.mem.Allocator, u: ast.ImportDecl, item: ast.ImportPath, outputs: []const ComptimeOutput) !bool {
+    if (item.segments.len < 2) return false;
+    const dir = item.segments[0 .. item.segments.len - 1];
+    const leaf = item.segments[item.segments.len - 1];
+    const joined = try std.mem.join(arena, "/", dir);
+    const owner = switch (u.source) {
+        .module => |pkg| try std.fmt.allocPrint(arena, "{s}/{s}", .{ pkg, joined }),
+        .root => if (u.ownPackage.len > 0) try std.fmt.allocPrint(arena, "{s}/{s}", .{ u.ownPackage, joined }) else joined,
+        else => return false,
+    };
+    for (outputs) |o| {
+        if (!std.mem.eql(u8, o.name, owner)) continue;
+        const ok = switch (o.outcome) {
+            .ok => |ok| ok,
+            else => return false,
+        };
+        const program = ok.resolved orelse return false;
+        for (program.decls) |d| {
+            if (dropped(d)) continue;
+            if (declName(d)) |n| if (std.mem.eql(u8, n, leaf)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+/// The name a top-level declaration binds, null for one that binds none.
+fn declName(d: ast.DeclKind) ?[]const u8 {
+    return switch (d) {
+        inline else => |payload| if (@hasField(@TypeOf(payload), "name") and @TypeOf(payload.name) == []const u8) payload.name else null,
+    };
 }
 
 /// The import item naming `name` of the module at `path` (`context` →
@@ -200,6 +321,55 @@ const Names = struct {
                 .slice => if (comptime mayHoldExpr(p.child)) {
                     for (ptr.*) |*e| try self.walk(p.child, e);
                 },
+                else => {},
+            },
+            .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+                for (ptr) |*e| try self.walk(arr.child, e);
+            },
+            else => {},
+        }
+    }
+
+    fn hasField(comptime fields: anytype, comptime name: []const u8) bool {
+        inline for (fields) |f| if (comptime std.mem.eql(u8, f.name, name)) return true;
+        return false;
+    }
+};
+
+/// Decision 835 (1) — the folded values printed as the call that builds them:
+/// std's `Context(contextValue: v)` (`std/context`, opaque to a program's
+/// reader) as `createContext(v)`.
+const Builders = struct {
+    create_context: bool = false,
+
+    fn walk(self: *Builders, comptime T: type, ptr: *T) std.mem.Allocator.Error!void {
+        if (T == ast.ImportDecl) return;
+        switch (@typeInfo(T)) {
+            .@"struct" => |st| {
+                if (comptime hasField(st.fields, "callee") and hasField(st.fields, "receiver") and hasField(st.fields, "args") and hasField(st.fields, "is_builtin")) {
+                    if (ptr.receiver == null and !ptr.is_builtin and std.mem.eql(u8, ptr.callee, "Context") and
+                        ptr.args.len == 1 and ptr.args[0].label != null and std.mem.eql(u8, ptr.args[0].label.?, "contextValue"))
+                    {
+                        ptr.callee = "createContext";
+                        ptr.args[0].label = null;
+                        self.create_context = true;
+                    }
+                }
+                inline for (st.fields) |f| {
+                    if (f.is_comptime) continue;
+                    if (comptime mayHoldExpr(f.type)) try self.walk(f.type, &@field(ptr.*, f.name));
+                }
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| {
+                    if (comptime mayHoldExpr(@TypeOf(payload.*))) try self.walk(@TypeOf(payload.*), payload);
+                },
+            },
+            .optional => |o| if (ptr.*) |*inner| try self.walk(o.child, inner),
+            // A node behind a const pointer cannot be rewritten in place.
+            .pointer => |p| if (comptime !p.is_const and mayHoldExpr(p.child)) switch (p.size) {
+                .one => try self.walk(p.child, ptr.*),
+                .slice => for (ptr.*) |*e| try self.walk(p.child, e),
                 else => {},
             },
             .array => |arr| if (comptime mayHoldExpr(arr.child)) {

@@ -111,6 +111,14 @@ compiler-cli/
 │   ├── runtime_file/        ← its fixture: `app` (a decorator and a template of
 │   │                          `lib`, a top-level `comptime` block, a folded value,
 │   │                          `std/math`) and `lib`
+│   ├── resolved_file.sh     ← `--emit-resolved`'s files (decision 834, B-163): `app`
+│   │                          (modules `main`, `util`) over `lib` writes
+│   │                          `app/main.bp`, `app/util.bp`, `lib/root.bp`,
+│   │                          `lib/tools.bp`, `std/math.bp`, each named on stderr
+│   │                          and opened by `// module <path>`; a hygiene alias
+│   │                          printed as its alias import, what ran at build gone
+│   │                          with its import
+│   ├── resolved_file/       ← its fixture: `app` and `lib`
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —
@@ -172,6 +180,7 @@ bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under 
 bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
 bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
 bash modules/compiler-cli/tests/runtime_file.sh      # every target built from a package's .bpr as built directly (805)
+bash modules/compiler-cli/tests/resolved_file.sh     # --emit-resolved writes one file per module (834)
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime

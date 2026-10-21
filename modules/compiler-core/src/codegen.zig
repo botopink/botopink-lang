@@ -218,9 +218,15 @@ pub fn generateWith(
     // written next to each entry so `require`/remote calls resolve at runtime.
     var aux_files: std.ArrayListUnmanaged(runtime.AuxFile) = .empty;
     defer aux_files.deinit(allocator);
+    var arena_aux = std.heap.ArenaAllocator.init(allocator);
+    defer arena_aux.deinit();
     for (outputs.items) |o| {
         if (!o.result.failed() and o.name.len > 0) {
-            try aux_files.append(allocator, .{ .name = o.name, .code = o.result.js });
+            // A dependency's module is named by its own package's atom
+            // (decision 109), which the harness's `test` package would not give.
+            const id = config.packages.idOf(o.name);
+            const atom: ?[]const u8 = if (id.package_in_path) crossModule.erlAtom(arena_aux.allocator(), id) catch null else null;
+            try aux_files.append(allocator, .{ .name = o.name, .code = o.result.js, .atom = atom });
             // Policy 3: every `type` of the module is a module of its own on
             // erlang/beam, compiled and loaded beside the file's.
             for (o.result.units) |u| try aux_files.append(allocator, .{ .name = u.atom, .code = u.code, .atom = u.atom });
