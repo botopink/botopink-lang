@@ -3,6 +3,7 @@ const std = @import("std");
 const T = @import("./types.zig");
 const ast = @import("../ast.zig");
 const render = @import("./render.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 pub const Loc = ast.Loc;
 
@@ -617,7 +618,7 @@ test "an associated type is shown under its owner's path" {
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
 /// domain) or "missing variants: A, B" (enum). Caller owns the result.
 ///
-/// Both forms open with **`case` … is not exhaustive**, the wording
+/// Both forms open with the code `non-exhaustive` (decision 858), then **`case` … is not exhaustive**, the wording
 /// `1.0.4-beta/MIGRATION.md:300` publishes for this rule (`not exhaustive`,
 /// `use _ {`) and the one decision 8 §5.4's reject fixtures match against. The
 /// text that stood here said "non-exhaustive", which no published sketch and no
@@ -628,8 +629,8 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
     if (n.missing.len == 0) {
         return std.fmt.allocPrint(
             gpa,
-            "`case` on '{s}' is not exhaustive: nothing covers the remaining values — use `_ {{ … }}`",
-            .{n.typeName},
+            "{s}: `case` on '{s}' is not exhaustive: nothing covers the remaining values — use `_ {{ … }}`",
+            .{ diagnostics.non_exhaustive, n.typeName },
         );
     }
     var list: std.ArrayList(u8) = .empty;
@@ -638,7 +639,7 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
         if (i > 0) try list.appendSlice(gpa, ", ");
         try list.appendSlice(gpa, name);
     }
-    return std.fmt.allocPrint(gpa, "`case` on '{s}' is not exhaustive: missing {s} {s}", .{ n.typeName, n.missingLabel, list.items });
+    return std.fmt.allocPrint(gpa, "{s}: `case` on '{s}' is not exhaustive: missing {s} {s}", .{ diagnostics.non_exhaustive, n.typeName, n.missingLabel, list.items });
 }
 
 /// `typeLabel`, with a union spelled out as `A | B`. Owned by the caller.

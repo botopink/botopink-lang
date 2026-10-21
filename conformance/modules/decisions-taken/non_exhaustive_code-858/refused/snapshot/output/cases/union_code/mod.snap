@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: non-exhaustive: `case` on 'Box | Pair' is not exhaustive: missing member(s) Pair
+at src/cases/union_code/mod.bp:8:12

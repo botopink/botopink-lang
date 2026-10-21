@@ -1788,6 +1788,12 @@ through its nested payloads included.
 
 <!-- example: modules/case/run/src/cases/case_exhaustive_nested_variants -->
 
+Every exhaustiveness refusal of a `case` — an enum's, a union's and an open domain's — opens with the code `non-exhaustive`, then the wording: `non-exhaustive: `case` on 'A | B' is not exhaustive: missing member(s) C`; an open domain's reads `nothing covers the remaining values — use `_`` after the same prefix (decision 858).
+
+<!-- example: modules/decisions-taken/non_exhaustive_code-858/refused/src/cases/enum_code -->
+<!-- example: modules/decisions-taken/non_exhaustive_code-858/refused/src/cases/union_code -->
+<!-- example: modules/decisions-taken/non_exhaustive_code-858/refused/src/cases/open_domain_code -->
+
 <!-- example: modules/decisions-taken/numeric_literal_suffixes-247/refused/src/cases/integer_literal_never_fits_f64 -->
 
 ### Arrays

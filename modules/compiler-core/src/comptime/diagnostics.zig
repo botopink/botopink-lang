@@ -20,6 +20,10 @@
 
 const std = @import("std");
 
+/// Decision 858 — every exhaustiveness refusal of a `case` (an enum's, a
+/// union's, an open domain's) opens its message with this code.
+pub const non_exhaustive: []const u8 = "non-exhaustive";
+
 // ── decisions 118–128 — the return is the effect ────────────────────────────
 //
 // Decision 118 removed the effect annotations, so every rule that paired an

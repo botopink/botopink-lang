@@ -1,0 +1,12 @@
+//// Decision 858 — an enum's exhaustiveness refusal opens with `non-exhaustive`.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+pub fn area(s: Shape) -> i32 {
+    return case s {
+        .Circle(r) { r }
+    };
+}

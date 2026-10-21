@@ -2817,7 +2817,7 @@ two domains and returned before looking at an arm for anything else, which is wh
 - **Guards** — a guarded arm neither covers anything nor shadows later arms.
 - **Diagnostics** — `nonExhaustive` (missing variants or members, or a wildcard
   request) and `redundantPattern` (arm after a catch-all, or a repeated variant).
-  The message reads **`case` on '<T>' is not exhaustive: …**, the text
+  The message reads **`non-exhaustive: `case` on '<T>' is not exhaustive: …`** (decision 858: the code is `diagnostics.non_exhaustive`), the text
   `1.0.4-beta/MIGRATION.md:300` publishes for this rule (`not exhaustive`,
   `use _ {`); a union's uncovered entries read as **members** and an enum's as
   **variants** (`nonExhaustive.missingLabel`, `TypeError.nonExhaustiveOf`), and a
