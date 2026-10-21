@@ -1,0 +1,39 @@
+//// Decision 884 — `use all(cs)` runs entry `i` with `Place.index(i)`: entries a
+//// plain function made take their position, so reordered they keep the state of
+//// the position they stand at; keyed entries keep their key.
+
+import {context.all, context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+// A plain function's entries: one written call, counted in each entry.
+fn sheet(names: string[]) -> Component<View>[] {
+    return names.map({ n -> Item(n) });
+}
+
+component fn Page(names: string[]) -> Component<View> {
+    val plain = use all(sheet(names));
+    val keyed = use all(names.map({ n -> #[key(n)] Item("k" + n) }));
+    return View(text: plain.map({ v -> v.text }).join(",")
+        + " | "
+        + keyed.map({ v -> v.text }).join(","));
+}
+
+async fn render(root: Scope, names: string[]) -> Async<string> {
+    return (await run(Page(names), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, ["a", "b"]));
+    print(await render(root, ["b", "a"]));
+}
