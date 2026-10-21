@@ -124,7 +124,7 @@ test "diff marks the lines each side alone has" {
 
 // ── the `build` record (decision 789) ─────────────────────────────────────────
 
-test "build lines come after the refusals and before the output, and round-trip" {
+test "build lines come first, before the refusals and the output, and round-trip" {
     val snap = Snap(build: ["hello at build", ""], stdout: "1\n");
     val text = render(snap);
     assert text == "botopink-cell 1\nbuild hello at build\nbuild\nout 1\n";
@@ -135,7 +135,7 @@ test "build lines come after the refusals and before the output, and round-trip"
     assert back.stdout == "1\n";
     val refused = Snap(refusals: [Refusal(message: "error: boom", at: "src/main.bp:2:3")], build: ["before"]);
     assert render(refused)
-        == "botopink-cell 1\nrefused error: boom\nat src/main.bp:2:3\nbuild before\n";
+        == "botopink-cell 1\nbuild before\nrefused error: boom\nat src/main.bp:2:3\n";
     assert roundTrip(refused).build.length == 1;
     assert !Snap(build: ["x"]).isEmpty();
 }
@@ -151,7 +151,8 @@ test "build lines are compared exactly" {
 test "a build record out of order names its line" {
     assert malformedLine("botopink-cell 1\nout a\nbuild x\n") == 3;
     assert malformedLine("botopink-cell 1\nabort\nbuild x\n") == 3;
-    assert malformedLine("botopink-cell 1\nbuild x\nrefused error: x\n") == 3;
+    assert malformedLine("botopink-cell 1\nrefused error: x\nbuild x\n") == 3;
+    assert malformedLine("botopink-cell 1\nbuild x\nrefused error: x\n") == 0;
     assert malformedLine("botopink-cell 1\nbuild \n") == 2;
     assert malformedLine("botopink-cell 1\nbuild x\nabort\nstderr boom\n") == 0;
 }

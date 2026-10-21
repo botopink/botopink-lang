@@ -19,8 +19,10 @@
 ////     stderr <text>                   with `abort`: the program's stderr contains
 ////                                       this text
 ////
-//// The records come in that order — refusals (`refused`, `at`, `label`, `from`),
-//// then `build`, then the output, then `abort`, then the `stderr` claims — and a
+//// The records come in the console's order (decision 904) — `build` lines, then the
+//// refusals (`refused`, `at`, `label`, `from`) or the output, then `abort`, then the
+//// `stderr` claims; nothing prints after a refusal, so a `build` after a `refused` is
+//// malformed — and a
 //// file has exactly one spelling: it parses only when rendering what it parsed
 //// gives back its text. A refusal and an output never share a file. The header
 //// alone is the empty answer.
@@ -97,7 +99,7 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
     var stdout = "";
     var stderr: string[] = [];
     var abort = false;
-    // 0 refusals · 1 build · 2 output · 3 after `no-final-newline` · 4 after `abort` · 5 stderr
+    // 0 start · 1 build · 2 output · 3 after `no-final-newline` · 4 after `abort` · 5 stderr · 6 refusals
     var phase = 0;
     var lastOutEmpty = false;
     var n = 0;
@@ -119,14 +121,15 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
         val last: ?Refusal = refusals.at(count - 1);
 
         if (word == "refused") {
-            if (phase == 1) return fail(n, "`refused` comes before `build`");
-            if (phase != 0) return fail(n, "`refused` comes before any output");
+            if (phase > 1 && phase != 6)
+                return fail(n, "`refused` comes before any output");
+            phase = 6;
             if (!hasRest)
                 return fail(n, "`refused` names the compiler's message");
             refusals = refusals.append([Refusal(message: rest)]);
         } else if (word == "at") {
             if (!hasRest) return fail(n, "`at` names `<file>:<line>:<col>`");
-            if (phase != 0 || count == 0 || last?.at != null)
+            if (phase != 6 || count == 0 || last?.at != null)
                 return fail(n, "`at` follows its `refused` line");
             refusals = refusals
                 .slice(0, count - 1)
@@ -134,7 +137,7 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
         } else if (word == "label") {
             if (!hasRest)
                 return fail(n, "`label` names the text printed beside the caret");
-            if (phase != 0
+            if (phase != 6
                 || count == 0
                 || last?.at == null
                 || last?.label != null)
@@ -144,12 +147,14 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
                 .append([withLabel(last ?? Refusal(message: ""), rest)]);
         } else if (word == "from") {
             if (!hasRest) return fail(n, "`from` names `<file>:<line>:<col>`");
-            if (phase != 0 || count == 0 || last?.at == null)
+            if (phase != 6 || count == 0 || last?.at == null)
                 return fail(n, "`from` follows its `at` line");
             refusals = refusals
                 .slice(0, count - 1)
                 .append([withFrame(last ?? Refusal(message: ""), rest)]);
         } else if (word == "build") {
+            if (phase == 6)
+                return fail(n, "`build` comes before `refused`: nothing prints after a refusal");
             if (phase > 1)
                 return fail(n, "`build` comes before `out`, `no-final-newline`, `abort` and `stderr`");
             phase = 1;
@@ -200,6 +205,9 @@ fn record(word: string, text: string) -> string {
 /// The one spelling of `snap`.
 pub fn render(snap: Snap) -> string {
     var out = HEADER + "\n";
+    for (snap.build) { b ->
+        out = out + record("build", b);
+    }
     for (snap.refusals) { r ->
         out = out + "refused " + r.message + "\n";
         if (r.at) {
@@ -213,9 +221,6 @@ pub fn render(snap: Snap) -> string {
         for (r.frames) { f ->
             out = out + "from " + f + "\n";
         }
-    }
-    for (snap.build) { b ->
-        out = out + record("build", b);
     }
     if (snap.stdout != "") {
         val ends = snap.stdout.endsWith("\n");
