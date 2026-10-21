@@ -20719,7 +20719,11 @@ const Emitter = struct {
             // A parameter typed by a type parameter out of scope here (the
             // `fn(A) -> C` `compose<A, B, C>` answers): the checker bound it
             // to the argument's type, and the argument crosses boxed.
-            const pr: Repr = if (pdecl) |pt| (self.gcSigRepr(pt, decl.?.gps) orelse self.wasmTypeOf(a.value.*)) else self.wasmTypeOf(a.value.*);
+            // No declared function type (`val f = fn(h: ?Holder[]) -> i32 { … }`):
+            // the lambda's own parameter type, the repr its adapter unboxes by —
+            // a `null` argument is then the null reference, not an `i32` box.
+            const lft: ?ast.TypeRef = if (pdecl == null) (if (li) |i| (if (k < self.lambdas.items[i].param_ft.len) self.lambdas.items[i].param_ft[k] else null) else null) else null;
+            const pr: Repr = if (pdecl) |pt| (self.gcSigRepr(pt, decl.?.gps) orelse self.wasmTypeOf(a.value.*)) else if (lft) |pt| (self.gcSigRepr(pt, null) orelse self.wasmTypeOf(a.value.*)) else self.wasmTypeOf(a.value.*);
             self.expected_fn = if (pdecl) |pt| (if (pt == .function and a.value.* == .function) pt else null) else null;
             defer self.expected_fn = null;
             if (pdecl == null) if (li) |i| {
