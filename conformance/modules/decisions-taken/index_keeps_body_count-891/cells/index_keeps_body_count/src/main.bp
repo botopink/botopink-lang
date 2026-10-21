@@ -1,0 +1,34 @@
+//// Decision 891 — an index keeps a component body's count as it keeps a key: in
+//// `[Part("header")].append(middle).append([Part("footer")])` built in the
+//// body, `footer` keeps its state when `middle` grows.
+
+import {context.all, context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Part(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+component fn Page(xs: string[]) -> Component<View> {
+    val middle = xs.map({ n -> Part(n) });
+    val parts = use all([Part("header")]
+        .append(middle)
+        .append([Part("footer")]));
+    return View(text: parts.map({ v -> v.text }).join(","));
+}
+
+async fn render(root: Scope, xs: string[]) -> Async<string> {
+    return (await run(Page(xs), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, ["x"]));
+    print(await render(root, ["x", "y"]));
+}
