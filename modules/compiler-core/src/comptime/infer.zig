@@ -4685,9 +4685,6 @@ fn checkSourceCells(env: *Env, program: ast.Program, src: implementationsParse.S
             const inner = unquotedString(raw) orelse continue;
             for (ast.Implementation.CellKind.prefixes) |pre| {
                 if (!(inner.len > pre.text.len and std.mem.startsWith(u8, inner, pre.text) and inner[pre.text.len] == ':')) continue;
-                // `std:` was only ever a wasm cell; on another target the
-                // string is host code.
-                if (!wasm and pre.kind == .std_) continue;
                 const labelled = try ast.wasmCellDisplay(env.arena, inner);
                 // `op:` / `wasi:` / `std:` are `.Wasm`'s cells alone.
                 const into = if (wasm or pre.kind == .body) variant else "Wasm";

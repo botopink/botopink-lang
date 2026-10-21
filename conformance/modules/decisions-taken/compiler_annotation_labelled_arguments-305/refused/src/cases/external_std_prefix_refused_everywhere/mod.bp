@@ -1,0 +1,12 @@
+//// Decision 847 — a `template` text starting `std:` is refused on `.JavaScript` and
+//// `.Erlang` as on `.Wasm`: `std:` is a wasm cell, written `.Wasm(std: "…")`,
+//// never a string that is host code on one target and a cell on another.
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(.JavaScript("std:hash.contentHash"), .Erlang("erlang:phash2($0)"))]
+pub declare fn contentHash(x: string) -> i32;
+
+pub fn main() -> void {
+    print(contentHash("a"));
+}
