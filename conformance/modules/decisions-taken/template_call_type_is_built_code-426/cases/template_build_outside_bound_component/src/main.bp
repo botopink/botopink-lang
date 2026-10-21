@@ -4,9 +4,9 @@
 
 import {compiler, io.terminal.print} from "std";
 
-type Styled(text: string) implement Renderable
+type Styled(text: string)
 
-type Other(text: string) implement Renderable
+type Other(text: string)
 
 component fn mk() -> Component<Other> {
     return Other(text: "other");

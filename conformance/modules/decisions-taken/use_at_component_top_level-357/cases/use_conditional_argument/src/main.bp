@@ -8,7 +8,7 @@ import {context.run, context.createContext, context.provide, context.context, io
 
 type Theme(mode: string)
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 pub val themeContext = comptime createContext(Theme(mode: "default"));
 

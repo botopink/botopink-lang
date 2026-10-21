@@ -247,7 +247,7 @@ test "js: import ---- named imports" {
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
@@ -263,7 +263,7 @@ test "codegen ---- use object destructure is a plain call" {
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
         \\    return #(base, push);
@@ -278,7 +278,7 @@ test "codegen ---- use tuple destructure is a plain call" {
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}
@@ -295,7 +295,7 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 
 test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\fn cleanup() -> void {
         \\    0;
         \\}
@@ -311,7 +311,7 @@ test "codegen ---- use effect void hook is a plain call" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\fn render() -> Element {
         \\    return Element();
         \\}

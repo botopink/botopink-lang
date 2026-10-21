@@ -1,4 +1,4 @@
-pub type View(text: string) implement Renderable
+pub type View(text: string)
 
 component fn Card(n: i32) -> Component<View> {
     return View(text: n.toString());

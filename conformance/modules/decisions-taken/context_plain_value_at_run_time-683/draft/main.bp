@@ -2,7 +2,7 @@
 
 import {context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 pub val rateContext = comptime createContext(1.5);
 

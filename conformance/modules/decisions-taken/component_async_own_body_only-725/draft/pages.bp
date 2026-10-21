@@ -1,7 +1,7 @@
 import {async} from "std";
 import {comptime.marks.marks};
 
-pub type Element(text: string, kids: Component<Element>[] = []) implement Renderable
+pub type Element(text: string, kids: Component<Element>[] = [])
 
 async fn count() -> Async<i32> {
     return 2;

@@ -3,7 +3,7 @@
 //// nodes are published with their `async` marks when this module's analysis
 //// ends.
 
-pub type Element(text: string) implement Renderable
+pub type Element(text: string)
 
 pub component fn session() -> Component<string> {
     return "alice";

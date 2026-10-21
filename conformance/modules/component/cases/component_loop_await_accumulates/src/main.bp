@@ -7,7 +7,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-pub type Piece(text: string) implement Renderable
+pub type Piece(text: string)
 
 fn piece(s: string) -> Piece {
     return Piece(text: s);

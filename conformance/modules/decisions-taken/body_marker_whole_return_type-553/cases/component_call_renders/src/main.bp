@@ -6,7 +6,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-pub type Element(tag: string, kids: Kid[]) implement Renderable
+pub type Element(tag: string, kids: Kid[])
 
 pub type Kid = Element | Component<Element>;
 

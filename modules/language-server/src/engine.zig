@@ -3879,9 +3879,9 @@ pub fn semanticTokens(
         }
 
         // Decision 606 (1) — a prelude wrapper written bare is the builtin
-        // type `@Name` painted as (`Async<…>`, `implement Renderable`).
+        // type `@Name` painted as (`Async<…>`).
         if (tok.kind == .identifier and isPreludeWrapperName(tok.lexeme) and
-            (std.mem.eql(u8, tok.lexeme, "Renderable") or nextSignificantKind(tokens, i) == .lessThan))
+            nextSignificantKind(tokens, i) == .lessThan)
         {
             try emitSem(arena, &out, tok, proto.SemanticTokenTypes.type_, proto.SemanticTokenModifiers.defaultLibrary);
             prev_kind = tok.kind;
@@ -4449,7 +4449,7 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// `anyvalue` and `anytype` are decision 578's (a template's answer, the kind
 /// of types).
 fn isPreludeWrapperName(name: []const u8) bool {
-    for ([_][]const u8{ "Result", "Async", "Component", "Iter", "AsyncIter", "Renderable" }) |n| if (std.mem.eql(u8, n, name)) return true;
+    for ([_][]const u8{ "Result", "Async", "Component", "Composition", "Iter", "AsyncIter" }) |n| if (std.mem.eql(u8, n, name)) return true;
     return false;
 }
 

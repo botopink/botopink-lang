@@ -3,7 +3,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 type Entry(name: string, view: fn() -> Component<Element>)
 

@@ -10,7 +10,7 @@
 
 import {context.run, context.RenderScope} from "std";
 
-type Element(count: i32, name: string) implement Renderable
+type Element(count: i32, name: string)
 
 type State(value: i32, name: string)
 

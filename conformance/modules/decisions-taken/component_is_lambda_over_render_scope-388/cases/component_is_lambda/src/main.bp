@@ -10,7 +10,7 @@ import {context.createContext, context.provide, context.context, context.RenderS
 
 type Item(name: string)
 
-type View(text: string, kids: Component<View>[]) implement Renderable
+type View(text: string, kids: Component<View>[])
 
 pub val prefixContext = comptime createContext("");
 

@@ -176,7 +176,7 @@ test "hover: @Async<@Result<T, E>> fn shows the whole Result as the await value"
 
 test "hover: @Component<T> fn shows T, not the context base" {
     try hoverSnap("hover_effect_component",
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
         \\}

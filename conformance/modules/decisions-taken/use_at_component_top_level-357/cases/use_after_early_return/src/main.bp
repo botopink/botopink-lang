@@ -2,7 +2,7 @@
 //// not run on every call: refused at the `use`, naming the line of that
 //// statement.
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn state(initial: i32) -> Component<i32> {
     return initial;

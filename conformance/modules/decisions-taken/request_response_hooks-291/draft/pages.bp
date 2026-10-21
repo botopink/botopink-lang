@@ -2,7 +2,7 @@
 
 import {comptime.stages.serverOnly, comptime.stages.page};
 
-pub type View(text: string) implement Renderable
+pub type View(text: string)
 
 pub type Request(url: string)
 

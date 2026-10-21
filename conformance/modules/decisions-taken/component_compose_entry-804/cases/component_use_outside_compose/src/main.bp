@@ -6,7 +6,7 @@ import {context.run, context.createContext, context.context, io.terminal.print} 
 
 type Theme(mode: string)
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 pub val themeContext = comptime createContext(Theme(mode: "light"));
 

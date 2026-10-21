@@ -3,7 +3,7 @@
 //// provide(…)`.
 //// The builtin is unknown, located at the `@`, naming the hook to write.
 
-type Element(total: i32) implement Renderable
+type Element(total: i32)
 
 component fn total() -> Component<i32> {
     val ctx = use @getContext(Element);

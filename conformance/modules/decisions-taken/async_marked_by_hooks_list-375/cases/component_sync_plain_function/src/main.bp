@@ -13,7 +13,7 @@
 
 import {context.run, compiler, io.terminal.print} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 #[compiler.external(.JavaScript("""($0 instanceof Promise)"""))]
 declare fn pending(v: unknown) -> bool;

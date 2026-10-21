@@ -9,7 +9,7 @@
 
 import {io.terminal.print} from "std";
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn Bad(n: i32) -> Component<Element> {
     yield n;

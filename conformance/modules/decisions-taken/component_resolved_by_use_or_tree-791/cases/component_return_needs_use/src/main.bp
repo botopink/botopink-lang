@@ -5,7 +5,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 component fn mk(n: i32) -> Component<View> {
     return View(text: "mk ${n}");

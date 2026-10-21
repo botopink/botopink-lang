@@ -106,12 +106,18 @@ const Frame = struct {
     recv: []const u8,
     /// Whether the body reads `recv` (a `use context`, an `inject`).
     reads: bool = false,
+    /// Whether the body names its cell (a `use`, a `use provide`, a returned
+    /// component).
+    uses_cell: bool = false,
     /// Each `return v` answers `answer(v)`; false when the body runs as an
     /// inner closure (a bare `try` in it, `lowerComponentBody`).
     wraps_returns: bool = true,
     /// The `R` of the `Component<R>` the body answers, as written — what
     /// each `answer(v)` carries (`carry`).
     renders: ?ast.TypeRef = null,
+    /// Whether the body's node is synchronous (375): a returned component
+    /// held in a name is then run without an `await`.
+    sync: bool = false,
 };
 
 const Lowering = struct {
@@ -217,8 +223,13 @@ const Lowering = struct {
     /// The cell a `use` resolves under: the body's own; outside every body
     /// a fresh root.
     fn cellArg(self: *Lowering, loc: ast.Loc) !*ast.Expr {
-        const f = self.current() orelse return self.call(root_fn, &.{}, loc);
-        return self.ident(f.cell, loc);
+        if (self.frames.items.len == 0) return self.call(root_fn, &.{}, loc);
+        const top = &self.frames.items[self.frames.items.len - 1];
+        if (top.*) |*f| {
+            f.uses_cell = true;
+            return self.ident(f.cell, loc);
+        }
+        return self.call(root_fn, &.{}, loc);
     }
 
     /// The contexts a `use context` reads: what the body's cell held at its
@@ -284,8 +295,8 @@ const Lowering = struct {
         const loc = stmt.expr.getLoc();
         const ctx = inner.call.kind.call.args[0].value;
         try self.walk(ast.Expr, ctx);
-        const f = self.current() orelse return error.ContextLowering;
-        const provided = try self.callCarrying(provide_fn, &.{ try self.ident(f.cell, loc), try self.string(use.key, loc), ctx }, try self.typeRefOfType(use.value_type), loc);
+        if (self.current() == null) return error.ContextLowering;
+        const provided = try self.callCarrying(provide_fn, &.{ try self.cellArg(loc), try self.string(use.key, loc), ctx }, try self.typeRefOfType(use.value_type), loc);
         stmt.expr = provided.*;
     }
 
@@ -374,13 +385,24 @@ const Lowering = struct {
             .jump => |*j| switch (j.kind) {
                 .@"return" => |value| if (self.current()) |f| if (f.wraps_returns) {
                     if (value) |v| try self.walk(ast.Expr, v);
-                    const v = value orelse try self.nullLit(j.loc);
+                    var v = value orelse try self.nullLit(j.loc);
+                    // Decisions 809 (4), 816 (6) — a returned component is
+                    // resolved under a child cell of the body's first.
+                    if (value) |rv| if (self.env.componentReturns.get(rv.getLoc())) |r| {
+                        const awaited = if (rv.* == .call) !self.syncAt(rv, null) else !f.sync;
+                        const ran = try self.arena.create(ast.Expr);
+                        ran.* = try self.run(rv, awaited, r, j.loc);
+                        v = ran;
+                    };
                     j.kind = .{ .@"return" = try self.callCarrying(answer_fn, &.{v}, f.renders, j.loc) };
                     return true;
                 },
                 else => {},
             },
             .function => |*f| {
+                // Decision 888 — the lambda takes the arity of the function
+                // type it met: the omitted trailing parameters, unnamed.
+                if (self.env.lambdaPads.get(f.loc)) |names| f.kind.params = names;
                 // Decision 574 — a `{ component -> … }` lambda is a
                 // `component fn`: its body becomes the function over the
                 // scope, the lambda's parameters and captures closed over by it.
@@ -452,16 +474,17 @@ const Lowering = struct {
     /// body's result: `val bpScopeResult__ = ({ -> rest })(); return
     /// answer(bpScopeResult__);`. Nothing before the last provide can leave
     /// early (357: no `use` after an early exit).
-    fn lowerComponentBody(self: *Lowering, body: []ast.Stmt, renders: ?ast.TypeRef, loc: ast.Loc) ![]ast.Stmt {
+    fn lowerComponentBody(self: *Lowering, body: []ast.Stmt, renders: ?ast.TypeRef, sync: bool, loc: ast.Loc) ![]ast.Stmt {
         const inner_closure = hasBareTry(body);
         const n = self.body_count;
         self.body_count += 1;
         const cell = try std.fmt.allocPrint(self.arena, cell_prefix ++ "{d}", .{n});
         const recv = try std.fmt.allocPrint(self.arena, recv_prefix ++ "{d}", .{n});
-        try self.frames.append(self.arena, Frame{ .cell = cell, .recv = recv, .wraps_returns = !inner_closure, .renders = renders });
+        try self.frames.append(self.arena, Frame{ .cell = cell, .recv = recv, .wraps_returns = !inner_closure, .renders = renders, .sync = sync });
         const memo_start = self.memo_slots.items.len;
         for (body) |*s| try self.walk(ast.Stmt, s);
         const reads = self.current().?.reads;
+        const uses_cell = reads or self.current().?.uses_cell;
         _ = self.frames.pop();
         // Decision 771 — this body's `use memo` slots, made with the value.
         const slots = try self.arena.dupe([]const u8, self.memo_slots.items[memo_start..]);
@@ -500,7 +523,10 @@ const Lowering = struct {
         const head: usize = if (reads) 2 else 1;
         const inner = try self.arena.alloc(ast.Stmt, head + rest.len);
         const opened = try self.call(enter_fn, &.{ try self.ident(scope_param, loc), try self.ident(key_param, loc) }, loc);
-        inner[0] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = cell, .value = opened, .mutable = false } } } } };
+        inner[0] = if (uses_cell)
+            .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = cell, .value = opened, .mutable = false } } } } }
+        else
+            .{ .expr = opened.* };
         if (reads) {
             const got = try self.call(received_fn, &.{try self.ident(cell, loc)}, loc);
             inner[1] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = recv, .value = got, .mutable = false } } } } };
@@ -546,7 +572,7 @@ const Lowering = struct {
                 s.tail = .returned;
             }
         }
-        f.kind.body = try self.lowerComponentBody(body, try self.typeRefOfType(r), f.loc);
+        f.kind.body = try self.lowerComponentBody(body, try self.typeRefOfType(r), false, f.loc);
         f.kind.marker = null;
     }
 
@@ -693,7 +719,7 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
+        env.componentLambdas.count() > 0 or env.lambdaPads.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
         .type_ => |t| for (t.methods) |m| if (writesComponent(m.returnType)) return true,
@@ -736,7 +762,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
             for (f.params) |*p| if (p.default) |*dv| try low.walk(ast.Expr, dv);
             if (f.body.len == 0) continue;
             if (writesComponent(f.returnType)) {
-                f.body = try low.lowerComponentBody(f.body, writtenRenders(f.returnType), f.nameLoc);
+                f.body = try low.lowerComponentBody(f.body, writtenRenders(f.returnType), env.syncFns.contains(f.name), f.nameLoc);
                 f.returnType = try low.lambdaType();
                 f.effect = null;
             } else try low.lowerPlainBody(f.body);
@@ -752,7 +778,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
             const methods = try arena.dupe(ast.ImplementMethod, im.methods);
             for (methods) |*m| {
                 if (implementMethodComponent(env, program, im.*, m.name)) |rt| {
-                    m.body = try low.lowerComponentBody(m.body, writtenRenders(rt), m.loc);
+                    m.body = try low.lowerComponentBody(m.body, writtenRenders(rt), false, m.loc);
                 } else try low.lowerPlainBody(m.body);
             }
             im.methods = methods;
@@ -801,6 +827,6 @@ fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
     }
     const body = m.body orelse return;
     if (component) {
-        m.body = try low.lowerComponentBody(body, renders, m.returnTypeLoc);
+        m.body = try low.lowerComponentBody(body, renders, false, m.returnTypeLoc);
     } else try low.lowerPlainBody(body);
 }

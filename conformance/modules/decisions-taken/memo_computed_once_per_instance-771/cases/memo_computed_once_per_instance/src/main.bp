@@ -7,7 +7,7 @@
 
 import {context.run, hooks.memo, io.terminal.print} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 component fn Page(name: string) -> Component<Element> {
     val label = use memo({ ->

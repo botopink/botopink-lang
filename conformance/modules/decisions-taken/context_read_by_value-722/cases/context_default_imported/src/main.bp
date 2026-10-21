@@ -7,7 +7,7 @@ pub mod theme;
 import {theme.Theme, theme.themeContext};
 import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 component fn Label() -> Component<Element> {
     val t = use context(themeContext);

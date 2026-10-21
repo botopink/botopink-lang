@@ -255,10 +255,10 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         return parseBuiltinTypeTail(this, alloc, tok, tok.lexeme[1..], false);
     }
     // Decision 606 (1) — a prelude wrapper written bare (`Result<i32,
-    // string>`, `Async<User>`, `implement Renderable`) is the prelude's
-    // declaration unless the file declares or imports one of that name.
+    // string>`, `Async<User>`) is the prelude's declaration unless the file
+    // declares or imports one of that name.
     if (this.check(.identifier) and this.peekAt(1).kind != .dot and isPreludeWrapperName(this.peek().lexeme) and
-        (std.mem.eql(u8, this.peek().lexeme, "Renderable") or this.peekAt(1).kind == .lessThan) and !preludeNameShadowed(this, this.peek().lexeme))
+        this.peekAt(1).kind == .lessThan and !preludeNameShadowed(this, this.peek().lexeme))
     {
         const tok = this.advance();
         return parseBuiltinTypeTail(this, alloc, tok, tok.lexeme, true);
@@ -268,7 +268,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
 
 /// The prelude's wrappers and markers a type position names bare (decision
 /// 606 (1)): what `@Name` spelled before.
-pub const prelude_wrapper_names = [_][]const u8{ "Result", "Async", "Component", "Composition", "Iter", "AsyncIter", "Renderable" };
+pub const prelude_wrapper_names = [_][]const u8{ "Result", "Async", "Component", "Composition", "Iter", "AsyncIter" };
 
 pub fn isPreludeWrapperName(name: []const u8) bool {
     for (prelude_wrapper_names) |n| if (std.mem.eql(u8, n, name)) return true;
@@ -348,16 +348,6 @@ fn parseBuiltinTypeTail(this: *This, alloc: std.mem.Allocator, tok: parser.Token
         if (removedKind) |k| {
             this.parseError = ParseErrorInfo.fromToken(k, tok);
             return ParseError.UnexpectedToken;
-        }
-        // Decision 354 — `@Renderable` is the marker a component's `R`
-        // implements (`type Element(…) implement @Renderable`). It takes no
-        // type argument: written bare.
-        if (std.mem.eql(u8, name, "Renderable")) {
-            if (this.check(.lessThan)) {
-                this.parseError = ParseErrorInfo.fromToken(.renderableTakesNoTypeArguments, this.peek());
-                return ParseError.UnexpectedToken;
-            }
-            return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true, .bare = bare } };
         }
         // Other builtin types always take their generic parameters
         // (`@Async<i32>`, never bare `@Async`).

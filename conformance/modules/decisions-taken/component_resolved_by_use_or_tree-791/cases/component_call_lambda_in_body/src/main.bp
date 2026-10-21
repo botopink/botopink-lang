@@ -6,7 +6,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type Prop(d: string) implement Renderable
+type Prop(d: string)
 
 component fn mk(n: i32) -> Component<Prop> {
     print("ran " + n.toString());

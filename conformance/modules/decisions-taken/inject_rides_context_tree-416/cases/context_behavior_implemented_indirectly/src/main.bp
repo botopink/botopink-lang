@@ -5,7 +5,7 @@
 
 import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 behavior Repository {
     fn fetch(self: Self, id: i32) -> string;

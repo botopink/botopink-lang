@@ -848,7 +848,7 @@ pub fn parseImplementBody(
     const kwTok = try this.consume(.implement);
 
     // Interfaces are full type refs so generic interfaces (`Iface<A, B>`)
-    // and builtin markers (`@Renderable`) parse, not just bare identifiers.
+    // and builtin markers (`@Annotation`) parse, not just bare identifiers.
     var interfaces: std.ArrayList(TypeRef) = .empty;
     errdefer {
         for (interfaces.items) |*t| t.deinit(alloc);

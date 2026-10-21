@@ -3,7 +3,7 @@ import {comptime.graph.graph};
 
 pub type Theme(mode: string)
 
-pub type Element(text: string) implement Renderable
+pub type Element(text: string)
 
 pub val themeContext = comptime createContext(Theme(mode: "light"));
 

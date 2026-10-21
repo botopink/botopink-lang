@@ -8,7 +8,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn state(initial: i32) -> Component<i32> {
     return initial;

@@ -3,7 +3,7 @@
 import {context.run, io.terminal} from "std";
 import {context.RenderScope} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 type CardProps(title: string, featured: bool = false)
 

@@ -85,26 +85,46 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
-// ── the place (decisions 819, 820) ───────────────────────────────────────────
+// ── the place (decisions 819, 820, 884, 891) ─────────────────────────────────
 
-// Where a component stands among its siblings: the number of the call that
-// made it and the item's, or a key in the item's stead (819 (2)). A program
-// passes `Place.none()`, the place the value carries; the numbers a call
-// stamps and `Place.key(k)` come with 820's stamp.
-pub type Place(callNo: i32, itemNo: i32, keyed: bool, keyValue: unknown) {
-    // The place the component's value carries (820 (2)): what `use c`, a
-    // render library's child and a root pass.
+// Where a component stands among its siblings (819 (2)): the number of the
+// call that made it, and its item half — absent, a count the call's
+// component body or plain function made (821), a list runner's index, or a
+// key. A program passes `Place.none()` (the place the value carries), or
+// runs one by hand with `Place.key(k)` / `Place.index(i)` (819 (3), 884).
+pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
+    // The place the component's value carries (820 (2)): what `use c` and a
+    // root pass.
     pub fn none() -> Place {
-        return Place(callNo: 0, itemNo: 0, keyed: false, keyValue: null);
+        return Place(callNo: 0, item: PlaceItem.Absent, itemNo: 0, keyValue: null);
     }
 
-    // This place with `key`'s key in the item's stead, or as it is when
-    // `key` is `Place.none()` (820 (2)).
+    // `k` in the item's stead, the call's number kept (819 (3)).
+    pub fn key(k: unknown) -> Place {
+        return Place(callNo: 0, item: PlaceItem.Key, itemNo: 0, keyValue: k);
+    }
+
+    // Position `i` in a list run — `all`'s entries and a render library's
+    // children (884, 891).
+    pub fn index(i: i32) -> Place {
+        return Place(callNo: 0, item: PlaceItem.Index, itemNo: i, keyValue: null);
+    }
+
+    // This place as `key` says it is run (820 (2), 884 (1), 891 (1)): a key
+    // replaces the item half; an index fills an absent one or a plain
+    // function's count and keeps a body's count and a key; `Place.none()`
+    // keeps it whole.
     pub fn with(self: Self, key: Place) -> Place {
-        if (key.keyed) return Place(callNo: self.callNo, itemNo: self.itemNo, keyed: true, keyValue: key.keyValue);
+        if (key.item == PlaceItem.Key) return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue);
+        if (key.item == PlaceItem.Index) {
+            if (self.item == PlaceItem.Absent || self.item == PlaceItem.Plain) return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null);
+        }
         return self;
     }
 }
+
+// A place's item half (891 (1)).
+pub type PlaceItem { Absent, Body, Plain, Index, Key }
 
 // ── the scope (decisions 809 (8), 817, 824, 825) ─────────────────────────────
 

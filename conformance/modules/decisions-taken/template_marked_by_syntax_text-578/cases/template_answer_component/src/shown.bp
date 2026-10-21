@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-pub type Styled(text: string) implement Renderable
+pub type Styled(text: string)
 
 component fn mk() -> Component<Styled> {
     return Styled(text: "styled");

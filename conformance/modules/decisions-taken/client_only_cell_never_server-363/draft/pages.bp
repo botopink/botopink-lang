@@ -3,7 +3,7 @@
 import {compiler} from "std";
 import {comptime.stages.clientOnly, comptime.stages.client, comptime.stages.page};
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 #[compiler.external(.JavaScript("""(globalThis.location ? "ready" : "none")"""))]
 declare fn readStatus() -> string;
