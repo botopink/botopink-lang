@@ -8,5 +8,6 @@
 [run/src/cases/string_lower_final_sigma/mod.bp](run/src/cases/string_lower_final_sigma/mod.bp)
 [run/src/cases/string_trim_keeps_nbsp/mod.bp](run/src/cases/string_trim_keeps_nbsp/mod.bp)
 [cells/tuple_in_type_parameter_slot/src/main.bp](cells/tuple_in_type_parameter_slot/src/main.bp)
+[cells/tuple_variable_in_generic_text/src/main.bp](cells/tuple_variable_in_generic_text/src/main.bp)
 
 Proved also by [generic_float_record_text](../template_hole_writes_print_text-530/run/src/cases/generic_float_record_text/mod.bp)

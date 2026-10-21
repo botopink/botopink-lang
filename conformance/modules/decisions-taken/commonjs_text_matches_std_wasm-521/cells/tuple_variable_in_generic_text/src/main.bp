@@ -1,0 +1,19 @@
+//// A tuple held in a local and handed to a generic function that writes its
+//// `T` as text is written as a tuple on every target (decision 521): the
+//// wasm backend's one body of `show` read the word it was handed as an
+//// `i32`, so `show(t)` aborted (and, before the GC mode, printed the
+//// tuple's address) where `show(#(5, 6))` answered `#(5, 6)`.
+
+import {io.terminal.print} from "std";
+
+fn show<T>(x: T) -> string {
+    return "${x}";
+}
+
+pub fn main() -> void {
+    val t = #(5, 6);
+    print(show(t));
+    print(show(#(5, 6)));
+    val u = #("a", 2.5);
+    print(show(u));
+}

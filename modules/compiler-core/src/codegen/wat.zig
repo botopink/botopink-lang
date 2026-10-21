@@ -22513,8 +22513,10 @@ const Emitter = struct {
         if (!isGenericParamName(n, f.genericParams, &.{})) return null;
         // A GC module binds a tuple whatever the body does (decision 568):
         // the copy holds it as the tuple it is, not as an `unknown`.
-        if (!comparesValues(ast.FnDecl, f) and !(self.mode == .gc and (isTupleLit(arg) or self.typeRefIsTuple(arg)))) return null;
+        const cmp = comparesValues(ast.FnDecl, f);
+        if (!cmp and !(self.mode == .gc and (isTupleLit(arg) or self.typeRefIsTuple(arg))) and !(self.mode == .gc and self.eq_local_types.contains(plainIdentName(arg) orelse ""))) return null;
         const at = (try self.eqTypeOf(arg)) orelse return null;
+        if (!cmp and self.mode == .gc and at.tupleElems() == null) return null;
         if (!self.eqComposite(at)) return null;
         return .{ .name = n, .ty = try self.eqKey(at), .tref = at };
     }
