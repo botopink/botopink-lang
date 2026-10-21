@@ -833,7 +833,7 @@ pub const AtomFault = struct {
         return switch (self.reason) {
             .duplicate => std.fmt.allocPrint(
                 alloc,
-                "modules `{s}` and `{s}` both render to the erlang module atom `{s}` — `__` is reserved as the in-file qualifier separator, so a run of `_` in a path segment collapses to one",
+                "modules `{s}` and `{s}` both render to the module atom `{s}` — a module's atom is its path lowercased, every character outside `[a-z0-9_@]` folded to `_` (109); rename one",
                 .{ self.path, self.other, self.atom },
             ),
             // Two `type` declarations of one module rendering one identity.
@@ -874,6 +874,61 @@ pub const AtomFault = struct {
         };
     }
 };
+
+/// Decisions 853, 890 — the pairs the emit refuses on EVERY target, before
+/// any backend: two modules whose paths fold to one module atom (`duplicate`,
+/// both modules carry the fault, naming the pair in source order) and two
+/// types of one module folding to one type atom (`duplicate_decl`). The module
+/// atom is the program's identity on every target (831 (1)), so the fold is a
+/// collision on commonJS and wasm too; a module of no package, a package name
+/// that cannot start an atom and an over-long atom stay the BEAM drivers'
+/// (`buildIn`). Everything is allocated with `arena`.
+pub fn pairFaults(arena: std.mem.Allocator, outputs: []const ComptimeOutput, packages: Packages) !std.StringHashMap(AtomFault) {
+    var faults = std.StringHashMap(AtomFault).init(arena);
+    var seen = std.StringHashMap([]const u8).init(arena);
+    for (outputs) |*ct| {
+        if (ct.name.len == 0) continue;
+        const atom = erlAtom(arena, packages.idOf(ct.name)) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => continue,
+        };
+        const gop = try seen.getOrPut(atom);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = ct.name;
+            continue;
+        }
+        if (std.mem.eql(u8, gop.value_ptr.*, ct.name)) continue;
+        const first = gop.value_ptr.*;
+        try faults.put(ct.name, .{ .atom = atom, .path = first, .reason = .duplicate, .other = ct.name });
+        try faults.put(first, .{ .atom = atom, .path = first, .reason = .duplicate, .other = ct.name });
+    }
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        if (faults.contains(ct.name)) continue;
+        const Seen = struct { decl: []const u8, atom: []const u8 };
+        var seen_types = std.StringHashMap(Seen).init(arena);
+        for (ok.transformed.decls) |decl| {
+            const r = switch (decl) {
+                .type_ => |t| t,
+                else => continue,
+            };
+            const atom = typeAtom(arena, packages.idOf(ct.name), r.name) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => continue,
+            };
+            const tgop = try seen_types.getOrPut(try std.ascii.allocLowerString(arena, atom));
+            if (tgop.found_existing) {
+                try faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .duplicate_decl, .other = tgop.value_ptr.decl, .other_atom = tgop.value_ptr.atom, .decl = r.name });
+                break;
+            }
+            tgop.value_ptr.* = .{ .decl = r.name, .atom = atom };
+        }
+    }
+    return faults;
+}
 
 /// Record one `pub` declaration: in `exports` (last writer, as it always was)
 /// and in `owners` (every writer). Two maps because they answer two questions —

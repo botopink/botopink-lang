@@ -6,6 +6,7 @@ const erlang = @import("./codegen/erlang.zig");
 const beam_asm = @import("./codegen/beam_asm.zig");
 const wat = @import("./codegen/wat.zig");
 const comptimeMod = @import("./comptime.zig");
+const TypeError = @import("./comptime/error.zig").TypeError;
 const loadMod = @import("./comptime/load.zig");
 const moduleMod = @import("./module.zig");
 const runtime = @import("./codegen/runtime.zig");
@@ -164,6 +165,12 @@ fn emitChecked(
     defer if (kept) |k| targetCheck.writeBack(outputs, k);
     const refused = try targetCheck.apply(scratch.allocator(), emitted, lookup);
     defer targetCheck.restore(emitted, refused);
+    // Decisions 853, 890 — two modules folding to one module atom (and two
+    // types of one module folding to one type atom) are refused on every
+    // target, before any backend.
+    const paired = try pairRefusals(scratch.allocator(), emitted, config.packages, refused);
+    defer targetCheck.restore(emitted, paired);
+    if (refused_names) |names| for (paired) |r| try names.append(allocator, emitted[r.index].name);
     if (refused_names) |names| for (refused) |r| try names.append(allocator, emitted[r.index].name);
     return switch (config.targetSource) {
         .commonJS => commonJS.codegenEmit(allocator, emitted, config),
@@ -171,6 +178,22 @@ fn emitChecked(
         .beam => beam_asm.codegenEmit(allocator, emitted, config),
         .wasm => wat.codegenEmit(allocator, emitted, config),
     };
+}
+
+/// Turn each module `crossModule.pairFaults` names into a `typeError` for the
+/// emit alone (`restore` hands the analysis back); a module `already` refused
+/// by the target keeps that refusal.
+fn pairRefusals(arena: std.mem.Allocator, outputs: []ComptimeOutput, packages: crossModule.Packages, already: []const targetCheck.Refusal) ![]const targetCheck.Refusal {
+    var faults = try crossModule.pairFaults(arena, outputs, packages);
+    var out: std.ArrayListUnmanaged(targetCheck.Refusal) = .empty;
+    if (faults.count() == 0) return out.items;
+    for (outputs, 0..) |*o, i| {
+        const fault = faults.get(o.name) orelse continue;
+        if (targetCheck.isRefused(outputs, already, o.name)) continue;
+        try out.append(arena, .{ .index = i, .saved = o.outcome });
+        o.outcome = .{ .typeError = TypeError.custom(try fault.message(arena), null) };
+    }
+    return out.items;
 }
 
 /// Compile `modules` for `config.targetSource`. Executes the emitted modules
