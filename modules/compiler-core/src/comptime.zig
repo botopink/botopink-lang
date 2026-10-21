@@ -4623,7 +4623,7 @@ pub fn compileTypesOnly(
                     while (sit.next()) |e| try fn_decls.put(e.key_ptr.*, e.value_ptr.*);
                 }
                 for (succ.bindings) |b| {
-                    if (b.decl == .@"fn") try fn_decls.put(b.name, try syntax_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
+                    if (b.decl == .@"fn" and !try hooksMod.isExpandedFn(arena_alloc, b.decl.@"fn")) try fn_decls.put(b.name, try syntax_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
                 }
 
                 // Prepend synthetic imports for stdlib modules implicitly used via
@@ -5057,7 +5057,10 @@ fn compileOnce(
                     while (sit.next()) |e| try fn_decls.put(e.key_ptr.*, e.value_ptr.*);
                 }
                 for (succ.bindings) |b| {
-                    if (b.decl == .@"fn") {
+                    // Decision 562 — a function expanded at its call site has
+                    // no run-time body and is never specialised: the check
+                    // reads the body before its `.value` reads are erased.
+                    if (b.decl == .@"fn" and !try hooksMod.isExpandedFn(arena_alloc, b.decl.@"fn")) {
                         try fn_decls.put(b.name, try syntax_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
                     }
                     if (b.typedExpr) |te| {

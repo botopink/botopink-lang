@@ -5,6 +5,7 @@
 [run/src/cases/comptime_expand_constant_at_build/mod.bp](run/src/cases/comptime_expand_constant_at_build/mod.bp)
 [cells/comptime_expand_library_names/src/main.bp](cells/comptime_expand_library_names/src/main.bp)
 [cells/comptime_expand_library_type_error/src/main.bp](cells/comptime_expand_library_type_error/src/main.bp)
+[cells/expanded_fn_forwards_parameter/src/main.bp](cells/expanded_fn_forwards_parameter/src/main.bp)
 [refused/src/cases/comptime_expand_runtime_argument/mod.bp](refused/src/cases/comptime_expand_runtime_argument/mod.bp)
 [refused/src/cases/typeinfo_all_behavior_call_outside_expansion/mod.bp](refused/src/cases/typeinfo_all_behavior_call_outside_expansion/mod.bp)
 
