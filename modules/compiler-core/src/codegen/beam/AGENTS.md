@@ -229,3 +229,16 @@ that changed a watched name, `erlang:erase` as the first statement of the `after
 sequence (a block statement followed by more code), the names the rest reassigns come out of the `try` in its value —
 `{Value, {Names…}} = try … end` — because a `try` binds nothing for the code after it. `beam_asm.zig` (the `.S`
 target) lowers it differently, see `../AGENTS.md` § `defer`.
+
+## `std@beam:ptSwap` — the `PersistentTerm` write's lock (decision 903)
+
+`x = f(x)` on a `#[compiler.beamMemory(.PersistentTerm)]` var is `std@beam:ptSwap(Key, fun(X) -> New end)`
+(`libs/std/src/beam.bp`, an `.Erlang` template like `etsSwap`): read, compute and `persistent_term:put` run inside
+`global:trans({{'$bp_persistent_term', Key}, self()}, Fun, [node()])`. The lock is the global lock server's, taken on
+this node alone, with the writer as its requester. It was chosen over a boot-process ETS lock row (`ets:insert_new` +
+monitor) and over a gen_server call because it needs no process of ours: the lock server monitors the requester and
+drops its lock when it dies, and `global:trans` releases it in an `after` when the fun returns or raises, so a writer
+that ends any way releases the lock with no timeout to guess. A gen_server call into the boot process would also release
+by itself, but would run the user's computation (which may write another var) inside that one process. Readers stay
+`persistent_term:get`, lock-free; a write that does not read the var is one `ptPut`, no lock. `erlang.zig`
+(`memoryWrite`) and `beam_asm.zig` (`emitMemoryWrite`) split on `ast.writeReadsVar` as the `Ets` row does.

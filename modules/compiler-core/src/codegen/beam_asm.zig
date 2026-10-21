@@ -5483,8 +5483,20 @@ const Emitter = struct {
                 try self.lowerExprIntoX0(new_value);
                 try self.callFileHelper(try self.implicitHelper(.set, name), 1);
             },
-            // A put, which scans every process (the writer's cost, 547).
-            .persistentTerm => {
+            // Decision 903 — a write that reads the `var` is
+            // `std@beam:ptSwap(Key, fun(X) -> New end)`, read, computed and put
+            // under the key's lock; any other, one put, which scans every
+            // process (the writer's cost, 547).
+            .persistentTerm => if (ast.writeReadsVar(name, plus, value)) {
+                const ar = self.atom_arena.allocator();
+                const body = try ar.dupe(ast.Stmt, &.{.{ .expr = new_value }});
+                const params = try ar.dupe([]const u8, &.{name});
+                const lam: ast.Expr = .{ .function = .{ .loc = value.getLoc(), .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
+                try self.lowerExprIntoX0(lam);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try self.beamPrimCall(.normal, "ptSwap", 2, 0);
+            } else {
                 const st = try self.stageOperands(&.{new_value}, &[_]ast.TrailingLambda{});
                 try self.emitParallelMove(&.{ key, st.ops[0] }, &.{ 0, 1 });
                 try self.beamPrimCall(.normal, "ptPut", 2, 0);

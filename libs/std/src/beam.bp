@@ -1,11 +1,11 @@
 //// std/beam — the BEAM memory host primitives, layer 1 of `beamMemory`.
 ////
-//// Seven `declare fn`s over two BEAM storage families: ETS (`ets:whereis/
+//// Eight `declare fn`s over two BEAM storage families: ETS (`ets:whereis/
 //// new/lookup_element/insert/select_replace`) and `persistent_term`
 //// (`persistent_term:get/put`). Nothing else. Each one is a single host
 //// call with the host's own arity — no composition, no policy — except
-//// `etsSwap`, the compare-and-swap loop a module `var`'s `x = f(x)` is
-//// (decisions 547 (ii), 877).
+//// `etsSwap` and `ptSwap`, the compare-and-swap loop and the locked
+//// read-compute-put a module `var`'s `x = f(x)` is (decisions 547 (ii), 877, 903).
 ////
 //// Why a module and not `.zig` (decision 43): `beamMemory` lives in two
 //// layers. **Layer 1 is this file** — the host vocabulary, as template
@@ -98,3 +98,14 @@ pub declare fn ptGet(key: unknown) -> unknown;
 
 #[compiler.external(.Erlang("persistent_term:put($0, $1)"))]
 pub declare fn ptPut(key: unknown, value: unknown) -> unknown;
+
+// `key`'s value rewritten to `f(V)` for the `V` it holds, read, computed and put under the
+// lock of that key, so two writers never interleave and no write is lost (decisions 547 (ii),
+// 903). The lock is `global:trans`'s, taken on this node alone, with the writer as its
+// requester: the global lock server drops a lock whose requester died, so a writer that ends
+// any way — returns, raises, is killed — releases it, with no timeout to guess. Readers never
+// take it (`ptGet` stays lock-free).
+#[compiler.external(
+    .Erlang("(fun(__K, __F) -> global:trans({{'$bp_persistent_term', __K}, self()}, fun() -> persistent_term:put(__K, __F(persistent_term:get(__K))) end, [node()]) end)($0, $1)"),
+)]
+pub declare fn ptSwap(key: unknown, f: unknown) -> unknown;

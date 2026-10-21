@@ -6067,7 +6067,7 @@ const Emitter = struct {
     /// `std@beam:etsSwap(Tab, fun(X) -> New end)`, the new value computed from
     /// the one read and stored only if no other process wrote between, else
     /// read again; one that does not read it is one insert. `PersistentTerm`:
-    /// a put, which scans every process (the writer's cost, 547).
+    /// a write that reads it is `std@beam:ptSwap(Key, fun(X) -> New end)`, read, computed and put under the key's lock (decision 903); any other, one put, which scans every process (the writer's cost, 547).
     fn memoryWrite(this: *Emitter, b: Ast.Builder, name: []const u8, mem: ast.Memory, plus: bool, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
         const key = try this.memoryKey(b, name);
         return switch (mem.mode) {
@@ -6075,7 +6075,12 @@ const Emitter = struct {
                 this.beamPrim(b, "etsSwap", &.{ try this.etsTable(b, name), try this.swapFun(b, name, plus, value, at) })
             else
                 this.beamPrim(b, "etsPut", &.{ try this.etsTable(b, name), try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
-            .persistentTerm => this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
+            // Decision 903 — the same split: `x = f(x)` is `ptSwap`, the read, the
+            // computation and the put under the key's lock; any other write one `put`.
+            .persistentTerm => if (ast.writeReadsVar(name, plus, &value))
+                this.beamPrim(b, "ptSwap", &.{ key, try this.swapFun(b, name, plus, value, at) })
+            else
+                this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
         };
     }
 

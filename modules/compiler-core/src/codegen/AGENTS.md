@@ -1807,8 +1807,11 @@ codegen/
   `'__bp_load'/0` from `-on_load` — except under `botopink test`, whose escript
   loads its own module before `std@beam`: there `'__bp_load'/0` is exported
   and the runner calls it (its own after the siblings load, each sibling's
-  from `'__bp_load_siblings'`); a write is a `ptPut`, which scans every
-  process (the writer's cost, 547). `beam_asm.zig` carries the same modes in
+  from `'__bp_load_siblings'`); a write that does not read the `var` is a
+  `ptPut`, which scans every process (the writer's cost, 547); one that does
+  is `std@beam:ptSwap(Key, fun(X) -> New end)` (decision 903), the read, the
+  computation and the put under `global:trans`'s lock on the key (see
+  `beam/AGENTS.md`). `beam_asm.zig` carries the same modes in
   assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
   evaluated ONCE, in declaration order, at module load — `conformance/docs.md` § `val`, and

@@ -844,8 +844,16 @@ type the call is refused, located at the call:
 <!-- example: modules/decisions-taken/dict_bump_integer_values_only-534/cells/dict_bump_non_integer -->
 
 **`PersistentTerm`** — one value per node, for a `var` written rarely and read much:
-a read costs a function call; a write is allowed and unchecked, but scans every
-process heap, a cost the writer weighs (547). It is
+a read costs a function call, lock-free; a write is allowed and unchecked, and
+its cost is two: it scans every process heap (547), and a reassignment that reads
+the `var` (`x = f(x)`) also takes the `var`'s lock — read, compute, `persistent_term:put`
+under it — so it is atomic as an `Ets` one's is and no write is lost; the lock is
+released however the writer ends, a writer that dies included (decision 903). A plain
+`x = v` is one `put`, no lock. The cost is the writer's to weigh:
+
+<!-- example: modules/decisions-taken/persistent_term_var_write_atomic-903/cells/persistent_term_var_write_atomic -->
+
+`PersistentTerm` is
 the mode for a routes table, a scanned-component list, configuration read at
 bootstrap — anything the decorators emit at load and nothing changes
 afterwards. Store a handler by **name**, not as a function value: a `fun`

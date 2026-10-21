@@ -1,0 +1,33 @@
+//// Decisions 547 (ii) and 903 — a `PersistentTerm` var's `x = f(x)` is atomic on
+//// the BEAM as an `Ets` one's is: five thunks of `runAll`, each its own process
+//// there, increment one var a hundred times through `total = total + 1`, and no
+//// write is lost. `main` prints how many thunks finished and the total they
+//// wrote: `5` and `500`, as on commonJS and wasm.
+
+import {async, io.terminal.print} from "std";
+
+#[compiler.beamMemory(.PersistentTerm)]
+var total = 0;
+
+async fn worker(name: string) -> Async<i32> {
+    var i = 0;
+    while (i < 100) {
+        total = total + 1;
+        i = i + 1;
+    }
+    return i;
+}
+
+pub async fn main() -> Async<void> {
+    val done = await async.runAll(
+        [
+            { -> worker("a") },
+            { -> worker("b") },
+            { -> worker("c") },
+            { -> worker("d") },
+            { -> worker("e") },
+        ],
+    );
+    print(done.length());
+    print(total);
+}
