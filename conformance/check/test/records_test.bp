@@ -90,7 +90,7 @@ test "a malformed .snap names its line" {
         #("botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nlabel y\n", 5),
         #("botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nat b:1:1\n", 5),
     ];
-    for c in cases {
+    for (cases) { c ->
         assert malformedLine(c._0) == c._1, c._0;
     }
 }

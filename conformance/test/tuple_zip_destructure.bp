@@ -4,7 +4,7 @@ test "§6 zip pairs elements into tuples" {
     val xs = [1, 2, 3];
     val ys = ["a", "b", "c"];
     var out = "";
-    for p in xs.zip(ys) {
+    for (xs.zip(ys)) { p ->
         val n = p.0;
         out = out + p.1 + n.toString();
     }
@@ -19,7 +19,7 @@ test "§6 val #(a, b) destructures by position" {
 
 test "§6 destructuring the pairs of a zip" {
     var sum = 0;
-    for p in [10, 20].zip([1, 2]) {
+    for ([10, 20].zip([1, 2])) { p ->
         val #(big, small) = p;
         sum = sum + big * small;
     }

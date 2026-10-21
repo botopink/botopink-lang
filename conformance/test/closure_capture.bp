@@ -34,7 +34,7 @@ test "an outer var reassigned inside a lambda threads out" {
 
 test "a closure inside a loop body sees the loop variable" {
     var acc = 0;
-    for x in [1, 2, 3] {
+    for ([1, 2, 3]) { x ->
         acc = acc + apply({ y -> y }, x);
     }
     assert acc == 6;

@@ -11,7 +11,7 @@ iter fn upto(n: i32) -> Iter<i32> {
 
 test "§9 a result generator yields its elements in order" {
     var acc = "";
-    for x in upto(4) {
+    for (upto(4)) { x ->
         acc = acc + x.toString();
     }
     assert acc == "0123";
@@ -19,7 +19,7 @@ test "§9 a result generator yields its elements in order" {
 
 test "§9 an empty result generator runs no iteration" {
     var runs = 0;
-    for x in upto(0) {
+    for (upto(0)) { x ->
         runs = runs + 1;
     }
     assert runs == 0;

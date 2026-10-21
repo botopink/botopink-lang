@@ -200,7 +200,7 @@ fn record(word: string, text: string) -> string {
 /// The one spelling of `snap`.
 pub fn render(snap: Snap) -> string {
     var out = HEADER + "\n";
-    for r in snap.refusals {
+    for (snap.refusals) { r ->
         out = out + "refused " + r.message + "\n";
         if (r.at) {
             at ->
@@ -210,11 +210,11 @@ pub fn render(snap: Snap) -> string {
             l ->
             out = out + "label " + l + "\n";
         }
-        for f in r.frames {
+        for (r.frames) { f ->
             out = out + "from " + f + "\n";
         }
     }
-    for b in snap.build {
+    for (snap.build) { b ->
         out = out + record("build", b);
     }
     if (snap.stdout != "") {
@@ -223,13 +223,13 @@ pub fn render(snap: Snap) -> string {
             snap.stdout.slice(0, snap.stdout.length - 1)
         else
             snap.stdout;
-        for line in body.split("\n") {
+        for (body.split("\n")) { line ->
             out = out + record("out", line);
         }
         if (!ends) out = out + "no-final-newline\n";
     }
     if (snap.abort) out = out + "abort\n";
-    for s in snap.stderr {
+    for (snap.stderr) { s ->
         out = out + "stderr " + s + "\n";
     }
     return out;
