@@ -3184,8 +3184,8 @@ no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed s
 
 ## `hook-name-use-prefix` (decision 926)
 
-`refuseHookNameUsePrefix` (`infer.zig`, first thing in `inferFnDecl`) refuses a `fn` answering `Component<R>` (marker or written return) named `use` followed by an upper-case letter, located at the name: `hook-name-use-prefix: a hook is read with use — name it thing`. Cell `conformance/modules/decisions-taken/hook_name_use_prefix_refused-926`. Methods, `default fn` and typed lambdas are not yet reached.
+`refuseHookNameUsePrefix` (`infer.zig`, first thing in `inferFnDecl`) refuses a `fn` answering `Component<R>` (marker or written return) named `use` followed by an upper-case letter, located at the name: `hook-name-use-prefix: a hook is read with use — name it thing`. Cell `conformance/modules/decisions-taken/hook_name_use_prefix_refused-926`. `inferTypeMethods` reads the same check (`refuseHookNameUsePrefixOf`) on a type's method and a behavior's `default fn`, at the name; cells `hook_name_use_prefix_method_refused`, `hook_name_use_prefix_default_fn_refused`. A typed lambda has no name, so 926 does not reach it.
 
 ## `noreturn-falls-through` (decision 929)
 
-`refuseNoreturnFallThrough` (`infer.zig`, after `refuseFallingOffTheEnd`) refuses a plain `fn` declared `-> noreturn` whose body `stmtsMayFallThrough`, located at the name: `noreturn-falls-through: …`. Cell `conformance/modules/decisions-taken/noreturn_body_falls_through_refused-929`. A typed lambda declared `-> noreturn` is not yet reached.
+`refuseNoreturnFallThrough` (`infer.zig`, after `refuseFallingOffTheEnd`) refuses a plain `fn` declared `-> noreturn` whose body `stmtsMayFallThrough`, located at the name: `noreturn-falls-through: …`. Cell `conformance/modules/decisions-taken/noreturn_body_falls_through_refused-929`. `inferTypeMethods` refuses a method and a `default fn` the same way (`failNoreturnFallThrough`, at the name), and `inferFunctionExprExpectedInner` a typed `fn` expression declared `-> noreturn`, at the `fn`; cells `noreturn_body_falls_through_method_refused`, `…_default_fn_refused`, `…_lambda_refused`.

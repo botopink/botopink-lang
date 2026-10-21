@@ -1,0 +1,11 @@
+//// Decision 929 — a typed function expression declared `-> noreturn` whose body
+//// can complete is refused at the `fn`, `noreturn-falls-through`.
+
+import {failure.panic, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val bad = fn(c: bool) -> noreturn {
+        if (c) panic("x");
+    };
+    print("unreachable");
+}

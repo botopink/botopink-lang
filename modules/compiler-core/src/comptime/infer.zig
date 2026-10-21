@@ -9693,6 +9693,7 @@ fn inferTypeMethods(
         if (m.is_declare) continue;
         // Decision 864 (4) — a method's record parameter is held to the same rules.
         try checkRecordParamList(env, m.name, m.params);
+        try refuseHookNameUsePrefixOf(env, m.name, m.nameLoc, m.returnType, m.marker);
 
         // 01 step 13 — a method's parameters and locals end with its body.
         var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
@@ -9844,6 +9845,10 @@ fn inferTypeMethods(
         if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
         if (answersNothing(m.returnType))
             try refuseValueTailInVoid(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ typeName, m.name }), body, tailTy);
+        if (methodEffect == null and !m.isExternal() and !env.inTemplateFn and m.returnType != null) {
+            if (env.returnWhole) |w| if (w.deref().isNamed("noreturn") and stmtsMayFallThrough(env, body))
+                return failNoreturnFallThrough(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ typeName, m.name }), m.nameLoc);
+        }
     }
 }
 
@@ -9930,16 +9935,23 @@ fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
 /// `use h(…)`, so a declaration answering `Component<R>` named `use` followed by
 /// an upper-case letter spells the verb twice. Refused at its name.
 fn refuseHookNameUsePrefix(env: *Env, f: ast.FnDecl) InferError!void {
-    if (f.returnType == null or f.isDeclare) return;
-    const isComponent = (f.effect != null and f.effect.? == .component) or
-        (ast.EffectKind.fromReturnType(f.returnType) orelse .task) == .component;
+    if (f.isDeclare) return;
+    return refuseHookNameUsePrefixOf(env, f.name, f.nameLoc, f.returnType, f.effect);
+}
+
+/// The same refusal for a method of a type and a `default fn` of a behavior
+/// (decision 926): a name `use[A-Z]…` answering `Component<R>`.
+fn refuseHookNameUsePrefixOf(env: *Env, name: []const u8, nameLoc: ast.Loc, returnType: ?ast.TypeRef, effect: ?ast.EffectKind) InferError!void {
+    if (returnType == null) return;
+    const isComponent = (effect != null and effect.? == .component) or
+        (ast.EffectKind.fromReturnType(returnType) orelse .task) == .component;
     if (!isComponent) return;
-    if (f.name.len < 4 or !std.mem.startsWith(u8, f.name, "use")) return;
-    if (f.name[3] < 'A' or f.name[3] > 'Z') return;
-    const suggested = try std.fmt.allocPrint(env.arena, "{c}{s}", .{ std.ascii.toLower(f.name[3]), f.name[4..] });
+    if (name.len < 4 or !std.mem.startsWith(u8, name, "use")) return;
+    if (name[3] < 'A' or name[3] > 'Z') return;
+    const suggested = try std.fmt.allocPrint(env.arena, "{c}{s}", .{ std.ascii.toLower(name[3]), name[4..] });
     const msg = try std.fmt.allocPrint(env.arena, "hook-name-use-prefix: a hook is read with use — name it {s}", .{suggested});
     var err = TypeError.custom(msg, "Decision 926: name the hook for what it yields, `use actionState(…)` rather than `useActionState(…)`.");
-    if (f.nameLoc.line > 0) err = err.withLoc(f.nameLoc);
+    if (nameLoc.line > 0) err = err.withLoc(nameLoc);
     env.lastError = err;
     return error.TypeError;
 }
@@ -9952,9 +9964,15 @@ fn refuseNoreturnFallThrough(env: *Env, f: ast.FnDecl, retType: *T.Type) InferEr
     if (env.inTemplateFn) return;
     if (!retType.deref().isNamed("noreturn")) return;
     if (!stmtsMayFallThrough(env, f.body)) return;
-    const msg = try std.fmt.allocPrint(env.arena, "noreturn-falls-through: `{s}` declares `-> noreturn` and its body can complete", .{f.name});
+    return failNoreturnFallThrough(env, try std.fmt.allocPrint(env.arena, "`{s}`", .{f.name}), f.nameLoc);
+}
+
+/// Decision 929 on a method, a `default fn` (named, at its name) and a typed
+/// function expression (at the `fn`).
+fn failNoreturnFallThrough(env: *Env, what: []const u8, loc: ast.Loc) InferError {
+    const msg = try std.fmt.allocPrint(env.arena, "noreturn-falls-through: {s} declares `-> noreturn` and its body can complete", .{what});
     var err = TypeError.custom(msg, "Decision 929: end every path with a call to a `noreturn` function, a `throw`, or a `loop` without `break`.");
-    if (f.nameLoc.line > 0) err = err.withLoc(f.nameLoc);
+    if (loc.line > 0) err = err.withLoc(loc);
     env.lastError = err;
     return error.TypeError;
 }
@@ -27465,6 +27483,9 @@ fn inferFunctionExprExpectedInner(
     const typedFn = fk.syntax == .fnExpr and fk.isTyped();
     const retType = if (typedFn) blk: {
         const written = expRet orelse try env.namedType("void");
+        if (fk.returnType != null and fk.returnType.? == .named and std.mem.eql(u8, fk.returnType.?.named, "noreturn") and
+            fk.marker == null and !env.inTemplateFn and stmtsMayFallThrough(env, bodyTyped))
+            return failNoreturnFallThrough(env, "the function expression", loc);
         if (writtenReturnHasValue(fk.returnType)) {
             if (stmtsMayFallThrough(env, bodyTyped)) {
                 const rendered = try snapshotMod.typeNameOf(env.arena, written);

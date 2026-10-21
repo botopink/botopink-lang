@@ -1,0 +1,14 @@
+//// Decision 929 — a `default fn` declared `-> noreturn` whose body can complete is
+//// refused at its name, `noreturn-falls-through`, as a `fn` is.
+
+import {failure.panic, io.terminal.print} from "std";
+
+behavior Halting {
+    default fn bad(self: Self, c: bool) -> noreturn {
+        if (c) panic("x");
+    }
+}
+
+pub fn main() -> void {
+    print("unreachable");
+}
