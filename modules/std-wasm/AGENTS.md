@@ -37,8 +37,8 @@ Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`, `wat/random.w
 | `number.i64ToString` | `(i64) -> $str` | the decimal text; `i64::MIN` through its wrapped magnitude, read unsigned |
 | `number.u64ToString` | `(i64) -> $str` | the carrier's 64 bits read unsigned (decision 319) |
 | `bytes.length` | `($str) -> i32` | the number of bytes of a `Bytes` (a string's layout) |
-| `bytes.at` | `($str, i32) -> i32` | the byte at an index as a word `0..255`, `-1` for a negative index or one past the end |
-| `bytes.ofWords` | `($arr_i32) -> $str` | a new `Bytes`, one byte (the word's low eight bits) per word (decision 585 (k)) |
+| `bytes.at` | `($str, i32) -> i32` | the byte at an index as a word `0..255`; the bare `array.get_u`, so a trap outside `0..length-1` (a negative index read unsigned included), decision 880 |
+| `bytes.ofWords` | `($arr_i32) -> $str` | a new `Bytes`, one byte per word; `unreachable` at the first word outside `0..255` (decisions 585 (k), 880) |
 | `random.float` | `() -> f64` | the host's entropy: the prelude's `$__wasi_random_f64`, named and not declared (585 (j)) |
 | `random.seed` | `(i32) -> ()` | the stream restarts from the word's bits: `$__random_state` set |
 | `random.seededFloat` | `() -> f64` | the next Mulberry32 draw in `[0.0, 1.0)`, the host's entropy before any `seed` (451) |

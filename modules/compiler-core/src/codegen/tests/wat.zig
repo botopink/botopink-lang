@@ -277,34 +277,42 @@ test "wat: front 164 s3 ---- an integer's text is the number leaves in a GC modu
 test "wat: front 164 s3 ---- the bytes leaves answer in a GC module" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
-    var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source =
+    const decls =
         \\#[compiler.external(.Wasm(std: "bytes.length"))]
         \\declare fn bytesLength(b: bytes) -> i32;
         \\#[compiler.external(.Wasm(std: "bytes.at"))]
         \\declare fn bytesAt(b: bytes, i: i32) -> i32;
         \\#[compiler.external(.Wasm(std: "bytes.ofWords"))]
         \\declare fn bytesOfWords(w: array<i32>) -> bytes;
-        \\fn main() -> void {
-        \\    val b = bytesOfWords([104, 105, 256 + 33]);
-        \\    print(bytesLength(b));
-        \\    print(bytesAt(b, 0));
-        \\    print(bytesAt(b, 2));
-        \\    print(bytesAt(b, 3));
-        \\    print(bytesAt(b, -1));
-        \\    print(bytesLength(bytesOfWords([])));
-        \\}
-        \\
         \\import {io.terminal.print, compiler} from "std";
-    }}, io, h.configs[3]);
-    defer {
-        for (outputs.items) |*o| o.result.deinit(alloc);
-        outputs.deinit(alloc);
+    ;
+    // In its domain a leaf answers; outside it (decision 880) it traps: `at`
+    // past the end or negative, `ofWords` at the first word beyond `0..255`.
+    const bodies = [_]struct { body: []const u8, expect: ?[]const u8 }{
+        .{ .body = "val b = bytesOfWords([104, 105, 255]);\n print(bytesLength(b));\n print(bytesAt(b, 0));\n print(bytesAt(b, 2));\n print(bytesLength(bytesOfWords([])));", .expect = "3\n104\n255\n0\n" },
+        .{ .body = "val b = bytesOfWords([104, 105, 33]);\n print(bytesAt(b, 3));", .expect = null },
+        .{ .body = "val b = bytesOfWords([104, 105, 33]);\n print(bytesAt(b, -1));", .expect = null },
+        .{ .body = "val b = bytesOfWords([104, 105, 289]);\n print(bytesLength(b));", .expect = null },
+    };
+    for (bodies) |c| {
+        const src = try std.fmt.allocPrint(alloc, "{s}\nfn main() -> void {{\n {s}\n}}\n", .{ decls, c.body });
+        defer alloc.free(src);
+        var outputs = try h.generate(alloc, &.{.{ .path = "", .std_member = true, .source = src }}, io, h.configs[3]);
+        defer {
+            for (outputs.items) |*o| o.result.deinit(alloc);
+            outputs.deinit(alloc);
+        }
+        const o = for (outputs.items) |o| {
+            if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+        } else return error.ModuleDidNotCompile;
+        try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(func $__std_bytes_ofWords ") != null);
+        const got = o.result.run_output orelse "";
+        if (c.expect) |e| {
+            try std.testing.expectEqualStrings(e, got);
+        } else {
+            try std.testing.expect(std.mem.indexOf(u8, got, "RUNTIME TRAP (wasmtime)") != null);
+        }
     }
-    const o = for (outputs.items) |o| {
-        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
-    } else return error.ModuleDidNotCompile;
-    try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(func $__std_bytes_ofWords ") != null);
-    try std.testing.expectEqualStrings("3\n104\n33\n-1\n-1\n0\n", o.result.run_output orelse "");
 }
 
 // Front 164 s3 P2-e — `random.*` as leaves: the stream's word is the prelude's
