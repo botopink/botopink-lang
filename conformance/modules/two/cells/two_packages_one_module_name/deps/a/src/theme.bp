@@ -3,7 +3,7 @@
 import {compiler} from "std";
 
 pub type Ns(label: string) {
-    fn show(self: Self) -> string {
+    pub fn show(self: Self) -> string {
         return "a:" + self.label;
     }
 }

@@ -103,60 +103,60 @@ pub type i32 implement Signed {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
         .Erlang(body: i32IsEvenBody),
         .Wasm(body: i32IsEvenBody),
     )]
-    declare fn isEven(self: Self) -> bool;
+    pub declare fn isEven(self: Self) -> bool;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
         .Erlang(body: i32IsOddBody),
         .Wasm(body: i32IsOddBody),
     )]
-    declare fn isOdd(self: Self) -> bool;
+    pub declare fn isOdd(self: Self) -> bool;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
     )]
-    declare fn toI32(self: Self) -> i32;
+    pub declare fn toI32(self: Self) -> i32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    declare fn toI64(self: Self) -> i64;
+    pub declare fn toI64(self: Self) -> i64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
     )]
-    declare fn toU32(self: Self) -> u32;
+    pub declare fn toU32(self: Self) -> u32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
     )]
-    declare fn toU64(self: Self) -> u64;
+    pub declare fn toU64(self: Self) -> u64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    declare fn toF64(self: Self) -> f64;
+    pub declare fn toF64(self: Self) -> f64;
 
     // `abs` aborts past `i32` as unary `-` does (decision 496): the lowest
     // `i32` has no positive counterpart in `i32`.
@@ -164,7 +164,7 @@ pub type i32 implement Signed {
         .Erlang("""(fun(__V) when __V =/= -2147483648 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i32">>}) end)($0)"""),
         .JavaScript("""((__a) => { if (__a === -2147483648) { throw Object.defineProperty(new Error("integer overflow: abs on i32"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })($0)"""),
     )]
-    declare fn abs(self: Self) -> Self;
+    pub declare fn abs(self: Self) -> Self;
 }
 
 pub type i64 implement Signed {
@@ -172,60 +172,60 @@ pub type i64 implement Signed {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
         .Erlang(body: i64IsEvenBody),
         .Wasm(body: i64IsEvenBody),
     )]
-    declare fn isEven(self: Self) -> bool;
+    pub declare fn isEven(self: Self) -> bool;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
         .Erlang(body: i64IsOddBody),
         .Wasm(body: i64IsOddBody),
     )]
-    declare fn isOdd(self: Self) -> bool;
+    pub declare fn isOdd(self: Self) -> bool;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
     )]
-    declare fn toI32(self: Self) -> i32;
+    pub declare fn toI32(self: Self) -> i32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    declare fn toI64(self: Self) -> i64;
+    pub declare fn toI64(self: Self) -> i64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
     )]
-    declare fn toU32(self: Self) -> u32;
+    pub declare fn toU32(self: Self) -> u32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
     )]
-    declare fn toU64(self: Self) -> u64;
+    pub declare fn toU64(self: Self) -> u64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    declare fn toF64(self: Self) -> f64;
+    pub declare fn toF64(self: Self) -> f64;
 
     // `abs` aborts past `i64` as unary `-` does (decision 496): the lowest
     // `i64` has no positive counterpart in `i64`.
@@ -233,7 +233,7 @@ pub type i64 implement Signed {
         .Erlang("""(fun(__V) when __V =/= -9223372036854775807 - 1 -> erlang:abs(__V); (_) -> erlang:error({integer_overflow, <<"integer overflow: abs on i64">>}) end)($0)"""),
         .JavaScript("""((__a) => { if (__a === -9223372036854775808n) { throw Object.defineProperty(new Error("integer overflow: abs on i64"), "__bp_panic", { value: true }); } return (__a < 0 || Object.is(__a, -0)) ? -__a : __a; })($0)"""),
     )]
-    declare fn abs(self: Self) -> Self;
+    pub declare fn abs(self: Self) -> Self;
 }
 
 pub type u32 implement Integer {
@@ -241,60 +241,60 @@ pub type u32 implement Integer {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
         .Erlang(body: u32IsEvenBody),
         .Wasm(body: u32IsEvenBody),
     )]
-    declare fn isEven(self: Self) -> bool;
+    pub declare fn isEven(self: Self) -> bool;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
         .Erlang(body: u32IsOddBody),
         .Wasm(body: u32IsOddBody),
     )]
-    declare fn isOdd(self: Self) -> bool;
+    pub declare fn isOdd(self: Self) -> bool;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
     )]
-    declare fn toI32(self: Self) -> i32;
+    pub declare fn toI32(self: Self) -> i32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    declare fn toI64(self: Self) -> i64;
+    pub declare fn toI64(self: Self) -> i64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
     )]
-    declare fn toU32(self: Self) -> u32;
+    pub declare fn toU32(self: Self) -> u32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
     )]
-    declare fn toU64(self: Self) -> u64;
+    pub declare fn toU64(self: Self) -> u64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    declare fn toF64(self: Self) -> f64;
+    pub declare fn toF64(self: Self) -> f64;
 }
 
 pub type u64 implement Integer {
@@ -302,60 +302,60 @@ pub type u64 implement Integer {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)"""),
         .Erlang(body: u64IsEvenBody),
         .Wasm(body: u64IsEvenBody),
     )]
-    declare fn isEven(self: Self) -> bool;
+    pub declare fn isEven(self: Self) -> bool;
 
     #[compiler.external(
         .JavaScript("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)"""),
         .Erlang(body: u64IsOddBody),
         .Wasm(body: u64IsOddBody),
     )]
-    declare fn isOdd(self: Self) -> bool;
+    pub declare fn isOdd(self: Self) -> bool;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)"""),
     )]
-    declare fn toI32(self: Self) -> i32;
+    pub declare fn toI32(self: Self) -> i32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    declare fn toI64(self: Self) -> i64;
+    pub declare fn toI64(self: Self) -> i64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)"""),
     )]
-    declare fn toU32(self: Self) -> u32;
+    pub declare fn toU32(self: Self) -> u32;
 
     #[compiler.external(
         .Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)"""),
     )]
-    declare fn toU64(self: Self) -> u64;
+    pub declare fn toU64(self: Self) -> u64;
 
     #[compiler.external(
         .Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    declare fn toF64(self: Self) -> f64;
+    pub declare fn toF64(self: Self) -> f64;
 }
 
 // The float widths. `toString`: `float_to_binary/1` prints scientific notation
@@ -372,38 +372,38 @@ pub type f32 implement Float {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("float_to_binary($0, [short])"),
         .JavaScript("toString"),
         .Wasm(std: "number.floatToString"),
     )]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .Erlang("erlang:abs($0)"),
         .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
     )]
-    declare fn abs(self: Self) -> Self;
+    pub declare fn abs(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
-    declare fn floor(self: Self) -> Self;
+    pub declare fn floor(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
-    declare fn ceil(self: Self) -> Self;
+    pub declare fn ceil(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
-    declare fn round(self: Self) -> Self;
+    pub declare fn round(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
-    declare fn squareRoot(self: Self) -> Self;
+    pub declare fn squareRoot(self: Self) -> Self;
 }
 
 pub type f64 implement Float {
@@ -411,38 +411,38 @@ pub type f64 implement Float {
         .Erlang("erlang:min($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn min(self: Self, other: Self) -> Self;
+    pub declare fn min(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("erlang:max($0, $1)"),
         .JavaScript("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)"""),
     )]
-    declare fn max(self: Self, other: Self) -> Self;
+    pub declare fn max(self: Self, other: Self) -> Self;
 
     #[compiler.external(
         .Erlang("float_to_binary($0, [short])"),
         .JavaScript("toString"),
         .Wasm(std: "number.floatToString"),
     )]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(
         .Erlang("erlang:abs($0)"),
         .JavaScript("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)"""),
     )]
-    declare fn abs(self: Self) -> Self;
+    pub declare fn abs(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:floor($0)"), .JavaScript("Math.floor($0)"))]
-    declare fn floor(self: Self) -> Self;
+    pub declare fn floor(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:ceil($0)"), .JavaScript("Math.ceil($0)"))]
-    declare fn ceil(self: Self) -> Self;
+    pub declare fn ceil(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:floor($0 + 0.5)"), .JavaScript("Math.round($0)"))]
-    declare fn round(self: Self) -> Self;
+    pub declare fn round(self: Self) -> Self;
 
     #[compiler.external(.Erlang("math:sqrt($0)"), .JavaScript("Math.sqrt($0)"))]
-    declare fn squareRoot(self: Self) -> Self;
+    pub declare fn squareRoot(self: Self) -> Self;
 }
 
 // The botopink bodies of the widths' `isEven` / `isOdd` (`body:`, decision 610).
@@ -495,7 +495,7 @@ fn u64IsOddBody(value: u64) -> bool {
 pub type bigint {
     // `bigint.of(n)` — the `bigint` equal to `n`.
     #[compiler.external(.Erlang("$0"), .JavaScript("BigInt($0)"))]
-    declare fn of(n: i64) -> bigint;
+    pub declare fn of(n: i64) -> bigint;
 
     // `bigint.parse(text)` — the integer a decimal numeral spells: an optional
     // `+` or `-`, then the digits `0`–`9` and nothing else, of any length (the
@@ -505,10 +505,10 @@ pub type bigint {
         .Erlang("""(fun(__S) -> __D = case __S of <<"-", __R/binary>> -> __R; <<"+", __R/binary>> -> __R; _ -> __S end, case (__D =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__D)) of true -> {ok, binary_to_integer(__S)}; false -> {error, <<"bigint.parse: ", 34, __S/binary, 34, " is not an integer">>} end end)($0)"""),
         .JavaScript("""((__s) => /^[+-]?[0-9]+$/.test(__s) ? { ok: BigInt(__s) } : { error: 'bigint.parse: "' + __s + '" is not an integer' })($0)"""),
     )]
-    declare fn parse(text: string) -> Result<bigint, string>;
+    pub declare fn parse(text: string) -> Result<bigint, string>;
 
     #[compiler.external(.Erlang("erlang:integer_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     // The `i64` equal to the value; past −2^63 … 2^63 − 1 an abort naming
     // the value (decision 264's text, as `toI64` of the integer widths).
@@ -516,7 +516,7 @@ pub type bigint {
         .Erlang("""(fun(__V) when __V >= -9223372036854775807 - 1, __V =< 9223372036854775807 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)"""),
         .JavaScript("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)"""),
     )]
-    declare fn toI64(self: Self) -> i64;
+    pub declare fn toI64(self: Self) -> i64;
 
     // The `f64` equal to the value; one between two `f64`s aborts, never
     // rounds (decision 319's conversions).
@@ -524,7 +524,7 @@ pub type bigint {
         .Erlang("""(fun(__V) -> case abs(__V) =< ((1 bsl 1024) - (1 bsl 971)) of true -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)"""),
         .JavaScript("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)"""),
     )]
-    declare fn toF64(self: Self) -> f64;
+    pub declare fn toF64(self: Self) -> f64;
 }
 
 // ── bytes (decision 346) ──────────────────────────────────────────────────────
@@ -544,7 +544,7 @@ pub type bigint {
 pub type bytes {
     // `bytes.fromUtf8(s)` — the UTF-8 bytes of `s`.
     #[compiler.external(.Erlang("$0"), .JavaScript("""(new TextEncoder().encode($0))"""))]
-    declare fn fromUtf8(s: string) -> bytes;
+    pub declare fn fromUtf8(s: string) -> bytes;
 
     // The text the bytes spell in UTF-8; anything else (a byte no UTF-8
     // sequence starts with, a sequence cut short, an overlong form, a
@@ -554,23 +554,23 @@ pub type bytes {
         .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B) of __S when is_binary(__S) -> {ok, __S}; _ -> {error, <<"bytes.toUtf8: not valid UTF-8">>} end end)($0)"""),
         .JavaScript("""((__b) => require('buffer').isUtf8(__b) ? { ok: new TextDecoder("utf-8", { ignoreBOM: true }).decode(__b) } : { error: "bytes.toUtf8: not valid UTF-8" })($0)"""),
     )]
-    declare fn toUtf8(self: Self) -> Result<string, string>;
+    pub declare fn toUtf8(self: Self) -> Result<string, string>;
 
     // The number of bytes.
     #[compiler.external(.Erlang("byte_size($0)"), .JavaScript("length"))]
-    declare fn length(self: Self) -> i32;
+    pub declare fn length(self: Self) -> i32;
 
     // The bytes of `self`, then those of `other`.
     #[compiler.external(
         .Erlang("<<($0)/binary, ($1)/binary>>"),
         .JavaScript("""((__a, __b) => { const __r = new Uint8Array(__a.length + __b.length); __r.set(__a, 0); __r.set(__b, __a.length); return __r; })($0, $1)"""),
     )]
-    declare fn concat(self: Self, other: bytes) -> bytes;
+    pub declare fn concat(self: Self, other: bytes) -> bytes;
 
     // `Slice<bytes>.slice` — `string`'s bounds (decision 139): a negative
     // index counts from the end, both are clamped to the length, an end
     // before the start is empty, and an absent end is the length — `b[1..]`.
-    fn slice(self: Self, start: i32, end: ?i32 = null) -> bytes {
+    pub fn slice(self: Self, start: i32, end: ?i32 = null) -> bytes {
         if (end != null)
             return bytesSlice1(self, start, end)
         else
@@ -582,24 +582,24 @@ pub type bytes {
 
 pub type bool {
     #[compiler.external(.Erlang("erlang:atom_to_binary($0)"), .JavaScript("toString"))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     #[compiler.external(.Erlang("(not $0)"), .JavaScript(body: boolNegateBody), .Wasm(body: boolNegateBody))]
-    declare fn negate(self: Self) -> bool;
+    pub declare fn negate(self: Self) -> bool;
 
-    fn nor(self: Self, other: bool) -> bool {
+    pub fn nor(self: Self, other: bool) -> bool {
         return !(self || other);
     }
 
-    fn nand(self: Self, other: bool) -> bool {
+    pub fn nand(self: Self, other: bool) -> bool {
         return !(self && other);
     }
 
-    fn exclusiveOr(self: Self, other: bool) -> bool {
+    pub fn exclusiveOr(self: Self, other: bool) -> bool {
         return self != other;
     }
 
-    fn exclusiveNor(self: Self, other: bool) -> bool {
+    pub fn exclusiveNor(self: Self, other: bool) -> bool {
         return self == other;
     }
 }
@@ -635,7 +635,7 @@ pub type string {
         .JavaScript("length"),
         .Wasm(std: "text.length"),
     )]
-    declare fn length(self: Self) -> i32;
+    pub declare fn length(self: Self) -> i32;
 
     // `string:split/3` answers the whole string for an empty separator, while
     // JS `split("")` answers one element per character. The erlang form
@@ -646,31 +646,31 @@ pub type string {
         .JavaScript("split"),
         .Wasm(std: "text.split"),
     )]
-    declare fn split(self: Self, sep: string) -> string[];
+    pub declare fn split(self: Self, sep: string) -> string[];
 
     // Over all of Unicode on every target (decision 443): the full mappings
     // (`"ß"` is `"SS"`). std-wasm's, which answers OTP's where a JS engine
     // differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`) — commonJS maps
     // through its helper over std-wasm's table, not this binding (decision 521).
     #[compiler.external(.Erlang("string:uppercase($0)"), .JavaScript("toUpperCase"), .Wasm(std: "text.toUpper"))]
-    declare fn toUpper(self: Self) -> string;
+    pub declare fn toUpper(self: Self) -> string;
 
     #[compiler.external(.Erlang("string:lowercase($0)"), .JavaScript("toLowerCase"), .Wasm(std: "text.toLower"))]
-    declare fn toLower(self: Self) -> string;
+    pub declare fn toLower(self: Self) -> string;
 
     #[compiler.external(
         .Erlang("(string:find($0, $1) =/= nomatch)"),
         .JavaScript("includes"),
         .Wasm(std: "text.contains"),
     )]
-    declare fn contains(self: Self, sub: string) -> bool;
+    pub declare fn contains(self: Self, sub: string) -> bool;
 
     #[compiler.external(
         .Erlang("(string:prefix($0, $1) =/= nomatch)"),
         .JavaScript("startsWith"),
         .Wasm(std: "text.startsWith"),
     )]
-    declare fn startsWith(self: Self, prefix: string) -> bool;
+    pub declare fn startsWith(self: Self, prefix: string) -> bool;
 
     // OTP has no `string:suffix/2`: the last `byte_size(suffix)` bytes are
     // compared with the suffix.
@@ -679,12 +679,12 @@ pub type string {
         .JavaScript("endsWith"),
         .Wasm(std: "text.endsWith"),
     )]
-    declare fn endsWith(self: Self, suffix: string) -> bool;
+    pub declare fn endsWith(self: Self, suffix: string) -> bool;
 
     // std-wasm's set on every target (441, 521): space, tab, LF, CR, VT, FF —
     // a no-break space stays; commonJS trims through its helper, not this one.
     #[compiler.external(.Erlang("string:trim($0)"), .JavaScript("trim"), .Wasm(std: "text.trim"))]
-    declare fn trim(self: Self) -> string;
+    pub declare fn trim(self: Self) -> string;
 
     // `string:trim/1` strips both ends; `/2` takes the direction.
     #[compiler.external(
@@ -692,10 +692,10 @@ pub type string {
         .JavaScript("trimStart"),
         .Wasm(std: "text.trimStart"),
     )]
-    declare fn trimStart(self: Self) -> string;
+    pub declare fn trimStart(self: Self) -> string;
 
     #[compiler.external(.Erlang("string:trim($0, trailing)"), .JavaScript("trimEnd"), .Wasm(std: "text.trimEnd"))]
-    declare fn trimEnd(self: Self) -> string;
+    pub declare fn trimEnd(self: Self) -> string;
 
     // Replaces the first occurrence, like JS `replace` with a string pattern.
     // `string:replace/3` returns an iolist, so it is flattened to a binary.
@@ -704,11 +704,11 @@ pub type string {
         .JavaScript("replace"),
         .Wasm(std: "text.replace"),
     )]
-    declare fn replace(self: Self, pattern: string, with: string) -> string;
+    pub declare fn replace(self: Self, pattern: string, with: string) -> string;
 
     // `Slice<string>.slice` — `end` is `?i32` so an open-ended `s[1..]` can
     // pass `null` in the second argument (there is no `Range` type to pass).
-    fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
+    pub fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
         if (end != null)
             return stringSlice1(self, start, end)
         else
@@ -735,7 +735,7 @@ pub type string {
         .JavaScript("charAt"),
         .Wasm(std: "text.at"),
     )]
-    declare fn at(self: Self, index: i32) -> ?string;
+    pub declare fn at(self: Self, index: i32) -> ?string;
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
@@ -748,10 +748,10 @@ pub type string {
         .JavaScript("indexOf"),
         .Wasm(std: "text.indexOf"),
     )]
-    declare fn indexOf(self: Self, sub: string) -> i32;
+    pub declare fn indexOf(self: Self, sub: string) -> i32;
 
     #[compiler.external(.JavaScript("toString"), .Erlang(body: stringToStringBody), .Wasm(body: stringToStringBody))]
-    declare fn toString(self: Self) -> string;
+    pub declare fn toString(self: Self) -> string;
 
     // `string.fromCodepoint(cp)` — the one-character string of the Unicode
     // scalar value `cp` (decision 262), an associated host primitive (no
@@ -766,7 +766,7 @@ pub type string {
         .JavaScript("""((__c) => { if (!(__c >= 0 && __c <= 1114111) || (__c >= 55296 && __c <= 57343)) throw new RangeError('String.fromCodepoint: ' + __c + ' is not a Unicode scalar value'); return String.fromCodePoint(__c); })($0)"""),
         .Wasm(std: "text.fromCodepoint"),
     )]
-    declare fn fromCodepoint(cp: i32) -> string;
+    pub declare fn fromCodepoint(cp: i32) -> string;
 
     // ── std-tail F7.string_ext additions ────────────────────────────────────
     // Each is wired to the Node prototype method on commonJS plus an Erlang
@@ -778,52 +778,52 @@ pub type string {
         .JavaScript("padStart"),
         .Wasm(std: "text.padStart"),
     )]
-    declare fn padStart(self: Self, length: i32, pad: string) -> string;
+    pub declare fn padStart(self: Self, length: i32, pad: string) -> string;
 
     #[compiler.external(
         .Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($0, $1, $2)"),
         .JavaScript("padEnd"),
         .Wasm(std: "text.padEnd"),
     )]
-    declare fn padEnd(self: Self, length: i32, pad: string) -> string;
+    pub declare fn padEnd(self: Self, length: i32, pad: string) -> string;
 
     #[compiler.external(.Erlang("binary:copy($0, $1)"), .JavaScript("repeat"), .Wasm(std: "text.repeat"))]
-    declare fn repeat(self: Self, times: i32) -> string;
+    pub declare fn repeat(self: Self, times: i32) -> string;
 
     #[compiler.external(
         .Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($0, $1, $2)"),
         .JavaScript("replaceAll"),
         .Wasm(std: "text.replaceAll"),
     )]
-    declare fn replaceAll(self: Self, pattern: string, with: string) -> string;
+    pub declare fn replaceAll(self: Self, pattern: string, with: string) -> string;
 
     #[compiler.external(
         .Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"),
         .JavaScript("(Array.from($0))"),
         .Wasm(std: "text.chars"),
     )]
-    declare fn chars(self: Self) -> string[];
+    pub declare fn chars(self: Self) -> string[];
 
     #[compiler.external(
         .Erlang("""binary:split($0, [<<"\r\n">>, <<"\n">>], [global])"""),
         .JavaScript("""$0.split(/\r?\n/)"""),
         .Wasm(std: "text.lines"),
     )]
-    declare fn lines(self: Self) -> string[];
+    pub declare fn lines(self: Self) -> string[];
 
     #[compiler.external(
         .Erlang("""[__W || __W <- binary:split($0, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]"""),
         .JavaScript("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)"""),
         .Wasm(std: "text.words"),
     )]
-    declare fn words(self: Self) -> string[];
+    pub declare fn words(self: Self) -> string[];
 
     // `\r\n` -> `\n`: the text as a unix host writes it. A lone `\r` stays.
     #[compiler.external(
         .Erlang("""binary:replace($0, <<"\r\n">>, <<"\n">>, [global])"""),
         .JavaScript("""$0.replaceAll("\r\n", "\n")"""),
     )]
-    declare fn normalizeNewlines(self: Self) -> string;
+    pub declare fn normalizeNewlines(self: Self) -> string;
 
     // The text without its trailing `\n` characters - only newlines, not
     // spaces or tabs (`trimEnd` takes all whitespace): whitespace inside or
@@ -832,7 +832,7 @@ pub type string {
         .Erlang("""re:replace($0, "\\n+\\z", "", [{return, binary}])"""),
         .JavaScript("""$0.replace(/\n+$/, "")"""),
     )]
-    declare fn trimTrailingNewlines(self: Self) -> string;
+    pub declare fn trimTrailingNewlines(self: Self) -> string;
 
     // The 1-based number of the first line (lines split on `\n`) where the
     // two texts differ, `0` when they are equal. A text that is a prefix of
@@ -841,7 +841,7 @@ pub type string {
         .Erlang("""(fun(__A, __B) -> (fun __F([__H | __T1], [__H | __T2], __N) -> __F(__T1, __T2, __N + 1); __F([], [], _) -> 0; __F(_, _, __N) -> __N + 1 end)(binary:split(__A, <<"\n">>, [global]), binary:split(__B, <<"\n">>, [global]), 0) end)($0, $1)"""),
         .JavaScript("""((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })($0, $1)"""),
     )]
-    declare fn firstDifferingLine(self: Self, other: string) -> i32;
+    pub declare fn firstDifferingLine(self: Self, other: string) -> i32;
 
     // A template on a primitive type's method becomes a PROTOTYPE PATCH on commonJS
     // (`String.prototype.charCodeAt = …`), so it must not name the method it
@@ -858,7 +858,7 @@ pub type string {
         .JavaScript("""((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })($0, $1)"""),
         .Wasm(std: "text.charCodeAt"),
     )]
-    declare fn charCodeAt(self: Self, index: i32) -> i32;
+    pub declare fn charCodeAt(self: Self, index: i32) -> i32;
 
     // The last match is found over the bytes and answered in `indexOf`'s unit
     // (decisions 169, 320): the codepoints of the text before it.
@@ -867,7 +867,7 @@ pub type string {
         .JavaScript("lastIndexOf"),
         .Wasm(std: "text.lastIndexOf"),
     )]
-    declare fn lastIndexOf(self: Self, sub: string) -> i32;
+    pub declare fn lastIndexOf(self: Self, sub: string) -> i32;
 
     // The integer a decimal numeral spells: an optional `+` or `-`, then the
     // digits `0`–`9` and nothing else — the WHOLE string, so whitespace, a
@@ -882,7 +882,7 @@ pub type string {
     // The body calls a method on `self` only, and free cells for the rest —
     // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
     // that shape it.
-    fn parseInt(self: Self) -> Result<i64, string> {
+    pub fn parseInt(self: Self) -> Result<i64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val digits = if (signed) stringSlice0(self, 1) else self;
         return if (stringIsDigits(digits))
@@ -899,7 +899,7 @@ pub type string {
     // the numeral rewritten as `<digits>.<digits>e<exponent>` (the one form
     // both hosts read), correctly rounded on both. A numeral too large for an
     // `f64` is an `Error`; one too small to tell from zero is `0.0`.
-    fn parseFloat(self: Self) -> Result<f64, string> {
+    pub fn parseFloat(self: Self) -> Result<f64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val start = if (signed) 1 else 0;
         val lowerAt = self.indexOf("e");
@@ -1072,17 +1072,17 @@ pub type array<T> {
         .Erlang("(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)($0, $1)"),
         .JavaScript("at"),
     )]
-    declare fn at(self: Self<T>, index: i32) -> ?T;
+    pub declare fn at(self: Self<T>, index: i32) -> ?T;
 
     #[compiler.external(.Erlang("($0 ++ [$1])"), .JavaScript("push"))]
-    declare fn push(self: Self<T>, item: T) -> void;
+    pub declare fn push(self: Self<T>, item: T) -> void;
 
     #[compiler.external(.Erlang("lists:last($0)"), .JavaScript("pop"))]
-    declare fn pop(self: Self<T>) -> ?T;
+    pub declare fn pop(self: Self<T>) -> ?T;
 
     // `Slice<T[]>.slice` — `end` is `?i32` so an open-ended `xs[1..]` can pass
     // `null` in the second argument (there is no `Range` type to pass).
-    fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
+    pub fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
         if (end != null)
             return arraySlice1(self, start, end)
         else
@@ -1093,7 +1093,7 @@ pub type array<T> {
         .Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, $0)))"""),
         .JavaScript("join"),
     )]
-    declare fn join(self: Self<T>, sep: string) -> string;
+    pub declare fn join(self: Self<T>, sep: string) -> string;
 
     // `reverse` ANSWERS a reversed array and leaves the receiver alone, on
     // every target. Native `Array.prototype.reverse` reverses in place and
@@ -1104,13 +1104,13 @@ pub type array<T> {
     // reader (ES2023; node 20, which is the floor CI installs), so the answer
     // is the same shape with no prototype patch and no helper.
     #[compiler.external(.Erlang("lists:reverse($0)"), .JavaScript("toReversed"))]
-    declare fn reverse(self: Self<T>) -> Self<T>;
+    pub declare fn reverse(self: Self<T>) -> Self<T>;
 
     #[compiler.external(
         .Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)"),
         .JavaScript("indexOf"),
     )]
-    declare fn indexOf(self: Self<T>, item: T) -> i32;
+    pub declare fn indexOf(self: Self<T>, item: T) -> i32;
 
     // The last index of `item`, `-1` when absent — `indexOf` from the other
     // end, with `indexOf`'s equality on every target. erlang and node answer
@@ -1120,16 +1120,16 @@ pub type array<T> {
         .JavaScript("lastIndexOf"),
         .Wasm(body: arrayLastIndexOfBody),
     )]
-    declare fn lastIndexOf(self: Self<T>, item: T) -> i32;
+    pub declare fn lastIndexOf(self: Self<T>, item: T) -> i32;
 
     #[compiler.external(.Erlang("lists:foreach($1, $0)"), .JavaScript("forEach"))]
-    declare fn forEach(self: Self<T>, action: fn(item: T)) -> void;
+    pub declare fn forEach(self: Self<T>, action: fn(item: T)) -> void;
 
     #[compiler.external(.Erlang("lists:map($1, $0)"), .JavaScript("map"))]
-    declare fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
+    pub declare fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
 
     #[compiler.external(.Erlang("lists:filter($1, $0)"), .JavaScript("filter"))]
-    declare fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
+    pub declare fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
 
     // `zip` pairs the receiver's items with `other`'s by index, truncating to
     // the shorter array. Template form: erlang uses `lists:zipwith` with a
@@ -1140,7 +1140,7 @@ pub type array<T> {
         .Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($0, length($1)), lists:sublist($1, length($0)))"),
         .JavaScript("$0.map((__x, __i) => [__x, ($1)[__i]]).slice(0, Math.min($0.length, ($1).length))"),
     )]
-    declare fn zip<U>(self: Self<T>, other: array<U>) -> array<#(T, U)>;
+    pub declare fn zip<U>(self: Self<T>, other: array<U>) -> array<#(T, U)>;
 
     // ── producers (associated — no receiver) ──
     // Pure botopink (no host backing): the host `lists:seq`/`duplicate` have the
@@ -1158,39 +1158,39 @@ pub type array<T> {
         .Erlang(body: arrayRangeBody),
         .Wasm(body: arrayRangeBody),
     )]
-    declare fn range(start: i32, stop: i32) -> array<i32>;
+    pub declare fn range(start: i32, stop: i32) -> array<i32>;
 
     #[compiler.external(
         .JavaScript("((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))($0, $1)"),
         .Erlang(body: arrayRepeatBody),
         .Wasm(body: arrayRepeatBody),
     )]
-    declare fn repeat<E>(value: E, times: i32) -> array<E>;
+    pub declare fn repeat<E>(value: E, times: i32) -> array<E>;
 
     // ── derived ops (default implementations over the primitives) ──
     #[compiler.external(.Erlang("($0 =:= [])"), .JavaScript(body: arrayIsEmptyBody), .Wasm(body: arrayIsEmptyBody))]
-    declare fn isEmpty(self: Self<T>) -> bool;
+    pub declare fn isEmpty(self: Self<T>) -> bool;
 
     #[compiler.external(.Erlang("lists:member($1, $0)"), .JavaScript(body: arrayContainsBody), .Wasm(body: arrayContainsBody))]
-    declare fn contains(self: Self<T>, x: T) -> bool;
+    pub declare fn contains(self: Self<T>, x: T) -> bool;
 
-    fn first(self: Self<T>) -> ?T {
+    pub fn first(self: Self<T>) -> ?T {
         return self.at(0);
     }
 
-    fn rest(self: Self<T>) -> Self<T> {
+    pub fn rest(self: Self<T>) -> Self<T> {
         return self.slice(1, self.length);
     }
 
-    fn take(self: Self<T>, n: i32) -> Self<T> {
+    pub fn take(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(0, n);
     }
 
-    fn drop(self: Self<T>, n: i32) -> Self<T> {
+    pub fn drop(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(n, self.length);
     }
 
-    fn fold<A>(
+    pub fn fold<A>(
         self: Self<T>,
         initial: A,
         f: fn(acc: A, item: T) -> A,
@@ -1203,29 +1203,29 @@ pub type array<T> {
     }
 
     #[compiler.external(.JavaScript("find"), .Erlang(body: arrayFindBody), .Wasm(body: arrayFindBody))]
-    declare fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T;
+    pub declare fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T;
 
-    fn count(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
+    pub fn count(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         return self.filter(pred).length;
     }
 
-    fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    pub fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length == self.length;
     }
 
-    fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    pub fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length != 0;
     }
 
     #[compiler.external(.Erlang("($0 ++ $1)"), .JavaScript("concat"), .Wasm(body: arrayAppendBody))]
-    declare fn append(self: Self<T>, other: Self<T>) -> Self<T>;
+    pub declare fn append(self: Self<T>, other: Self<T>) -> Self<T>;
 
     #[compiler.external(.Erlang("[$1 | $0]"), .JavaScript(body: arrayPrependBody), .Wasm(body: arrayPrependBody))]
-    declare fn prepend(self: Self<T>, item: T) -> Self<T>;
+    pub declare fn prepend(self: Self<T>, item: T) -> Self<T>;
 
     // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
     // copy goes through `append` rather than a nested `forEach`.
-    fn flatten<E>(self: Self<array<E>>) -> array<E> {
+    pub fn flatten<E>(self: Self<array<E>>) -> array<E> {
         var out: E[] = [];
         self.forEach({ inner ->
             out = out.append(inner);
@@ -1234,9 +1234,9 @@ pub type array<T> {
     }
 
     #[compiler.external(.JavaScript("flatMap"), .Erlang(body: arrayFlatMapBody), .Wasm(body: arrayFlatMapBody))]
-    declare fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
+    pub declare fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> array<U>;
 
-    fn toList(self: Self<T>) -> Self<T> {
+    pub fn toList(self: Self<T>) -> Self<T> {
         return self;
     }
 
@@ -1245,22 +1245,22 @@ pub type array<T> {
     // (different camelCase name, identical semantics — chosen to mirror the
     // Node Array prototype). The originals stay so existing callers don't
     // break.
-    fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    pub fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.any(pred);
     }
 
-    fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
+    pub fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.all(pred);
     }
 
-    fn flat<E>(self: Self<array<E>>) -> array<E> {
+    pub fn flat<E>(self: Self<array<E>>) -> array<E> {
         return self.flatten();
     }
 
     // First index where `pred` holds, or -1 when no element matches. Pure
     // botopink — recurses over indices through a fold that captures the
     // first hit (`-1` is preserved once set).
-    fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
+    pub fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         var out = -1;
         var i = 0;
         self.forEach({ x ->
@@ -1273,14 +1273,14 @@ pub type array<T> {
     // Build a fresh array of `length` copies of `value` — equivalent to
     // `array.repeat(value, self.length)`, but the receiver-method form
     // matches the JS prototype signature callers expect.
-    fn fill<E>(self: Self<T>, value: E) -> array<E> {
+    pub fn fill<E>(self: Self<T>, value: E) -> array<E> {
         return array.repeat(value, self.length);
     }
 
     // Partition the array into consecutive chunks of `n` elements; the last
     // chunk may be shorter when `self.length` is not divisible by `n`.
     // Negative or zero `n` returns an empty array (no infinite loop).
-    fn chunked(self: Self<T>, n: i32) -> array<Self<T>> {
+    pub fn chunked(self: Self<T>, n: i32) -> array<Self<T>> {
         var out: array<Self<T>> = [];
         if (n <= 0) return out;
         val len = self.length;
@@ -1293,7 +1293,7 @@ pub type array<T> {
     // Sliding window of length `n` over the array. Returns one window per
     // valid start offset (`self.length - n + 1` windows). Negative or zero
     // `n`, or `n > self.length`, returns an empty array.
-    fn sliding(self: Self<T>, n: i32) -> array<Self<T>> {
+    pub fn sliding(self: Self<T>, n: i32) -> array<Self<T>> {
         var out: array<Self<T>> = [];
         if (n <= 0) return out;
         val windows = self.length - n + 1;
@@ -1308,7 +1308,7 @@ pub type array<T> {
     // order (decision 217): `[1, 2, 1, 3, 2].unique()` is `[1, 2, 3]` on every
     // target. Values compare with `==` (decision 210), so records by value —
     // not `contains`, which answers the host's identity on commonJS.
-    fn unique(self: Self<T>) -> Self<T> {
+    pub fn unique(self: Self<T>) -> Self<T> {
         var out: T[] = [];
         self.forEach({ x ->
             if (!out.any({ y -> y == x })) out = out.append([x])
@@ -1708,25 +1708,25 @@ pub type Result<R, E> {
     Error(error: E),
 
     // Apply `transform` to the Ok payload; an Error is propagated untouched.
-    declare fn map<R2>(
+    pub declare fn map<R2>(
         self: Self<R, E>,
         transform: fn(value: R) -> R2,
     ) -> Result<R2, E>;
 
     // Like `map` but `transform` itself returns a Result (no nesting).
-    declare fn flatMap<R2>(
+    pub declare fn flatMap<R2>(
         self: Self<R, E>,
         transform: fn(value: R) -> Result<R2, E>,
     ) -> Result<R2, E>;
 
     // The Ok payload, or `fallback` when the receiver is an Error.
-    declare fn unwrapOr(self: Self<R, E>, fallback: R) -> R;
+    pub declare fn unwrapOr(self: Self<R, E>, fallback: R) -> R;
 
     // True when the receiver is `Ok`.
-    declare fn isOk(self: Self<R, E>) -> bool;
+    pub declare fn isOk(self: Self<R, E>) -> bool;
 
     // True when the receiver is `Error`.
-    declare fn isError(self: Self<R, E>) -> bool;
+    pub declare fn isError(self: Self<R, E>) -> bool;
 }
 
 // A `Result` value is constructed by `return`/`throw` inside a body whose
@@ -2175,7 +2175,7 @@ pub type Asset(
     size: i64,
     hash: string,
 ) {
-    declare fn text(self: Self) -> string;
+    pub declare fn text(self: Self) -> string;
 }
 
 // ── Decl reflection model (annotation processors) ────────────────────────────
@@ -2405,7 +2405,7 @@ pub type TypeInfo<T>(
     methods: __Decl__Method[],
     meta: DeclaredMeta[],
 ) {
-    declare fn all(
+    pub declare fn all(
         with: Decorator | Decorator[],
         member: ?string = null,
     ) -> Declared<unknown>[];

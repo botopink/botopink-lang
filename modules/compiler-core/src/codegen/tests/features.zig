@@ -565,7 +565,7 @@ test "js: import ---- cross-module record construct and assoc fn" {
         .{ .path = "http", .source =
         \\pub type Response(
         \\    body: string) {
-        \\    fn ok(body: string) -> Response {
+        \\    pub fn ok(body: string) -> Response {
         \\        return Response(body: body);
         \\    }
         \\}

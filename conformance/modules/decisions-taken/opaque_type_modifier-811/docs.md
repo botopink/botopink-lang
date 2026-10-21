@@ -12,7 +12,7 @@ out of a union.
 Each refusal is located: `Token(…)` written in `main` is `opaque-construction`, naming the methods that make one
 (`opaque_construction`); `t.uses` read in `main` is `opaque-field` (`opaque_field`), as a pattern of the fields is
 (`opaque_pattern`); `Token.bumped(…)`, a method without `pub`, called from another module's `main` is
-`opaque-method` (`opaque_method`).
+`method-not-pub` (`opaque_method`), as any type's is (decision 859).
 
 std's `compiler.Module` is opaque (811 (4)): `compiler.load` answers one through its method without `pub`, and its
 fields are read through `name()` and `path()` — the cells of decisions 786, 787, 792 and 806.

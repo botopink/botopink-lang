@@ -1136,12 +1136,29 @@ under a name no source spells. A method may share a field's name: outside,
 `X(…)` written outside `X`'s methods is `opaque-construction`, at the call, naming
 the `pub` methods that make one; a field read there, or a pattern of the fields
 (`case t { X(f: v) -> … }`), is `opaque-field`; a method without `pub` called from
-another module is `opaque-method`, at the call.
+another module is `method-not-pub`, at the call, as any type's is (§ Methods without `pub`).
 
 <!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_construction -->
 <!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_field -->
 <!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_method -->
 <!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_pattern -->
+
+### Methods without `pub`
+
+A method written without `pub` is private to its module, for every type (decision 859):
+`x.m(…)` or `X.m(…)` from another module is `method-not-pub`, at the call, naming the
+type and the method. A method that implements a member of a behavior the type itself
+declares `implement` for is reached through the behavior from anywhere, with or without
+`pub`; the compiler's lowering reaches one by a mark on the call it writes (decision 830).
+std's prelude writes every member of a primitive `pub` — `pub fn`, `pub declare fn`,
+`pub val length: i32;` — and a member a decorator adds with `decl.addMember` is `pub`
+(decision 887). The `.d.ts` declares a type's `pub` methods only.
+
+<!-- example: modules/decisions-taken/method_private_to_module-859/cells/method_through_behavior -->
+<!-- example: modules/decisions-taken/method_private_to_module-859/cells/method_private_to_module -->
+<!-- example: modules/decisions-taken/added_member_is_pub-887/cells/added_member_is_pub -->
+
+An extension block of another module met by such a method is refused at the block (decision 886, § behavior).
 
 ### type — enums
 

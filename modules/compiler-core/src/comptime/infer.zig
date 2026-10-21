@@ -59,6 +59,7 @@ const typedMeta = @import("typed_meta.zig");
 const typeIdentity = @import("type_identity.zig");
 const expandCall = @import("expand_call.zig");
 const opaqueTypes = @import("opaque_types.zig");
+const methodVisibility = @import("method_visibility.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -17999,6 +18000,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     (std.mem.eql(u8, ia.member, "length") or std.mem.eql(u8, ia.member, "len")))
                 {
                     const k: envMod.PrimKind = if (std.mem.eql(u8, recvNamed.name, "string")) .string else .array;
+                    // Decision 887 (2) — the property is the table's, `pub val length: i32;`.
+                    try methodVisibility.refusePrimitiveMember(env, primitiveTable(env, recvNamed.name), recvNamed.name, ia.member, loc);
                     try env.instanceLowerings.put(loc, .{ .prim = k });
                     outType = try env.namedType("i32");
                 }
@@ -22249,21 +22252,33 @@ fn checkOpaqueCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
         const raw = recv.identifier.kind.ident;
         if (env.localBindDepth(raw) != null) return;
         const name = env.importedTypeAliases.get(raw) orelse raw;
-        return opaqueTypes.refuseMethod(env, name, call.callee, c.loc, call.lowering);
+        return methodVisibility.refuseCall(env, name, call.callee, c.loc, call.lowering);
     }
     if (env.localBindDepth(call.callee) != null) return;
     const name = env.importedTypeAliases.get(call.callee) orelse call.callee;
     return opaqueTypes.refuseConstruction(env, name, c.loc, call.lowering);
 }
 
-/// Decision 811 (1) — `x.m(…)` on a value of an opaque type, `m` written
-/// without `pub`, outside the type's own methods.
+/// Decision 859 — `x.m(…)` on a value of a type of another module, `m`
+/// written without `pub` (`method_visibility.zig`); a primitive's member is
+/// read from its table of `primitives.bp` (887 (2)).
 fn checkOpaqueMethodCall(env: *Env, typed: TypedExpr, c: ast.CallExprOf(.untyped)) InferError!void {
     if (typed != .call or typed.call.kind != .call) return;
     const call = typed.call.kind.call;
     const recv = call.receiver orelse return;
     const name = nominalName(recv.getType()) orelse return;
-    return opaqueTypes.refuseMethod(env, name, call.callee, typed.call.loc, c.kind == .call and c.kind.call.lowering);
+    const lowering = c.kind == .call and c.kind.call.lowering;
+    if (primitiveOfInterface(name)) |p| {
+        if (lowering) return;
+        return methodVisibility.refusePrimitiveMember(env, primitiveTable(env, p), p, call.callee, typed.call.loc);
+    }
+    return methodVisibility.refuseCall(env, name, call.callee, typed.call.loc, lowering);
+}
+
+/// The member table of `primitives.bp` the primitive `name` holds its own
+/// members in (decision 641), as std registered it.
+fn primitiveTable(env: *Env, name: []const u8) ?ast.BehaviorDecl {
+    return env.stdBehaviorBase.get(name) orelse env.assocInterfaceDecls.get(name);
 }
 
 fn refuseContextHookWithoutUse(env: *Env, name: []const u8, loc: ast.Loc) InferError {

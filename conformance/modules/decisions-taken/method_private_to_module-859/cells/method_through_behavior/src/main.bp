@@ -1,0 +1,20 @@
+//// Decision 859 (2) — a method that implements a member of a behavior the type declares `implement` for
+//// is reached through the behavior from anywhere, with or without `pub`: called on the type's value or
+//// through the behavior from another module, it stands. A method without `pub` is called anywhere in
+//// its own module, and a `pub` one from every module.
+
+import {io.terminal.print} from "std";
+mod box;
+import {box.Box, box.Labelled, box.twice};
+
+fn show(l: Labelled) -> string {
+    return l.label();
+}
+
+pub fn main() -> void {
+    val b = Box(n: 2);
+    print(b.label());
+    print(show(b));
+    print(b.doubled().n);
+    print(twice(b).n);
+}

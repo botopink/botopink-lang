@@ -1,5 +1,5 @@
 pub type Policy(name: string) {
-    fn describe(self: Self) -> string {
+    pub fn describe(self: Self) -> string {
         return "b:" + self.name;
     }
 }

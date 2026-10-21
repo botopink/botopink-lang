@@ -1,7 +1,7 @@
 //// A site library's `App` (jhonstart's shape).
 
 pub type App(title: string) {
-    fn render(self: Self) -> string {
+    pub fn render(self: Self) -> string {
         return "site:" + self.title;
     }
 }

@@ -1186,6 +1186,8 @@ fn mergeMembers(
         // wrote it (`MemberContribution.renames`).
         var method = try member_fn.renameMethod(arena, parsed_method, m.renames);
         try std_calls.rewriteWith(arena, m.stdCalls, ast.BehaviorMethod, &method);
+        // Decision 887 (1) — a member a decorator adds reaches every importer.
+        method.isPub = true;
         line_shift += std.mem.count(u8, m.source, "\n") + 1;
         offset_shift += m.source.len + 1;
 
@@ -2278,7 +2280,7 @@ pub const decl_reflection_src =
     \\pub type __Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
     \\pub type Asset(path: string, bytes: bytes, size: i64, hash: string) {
-    \\    declare fn text(self: Self) -> string;
+    \\    pub declare fn text(self: Self) -> string;
     \\}
     \\pub behavior Decorator {
     \\    fn same(self: Self, other: Decorator) -> bool;
@@ -2322,15 +2324,15 @@ pub const decl_reflection_src =
     \\    module: string,
     \\    owner: ?Declared<unknown>,
     \\    package: string) {
-    \\    declare fn attr(self: Self, name: string) -> ?string;
-    \\    declare fn fail(self: Self, message: string) -> void;
-    \\    declare fn failAt(self: Self, span: __Span, message: string) -> void;
-    \\    declare fn addMember(self: Self, source: string) -> void;
-    \\    declare fn setMeta(self: Self, key: string, value: string) -> void;
-    \\    declare fn addMeta<T>(self: Self, value: T) -> void;
-    \\    declare fn addType(self: Self, name: string, source: string) -> void;
-    \\    declare fn compile(self: Self, executor: fn()) -> void;
-    \\    declare fn implement(self: Self, source: Implementation) -> void;
+    \\    pub declare fn attr(self: Self, name: string) -> ?string;
+    \\    pub declare fn fail(self: Self, message: string) -> void;
+    \\    pub declare fn failAt(self: Self, span: __Span, message: string) -> void;
+    \\    pub declare fn addMember(self: Self, source: string) -> void;
+    \\    pub declare fn setMeta(self: Self, key: string, value: string) -> void;
+    \\    pub declare fn addMeta<T>(self: Self, value: T) -> void;
+    \\    pub declare fn addType(self: Self, name: string, source: string) -> void;
+    \\    pub declare fn compile(self: Self, executor: fn()) -> void;
+    \\    pub declare fn implement(self: Self, source: Implementation) -> void;
     \\}
     \\pub type __Source(file: string, line: i32, col: i32)
     \\pub type __ExprContext(source: __Source, text: string, multiline: bool)

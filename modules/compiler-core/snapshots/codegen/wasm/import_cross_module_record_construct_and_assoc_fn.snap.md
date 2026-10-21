@@ -2,7 +2,7 @@
 ```botopink
 pub type Response(
     body: string) {
-    fn ok(body: string) -> Response {
+    pub fn ok(body: string) -> Response {
         return Response(body: body);
     }
 }

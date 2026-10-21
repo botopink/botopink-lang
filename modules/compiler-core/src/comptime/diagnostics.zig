@@ -356,9 +356,6 @@ pub const opaque_construction: []const u8 = "opaque-construction";
 /// Decision 811 (1) — a field of an opaque type read (or opened by a pattern)
 /// outside its own methods.
 pub const opaque_field: []const u8 = "opaque-field";
-/// Decisions 811 (1), 814 (2) — a method of an opaque type written without
-/// `pub`, called outside the type's module.
-pub const opaque_method: []const u8 = "opaque-method";
 /// Decision 793 (1) — a `return` or a `throw` inside a top-level `comptime
 /// { … }` block: a block is a build body that answers nothing.
 pub const comptime_block_exit: []const u8 = "comptime-block-exit";
@@ -468,9 +465,10 @@ pub const external_on_behavior: []const u8 = "external-on-behavior";
 /// the implementing type (a required member and an overridden `default fn`
 /// alike, a type's own clause and an extension block alike).
 pub const implement_signature_differs: []const u8 = "implement-signature-differs";
-/// Decisions 859, 886 — a method written without `pub` reached from another
-/// module: here, a type's own method that would meet an extension block's
-/// contract from a block outside the type's module.
+/// Decisions 859, 886, 887 — a method (or a primitive's property) written
+/// without `pub` reached from another module: a call of it
+/// (`method_visibility.zig`), or a type's own method that would meet an
+/// extension block's contract from a block outside the type's module.
 pub const method_not_pub: []const u8 = "method-not-pub";
 /// Decision 621 — a second unlabelled argument of a cell of
 /// `Implementation`: only the `template` is positional.
@@ -1055,7 +1053,7 @@ pub const all_codes = [_][]const u8{
     load_no_main,
     opaque_construction,
     opaque_field,
-    opaque_method,
+    method_not_pub,
     comptime_block_exit,
     bytes_widened,
     bytes_type_test,

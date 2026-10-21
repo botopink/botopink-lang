@@ -5,13 +5,13 @@
 //! written only inside `X`'s own methods (`opaque-construction`) and a field
 //! is read only there (`opaque-field`) — type-private, not elsewhere in `X`'s
 //! module either (decision 814 (1)); a method written without `pub` is called
-//! only in `X`'s module (`opaque-method`, 814 (2)). Outside, an `X` is named, passed,
+//! only in `X`'s module, as every type's is (`method-not-pub`, decision 859,
+//! `method_visibility.zig`). Outside, an `X` is named, passed,
 //! stored, compared with `==` and tested with `is` — never built nor opened.
 //!
 //! "Inside `X`'s own methods" is `Env.opaqueOwner`, set by `inferTypeMethods`
 //! while it checks a method body of `X`; "`X`'s module" is `Env.ownDecls`. The
-//! compiler's own lowering may build an `X` and call a method of `X` written
-//! without `pub` from any module: a call node the lowering marked
+//! compiler's own lowering may build an `X` from any module: a call node the lowering marked
 //! (`CallExpr.lowering`, decision 830) is admitted, never a line range.
 
 const std = @import("std");
@@ -75,23 +75,6 @@ pub fn refusePattern(env: *Env, name: []const u8) InferError!void {
     if (inside(env, r)) return;
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an opaque type — a pattern of its fields opens it, and only its own methods do (decisions 811, 814)", .{ diagnostics.opaque_field, r.name });
     env.lastError = TypeError.custom(msg, "Test the type with `is`, or read what its `pub` methods answer.");
-    return error.TypeError;
-}
-
-/// `x.m(…)` / `X.m(…)` calling `name`'s method `method`: a method written
-/// without `pub` is called only in `X`'s module (decision 814 (2)) and by the
-/// compiler's lowering (a marked call).
-pub fn refuseMethod(env: *Env, name: []const u8, method: []const u8, loc: ast.Loc, lowering: bool) InferError!void {
-    const r = opaqueRecord(env, name) orelse return;
-    const m = env.getInherentMethodDecl(r.name, method) orelse return;
-    if (m.isPub or inside(env, r) or env.ownDecls.contains(r.name) or lowering) return;
-    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is written without `pub` — a method of the opaque type `{s}` without `pub` is called only in its own module (decisions 811, 814)", .{ diagnostics.opaque_method, r.name, method, r.name });
-    const madeBy = try makersText(env, r);
-    const hint = if (madeBy.len > 0)
-        try std.fmt.allocPrint(env.arena, "Call one of its `pub` methods: {s}.", .{madeBy})
-    else
-        "Call one of its `pub` methods.";
-    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
     return error.TypeError;
 }
 
