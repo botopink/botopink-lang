@@ -13800,6 +13800,12 @@ fn isPrintBuiltin(name: []const u8) bool {
 /// texts are equal.
 fn textShapeOf(out: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, ty: *T.Type) !void {
     const d = ty.deref();
+    // A function value's parameters (144 B-115): `(`…`)`.
+    if (d.* == .func) {
+        try out.append(arena, '(');
+        for (d.func.params) |p| try textShapeOf(out, arena, p);
+        return out.append(arena, ')');
+    }
     if (d.* != .named) return out.append(arena, '_');
     const n = d.named;
     if (n.args.len == 0) return out.append(arena, if (std.mem.eql(u8, n.name, "f64") or std.mem.eql(u8, n.name, "f32")) 'f' else '_');
@@ -13817,7 +13823,7 @@ fn textShapeOf(out: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, ty: *
 }
 
 /// 144 B-78 (decision 521) — every value written as text whose type holds a
-/// float, as `InstanceLowering.text_value` at its loc plus
+/// float (or a tuple, 144 B-115), as `InstanceLowering.text_value` at its loc plus
 /// `ast.text_synthetic_col`: commonJS writes that float through `__bp_f64`
 /// where its own reading of the tree cannot type it (an imported record's
 /// field, a generic method's answer). A loc inferred more than once records
@@ -13830,11 +13836,18 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         // Decision 530 — a hole the text helper writes: recorded as it is keyed.
         // 144 B-114 — a generic call's argument: keyed already, and like a value
         // written as text, recorded only when its type holds a float.
-        const is_arg = e.key_ptr.col >= ast.text_arg_col;
-        const is_hole = !is_arg and e.key_ptr.col >= ast.text_hole_col;
+        // 144 B-115 — a generic fn named as a value: keyed already, recorded
+        // as an argument is.
+        const is_fn_value = e.key_ptr.col >= ast.text_fn_value_col;
+        const is_arg = !is_fn_value and e.key_ptr.col >= ast.text_arg_col;
+        const is_hole = !is_arg and !is_fn_value and e.key_ptr.col >= ast.text_hole_col;
         var first: std.ArrayListUnmanaged(u8) = .empty;
         try textShapeOf(&first, arena, tys[0]);
-        if (!is_hole and std.mem.indexOfScalar(u8, first.items, 'f') == null) continue;
+        const holds_float = std.mem.indexOfScalar(u8, first.items, 'f') != null;
+        const holds_tuple = std.mem.indexOfScalar(u8, first.items, '#') != null;
+        // 144 B-115 — a tuple too: JavaScript holds it as an array, and
+        // `@print` writes `#(1, 2)` only where its shape says so.
+        if (!is_hole and !holds_float and !holds_tuple) continue;
         const agree = for (tys[1..]) |t| {
             var other: std.ArrayListUnmanaged(u8) = .empty;
             try textShapeOf(&other, arena, t);
@@ -13843,7 +13856,7 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         if (!agree) continue;
         const ref = (try typeRefOfType(arena, env, tys[0])) orelse continue;
         var key = e.key_ptr.*;
-        if (!is_hole and !is_arg) key.col += ast.text_synthetic_col;
+        if (!is_hole and !is_arg and !is_fn_value) key.col += ast.text_synthetic_col;
         const slot = try out.getOrPut(key);
         if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
     }
@@ -17839,6 +17852,15 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 // scheme's `.generic` vars must never reach `unify`.
                 const inst = try instantiateGenericType(env, ty);
                 try noteComponentValue(env, name, inst, loc);
+                // 144 B-115 (decision 673) — a module fn of type parameters
+                // named as a value: commonJS hands its body the print shape of
+                // each, read off the function type this use instantiates
+                // (`text_fn_value_col`).
+                if (inst != ty and env.localBindDepth(name) == null and inst.deref().* == .func) {
+                    var key = loc;
+                    key.col += ast.text_fn_value_col;
+                    try noteTextValue(env, key, inst);
+                }
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = inst, .kind = .{ .ident = name } } };
             }
             env.lastError = try unboundAt(env, name, loc);
@@ -21620,6 +21642,17 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8,
                     .function => |f| blk: {
                         const d = argTy.deref();
                         if (d.* != .func) continue;
+                        // 144 B-115 — a function named as the argument
+                        // (`xs.map(show)`, `show` generic) takes the declared
+                        // parameter types where its own are still open, so
+                        // the instance this use makes is known (commonJS
+                        // reads its print shapes off it).
+                        if (typedArgs[i].value.* == .identifier and f.params.len == d.func.params.len) for (f.params, d.func.params) |fp, ap| {
+                            if (ap.deref().* != .typeVar) continue;
+                            const want = try resolveTypeRefInContext(env, fp, gm);
+                            if (!typeIsGround(want, 0)) continue;
+                            try unifyAt(env, ap, want, typedArgs[i].value.getLoc());
+                        };
                         break :blk switch (f.returnType.*) {
                             .named => |n| .{ n, d.func.ret },
                             else => .{ null, argTy },
@@ -25989,7 +26022,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // 144 B-114 (decision 521) — each argument of a generic fn's call:
             // commonJS hands the callee's body the print shape of each type
             // parameter, read off the argument it binds (`text_arg_col`).
-            if (!localCallee and calleeType != ctorInstantiated) for (typedArgs) |ta| {
+            // 144 B-115 — and of a generic record's constructor: the value
+            // carries the shape of each field a type parameter types.
+            if (!localCallee and (calleeType != ctorInstantiated or ctorInstantiated != calleeTypeRaw)) for (typedArgs) |ta| {
                 var key = ta.value.getLoc();
                 key.col += ast.text_arg_col;
                 try noteTextValue(env, key, ta.value.getType());

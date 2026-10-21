@@ -962,6 +962,7 @@ class Dict {
 Dict.prototype.__bp = "Dict";
 Dict.prototype.__bp_b_Index = true;
 Dict.prototype.__bp_b_Display = true;
+Dict.prototype.__bp_s = { pairs: ["[", ["#", null, null]] };
 exports.Dict = Dict;
 
 // One key or value of `Dict.display`: a string quoted, anything else as it

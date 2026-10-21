@@ -93,6 +93,12 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_print_as(shapes) {
+    const a = [];
+    const f = Array.from(Array.from(arguments).slice(1), (v, i) => __bp_show(v, shapes[i], true, a)).join(" ");
+    console.log.apply(console, [f, ...a]);
+}
+
 // behavior array
 //   length: i32
 //   fn at(...)
@@ -254,7 +260,7 @@ function main() {
     const sl = xs.slice(0, 2);
     __bp_print(sl.length);
     const ps = [[1, "a"], [2, "b"]];
-    __bp_print(__bp_array_at(ps, 1));
+    __bp_print_as([["#", null, null]], __bp_array_at(ps, 1));
 }
 
 function _botopink_main() {
@@ -278,5 +284,5 @@ Object.defineProperty(exports, "__bp_priv__", { value: { main } });
 2
 2
 2
-[2, "b"]
+#(2, "b")
 ```

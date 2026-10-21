@@ -693,6 +693,15 @@ pub const text_arg_col: usize = 8_000_000;
 /// synthetic columns, so the answer is keyed by a loc no written node has.
 pub const catalogue_default_col: usize = 9_000_000;
 
+/// The column added to the loc of a generic fn named as a value (`xs.map(show)`)
+/// to key the `text_value` lowering of the function type that use instantiates
+/// when a parameter of it holds a float or a tuple (144 B-115, decision 673;
+/// `infer.textValueLowerings`): commonJS reads from it the print shapes the
+/// arrow it writes in place of the name hands the body. Far past the other
+/// synthetic columns, so an argument's `text_arg_col` over a synthetic loc
+/// never reaches it.
+pub const text_fn_value_col: usize = 100_000_000;
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {

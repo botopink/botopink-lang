@@ -2626,6 +2626,48 @@ const Emitter = struct {
         return try self.b.arrowExpr(params, try self.b.call(.{ .ident = name }, args));
     }
 
+    /// 144 B-115 (decision 673) — a generic fn that writes a `T` as text
+    /// (`shape_fns`) named as a value anywhere a written function type does not
+    /// say its parameters (`xs.map(show)`, `val f = show`): the value is an
+    /// arrow of the fn's own arity, `(a0) => show(a0, "f")`, so a host callback's
+    /// extra arguments (`map`'s index and array) never land in the hidden
+    /// slots, and each shape is read off the function type the checker says
+    /// this use instantiates (`ast.text_fn_value_col`); a shape it does not
+    /// know is left out (the engine's text). Null for any other name.
+    fn shapedFnRef(self: *Emitter, name: []const u8, loc: ast.Loc) !?js.Expr {
+        if (self.local_vars.contains(name) or self.print_shapes.contains(name) or self.eq_types.contains(name)) return null;
+        const f = self.shape_fns.get(name) orelse return null;
+        const shapes = try self.arena().alloc(js.Expr, f.genericParams.len);
+        var last: usize = 0;
+        if (self.lowerings) |lw| {
+            var key = loc;
+            key.col += ast.text_fn_value_col;
+            if (lw.get(key)) |il| if (il == .text_value and il.text_value == .function) {
+                const given = il.text_value.function.params;
+                if (given.len == f.params.len) for (f.genericParams, 0..) |gp, gi| {
+                    shapes[gi] = .null_;
+                    for (f.params, given) |p, g| {
+                        const sh = (try self.typeShape(g)) orelse continue;
+                        if (shapeAtParam(p.typeRef, sh, gp.name)) |at| {
+                            shapes[gi] = at;
+                            last = gi + 1;
+                            break;
+                        }
+                    }
+                };
+            };
+        }
+        const params = try self.arena().alloc(js.Param, f.params.len);
+        const args = try self.arena().alloc(js.Expr, f.params.len + last);
+        for (0..f.params.len) |i| {
+            const pname = try std.fmt.allocPrint(self.arena(), "__a{d}", .{i});
+            params[i] = js.Param.id(pname);
+            args[i] = .{ .name = pname };
+        }
+        @memcpy(args[f.params.len..], shapes[0..last]);
+        return try self.b.arrowExpr(params, try self.b.call(.{ .ident = name }, args));
+    }
+
     /// 144 B-115 (decision 673) — whether `t` names one of the type
     /// parameters `gps`, or holds one.
     fn mentionsTypeParam(t: ast.TypeRef, gps: []const ast.GenericParam) bool {
@@ -2664,7 +2706,12 @@ const Emitter = struct {
                 }
             } else sh = try self.typeShape(f.typeRef);
             const got = sh orelse continue;
-            if (!shapeHoldsFloat(got)) continue;
+            // 144 B-115 — a tuple in a type parameter's slot prints as one.
+            if (!shapeHoldsFloat(got) and !shapeHoldsTuple(got)) continue;
+            // What the class's prototype already says of the field
+            // (`protoShapes`, `Dict`'s `pairs: array<#(K, V)>`) the value
+            // need not carry.
+            if (try self.typeShape(f.typeRef)) |proto| if (shapeEql(proto, got)) continue;
             try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = got } });
         }
         if (props.items.len == 0) return null;
@@ -3221,17 +3268,42 @@ const Emitter = struct {
         };
     }
 
+    /// Whether two static print shapes are the same.
+    fn shapeEql(a: js.Expr, b: js.Expr) bool {
+        return switch (a) {
+            .null_ => b == .null_,
+            .quoted => |q| b == .quoted and std.mem.eql(u8, q, b.quoted),
+            .array => |x| b == .array and x.elems.len == b.array.elems.len and for (x.elems, b.array.elems) |l, r| {
+                if (!shapeEql(l, r)) break false;
+            } else true,
+            else => false,
+        };
+    }
+
+    /// 144 B-115 — whether the print shape `sh` places a tuple anywhere.
+    fn shapeHoldsTuple(sh: js.Expr) bool {
+        if (isTupleShape(sh)) return true;
+        return switch (sh) {
+            .array => |a| for (a.elems) |el| {
+                if (shapeHoldsTuple(el)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
     /// `<Class>.prototype.__bp_s = { x: "f" };` — the print shape of each
     /// field whose declared type holds a float (144 B-78, decision 521), which
     /// `__bp_show` hands each field's value: JavaScript has one number type,
     /// so `Pt(x: 1.0)` printed `Pt(x: 1)`. On the prototype, as `__bp` is, so
-    /// a value carries it into any module that prints it. Null when no
-    /// field holds a float.
+    /// a value carries it into any module that prints it. A tuple field the
+    /// same (144 B-115): `P(t: #(1, 2))` printed `P(t: [1, 2])`. Null when no
+    /// field holds a float or a tuple.
     fn protoShapes(self: *Emitter, class_name: []const u8, fields: anytype) !?js.Stmt {
         var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
         for (fields) |f| {
             const sh = (try self.typeShape(f.typeRef)) orelse continue;
-            if (!shapeHoldsFloat(sh)) continue;
+            // 144 B-115 — and a tuple, which JavaScript holds as an array.
+            if (!shapeHoldsFloat(sh) and !shapeHoldsTuple(sh)) continue;
             try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = sh } });
         }
         if (props.items.len == 0) return null;
@@ -5058,6 +5130,7 @@ const Emitter = struct {
                 // `self` as a real parameter (`self_is_param`).
                 .ident => |n| {
                     if (std.mem.eql(u8, n, "self") and !self.self_is_param) return .this;
+                    if (try self.shapedFnRef(n, id.loc)) |arrow| return arrow;
                     return .{ .ident = n };
                 },
                 .dotIdent => |n| return .{ .name = n },

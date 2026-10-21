@@ -149,9 +149,17 @@ codegen/
   `f64`, `["[", "f"]` for an `f64[]`), which `typeShape` answers for `T` in
   its body, and each direct call hands it in (`typeArgShapes`), read off the
   argument's own print shape or the checker's type recorded at its loc plus
-  `ast.text_arg_col`. A call that omits it — a fn value, a host or TypeScript
-  caller, a call short of its defaulted parameters, another module — answers
-  the old text; the `.d.ts` and the `T` values are unchanged.
+  `ast.text_arg_col`. Such a fn named as a value without a written function
+  type (`xs.map(show)`, 144 B-115) is an arrow of its own arity
+  (`shapedFnRef`), so a host callback's extra arguments never land in the
+  hidden slots, handing the shapes of the function type the checker recorded
+  at the name's loc plus `ast.text_fn_value_col`. A tuple is a shape as a
+  float is (144 B-115): a print argument, a generic call's or a generic
+  record constructor's argument, a record field (`__bp_s`) whose type holds one
+  is written `#(1, 2)`, not as the array JavaScript holds. A call that omits
+  the shapes — a host or TypeScript caller, a call short of its defaulted
+  parameters, another module — answers the old text; the `.d.ts` and the `T`
+  values are unchanged.
   A botopink value is told from a host object by the `__bp` marker its
   prototype carries (decision 5) — never by a `constructor` test, so a `Map` or
   a `@Result`'s `{ ok }` keeps `console.log`'s own text. The name comes from

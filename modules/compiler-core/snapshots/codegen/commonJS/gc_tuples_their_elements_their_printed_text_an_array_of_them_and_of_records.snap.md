@@ -118,7 +118,7 @@ function main() {
 }
     const ts = [[1, "a"], [2, "b"]];
     __bp_print_as([["[", ["#", null, null]]], ts);
-    __bp_print(__bp_array_at(ts, 0));
+    __bp_print_as([["#", null, null]], __bp_array_at(ts, 0));
 }
 exports.main = main;
 
@@ -150,5 +150,5 @@ true
 p
 q
 [#(1, "a"), #(2, "b")]
-[1, "a"]
+#(1, "a")
 ```
