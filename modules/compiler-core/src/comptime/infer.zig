@@ -5747,7 +5747,7 @@ fn refuseUnknownAnnotationList(env: *Env, program: ast.Program, anns: []const as
         const msg = if (std.mem.eql(u8, family, "Stage") or std.mem.eql(u8, family, "BeamMemory")) msg: {
             const case = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[i + 1 ..] else "<Case>";
             const args = a.writtenArgs();
-            const inner = if (args.len == 0) "" else try std.fmt.allocPrint(env.arena, "({s})", .{try joinAnnotationArgs(env, a)});
+            const inner = if (args.len == 0 or std.mem.eql(u8, family, "BeamMemory")) "" else try std.fmt.allocPrint(env.arena, "({s})", .{try joinAnnotationArgs(env, a)});
             break :msg try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` is gone — write `#[{s}(.{s}{s})]` (decisions 663, 774)", .{ diagnostics.unknown_annotation, a.name, if (std.mem.eql(u8, family, "Stage")) ast.stage_annotation else ast.beam_memory_annotation, case, inner });
         } else try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation", .{ diagnostics.unknown_annotation, a.name });
         var e = TypeError.custom(msg, "An annotation is a decorator written without the `@`: `#[compiler.external(…)]`, `#[compiler.stage(.Any)]`, `#[compiler.beamMemory(.<Mode>)]`, or a decorator of your own.");
@@ -9096,7 +9096,7 @@ fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
 /// annotation means) or `PersistentTerm`, with no argument. Off the BEAM the
 /// annotation is accepted and changes nothing (547, amending 167).
 fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
-    _ = bindTy;
+    if (v.mutable) try refuseModuleVarHoldingTask(env, v, bindTy);
     const members = [_][]const u8{ "Ets", "PersistentTerm" };
     for (v.annotations) |a| {
         const arg = a.beamMemoryOf() orelse continue;
@@ -9125,6 +9125,53 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
             try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — `.{s}` takes none", .{ item.label orelse item.value, arg.case }),
             try std.fmt.allocPrint(env.arena, "Write `#[compiler.beamMemory(.{s})]`.", .{arg.case}),
         );
+    }
+}
+
+/// Decision 547 (iii) — a module `var` whose type holds an `Async` is refused
+/// on every target: a task never crosses heaps (B-30-b), and a module `var` is
+/// one value for the whole program. "Holds" reads through every type
+/// constructor: a type argument (`Async<T>`, an array, an optional, a `Dict`),
+/// a tuple element, an anonymous record field and the fields of a declared
+/// record, struct or enum variant. A function type holds no task, only the
+/// closure. Located at the written type, else at the name.
+fn refuseModuleVarHoldingTask(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    if (!typeHoldsAsync(env, bindTy, &seen, 0)) return;
+    const hasAnn = v.typeAnnotation != null and (v.typeLoc.line != 0 or v.typeLoc.col != 0);
+    const loc = if (hasAnn) v.typeLoc else if (v.nameLoc.line != 0) v.nameLoc else v.value.getLoc();
+    return failAt(
+        env,
+        loc,
+        try std.fmt.allocPrint(env.arena, "{s}: the module `var` `{s}` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))", .{ diagnostics.module_var_holds_task, v.name }),
+        "Keep the task in a local and store its settled value: `var total = 0;` … `total = await t;`.",
+    );
+}
+
+fn typeHoldsAsync(env: *Env, t: *T.Type, seen: *std.StringHashMapUnmanaged(void), depth: u32) bool {
+    if (depth > 32) return false;
+    const d = t.deref();
+    switch (d.*) {
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "Async")) return true;
+            for (n.args) |a| if (typeHoldsAsync(env, a, seen, depth + 1)) return true;
+            if (seen.contains(n.name)) return false;
+            seen.put(env.arena, n.name, {}) catch return false;
+            if (env.lookupTypeDef(n.name)) |td| {
+                if (td.fields()) |flds| for (flds) |f| if (typeHoldsAsync(env, f.type_, seen, depth + 1)) return true;
+                if (td == .enum_) for (td.enum_.variants) |vr| for (vr.fields) |f| if (typeHoldsAsync(env, f.type_, seen, depth + 1)) return true;
+            }
+            return false;
+        },
+        .union_ => |us| {
+            for (us) |u| if (typeHoldsAsync(env, u, seen, depth + 1)) return true;
+            return false;
+        },
+        .record => |fs| {
+            for (fs) |f| if (typeHoldsAsync(env, f.type_, seen, depth + 1)) return true;
+            return false;
+        },
+        .func, .typeVar => return false,
     }
 }
 

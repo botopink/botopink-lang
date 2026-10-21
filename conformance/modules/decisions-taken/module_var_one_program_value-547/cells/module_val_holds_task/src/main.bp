@@ -1,0 +1,12 @@
+//// Decision 547 (iii) refuses a module `var` whose type holds an `Async`, and only a `var`: a
+//// module `val` is bound once and never reassigned. This `val` holding a task is accepted.
+
+import {io.terminal.print} from "std";
+
+val pending: Async<i32> = async {
+    return 7;
+};
+
+pub async fn main() -> Async<void> {
+    print(await pending);
+}

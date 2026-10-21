@@ -385,6 +385,9 @@ pub const comptime_interrupted: []const u8 = "comptime-interrupted";
 /// invocation is independent. Fires from `comptime/decorator_eval.zig`
 /// `moduleVarWrite`, located at the write.
 pub const decorator_writes_module_var: []const u8 = "decorator-writes-module-var";
+/// Decision 547 (iii) — a module `var` whose type holds an `Async`: a task
+/// never crosses heaps. Located at the `var`'s written type, else its name.
+pub const module_var_holds_task: []const u8 = "module-var-holds-task";
 /// Decision 297 — `x is type` where `x` is no `comptime x: V | type<T>`
 /// parameter.
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
@@ -1061,6 +1064,7 @@ pub const all_codes = [_][]const u8{
     comptime_badarith,
     comptime_interrupted,
     decorator_writes_module_var,
+    module_var_holds_task,
     is_type_outside_value_or_type,
     type_arg_read,
     is_type_parameter,

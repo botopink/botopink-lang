@@ -1253,7 +1253,7 @@ test "infer: `beamMemory` accepts its two members, and every write of a module `
 
 test "infer error: `#[@BeamMemory.<Mode>]` and `#[@Stage.Any]` are refused, naming `compiler`'s member (decisions 663, 774)" {
     const cases = [_][2][]const u8{
-        .{ "#[@BeamMemory.Ets(keyed: true)]\nvar x: i32 = 0;", "`#[@BeamMemory.Ets]` is gone — write `#[compiler.beamMemory(.Ets(keyed: true))]` (decisions 663, 774)" },
+        .{ "#[@BeamMemory.Ets(keyed: true)]\nvar x: i32 = 0;", "`#[@BeamMemory.Ets]` is gone — write `#[compiler.beamMemory(.Ets)]` (decisions 663, 774)" },
         .{ "#[@BeamMemory.ProcessDict]\nvar x: i32 = 0;", "`#[@BeamMemory.ProcessDict]` is gone — write `#[compiler.beamMemory(.ProcessDict)]` (decisions 663, 774)" },
         .{ "#[@Stage.Any]\nfn f() -> i32 { return 1; }", "`#[@Stage.Any]` is gone — write `#[compiler.stage(.Any)]` (decisions 663, 774)" },
         .{ "#[beamMemory(.Ets)]\nvar x: i32 = 0;", "`#[beamMemory(…)]` is a member of `compiler` — write `#[compiler.beamMemory(.Ets)]` (decision 774)" },
