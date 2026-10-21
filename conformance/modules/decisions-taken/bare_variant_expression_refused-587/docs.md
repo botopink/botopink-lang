@@ -1,6 +1,7 @@
 # Decision 587 — (a), with B-22-a (the same question): a bare variant in expression position is refused at the call, located, naming `E.T
 
 [run/src/cases/decorator_arg_variant_constructor/mod.bp](run/src/cases/decorator_arg_variant_constructor/mod.bp)
+[cells/dot_variant_std_namespace_argument/src/main.bp](cells/dot_variant_std_namespace_argument/src/main.bp)
 [refused/src/cases/enum_variant_bare_call_refused/mod.bp](refused/src/cases/enum_variant_bare_call_refused/mod.bp)
 [refused/src/cases/enum_variant_bare_unit_refused/mod.bp](refused/src/cases/enum_variant_bare_unit_refused/mod.bp)
 [run/src/cases/enum_variant_labelled_defaults/mod.bp](run/src/cases/enum_variant_labelled_defaults/mod.bp)

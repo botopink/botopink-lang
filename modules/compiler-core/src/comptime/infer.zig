@@ -24802,10 +24802,24 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 if (!env.namespaces.modules.contains(ns)) break :blk null;
                 break :blk ns;
             };
+            // 144 B-120 — `process.onSignal(.Term, h)` through a std module
+            // namespace: the std function's parameters are the expectation,
+            // as a program module's (above) and a leaf import's are.
+            const stdNamespaceKey: ?[]const u8 = blk: {
+                if (call.is_builtin or call.calleeExpr != null or namespaceCallee != null) break :blk null;
+                const r = call.receiver orelse break :blk null;
+                if (r.* != .identifier or r.identifier.kind != .ident) break :blk null;
+                const key = env.stdImports.get(r.identifier.kind.ident) orelse break :blk null;
+                const exports = env.stdModules.get(key) orelse break :blk null;
+                if (!exports.contains(call.callee)) break :blk null;
+                break :blk key;
+            };
             const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn|
                 env.ctorParams.get(qn)
             else if (namespaceCallee) |ns|
                 env.namespaces.params.get(try envMod.NamespaceImports.paramsKey(env.arena, ns, call.callee))
+            else if (stdNamespaceKey) |key|
+                try stdFnParams(env, key, call.callee)
             else
                 calleeParams(env, call.callee);
             if (call.receiver == null) if (declParamsAst) |dps| try refuseInlineFieldsAcrossModules(env, call.callee, dps, call.args, loc);
@@ -24841,6 +24855,13 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     if (env.namespaces.paths.get(ns)) |path| if (env.typeDeclRegistry) |reg| if (reg.get(path)) |decls| {
                         try registerImportedSignatureClosure(env, decls, exported);
                     };
+                    break :blk if (inst.* == .func) inst.func.params else null;
+                }
+                if (stdNamespaceKey) |key| {
+                    const exported = env.stdModules.get(key).?.get(call.callee).?;
+                    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+                    defer seen.deinit();
+                    const inst = (try instantiateType(env, exported, &seen, .allVars)).deref();
                     break :blk if (inst.* == .func) inst.func.params else null;
                 }
                 if (call.receiver != null or call.is_builtin) break :blk null;
