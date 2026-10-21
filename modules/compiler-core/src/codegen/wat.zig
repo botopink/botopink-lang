@@ -22613,12 +22613,15 @@ const Emitter = struct {
                 };
                 if (!isParam(n, a, b) or !self.isArrayExpr(arg)) return null;
                 if (self.elemRecordOf(arg)) |r| return .{ .name = n, .ty = r };
-                return .{ .name = n, .ty = switch (self.elemKindOf(arg)) {
-                    .str => "string",
-                    // A GC module's copy holds the array as `f64`s (a specialised copy).
-                    .f64 => if (self.mode == .gc) "f64" else return null,
-                    .i32 => "i32",
-                } };
+                return .{
+                    .name = n,
+                    .ty = switch (self.elemKindOf(arg)) {
+                        .str => "string",
+                        // A GC module's copy holds the array as `f64`s (a specialised copy).
+                        .f64 => if (self.mode == .gc) "f64" else return null,
+                        .i32 => "i32",
+                    },
+                };
             },
             else => return null,
         }
