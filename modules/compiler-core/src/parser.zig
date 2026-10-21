@@ -118,14 +118,12 @@ pub const ParseErrorType = enum {
     effectTypeRemovedFutureGenerator,
     /// Decisions 128 / 127 / 354 — `@Use<C, T>`: `@Component<T>`.
     effectTypeRemovedUse,
-    /// Decision 354 — `@Context<C>` left the language: a component's `R`
-    /// implements `@Renderable`, and a context is a `Context<T>` object.
+    /// Decision 354 — `@Context<C>` left the language: a context is a
+    /// `Context<T>` object.
     contextMarkerRemoved,
     /// Decision 354 — `@Component<C, R>`: the base parameter is gone, the
     /// wrapper is `@Component<R>`. Located on the base.
     componentBaseParamRemoved,
-    /// Decision 354 — `@Renderable` is a bare marker, `@Renderable<…>` is refused.
-    renderableTakesNoTypeArguments,
     /// Decision 316 — `fn(..) -> R` written anywhere but as `@Decl<…>`'s
     /// pattern. Located on the `..`.
     anyParamsOutsideDecl,

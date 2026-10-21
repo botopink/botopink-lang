@@ -202,6 +202,11 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
                 // (`body: ?unknown`, decision 575 (6)).
                 if (std.mem.eql(u8, na.name, "optional") and na.args.len == 1)
                     return unify(env, na.args[0], tb);
+                // Decisions 815 (2), 826 (4) — a `Component<T>` slot takes its
+                // `Composition<T>` member: a function over the scope and the
+                // place (a lambda's arity padded to it, 888).
+                if (std.mem.eql(u8, na.name, "Component") and na.args.len == 1 and tb.* == .func)
+                    return unify(env, try compositionOf(env, na.args[0]), tb);
                 env.lastError = TypeError.typeMismatch(ta, tb);
                 return error.TypeError;
             },
@@ -278,6 +283,17 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
             },
         },
     }
+}
+
+/// `fn(scope: Scope, key: Place) -> T | Async<T>` (decisions 815 (1), 819 (1)).
+fn compositionOf(env: *Env, t: *T.Type) UnifyError!*T.Type {
+    const params = try env.arena.alloc(*T.Type, 2);
+    params[0] = try env.namedType("Scope");
+    params[1] = try env.namedType("Place");
+    const members = try env.arena.alloc(*T.Type, 2);
+    members[0] = t;
+    members[1] = try env.namedTypeArgs("Async", &.{t});
+    return env.funcType(params, try env.unionType(members));
 }
 
 fn isOptional(n: anytype) bool {

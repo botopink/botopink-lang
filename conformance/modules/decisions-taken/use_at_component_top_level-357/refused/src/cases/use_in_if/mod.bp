@@ -2,7 +2,7 @@
 //// a `Component` body and runs on every call. One inside an `if` runs on
 //// some calls only, and is refused at the `use`, naming the `if`.
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn state(initial: i32) -> Component<i32> {
     return initial;

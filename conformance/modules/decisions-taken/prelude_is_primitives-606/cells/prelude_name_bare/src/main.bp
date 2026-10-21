@@ -4,7 +4,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type Badge(label: string) implement Renderable
+type Badge(label: string)
 
 fn parse(s: string) -> Result<i32, string> {
     if (s == "1") return 1;

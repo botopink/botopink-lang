@@ -8,7 +8,7 @@ import {context.run, context.createContext, context.provide, context.context, io
 
 pub val prefixContext = comptime createContext("");
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 iter fn upTo(n: i32) -> Iter<i32> {
     var i = 0;

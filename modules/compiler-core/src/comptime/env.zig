@@ -62,9 +62,6 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// True when this type implements the marker `@Renderable` (decision
-        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
-        renderable: bool = false,
         /// Decision 811 (1) — `opaque type`: built, opened and its methods
         /// without `pub` called only inside its own methods (`opaque_types.zig`).
         opaque_: bool = false,
@@ -81,9 +78,6 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// True when this type implements the marker `@Renderable` (decision
-        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
-        renderable: bool = false,
     };
 
     pub const Enum = struct {
@@ -94,19 +88,7 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         variants: []VariantDef,
         implements: []const []const u8 = &.{},
-        /// True when this type implements the marker `@Renderable` (decision
-        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
-        renderable: bool = false,
     };
-
-    /// True when this type implements `@Renderable` (decision 354).
-    pub fn isRenderable(self: TypeDef) bool {
-        return switch (self) {
-            .record => |r| r.renderable,
-            .struct_ => |s| s.renderable,
-            .enum_ => |e| e.renderable,
-        };
-    }
 
     /// Return the fields slice for record or struct types; null for enums.
     pub fn fields(self: TypeDef) ?[]FieldDef {
@@ -194,9 +176,9 @@ pub const FnContext = struct {
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",
-    /// Decision 354 — true when the return is `@Component<R>` with an `R` that
-    /// implements `@Renderable`: a component, whose body may `use provide`.
-    renderable: bool = false,
+    /// Decisions 354, 804 (3) — true for a `component` body answering
+    /// `Component<R>`, whose body may `use provide`.
+    component_body: bool = false,
     /// Decision 804 (1) — set on a helper method of a type component (the
     /// component's name): hooks are read in its `compose` alone.
     composeHelperOf: ?[]const u8 = null,
@@ -1324,6 +1306,15 @@ pub const Env = struct {
     /// `@Component<R>`, by location, with that type: a call makes the
     /// component's lambda and runs nothing (decision 791 (1)).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 888 — every untyped lambda written with fewer parameters than
+    /// the function type it meets, by its location, with the parameters it
+    /// takes: the written ones, then unnamed ones (`context_lower.zig` writes
+    /// them into the lambda, so every backend emits the type's arity).
+    lambdaPads: std.AutoHashMapUnmanaged(ast.Loc, []const []const u8) = .empty,
+    /// Decisions 809 (4), 816 (6) — every value a component body returns
+    /// that is a `Component<X>`, by the value's location, with that `X`: the
+    /// lowering resolves it with a child cell before the body answers.
+    componentReturns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 804 (1) — the module's type components, as
     /// `component_types.zig` rewrote them: the record a `compose` body's
     /// `self` reads (`Card__Self`) to the component's name (`Card`). A helper

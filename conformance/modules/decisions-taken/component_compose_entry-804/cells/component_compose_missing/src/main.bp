@@ -4,7 +4,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 type Card(title: string) implement Component<View> {
     fn render(self: Self) -> Component<View> {

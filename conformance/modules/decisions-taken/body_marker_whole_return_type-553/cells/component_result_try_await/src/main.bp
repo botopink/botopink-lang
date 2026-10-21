@@ -8,7 +8,7 @@
 
 import {context.run, io.terminal.print} from "std";
 
-type RequestScope(id: string) implement Renderable
+type RequestScope(id: string)
 
 component fn requestId() -> Component<string> {
     return "r-7";

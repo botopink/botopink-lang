@@ -5,7 +5,7 @@
 
 import {io.terminal.print} from "std";
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
     val push: fn(i32) -> i32 = { action -> f(base, action) };

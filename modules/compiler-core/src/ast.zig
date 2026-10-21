@@ -4945,8 +4945,8 @@ pub const ImplementDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
-    /// interfaces being implemented, e.g. `[Drawable, @Renderable]`.
-    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Renderable`)
+    /// interfaces being implemented, e.g. `[Drawable, Display]`.
+    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`)
     /// are supported, not just bare identifiers.
     interfaces: []TypeRef,
     /// The type this implement is for, e.g. "SmartCamera".

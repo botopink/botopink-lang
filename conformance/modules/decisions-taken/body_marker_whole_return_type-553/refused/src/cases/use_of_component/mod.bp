@@ -3,7 +3,7 @@
 //// is refused at the `use` as a hook's `use` is outside a component body
 //// (553, 722).
 
-type Element(count: i32) implement Renderable
+type Element(count: i32)
 
 component fn Counter() -> Component<Element> {
     return Element(count: 1);

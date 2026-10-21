@@ -1,6 +1,6 @@
 import {compiler} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 fn graph(syntax decl: unknown) -> void {
     var names: string[] = [];

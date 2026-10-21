@@ -3,7 +3,7 @@
 
 import {compiler} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 // A marker: a decorator with an empty body.
 pub fn trimmed(syntax decl: unknown) -> void {}

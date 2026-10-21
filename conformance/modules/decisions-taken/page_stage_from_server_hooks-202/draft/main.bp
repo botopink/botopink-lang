@@ -4,7 +4,7 @@ import {compiler, io.terminal} from "std";
 import {comptime.pages.page, comptime.pages.PageStage};
 import {hooks.title, hooks.session};
 
-type Element(text: string, child: ?Component<Element> = null) implement Renderable
+type Element(text: string, child: ?Component<Element> = null)
 
 component fn Greeting() -> Component<Element> {
     val user = use session();

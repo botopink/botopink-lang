@@ -1034,7 +1034,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = type() implement Renderable
+        \\val Element = type()
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn Page1() -> Element { return Element(); }
         \\fn Page2() -> Element { return Element(); }

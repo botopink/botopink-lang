@@ -143,7 +143,6 @@ test "effect-type-removed — in a parameter and inside another type" {
 test "decision 354 — `@Context`, `@Component<C, R>` and `@Renderable<…>` refused, located" {
     try expectKindAt("type E() implement @Context<E>", .contextMarkerRemoved, 1, 20);
     try expectKindAt("fn f() -> @Component<Base, i32> { return 0; }", .componentBaseParamRemoved, 1, 22);
-    try expectKindAt("type E() implement @Renderable<E>", .renderableTakesNoTypeArguments, 1, 31);
     try expectKind("fn f(g: fn() -> @Component<Base, i32>) -> i32 { return 0; }", .componentBaseParamRemoved);
 }
 

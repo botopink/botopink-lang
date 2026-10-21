@@ -10,7 +10,7 @@
 
 import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Rule(name: string, text: string) implement Renderable
+type Rule(name: string, text: string)
 
 type SheetWriter(layer: string, add: fn(layer: string, rule: Rule))
 

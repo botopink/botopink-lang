@@ -7,7 +7,7 @@
 
 import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
-type Element(text: string) implement Renderable
+type Element(text: string)
 
 type Depth(n: i32)
 

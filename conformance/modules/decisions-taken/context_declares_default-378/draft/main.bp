@@ -4,7 +4,7 @@ import {context.run, context.createContext, context.provide, context.context, io
 
 type Theme(primary: string, radius: i32)
 
-type View(text: string) implement Renderable
+type View(text: string)
 
 // Every context declares its default where it is made, computed at build.
 pub val themeContext = comptime createContext(Theme(primary: "#e11d48", radius: 4));
