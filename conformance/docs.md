@@ -2626,16 +2626,45 @@ them into an iterator or a stream (decision 125):
 |---|---|---|
 | `loop { … }` | repeats until `break` | no |
 | `while (cond) { … }` | repeats while `cond` holds | no |
-| `for (coll) { x -> … }` | walks a collection, a range or an `Iter` | no |
-| `for await (s) { x -> … }` | walks a `AsyncIter`, where the body has an await channel | no |
+| `for xs { x -> … }` · `for (xs) { x -> … }` | walks a collection, a range or an `Iter` | no |
+| `for (a, b) { x, y -> … }` | walks several sources together, one item of each per round | no |
+| `for await s { x -> … }` · `for await (s) { x -> … }` | walks a `AsyncIter`, where the body has an await channel | no |
 | `iter loop` · `iter while` · `iter for` | the loop is an iterator: `yield v` / `break v` emit | **yes** — `Iter<T>` |
 | `stream loop` · `stream while` · `stream for` · `stream for await` | the same, and the body may `await` | **yes** — `AsyncIter<T>` |
 
 A plain loop is a statement: bare `break` leaves it and `continue` starts its
-next round, in all three. `for` binds the item only — the index is
-`for (0..xs.length) { i -> … }`. The parentheses stay (`while (cond) {`), as
-they do on `if`: without them `while x {` could not tell the body from a record
-literal. `loop (…)` is an error naming `for` and `while`.
+next round, in all three. The condition of `while` keeps its parentheses
+(`while (cond) {`), as `if`'s does: without them `while x {` could not tell the
+body from a record literal. `loop (…)` is an error naming `for` and `while`.
+
+`for` names its sources after the keyword, and its body is a block opening with
+one parameter per source (decision 956): `for xs { x -> … }` and
+`for (xs) { x -> … }` are one loop, the parentheses optional with one source and
+kept by the formatter as written. A bare source takes no trailing lambda, so the
+`{` is the body's: `for g.iter() { c -> … }`, `for ns.f(1) { x -> … }`,
+`for @TypeInfo.all(T) { d -> … }`. A source may begin with `try` — `for try
+items(n) { x -> … }` walks the `Ok` value and propagates the `Error` — or with
+`await` or `comptime`. The body is a loop body, never a lambda: `break`,
+`continue`, a label after the keyword (`for :outer xs { x -> … }`), and a
+`return` that leaves the enclosing function.
+
+Several sources go in parentheses and walk together: `for (a, b, c) { x, y, z
+-> … }` takes one item of each per round, in order, and ends when the shortest
+source ends. An open range never ends the loop, so it serves as the index:
+`for (names, 0...) { name, i -> … }`; `0...` and `0..` are the same open range
+there, and alone (`for 0... { i -> … }`) it counts until a `break`. `for await`
+walks one stream.
+
+<!-- example: modules/decisions-taken/for_loop_sources-956/cells/for_loop_sources -->
+
+There is no `for x in xs`: it is `for-in-loop`, refused at the binder and naming
+`for xs { x -> … }`. A parameter count other than the sources' is
+`for-parameter-count`, refused at the block and naming both counts; a body with
+no parameter is `for-without-binder`; several sources without their parentheses
+(`for a, b { … }`) are `for-sources-parenthesised`, and `for await (a, b)` is
+`for-await-one-source`.
+
+<!-- example: modules/decisions-taken/for_loop_sources-956/cells/for_in_refused -->
 
 `loop (xs) { x -> … }` and `loop (cond)` are `removed-loop-parenthesised`, naming `for` and `while`. `while` and `loop` bind nothing, so a binder on one is `loop-binds-nothing`, refused at the binder. `loop await` does not exist either: a stream is walked with `for await`, and the parser refuses the `await` after `loop`, located at it.
 
@@ -2690,7 +2719,7 @@ channel (a `Async`, `Component` or `AsyncIter` return, an `async { }` block or a
 `stream` loop) and is otherwise `await-without-async`. `for` over a
 `bool` is refused naming `while`.
 
-Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
+Labels go on all three: `for :outer xs { x -> … }`, `while :w (…) { … }`,
 `loop :l { … }`, then `break :outer`, `continue :outer`. A `continue :outer` from a nested loop's body or from a
 `case` arm's block ends the inner loops and starts the named loop's next round; a label no enclosing loop carries is
 `break-label-unbound`, on `continue` as on `break`. A bare `continue` from a block or a `case` arm in a loop's

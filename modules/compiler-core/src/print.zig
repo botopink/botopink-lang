@@ -491,11 +491,29 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "open the body with `x ->`",
             .hint = "To repeat without a value write `while (cond) { … }` or `loop { … break; }`.",
         },
-        .forBindsOneName => .{
-            .code = "for-binds-one-name",
-            .message = "a `for` binds one name — there is no index binder",
-            .caretCaption = "one name before `->`",
-            .hint = "Iterate the positions to read an index: `for (0..xs.length) { i -> val x = xs[i]; … }`.",
+        .forParameterCount => .{
+            .code = "for-parameter-count",
+            .message = "a `for` binds one parameter per source, in order",
+            .caretCaption = info.detail orelse "one parameter per source",
+            .hint = "Each source hands one item per round to the parameter in its place (decision 956): `for xs { x -> … }`, `for (a, b) { x, y -> … }`; the index is an open range, `for (xs, 0...) { x, i -> … }`.",
+        },
+        .forInLoop => .{
+            .code = "for-in-loop",
+            .message = "there is no `for x in xs` — the item is the block's parameter",
+            .caretCaption = "write `for xs { x -> … }`",
+            .hint = "A `for` names its sources and its body opens with their parameters (decision 956): `for xs { x -> … }`, `for (xs) { x -> … }`, `for (a, b) { x, y -> … }`; `for await s { x -> … }` walks an `AsyncIter`.",
+        },
+        .forSourcesParenthesised => .{
+            .code = "for-sources-parenthesised",
+            .message = "several sources are written in parentheses",
+            .caretCaption = "write `for (a, b) { x, y -> … }`",
+            .hint = "One source may go without them, `for xs { x -> … }`; several walk together inside them, one parameter each, ending with the shortest (decision 956).",
+        },
+        .forAwaitOneSource => .{
+            .code = "for-await-one-source",
+            .message = "`for await` walks one `AsyncIter`",
+            .caretCaption = "one source",
+            .hint = "`for await s { x -> … }` awaits each item of one stream; several sources walk together only in a plain `for (a, b) { x, y -> … }` (decision 956).",
         },
         .loopAnnotationNotGenerator => .{
             .code = "loop-annotation-not-generator",

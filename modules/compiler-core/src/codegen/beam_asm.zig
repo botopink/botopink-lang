@@ -12591,7 +12591,13 @@ const Emitter = struct {
     /// frame (`tag` is its y-slot): the thrown `E` is this function's return
     /// value, or — when this frame is itself a loop's fun — thrown on to the
     /// next call site. A thrown `V` is the same. Any other raise is re-raised.
-    fn guardLoopCall(self: *Emitter, tag: u32, call: anytype) anyerror!void {
+    /// `outer_end` bounds the tags of the guards this loop's call site opened
+    /// around this one (`tag + 1 ..< outer_end`, `emitLoopCall`): a `return`
+    /// answered here leaves the function from inside them, so their catch
+    /// sections are ended first — OTP refuses a frame deallocated with a
+    /// section still open (`unfinished_catch_try`), which a loop body holding
+    /// both a `return` and a bare `break` reached.
+    fn guardLoopCall(self: *Emitter, tag: u32, outer_end: u32, call: anytype) anyerror!void {
         const caught = self.allocLabel();
         const ret = self.allocLabel();
         const other = self.allocLabel();
@@ -12604,9 +12610,11 @@ const Emitter = struct {
         try beamEmitter.writeTryCase(self.out, tag);
         try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
         try beamEmitter.writeTest(self.out, .is_tagged_tuple, ret, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(try_throw_signal) });
+        try self.endOuterGuards(tag, outer_end);
         try self.answerLoopThrow();
         try beamEmitter.writeLabel(self.out, ret);
         try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(return_throw_signal) });
+        try self.endOuterGuards(tag, outer_end);
         try self.answerLoopThrow();
         try beamEmitter.writeLabel(self.out, other);
         try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
@@ -12975,20 +12983,22 @@ const Emitter = struct {
         const n: u32 = @as(u32, @intCast(conts.items.len)) + @intFromBool(brk_label != null) +
             @intFromBool(bodyBreaksBare(body)) + @intFromBool(bodyPropagates(body));
         var top: u32 = self.next_y + n;
+        const end = top;
         self.next_y += n;
 
         const Guarded = struct {
             inner: @TypeOf(call),
             body: []const ast.Stmt,
             top: *u32,
+            end: u32,
             fn emit(g: @This(), em: *Emitter) anyerror!void {
                 if (bodyPropagates(g.body)) {
                     g.top.* -= 1;
-                    try em.guardLoopCall(g.top.*, g.inner);
+                    try em.guardLoopCall(g.top.*, g.end, g.inner);
                 } else try g.inner.emit(em);
             }
         };
-        const guarded: Guarded = .{ .inner = call, .body = body, .top = &top };
+        const guarded: Guarded = .{ .inner = call, .body = body, .top = &top, .end = end };
         const Bare = struct {
             inner: Guarded,
             body: []const ast.Stmt,
@@ -13172,6 +13182,15 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, other);
         try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
         try beamEmitter.writeLabel(self.out, done);
+    }
+
+    /// `try_end` of the guards opened around the one tagged `tag` at the same
+    /// call site, before `answerLoopThrow` returns from this function; a loop's
+    /// fun throws on instead, and the sections around catch it.
+    fn endOuterGuards(self: *Emitter, tag: u32, outer_end: u32) anyerror!void {
+        if (self.in_loop_lambda) return;
+        var t = tag + 1;
+        while (t < outer_end) : (t += 1) try beamEmitter.writeTryEnd(self.out, t);
     }
 
     /// The `{Signal, V}` in `x1` a loop's fun threw, answered at its call site:

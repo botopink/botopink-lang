@@ -1,0 +1,20 @@
+//// Decision 956 (4) — there is no `for x in xs`: the item is the block's
+//// parameter, `for g.iter() { c -> … }`. 950's `for c in g.iter() { … }` is
+//// refused `for-in-loop` at the binder, naming the block form.
+
+import {io.terminal.print} from "std";
+
+type Grid(cells: i32[]) {
+    fn iter(self: Self) -> Iter<i32> {
+        return iter for self.cells { c -> yield c; };
+    }
+}
+
+pub fn main() -> void {
+    val g = Grid(cells: [1, 2]);
+    var total = 0;
+    for c in g.iter() {
+        total = total + c;
+    };
+    print(total.toString());
+}

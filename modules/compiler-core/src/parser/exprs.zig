@@ -2259,6 +2259,11 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
 
 pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg {
     _ = try this.consume(.leftParenthesis);
+    // Inside the parentheses an argument is any expression again: a bare
+    // `for f(xs.map { x -> x }) { … }` keeps the argument's lambda.
+    const savedNoTrailing = this.noTrailingLambda;
+    this.noTrailingLambda = false;
+    defer this.noTrailingLambda = savedNoTrailing;
     var args: std.ArrayList(CallArg) = .empty;
     errdefer {
         for (args.items) |*a| a.deinit(alloc);
@@ -2333,6 +2338,10 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
 /// Parses zero or more trailing lambda blocks:
 ///   `{ params? -> body }`  or  `label: { params? -> body }`
 pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]TrailingLambda {
+    // An operand that takes no trailing lambda (`noTrailingLambda`: a `try`
+    // operand, a bare `for` source) leaves the `{` to its construct, on every
+    // call form — `f(x)`, `@TypeInfo.all(T)`, `@name { … }` alike.
+    if (this.noTrailingLambda) return alloc.alloc(TrailingLambda, 0);
     var lambdas: std.ArrayList(TrailingLambda) = .empty;
     errdefer {
         for (lambdas.items) |*t| t.deinit(alloc);
@@ -2477,53 +2486,457 @@ pub fn parseWhileExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr
     };
 }
 
-/// `for [await] [:label] (iter) { x -> … }` — iterates a collection, a range
-/// (`a..b` exclusive, `a...b` inclusive) or a generator, binding exactly one
-/// name; `for await` iterates an `@FutureGenerator`. A body that does not
-/// open with `x ->` is `for-without-binder`; two names are `for-binds-one-name`.
+/// `for [await] [:label] <sources> { x, … -> … }` — decision 956 over 105:
+/// the sources after the keyword, the body a block opening with one parameter
+/// per source. One source is written bare or in parentheses (`for xs { x -> … }`
+/// is `for (xs) { x -> … }`, the `bare` flag keeping the spelling); several are
+/// written in parentheses and walk together (`for (a, b) { x, y -> … }`), the
+/// loop ending with the shortest, an open range (`0...`) never ending it. A
+/// source may begin with `try`, `await` or `comptime` (decision 395 (3)). A bare
+/// source is read with no trailing lambda, so the `{` is the body's
+/// (`for g.iter() { c -> … }`). `for x in xs` is `for-in-loop`; a parameter
+/// count other than the sources' is `for-parameter-count` at the block; a body
+/// that opens with no parameter `for-without-binder`. One source that is not an
+/// open range is the node itself; anything else is the loop it means
+/// (`buildForWritten`), the written loop kept for the formatter.
 pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const forTok = this.advance(); // consume 'for'
     const awaitLoop = this.match(.await);
     const label = try parseLoopLabel(this);
-    _ = try this.consume(.leftParenthesis);
-    // Decision 395 (3) — `for (comptime @typeInfo(T).metaAll(C)) { c -> … }`:
-    // a `comptime` begins the iterable as `try` and `await` do.
-    const iterExpr = if (this.check(.@"try") or this.check(.await) or this.check(.@"comptime")) try this.parseExpr(alloc) else try this.parseRangeExpr(alloc);
-    const iterPtr = try this.boxExprOwned(alloc, iterExpr);
-    errdefer {
-        iterPtr.deinit(alloc);
-        alloc.destroy(iterPtr);
+    if (forInAhead(this)) |inAt| {
+        const first = this.peek();
+        const inTok = this.peekAt(inAt);
+        this.parseError = ParseErrorInfo.fromTokenSpan(.forInLoop, first, inTok.offset + inTok.lexeme.len - first.offset);
+        return ParseError.UnexpectedToken;
     }
-    _ = try this.consume(.rightParenthesis);
+    var sources: std.ArrayListUnmanaged(*Expr) = .empty;
+    defer sources.deinit(alloc);
+    var sourcesOwned = true;
+    defer if (sourcesOwned) for (sources.items) |sp| {
+        sp.deinit(alloc);
+        alloc.destroy(sp);
+    };
+    var parenthesised = false;
+    if (this.check(.leftParenthesis)) {
+        const saved = this.current;
+        _ = this.advance();
+        while (true) {
+            const e = try parseForSource(this, alloc);
+            const ptr = try this.boxExprOwned(alloc, e);
+            sources.append(alloc, ptr) catch |err| {
+                ptr.deinit(alloc);
+                alloc.destroy(ptr);
+                return err;
+            };
+            if (!this.check(.comma)) break;
+            if (awaitLoop) {
+                this.parseError = ParseErrorInfo.fromToken(.forAwaitOneSource, this.peek());
+                return ParseError.UnexpectedToken;
+            }
+            _ = this.advance();
+        }
+        _ = try this.consume(.rightParenthesis);
+        if (this.check(.leftBrace) or sources.items.len > 1) {
+            parenthesised = true;
+        } else {
+            // `for (a).b() { … }` — the parentheses were the source's own.
+            for (sources.items) |sp| {
+                sp.deinit(alloc);
+                alloc.destroy(sp);
+            }
+            sources.clearRetainingCapacity();
+            this.current = saved;
+        }
+    }
+    if (!parenthesised) {
+        const savedNoTrailing = this.noTrailingLambda;
+        this.noTrailingLambda = true;
+        defer this.noTrailingLambda = savedNoTrailing;
+        const e = try parseForSource(this, alloc);
+        const ptr = try this.boxExprOwned(alloc, e);
+        sources.append(alloc, ptr) catch |err| {
+            ptr.deinit(alloc);
+            alloc.destroy(ptr);
+            return err;
+        };
+        if (this.check(.comma)) {
+            this.parseError = ParseErrorInfo.fromToken(.forSourcesParenthesised, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+    }
+    const braceTok = this.peek();
     _ = try this.consume(.leftBrace);
     if (!loopParamsAhead(this)) {
         this.parseError = ParseErrorInfo.fromToken(.forWithoutBinder, this.peek());
         return ParseError.UnexpectedToken;
     }
     const paramsLoc = locFromToken(this.peek());
-    const nameTok = this.advance();
-    if (this.check(.comma)) {
-        this.parseError = ParseErrorInfo.fromToken(.forBindsOneName, this.peekAt(1));
-        return ParseError.UnexpectedToken;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(alloc);
+    while (true) {
+        try names.append(alloc, this.advance().lexeme);
+        if (!this.match(.comma)) break;
     }
     _ = try this.consume(.rightArrow);
-    const params = try alloc.alloc([]const u8, 1);
+    if (names.items.len != sources.items.len) {
+        this.parseError = ParseErrorInfo.fromTokenDetail(.forParameterCount, braceTok, forCountDetail(sources.items.len, names.items.len));
+        return ParseError.UnexpectedToken;
+    }
+    const params = try names.toOwnedSlice(alloc);
     errdefer alloc.free(params);
-    params[0] = nameTok.lexeme;
     const body = try parseLoopBody(this, alloc);
-    return .{
-        .loc = locFromToken(forTok),
-        .keyword = .for_,
-        .generator = null,
-        .iter = iterPtr,
-        .indexRange = null,
+    if (sources.items.len == 1 and !isOpenRange(sources.items[0].*)) {
+        sourcesOwned = false;
+        return .{
+            .loc = locFromToken(forTok),
+            .keyword = .for_,
+            .generator = null,
+            .iter = sources.items[0],
+            .indexRange = null,
+            .params = params,
+            .paramsLoc = paramsLoc,
+            .condition = false,
+            .body = body,
+            .awaitLoop = awaitLoop,
+            .label = label,
+            .bare = !parenthesised,
+        };
+    }
+    sourcesOwned = false;
+    return buildForWritten(this, alloc, .{
+        .forTok = forTok,
+        .sources = sources.items,
         .params = params,
-        .paramsLoc = paramsLoc,
-        .condition = false,
         .body = body,
-        .awaitLoop = awaitLoop,
         .label = label,
+        .awaitLoop = awaitLoop,
+        .parenthesised = parenthesised,
+    });
+}
+
+/// One source of a `for`: an expression that may begin with `try`, `await`
+/// or `comptime`, else a range (`a..b`, `a...b`, the open `a..` / `a...`).
+fn parseForSource(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    if (this.check(.@"try") or this.check(.await) or this.check(.@"comptime")) return this.parseExpr(alloc);
+    return parseRangeExprOpts(this, alloc, true);
+}
+
+fn isOpenRange(e: Expr) bool {
+    return e == .collection and e.collection.kind == .range and e.collection.kind.range.end == null;
+}
+
+/// The offset from the cursor of the `in` of `for x in xs` / `for #(k, v) in d`
+/// / `for (x in xs)` (decision 956 (4)), or null.
+fn forInAhead(this: *This) ?usize {
+    var i: usize = 0;
+    if (this.peekAt(0).kind == .leftParenthesis) i = 1;
+    const isIn = struct {
+        fn f(t: Token) bool {
+            return t.kind == .identifier and std.mem.eql(u8, t.lexeme, "in");
+        }
+    }.f;
+    if (this.peekAt(i).kind == .identifier and isIn(this.peekAt(i + 1))) return i + 1;
+    if (this.peekAt(i).kind == .hash and this.peekAt(i + 1).kind == .leftParenthesis) {
+        var depth: usize = 0;
+        var j = i + 1;
+        while (true) : (j += 1) {
+            switch (this.peekAt(j).kind) {
+                .leftParenthesis => depth += 1,
+                .rightParenthesis => {
+                    depth -= 1;
+                    if (depth == 0) return if (isIn(this.peekAt(j + 1))) j + 1 else null;
+                },
+                .endOfFile, .leftBrace, .semicolon => return null,
+                else => {},
+            }
+        }
+    }
+    return null;
+}
+
+/// `for-parameter-count`'s caption: both counts, from a table built at
+/// compile time (the diagnostic owns no memory).
+fn forCountDetail(sources: usize, params: usize) []const u8 {
+    const table = comptime blk: {
+        @setEvalBranchQuota(100_000);
+        var t: [10][10][]const u8 = undefined;
+        for (0..10) |si| for (0..10) |pi| {
+            t[si][pi] = std.fmt.comptimePrint("{d} source{s}, {d} parameter{s}", .{ si, if (si == 1) "" else "s", pi, if (pi == 1) "" else "s" });
+        };
+        break :blk t;
     };
+    if (sources < 10 and params < 10) return table[sources][params];
+    return "one parameter per source";
+}
+
+const ForParts = struct {
+    forTok: Token,
+    sources: []*Expr,
+    params: []const []const u8,
+    body: []Stmt,
+    label: ?[]const u8,
+    awaitLoop: bool,
+    parenthesised: bool,
+};
+
+/// Decision 956 (2) — the loop a `for` over several sources (or over one open
+/// range) means, built from text and then given the written sources and body:
+///
+///     loop {
+///         val __forL_C_v0 = <source 0>;                 // a value
+///         var __forL_C_c1 = <start>; val __forL_C_e1 = <end>;   // a range
+///         val __forL_C_s2 = iter for (__forL_C_v2) { __forL_C_i2 -> yield __forL_C_i2; };
+///         for :label (__forL_C_v0) { x ->               // the first value walks
+///             if (__forL_C_c1 >= __forL_C_e1) { break; };       // `>` when inclusive
+///             val y = __forL_C_c1; __forL_C_c1 = __forL_C_c1 + 1;
+///             case __forL_C_s2.next() {
+///                 Yield(z) -> { <body> };
+///                 Done -> { break; };
+///             };
+///         };
+///         break;
+///     }
+///
+/// Every source is bound in the order written; with no value among them the
+/// walk is a `loop :label { … }`. A round's own steps come before the body, so
+/// a `continue` starts the next round; the body's `break`, `continue`, labels
+/// and `return` are the walk's. The names carry the `for`'s line and column, so
+/// two loops never share one; the built tokens sit at
+/// `ast.for_written_synthetic_col`.
+fn buildForWritten(this: *This, alloc: std.mem.Allocator, parts: ForParts) ParseError!LoopExpr {
+    const n = parts.sources.len;
+    // On every error path the written pieces are freed here.
+    var piecesOwned = true;
+    defer if (piecesOwned) {
+        for (parts.sources) |sp| {
+            sp.deinit(alloc);
+            alloc.destroy(sp);
+        }
+        for (parts.body) |*st| st.deinit(alloc);
+        alloc.free(parts.body);
+        alloc.free(parts.params);
+    };
+    const Kind = enum { value, range, open };
+    const kinds = try alloc.alloc(Kind, n);
+    defer alloc.free(kinds);
+    var driver: ?usize = null;
+    for (parts.sources, 0..) |sp, k| {
+        kinds[k] = if (sp.* == .collection and sp.collection.kind == .range)
+            (if (sp.collection.kind.range.end == null) .open else .range)
+        else
+            .value;
+        if (kinds[k] == .value and driver == null) driver = k;
+    }
+    const L = parts.forTok.line;
+    const C = parts.forTok.col;
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    try buf.appendSlice(alloc, "loop {\n");
+    for (0..n) |k| switch (kinds[k]) {
+        .value => {
+            try buf.print(alloc, "val __for{d}_{d}_v{d} = __for_hole_{d};\n", .{ L, C, k, k });
+            if (driver.? != k) try buf.print(alloc, "val __for{d}_{d}_s{d} = iter for (__for{d}_{d}_v{d}) {{ __for{d}_{d}_i{d} -> yield __for{d}_{d}_i{d}; }};\n", .{ L, C, k, L, C, k, L, C, k, L, C, k });
+        },
+        .range => try buf.print(alloc, "var __for{d}_{d}_c{d} = __for_lo_{d};\nval __for{d}_{d}_e{d} = __for_hi_{d};\n", .{ L, C, k, k, L, C, k, k }),
+        .open => try buf.print(alloc, "var __for{d}_{d}_c{d} = __for_lo_{d};\n", .{ L, C, k, k }),
+    };
+    if (driver) |d| {
+        try buf.appendSlice(alloc, "for ");
+        if (parts.label) |l| try buf.print(alloc, ":{s} ", .{l});
+        try buf.print(alloc, "(__for{d}_{d}_v{d}) {{ {s} ->\n", .{ L, C, d, parts.params[d] });
+    } else {
+        try buf.appendSlice(alloc, "loop ");
+        if (parts.label) |l| try buf.print(alloc, ":{s} ", .{l});
+        try buf.appendSlice(alloc, "{\n");
+    }
+    var opened: usize = 0;
+    for (0..n) |k| {
+        if (driver != null and driver.? == k) continue;
+        const p = parts.params[k];
+        switch (kinds[k]) {
+            .range => {
+                const inclusive = parts.sources[k].collection.kind.range.inclusive;
+                try buf.print(alloc, "if (__for{d}_{d}_c{d} {s} __for{d}_{d}_e{d}) {{ break; }};\n", .{ L, C, k, if (inclusive) ">" else ">=", L, C, k });
+                try buf.print(alloc, "val {s} = __for{d}_{d}_c{d};\n__for{d}_{d}_c{d} = __for{d}_{d}_c{d} + 1;\n", .{ p, L, C, k, L, C, k, L, C, k });
+            },
+            .open => try buf.print(alloc, "val {s} = __for{d}_{d}_c{d};\n__for{d}_{d}_c{d} = __for{d}_{d}_c{d} + 1;\n", .{ p, L, C, k, L, C, k, L, C, k }),
+            .value => {
+                try buf.print(alloc, "case __for{d}_{d}_s{d}.next() {{\nYield({s}) -> {{\n", .{ L, C, k, p });
+                opened += 1;
+            },
+        }
+    }
+    try buf.appendSlice(alloc, "__for_body;\n");
+    for (0..opened) |_| try buf.appendSlice(alloc, "};\nDone -> {\nbreak;\n};\n};\n");
+    try buf.appendSlice(alloc, "};\nbreak;\n}");
+    const text = try buf.toOwnedSlice(alloc);
+    var textOwned = true;
+    defer if (textOwned) alloc.free(text);
+
+    // Parse the text, its tokens placed past every written column.
+    var lx = lexer.Lexer.init(text);
+    const tokens = lx.scanAll(alloc) catch return ParseError.OutOfMemory;
+    defer lx.deinit(alloc);
+    // Each `+` of the text is a range's counter step, in source order: it is
+    // located at its range's `..` / `...`, so an overflow names the range
+    // written (the range node itself is not kept, so nothing else keys there).
+    var rangeLocs: std.ArrayListUnmanaged(ast.Loc) = .empty;
+    defer rangeLocs.deinit(alloc);
+    for (parts.sources, 0..) |sp, k| if (kinds[k] != .value) try rangeLocs.append(alloc, sp.collection.loc);
+    var plusSeen: usize = 0;
+    for (@constCast(tokens)) |*tok| {
+        if (tok.kind == .plus and plusSeen < rangeLocs.items.len) {
+            const at = rangeLocs.items[plusSeen];
+            plusSeen += 1;
+            tok.line = at.line;
+            tok.col = at.col;
+            tok.offset = parts.forTok.offset;
+            tok.expansion = at.expansion;
+            continue;
+        }
+        tok.col = ast.for_written_synthetic_col + C * ast.for_written_col_stride + tok.offset;
+        tok.line = L;
+        tok.offset = parts.forTok.offset;
+        tok.expansion = parts.forTok.expansion;
+    }
+    var sub = This.init(tokens);
+    var built = sub.parseExpr(alloc) catch |err| {
+        // The built text always parses; a failure is the compiler's, named
+        // where the `for` is written.
+        this.parseError = sub.parseError orelse ParseErrorInfo.fromToken(.unexpectedToken, parts.forTok);
+        this.parseError.?.start = parts.forTok.offset;
+        this.parseError.?.end = parts.forTok.offset + parts.forTok.lexeme.len;
+        this.parseError.?.line = parts.forTok.line;
+        this.parseError.?.col = parts.forTok.col;
+        return err;
+    };
+    if (built != .loop) {
+        built.deinit(alloc);
+        return ParseError.OutOfMemory;
+    }
+    var outer = built.loop;
+    errdefer outer.deinit(alloc);
+
+    // The written sources into their holes, the written body into the round.
+    const written = try alloc.alloc(ast.ForWritten.Source, n);
+    errdefer alloc.free(written);
+    for (outer.body) |*st| {
+        if (st.expr != .binding or st.expr.binding.kind != .localBind) continue;
+        const lb = st.expr.binding.kind.localBind;
+        if (lb.value.* != .identifier or lb.value.identifier.kind != .ident) continue;
+        const name = lb.value.identifier.kind.ident;
+        const hole = holeIndex(name) orelse continue;
+        const src = parts.sources[hole.k];
+        switch (hole.part) {
+            .value => {
+                lb.value.* = src.*;
+                written[hole.k] = .{ .value = lb.value };
+            },
+            .lo => {
+                const r = src.collection.kind.range;
+                lb.value.* = r.start.*;
+                written[hole.k] = .{ .range = .{ .start = lb.value, .end = null, .inclusive = r.inclusive } };
+            },
+            .hi => {
+                const r = src.collection.kind.range;
+                lb.value.* = r.end.?.*;
+                written[hole.k].range.end = lb.value;
+            },
+        }
+    }
+    // The written range nodes gave their bounds away; only their boxes go.
+    for (parts.sources, 0..) |sp, k| {
+        if (kinds[k] != .value) {
+            const r = sp.collection.kind.range;
+            alloc.destroy(r.start);
+            if (r.end) |e| alloc.destroy(e);
+        }
+        alloc.destroy(sp);
+    }
+    const bodyView = spliceForBody(alloc, outer.body, parts.body) catch |err| {
+        piecesOwned = false;
+        return err;
+    };
+    alloc.free(parts.body);
+    piecesOwned = false;
+    const fw = try alloc.create(ast.ForWritten);
+    fw.* = .{
+        .sources = written,
+        .params = parts.params,
+        .body = bodyView,
+        .label = parts.label,
+        .awaitLoop = parts.awaitLoop,
+        .parenthesised = parts.parenthesised,
+        .text = text,
+    };
+    textOwned = false;
+    outer.loc = locFromToken(parts.forTok);
+    outer.paramsLoc = locFromToken(parts.forTok);
+    outer.forWritten = fw;
+    return outer;
+}
+
+const ForHole = struct { k: usize, part: enum { value, lo, hi } };
+
+fn holeIndex(name: []const u8) ?ForHole {
+    const Pre = struct { pre: []const u8, part: @FieldType(ForHole, "part") };
+    const pres = [_]Pre{ .{ .pre = "__for_hole_", .part = .value }, .{ .pre = "__for_lo_", .part = .lo }, .{ .pre = "__for_hi_", .part = .hi } };
+    for (pres) |p| if (std.mem.startsWith(u8, name, p.pre)) {
+        const k = std.fmt.parseInt(usize, name[p.pre.len..], 10) catch return null;
+        return .{ .k = k, .part = p.part };
+    };
+    return null;
+}
+
+/// Finds the `__for_body;` statement in the built loop and puts the written
+/// body in its place; answers the written statements' place there.
+fn spliceForBody(alloc: std.mem.Allocator, stmts: []Stmt, body: []Stmt) ParseError![]const Stmt {
+    return (try spliceForBodyIn(alloc, stmts, body)) orelse ParseError.OutOfMemory;
+}
+
+fn spliceForBodyIn(alloc: std.mem.Allocator, stmts: []Stmt, body: []Stmt) ParseError!?[]const Stmt {
+    for (stmts) |*st| {
+        switch (st.expr) {
+            .loop => |*lp| {
+                for (lp.body, 0..) |inner, i| {
+                    if (inner.expr == .identifier and inner.expr.identifier.kind == .ident and
+                        std.mem.eql(u8, inner.expr.identifier.kind.ident, "__for_body"))
+                    {
+                        const out = try alloc.alloc(Stmt, lp.body.len - 1 + body.len);
+                        @memcpy(out[0..i], lp.body[0..i]);
+                        @memcpy(out[i .. i + body.len], body);
+                        @memcpy(out[i + body.len ..], lp.body[i + 1 ..]);
+                        alloc.free(lp.body);
+                        lp.body = out;
+                        return out[i .. i + body.len];
+                    }
+                }
+                if (try spliceForBodyIn(alloc, lp.body, body)) |v| return v;
+            },
+            .collection => |*col| if (col.kind == .case) {
+                for (col.kind.case.arms) |*arm| {
+                    if (arm.body != .function) continue;
+                    const fb = &arm.body.function.kind.body;
+                    for (fb.*, 0..) |inner, i| {
+                        if (inner.expr == .identifier and inner.expr.identifier.kind == .ident and
+                            std.mem.eql(u8, inner.expr.identifier.kind.ident, "__for_body"))
+                        {
+                            const out = try alloc.alloc(Stmt, fb.len - 1 + body.len);
+                            @memcpy(out[0..i], fb.*[0..i]);
+                            @memcpy(out[i .. i + body.len], body);
+                            @memcpy(out[i + body.len ..], fb.*[i + 1 ..]);
+                            alloc.free(fb.*);
+                            fb.* = out;
+                            return out[i .. i + body.len];
+                        }
+                    }
+                    if (try spliceForBodyIn(alloc, fb.*, body)) |v| return v;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
 }
 
 /// A block of annotations before a loop. Decision 125 — a loop takes no
@@ -2592,7 +3005,9 @@ fn genLoopAfterPrefix(this: *This, alloc: std.mem.Allocator, kind: ast.EffectKin
         .loc = loc,
         .keyword = .loop,
         .generator = kind,
-        .prefixedKeyword = inner.keyword,
+        // A `for` the parser wrote as another loop (decision 956) is still
+        // the `for` written.
+        .prefixedKeyword = if (inner.forWritten != null) .for_ else inner.keyword,
         .iter = iterPtr,
         .indexRange = null,
         .params = &.{},
@@ -2650,6 +3065,13 @@ fn loopParamsAhead(this: *This) bool {
 /// (inclusive, decision 105), or falls back to a plain equality-level
 /// expression when neither token is present.
 pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    return parseRangeExprOpts(this, alloc, false);
+}
+
+/// `parseRangeExpr`; `forSource` reads a `for` source (decision 956 (2)): the
+/// body's `{` ends an open range (`for 0.. { i -> … }`) and `a...` is an open
+/// range as `a..` is.
+fn parseRangeExprOpts(this: *This, alloc: std.mem.Allocator, forSource: bool) ParseError!Expr {
     const start = try this.parseBinaryExpr(alloc, prec.equality);
     // Nothing between here and the box can fail (`check`/`advance` do not), so
     // `start` needs no errdefer of its own — and must not have one: once boxed,
@@ -2665,18 +3087,20 @@ pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // Optional end: `0..10` vs `0..`
     // `]` closes an open-ended slice `xs[0..]`, like `)` closes `for (0..)`.
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
-        !this.check(.rightSquareBracket) and !this.check(.endOfFile);
+        !this.check(.rightSquareBracket) and !this.check(.endOfFile) and
+        !(forSource and this.check(.leftBrace));
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
         const endPtr = try this.boxExprOwned(alloc, end);
         return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = endPtr, .inclusive = inclusive } } } };
     }
-    // `a...` has no end to include: an open range is `a..`.
-    if (inclusive) {
+    // `a...` has no end to include: an open range is `a..` — except as a
+    // `for` source, where `0...` counts on (decision 956 (2)).
+    if (inclusive and !forSource) {
         this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, dotTok);
         return ParseError.UnexpectedToken;
     }
-    return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = null } } } };
+    return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = null, .inclusive = inclusive } } } };
 }
 
 // ── string interpolation (`${…}`) ───────────────────────────────────────────

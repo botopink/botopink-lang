@@ -480,8 +480,8 @@ test "surface: a for without a binder is for-without-binder at the body's first 
     try expectError("fn f() { for ([1, 2]) { @print(1); }; }", .forWithoutBinder, 1, 25);
 }
 
-test "surface: a for with two binders is for-binds-one-name at the second" {
-    try expectError("fn f() { for ([1, 2]) { x, i -> x; }; }", .forBindsOneName, 1, 28);
+test "surface: a for with two binders for one source is for-parameter-count at the block" {
+    try expectError("fn f() { for ([1, 2]) { x, i -> x; }; }", .forParameterCount, 1, 23);
 }
 
 test "surface: an annotation block on a loop is refused — a loop takes `iter` / `stream`" {

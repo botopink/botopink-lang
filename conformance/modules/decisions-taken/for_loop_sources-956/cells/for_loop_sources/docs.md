@@ -1,0 +1,3 @@
+# for_loop_sources
+
+The collection loop of decision 956 on every target: one source bare (`for xs { x -> … }`) or in parentheses (`for (xs) { x -> … }`), a range, an `Iter`, a method answering one (`for g.iter() { c -> … }`), `for await` bare and parenthesised, and `for try items(n) { x -> … }` walking the `Ok` value and propagating the `Error`; several sources in parentheses walking together, one parameter each, the shortest ending the loop — an array against an `Iter`, an `Iter` against an array, an array against a range, three sources — and the open range `0...` as the index; a label after the keyword, `continue :outer`, `break :outer`, a bare `break` and a `return` from the enclosing function inside the walk.

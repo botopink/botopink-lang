@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[for-in-loop]: there is no `for x in xs` — the item is the block's parameter
+at src/main.bp:16:9
+label write `for xs { x -> … }`

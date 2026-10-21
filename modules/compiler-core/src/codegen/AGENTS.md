@@ -3713,7 +3713,10 @@ the function in `guardTry` — a `try` in the function's own statement sequence
 (`fn_top_body`, a lambda's body included) still nests the rest in its Ok arm;
 beam throws `{'__bp_try', E}` out of a loop's fun (`emitTryError`) to a catch
 section at the loop's call site (`guardLoopCall`, one y-slot counted by
-`bodyPropagates`), which returns it (or throws it on from a nested loop's fun);
+`bodyPropagates`), which returns it (or throws it on from a nested loop's fun) —
+ending first the sections the same call site opened around it, a bare `break`'s
+and a label's (`endOuterGuards`), since OTP refuses a frame left with a section
+open (`unfinished_catch_try`: a loop body holding both a `return` and a `break`);
 wasm's `lowerTryPropagate` pushes the Error and ends when a generator scope is
 open.
 

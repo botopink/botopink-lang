@@ -561,6 +561,41 @@ pub const Formatter = struct {
     /// loops (`parser/exprs.zig`), which record no `emptyLinesBefore` at all —
     /// this printer keeps whatever they record, so those two start round-tripping
     /// the moment the loops call `parseStmtListInBraces` (front 15's G5).
+    /// Decision 956 — `for [await] [:label] <sources> { x, … -> … }` as
+    /// written, from the `ForWritten` of the loop the parser built: the
+    /// sources bare or in parentheses as written, a range with its own
+    /// spelling (`0..n`, `0...`).
+    fn fmtForWritten(this: *Formatter, fw: *const ast.ForWritten) anyerror!*const Doc {
+        var doc: *const Doc = try this.text("for");
+        if (fw.awaitLoop) doc = try this.concat(doc, try this.text(" await"));
+        if (fw.label) |lbl| doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, " :{s}", .{lbl})));
+        doc = try this.concat(doc, try this.text(if (fw.parenthesised) " (" else " "));
+        for (fw.sources, 0..) |src, i| {
+            if (i > 0) doc = try this.concat(doc, try this.text(", "));
+            switch (src) {
+                .value => |v| doc = try this.concat(doc, try this.fmtExpr(v.*)),
+                .range => |r| {
+                    doc = try this.concat(doc, try this.fmtExpr(r.start.*));
+                    doc = try this.concat(doc, try this.text(if (r.inclusive) "..." else ".."));
+                    if (r.end) |e| doc = try this.concat(doc, try this.fmtExpr(e.*));
+                },
+            }
+        }
+        doc = try this.concat(doc, try this.text(if (fw.parenthesised) ") {" else " {"));
+        for (fw.params, 0..) |p, i| {
+            doc = try this.concat(doc, if (i == 0) try this.text(" ") else try this.text(", "));
+            doc = try this.concat(doc, try this.text(p));
+        }
+        doc = try this.concat(doc, try this.text(" ->"));
+        if (fw.body.len == 0) return this.concat(doc, try this.text(" }"));
+        return this.forceBreak(try this.concatAll(&.{
+            doc,
+            try this.nest(INDENT, try this.concat(this.hardline(), try this.fmtStmtSeq(@constCast(fw.body)))),
+            this.hardline(),
+            try this.text("}"),
+        }));
+    }
+
     fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
@@ -882,6 +917,9 @@ pub const Formatter = struct {
                 if (lp.prefixedKeyword) |pk| if (pk != .loop and lp.body.len >= 1 and lp.body[0].expr == .loop) {
                     break :blk this.concat(try this.text(prefix), try this.fmtExpr(lp.body[0].expr));
                 };
+                // Decision 956 — a `for` the parser wrote as the loop it means
+                // prints as written.
+                if (lp.forWritten) |fw| break :blk try this.fmtForWritten(fw);
                 var doc: *const Doc = try this.text(prefix);
                 doc = try this.concat(doc, try this.text(lp.keyword.spelling()));
                 if (lp.keyword == .for_ and lp.awaitLoop) doc = try this.concat(doc, try this.text(" await"));
@@ -889,6 +927,12 @@ pub const Formatter = struct {
                     doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, " :{s}", .{lbl})));
                 }
                 if (lp.keyword == .loop) {
+                    doc = try this.concat(doc, try this.text(" {"));
+                } else if (lp.bare) {
+                    // `for xs { x -> … }` — the parentheses kept as written
+                    // (decision 956 (4)).
+                    doc = try this.concat(doc, try this.text(" "));
+                    doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
                     doc = try this.concat(doc, try this.text(" {"));
                 } else {
                     doc = try this.concat(doc, try this.text(" ("));
@@ -1252,7 +1296,7 @@ pub const Formatter = struct {
                 .range => |r| if (r.end) |end|
                     this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(if (r.inclusive) "..." else ".."), try this.fmtExpr(end.*)))
                 else
-                    this.concat(try this.fmtExpr(r.start.*), try this.text("..")),
+                    this.concat(try this.fmtExpr(r.start.*), try this.text(if (r.inclusive) "..." else "..")),
             },
             .comptime_ => |ct| switch (ct.kind) {
                 .comptimeExpr => |e| this.concat(try this.text("comptime "), try this.fmtExpr(e.*)),

@@ -1095,14 +1095,25 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// top-level `continue` is `continue-outside-loop` and a
         /// `break <value>` is refused. Dumped only when set.
         markedLambda: bool = false,
+        /// Decision 956 (1) — `for xs { x -> … }`: the source written without
+        /// parentheses. The formatter keeps the parentheses as written. Dumped
+        /// only when set.
+        bare: bool = false,
+        /// Decision 956 (2) — a `for` over several sources, or over an open
+        /// range: the parser writes it as the loop it means (`ForWritten`), and
+        /// this is the loop as written, for the formatter. Null everywhere else,
+        /// and never in the typed tree. Not dumped: the dump shows the loop the
+        /// passes read.
+        forWritten: ?*ForWritten = null,
 
         /// `prefixedKeyword` is left out of the AST dump when null, so the
         /// slot moved no snapshot of an unprefixed loop.
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{"type_"}, &.{ "prefixedKeyword", "markedLambda" });
+            return stringifyOmitting(this, jws, &.{ "type_", "forWritten" }, &.{ "prefixedKeyword", "markedLambda", "bare" });
         }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
+            if (this.forWritten) |fw| fw.deinit(allocator);
             destroyExpr(allocator, this.iter);
             if (this.indexRange) |ir| destroyExpr(allocator, ir);
             allocator.free(this.params);
@@ -1111,6 +1122,50 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         }
     };
 }
+
+/// Decision 956 — a `for` as written when the parser wrote it as another loop:
+/// several sources walked together (`for (a, b) { x, y -> … }`), or an open
+/// range (`for (0...) { i -> … }`). The loop the parser builds is
+/// `loop { <the sources bound in order>; <the walk>; break; }` — the first
+/// source that is not a range walked by a `for`, each other one stepped in its
+/// round (a range by a counter, a value by its `iter for` iterator's `next()`),
+/// the round ending when one ends — and every pass reads that loop. This is
+/// what the formatter prints back. The pointers are into the built loop and
+/// owned by it; this struct owns its slices and the text the built loop's
+/// names are slices of.
+pub const ForWritten = struct {
+    pub const Source = union(enum) {
+        /// A source that is a value: the expression, inside the built loop.
+        value: *const Expr,
+        /// A range: its bounds, inside the built loop; `end` null when open.
+        range: struct { start: *const Expr, end: ?*const Expr, inclusive: bool },
+    };
+    sources: []Source,
+    params: []const []const u8,
+    /// The body as written — the statements the walk's innermost round holds.
+    body: []const Stmt,
+    label: ?[]const u8,
+    awaitLoop: bool,
+    /// `for (…)` written with its parentheses.
+    parenthesised: bool,
+    /// The text the built loop was parsed from: its names are slices of it.
+    text: []const u8,
+
+    pub fn deinit(this: *ForWritten, allocator: std.mem.Allocator) void {
+        allocator.free(this.sources);
+        allocator.free(this.params);
+        allocator.free(this.text);
+        allocator.destroy(this);
+    }
+};
+
+/// The column the parser adds to the tokens of the loop it builds for a `for`
+/// over several sources or an open range (decision 956, `ForWritten`), plus
+/// `for_written_col_stride` per column of the `for` and the token's offset in
+/// the built text: past every written column and every other synthetic one,
+/// so no node it builds keys a lowering of a written node or of another loop.
+pub const for_written_synthetic_col: usize = 200_000_000;
+pub const for_written_col_stride: usize = 10_000;
 
 /// Binding expressions: variable declarations and assignments
 pub fn BindingExprOf(comptime phase: Phase) type {

@@ -220,9 +220,19 @@ pub const ParseErrorType = enum {
     loopBindsNothing,
     /// `for (xs) { … }` without `x ->` — a `for` binds the item it iterates.
     forWithoutBinder,
-    /// `for (xs) { x, i -> … }` — a `for` binds one name; the index is
-    /// `for (0..xs.length) { i -> }` (decision 105).
-    forBindsOneName,
+    /// Decision 956 (2) — a `for` binds one parameter per source, in order:
+    /// `for xs { x, i -> … }` and `for (a, b) { x -> … }` are refused at the
+    /// block, `detail` naming both counts (`forCountDetail`).
+    forParameterCount,
+    /// Decision 956 (4) — `for x in xs { … }`: the item is the block's
+    /// parameter, `for xs { x -> … }`.
+    forInLoop,
+    /// Decision 956 (2) — several sources are written in parentheses:
+    /// `for a, b { … }` is `for (a, b) { x, y -> … }`.
+    forSourcesParenthesised,
+    /// `for await (a, b) { … }` — `for await` walks one `AsyncIter`; decision
+    /// 956 (2)'s several sources are synchronous.
+    forAwaitOneSource,
     /// `#[…] loop` with an annotation that is not a generator effect, or a
     /// generator annotation on `for` / `while` — only `loop` takes the
     /// annotation, and only the three generator effects (decision 105).

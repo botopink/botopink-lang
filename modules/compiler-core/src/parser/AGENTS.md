@@ -62,9 +62,21 @@ parser/
 │                     none (`FunctionExpr.paramTypes` / `.returnType`), admitted by the checker only as a decorator's
 │                     `decl.addMember(name, fn…)` (`comptime/member_fn.zig`). The loops are decision 105's three keywords,
 │                     one parser each and one `LoopExpr` node (`keyword` says which): `parseForExpr` —
-│                     `for [await] [:label] (iter) { x -> … }` over a collection, a range (`a..b` exclusive,
-│                     `a...b` inclusive — `parseRangeExpr` reads both tokens) or a generator, binding exactly one
-│                     name (`for-without-binder` / `for-binds-one-name`; `paramsLoc` locates it); `parseWhileExpr` —
+│                     `for [await] [:label] <sources> { x, … -> … }` (decision 956) over a collection, a range
+│                     (`a..b` exclusive, `a...b` inclusive — `parseRangeExpr` reads both tokens; as a source
+│                     `parseRangeExprOpts` reads the open `a..` / `a...` too, the body's `{` ending it) or a
+│                     generator: one source bare (`bare`, read under `noTrailingLambda`, so
+│                     `for g.iter() { c -> … }` leaves the `{` to the body — `parseTrailingLambdas` honours the flag on
+│                     every call form and `parseCallArgs` clears it inside the parentheses) or in parentheses
+│                     (`for (a).b() {` rewinds to a bare source), several only in parentheses, one parameter per
+│                     source (`for-without-binder` / `for-parameter-count` at the `{`, `detail` naming both
+│                     counts; `for-sources-parenthesised`; `for-await-one-source`; `for x in xs` is `for-in-loop`,
+│                     `forInAhead`; `paramsLoc` locates the parameters). One source that is not an open range is
+│                     the node itself; anything else is `buildForWritten`'s loop — the text
+│                     `loop { <sources bound in order>; <the walk>; break; }` parsed by a sub-parser at
+│                     `ast.for_written_synthetic_col` (a counter's `+` at its range's `..`), the written sources and
+│                     body moved into its holes, and the written loop kept as `LoopExpr.forWritten` for the
+│                     formatter (`ast.ForWritten`); `parseWhileExpr` —
 │                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
 │                     `loop [:label] { … }` (`condition` over the literal `true`); `break [:label]` and `continue [:label]`
 │                     carry the label in the AST (the checker's `checkJumpLabel` reads both). A binder on `while`/`loop` is

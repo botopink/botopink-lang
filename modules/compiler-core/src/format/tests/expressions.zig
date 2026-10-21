@@ -657,6 +657,42 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
     );
 }
 
+// ── decision 956: the sources as written — bare, in parentheses, several ─────
+
+test "format: a for's sources print back as written, parentheses kept" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[], g: Grid, s: AsyncIter<i32>) -> void {
+        \\    for xs { x ->
+        \\        print(x);
+        \\    }
+        \\    for (xs) { x ->
+        \\        print(x);
+        \\    }
+        \\    for g.iter() { c ->
+        \\        print(c);
+        \\    }
+        \\    for :outer (xs, g.iter(), 0...) { x, c, i ->
+        \\        if (x == 2) break :outer;
+        \\        print(c + i);
+        \\    }
+        \\    for (0..3, 1...4) { a, b ->
+        \\        print(a + b);
+        \\    }
+        \\    for 0... { i ->
+        \\        if (i == 3) break;
+        \\    }
+        \\    for await s { v ->
+        \\        print(v);
+        \\    }
+        \\    val it = iter for (xs, 0..) { x, i ->
+        \\        yield x + i;
+        \\    };
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
 // ── decision 105: the three loop keywords print back as written ──────────────
 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
