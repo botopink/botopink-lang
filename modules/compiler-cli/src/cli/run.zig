@@ -78,7 +78,11 @@ fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts
         reporter.print("{s}\n", .{try refusalText(arena, file)});
         return 1;
     }
-    const proj: config.ProjectConfig = .{ .name = built.root };
+    // The host the `.bpr` records (decision 334 (2)): a browser project runs through its loader.
+    const proj: config.ProjectConfig = .{ .name = built.root, .manifest = .{ .path = "botopink.json", .text = "", .kind = .package, .name = built.root, .wasm_host = switch (built.wasm_host) {
+        .wasi => .wasi,
+        .browser => .browser,
+    } } };
     const argv = try programArgvFor(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
     var full = std.ArrayListUnmanaged([]const u8).empty;
     try full.appendSlice(arena, argv);

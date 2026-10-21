@@ -101,6 +101,7 @@ const RuntimeSink = struct {
     dir: []const u8,
     root: []const u8,
     deps: []const []const u8,
+    wasm_host: bp.ast.WasmHost,
 
     fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput) anyerror!void {
         const self: *RuntimeSink = @ptrCast(@alignCast(ctx));
@@ -136,6 +137,7 @@ const RuntimeSink = struct {
                 .program = if (is_root) program else &.{},
                 .root = if (is_root) self.root else "",
                 .deps = if (is_root) self.deps else &.{},
+                .wasm_host = if (is_root) self.wasm_host else .wasi,
             };
             const bytes = try runtime_file.write(self.gpa, stamp, meta, mods);
             defer self.gpa.free(bytes);
@@ -259,7 +261,7 @@ pub fn run(
         sinks.resolved = &sink;
     }
     if (opts.emit_runtime) |dir| {
-        runtime_sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps };
+        runtime_sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host };
         sinks.runtime = &runtime_sink;
     }
     const hook: ?bp.codegen.AnalysedHook = if (sinks.resolved != null or sinks.runtime != null)
@@ -327,6 +329,7 @@ pub const RuntimeBuild = struct {
     exit: u8,
     root: []const u8 = "",
     has_main: bool = false,
+    wasm_host: bp.ast.WasmHost = .wasi,
 };
 
 /// `botopink build --target <t> <file>.bpr` (decision 805 (1), (3)): the
@@ -386,6 +389,7 @@ pub fn runRuntime(
         .typeDefLanguage = if (opts.typescript) .typescript else null,
         .build_root = ".botopinkbuild",
         .packages = .{ .root = meta.root, .deps = meta.deps },
+        .wasm_host = meta.wasm_host,
         .wasm_artifact = true,
     };
     var emitted = try bp.codegen.emit(gpa, outputs, cfg);
@@ -405,11 +409,11 @@ pub fn runRuntime(
         true;
     if (failed.len > 0) {
         diagnostics.reportFailedModules(arena, failed);
-        return .{ .exit = 1, .root = meta.root };
+        return .{ .exit = 1, .root = meta.root, .wasm_host = meta.wasm_host };
     }
-    if (!erl_ok) return .{ .exit = 1, .root = meta.root };
+    if (!erl_ok) return .{ .exit = 1, .root = meta.root, .wasm_host = meta.wasm_host };
 
-    return .{ .exit = 0, .root = meta.root, .has_main = has_main };
+    return .{ .exit = 0, .root = meta.root, .has_main = has_main, .wasm_host = meta.wasm_host };
 }
 
 /// Whether the analysed module `name` of `outputs` declares a top-level

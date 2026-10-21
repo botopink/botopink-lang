@@ -10,6 +10,10 @@
 //! Zig types, the same skips) inside a container of its own, so a field
 //! added to the analysis is carried without anyone remembering to.
 //!
+//! The root's bytes may differ between a build that had level B warm and a
+//! cold one (the encoder's identity table follows the live tree's aliasing);
+//! the decoded tree is the same.
+//!
 //! ## The file
 //!
 //! ```text
@@ -71,6 +75,9 @@ pub const Meta = struct {
     /// dependency packages the build's module table names.
     root: []const u8 = "",
     deps: []const []const u8 = &.{},
+    /// The root package's file alone: the runtime a wasm build of the program
+    /// binds to, the manifest's `"wasm": { "host": … }` (decision 334 (2)).
+    wasm_host: @import("../ast.zig").WasmHost = .wasi,
 };
 
 /// One module's analysis, its source with it: a target's refusal at emit

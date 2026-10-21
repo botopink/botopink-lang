@@ -12,6 +12,10 @@
 #     phase (the top-level block's `print`);
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
+#   • the manifest's wasm host (decision 334 (2)) is in the root's `.bpr`: over
+#     `web/`, a `"host": "browser"` project, the wasm build from the `.bpr` is
+#     the direct build byte for byte (the `.mjs` loader included) and `run` from
+#     it goes through the loader under node, answering the direct run;
 #   • refused: `build` / `run` over a `.bpr` without `--target`
 #     (`runtime-target-required`), a `.bpr` of another compiler
 #     (`runtime-other-compiler`), a dependency's `.bpr` as the program
@@ -46,6 +50,10 @@ fail() { echo "  ✗ $*" >&2; failures=$((failures + 1)); }
 bp() { # <log> <args…>: the CLI in `app`, its stdout and stderr to <log>
   local log="$1"; shift
   ( cd "$APP" && "$BP_BIN" "$@" ) > "$log" 2>&1
+}
+bpin() { # <dir> <log> <args…>: the CLI in <dir>
+  local dir="$1" log="$2"; shift 2
+  ( cd "$dir" && "$BP_BIN" "$@" ) > "$log" 2>&1
 }
 
 # A refusal: exit 1 and the coded line.
@@ -98,6 +106,26 @@ refused "a dependency's .bpr as the program" runtime-not-a-program build --targe
 mkdir -p "$WORK/lone" && cp "$RT-commonJS/app.bpr" "$WORK/lone/"
 refused "a package's .bpr missing beside the root's" runtime-missing build --target commonJS --out "$WORK/o" "$WORK/lone/app.bpr"
 if bp "$WORK/refused.log" build --emit-runtime; then fail "--emit-runtime without its directory: exit 0"; fi
+
+# The wasm host: `web` declares `"wasm": { "host": "browser" }`.
+WEB="$WORK/web"
+if ! bpin "$WEB" "$WORK/direct.log" build --target wasm --out "$WORK/direct-web" --emit-runtime "$WORK/rt-web"; then
+  fail "web: the direct build failed"; sed 's/^/      /' "$WORK/direct.log" >&2
+else
+  [[ -f "$WORK/direct-web/main.mjs" ]] || fail "web: the direct build wrote no main.mjs loader"
+  if ! bpin "$WEB" "$WORK/bpr.log" build --target wasm --out "$WORK/bpr-web" "$WORK/rt-web/web.bpr"; then
+    fail "web: the build from web.bpr failed"; sed 's/^/      /' "$WORK/bpr.log" >&2
+  else
+    diff -r "$WORK/direct-web" "$WORK/bpr-web" > "$WORK/diff.log" \
+      || { fail "web: built from web.bpr differs from the direct build"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+  fi
+  bpin "$WEB" "$WORK/run-direct.out" run --target wasm --out "$WORK/run-direct-web" || fail "web: the direct run failed"
+  grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
+  grep -q '^hello from the browser host$' "$WORK/want.out" || fail "web: the direct run printed no greeting"
+  bpin "$WEB" "$WORK/run-bpr.out" run --target wasm --out "$WORK/run-bpr-web" "$WORK/rt-web/web.bpr" || fail "web: the run from web.bpr failed"
+  diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
+    || { fail "web: the run from web.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+fi
 
 if (( failures > 0 )); then
   echo "runtime_file.sh: $failures failure(s)" >&2

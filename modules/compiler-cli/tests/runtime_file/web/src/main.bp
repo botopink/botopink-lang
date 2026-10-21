@@ -1,0 +1,9 @@
+//// The program of a `"wasm": { "host": "browser" }` manifest: `runtime_file.sh`
+//// builds it directly and from its `.bpr`, which records the host (decision
+//// 334 (2)), and runs both through the loader under node.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("hello from the browser host");
+}
