@@ -18591,6 +18591,11 @@ const Emitter = struct {
     /// A label is not a case here: the checker resolves `row.name` to `row._0`
     /// before this backend sees it (decision 8 §6 T4), so the member is always
     /// `_N` or a bare `N`.
+    /// The shape of `t._N` when that element of a tuple is an array (`[i`, `[s`, …).
+    fn tupleElemArrayShape(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        const sh = (self.tupleElemShapeOf(e) catch return null) orelse return null;
+        return if (sh.len > 0 and sh[0] == '[') sh else null;
+    }
     fn tupleElemShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
         const ia = switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -18744,6 +18749,8 @@ const Emitter = struct {
                 // .at(0) ?? "").length()` and its narrowed twin read the box
                 // as a string pointer and printed a heap address at exit 0.
                 .identAccess => blk: {
+                    // `t._1` of a tuple holding an array: the tuple's shape names the elements.
+                    if (self.tupleElemArrayShape(e)) |sh| break :blk if (sh.len > 1 and sh[1] == 's') .str else if (sh.len > 1 and sh[1] == 'f') .f64 else .i32;
                     const tr = self.typeRefOf(e) orelse break :blk .i32;
                     break :blk arrayElemOfTypeRef(tr) orelse .i32;
                 },
@@ -26887,7 +26894,7 @@ const Emitter = struct {
                 // stored in `Ticker(s: …)` included. `for await (t.s)` fell to
                 // the unknown-iterable no-op and yielded nothing. An optional
                 // field (`?T[]`) is not an array until it is unwrapped.
-                .identAccess => self.elemTypeRefOf(e) != null or self.isChildrenTyped(e),
+                .identAccess => self.elemTypeRefOf(e) != null or self.isChildrenTyped(e) or self.tupleElemArrayShape(e) != null,
                 else => false,
             },
             .collection => |col| switch (col.kind) {

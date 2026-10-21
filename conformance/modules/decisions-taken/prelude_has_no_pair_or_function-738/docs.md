@@ -7,3 +7,4 @@ Cells in this repository that bear on it: `modules/decisions-taken/prelude_is_pr
 [cells/prelude_has_no_pair_or_function/src/main.bp](cells/prelude_has_no_pair_or_function/src/main.bp)
 [cells/tuple_destructure_array_element/src/main.bp](cells/tuple_destructure_array_element/src/main.bp)
 [cells/tuple_destructure_discard/src/main.bp](cells/tuple_destructure_discard/src/main.bp)
+[cells/tuple_element_array_read/src/main.bp](cells/tuple_element_array_read/src/main.bp)
