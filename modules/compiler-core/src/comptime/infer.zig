@@ -12680,7 +12680,7 @@ fn isKnownBuiltinName(callee: []const u8) bool {
     // degraded module is not reported as a misspelled builtin — a hand-written
     // `@is(…)` is refused in `inferCallExpr` (decision 322).
     return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name) or
-        std.mem.eql(u8, callee, ast.non_null_builtin_name);
+        std.mem.eql(u8, callee, ast.non_null_builtin_name) or std.mem.eql(u8, callee, ast.key_builtin_name);
 }
 
 pub fn isPrimitiveTypeName(name: []const u8) bool {
@@ -17998,6 +17998,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 // scheme's `.generic` vars must never reach `unify`.
                 const inst = try instantiateGenericType(env, ty);
                 try noteComponentValue(env, name, inst, loc);
+                try noteComponentFnValue(env, name, inst, loc);
                 // 144 B-115 (decision 673) — a module fn of type parameters
                 // named as a value: commonJS hands its body the print shape of
                 // each, read off the function type this use instantiates
@@ -22992,6 +22993,17 @@ fn noteHookCall(env: *Env, c: ast.CallExprOf(.untyped), ty: *T.Type) InferError!
 /// lands, so naming it reaches it — an edge as a call is. A local of that name
 /// is a value the checker does not follow here (a parameter is called, and
 /// that call is the edge).
+/// Decision 821 (3) — a function answering a component named as a value
+/// (`itens.map(Card)`): `context_lower.zig` numbers it where it is written and
+/// stamps each value it makes. A host function's values are the host's.
+fn noteComponentFnValue(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
+    const d = ty.deref();
+    if (d.* != .func) return;
+    if (!isComponentType(d.func.ret)) return;
+    if (env.localBindDepth(name) == null) if (env.fnDecls.get(name)) |f| if (isHookHost(f)) return;
+    try env.componentFnValues.put(env.arena, loc, d.func.params.len);
+}
+
 fn noteComponentValue(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
     const b = env.hookBuilder orelse return;
     if (env.localBindDepth(name) != null) return;
@@ -23977,6 +23989,61 @@ const optional_synthetic_col = ast.optional_synthetic_col;
 /// written loc of its own — the `[` or `(` after `?.`, the method's name — so
 /// the plans inference makes while typing it find it. The operand is refused
 /// first when it is never `null` (`refuseNeverNull`).
+/// Decision 818 (3) — `#[key(k)] x`, the one annotation an expression takes:
+/// `x` answers a `Component<T>` (else `key-not-component`) and `k` is a value
+/// `==` compares as one — a `string`, an integer, an enum — (a record or a
+/// function `key-type`). The call answers `x`'s type; `context_lower.zig`
+/// writes the key into the place the value carries (820 (1)).
+fn inferKeyedExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const saved = env.expectedType;
+    const typedValue = try inferExprTyped(env, call.args[0].value.*);
+    env.expectedType = null;
+    const typedKey = try inferExprTyped(env, call.args[1].value.*);
+    env.expectedType = saved;
+    if (!isComponentType(typedValue.getType())) {
+        const shown = baseNameOfType(typedValue.getType()) orelse "a value";
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, diagnostics.key_not_component ++ ": `#[key(…)]` names a component's place, and this expression answers `{s}`, not a `Component<T>`", .{shown}),
+            "Write the key before the call that makes the component: `#[key(p.id)] Item(p)` (decision 818 (3)).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!isValueKeyType(env, typedKey.getType())) {
+        const shown = baseNameOfType(typedKey.getType()) orelse "a record or a function";
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, diagnostics.key_type ++ ": a key is a value `==` compares as one — a `string`, an integer or an enum —, not `{s}`", .{shown}),
+            "Key the component by one of the item's values: `#[key(p.id)]` (decision 818 (3)).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    try env.keyedExprs.put(env.arena, loc, {});
+    const args = try env.arena.alloc(ast.CallArgOf(.typed), 2);
+    args[0] = .{ .label = null, .value = try makeTypedPtr(env, typedValue) };
+    args[1] = .{ .label = null, .value = try makeTypedPtr(env, typedKey) };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = typedValue.getType(), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = ast.key_builtin_name,
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
+/// Whether a key of type `ty` compares as a value (818 (3)): anything but a
+/// record, a tuple or a function; a type not yet known is let through.
+fn isValueKeyType(env: *Env, ty: *T.Type) bool {
+    const t = ty.deref();
+    return switch (t.*) {
+        .func => false,
+        .record => false,
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, "tuple")) break :blk false;
+            break :blk recordFieldNames(env, n.name) == null;
+        },
+        else => true,
+    };
+}
+
 fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const isBang = call.is_builtin and std.mem.eql(u8, call.callee, ast.non_null_builtin_name);
     const isIndex = call.is_builtin and std.mem.eql(u8, call.callee, ast.index_builtin_name);
@@ -24643,6 +24710,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // the transform (`inferOptionalOperator`).
             if (call.optional or (call.is_builtin and std.mem.eql(u8, call.callee, ast.non_null_builtin_name))) {
                 return inferOptionalOperator(env, call, loc);
+            }
+            // Decision 818 (3) — `#[key(k)] x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, ast.key_builtin_name) and call.args.len == 2) {
+                return inferKeyedExpr(env, call, loc);
             }
             // Front 15 handover — `.Circle(radius: 1)`: the parser chains the
             // call onto a `.dotIdent` head, so the callee arrives as an

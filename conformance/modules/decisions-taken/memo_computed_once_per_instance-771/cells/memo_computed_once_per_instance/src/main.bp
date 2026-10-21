@@ -1,11 +1,11 @@
-//// Decisions 755, 771 — `use memo({ -> make })` is std's
-//// `hooks.memo<T>(make: fn() -> T) -> Component<T>`: one slot per `use memo`
-//// position, allocated when one `Page(…)` call makes the component value; its
-//// first render runs `make` and fills the slot, a later render of the same
-//// value reads it. `a` rendered twice makes its label and its count once;
-//// `b`, another value of the same component, makes its own.
+//// Decisions 755, 816, 818 (1) — `use memo({ -> make })` is std's
+//// `hooks.memo<T>(make: fn() -> T) -> Component<T>`: each `use memo` takes a
+//// child cell of the body's cell at its place, and its slot is that cell's —
+//// filled on the cell's first render, read while the cell stands. `a` run
+//// twice over one root makes its label and its count once; `b`, made by
+//// another call, stands at another place and makes its own.
 
-import {context.run, hooks.memo, io.terminal.print} from "std";
+import {context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
 
 type Element(text: string)
 
@@ -22,14 +22,16 @@ component fn Page(name: string) -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
     val a = Page("a");
     val b = Page("bb");
-    val first = await run(a);
+    val first = await run(a, root);
     print(first.text);
-    val again = await run(a);
+    val again = await run(a, root);
     print(again.text);
-    val other = await run(b);
+    val other = await run(b, root);
     print(other.text);
-    val last = await run(a);
+    val last = await run(a, root);
     print(last.text);
 }

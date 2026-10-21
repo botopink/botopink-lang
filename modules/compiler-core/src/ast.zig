@@ -3287,6 +3287,16 @@ pub const ambient_behavior_module = "std/primitives";
 /// which is the same place `x is T` reached before `04-js` lowered it.
 pub const index_builtin_name = "[]";
 
+/// Decision 818 (3) — the reserved builtin-call name that carries `#[key(k)]
+/// x`, the one annotation an expression takes: `call{ .callee =
+/// key_builtin_name, .is_builtin = true, .args = &.{ <x>, <k> } }`, for
+/// `index_builtin_name`'s reason. `@#key(…)` does not lex, so no source writes
+/// it by hand. The checker refuses it before an expression answering no
+/// `Component<T>` (`key-not-component`) and a key `==` does not compare as a
+/// value (`key-type`); `comptime/context_lower.zig` lowers it to the stamp
+/// that writes the key in the value's place (820 (1)).
+pub const key_builtin_name = "#key";
+
 /// Decision 330 (5) — the reserved builtin-call name that carries the postfix
 /// `x!`: `call{ .callee = non_null_builtin_name, .is_builtin = true, .args =
 /// &.{ <the operand> } }`, for `index_builtin_name`'s reason. `@!(…)` does not

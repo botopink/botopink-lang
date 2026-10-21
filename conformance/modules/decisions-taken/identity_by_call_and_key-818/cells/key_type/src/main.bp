@@ -1,0 +1,21 @@
+//// Decision 818 (3) — a key is a value `==` compares as one — a `string`, an
+//// integer, an enum —; a record key is refused at the `#`, `key-type`.
+
+import {context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+type Id(value: string)
+
+component fn Item(name: string) -> Component<View> {
+    return View(text: name);
+}
+
+component fn App() -> Component<View> {
+    val items = ["a"].map({ n -> #[key(Id(value: n))] Item(n) });
+    return View(text: "app");
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(App())).text);
+}

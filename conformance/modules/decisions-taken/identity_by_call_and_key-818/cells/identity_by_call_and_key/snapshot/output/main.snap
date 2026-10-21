@@ -1,0 +1,10 @@
+botopink-cell 1
+out made on
+out made x
+out made y
+out made mostra 1
+out made mostra 2
+out on | x,y | mostra 1 mostra 2
+out on | y,x | mostra 1 mostra 2
+out made off
+out off | y,x | mostra 1 mostra 2

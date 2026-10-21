@@ -1,0 +1,10 @@
+botopink-cell 1
+out made painel
+out made x
+out made y
+out painel 1 | x,y
+out made login
+out login 2 | y,x
+out made painel
+out painel 1 | y,x
+out key-duplicate: two siblings carry the key "x" (decision 819 (5))

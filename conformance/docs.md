@@ -2892,7 +2892,7 @@ hooks of std's `context` module work it, `use`d and nothing else
   or `val c = comptime createContext(Theme(mode: "dark"));` then `use
   provide(c);`, or, for a value known only at run time, `val c = use memo({ ->
   createContext(Theme(mode: mode)) });` then `use provide(c);` (made on the
-  component instance's first render and kept for it) — and `use
+  first render of the memo's cell and kept while it stands) — and `use
   provide(themeContext)` gives the declared default again. In a body that is no
   `component` body answering `Component<R>` it is
   `context-provide-outside-component`.
@@ -2927,16 +2927,16 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cells/context_provide_made_at_run_time -->
 
-**Memo** (decisions 755, 771, 774). `val v = use memo({ -> make });` is std's
+**Memo** (decisions 755, 816, 818 (1)). `val v = use memo({ -> make });` is std's
 hook `hooks.memo<T>(make: fn() -> T) -> Component<T>`, imported as any std
 function (`import {hooks.memo} from "std"`): it answers the value `make`
-computed on the component instance's first render, kept for that instance and
-never recomputed — there is no dependency list. A component instance is the
-value one `Page(…)` call makes: when that value is made, one slot is allocated
-per `use memo` position in the body; the first render fills the slot, and a
-later render of the same value reads it. Another `Page(…)` call is another
-instance, with slots of its own. The slot is a process-dictionary entry on
-erlang and beam, a closure cell on commonJS and a heap cell on wasm.
+computed on the first render of its cell, kept while that cell stands and
+never recomputed — there is no dependency list. `use memo` is a call of the
+body like any other, numbered with them, and takes a child cell of the
+body's cell at its place; its slot is that cell's. A cell stands from one
+render to the next while its place is met again — the same root run again,
+the same written call, the same item count or key (decisions 816, 819, 820)
+—, so two runs over one `Scope` root share it and a fresh root starts empty.
 
 <!-- example: modules/decisions-taken/memo_computed_once_per_instance-771/cells/memo_computed_once_per_instance -->
 
@@ -3011,6 +3011,51 @@ body's:
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_resolved_by_use_or_tree -->
 
 <!-- example: modules/decisions-taken/use_child_cell_provide_in_order-812/cells/use_child_cell_provide_in_order -->
+
+A lambda of the type `Composition<T>` is a component without hooks, and a
+component may be called by hand with a scope and a place (decision 815):
+
+<!-- example: modules/decisions-taken/composition_function_again-815/cells/composition_function_again -->
+
+**Places** (decisions 816–821). A render's cells form a tree that std's
+`Scope` keeps: a hook's state — `use memo`'s slot — lives in its cell, and a
+cell is kept from one render to the next while the same place of its parent
+is met, as React keeps a fiber; a place not met in a render is dropped, and
+a reused cell takes its parent's contexts anew. The place is written into a
+component's value by the call that makes it: the call's number, counting the
+calls answering a component in the nearest `component` body — the lambdas
+written in it with it, a `use memo` and a `use all` among them —, and the
+item's, the count of the values that call made in the body's current render;
+a plain function counts its own calls at each entry, and a call written in a
+body stamps over what a plain function stamped; a function answering a
+component named as a value (`itens.map(Card)`) is numbered where it is
+written. `use c`, the root and a hand run with `Place.none()` keep the place
+the value carries; `Place.key(k)` puts `k` in the item's stead. A value made
+outside every function carries none and takes the root's place.
+
+<!-- example: modules/decisions-taken/hooks_state_by_tree_place-816/cells/hooks_state_by_tree_place -->
+
+<!-- example: modules/decisions-taken/cells_by_place_and_identity-817/cells/cells_by_place_and_identity -->
+
+<!-- example: modules/decisions-taken/place_written_by_the_call-820/cells/place_written_by_the_call -->
+
+<!-- example: modules/decisions-taken/place_numbered_in_component_body-821/cells/place_numbered_in_component_body -->
+
+`#[key(k)]`, the one annotation an expression takes, is written before an
+expression answering a `Component<T>` — `pessoas.map({ p -> #[key(p.id)]
+Item(p) })` — and puts `k` in the item's stead, so a reordered list keeps each
+item's state (decision 818 (3)); before any other expression it is
+`key-not-component`, and a key `==` does not compare as a value — a record, a
+function — is `key-type`. Two siblings with one key fail at run time,
+`key-duplicate` (decision 819 (5)).
+
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/identity_by_call_and_key -->
+
+<!-- example: modules/decisions-taken/composition_takes_its_place-819/cells/composition_takes_its_place -->
+
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_not_component -->
+
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_type -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`

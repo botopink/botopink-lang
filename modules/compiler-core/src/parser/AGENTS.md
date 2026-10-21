@@ -75,7 +75,10 @@ parser/
 │                     `while` / `for` (decision 125; `genLoopPrefixAhead` — the two words are contextual, an
 │                     identifier anywhere else): `iter loop` is the prefixed `loop` node, `iter while` / `iter for`
 │                     the prefixed `loop { <written loop>; break; }` with `prefixedKeyword` recording the keyword;
-│                     `LoopExpr.generator` carries `.iterator` / `.stream`. An annotation block before a loop is
+│                     `LoopExpr.generator` carries `.iterator` / `.stream`. `#[key(k)] x` (decision 818 (3), the
+│                     one annotation an expression takes; `keyAnnotationAhead`, `parseKeyedExpr`) is the
+│                     `ast.key_builtin_name` builtin call over `x` and `k`, located at the `#`, which the formatter
+│                     prints back. Any other annotation block before a loop is
 │                     `loop-annotation-not-generator` (`parseAnnotatedLoopExpr`), a removed effect annotation there
 │                     `effect-annotation-removed` with the `iter` / `stream` fix-it; a removed wrapper
 │                     name in a type is `effect-type-removed` (`types.zig`) — always, there is no mode
@@ -103,6 +106,7 @@ parser/
     ├── decision529.zig   ← decision 529 (2)'s parser half: `..props: R` is a record parameter (`Param.recordParam`), told from a variadic by the type — a named non-primitive type against an array —, with no default (`record-param-default`); `..value: i32` stays `variadic-not-array`
     ├── decision311.zig   ← decision 311's parser half: the template annotation `#[f "…"]` / `#[f """…"""]` (`parser.zig` `parseAnnotationCall` → `Annotation.template` + `templateLoc`, the literal as written; its holes parsed by `exprs.zig` `parseStringToken`, so a malformed one is a parse error), alone and inside a list, its AST dump; a builtin `@` annotation takes no literal
     ├── decision255.zig   ← decision 255's two expression forms: a type application before a member (`Dict<string, unknown>.empty()`, the comparisons that stay comparisons) and `comptime <expr>`, each with its `botopink format` round-trip
+    ├── decision818.zig   ← decision 818 (3)'s `#[key(k)] x`: the `#key` builtin call it parses to, at the `#`, and its `botopink format` round-trip
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…; R5 carets the second annotation, 01 R9)
     └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`, R9 the catch-all names its token, R10 the decided-against forms refused by name)
 ```

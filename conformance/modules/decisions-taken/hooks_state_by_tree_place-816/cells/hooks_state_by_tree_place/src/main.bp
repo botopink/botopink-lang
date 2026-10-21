@@ -1,0 +1,49 @@
+//// Decision 816 — a hook's state lives in its cell of the render's tree and is
+//// kept from one render to the next while the same component stands at the same
+//// place: `App` rendered again over one root keeps `Counter("counter")`'s and
+//// the type form `Badge`'s memos; `if (logged) Counter("panel") else
+//// Counter("login")` are two places, so the branch that renders gets a fresh
+//// cell and the one left out is dropped — `panel` is made again after `login`.
+
+import {context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Counter(name: string) -> Component<View> {
+    val n = use memo({ ->
+        print("made " + name);
+        name.length
+    });
+    return View(text: name + " " + n.toString());
+}
+
+type Badge(label: string) implement Component<View> {
+    fn compose(self: Self) -> Component<View> {
+        val m = use memo({ ->
+            print("made badge " + self.label);
+            self.label
+        });
+        return View(text: "badge " + m);
+    }
+}
+
+component fn App(logged: bool) -> Component<View> {
+    val c = use Counter("counter");
+    val b = use Badge(label: "b");
+    val shown = if (logged) Counter("panel") else Counter("login");
+    val s = use shown;
+    return View(text: c.text + " / " + b.text + " / " + s.text);
+}
+
+async fn render(root: Scope, logged: bool) -> Async<string> {
+    return (await run(App(logged), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, true));
+    print(await render(root, true));
+    print(await render(root, false));
+    print(await render(root, true));
+}

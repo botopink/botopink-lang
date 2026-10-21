@@ -478,6 +478,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return .{ .loop = try this.parseLoopExpr(alloc, null) };
     }
     if (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket) {
+        if (keyAnnotationAhead(this)) return parseKeyedExpr(this, alloc);
         return .{ .loop = try this.parseAnnotatedLoopExpr(alloc) };
     }
     //   iter loop|while|for …  /  stream loop|while|for …   (decision 125)
@@ -2524,6 +2525,39 @@ pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
         .awaitLoop = awaitLoop,
         .label = label,
     };
+}
+
+/// Whether the cursor sits on `#[key(` — decision 818 (3)'s annotation of an
+/// expression.
+fn keyAnnotationAhead(this: *This) bool {
+    return this.peekAt(2).kind == .identifier and std.mem.eql(u8, this.peekAt(2).lexeme, "key") and
+        this.peekAt(3).kind == .leftParenthesis;
+}
+
+/// `#[key(k)] x` (decision 818 (3)): the expression `x` with the key `k`, as
+/// the `#key` builtin call (`ast.key_builtin_name`) over `x` and `k`, located
+/// at the `#`. Whether `x` answers a `Component<T>` is the checker's.
+fn parseKeyedExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    const hashTok = this.advance(); // `#`
+    _ = this.advance(); // `[`
+    _ = this.advance(); // `key`
+    _ = try this.consume(.leftParenthesis);
+    var key = try this.parseExpr(alloc);
+    errdefer key.deinit(alloc);
+    _ = try this.consume(.rightParenthesis);
+    _ = try this.consume(.rightSquareBracket);
+    var value = try this.parseExpr(alloc);
+    errdefer value.deinit(alloc);
+    var args = try alloc.alloc(CallArg, 2);
+    args[0] = .{ .label = null, .value = try this.boxExpr(alloc, value) };
+    args[1] = .{ .label = null, .value = try this.boxExpr(alloc, key) };
+    return Expr{ .call = .{ .loc = locFromToken(hashTok), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = ast.key_builtin_name,
+        .is_builtin = true,
+        .args = args,
+        .trailing = try alloc.alloc(TrailingLambda, 0),
+    } } } };
 }
 
 /// A block of annotations before a loop. Decision 125 — a loop takes no

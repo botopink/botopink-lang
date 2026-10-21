@@ -1306,6 +1306,14 @@ pub const Env = struct {
     /// `@Component<R>`, by location, with that type: a call makes the
     /// component's lambda and runs nothing (decision 791 (1)).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 818 (3) — every `#[key(k)] x` the checker accepted, by its
+    /// location: `context_lower.zig` lowers each to the stamp that writes the
+    /// key into the value's place (820 (1)).
+    keyedExprs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 821 (3) — every function answering a component named as a
+    /// value, by the name's location, with its arity: `context_lower.zig`
+    /// numbers it where it is written and stamps each value it makes.
+    componentFnValues: std.AutoHashMapUnmanaged(ast.Loc, usize) = .empty,
     /// Decision 888 — every untyped lambda written with fewer parameters than
     /// the function type it meets, by its location, with the parameters it
     /// takes: the written ones, then unnamed ones (`context_lower.zig` writes

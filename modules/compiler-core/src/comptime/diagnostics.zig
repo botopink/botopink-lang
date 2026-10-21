@@ -78,6 +78,13 @@ pub const await_component: []const u8 = "await-component";
 /// Decision 804 (1) — a type implementing `Component<R>` that declares no
 /// `fn compose(self: Self) -> Component<R>`, its body. Located at the type.
 pub const component_compose_missing: []const u8 = "component-compose-missing";
+/// Decision 818 (3) — `#[key(k)]` written before an expression answering no
+/// `Component<T>`: the one annotation an expression takes names a component's
+/// place. Located at the `#`.
+pub const key_not_component: []const u8 = "key-not-component";
+/// Decision 818 (3) — a `#[key(k)]` whose key `==` does not compare as a
+/// value: a record or a function. Located at the `#`.
+pub const key_type: []const u8 = "key-type";
 /// Decisions 804 (1), 388 (5) — a type component's field typed `Scope`:
 /// the renderer hands the scope to `compose` at each run. Located at the
 /// field's type.
@@ -935,6 +942,8 @@ pub const all_codes = [_][]const u8{
     iter_await,
     await_component,
     component_compose_missing,
+    key_not_component,
+    key_type,
     component_scope_field,
     component_use_outside_compose,
     component_compose_called,
