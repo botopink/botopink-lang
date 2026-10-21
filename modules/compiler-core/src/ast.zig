@@ -693,6 +693,17 @@ pub const text_arg_col: usize = 8_000_000;
 /// synthetic columns, so the answer is keyed by a loc no written node has.
 pub const catalogue_default_col: usize = 9_000_000;
 
+/// The column the component lowering writes a stamp's call at past the call it
+/// wraps (`context_lower.stampLoc`): past any written column and apart from the
+/// other synthetic columns, so it keys none of the checker's plans of the
+/// wrapped call.
+pub const stamp_synthetic_col: usize = 10_000_000;
+
+/// The column the component lowering adds a second time, to the call inside the
+/// lambda it builds for `xs.map(Card)`: `stamp_synthetic_col` twice would meet
+/// `record_param_synthetic_col`'s, so it has a column of its own.
+pub const stamp_lambda_col: usize = 11_000_000;
+
 /// The column added to the loc of a generic fn named as a value (`xs.map(show)`)
 /// to key the `text_value` lowering of the function type that use instantiates
 /// when a parameter of it holds a float or a tuple (144 B-115, decision 673;
