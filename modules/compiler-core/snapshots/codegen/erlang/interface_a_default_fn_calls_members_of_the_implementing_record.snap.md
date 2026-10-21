@@ -79,7 +79,7 @@ main(_Args) ->
 ```erlang
 -module(test@main@@Money).
 -compile({no_auto_import,[min/2, max/2]}).
--export([min/2, max/2, clamp/3, '__bp_get'/2, '__bp_format'/1]).
+-export([min/2, max/2, clamp/3, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 min(Self, Other) ->
     case (erlang:element(2, Self) < erlang:element(2, Other)) of
@@ -103,6 +103,8 @@ clamp(Self, Lo, Hi) ->
 '__bp_get'(V, cents) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Money", [{"cents", erlang:element(2, V)}]}.
+
+'__bp_behaviors'() -> ['Bounded'].
 ```
 
 ----- RUN LOG -----

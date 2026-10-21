@@ -11199,6 +11199,8 @@ const Emitter = struct {
     /// tag it builds, joined by `orelse` — its unit variants as atoms and its
     /// payload variants as tagged tuples.
     fn typeTestNode(this: *Emitter, b: Ast.Builder, t: ast.TypeRef, subject: Ast.Expr) anyerror!?Ast.Expr {
+        // Decision 810 (1) — a behavior: the value's type module answers it.
+        if (ast.behaviorTestName(t)) |bn| return try this.genCall(b, .implements, &.{ subject, Ast.Expr.a(bn) });
         switch (t) {
             .named => |n| {
                 if (std.mem.eql(u8, n, "string")) return try b.remote("erlang", "is_binary", &.{subject});
@@ -12051,6 +12053,25 @@ const Emitter = struct {
             .layout = .inline_,
         }}) } } });
         try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
+        try behaviorsForm(b, unit, r.implement);
+    }
+
+    /// Decision 810 (1) — `'__bp_behaviors'() -> ['Shown', …]`: the behaviors
+    /// the type implements, which `'__bp_implements'/2` reads for `v is B`.
+    fn behaviorsForm(b: Ast.Builder, unit: *SavedUnitState, implement: []const ast.TypeRef) !void {
+        if (implement.len == 0) return;
+        var names: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (implement) |im| switch (im) {
+            .named => |n| try names.append(b.arena, Ast.Expr.a(n)),
+            .generic => |g| try names.append(b.arena, Ast.Expr.a(g.name)),
+            else => {},
+        };
+        try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_behaviors", .clauses = try b.arena.dupe(Ast.Clause, &.{.{
+            .patterns = &.{},
+            .body = try b.body(&.{.{ .list = try names.toOwnedSlice(b.arena) }}),
+            .layout = .inline_,
+        }}) } } });
+        try unit.exports.append(b.arena, .{ .name = "__bp_behaviors", .arity = 0 });
     }
 
     /// `'__bp_format'/1` for an enum: one clause per variant, the tag as the
@@ -12104,6 +12125,7 @@ const Emitter = struct {
         }
         try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_format", .clauses = clauses } } });
         try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
+        try behaviorsForm(b, unit, e.implement);
     }
 
     /// The method a type renders itself through (decision 8 §7's `Display`):

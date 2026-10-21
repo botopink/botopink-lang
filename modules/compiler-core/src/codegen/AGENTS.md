@@ -3561,6 +3561,30 @@ std's body stopped calling a method on an optional and the erlang emitter types 
 `default fn` body's locals (§ erlang, "A `default fn` body's locals"); wasm's
 std-wasm's `array.unique` answers the same (`modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique`).
 
+## A behavior's identity at run time (decision 810 (1))
+
+`v is B<…>` over a behavior `B` reaches every backend as the tested type `.named`
+`ast.behavior_test_prefix ++ "B"` (`ast.behaviorTestName`; the checker records it, `type_token.apply`
+writes it), and a `case` arm naming a behavior reaches them already rewritten to that `is` test
+(`comptime/type_token.zig` `behaviorCase`). The identity is the mark each implementing type carries:
+
+- **commonJS** — `Tag.prototype.__bp_b_Shown = true;` after the class of every record and enum whose
+  `implement` names `Shown` (`appendBehaviorMarks`); the test is `(v != null && v.__bp_b_Shown ===
+  true)`, which crosses every module. `x is Async<…>` is `instanceof Promise` (a failing task's
+  `__bp_task` is one too).
+- **erlang / beam** — a record's type module exports `'__bp_behaviors'/0`, the list of the behaviors
+  its type implements (`behaviorsForm`, beam's `emitBehaviors`); the test is the shared runtime helper
+  `'__bp_implements'/2` (`beam/gen_runtime.zig` `.implements`): the value's tag (a record's or a
+  payload variant's first element, a unit variant's atom), its `__v__` segment cut off, is a loaded
+  module exporting `'__bp_behaviors'/0` that lists the behavior; an enum's module exports it too.
+- **wat** — a unit links every module statically, so `registerTypes` records each behavior's
+  implementing types (`behavior_impls`) and `typeDescriptors` / `gcTypeTests` answer the union of
+  theirs: the test is the implementors' own descriptor (or GC type) tests.
+
+A generic function over a union parameter (`fn first<T>(v: Box<T> | Pair<T>)`) binds `T` on wat from
+the member the argument's type names (`bindParam`), as the member written alone would; it printed a
+string answer as its address.
+
 ## Quick-reference rules
 
 - Emitters are **blind** — they never inspect `ExprKind.comptime_`; the

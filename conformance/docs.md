@@ -1562,6 +1562,18 @@ that work, `comptime t: type<T>` and `t: type<T>` (decisions 667, 758):
 
 <!-- example: modules/decisions-taken/type_token_run_time_value-758/cells/is_type_parameter_refused -->
 
+A type parameter the tested value's own type binds is no such case (decision 810 (1)): `v is X<T>`
+is accepted when `X<T>` is a member of `v`'s static type and `T` is bound through it (`v: Box<T> |
+Pair<T>`, so `v is Box<T>`), and it narrows `v` to that member. At run time it tests `X` alone — a
+record's, an enum's or a behavior's identity, as `v is X<unknown>` does —, the argument coming from
+`v`'s type. A behavior's identity is the value's type implementing it: `v is Shown<unknown>` holds for
+a value of a type written `implement Shown<T>`, on every target. `is-type-parameter` stays for a
+parameter nothing binds: `x: unknown`, `x is Box<T>`.
+
+<!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/run/src/cases/is_behavior_identity_run_time -->
+
+<!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/refused/src/cases/is_unbound_type_argument -->
+
 A type to test against travels as a `comptime t: type<T>` parameter — `fn
 count<T>(self: Registry, comptime t: type<T>) -> i32 { … if (e is t) … }`, called
 `r.count(Users)`, `T` inferred from `t`. The parameter is the function's
@@ -1632,6 +1644,8 @@ These shapes narrow:
 | Shape | Where the name is narrowed |
 |---|---|
 | `if (x is T) { … }` | the branch |
+| `if (x is A) { … } else { … }`, `x` a union | the `else` branch, to the union without `A` |
+| `if (x is A) { return …; }` — `x` a union | the REST of the block, to the union without `A`, for a parameter, a `val` and a `var` until it is assigned |
 | `if (guard(x)) { … }`, for a `fn guard(x: …) -> x is T` | the branch |
 | `if (x != null) { … }` — and `null != x` | the branch, to the `?T`'s payload |
 | `if (x == null) { … } else { … }` | the `else` branch |
@@ -1643,6 +1657,18 @@ These shapes narrow:
 
 <!-- example: modules/narrow/run/src/cases/narrow_after_null_return -->
 
+A union narrows by the flow of an `is` (decision 810 (2)): inside `if (v is A)` `v` is `A`; in its
+`else`, and after it when the branch leaves (`return`, `throw`, `break`, `continue`), `v` is its union
+without `A`, each further test removing one more (`if (x is A) return …; if (x is B) return …; x` is
+`C`). It holds for a parameter, a `val`, a loop's binder and a `var` until it is assigned — a `var`
+assigned inside a branch, a loop or a function below the test is not narrowed. No new name is bound:
+`v` keeps its name with a narrower type. A member forgotten is caught where the rest is used, a
+mismatch at that use. The flow's `if` and the `case` below are both the language's (810 (4)).
+
+<!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/run/src/cases/union_narrowing_flow_and_case -->
+
+<!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/refused/src/cases/union_narrowing_forgotten_member_use -->
+
 Three shapes do **not** narrow, and each for its own reason:
 
 * `if (x)` on a `?T` with no binder is refused — "type mismatch: expected bool,
@@ -1650,7 +1676,7 @@ Three shapes do **not** narrow, and each for its own reason:
   or `if (x != null)`.
 * `while (x != null) { … }` leaves its body alone. A condition loop reassigns the
   name it tests, and a narrowed name could not be assigned the optional again.
-* A guard clause narrows a `val` and not a `var`, for the same reason: a `var`
+* A null-test guard clause narrows a `val` and not a `var`, for the same reason: a `var`
   can be assigned below the guard.
 
 The binder of `if (x) { v -> … }` (and of `x ?? d`, which reads as one) is bound in the then-branch
@@ -2383,6 +2409,14 @@ a comment there as it is in a function body, and `botopink format` keeps it:
 A guard and a type pattern:
 
 <!-- example: modules/case/cells/case_type_guard_arms -->
+
+A type pattern may be a generic type, `Box<T> { b -> … }`, under `is`'s rule for its arguments
+(decision 810 (3), (1)): accepted when `Box<T>` is a member of the subject's type, the binder that
+member, its arguments the subject's own; a type parameter nothing binds is `is-type-parameter`. A
+behavior is a type pattern too (`Shown<unknown> { k -> … }`), tested by its identity. A `case` over a
+union is exhaustive: a member with no arm and no `_` is refused at the `case`, naming it:
+
+<!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/refused/src/cases/union_case_forgotten_member -->
 
 A variant pattern names **every** field of its variant, or ends with `..`:
 

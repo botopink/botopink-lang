@@ -1639,6 +1639,12 @@ pub const Env = struct {
     /// Decision 758 — the tests `x is t` over a run-time type token `t:
     /// type<T>`, by the test's loc: written `__bp_is_type(x, t)`.
     runtimeTokenTests: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 810 (1), (3) — each `v is B<…>` (by the call's loc) and each
+    /// type pattern `B<…> { … }` (by the arm's `patternLoc`) whose `B` is a
+    /// behavior, with the name the backends test it by
+    /// (`ast.behavior_test_prefix` and its declared name); `type_token.apply`
+    /// writes it into the program.
+    behaviorTests: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
     /// Decision 758 — the types written where a run-time token is taken, by
     /// the name's loc: written `__bp_type_token(Users)`, the type's identity.
     runtimeTokenArgs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,

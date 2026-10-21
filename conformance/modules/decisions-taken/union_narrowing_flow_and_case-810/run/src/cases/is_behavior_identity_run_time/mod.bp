@@ -1,0 +1,63 @@
+//// Decision 810 (1) — at run time `is` tests a type's identity alone: a
+//// record's, and a behavior's (a record's or an enum's type implements it) — the value's type implements it — and a
+//// function type by its arity, on every target. A behavior type pattern
+//// (`Shown<unknown> { k -> … }`) is the same test. erlang and beam answered
+//// `false` for every behavior, commonJS named a class no module emits, wasm
+//// refused the test.
+
+import {io.terminal.print} from "std";
+
+behavior Shown<T> {
+    fn shown(self: Self<T>) -> T;
+}
+
+type Tag<T>(value: T) implement Shown<T> {
+    fn shown(self: Self<T>) -> T {
+        return self.value;
+    }
+}
+
+type Box<T>(item: T)
+
+type Mark implement Shown<string> {
+    Plain,
+    Named(text: string),
+
+    fn shown(self: Self) -> string {
+        return "mark";
+    }
+}
+
+fn kind(v: unknown) -> string {
+    val a = if (v is Shown<unknown>) "shown" else "-";
+    val b = if (v is Box<unknown>) "box" else "-";
+    val c = if (v is fn(i32) -> string) "fn" else "-";
+    return a + " " + b + " " + c;
+}
+
+fn label(v: unknown) -> string {
+    return case v {
+        Shown<unknown> { k ->
+            "shown"
+        }
+        Box<unknown> { b ->
+            "box"
+        }
+        _ {
+            "other"
+        }
+    };
+}
+
+fn say(n: i32) -> string {
+    return n.toString();
+}
+
+pub fn runCase() -> void {
+    print(kind(Tag(value: 1)));
+    print(kind(Box(item: 1)));
+    print(kind(say));
+    print(kind(3));
+    print(kind(Mark.Plain), kind(Mark.Named(text: "n")));
+    print(label(Tag(value: "t")), label(Box(item: "b")), label(say));
+}

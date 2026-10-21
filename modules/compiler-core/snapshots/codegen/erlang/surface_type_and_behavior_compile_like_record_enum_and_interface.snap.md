@@ -96,7 +96,7 @@ main(_Args) ->
 ----- ERLANG -- test@main@@Square.erl
 ```erlang
 -module(test@main@@Square).
--export([area/1, '__bp_get'/2, '__bp_format'/1]).
+-export([area/1, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 area(Self) ->
     '__bp_int'((erlang:element(2, Self) * erlang:element(2, Self)), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:7:26">>).
@@ -104,6 +104,8 @@ area(Self) ->
 '__bp_get'(V, side) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Square", [{"side", erlang:element(2, V)}]}.
+
+'__bp_behaviors'() -> ['Shape'].
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

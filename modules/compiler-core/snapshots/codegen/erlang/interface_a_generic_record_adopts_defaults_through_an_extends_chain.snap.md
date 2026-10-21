@@ -84,7 +84,7 @@ main(_Args) ->
 ```erlang
 -module(test@main@@Bag).
 -compile({no_auto_import,[size/1]}).
--export([size/1, twiceSize/1, isEmpty/1, '__bp_get'/2, '__bp_format'/1]).
+-export([size/1, twiceSize/1, isEmpty/1, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 size(Self) ->
     erlang:length(erlang:element(2, Self)).
@@ -98,6 +98,8 @@ isEmpty(Self) ->
 '__bp_get'(V, items) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Bag", [{"items", erlang:element(2, V)}]}.
+
+'__bp_behaviors'() -> ['Counted'].
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

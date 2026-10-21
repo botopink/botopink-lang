@@ -3154,7 +3154,7 @@ message(Self) ->
 ```erlang
 -module(std@io@fs@@File).
 -compile({no_auto_import,[size/1]}).
--export([path/1, size/1, read/2, bytes/1, text/1, chunks/2, lines/1, hash/1, write/2, close/1, '__bp_get'/2, '__bp_format'/1]).
+-export([path/1, size/1, read/2, bytes/1, text/1, chunks/2, lines/1, hash/1, write/2, close/1, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 path(Self) ->
     erlang:element(2, Self).
@@ -3286,6 +3286,8 @@ close(Self) ->
 '__bp_get'(V, handle) -> erlang:element(3, V).
 
 '__bp_format'(V) -> {record, "File", [{"location", erlang:element(2, V)}, {"handle", erlang:element(3, V)}]}.
+
+'__bp_behaviors'() -> ['Closeable'].
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

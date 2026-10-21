@@ -89,7 +89,25 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         var subjectToks: std.ArrayList(Token) = .empty;
         defer subjectToks.deinit(alloc);
         try subjectToks.append(alloc, patTok);
-        const firstPat = try this.parsePattern(alloc);
+        // Decision 810 (3) — a generic type pattern, `Box<T> { b -> … }`: the
+        // pattern is the type's name (what a backend tests, the type's
+        // identity) and the written arguments ride on the arm for the checker.
+        var patternTypeArgs: []ast.TypeRef = &.{};
+        errdefer if (patternTypeArgs.len > 0) {
+            for (patternTypeArgs) |*a| a.deinit(alloc);
+            alloc.free(patternTypeArgs);
+        };
+        const firstPat = if (patTok.kind == .identifier and this.peekAt(1).kind == .lessThan) blk: {
+            const ref = try this.parseTypeRefMember(alloc);
+            if (ref != .generic or ref.unionMembers() != null) {
+                var r = ref;
+                r.deinit(alloc);
+                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, patTok);
+                return ParseError.UnexpectedToken;
+            }
+            patternTypeArgs = ref.generic.args;
+            break :blk ast.Pattern{ .ident = ref.generic.name };
+        } else try this.parsePattern(alloc);
         const pattern: ast.Pattern = if (this.match(.comma)) blk: {
             var pats: std.ArrayList(ast.Pattern) = .empty;
             errdefer {
@@ -195,7 +213,9 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
             .guard = guard,
             .emptyLinesBefore = emptyLinesBefore,
             .patternLoc = locFromToken(patTok),
+            .patternTypeArgs = patternTypeArgs,
         });
+        patternTypeArgs = &.{};
     }
 
     _ = try this.consume(.rightBrace);

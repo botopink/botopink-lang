@@ -197,6 +197,11 @@ pub const Helper = enum {
     /// `number`, `any`, `{int, Lo, Hi}` with `undefined` for no bound), each
     /// tested as the literal `x is T` is.
     is_type,
+    /// `(V, B)` → whether `V`'s type implements the behavior `B` (decision
+    /// 810 (1), a behavior's identity): a record's tag is its type's module,
+    /// a variant's is that module with its `__v__` segment, and the module
+    /// answers `'__bp_behaviors'/0`, the behaviors its type implements.
+    implements,
 
     /// The helper's function name in the erlang module.
     pub fn name(h: Helper) []const u8 {
@@ -218,13 +223,14 @@ pub const Helper = enum {
             .every => "__bp_iter_every",
             .find => "__bp_iter_find",
             .is_type => "__bp_is_type",
+            .implements => "__bp_implements",
         };
     }
 
     pub fn arity(h: Helper) usize {
         return switch (h) {
             .gen_new, .gen_yield, .step, .close, .to_array => 1,
-            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find, .is_type => 2,
+            .with, .foreach, .map, .filter, .take, .drop, .some, .every, .find, .is_type, .implements => 2,
             .foldl, .reduce => 3,
         };
     }
@@ -287,6 +293,11 @@ pub const Helper = enum {
                 "{'__bp_type', _, {int, Lo, Hi}} -> erlang:is_number(__BpA0) andalso (__BpA0 == erlang:trunc(__BpA0)) andalso ((Lo =:= undefined) orelse (__BpA0 >= Lo)) andalso ((Hi =:= undefined) orelse (__BpA0 =< Hi));\n" ++
                 "{'__bp_type', _, Shapes} -> lists:any(fun({Tag, N}) -> case N of 0 -> __BpA0 =:= Tag; _ -> erlang:is_tuple(__BpA0) andalso (erlang:tuple_size(__BpA0) =:= N) andalso (erlang:element(1, __BpA0) =:= Tag) end end, Shapes)\n" ++
                 "end",
+            .implements => "T = case erlang:is_tuple(__BpA0) andalso (erlang:tuple_size(__BpA0) > 0) of\ntrue -> erlang:element(1, __BpA0);\nfalse -> __BpA0\nend,\n" ++
+                "case erlang:is_atom(T) andalso (T =/= true) andalso (T =/= false) andalso (T =/= undefined) of\n" ++
+                "true ->\nM = case string:split(erlang:atom_to_list(T), \"__v__\") of\n[P, _] -> erlang:list_to_atom(P);\n_ -> T\nend,\n" ++
+                "(code:ensure_loaded(M) =:= {module, M}) andalso erlang:function_exported(M, '__bp_behaviors', 0) andalso lists:member(__BpA1, erlang:apply(M, '__bp_behaviors', []));\n" ++
+                "false -> false\nend",
             .find => "case __BpA0 of\n{'__bp_gen', P} ->\n" ++
                 consuming("fun WF() -> case Call(P, next) of [V] -> case __BpA1(V) of true -> Call(P, close), V; _ -> WF() end; [] -> undefined end end") ++
                 ";\nL -> case lists:search(__BpA1, L) of {value, V} -> V; false -> undefined end\nend",

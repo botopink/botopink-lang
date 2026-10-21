@@ -9824,12 +9824,12 @@ fn inferTypeMethods(
         try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
         try noteStatementClosures(env, body);
         var tailTy: ?*T.Type = null;
-        for (body) |stmt| {
+        for (body, 0..) |stmt, si| {
             const deferFrame = if (stmt.deferred) enterDefer(env) else null;
             defer if (deferFrame) |f| leaveDefer(env, f);
             const typed = try inferExprTyped(env, stmt.expr);
             if (stmt.tail == .value) tailTy = typed.getType();
-            try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+            try narrowAfterEarlyExit(env, stmt.expr, body[si + 1 ..], &narrowed);
         }
         if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
         if (answersNothing(m.returnType))
@@ -14810,7 +14810,7 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!?*T.Type {
     defer narrowed.deinit(env.arena);
     const savedStatementBlock = env.statementBlockLoc;
     defer env.statementBlockLoc = savedStatementBlock;
-    for (body) |stmt| {
+    for (body, 0..) |stmt, si| {
         env.statementBlockLoc = statementBlockLocOf(stmt.expr);
         env.useStatementLoc = if (stmt.expr == .useHook) stmt.expr.useHook.loc else null;
         const deferFrame = if (stmt.deferred) enterDefer(env) else null;
@@ -14818,7 +14818,7 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!?*T.Type {
         const ty = try inferExpr(env, stmt.expr);
         if (stmt.tail == .value) tailTy = ty;
         env.useStatementLoc = null;
-        try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+        try narrowAfterEarlyExit(env, stmt.expr, body[si + 1 ..], &narrowed);
         // Decision 357 — a `use` after this statement would not run on every call.
         if (env.useConstruct == null and env.earlyExitLine == null and ast.exprMayExitEarly(stmt.expr))
             env.earlyExitLine = stmt.expr.getLoc().line;
@@ -14872,7 +14872,7 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
         const deferFrame = if (s.deferred) enterDefer(env) else null;
         defer if (deferFrame) |f| leaveDefer(env, f);
         out[i] = .{ .expr = try inferExprTyped(env, s.expr), .tail = s.tail, .deferred = s.deferred };
-        try narrowAfterEarlyExit(env, s.expr, &narrowed);
+        try narrowAfterEarlyExit(env, s.expr, stmts[i + 1 ..], &narrowed);
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
     return out;
@@ -14925,7 +14925,26 @@ fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) In
 /// `case s { Circle { … } }` a variant arm.
 fn typePatternType(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!?*T.Type {
     const name = typePatternName(env, pattern, subjectType) orelse return null;
-    return try env.namedType(name);
+    const named = try env.namedType(name);
+    // Decision 810 (3) — over a union, the member the pattern names: a generic
+    // one's arguments are the subject's own (`Box<T> { b -> b.item }` reads a
+    // `T`).
+    const s = subjectType.deref();
+    if (s.* == .union_) for (s.union_) |m| if (memberTestedBy(m, named)) return m;
+    return named;
+}
+
+/// Decision 810 (3) — the arguments written on a type pattern (`Box<T> { … }`)
+/// follow `is`'s rule (810 (1)): accepted when the type they write is a member
+/// of the subject's type, a type parameter nothing binds `is-type-parameter`,
+/// any other argument one no run-time test can see.
+fn checkTypePatternArgs(env: *Env, arm: ast.CaseArm, subjectType: *T.Type) InferError!void {
+    if (arm.patternTypeArgs.len == 0 or arm.pattern != .ident) return;
+    const ref = ast.TypeRef{ .generic = .{ .name = arm.pattern.ident, .args = arm.patternTypeArgs, .is_builtin = false } };
+    _ = resolveTypeRef(env, ref) catch |err| return locateLast(env, err, arm.patternLoc);
+    if (try boundTypeTestIdentity(env, subjectType, ref, arm.patternLoc) != null) return;
+    try refuseUnboundTypeArgument(env, ref, arm.patternLoc);
+    try checkIsTestableType(env, ref, arm.patternLoc);
 }
 
 /// The type name a pattern tests as a type pattern, or null when it is an
@@ -14949,7 +14968,9 @@ fn typePatternName(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) ?[]con
 /// binder, which is what every arm written before decision 8 relies on.
 fn isKnownTypeName(env: *Env, name: []const u8) bool {
     for (scalar_type_names) |p| if (std.mem.eql(u8, name, p)) return true;
-    return env.lookupTypeDef(name) != null;
+    // Decision 810 (3) — a behavior is a type pattern too (`Composable<T> {
+    // k -> … }`), tested by its identity.
+    return env.lookupTypeDef(name) != null or behaviorDeclaredName(env, name) != null;
 }
 
 /// Decision 8 §5.1 P8 — the bare variant name inside a pattern's written path.
@@ -15729,15 +15750,111 @@ fn typeTokenParam(params: []const ast.Param, name: []const u8) ?ast.Param {
 /// (or of its type): erased at run time, no target can decide it. The way out
 /// is a type token, in either form (decisions 757, 758).
 fn refuseIsTypeParameter(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    return refuseIsTypeParameterIn(env, ref, null, loc);
+}
+
+/// `refuseIsTypeParameter` for `ref` written inside the tested type `outer`
+/// (`x is Box<T>`, decision 810 (1)), which the message names.
+fn refuseIsTypeParameterIn(env: *Env, ref: ast.TypeRef, outer: ?ast.TypeRef, loc: ast.Loc) InferError!void {
     if (ref != .named or std.mem.eql(u8, ref.named, "Self")) return;
     const n = ref.named;
     const inScope = (if (env.fnGenericMap) |gm| gm.contains(n) else false) or
         (if (env.methodGenericMap) |gm| gm.contains(n) else false);
     if (!inScope) return;
-    const msg = try std.fmt.allocPrint(env.arena, "{s}: `is {s}` tests the type parameter `{s}`, which no target knows at run time — take the type as `comptime t: type<{s}>` or `t: type<{s}>` and test `v is t`", .{ diagnostics.is_type_parameter, n, n, n, n });
+    const written = if (outer) |o| try std.fmt.allocPrint(env.arena, "{f}", .{o}) else n;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `is {s}` tests the type parameter `{s}`, which no target knows at run time — take the type as `comptime t: type<{s}>` or `t: type<{s}>` and test `v is t`", .{ diagnostics.is_type_parameter, written, n, n, n });
     const hint = try std.fmt.allocPrint(env.arena, "`fn get<{s}>(self: Registry, comptime t: type<{s}>) -> ?{s} {{ … if (e is t) … }}`, called `r.get(Users)`, is specialised per type (decision 757); `t: type<{s}>` without `comptime` is the type's identity at run time, one function for every type (decision 758).", .{ n, n, n, n });
     env.lastError = TypeError.custom(msg, hint).withLoc(loc);
     return error.TypeError;
+}
+
+/// Decision 810 (1) — `v is X<A, …>` where `X<A, …>` is a member of `v`'s
+/// static type (`v` itself when its type is no union): the arguments are bound
+/// through `v`'s type, so the test needs only `X`'s identity. Answers the form
+/// the backends test, `X<unknown, …>`; null when the written type is not such
+/// a member (a union, a type with no argument, or arguments `unknown` alone
+/// need nothing of this).
+fn boundTypeTestIdentity(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: ast.Loc) InferError!?ast.TypeRef {
+    _ = loc;
+    if (tested != .generic or tested.unionMembers() != null) return null;
+    const g = tested.generic;
+    const allUnknown = for (g.args) |a| {
+        if (!(a == .named and std.mem.eql(u8, a.named, ast.unknown_type_name))) break false;
+    } else true;
+    if (allUnknown) return null;
+    const want = try resolveTypeRef(env, tested);
+    if (staticMemberMatching(valueType, want) == null) return null;
+    const args = try env.arena.alloc(ast.TypeRef, g.args.len);
+    for (args) |*a| a.* = .{ .named = ast.unknown_type_name };
+    return ast.TypeRef{ .generic = .{ .name = g.name, .args = args, .is_builtin = g.is_builtin, .bare = g.bare } };
+}
+
+/// The member of `valueType` (the type itself when it is no union) that is
+/// `want`: the same named type with the same arguments, a written `unknown`
+/// argument matching any. Null when none is.
+fn staticMemberMatching(valueType: *T.Type, want: *T.Type) ?*T.Type {
+    const v = valueType.deref();
+    const members: []const *T.Type = if (v.* == .union_) v.union_ else &.{v};
+    for (members) |m| if (sameTypeWritten(m, want)) return m;
+    return null;
+}
+
+/// `a` and `b` are one type as written: the same type variable, or the same
+/// head with the same arguments; an `unknown` on `b`'s side matches anything.
+fn sameTypeWritten(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da == db) return true;
+    if (unifyMod.isUnknown(db)) return true;
+    switch (da.*) {
+        .named => |na| {
+            if (db.* != .named) return false;
+            const nb = db.named;
+            if (!std.mem.eql(u8, na.name, nb.name) or na.args.len != nb.args.len) return false;
+            for (na.args, nb.args) |x, y| if (!sameTypeWritten(x, y)) return false;
+            return true;
+        },
+        .func => |fa| {
+            if (db.* != .func) return false;
+            const fb = db.func;
+            if (fa.params.len != fb.params.len) return false;
+            for (fa.params, fb.params) |x, y| if (!sameTypeWritten(x, y)) return false;
+            return sameTypeWritten(fa.ret, fb.ret);
+        },
+        .typeVar => return db.* == .typeVar and da.typeVar == db.typeVar,
+        else => return false,
+    }
+}
+
+/// Decision 810 (1), (3) — the declared name of the behavior `name` names
+/// (one this module declares, imports or finds ambient), or null.
+fn behaviorDeclaredName(env: *Env, name: []const u8) ?[]const u8 {
+    for (env.moduleDecls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return name;
+    if (env.importedBehaviorDecls.get(name)) |b| return b.name;
+    if (env.ambientBehaviorDecls.get(name)) |b| return b.name;
+    return null;
+}
+
+/// Decision 810 (1) — the tested type the backends lower: a behavior's
+/// (`v is Composable<unknown>`) is `ast.behavior_test_prefix` and its declared
+/// name, the identity every implementing type carries; any other unchanged.
+fn behaviorTestRef(env: *Env, ref: ast.TypeRef) InferError!ast.TypeRef {
+    const name = switch (ref) {
+        .named => |n| n,
+        .generic => |g| if (ref.unionMembers() != null or g.is_builtin) return ref else g.name,
+        else => return ref,
+    };
+    if (env.lookupTypeDef(name) != null) return ref;
+    const declared = behaviorDeclaredName(env, name) orelse return ref;
+    return .{ .named = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ ast.behavior_test_prefix, declared }) };
+}
+
+/// Decision 810 (1) — `x is List<T>` with `T` a type parameter of the
+/// enclosing function that `x`'s type does not bind: `is-type-parameter`, as
+/// the bare `x is T` is (667).
+fn refuseUnboundTypeArgument(env: *Env, tested: ast.TypeRef, loc: ast.Loc) InferError!void {
+    if (tested != .generic or tested.unionMembers() != null) return;
+    for (tested.generic.args) |a| try refuseIsTypeParameterIn(env, a, tested, loc);
 }
 
 /// Decision 757 — a call of an ordinary function or method (one with a body:
@@ -16057,6 +16174,10 @@ const CondNarrowing = struct {
     name: []const u8,
     then_: ?*T.Type = null,
     else_: ?*T.Type = null,
+    /// Decision 810 (2) — the narrowing is an `is` test's over a union, which
+    /// narrows a `var` too until it is assigned (the null test narrows a
+    /// `val` alone after an early exit).
+    fromIs: bool = false,
 };
 
 /// The payload of a `?T`, or null for every other type — an unresolved type
@@ -16142,6 +16263,21 @@ fn collectCondNarrowings(
             },
             else => {},
         },
+        // Decision 810 (2) — `x is A` over a union: where it failed, `x` is
+        // the union without `A` (the member it tested); the branch where it
+        // held is narrowed by `isNarrowingOf`'s channel.
+        .call => {
+            const n = isNarrowingOf(cond) orelse return;
+            const bound = env.lookup(n.name) orelse return;
+            const b = bound.deref();
+            if (b.* != .union_) return;
+            const tested = resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref) catch return;
+            var rest: std.ArrayListUnmanaged(*T.Type) = .empty;
+            for (b.union_) |m| if (!memberTestedBy(m, tested)) try rest.append(env.arena, m);
+            if (rest.items.len == 0 or rest.items.len == b.union_.len) return;
+            const else_ = if (rest.items.len == 1) rest.items[0] else try env.unionType(try rest.toOwnedSlice(env.arena));
+            try out.append(env.arena, .{ .name = n.name, .else_ = else_, .fromIs = true });
+        },
         .unaryOp => |u| {
             if (u.op != .not) return;
             try collectCondNarrowings(env, u.expr.*, out);
@@ -16153,6 +16289,35 @@ fn collectCondNarrowings(
         },
         else => {},
     }
+}
+
+/// Decision 810 (2) — whether `x is tested` holding means `x` is the union
+/// member `m`: the same named type (its arguments are `x`'s own, 810 (1)), or a
+/// function type of the same shape. `unknown` tests every member.
+fn memberTestedBy(m: *T.Type, tested: *T.Type) bool {
+    const dm = m.deref();
+    const dt = tested.deref();
+    if (unifyMod.isUnknown(dt)) return true;
+    return switch (dm.*) {
+        .named => |nm| dt.* == .named and std.mem.eql(u8, nm.name, dt.named.name),
+        .func => dt.* == .func and sameTypeWritten(dm, dt),
+        else => false,
+    };
+}
+
+/// Decision 810 (1), (2) — the member of a union-typed `x` that `x is tested`
+/// narrows it to inside the branch: the member itself, its arguments from
+/// `x`'s type. Null when `x`'s type is no union or no member is the one.
+fn testedUnionMember(env: *Env, name: []const u8, tested: *T.Type) ?*T.Type {
+    const bound = env.lookup(name) orelse return null;
+    const b = bound.deref();
+    if (b.* != .union_) return null;
+    var found: ?*T.Type = null;
+    for (b.union_) |m| if (memberTestedBy(m, tested)) {
+        if (found != null) return null;
+        found = m;
+    };
+    return found;
 }
 
 /// Rebind `name` to its narrowed type for one branch, remembering what it was.
@@ -16221,6 +16386,7 @@ fn callNeverReturns(env: *Env, cc: anytype) bool {
 fn narrowAfterEarlyExit(
     env: *Env,
     stmt: ast.Expr,
+    rest: []const ast.Stmt,
     snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
 ) InferError!void {
     if (stmt != .branch or stmt.branch.kind != .if_) return;
@@ -16232,9 +16398,38 @@ fn narrowAfterEarlyExit(
     try collectCondNarrowings(env, i.cond.*, &narrowings);
     for (narrowings.items) |n| {
         const ty = n.else_ orelse continue;
-        if (!env.isVal(n.name)) continue;
+        // Decision 810 (2) — an `is` test narrows a `var` too, until it is
+        // assigned: an assignment written as a statement of the rest ends it
+        // (`narrowedDecl`); one nested in a branch, a loop or a function
+        // would leave the rest typed by a value it no longer holds, so such a
+        // `var` is not narrowed.
+        if (!env.isVal(n.name) and !(n.fromIs and !assignedNested(env, rest, n.name))) continue;
         try bindNarrowed(env, n.name, ty, snapshots);
     }
+}
+
+/// Whether `name` is assigned inside a nested construct of `rest` (a branch, a
+/// loop, a function), anywhere but as one of `rest`'s own statements.
+fn assignedNested(env: *Env, rest: []const ast.Stmt, name: []const u8) bool {
+    for (rest) |s| {
+        if (s.expr == .binding and s.expr.binding.kind == .assign) {
+            const a = s.expr.binding.kind.assign;
+            if (a.target == .name and std.mem.eql(u8, a.target.name, name)) {
+                if (exprAssigns(env, a.value.*, name)) return true;
+                continue;
+            }
+        }
+        if (exprAssigns(env, s.expr, name)) return true;
+    }
+    return false;
+}
+
+fn exprAssigns(env: *Env, e: ast.Expr, name: []const u8) bool {
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    const one = [_]ast.Stmt{.{ .expr = e }};
+    ast.collectAssignedNames(env.arena, &one, &names) catch return true;
+    for (names.items) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
 }
 
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
@@ -18935,7 +19130,11 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 // `narrowings` rather than growing a second narrowing
                 // mechanism — and so does the null test below it.
                 if (isNarrowingOf(i.cond.*)) |n| {
-                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref) });
+                    const tested = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref);
+                    // Decision 810 (1) — over a union, the member tested, its
+                    // arguments from the value's own type.
+                    const member = if (typeTokenRef(env, n.ref) == null and runtimeTokenRef(env, n.ref) == null) testedUnionMember(env, n.name, tested) else null;
+                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = member orelse tested });
                 }
                 // The null test: `if (x != null)` rebinds `x` to the `?T`'s
                 // payload inside the branch, `if (x == null)` rebinds it in the
@@ -24791,7 +24990,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     const tokenRef = typeTokenRef(env, call.isType.?) orelse runtimeRef;
                     // Decision 667 — `v is T` on a bare type parameter.
                     if (tokenRef == null) try refuseIsTypeParameter(env, call.isType.?, loc);
-                    if (tokenRef orelse call.isType) |tested| {
+                    // Decision 810 (1) — `v is X<T>` with `X<T>` a member of
+                    // `v`'s static type: its arguments come from `v`'s type,
+                    // so the run-time test is `X`'s identity alone, as
+                    // `v is X<unknown>` is; the backends get that form.
+                    const boundIdentity: ?ast.TypeRef = if (tokenRef == null and typedArgs.len == 1)
+                        try boundTypeTestIdentity(env, typedArgs[0].value.getType(), call.isType.?, loc)
+                    else
+                        null;
+                    if (boundIdentity == null) if (tokenRef orelse call.isType) |tested| {
                         // Decision 332 (question 139-a) — no run-time test
                         // tells a `bigint` from another integer: `is` neither
                         // tests for one nor tests one.
@@ -24811,8 +25018,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             ).withLoc(loc);
                             return error.TypeError;
                         }
+                        try refuseUnboundTypeArgument(env, tested, loc);
                         try checkIsTestableType(env, tested, loc);
                         if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);
+                    };
+                    // Decision 810 (1) — a behavior tested: its identity,
+                    // written into the program by `type_token.apply`.
+                    if (tokenRef == null) {
+                        const lowered = try behaviorTestRef(env, boundIdentity orelse call.isType.?);
+                        if (ast.behaviorTestName(lowered) != null) try env.behaviorTests.put(env.arena, loc, lowered.named);
                     }
                     return TypedExpr{
                         .call = .{
@@ -24827,7 +25041,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                     .trailing = typedTrailing,
                                     // The tested type is what the backends lower the run-time
                                     // test from; dropping it here left them nothing to read.
-                                    .isType = tokenRef orelse call.isType,
+                                    .isType = boundIdentity orelse tokenRef orelse call.isType,
                                 },
                             },
                         },
@@ -27195,6 +27409,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                         try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
                     }
                 } else bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots) catch |err| return locateLast(env, err, arm.patternLoc);
+                if (typedSubjects.len == 1) try checkTypePatternArgs(env, arm, typedSubjects[0].getType());
                 if (typedSubjects.len == 1) {
                     try noteResolvedPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
                     try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
@@ -27232,6 +27447,12 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 };
                 env.keepReturnTarget = false;
                 try restorePatternBindings(env, snapshots.items);
+                // Decision 810 (3) — a type pattern naming a behavior is
+                // lowered as `is` lowers one (`behaviorTestRef`).
+                if (typedSubjects.len == 1 and arm.pattern == .ident and typePatternName(env, arm.pattern, typedSubjects[0].getType()) != null) {
+                    const ref = try behaviorTestRef(env, .{ .named = arm.pattern.ident });
+                    if (ast.behaviorTestName(ref) != null) try env.behaviorTests.put(env.arena, arm.patternLoc, ref.named);
+                }
                 typedArms[i] = .{
                     .pattern = arm.pattern,
                     .body = bodyTyped,

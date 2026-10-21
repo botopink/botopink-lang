@@ -781,15 +781,25 @@ pub fn CaseArmOf(comptime phase: Phase) type {
         /// of the dump: a location is a diagnostic aid, not surface, and the AST
         /// dumps are snapshot-compared.
         patternLoc: Loc = .{ .line = 0, .col = 0 },
+        /// Decision 810 (3) — the type arguments written on a type pattern
+        /// (`Box<T> { b -> … }`): the pattern itself stays `.ident` with the
+        /// type's name, which is all a backend tests (the type's identity);
+        /// the checker reads the arguments under 810 (1)'s binding rule.
+        /// Empty when none was written; owned.
+        patternTypeArgs: []TypeRef = &.{},
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.pattern.deinit(allocator);
             this.body.deinit(allocator);
             if (this.guard) |*g| g.deinit(allocator);
+            if (this.patternTypeArgs.len > 0) {
+                for (this.patternTypeArgs) |*a| a.deinit(allocator);
+                allocator.free(this.patternTypeArgs);
+            }
         }
 
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
-            return stringifyOmitting(this, jws, &.{"patternLoc"}, &.{});
+            return stringifyOmitting(this, jws, &.{"patternLoc"}, &.{"patternTypeArgs"});
         }
     };
 }
@@ -3179,6 +3189,27 @@ pub const union_type_name = "|";
 /// `Box<i32>` as the tested type is §4.2's error — only `Box<unknown>` is
 /// checkable.
 pub const is_builtin_name = "is";
+
+/// Decision 810 (1), (3) — the tested type of `v is B<…>` (and a type pattern
+/// `B<…> { k -> … }`) when `B` is a behavior, as the checker hands it to the
+/// backends: `.named` `<prefix><B>`, the behavior's declared name. A behavior
+/// has no value of its own, so its identity is the mark every type that
+/// implements it carries (each backend's: a prototype key on commonJS, the
+/// type module's `'__bp_behaviors'/0` on erlang and beam, the implementors'
+/// own tests on wasm).
+pub const behavior_test_prefix = "__bp_behavior__";
+
+/// The behavior a tested type names under `behavior_test_prefix`, or null.
+pub fn behaviorTestName(ref: TypeRef) ?[]const u8 {
+    if (ref != .named or !std.mem.startsWith(u8, ref.named, behavior_test_prefix)) return null;
+    return ref.named[behavior_test_prefix.len..];
+}
+
+/// `behaviorTestName` for a pattern's written name.
+pub fn behaviorPatternName(name: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, name, behavior_test_prefix)) return null;
+    return name[behavior_test_prefix.len..];
+}
 
 /// The reserved builtin-call name that carries [decision 30](../../../specs)'s
 /// index expression: `call{ .callee = index_builtin_name, .is_builtin = true,

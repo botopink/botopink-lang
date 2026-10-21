@@ -3166,6 +3166,7 @@ const Emitter = struct {
         const marker = try self.protoName(r.name, r.printedName());
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
         try out.appendSlice(self.arena(), &.{ class, marker });
+        try self.appendBehaviorMarks(&out, r.name, r.implement);
         if (try self.protoShapes(r.name, r.recordFields())) |shapes| try out.append(self.arena(), shapes);
         if (r.isPub) try out.append(self.arena(), try self.pubExport(r.name));
         return self.b.group(out.items);
@@ -3272,6 +3273,29 @@ const Emitter = struct {
             "=",
             .{ .quoted = source_name },
         ) };
+    }
+
+    /// Decision 810 (1) — the identity `v is B<…>` tests for a behavior `B`:
+    /// a key on the prototype of every class whose type implements it,
+    /// `Tag.prototype.__bp_b_Shown = true`, so it crosses every module.
+    fn appendBehaviorMarks(self: *Emitter, out: *std.ArrayListUnmanaged(js.Stmt), class_name: []const u8, implement: []const ast.TypeRef) !void {
+        for (implement) |im| {
+            const b = switch (im) {
+                .named => |n| n,
+                .generic => |g| g.name,
+                else => continue,
+            };
+            try out.append(self.arena(), .{ .expr = try self.b.assign(
+                try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), try behaviorMarkKey(self.arena(), b)),
+                "=",
+                .{ .name = "true" },
+            ) });
+        }
+    }
+
+    /// The prototype key a behavior's identity is: `__bp_b_<name>`.
+    fn behaviorMarkKey(ar: std.mem.Allocator, behavior: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(ar, "__bp_b_{s}", .{behavior});
     }
 
     /// The JS class name of one variant of `enum_name` — `Shape$Circle`.
@@ -3510,6 +3534,7 @@ const Emitter = struct {
         // Only the base class is marked: every variant inherits `__bp` and
         // adds its own `tag`, which is how the formatter spells `Shape.Square`.
         try out.append(self.arena(), try self.protoName(e.name, e.printedName()));
+        try self.appendBehaviorMarks(&out, e.name, e.implement);
         for (tail.items) |st| try out.append(self.arena(), st);
         if (e.isPub) try out.append(self.arena(), try self.pubExport(e.name));
         return self.b.group(try out.toOwnedSlice(self.arena()));
@@ -7476,6 +7501,12 @@ const Emitter = struct {
     /// constructor), and an unknown spelling answers `false` rather than
     /// emitting something that is not JavaScript.
     fn isTest(self: *Emitter, t: ast.TypeRef, subject: js.Expr) anyerror!js.Expr {
+        // Decision 810 (1) — a behavior: the mark its implementors carry.
+        if (ast.behaviorTestName(t)) |b| return self.b.paren(try self.b.binaryBare(
+            "&&",
+            try self.b.binaryBare("!=", subject, .null_),
+            try self.b.binaryBare("===", try self.b.member(subject, try behaviorMarkKey(self.arena(), b)), .{ .name = "true" }),
+        ));
         switch (t) {
             .named => |n| {
                 if (std.mem.eql(u8, n, "string")) return self.typeofIs(subject, "string");
@@ -7503,6 +7534,9 @@ const Emitter = struct {
                 if (std.mem.eql(u8, g.name, "array")) {
                     return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
                 }
+                // An `Async<T>` is a Promise on this target (a failing task's
+                // too, `__bp_task`).
+                if (std.mem.eql(u8, g.name, "Async")) return self.b.binaryBare("instanceof", subject, .{ .name = "Promise" });
                 return self.b.binaryBare("instanceof", subject, .{ .name = g.name });
             },
             .optional => |inner| return self.b.paren(try self.b.binaryBare(
@@ -7741,6 +7775,7 @@ const Emitter = struct {
         if (name.len == 0) return false;
         if (isKeywordLiteralPattern(name)) return false;
         if (isVariantPath(name) or primitiveTypeName(name)) return false;
+        if (ast.behaviorPatternName(name) != null) return false;
         if (self.unit_variant_names.contains(name) or self.variant_fields.contains(name)) return false;
         return !std.ascii.isUpper(name[0]);
     }
@@ -7889,6 +7924,8 @@ const Emitter = struct {
                     subject,
                     .{ .name = n },
                 );
+                // Decision 810 (3) — a type pattern naming a behavior.
+                if (ast.behaviorPatternName(n) != null) return try self.isTest(.{ .named = n }, subject);
                 const bare = bareVariantName(n);
                 // A primitive type spelling is decision 8 §5.2's type-test arm
                 // (`case x { i32 { … } string { … } }`), tested by §4.1's

@@ -51,6 +51,8 @@ const Ctx = struct {
     /// written where one is taken (`Env.runtimeTokenTests` / `runtimeTokenArgs`).
     rtTests: *const std.AutoHashMapUnmanaged(ast.Loc, void),
     rtArgs: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    /// Decision 810 — the behavior tests, by loc (`Env.behaviorTests`).
+    behaviorTests: *const std.AutoHashMapUnmanaged(ast.Loc, []const u8),
     /// Decision 757 across modules — the imported callables copied per type
     /// into this module (`Env.tokenImports`, `token_import.zig`), and the
     /// names of this module's functions, where those copies are.
@@ -164,12 +166,12 @@ pub fn apply(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.
         },
         else => {},
     };
-    if (callables.count() == 0 and env.typeTokenCalls.count() == 0 and env.runtimeTokenTests.count() == 0 and env.runtimeTokenArgs.count() == 0) return program;
+    if (callables.count() == 0 and env.typeTokenCalls.count() == 0 and env.runtimeTokenTests.count() == 0 and env.runtimeTokenArgs.count() == 0 and env.behaviorTests.count() == 0) return program;
 
     var pending: std.ArrayListUnmanaged(Pending) = .empty;
     var fnNames: std.StringHashMapUnmanaged(void) = .empty;
     for (program.decls) |d| if (d == .@"fn") try fnNames.put(arena, d.@"fn".name, {});
-    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .rtTests = &env.runtimeTokenTests, .rtArgs = &env.runtimeTokenArgs, .imports = &env.tokenImports, .fnNames = &fnNames, .nsCalls = &env.namespaces.calls, .callables = &callables, .pending = &pending };
+    var ctx: Ctx = .{ .arena = arena, .calls = &env.typeTokenCalls, .rtTests = &env.runtimeTokenTests, .rtArgs = &env.runtimeTokenArgs, .behaviorTests = &env.behaviorTests, .imports = &env.tokenImports, .fnNames = &fnNames, .nsCalls = &env.namespaces.calls, .callables = &callables, .pending = &pending };
 
     // Every body as written, the callables that read a token excepted (only
     // their copies run).
@@ -312,6 +314,106 @@ fn builtinCall(ctx: *Ctx, callee: []const u8, loc: ast.Loc, args: []const ast.Ex
     return out;
 }
 
+/// Decision 810 (3) — a `case` with an arm whose type pattern names a
+/// behavior (`Shown<T> { k -> … }`): a behavior's identity is no pattern any
+/// target matches (erlang has no guard that can ask a type's module), so the
+/// arm is written as the `is` test it is — the arms before it stay, and the
+/// rest of the `case` is a `_` arm binding the subject:
+///
+/// `case s { A {…} Shown<T> { k -> b } rest… }` →
+/// `case s { A {…} _ { __bp_case_s -> if (__bp_case_s is Shown) { val k: Shown<T> = __bp_case_s; b } else { case __bp_case_s { rest… } } } }`
+///
+/// Null when no arm is such a pattern.
+fn behaviorCase(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!?ast.Expr {
+    if (c.subjects.len != 1) return null;
+    const at = for (c.arms, 0..) |arm, k| {
+        if (arm.pattern == .ident and ctx.behaviorTests.contains(arm.patternLoc)) break k;
+    } else return null;
+    const a = ctx.arena;
+    const arm = c.arms[at];
+    const marker = ctx.behaviorTests.get(arm.patternLoc).?;
+    const subj = try std.fmt.allocPrint(a, "__bp_case_{d}_{d}", .{ arm.patternLoc.line, arm.patternLoc.col });
+    const subjExpr: ast.Expr = .{ .identifier = .{ .loc = arm.patternLoc, .kind = .{ .ident = subj } } };
+
+    // The test: `__bp_case_s is <marker>`, and the arm's guard after it.
+    var cond: ast.Expr = .{ .call = .{ .loc = arm.patternLoc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = ast.is_builtin_name,
+        .is_builtin = true,
+        .args = try argsOf(a, &.{subjExpr}),
+        .trailing = &.{},
+        .isType = .{ .named = marker },
+    } } } };
+    if (arm.guard) |g| cond = .{ .binaryOp = .{ .loc = arm.patternLoc, .op = .@"and", .lhs = try boxed(a, cond), .rhs = try boxed(a, try clone(ast.Expr, ctx, g)) } };
+
+    // The arm's body over the subject: its binder a `val` of the type the
+    // pattern names.
+    var then_: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+    const body = try clone(ast.Expr, ctx, arm.body);
+    if (body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len <= 1) {
+        if (body.function.kind.params.len == 1) {
+            const written: ast.TypeRef = if (arm.patternTypeArgs.len > 0)
+                .{ .generic = .{ .name = arm.pattern.ident, .args = arm.patternTypeArgs, .is_builtin = false } }
+            else
+                .{ .named = arm.pattern.ident };
+            try then_.append(a, .{ .expr = .{ .binding = .{ .loc = arm.patternLoc, .kind = .{ .localBind = .{
+                .name = body.function.kind.params[0],
+                .value = try boxed(a, subjExpr),
+                .mutable = false,
+                .typeAnnotation = written,
+            } } } } });
+        }
+        try then_.appendSlice(a, body.function.kind.body);
+    } else try then_.append(a, .{ .expr = body, .tail = .value });
+
+    // The arms after it, a `case` of their own (behavior arms among them
+    // written the same way).
+    const after = c.arms[at + 1 ..];
+    const else_: ?[]ast.Stmt = if (after.len == 0) null else blk: {
+        var inner = c;
+        inner.subjects = try a.dupe(ast.Expr, &.{subjExpr});
+        inner.arms = after;
+        inner.trailingComments = &.{};
+        const innerExpr = try clone(ast.Expr, ctx, .{ .collection = .{ .loc = loc, .kind = .{ .case = inner } } });
+        break :blk try a.dupe(ast.Stmt, &.{.{ .expr = innerExpr, .tail = .value }});
+    };
+    const ifExpr: ast.Expr = .{ .branch = .{ .loc = arm.patternLoc, .kind = .{ .if_ = .{
+        .cond = try boxed(a, cond),
+        .binding = null,
+        .then_ = try then_.toOwnedSlice(a),
+        .else_ = else_,
+    } } } };
+    const restArm: ast.CaseArm = .{
+        .pattern = .wildcard,
+        .body = .{ .function = .{ .loc = arm.patternLoc, .kind = .{
+            .syntax = .lambda,
+            .params = try a.dupe([]const u8, &.{subj}),
+            .body = try a.dupe(ast.Stmt, &.{.{ .expr = ifExpr, .tail = .value }}),
+        } } },
+        .patternLoc = arm.patternLoc,
+        .emptyLinesBefore = arm.emptyLinesBefore,
+    };
+    var arms: std.ArrayListUnmanaged(ast.CaseArm) = .empty;
+    for (c.arms[0..at]) |b| try arms.append(a, try clone(ast.CaseArm, ctx, b));
+    try arms.append(a, restArm);
+    var outer = c;
+    outer.subjects = try clone(@TypeOf(c.subjects), ctx, c.subjects);
+    outer.arms = try arms.toOwnedSlice(a);
+    return .{ .collection = .{ .loc = loc, .kind = .{ .case = outer } } };
+}
+
+fn boxed(a: std.mem.Allocator, e: ast.Expr) !*ast.Expr {
+    const p = try a.create(ast.Expr);
+    p.* = e;
+    return p;
+}
+
+fn argsOf(a: std.mem.Allocator, args: []const ast.Expr) ![]ast.CallArg {
+    const list = try a.alloc(ast.CallArg, args.len);
+    for (args, list) |x, *slot| slot.* = .{ .label = null, .value = try boxed(a, x) };
+    return list;
+}
+
 const Built = struct { name: []const u8, body: []ast.Stmt, ctx: Ctx };
 
 fn joined(arena: std.mem.Allocator, types: []const []const u8) ![]const u8 {
@@ -393,9 +495,23 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
         if (ctx.bound.len == 0) return v;
         if (v == .named) return if (ctx.boundOf(v.named)) |t| .{ .named = t } else v;
     }
+    // Decision 810 (3) — a type pattern naming a behavior: its identity.
+    if (T == ast.CaseArm) {
+        var arm = v;
+        arm.body = try clone(ast.Expr, ctx, v.body);
+        arm.guard = try clone(?ast.Expr, ctx, v.guard);
+        arm.pattern = try clone(ast.Pattern, ctx, v.pattern);
+        if (arm.pattern == .ident) if (ctx.behaviorTests.get(v.patternLoc)) |marker| {
+            arm.pattern = .{ .ident = marker };
+        };
+        return arm;
+    }
     if (T == ast.Expr) {
         var out = v;
         switch (v) {
+            .collection => |col| if (col.kind == .case) {
+                if (try behaviorCase(ctx, col.loc, col.kind.case)) |e| return e;
+            },
             .identifier => |id| if (id.kind == .ident) {
                 if (ctx.substOf(id.kind.ident)) |t| out.identifier.kind = .{ .ident = t };
                 // Decision 758 — a type where a run-time token is taken.
@@ -412,6 +528,10 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
                     call.isType = .{ .named = t };
                 };
                 if (ctx.calls.get(c.loc)) |tc| try rewriteCall(ctx, &call, tc, c.loc);
+                // Decision 810 — `v is B<…>` over a behavior: its identity.
+                if (call.isType != null) if (ctx.behaviorTests.get(c.loc)) |marker| {
+                    call.isType = .{ .named = marker };
+                };
                 // Decision 758 — `x is t` over a run-time token: the
                 // target's run-time helper over the value and the token.
                 if (ctx.rtTests.contains(c.loc) and call.isType != null and call.isType.? == .named and call.args.len == 1) {

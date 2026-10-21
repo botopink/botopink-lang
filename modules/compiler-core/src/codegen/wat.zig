@@ -2881,6 +2881,9 @@ const Emitter = struct {
     /// Every behavior the program declares, by name (`registerTypes`): where a
     /// type that implements one finds the `default fn`s it adopts.
     behavior_decls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// Decision 810 (1) — the types of the unit that implement each behavior,
+    /// by the behavior's name (`registerTypes`): `v is B` is a test of each.
+    behavior_impls: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
     /// The parameters a lambda about to be lifted is written against when
     /// they come from a declaration rather than a function type — a behavior
     /// literal's method (`expected_fn`'s twin).
@@ -3752,6 +3755,16 @@ const Emitter = struct {
     /// construction calls can be distinguished from ordinary function calls.
     fn registerTypes(self: *Emitter, program: ast.Program) !void {
         const ra = self.reg_arena.allocator();
+        for (program.decls) |decl| if (decl == .type_) for (decl.type_.implement) |im| {
+            const bn = switch (im) {
+                .named => |n| n,
+                .generic => |g| g.name,
+                else => continue,
+            };
+            const gop = try self.behavior_impls.getOrPut(ra, bn);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(ra, decl.type_.name);
+        };
         for (program.decls) |decl| switch (decl) {
             .type_ => |tdecl| switch (tdecl.shape) {
                 .record => {
@@ -4850,6 +4863,14 @@ const Emitter = struct {
     /// Every descriptor a value of `t` may carry: one for a record, one per
     /// variant for an enum, none for anything wasm cannot place.
     fn typeDescriptors(self: *Emitter, t: ast.TypeRef) anyerror![]const u32 {
+        // Decision 810 (1) — a behavior: every implementing type's own.
+        if (ast.behaviorTestName(t)) |bn| {
+            var out: std.ArrayListUnmanaged(u32) = .empty;
+            if (self.behavior_impls.get(bn)) |impls| for (impls.items) |tn| {
+                try out.appendSlice(self.arena(), try self.typeDescriptors(.{ .named = tn }));
+            };
+            return out.items;
+        }
         const name = switch (t) {
             .named => |n| n,
             .generic => |g| g.name,
@@ -6384,6 +6405,14 @@ const Emitter = struct {
     /// The GC types a value of `x is T` / a `case` arm naming `T` can be: a
     /// record's struct, a payload enum's variants, one variant by its path.
     fn gcTypeTests(self: *Emitter, t: ast.TypeRef) anyerror![]const ValType {
+        // Decision 810 (1) — a behavior: every implementing type's own.
+        if (ast.behaviorTestName(t)) |bn| {
+            var out: std.ArrayListUnmanaged(ValType) = .empty;
+            if (self.behavior_impls.get(bn)) |impls| for (impls.items) |tn| {
+                try out.appendSlice(self.arena(), try self.gcTypeTests(.{ .named = tn }));
+            };
+            return out.items;
+        }
         const name = switch (t) {
             .named => |n| n,
             .generic => |g| g.name,
@@ -22276,6 +22305,16 @@ const Emitter = struct {
                 return .{ .name = n, .ty = self.concreteTypeOf(arg) orelse return null };
             },
             .array, .generic => {
+                // Decision 810 — a union parameter (`v: Box<T> | Pair<T>`):
+                // the member the argument's type names binds as that member
+                // written alone would.
+                if (t.unionMembers()) |members| {
+                    const at = self.typeRefOf(arg) orelse return null;
+                    if (at != .generic) return null;
+                    for (members) |m| if (m == .generic and std.mem.eql(u8, m.generic.name, at.generic.name))
+                        return self.bindParam(m, arg, isParam, a, b);
+                    return null;
+                }
                 // `p: Pair<T>` against an argument whose type says `Pair<string>`
                 // (`ctorTypeRef`, a local bound to one): `T` is what the
                 // argument's type argument at its place is.

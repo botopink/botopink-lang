@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: `case` on 'Box | Pair | Trio' is not exhaustive: missing member(s) Trio
+at src/cases/union_case_forgotten_member/mod.bp:12:12

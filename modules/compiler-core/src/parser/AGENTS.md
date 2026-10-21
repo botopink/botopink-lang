@@ -555,7 +555,10 @@ trailing `..` (P7), a `#(…)` tuple pattern (P6), an `A...B` inclusive range
 (§5.2) and a pattern nested inside a payload (`.Some(#(a, b))`). One payload
 production serves variants and tuples; a payload of nothing but plain binders
 keeps the `fields` shape every existing consumer knows, anything else becomes
-`literals`. `null`, `true` and `false` land on `.ident` but are not binders
+`literals`. A `case` arm whose pattern is a generic type, `Box<T> { b -> … }` (decision 810 (3)), is
+read by `parseTypeRefMember`: the pattern lands on `.ident` with the type's name — what a backend
+tests, the type's identity — and the written arguments on the arm (`CaseArm.patternTypeArgs`, left
+out of the AST dump), which the checker judges and the formatter prints back. `null`, `true` and `false` land on `.ident` but are not binders
 (`isPlainBinder`): `Box(label: null, n: k)` is `literals`, and every backend
 tests the field (`commonJS` `isKeywordLiteralPattern`, erlang's `undefined`
 atom, beam's `is_eq_exact`, wasm's `eqz`) — kept as `fields` it was bound as a

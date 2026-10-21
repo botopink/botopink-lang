@@ -1,0 +1,6 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.union_narrowing_flow_and_case.runCase();
+    cases.is_behavior_identity_run_time.runCase();
+}

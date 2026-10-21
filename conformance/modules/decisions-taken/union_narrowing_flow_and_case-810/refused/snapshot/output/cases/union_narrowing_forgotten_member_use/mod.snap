@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: cannot read a field of a `Circle | Square` — not every member of the union answers it
+at src/cases/union_narrowing_forgotten_member_use/mod.bp:13:14

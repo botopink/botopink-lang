@@ -378,9 +378,9 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- test@main@@Square.S
 ```erlang
 {module, test@main@@Square}.
-{exports, [{area, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{area, 1}, {'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 15}.
 
 {function, area, 1, 3}.
   {label, 2}.
@@ -441,6 +441,14 @@ import {io.terminal.print} from "std";
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Square">>}, {y, 1}]}}.
     {deallocate, 2}.
+    return.
+
+{function, '__bp_behaviors', 0, 14}.
+  {label, 13}.
+    {line, [{location, "test@main@@Square.erl", 2}]}.
+    {func_info, {atom, test@main@@Square}, {atom, '__bp_behaviors'}, 0}.
+  {label, 14}.
+    {move, {literal, ['Shape']}, {x, 0}}.
     return.
 ```
 

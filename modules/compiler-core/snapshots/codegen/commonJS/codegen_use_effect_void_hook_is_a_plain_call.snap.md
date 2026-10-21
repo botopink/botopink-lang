@@ -517,6 +517,7 @@ const { push: bpScopePush__, find: bpScopeFind__, rendered: bpScopeRendered__, v
 class Element {
 }
 Element.prototype.__bp = "Element";
+Element.prototype.__bp_b_Renderable = true;
 
 function cleanup() {
     0;

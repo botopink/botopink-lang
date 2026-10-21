@@ -851,7 +851,7 @@ reverse(O) ->
 ```erlang
 -module(std@collections@@Dict).
 -compile({no_auto_import,[size/1]}).
--export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, bump/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1]).
+-export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, bump/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 display(Self) ->
     Parts = lists:foldl(fun(P, Parts) ->
@@ -942,6 +942,8 @@ ofEntries(Entries) ->
 '__bp_get'(V, pairs) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {text, display(V)}.
+
+'__bp_behaviors'() -> ['Index', 'Display'].
 
 '__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.

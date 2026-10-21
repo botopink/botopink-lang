@@ -111,6 +111,7 @@ class Money {
     }
 }
 Money.prototype.__bp = "Money";
+Money.prototype.__bp_b_Bounded = true;
 
 function main() {
     const m = new Money(500).clamp(new Money(0), new Money(120));

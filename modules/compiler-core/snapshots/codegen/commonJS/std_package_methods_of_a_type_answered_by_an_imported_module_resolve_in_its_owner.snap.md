@@ -960,6 +960,8 @@ class Dict {
     }
 }
 Dict.prototype.__bp = "Dict";
+Dict.prototype.__bp_b_Index = true;
+Dict.prototype.__bp_b_Display = true;
 exports.Dict = Dict;
 
 // One key or value of `Dict.display`: a string quoted, anything else as it

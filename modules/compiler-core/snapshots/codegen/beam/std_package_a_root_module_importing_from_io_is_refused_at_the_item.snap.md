@@ -10427,9 +10427,9 @@ test "fs answers PermissionDenied for an OS permission error" {
 ----- BEAM ASSEMBLY -- std@io@fs@@File.S
 ```erlang
 {module, std@io@fs@@File}.
-{exports, [{path, 1}, {size, 1}, {read, 2}, {bytes, 1}, {text, 1}, {chunks, 2}, {lines, 1}, {hash, 1}, {write, 2}, {close, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{path, 1}, {size, 1}, {read, 2}, {bytes, 1}, {text, 1}, {chunks, 2}, {lines, 1}, {hash, 1}, {write, 2}, {close, 1}, {'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
 {attributes, []}.
-{labels, 493}.
+{labels, 495}.
 
 {function, path, 1, 3}.
   {label, 2}.
@@ -10795,6 +10795,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"File">>}, {y, 1}]}}.
     {deallocate, 2}.
+    return.
+
+{function, '__bp_behaviors', 0, 494}.
+  {label, 493}.
+    {line, [{location, "std@io@fs@@File.erl", 30}]}.
+    {func_info, {atom, std@io@fs@@File}, {atom, '__bp_behaviors'}, 0}.
+  {label, 494}.
+    {move, {literal, ['Closeable']}, {x, 0}}.
     return.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 31}.

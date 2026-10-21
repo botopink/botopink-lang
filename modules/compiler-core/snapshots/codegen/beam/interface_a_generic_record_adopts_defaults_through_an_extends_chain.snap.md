@@ -361,9 +361,9 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- test@main@@Bag.S
 ```erlang
 {module, test@main@@Bag}.
-{exports, [{size, 1}, {twiceSize, 1}, {isEmpty, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{size, 1}, {twiceSize, 1}, {isEmpty, 1}, {'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
 {attributes, []}.
-{labels, 18}.
+{labels, 20}.
 
 {function, size, 1, 3}.
   {label, 2}.
@@ -452,6 +452,14 @@ import {io.terminal.print} from "std";
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Bag">>}, {y, 1}]}}.
     {deallocate, 2}.
+    return.
+
+{function, '__bp_behaviors', 0, 19}.
+  {label, 18}.
+    {line, [{location, "test@main@@Bag.erl", 4}]}.
+    {func_info, {atom, test@main@@Bag}, {atom, '__bp_behaviors'}, 0}.
+  {label, 19}.
+    {move, {literal, ['Counted']}, {x, 0}}.
     return.
 ```
 

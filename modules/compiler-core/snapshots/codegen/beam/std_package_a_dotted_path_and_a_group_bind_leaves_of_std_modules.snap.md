@@ -1171,9 +1171,9 @@ test "order case over Order" {
 ----- BEAM ASSEMBLY -- std@collections@@Dict.S
 ```erlang
 {module, std@collections@@Dict}.
-{exports, [{display, 1}, {at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {bump, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {empty, 0}, {ofEntries, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{display, 1}, {at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {bump, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {empty, 0}, {ofEntries, 1}, {'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
 {attributes, []}.
-{labels, 126}.
+{labels, 128}.
 
 {function, display, 1, 3}.
   {label, 2}.
@@ -1565,6 +1565,14 @@ test "order case over Order" {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, text}, {x, 0}]}}.
     {deallocate, 0}.
+    return.
+
+{function, '__bp_behaviors', 0, 127}.
+  {label, 126}.
+    {line, [{location, "std@collections@@Dict.erl", 18}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '__bp_behaviors'}, 0}.
+  {label, 127}.
+    {move, {literal, ['Index', 'Display']}, {x, 0}}.
     return.
 
 {function, '__bp_print', 1, 35}.

@@ -343,9 +343,9 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- test@main@@Money.S
 ```erlang
 {module, test@main@@Money}.
-{exports, [{min, 2}, {max, 2}, {clamp, 3}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{min, 2}, {max, 2}, {clamp, 3}, {'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
 {attributes, []}.
-{labels, 21}.
+{labels, 23}.
 
 {function, min, 2, 3}.
   {label, 2}.
@@ -448,6 +448,14 @@ import {io.terminal.print} from "std";
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Money">>}, {y, 1}]}}.
     {deallocate, 2}.
+    return.
+
+{function, '__bp_behaviors', 0, 22}.
+  {label, 21}.
+    {line, [{location, "test@main@@Money.erl", 4}]}.
+    {func_info, {atom, test@main@@Money}, {atom, '__bp_behaviors'}, 0}.
+  {label, 22}.
+    {move, {literal, ['Bounded']}, {x, 0}}.
     return.
 ```
 

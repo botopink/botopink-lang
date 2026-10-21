@@ -117,6 +117,7 @@ class Bag {
     }
 }
 Bag.prototype.__bp = "Bag";
+Bag.prototype.__bp_b_Counted = true;
 
 function main() {
     __bp_print(new Bag([]).isEmpty());

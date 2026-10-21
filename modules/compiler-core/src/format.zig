@@ -2153,8 +2153,14 @@ pub const Formatter = struct {
                 }
                 break :blk body;
             };
+            // Decision 810 (3) — a generic type pattern keeps its written
+            // arguments (`Box<T> { b -> … }`).
+            const patDoc = if (arm.patternTypeArgs.len > 0 and arm.pattern == .ident)
+                try this.fmtTypeRef(.{ .generic = .{ .name = arm.pattern.ident, .args = arm.patternTypeArgs, .is_builtin = false } })
+            else
+                try this.fmtPattern(arm.pattern);
             try armParts.append(this.arena, try this.concatAll(&.{
-                try this.fmtPattern(arm.pattern),
+                patDoc,
                 guardDoc,
                 if (isBlockArm) try this.text(" ") else try this.text(" -> "),
                 if (isBlockArm)

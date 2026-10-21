@@ -3691,6 +3691,15 @@ const Emitter = struct {
         const t = cc.isType orelse return error.InvalidArgs;
         if (cc.args.len != 1) return error.InvalidArgs;
         try self.lowerExprIntoX0(cc.args[0].value.*);
+        // Decision 810 (1) — a behavior: the value's type module answers it
+        // (`beam/gen_runtime.zig`'s `'__bp_implements'/2`, erlang's too).
+        if (ast.behaviorTestName(t)) |bn| {
+            var buf: [512]u8 = undefined;
+            const atom = try self.atom_arena.allocator().dupe(u8, try atomName(bn, &buf));
+            try beamEmitter.writeMoveOp(self.out, Op.atom(atom), Dst.xr(1));
+            try self.callGenHelper(.implements);
+            return;
+        }
         const fail = self.allocLabel();
         const end = self.allocLabel();
         const testable = try self.emitTypeTestBranch(t, fail);
@@ -4232,12 +4241,44 @@ const Emitter = struct {
                 const fields = r.recordFields();
                 if (fields.len > 0) try self.emitFieldGetter(fields, unit);
                 try self.emitRecordFormat(r.printedName(), r, unit);
+                try self.emitBehaviors(r.implement, unit);
             },
             .enum_ => |e| {
                 if (e.variants().len == 0) return;
                 try self.emitEnumFormat(e.printedName(), e, unit);
+                try self.emitBehaviors(e.implement, unit);
             },
         }
+    }
+
+    /// Decision 810 (1) — `'__bp_behaviors'() -> ['Shown', …]`, the behaviors
+    /// the type implements, which `'__bp_implements'/2` reads for `v is B`.
+    fn emitBehaviors(self: *Emitter, implement: []const ast.TypeRef, unit: *SavedBeamUnit) !void {
+        if (implement.len == 0) return;
+        const ar = self.atom_arena.allocator();
+        var names: std.ArrayListUnmanaged(Term) = .empty;
+        for (implement) |im| {
+            const n = switch (im) {
+                .named => |x| x,
+                .generic => |g| g.name,
+                else => continue,
+            };
+            var buf: [512]u8 = undefined;
+            try names.append(ar, Term.atomOf(try ar.dupe(u8, try atomName(n, &buf))));
+        }
+        const name = "'__bp_behaviors'";
+        try self.reserveFn(name, 0);
+        try unit.exports.append(self.alloc, .{ .name = name, .arity = 0 });
+        const l = try self.fnLabelsFor(name, 0);
+        const w = self.out;
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, name, 0, l.entry);
+        try beamEmitter.writeLabel(w, l.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, name, 0);
+        try beamEmitter.writeLabel(w, l.entry);
+        try beamEmitter.writeMoveOp(w, .{ .term = Term.listOf(try names.toOwnedSlice(ar)) }, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
     }
 
     /// `'__bp_get'(V, Field)`: a chain of `is_eq_exact` tests on the field

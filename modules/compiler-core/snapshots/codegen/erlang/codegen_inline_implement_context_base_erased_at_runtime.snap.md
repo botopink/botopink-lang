@@ -22,9 +22,11 @@ render() ->
 ----- ERLANG -- test@main@@Element.erl
 ```erlang
 -module(test@main@@Element).
--export(['__bp_format'/1]).
+-export(['__bp_format'/1, '__bp_behaviors'/0]).
 
 '__bp_format'(_) -> {record, "Element", []}.
+
+'__bp_behaviors'() -> ['Renderable'].
 ```
 
 ----- RUN LOG -----
