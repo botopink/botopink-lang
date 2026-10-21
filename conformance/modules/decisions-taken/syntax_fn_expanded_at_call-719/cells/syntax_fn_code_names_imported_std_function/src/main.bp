@@ -1,0 +1,12 @@
+//// Decisions 719, 841, 578, 170 — the code a `syntax` expression function writes
+//// resolves each name in the scope of whoever wrote it: `print` is imported by
+//// `logger`, the call site imports none, and the answer is `-> void` or `-> anyvalue`.
+
+mod logger;
+import {logger.log, logger.logAny};
+
+pub fn main() -> void {
+    val n = 3;
+    log("sum", n + 4);
+    logAny("product", n * 2);
+}
