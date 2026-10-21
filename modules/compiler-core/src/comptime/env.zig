@@ -770,8 +770,28 @@ pub const SequenceKind = enum { iterator, stream };
 /// its source in `Env.contributions`, and the index of its annotated
 /// declaration in the module's declarations. Decision 567 — a type error
 /// inside it is located at `loc`, the annotation that ran the decorator, its
-/// `compiler.init` call (`call`) the `called from` line.
-pub const ExecutorAnchor = struct { contribution: usize, decl: usize, loc: ?ast.Loc = null, call: ?CallSite = null };
+/// `compiler.init` call (`call`) the `called from` line. Decision 798 (2) —
+/// `decorator` is the annotation's name (`registered`, or a top-level
+/// `comptime` block's `__bp_comptime_<k>` marker), which `--emit-resolved`
+/// names in the executor's origin comment.
+pub const ExecutorAnchor = struct { contribution: usize, decl: usize, loc: ?ast.Loc = null, call: ?CallSite = null, decorator: []const u8 = "" };
+
+/// Decision 798 (2) — where an expansion came from: the template (or the
+/// function expanded at its call, 562) as the call names it, the file it is
+/// declared in and its line. `--emit-resolved` prints it as the comment
+/// `// from <what> (<file>:<line>)` over the statement the expansion stands in.
+pub const ExpansionOrigin = struct { what: []const u8, module: []const u8, file: []const u8, line: usize };
+
+/// Decision 798 (2) — a module's decorator outputs, in the order their
+/// sources are placed past the module's last line (`comptime.zig`
+/// `parseAndMergeContributions`, `mergeMembers`, `mergeAssocTypes`): what
+/// `comptime/resolved_origins.zig` `outputAt` reads a line's owner from.
+pub const OutputRecords = struct {
+    contributions: []const []const u8 = &.{},
+    members: []const MemberContribution = &.{},
+    types: []const TypeContribution = &.{},
+    anchors: []const ExecutorAnchor = &.{},
+};
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
 /// parameter. `params` are the trailing argument parameters an `#[d(args)]`
@@ -808,7 +828,9 @@ pub const MemberContribution = struct {
 
 /// Decision 567 — where a decorator body wrote the `decl.addMember` /
 /// `decl.addType` call whose output the module's analysis refused.
-pub const CallSite = struct { file: []const u8, loc: ast.Loc };
+/// Decision 798 (2) — `module` is the decorator's module path, which
+/// `--emit-resolved`'s origin comment labels the file by (empty when unknown).
+pub const CallSite = struct { file: []const u8, loc: ast.Loc, module: []const u8 = "" };
 
 /// Decision 575 (6) — what a library's source annotation implemented
 /// (`compiler.implement(source)`) for the declaration it annotates.
@@ -1032,6 +1054,13 @@ pub const Env = struct {
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
     templateExpansions: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 798 (2) — each expansion's origin, by the call's loc (a key of
+    /// `templateExpansions`): read only by `comptime.zig` `resolvedProgram`.
+    expansionOrigins: std.AutoHashMapUnmanaged(ast.Loc, ExpansionOrigin) = .empty,
+    /// Decision 798 (2) — on a re-analysis's env, the outputs of pass 1 that
+    /// placed the merged module's lines (`comptime.zig` `keepPassOneTraces`);
+    /// null on pass 1's own env, whose lists are those outputs.
+    passOneOutputs: ?OutputRecords = null,
     /// Decisions 311 (3), 415 (1) — calls named like a template of the scope
     /// that inference resolved to something else (a method of the receiver's
     /// own type, a `"std"` namespace's function; for a free call, a parameter
@@ -2690,6 +2719,25 @@ pub const Env = struct {
 
     /// The file `decl`'s calls are located in (decision 532): the file of the
     /// module it was declared in; this module's when nothing recorded it.
+    /// Decision 798 (2) — records that the expansion at `loc` came from
+    /// `decl` (a template, or a function expanded at its call): its name, its
+    /// file (`srcPathOfDecl`, as a decorator's output call site names it) and
+    /// the line its name is written on.
+    /// The decorator outputs that placed this module's lines past its end.
+    pub fn outputRecords(self: *const Env) OutputRecords {
+        return self.passOneOutputs orelse .{
+            .contributions = self.contributions.items,
+            .members = self.memberContributions.items,
+            .types = self.typeContributions.items,
+            .anchors = self.executorAnchors.items,
+        };
+    }
+
+    pub fn noteExpansionOrigin(self: *Env, loc: ast.Loc, decl: ast.FnDecl) std.mem.Allocator.Error!void {
+        const owner = self.comptimeOwnerOf(decl);
+        try self.expansionOrigins.put(self.arena, loc, .{ .what = decl.name, .module = if (owner.len > 0) owner else self.modulePath, .file = self.srcPathOfDecl(decl), .line = decl.nameLoc.line });
+    }
+
     pub fn srcPathOfDecl(self: *Env, decl: ast.FnDecl) []const u8 {
         const owner = self.comptimeOwnerOf(decl);
         return self.srcPathOf(if (owner.len > 0) owner else self.modulePath);

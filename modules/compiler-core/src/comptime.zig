@@ -7,6 +7,7 @@ const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const context_lower = @import("comptime/context_lower.zig");
+const resolved_origins = @import("comptime/resolved_origins.zig");
 const typeIdentity = @import("comptime/type_identity.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
@@ -344,6 +345,9 @@ fn resolvedProgram(
     fn_decls: std.StringHashMap(ast.FnDecl),
     comptime_arrays: std.StringHashMap([]const ast.TypedExpr),
     env: *const envMod.Env,
+    /// The module's own text: a line past its end is a decorator's output
+    /// (`resolved_origins.outputAt`).
+    source: []const u8,
 ) !ast.Program {
     const ml = transform.MethodLowerings.init(arena);
     const rj = transform.ResultJumpLowerings.init(arena);
@@ -366,7 +370,13 @@ fn resolvedProgram(
     var splices = try env.srcRewrites.clone();
     var cit = env.typeinfoAll.keyIterator();
     while (cit.next()) |loc| _ = splices.remove(loc.*);
-    const t = try transform.transform(arena, erased, decls, comptime_arrays, &ml, &env.templateExpansions, &splices, &rj, &sa, &es, &env.indexRewrites, &onc, std.StringHashMap([]const ast.Param).init(arena), &di, &rp, &ns, &env.localCalleeCalls, &ec, .resolved);
+    // Decision 798 (2) — each piece's origin, a comment over it: an expansion
+    // and a folded value marked on the tree as written, a decorator's output
+    // on the transform's.
+    const self_file = resolved_origins.labelOf(env, env.modulePath, if (env.srcPath.len > 0) env.srcPath else try std.fmt.allocPrint(arena, "{s}.bp", .{if (env.modulePath.len > 0) env.modulePath else "main"}));
+    const marked = try resolved_origins.annotateWritten(arena, erased, env, &splices, self_file);
+    const t0 = try transform.transform(arena, marked, decls, comptime_arrays, &ml, &env.templateExpansions, &splices, &rj, &sa, &es, &env.indexRewrites, &onc, std.StringHashMap([]const ast.Param).init(arena), &di, &rp, &ns, &env.localCalleeCalls, &ec, .resolved);
+    const t = try resolved_origins.annotateOutputs(arena, t0, env, source, self_file);
     // What expanded code and folded values name that the module does not
     // declare: the template's imports, the prelude records a value is built
     // from (`SourceLocation`, `Declared`, `Asset`, `__Source`).
@@ -1227,27 +1237,8 @@ fn mergeMembers(
 /// only one the analysis reports.
 fn locateInOutputs(arena: std.mem.Allocator, te: validation.TypeError, source: []const u8, env: *const Env) validation.TypeError {
     const at = (te.loc orelse return te).line;
-    var line: usize = std.mem.count(u8, source, "\n") + 1;
-    for (env.contributions.items, 0..) |c, ci| {
-        const last = line + std.mem.count(u8, c, "\n") + 1;
-        // Decision 580 — an executor is code a decorator added, located as
-        // a member is.
-        if (at > line and at <= last) for (env.executorAnchors.items) |an| {
-            if (an.contribution == ci) return locatedAt(arena, te, an.loc, an.call);
-        };
-        line = last;
-    }
-    for (env.memberContributions.items) |m| {
-        const last = line + std.mem.count(u8, m.source, "\n") + 1;
-        if (at > line and at <= last) return locatedAt(arena, te, m.loc, m.call);
-        line = last;
-    }
-    for (env.typeContributions.items) |t| {
-        const last = line + std.mem.count(u8, t.source, "\n") + 1;
-        if (at > line and at <= last) return locatedAt(arena, te, t.loc, t.call);
-        line = last;
-    }
-    return te;
+    const o = resolved_origins.outputAt(env, source, at) orelse return te;
+    return locatedAt(arena, te, o.loc, o.call);
 }
 
 /// `locateInOutputs` for a refusal of the target recorded by inference
@@ -1635,6 +1626,7 @@ fn withNested(arena: std.mem.Allocator, assoc: []const []const u8, t: ast.TypeDe
 /// The pass-2 env replaces pass 1's, where the decorators ran: carry their
 /// runtime traces over, ahead of any pass-2 (template) evaluations.
 fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
+    pass_two.passOneOutputs = pass_one.outputRecords();
     try pass_two.comptimeTraces.insertSlice(pass_two.arena, 0, pass_one.comptimeTraces.items);
     // A `comptime` node of the source is inferred again by the re-analysis
     // (a decorator's output spliced, decisions 788 (2), 793 (5)): what it
@@ -5191,7 +5183,7 @@ fn compileOnce(
                     break :blk ast.Program{ .decls = new_decls };
                 };
                 // Before the lowering transform, which rewrites nodes in place.
-                const resolved: ?ast.Program = if (keep_resolved) try resolvedProgram(arena_alloc, succ.written orelse succ.program, fn_decls, comptime_arrays, &succ.env) else null;
+                const resolved: ?ast.Program = if (keep_resolved) try resolvedProgram(arena_alloc, succ.written orelse succ.program, fn_decls, comptime_arrays, &succ.env, mod.source) else null;
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withEmbedParams(arena_alloc, try withAssetDecl(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceRecordDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try type_token.apply(arena_alloc, try transform.transform(arena_alloc, try syntax_param.eraseProgram(arena_alloc, try withoutExpandedFns(arena_alloc, program_for_transform), infer.isDecoratorParams), fn_decls, comptime_arrays, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces, &succ.env.localCalleeCalls, &succ.env.embedCallArgs, .backends), &succ.env), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env), program_for_transform.decls), &succ.env),

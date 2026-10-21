@@ -356,6 +356,7 @@ fn expandWith(x: *Expander, decl: ast.FnDecl, args: []const Arg, loc: ast.Loc, e
     defer env.expectedType = saved;
     const typed = try infer.inferExprTyped(env, expansion.*);
     try env.templateExpansions.put(loc, expansion);
+    try env.noteExpansionOrigin(loc, decl);
     return typed;
 }
 

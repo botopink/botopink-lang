@@ -14,7 +14,9 @@ analysed with no fold, expansion, decorator or build output, then built on every
 answer compared with the cell's (it sets `reserved_names.accept_compiler_names`, the printing's names
 being the compiler's) and over a package of several modules and a dependency (decision 834:
 `resolvedPrint.files` one file per module, the printed tree re-read as the project, the same answer
-on every target), `beam_templates.zig` for
+on every target) and decision 798 (2)'s origin comments (each piece's `// from <what> (<file>:<line>)` over it
+in a module and in the package, the printing still re-read with no comptime and the same answer on
+every target), `beam_templates.zig` for
 decision 141's audit — every `#[@external(.Erlang(…))]` template std, its
 `primitives.bp` and the bundled libraries ship lowers for beam, through
 `beam_asm.templateBody` / `templateModuleText` / `lowerTemplateText`, the

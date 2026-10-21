@@ -13,6 +13,10 @@ pub val loud = shout @`hello`;
 
 pub val prefix = comptime createContext("#");
 
+comptime {
+    compiler.init({ -> print("ready") });
+}
+
 fn job(syntax decl: unknown) -> void {
     compiler.setMeta(Job(kind: "job"));
 }

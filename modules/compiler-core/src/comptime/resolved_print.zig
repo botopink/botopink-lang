@@ -158,6 +158,19 @@ pub fn module(allocator: std.mem.Allocator, program: ast.Program, outputs: []con
         blank.items[0] = false;
         if (head < blank.items.len) blank.items[head] = true;
     }
+    // A `//` comment heads the declaration after it (an origin comment,
+    // decision 798 (2), or one the source wrote): the blank line that stands
+    // before the declaration stands before the comment.
+    for (decls.items, 0..) |d, i| {
+        if (i == 0 or d != .comment or d.comment.is_module or d.comment.trailing) continue;
+        const prev = decls.items[i - 1];
+        if (prev == .comment and !prev.comment.is_module) continue;
+        const next = for (decls.items[i..]) |n| {
+            if (n != .comment) break n;
+        } else continue;
+        if ((prev == .use or prev == .mod) and (next == .use or next == .mod)) continue;
+        blank.items[i] = true;
+    }
     // A first printing tells which of std's `print` / `panic` the module calls.
     var probe: format.Formatter.Resolved = .{ .keepAnnotation = keepAnnotation };
     _ = try format.formatResolved(arena, .{ .decls = decls.items, .blankLineBefore = blank.items }, &probe);

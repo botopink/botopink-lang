@@ -286,6 +286,12 @@ test "resolved program: one file per module, a dependency's in its own directory
     try std.testing.expect(std.mem.indexOf(u8, util, "tools.entity") == null);
     try std.testing.expect(std.mem.indexOf(u8, main, "tools.shout") == null);
     try std.testing.expect(std.mem.indexOf(u8, main, "import {util.greet};") != null);
+    // Decision 798 (2) — each piece's origin, the dependency's file named by
+    // its module path: the member at the decorator's `addMember` call, each
+    // expansion at its template, the folded value at its `comptime`.
+    try expectHolds(util, "    // from #[entity] (lib/tools.bp:12)\n    pub fn table() -> string {");
+    try expectHolds(util, "    // from boxed (lib/tools.bp:19)\n    // from comptime (src/util.bp:7)\n    return __bp_tpl_lib_tools__wrap(\"hi\")");
+    try expectHolds(main, "\n\n// from shout (lib/tools.bp:15)\npub val loud = ");
 
     // The printed tree read back as the project: no comptime left, the same
     // answer on every target.
@@ -302,6 +308,95 @@ test "resolved program: one file per module, a dependency's in its own directory
         if (!std.mem.eql(u8, want, got) or want.len == 0) {
             std.debug.print("project on {s}: the printing answers\n{s}\nthe project\n{s}\n", .{ @tagName(cfg.targetSource), got, want });
             for (files) |f| std.debug.print("{s}:\n{s}\n", .{ f.path, f.text });
+            return error.AnswerDiffers;
+        }
+    }
+}
+
+fn expectHolds(text: []const u8, want: []const u8) !void {
+    if (std.mem.indexOf(u8, text, want) != null) return;
+    std.debug.print("the printing lacks\n{s}\nprinted:\n{s}\n", .{ want, text });
+    return error.OriginMissing;
+}
+
+// Decision 798 (2) — every piece the build produced carries its origin as a
+// `//` comment over it: a decorator's added member and `compiler.init`
+// executor at the decorator's output call, a top-level `comptime` block's
+// executor at its `compiler.init`, a template's expansion at the template, a
+// folded `comptime` value at the `comptime`. The comments are never read
+// back: the printing still checks with no comptime and answers as the
+// program on every target.
+const origins_main =
+    \\import {compiler, io.terminal.print} from "std";
+    \\
+    \\var entries: string[] = [];
+    \\
+    \\pub fn register(entry: string) -> void {
+    \\    entries.push(entry);
+    \\}
+    \\
+    \\pub fn registered(syntax decl: unknown) -> void {
+    \\    val name = compiler.name(decl)!;
+    \\    compiler.init({ -> register(name) });
+    \\}
+    \\
+    \\pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    \\    compiler.addMember("pub fn table() -> string { return \"" + table + "\"; }");
+    \\}
+    \\
+    \\pub fn shout(syntax q: string) -> string {
+    \\    return compiler.build("(\"" + compiler.text(q) + "\").toUpper()");
+    \\}
+    \\
+    \\comptime {
+    \\    compiler.init({ -> register("block") });
+    \\}
+    \\
+    \\#[entity("towns")]
+    \\pub type Town(name: string)
+    \\
+    \\#[registered]
+    \\pub fn own() -> string {
+    \\    return "own";
+    \\}
+    \\
+    \\pub val answer = comptime 6 * 7;
+    \\
+    \\pub fn main() -> void {
+    \\    print(entries.join(","));
+    \\    print(shout @`hello`);
+    \\    print(Town.table() + " " + own() + " " + answer.toString());
+    \\}
+    \\
+;
+
+test "resolved program: each piece the build produced carries its origin as a comment, never read back (decision 798 (2))" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    reservedNames.accept_compiler_names = true;
+    defer reservedNames.accept_compiler_names = false;
+    var cfg0 = h.configs[0];
+    cfg0.build_root = test_scratch.path(io, "codegen/resolved_print_origins");
+    const text = try printed(gpa, io, origins_main, cfg0);
+    defer gpa.free(text);
+    try expectHolds(text, "\n\n// from comptime { … } (src/main.bp:23)\npub fn __bp_executor_");
+    try expectHolds(text, "    // from #[entity] (src/main.bp:15)\n    pub fn table() -> string {");
+    try expectHolds(text, "\n\n// from #[registered] (src/main.bp:11)\npub fn __bp_executor_");
+    try expectHolds(text, "\n\n// from comptime (src/main.bp:34)\npub val answer = 42;");
+    try expectHolds(text, "    // from shout (src/main.bp:18)\n    print((\"hello\").toUpper());");
+    // One comment per piece: the `val` that runs an executor is the
+    // executor's piece.
+    try std.testing.expectEqual(@as(usize, 5), std.mem.count(u8, text, "// from "));
+    try expectNoComptime(gpa, io, "origins", text, cfg0);
+    for (h.configs) |c| {
+        var cfg = c;
+        cfg.build_root = cfg0.build_root;
+        const want = try answer(gpa, io, origins_main, cfg);
+        defer gpa.free(want);
+        const got = try answer(gpa, io, text, cfg);
+        defer gpa.free(got);
+        if (!std.mem.eql(u8, want, got) or want.len == 0) {
+            std.debug.print("origins on {s}: the printing answers\n{s}\nthe program\n{s}\nprinted:\n{s}\n", .{ @tagName(cfg.targetSource), got, want, text });
             return error.AnswerDiffers;
         }
     }

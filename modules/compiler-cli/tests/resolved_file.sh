@@ -14,7 +14,14 @@
 #   • what ran at build is gone with its import: `entity`, `shout`, `boxed`;
 #   • a folded value the language cannot write is printed as the run-time call
 #     that builds it (decision 835 (1)): a context, `createContext(v)`;
-#   • a `@TypeInfo.all(…)` read stays the read as written (835 (3)).
+#   • a `@TypeInfo.all(…)` read stays the read as written (835 (3));
+#   • each piece the build produced carries its origin as the comment over it
+#     (798 (2)), `// from <what> (<file>:<line>)`, a dependency's file by its
+#     module path: `lib`'s `#[entity]` member at its `addMember` call, the
+#     expansions of `shout` and `boxed` at their declarations, the folded
+#     context at its `comptime`, the top-level `comptime` block's executor at
+#     its `compiler.init`; a decorator that only records meta (`#[job]`)
+#     produced nothing and has none.
 # The printed tree re-read as a project, on every target, is the oracle of
 # `compiler-core`'s `codegen/tests/resolved_print.zig` (its names are the
 # compiler's, refused in a written program, 805 (6)).
@@ -76,6 +83,18 @@ lacks app/main.bp 'tools.shout'
 has app/main.bp 'pub val prefix = createContext("#");'
 lacks app/main.bp 'contextValue'
 has app/main.bp 'val jobs: Declared<unknown>[] = @TypeInfo.all(with: job);'
+
+over() { # <file> <comment> <the line after it, from its start>
+  awk -v c="$2" -v n="$3" 'prev == c && index($0, n) == 1 { found = 1 } { sub(/^ +/, ""); prev = $0 } END { exit !found }' "$RES/$1" \
+    || { fail "$1: no '$2' over '$3'"; sed 's/^/      /' "$RES/$1" >&2; }
+}
+over app/main.bp '// from shout (lib/tools.bp:19)' 'pub val loud = '
+over app/main.bp '// from comptime (src/main.bp:14)' 'pub val prefix = '
+over app/main.bp '// from comptime { … } (src/main.bp:17)' 'pub fn __bp_executor_'
+over app/util.bp '// from #[entity] (lib/tools.bp:15)' '    pub fn table() -> string {'
+over app/util.bp '// from boxed (lib/tools.bp:24)' '    return __bp_tpl_lib_tools__wrap("hi")'
+[[ "$(grep -c '// from ' "$RES/app/main.bp")" == 3 ]] || fail "app/main.bp: not one origin comment per piece"
+lacks app/main.bp '// from #[job]'
 
 if (( failures > 0 )); then
   echo "resolved_file.sh: $failures failure(s)" >&2

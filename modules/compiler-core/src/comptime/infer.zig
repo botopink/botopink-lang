@@ -6903,7 +6903,7 @@ fn runDeclDecorators(
                         const isMember = std.mem.eql(u8, handle.kind, "Method") or std.mem.eql(u8, handle.kind, "Field");
                         const annotated = if (isMember) if (memberOwner) |o| try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ o, handle.name }) else handle.name else handle.name;
                         const source = try executorSource(env, a, dfn, sig, values, c, local, annotated);
-                        try env.executorAnchors.append(env.arena, .{ .contribution = env.contributions.items.len, .decl = env.decoratedDeclIndex, .loc = a.loc, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind) });
+                        try env.executorAnchors.append(env.arena, .{ .contribution = env.contributions.items.len, .decl = env.decoratedDeclIndex, .loc = a.loc, .call = try outputCallSite(env, dfn, owner, raw[0..ci], c.kind), .decorator = a.name });
                         try env.contributions.append(env.arena, source);
                     },
                     // `decl.addType(name, source)` (decision 216 (3)) — an
@@ -8165,7 +8165,7 @@ fn outputCallSite(env: *Env, dfn: ast.FnDecl, owner: []const u8, before: []const
     }
     const sites = try hooksMod.callSites(env.arena, dfn, callee);
     if (sites.len == 0) return null;
-    return .{ .file = srcPathOfModule(env, owner), .loc = sites[@min(nth, sites.len - 1)] };
+    return .{ .file = srcPathOfModule(env, owner), .loc = sites[@min(nth, sites.len - 1)], .module = owner };
 }
 
 const hooks_output_hint = "A decorator that reads `.hooks` runs after the module's bodies are inferred (decision 372): it records meta (`decl.setMeta`) or refuses (`decl.fail`). Add members and types from a decorator that reads no `.hooks`.";
@@ -10685,6 +10685,8 @@ fn expandTemplateCall(
     retType: *T.Type,
     loc: ast.Loc,
 ) InferError!TypedExpr {
+    // Decision 798 (2) — the expansion's origin, for `--emit-resolved`.
+    try env.noteExpansionOrigin(loc, tfn);
     // Decision 353 — a body reading the program's catalogue is never reduced
     // by inspection: its queries are answered where the module is built.
     const reads_catalogue = (try templateQueriesOf(env, env.comptimeOwnerOf(tfn), tfn)).len > 0;

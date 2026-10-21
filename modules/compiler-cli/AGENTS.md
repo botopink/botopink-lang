@@ -117,7 +117,8 @@ compiler-cli/
 │   │                          `lib/tools.bp`, `std/math.bp`, each named on stderr
 │   │                          and opened by `// module <path>`; a hygiene alias
 │   │                          printed as its alias import, what ran at build gone
-│   │                          with its import
+│   │                          with its import; each piece's origin comment
+│   │                          (decision 798 (2)) over it
 │   ├── resolved_file/       ← its fixture: `app` and `lib`
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
