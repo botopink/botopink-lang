@@ -1778,9 +1778,19 @@ codegen/
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
   `undefined`, bare `throw;` → `erlang:throw(undefined)`.
 - **Module-level `var`s — `beamMemory`** (front 17 step 4, decisions 39, 40,
-  43; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `loadForms`): a `var` is
-  one value per PROCESS (`ProcessDict`, the default) unless its annotation widens
-  it to the node (`Ets`, `PersistentTerm`). A read is still the call `name()`;
+  43, 547, 877; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `loadForms`):
+  a `var` with no annotation is one value for the whole program (decisions 547,
+  877: `ast.Memory.implicit`, an `Ets` row); `#[compiler.beamMemory(.<Mode>)]`
+  picks `ProcessDict` (one value per process), `Ets` or `PersistentTerm`. The
+  unannotated one reaches its table through `'__bp_tab_<var>'/0`
+  (`etsTabForms`): the table's name once its owner holds it, else the guard
+  `'__bp_ets'` seeded by the initialiser, lowered there alone — any expression,
+  run once, at boot for one that can have an effect (`'_botopink_init'/0`
+  reads it). A write that does not read the `var` is one `etsPut`; one that
+  does (`x = f(x)`, `x += n`, `xs.push(v)`) is `std@beam:etsSwap(Tab, fun(X) ->
+  New end)` (`swapFun`), the compare-and-swap of 547 (ii) — `ets:select_replace`
+  against the value read, retried when another process wrote between — and the
+  checker refuses none of its writes. A read is still the call `name()`;
   the reader and every write that no local shadows (`bindExpr` →
   `memoryWrite`) lower onto `std/beam`'s host primitives as remote calls into
   `std@beam` (`beamPrim`) — this file names no ETS, `persistent_term` or
@@ -2205,7 +2215,11 @@ codegen/
   `'__bp_ets_owner'/2` (the guard, the wait loop and the registered owner of
   decision 39 — `etsNew` under `try`, seed, `register`, `timer:sleep(infinity)`),
   `'__bp_ets_add'/3` (`etsBump`, the increment of `ast.classifyMemoryWrite`)
-  and `'__bp_ets_set'/3` (`etsPut` of the whole value). A `PersistentTerm` var
+  and `'__bp_ets_set'/3` (`etsPut` of the whole value). An unannotated `var`
+  (decisions 547, 877, `emitImplicitHelpers`) has three of its own:
+  `'__bp_tab_<var>'/0` (the table, the initialiser lowered there alone),
+  `'__bp_set_<var>'/1` (`etsPut`) and `'__bp_swap_<var>'/1` (`etsSwap` of the
+  lambda `{ x -> New }` the write site lowers). A `PersistentTerm` var
   is put by `'__bp_load'/0`, named by `{attributes, [{on_load, [{'__bp_load',
   0}]}]}` (`beamEmitter.writeOnLoadAttributes`) — the one attribute this
   backend writes. **`keyed: true`** (decision 168): `lowerCall` →

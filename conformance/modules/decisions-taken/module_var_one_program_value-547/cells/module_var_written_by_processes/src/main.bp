@@ -1,0 +1,38 @@
+//// Decisions 547 and 877 — a module `var` with no annotation is one value for
+//// the whole program on every target: on the BEAM a one-row ETS table, never a
+//// value per process. Five thunks of `runAll`, each its own process there,
+//// write the two `var`s: `total` a hundred times through `total = total + 1`,
+//// `names` once through a `push` — reassignments that read the `var` they
+//// write, atomic on the BEAM (547 (ii)), so no write is lost. `main` reads the
+//// totals the thunks wrote: `500` and `5`, as on commonJS and wasm.
+
+import {async, io.terminal.print} from "std";
+
+var total = 0;
+
+var names: string[] = [];
+
+async fn worker(name: string) -> Async<i32> {
+    var i = 0;
+    while (i < 100) {
+        total = total + 1;
+        i = i + 1;
+    }
+    names.push(name);
+    return i;
+}
+
+pub async fn main() -> Async<void> {
+    val done = await async.runAll(
+        [
+            { -> worker("a") },
+            { -> worker("b") },
+            { -> worker("c") },
+            { -> worker("d") },
+            { -> worker("e") },
+        ],
+    );
+    print(done.length());
+    print(total);
+    print(names.length);
+}

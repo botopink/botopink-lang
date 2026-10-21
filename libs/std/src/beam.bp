@@ -1,10 +1,12 @@
 //// std/beam — the BEAM memory host primitives, layer 1 of `beamMemory`.
 ////
-//// Eleven `declare fn`s over three BEAM storage families: the process
+//// Thirteen `declare fn`s over three BEAM storage families: the process
 //// dictionary (`erlang:get/put/erase`), ETS (`ets:whereis/new/lookup/
-//// lookup_element/insert/update_counter`) and `persistent_term`
+//// lookup_element/insert/update_counter/select_replace`) and `persistent_term`
 //// (`persistent_term:get/put`). Nothing else. Each one is a single host
-//// call with the host's own arity — no composition, no policy.
+//// call with the host's own arity — no composition, no policy — except
+//// `etsSwap`, the compare-and-swap loop an unannotated module `var`'s
+//// `x = f(x)` is (decisions 547 (ii), 877).
 ////
 //// Why a module and not `.zig` (decision 43): `beamMemory` lives in two
 //// layers. **Layer 1 is this file** — the host vocabulary, as template
@@ -102,6 +104,18 @@ pub declare fn etsBump(tid: unknown, key: unknown, incr: unknown) -> unknown;
 // incremented — `Dict.bump` on a `keyed: true` var (decision 340).
 #[compiler.external(.Erlang("ets:update_counter($0, $1, $2, $3)"))]
 pub declare fn etsBumpFrom(tid: unknown, key: unknown, incr: unknown, initial: unknown) -> unknown;
+
+// `tid`'s one row `{tid, V}` rewritten to `{tid, f(V)}` only while it still holds the `V`
+// read, read again and retried when another process wrote between (`ets:select_replace`,
+// decisions 547 (ii), 877) — the one composed primitive: a module `var` with no annotation
+// is one value for the whole program, and `x = f(x)` loses no write. The match spec
+// compares with `=:=` against the value read as a constant, so no value is a pattern; its
+// variable `'$1'` is built from its characters (`[36, 49]`), as `$1` in a template is the
+// second argument.
+#[compiler.external(
+    .Erlang("(fun __Swap(__T, __F) -> __Old = ets:lookup_element(__T, __T, 2), __M = erlang:list_to_atom([36, 49]), case ets:select_replace(__T, [{{__T, __M}, [{'=:=', __M, {const, __Old}}], [{const, {__T, __F(__Old)}}]}]) of 1 -> true; _ -> __Swap(__T, __F) end end)($0, $1)"),
+)]
+pub declare fn etsSwap(tid: unknown, f: unknown) -> unknown;
 
 // ── persistent_term — read-cheap, write-expensive, written at load time
 

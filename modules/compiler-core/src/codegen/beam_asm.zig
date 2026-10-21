@@ -2178,6 +2178,13 @@ fn emitBeamAsm(
             try em.reserveFn(MEM_ETS_ROW, 3);
             try em.reserveFn(MEM_ETS_BUMP, 4);
         }
+        // Decisions 547, 877 — an unannotated `var`'s table, set and swap.
+        var mv_it = em.module_vars.iterator();
+        while (mv_it.next()) |e| if (e.value_ptr.implicit) {
+            try em.reserveFn(try em.implicitHelper(.tab, e.key_ptr.*), 0);
+            try em.reserveFn(try em.implicitHelper(.set, e.key_ptr.*), 1);
+            try em.reserveFn(try em.implicitHelper(.swap, e.key_ptr.*), 1);
+        };
     }
     if (pt_vars.items.len > 0) try em.reserveFn(MEM_LOAD, 0);
     // Decision 64's beam half (C-03): a `pub` host-backed `declare fn` is
@@ -5438,7 +5445,10 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(v.name, 0);
         self.resetFnState(0);
         try beamEmitter.writeBlankLine(self.out);
-        try beamEmitter.writeComment(self.out, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() });
+        if (mem.implicit)
+            try beamEmitter.writeComment(self.out, "var {s} — the program's one value, an ETS row", .{v.name})
+        else
+            try beamEmitter.writeComment(self.out, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() });
         try beamEmitter.writeFunctionHeader(self.out, v.name, 0, labels.entry);
         try beamEmitter.writeLabel(self.out, labels.func_info);
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
@@ -5482,6 +5492,15 @@ const Emitter = struct {
                 try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
                 try self.callFileHelper(MEM_ETS_GUARD, 2);
                 try self.emitReturn();
+            } else if (mem.implicit) {
+                // Decisions 547, 877 — `etsGet('__bp_tab_<var>'(), Key, 2)`.
+                self.num_y = 0;
+                try self.emitFrame(0);
+                try self.callFileHelper(try self.implicitHelper(.tab, v.name), 0);
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(1));
+                try beamEmitter.writeMoveOp(self.out, Op.int(2), Dst.xr(2));
+                try self.beamPrimCall(.last, "etsGet", 3, 0);
+                try self.emitImplicitHelpers(v);
             } else {
                 self.num_y = self.precountLocalsInExpr(v.value.*);
                 try self.emitFrame(0);
@@ -5524,6 +5543,27 @@ const Emitter = struct {
             },
             .ets => {
                 if (mem.keyed) return self.emitKeyedRowWrite(name, value);
+                // Decisions 547 (ii), 877 — the unannotated default: a write
+                // that does not read the `var` is `'__bp_set_<var>'(V)`, one
+                // insert; one that reads it is `'__bp_swap_<var>'(fun(X) -> New
+                // end)`, `std@beam:etsSwap`'s compare-and-swap.
+                if (mem.implicit) {
+                    switch (ast.classifyMemoryWrite(name, plus, value)) {
+                        .whole => {
+                            try self.lowerExprIntoX0(new_value);
+                            try self.callFileHelper(try self.implicitHelper(.set, name), 1);
+                        },
+                        .bump, .recompose => {
+                            const ar = self.atom_arena.allocator();
+                            const body = try ar.dupe(ast.Stmt, &.{.{ .expr = new_value }});
+                            const params = try ar.dupe([]const u8, &.{name});
+                            const lam: ast.Expr = .{ .function = .{ .loc = value.getLoc(), .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
+                            try self.lowerExprIntoX0(lam);
+                            try self.callFileHelper(try self.implicitHelper(.swap, name), 1);
+                        },
+                    }
+                    return;
+                }
                 const seed = self.module_var_decls.get(name).?.value.*;
                 switch (ast.classifyMemoryWrite(name, plus, value)) {
                     // Decision 40: the host's atomic counter, integers only
@@ -5672,6 +5712,70 @@ const Emitter = struct {
             try beamEmitter.writeTestHeap(self.out, 3, 3);
             try beamEmitter.writePutTuple2(self.out, Dst.xr(3), &.{ Op.yr(0), Op.int(0) });
             try self.beamPrimCall(.last, "etsBumpFrom", 4, 2);
+        }
+    }
+
+    const ImplicitHelper = enum { tab, set, swap };
+
+    /// The name of an unannotated module `var`'s helper (decisions 547, 877):
+    /// `'__bp_tab_<var>'/0`, `'__bp_set_<var>'/1`, `'__bp_swap_<var>'/1`.
+    fn implicitHelper(self: *Emitter, h: ImplicitHelper, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.atom_arena.allocator(), "'__bp_{s}_{s}'", .{ @tagName(h), name });
+    }
+
+    /// Decisions 547, 877 — an unannotated module `var`'s three helpers, the
+    /// assembly of `erlang.zig`'s `etsTabForms` and of its two writes:
+    ///
+    ///     '__bp_tab_x'() -> case erlang:whereis(Key) of
+    ///                           undefined -> '__bp_ets'(Key, Init); _ -> Key end.
+    ///     '__bp_set_x'(V) -> std@beam:etsPut('__bp_tab_x'(), {Key, V}).
+    ///     '__bp_swap_x'(F) -> std@beam:etsSwap('__bp_tab_x'(), F).
+    ///
+    /// The initialiser is lowered in the table's function alone, so it runs
+    /// only when the table is created and sees no caller's locals.
+    fn emitImplicitHelpers(self: *Emitter, v: ast.ValDecl) !void {
+        const key = Op.atom(try self.memoryKey(v.name));
+        const tab = try self.implicitHelper(.tab, v.name);
+        const guard = (try self.fnLabelsFor(MEM_ETS_GUARD, 2)).entry;
+        const tab_entry = (try self.fnLabelsFor(tab, 0)).entry;
+        self.resetFnState(0);
+        try self.beginHelper(tab, 0);
+        {
+            self.num_y = self.precountLocalsInExpr(v.value.*);
+            self.next_y = 0;
+            try self.emitFrame(0);
+            const owned = self.allocLabel();
+            try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "whereis" } }, 0);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, owned, &.{ Op.xr(0), Op.atom("undefined") });
+            try self.lowerExprIntoX0(v.value.*);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .last, 2, .{ .local = guard }, self.num_y);
+            try beamEmitter.writeLabel(self.out, owned);
+            try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, self.num_y);
+            try beamEmitter.writeReturn(self.out);
+        }
+        self.resetFnState(1);
+        for ([_]ImplicitHelper{ .set, .swap }) |h| {
+            try self.beginHelper(try self.implicitHelper(h, v.name), 1);
+            try beamEmitter.writeAllocate(self.out, 1, 1);
+            try beamEmitter.writeInitYregs(self.out, 1);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+            try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = tab_entry }, 0);
+            switch (h) {
+                .set => {
+                    try beamEmitter.writeTestHeap(self.out, 3, 1);
+                    try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ key, Op.yr(0) });
+                    try self.beamPrimCall(.last, "etsPut", 2, 1);
+                },
+                .swap => {
+                    try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+                    try self.beamPrimCall(.last, "etsSwap", 2, 1);
+                },
+                .tab => unreachable,
+            }
         }
     }
 
@@ -5847,6 +5951,11 @@ const Emitter = struct {
     /// survives it.
     fn emitEtsReseed(self: *Emitter, v: ast.ValDecl) !void {
         const key = Op.atom(try self.memoryKey(v.name));
+        if (v.memory().?.implicit) {
+            try self.lowerExprIntoX0(v.value.*);
+            try self.callFileHelper(try self.implicitHelper(.set, v.name), 1);
+            return;
+        }
         if (!v.memory().?.keyed) {
             const st = try self.stageOperands(&.{ v.value.*, v.value.* }, &[_]ast.TrailingLambda{});
             try self.emitParallelMove(&.{ key, st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
@@ -6067,6 +6176,12 @@ const Emitter = struct {
             else => {},
         };
         for ([_][]const u8{ MEM_PD_SET, MEM_ETS_GUARD, MEM_ETS_ADD, MEM_ETS_SET, MEM_ETS_AT, MEM_ETS_ROW, MEM_ETS_BUMP }) |n| try names.put(arena, n, {});
+        {
+            var mv_it = self.module_vars.iterator();
+            while (mv_it.next()) |e| if (e.value_ptr.implicit) for ([_]ImplicitHelper{ .tab, .set, .swap }) |h| {
+                try names.put(arena, try self.implicitHelper(h, e.key_ptr.*), {});
+            };
+        }
         // The candidates, sorted, so the wrappers come out in one order.
         var keys: std.ArrayListUnmanaged([]const u8) = .empty;
         var it = self.fn_labels.keyIterator();

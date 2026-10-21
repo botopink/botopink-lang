@@ -191,6 +191,10 @@ const MEM_ETS_AT = "__bp_ets_at";
 const MEM_ETS_ROW = "__bp_ets_row";
 const MEM_ETS_BUMP = "__bp_ets_bump";
 const MEM_ROWS = "__bp_rows";
+/// Decisions 547, 877 — `'__bp_tab_<var>'/0`, the table of an unannotated
+/// module `var`: its name once the owner holds it, else the guard seeded by
+/// the initialiser, evaluated there alone — any expression, run once.
+const MEM_ETS_TAB = "__bp_tab_";
 
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
 
@@ -6100,7 +6104,10 @@ const Emitter = struct {
     /// - `Ets` — `lookup_element` on the table the guard answers (`etsOwnerForms`).
     /// - `PersistentTerm` — the term `'__bp_load'/0` put when the module loaded.
     fn memoryVarForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl, mem: ast.Memory) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() })) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(if (mem.implicit)
+            try std.fmt.allocPrint(b.arena, "var {s} — the program's one value, an ETS row", .{v.name})
+        else
+            try std.fmt.allocPrint(b.arena, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() })) });
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;
@@ -6129,6 +6136,27 @@ const Emitter = struct {
             .persistentTerm => try this.beamPrim(b, "ptGet", &.{key}),
         };
         try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{body})));
+        if (mem.implicit) try this.etsTabForms(b, out, v);
+    }
+
+    /// Decisions 547, 877 — `'__bp_tab_<var>'() -> case erlang:whereis(Key)
+    /// of undefined -> '__bp_ets'(Key, Init); _ -> Key end.` The initialiser
+    /// is lowered here, in a function of its own, so it runs only when the
+    /// table is created — at boot, by `'_botopink_init'/0`'s read, for one
+    /// that can have an effect — and sees no caller's locals.
+    fn etsTabForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
+        this.resetLocals();
+        const key = try this.memoryKey(b, v.name);
+        const body = try b.caseOf(try b.remote("erlang", "whereis", &.{key}), &.{
+            try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.fileCall(b, MEM_ETS_GUARD, &.{ key, try this.memoryInit(b, v) })}),
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{key}),
+        });
+        try out.appendSlice(b.arena, &.{ .blank, try blockFunction(b, try this.etsTabName(b, v.name), &.{}, try b.body(&.{body})) });
+    }
+
+    fn etsTabName(this: *Emitter, b: Ast.Builder, name: []const u8) ![]const u8 {
+        _ = this;
+        return std.fmt.allocPrint(b.arena, MEM_ETS_TAB ++ "{s}", .{name});
     }
 
     /// The declaration's initialiser as a value — a comptime block's `break`.
@@ -6147,6 +6175,7 @@ const Emitter = struct {
     /// can be written at every site.
     fn etsTable(this: *Emitter, b: Ast.Builder, name: []const u8) !Ast.Expr {
         const decl = this.module_var_decls.get(name).?;
+        if (decl.memory().?.implicit) return this.fileCall(b, try this.etsTabName(b, name), &.{});
         return this.fileCall(b, MEM_ETS_GUARD, &.{ try this.memoryKey(b, name), try this.memoryInit(b, decl) });
     }
 
@@ -6171,6 +6200,15 @@ const Emitter = struct {
             .ets => {
                 if (mem.keyed) return this.keyedRowWrite(b, name, value);
                 const tab = try this.etsTable(b, name);
+                // Decisions 547 (ii), 877 — the unannotated default: a write
+                // that reads the `var` is `std@beam:etsSwap(Tab, fun(X) -> New
+                // end)`, the new value computed from the one read and stored
+                // only if no other process wrote between, else read again; one
+                // that does not read it is one insert.
+                if (mem.implicit) return switch (ast.classifyMemoryWrite(name, plus, &value)) {
+                    .whole => this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
+                    .bump, .recompose => this.beamPrim(b, "etsSwap", &.{ tab, try this.swapFun(b, name, plus, value, at) }),
+                };
                 switch (ast.classifyMemoryWrite(name, plus, &value)) {
                     // Decision 40: an increment is the host's atomic counter —
                     // integers only, which the checker has already enforced.
@@ -6188,6 +6226,17 @@ const Emitter = struct {
             // program that reaches here unchecked still means what it says.
             .persistentTerm => return this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
         }
+    }
+
+    /// `fun(X) -> New end` — the new value of module `var` `name` as a
+    /// function of the value read: inside it `name` is the parameter, so every
+    /// read of it in `value` is the one value `etsSwap` compares against.
+    fn swapFun(this: *Emitter, b: Ast.Builder, name: []const u8, plus: bool, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
+        var scope = try this.saveLocalScope();
+        defer this.restoreLocalScope(&scope);
+        const param = Ast.Expr.v(try this.patternBindVar(b, name));
+        const new_value = try this.memoryNewValue(b, name, plus, value, at);
+        return .{ .fun = .{ .params = try b.exprs(&.{param}), .body = try b.body(&.{new_value}) } };
     }
 
     /// The value a write stores: `value`, or `name + value` for `+=` — lowered
@@ -12371,6 +12420,10 @@ const Emitter = struct {
             else => {},
         };
         for ([_][]const u8{ MEM_ETS_GUARD, MEM_ETS_AT, MEM_ETS_ROW, MEM_ETS_BUMP }) |n| try names.put(b.arena, n, {});
+        for (program.decls) |decl| switch (decl) {
+            .val => |v| if (v.memory()) |mem| if (mem.implicit) try names.put(b.arena, try std.fmt.allocPrint(b.arena, MEM_ETS_TAB ++ "{s}", .{v.name}), {}),
+            else => {},
+        };
         _ = this;
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         for (forms) |form| {

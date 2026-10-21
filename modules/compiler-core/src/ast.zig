@@ -3544,7 +3544,8 @@ pub const ValDecl = struct {
 
     /// Where a module `var` lives on the BEAM (front 17, decision 43's layer
     /// 2): the `#[compiler.beamMemory(.<Mode>)]` it carries (decision 663),
-    /// `ProcessDict` when it carries none. Null for a `val`. An unknown member
+    /// and when it carries none the program's one value (decisions 547, 877):
+    /// a one-row ETS table, `implicit`. Null for a `val`. An unknown member
     /// reads as the default here because inference has already refused it
     /// (decision 41).
     pub fn memory(this: ValDecl) ?Memory {
@@ -3565,12 +3566,12 @@ pub const ValDecl = struct {
             }
             return .{ .mode = mode, .keyed = keyed, .loc = a.loc };
         }
-        return .{ .mode = .processDict };
+        return .{ .mode = .ets, .implicit = true };
     }
 };
 
-/// The three members of `BeamMemory` (decision 41). `processDict` is also
-/// what a module `var` with no annotation means.
+/// The three members of `BeamMemory` (decision 41). A module `var` with no
+/// annotation is `ets`, `Memory.implicit` (decisions 547, 877).
 pub const MemoryMode = enum {
     processDict,
     ets,
@@ -3592,6 +3593,12 @@ pub const Memory = struct {
     keyed: bool = false,
     /// The annotation's location; null for the unannotated default.
     loc: ?Loc = null,
+    /// Decisions 547, 877 — the unannotated default: one value for the whole
+    /// program, a one-row ETS table on the BEAM whose initialiser is any
+    /// expression, run once, and whose every write is atomic — a write that
+    /// reads the `var` it writes (`x = f(x)`) a compare-and-swap retried until
+    /// no other process wrote between (`ets:select_replace`).
+    implicit: bool = false,
 };
 
 /// What an assignment to the module `var` `name` does with the value it

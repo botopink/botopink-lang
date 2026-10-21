@@ -4,4 +4,4 @@
 
 Cells in this repository that also bear on it: `modules/decisions-taken/std_async_on_every_target-690/cells/std_async_on_every_target`.
 
-[draft/main.bp](draft/main.bp)
+[cells/example/src/main.bp](cells/example/src/main.bp)

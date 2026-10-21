@@ -1,7 +1,7 @@
 //! codegen: module-level `var` storage on the BEAM — front 17 steps 4–5
-//! (`beamMemory`, decisions 39, 40 and 43). A module `var` is one value per
-//! execution context, which on the BEAM is the PROCESS; `#[compiler.beamMemory(.Ets)]`
-//! and `#[compiler.beamMemory(.PersistentTerm)]` widen it to the node. Every fixture
+//! (`beamMemory`, decisions 39, 40 and 43). A module `var` with no annotation
+//! is one value for the whole program, a one-row ETS table (decisions 547,
+//! 877); `#[compiler.beamMemory(.ProcessDict)]` still keeps one per process. Every fixture
 //! here runs its program and asserts what it PRINTED, because the property is
 //! behaviour across processes: the three modes are indistinguishable in one
 //! process, and a mode that silently fell back to another would still print
@@ -233,7 +233,7 @@ test "erlang: beam memory ---- a var in a module that imports nothing from std r
         \\
         \\import {io.terminal.print} from "std";
     , "2\n", &.{
-        "std@beam:pdGet(",
-        "std@beam:pdPut(",
+        "std@beam:etsGet(",
+        "std@beam:etsSwap(",
     });
 }

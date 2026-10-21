@@ -9062,7 +9062,7 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
             try std.fmt.allocPrint(env.arena, "a `keyed: true` var is re-seeded one row per entry whenever its table is re-created — `{s}`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries", .{v.name}),
             try std.fmt.allocPrint(env.arena, "Write `var {s} = Dict.empty();`, or its rows as literals: `Dict.ofEntries([#(\"a\", 1)])`.", .{v.name}),
         );
-    } else if (mem.mode == .ets and !ast.isMemorySeed(v.value.*)) return failAt(
+    } else if (mem.mode == .ets and !mem.implicit and !ast.isMemorySeed(v.value.*)) return failAt(
         // Design §5(d), step 4: an `Ets` table that goes missing is re-created
         // and re-seeded from the declaration at a moment nobody chose, so the
         // seed is a literal or a `comptime` expression — not a purity
@@ -9091,6 +9091,9 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
     // A local or parameter of the same name shadows the module binding.
     const bound = env.lookup(name) orelse return;
     if (bound != mv.ty) return;
+    // Decisions 547, 877 — the unannotated default: every write is atomic,
+    // one that reads the `var` a compare-and-swap, so none is refused.
+    if (mv.memory.implicit) return;
     switch (mv.memory.mode) {
         .processDict => {},
         .persistentTerm => return failAt(

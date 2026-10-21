@@ -6,3 +6,4 @@
 [cells/beam_memory_keyed_scalar/src/main.bp](cells/beam_memory_keyed_scalar/src/main.bp)
 [cells/beam_memory_unknown_argument/src/main.bp](cells/beam_memory_unknown_argument/src/main.bp)
 [cells/beam_memory_unknown_member/src/main.bp](cells/beam_memory_unknown_member/src/main.bp)
+[cells/module_var_written_by_processes/src/main.bp](cells/module_var_written_by_processes/src/main.bp)
