@@ -1914,6 +1914,10 @@ const Emitter = struct {
     /// calls hand in (`typeArgShapes`). JavaScript cannot tell an `f64` from
     /// an integer at run time.
     shape_fns: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// Decision 899 — the imported names (by the name they bind here) of a
+    /// bodied, non-host generic fn of another module: its declared signature,
+    /// which a call into it reads to hand it the print shapes.
+    imported_shape_sigs: std.StringHashMapUnmanaged(crossModule.ShapeSig) = .empty,
     /// The type parameters whose print shape is a parameter of the fn being
     /// emitted (`shape_fns`): `typeShape` answers `__bp_ty_<T>` for each.
     ty_shapes: []const ast.GenericParam = &.{},
@@ -2308,6 +2312,7 @@ const Emitter = struct {
                     // (`import {parser.Outcome};`, decision 206), so the
                     // lookup is the leaf in the module its path names.
                     if (xc.picked(imp.leaf(), try u.leafSource(imp, self.arena(), false), null)) |info| {
+                        if (info.kind == .@"fn") if (info.shape_sig) |sig| try self.imported_shape_sigs.put(self.arena(), imp.name(), sig);
                         if (info.is_class) {
                             try self.class_names.put(imp.name(), {});
                             if (info.fields.len > 0) try self.record_fields.put(imp.name(), info.fields);
@@ -7022,22 +7027,56 @@ const Emitter = struct {
     /// print shape of each type parameter, read off the first argument whose
     /// declared type places it; none when no type parameter has one, and the
     /// trailing ones without a shape left out.
-    fn typeArgShapes(self: *Emitter, f: ast.FnDecl, cc: anytype) anyerror![]const js.Expr {
-        if (cc.args.len + cc.trailing.len != f.params.len) return &.{};
-        const out = try self.arena().alloc(js.Expr, f.genericParams.len);
+    fn typeArgShapes(self: *Emitter, generics: []const ast.GenericParam, params: []const ast.Param, cc: anytype) anyerror![]const js.Expr {
+        const given = cc.args.len + cc.trailing.len;
+        if (given > params.len) return &.{};
+        // Decision 899 — a call omitting trailing defaults fills each with
+        // `undefined` first, so the hidden slots follow the last parameter.
+        for (params[given..]) |p| if (p.default == null) return &.{};
+        const out = try self.arena().alloc(js.Expr, generics.len);
         var last: usize = 0;
-        for (f.genericParams, 0..) |gp, gi| {
+        for (generics, 0..) |gp, gi| {
             out[gi] = .null_;
             for (cc.args, 0..) |a, i| {
                 const sh = (try self.argShape(a.value.*)) orelse continue;
-                if (shapeAtParam(f.params[i].typeRef, sh, gp.name)) |at| {
+                if (shapeAtParam(params[i].typeRef, sh, gp.name)) |at| {
                     out[gi] = at;
                     last = gi + 1;
                     break;
                 }
             }
         }
-        return out[0..last];
+        if (last == 0) return &.{};
+        const fill = params.len - given;
+        const res = try self.arena().alloc(js.Expr, fill + last);
+        for (res[0..fill]) |*r| r.* = .{ .name = "undefined" };
+        @memcpy(res[fill..], out[0..last]);
+        return res;
+    }
+
+    /// Decision 899 — the signature of the bodied, non-host generic fn of
+    /// another module a call reaches: `lib.show(x)` through a module's name,
+    /// or `show(x)` through an import. Read from the export info alone.
+    fn crossShapeSig(self: *Emitter, cc: anytype) ?crossModule.ShapeSig {
+        const xc = self.cross orelse return null;
+        if (self.print_shapes.contains(cc.callee) or self.eq_types.contains(cc.callee)) return null;
+        if (cc.calleeExpr != null) return null;
+        if (cc.receiver) |recv| {
+            if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+            const rn = recv.identifier.kind.ident;
+            if (self.print_shapes.contains(rn) or self.eq_types.contains(rn) or self.local_vars.contains(rn)) return null;
+            const list = xc.owners.get(cc.callee) orelse return null;
+            var hit: ?crossModule.ExportInfo = null;
+            for (list) |e| {
+                if (e.kind != .@"fn" or e.shape_sig == null) continue;
+                if (!std.mem.eql(u8, crossModule.moduleBasename(e.module), rn)) continue;
+                if (hit != null) return null;
+                hit = e;
+            }
+            return if (hit) |h| h.shape_sig else null;
+        }
+        if (self.local_vars.contains(cc.callee)) return null;
+        return self.imported_shape_sigs.get(cc.callee);
     }
 
     /// True when either side of a comparison is statically known to hold a
@@ -7496,7 +7535,9 @@ const Emitter = struct {
         for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
         if (!is_new and slots == null and cc.receiver == null and cc.calleeExpr == null) if (self.shape_fns.get(cc.callee)) |f| {
             if (!self.print_shapes.contains(cc.callee) and !self.eq_types.contains(cc.callee))
-                try args.appendSlice(self.arena(), try self.typeArgShapes(f, cc));
+                try args.appendSlice(self.arena(), try self.typeArgShapes(f.genericParams, f.params, cc));
+        } else if (!is_new and slots == null) if (self.crossShapeSig(cc)) |sig| {
+            try args.appendSlice(self.arena(), try self.typeArgShapes(sig.generics, sig.params, cc));
         };
 
         const arg_slice = try args.toOwnedSlice(self.arena());

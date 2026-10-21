@@ -85,7 +85,24 @@ pub const ExportInfo = struct {
     /// A `.@"fn"` export declared to return `f64` / `f32`: a consumer printing
     /// a call to it keeps the value's `.0` (commonJS has one number type).
     returns_float: bool = false,
+    /// Decision 899 — a `.@"fn"` export that is generic, bodied and no host
+    /// binding, with no variadic or destructuring parameter: the declared
+    /// signature a commonJS caller reads to hand it the print shape of each
+    /// type parameter. null for every other export.
+    shape_sig: ?ShapeSig = null,
 };
+
+/// A generic fn's declared signature (decision 899): its type parameters and
+/// its parameters, read from the declaration and never from its body.
+pub const ShapeSig = struct {
+    generics: []const ast.GenericParam,
+    params: []const ast.Param,
+};
+
+fn hasVariadicOrDestruct(params: []const ast.Param) bool {
+    for (params) |p| if (p.variadic or p.destruct != null) return true;
+    return false;
+}
 
 /// What a name resolves to for one consumer, counted over the PROGRAM.
 ///
@@ -1159,6 +1176,10 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                     .is_external = f.isExternal(),
                     .erlang_backed = f.isExternal() and f.externalFor("erlang") != null,
                     .arity = f.params.len,
+                    .shape_sig = if (f.genericParams.len > 0 and f.body.len > 0 and !f.isExternal() and !hasVariadicOrDestruct(f.params))
+                        .{ .generics = f.genericParams, .params = f.params }
+                    else
+                        null,
                     .returns_float = if (f.returnType) |rt| rt == .named and
                         (std.mem.eql(u8, rt.named, "f64") or std.mem.eql(u8, rt.named, "f32")) else false,
                 }),

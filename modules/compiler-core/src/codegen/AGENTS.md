@@ -156,9 +156,12 @@ codegen/
   at the name's loc plus `ast.text_fn_value_col`. A tuple is a shape as a
   float is (144 B-115): a print argument, a generic call's or a generic
   record constructor's argument, a record field (`__bp_s`) whose type holds one
-  is written `#(1, 2)`, not as the array JavaScript holds. A call that omits
-  the shapes — a host or TypeScript caller, a call short of its defaulted
-  parameters, another module — answers the old text; the `.d.ts` and the `T`
+  is written `#(1, 2)`, not as the array JavaScript holds. A call into a
+  bodied, non-host generic fn of another module hands the shapes too
+  (decision 899): the caller reads the callee's declared signature from the
+  export info (`ExportInfo.shape_sig`, `crossShapeSig`) and never its body,
+  filling an omitted trailing default with `undefined` first. A call that
+  omits the shapes — a host or TypeScript caller — answers the old text; the `.d.ts` and the `T`
   values are unchanged.
   A botopink value is told from a host object by the `__bp` marker its
   prototype carries (decision 5) — never by a `constructor` test, so a `Map` or

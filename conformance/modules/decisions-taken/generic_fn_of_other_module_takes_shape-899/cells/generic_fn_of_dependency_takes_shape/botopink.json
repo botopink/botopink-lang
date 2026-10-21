@@ -1,0 +1,1 @@
+{ "name": "generic_fn_of_dependency_takes_shape", "dependencies": { "kit": { "path": "deps/kit" } } }
