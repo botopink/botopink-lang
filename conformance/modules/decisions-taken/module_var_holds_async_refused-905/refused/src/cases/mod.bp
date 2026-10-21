@@ -1,0 +1,3 @@
+pub mod module_var_async_direct;
+pub mod module_var_async_in_array;
+pub mod module_var_async_in_record_field;

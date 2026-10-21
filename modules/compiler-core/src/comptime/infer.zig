@@ -9213,7 +9213,7 @@ fn refuseModuleVarHoldingTask(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferE
     return failAt(
         env,
         loc,
-        try std.fmt.allocPrint(env.arena, "{s}: the module `var` `{s}` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))", .{ diagnostics.module_var_holds_task, v.name }),
+        try std.fmt.allocPrint(env.arena, "{s}: the module `var` `{s}` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))", .{ diagnostics.module_var_holds_async, v.name }),
         "Keep the task in a local and store its settled value: `var total = 0;` … `total = await t;`.",
     );
 }
