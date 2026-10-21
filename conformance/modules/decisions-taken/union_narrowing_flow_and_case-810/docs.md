@@ -2,7 +2,7 @@
 
 A union narrows by the flow of an `is` (810 (2)): past `if (s is Dot) return 0;` `s` is the union
 without `Dot`, each further test removing one more, in the `else` too, for a parameter, a `val`, a
-loop's binder and a `var` until it is assigned (`union_narrowing_flow_and_case`); a member forgotten is
+loop's binder and a `var` until it is assigned (`union_narrowing_flow_and_case`), and a field read on the narrowed value answers the field (`union_narrowed_field_read`); a member forgotten is
 refused where the rest is used (`union_narrowing_forgotten_member_use`). `v is Box<T>` is accepted where
 `Box<T>` is a member of `v`'s type (810 (1)), and a `case` covers a union with a type pattern per
 member, a generic one included, `Box<T> { b -> … }` (810 (3)); a member left out is refused at the
@@ -12,6 +12,7 @@ behavior's (the value's type implements it), a function type's arity — on ever
 behavior type pattern (`is_behavior_identity_run_time`). Std's `resolve` (810 (5)) is 809 (6)'s.
 
 [run/src/cases/union_narrowing_flow_and_case/mod.bp](run/src/cases/union_narrowing_flow_and_case/mod.bp)
+[run/src/cases/union_narrowed_field_read/mod.bp](run/src/cases/union_narrowed_field_read/mod.bp)
 [run/src/cases/is_behavior_identity_run_time/mod.bp](run/src/cases/is_behavior_identity_run_time/mod.bp)
 [refused/src/cases/union_narrowing_forgotten_member_use/mod.bp](refused/src/cases/union_narrowing_forgotten_member_use/mod.bp)
 [refused/src/cases/union_case_forgotten_member/mod.bp](refused/src/cases/union_case_forgotten_member/mod.bp)

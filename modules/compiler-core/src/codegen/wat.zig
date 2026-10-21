@@ -29428,6 +29428,58 @@ const Emitter = struct {
         return .{ .name = n0, .previous = previous };
     }
 
+    const RecNarrow = struct { name: []const u8, previous: ?[]const u8 };
+
+    /// Decision 810 (2) — `if (k is A) { … k.tag … }` over a union: inside the
+    /// branch `k` IS the record the test proved (a union member keeps the
+    /// record's own header, so the pointer is the record), and in the `else`
+    /// it is the one member left when the union has two. Typing the name by
+    /// that record lets a field read find its declared slot rather than the
+    /// unique-field guess, which read an address.
+    fn narrowRecordTest(self: *Emitter, cond: ast.Expr, holds: bool) anyerror!?RecNarrow {
+        const cc = switch (cond) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return null;
+        const tested = cc.isType orelse return null;
+        const tname: []const u8 = switch (tested) {
+            .named => |n| n,
+            else => return null,
+        };
+        const n0 = plainIdentName(cc.args[0].value.*) orelse return null;
+        const n = self.resolveName(n0);
+        const members = (self.typeRefOf(cc.args[0].value.*) orelse return null).unionMembers() orelse return null;
+        var rec: ?[]const u8 = null;
+        if (holds) {
+            rec = self.resolveRecordName(tname) orelse return null;
+        } else {
+            for (members) |m| {
+                const mn: []const u8 = switch (m) {
+                    .named => |x| x,
+                    else => return null,
+                };
+                if (std.mem.eql(u8, mn, tname)) continue;
+                if (rec != null) return null;
+                rec = self.resolveRecordName(mn) orelse return null;
+            }
+        }
+        const r = rec orelse return null;
+        const previous = self.local_types.get(n);
+        try self.local_types.put(n, r);
+        return .{ .name = n, .previous = previous };
+    }
+
+    fn dropRecordNarrowing(self: *Emitter, rn: ?RecNarrow) void {
+        const u = rn orelse return;
+        if (u.previous) |p| {
+            self.local_types.put(u.name, p) catch {};
+        } else _ = self.local_types.remove(u.name);
+    }
+
     /// Decision 254 — `if (f is fn(…) -> T) { … f(…) … }` over an `unknown`
     /// `f`: inside the branch `f` is the closure cell the box holds, typed by
     /// the tested function type so a call through it answers `T`.
@@ -29607,6 +29659,7 @@ const Emitter = struct {
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
         const unknown_narrowed = try self.narrowUnknown(i.cond.*);
+        const rec_narrowed = try self.narrowRecordTest(i.cond.*, true);
         const then_tail: Tail = if (link_box) |bx| blk: {
             const tail = i.then_[0].expr;
             if (bx.cell != .none) {
@@ -29617,6 +29670,7 @@ const Emitter = struct {
             }
             break :blk .value;
         } else if (own_ty) try self.emitBranchValue(i.then_, ty) else try self.emitBody(i.then_, !as_stmt);
+        self.dropRecordNarrowing(rec_narrowed);
         self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         if (binder_prev) |bp| try self.restoreBinderFlags(bp);
@@ -29632,7 +29686,9 @@ const Emitter = struct {
             var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
             try self.collectNullTestNames(i.cond.*, false, &else_names);
             const else_marked = try self.applyNarrowing(else_names.items);
+            const else_rec = try self.narrowRecordTest(i.cond.*, false);
             const else_tail = if (own_ty) try self.emitBranchValue(els, ty) else try self.emitBody(els, !as_stmt);
+            self.dropRecordNarrowing(else_rec);
             self.dropNarrowing(else_marked);
             else_seq = self.seal(&else_c, self.stackOf(else_tail, ty));
         } else if (!as_stmt) {
