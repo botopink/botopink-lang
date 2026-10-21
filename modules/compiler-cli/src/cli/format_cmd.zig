@@ -265,6 +265,16 @@ fn formatFile(
         return .invalid;
     };
 
+    // Decisions 622, 846 — the shortform `fn f(x: T) R` is refused, never rewritten.
+    if (bp.format.firstReturnMissing(program)) |f| {
+        var aw: std.Io.Writer.Allocating = .init(arena);
+        const hint = f.arrowOmittedHint orelse "";
+        const msg = try std.fmt.allocPrint(arena, "fn-return-missing: `{s}` writes no return type — write `-> {s}…`", .{ f.name, hint });
+        try diagnostics.renderLocated(&aw.writer, msg, path, source, f.nameLoc.line, f.nameLoc.col, f.name.len);
+        reporter.print("{s}", .{aw.written()});
+        return .invalid;
+    }
+
     // Format. A file ends with exactly one newline.
     const body = try bp.format.format(arena, program);
     const formatted = if (body.len == 0) body else try std.mem.concat(arena, u8, &.{ std.mem.trimEnd(u8, body, "\n"), "\n" });

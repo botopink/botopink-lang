@@ -3181,6 +3181,10 @@ pub const Formatter = struct {
     }
 
     fn fmtFnDecl(this: *Formatter, f: ast.FnDecl) !*const Doc {
+        // Decisions 622, 846 — `fn f(x: T) R` (a type with no `->`) is refused
+        // by the checker, `fn-return-missing`; the formatter refuses it too
+        // rather than print the function without its type.
+        if (f.arrowOmittedHint != null) return error.FnReturnMissing;
         // `[pub] fn ` — the effect is carried by a `#[@<effect>]` annotation
         // (emitted by `fmtAnnotations`). The deprecated `*fn` prefix was removed
         // in v0.beta.19, so there is no longer a star-derived effect to print.
@@ -3756,6 +3760,17 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
 }
 
 // ── public entry point ────────────────────────────────────────────────────────
+
+/// The first top-level function written in the refused shortform `fn f(x: T) R`
+/// (decisions 622, 846): `format` fails `error.FnReturnMissing` over it, and the
+/// caller reports it located with this declaration.
+pub fn firstReturnMissing(program: ast.Program) ?ast.FnDecl {
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |f| if (f.arrowOmittedHint != null) return f,
+        else => {},
+    };
+    return null;
+}
 
 /// Format a parsed `Program` to a UTF-8 string.
 /// The returned slice is owned by `allocator`.

@@ -1430,3 +1430,17 @@ test "format: an opaque type keeps its modifier (decision 811)" {
         \\}
     );
 }
+
+test "format: the shortform fn f(x: T) R is refused, never rewritten (decisions 622, 846)" {
+    const alloc = std.testing.allocator;
+    const src = "fn f(x: i32) i32 {\n    return x;\n}\n";
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(alloc);
+    defer l.deinit(alloc);
+    var p = parserMod.Parser.init(tokens);
+    p.keep_surface = true;
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    try std.testing.expect(formatMod.firstReturnMissing(program) != null);
+    try std.testing.expectError(error.FnReturnMissing, formatMod.format(alloc, program));
+}
