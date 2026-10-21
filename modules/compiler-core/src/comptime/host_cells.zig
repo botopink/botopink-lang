@@ -580,7 +580,8 @@ pub fn isAttemptAdapter(text: []const u8) bool {
 const attempt_at_build =
     "(fun(__F) -> try {ok, __F()} catch " ++
     "error:{__T, __M} when __T =:= panic orelse __T =:= todo -> {error, unicode:characters_to_binary(__M)}; " ++
-    "error:{bp_assert, _, _, __M} -> {error, unicode:characters_to_binary(__M)} end end)($0)";
+    "error:{bp_assert, _, _, __M} -> {error, unicode:characters_to_binary(__M)}; " ++
+    "error:{bp_wat_runtime, <<\"" ++ blockEval.division_by_zero_raised ++ "\">> = __M} -> {error, __M} end end)($0)";
 
 /// `f` (a `wasi: .Attempt` binding) with its one cell the comptime's form,
 /// `attempt_at_build`, which the comptime module writes inline.

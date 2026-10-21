@@ -268,7 +268,7 @@ pub fn evaluate(
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
-        .runtime_error => |detail| .{ .err = try errorText(arena, "the decorator body raised", detail) },
+        .runtime_error => |detail| .{ .err = hostRuntime.interruptedText(detail) orelse try errorText(arena, "the decorator body raised", detail) },
     };
 }
 

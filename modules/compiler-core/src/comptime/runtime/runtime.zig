@@ -33,6 +33,19 @@ pub const Response = union(enum) {
     runtime_error: []u8,
 };
 
+/// Decision 878 — stop every comptime body in flight (signal-safe), and whether
+/// one is running: the CLI's SIGINT handler and the language server's cancel.
+pub const interrupt = persistent_wat.interrupt;
+pub const running = persistent_wat.running;
+
+/// Decision 878 — the refusal text of a body the build's interrupt stopped
+/// (`persistent_wat.interrupt`), when `detail` is the engine's reply for it;
+/// null for any other raise. The evaluators' callers locate it at the body.
+pub fn interruptedText(detail: []const u8) ?[]const u8 {
+    if (!std.mem.eql(u8, detail, persistent_wat.interrupted_reply)) return null;
+    return "comptime-interrupted: the build was interrupted while this body was evaluated";
+}
+
 pub const EvalError = error{ OutOfMemory, EvalFailed };
 
 /// Evaluate generated module `module` (Erlang text `code`) with the ETF

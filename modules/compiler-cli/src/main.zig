@@ -26,6 +26,7 @@ const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
 const builtin = @import("builtin");
+const bp = @import("botopink");
 const build_stamp = @import("build_stamp");
 
 // ── Version ───────────────────────────────────────────────────────────────────
@@ -128,12 +129,49 @@ const HELP =
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 pub fn main(init: std.process.Init) void {
+    installSigint();
     const exit_code = dispatch(init) catch |err| blk: {
         const name = @errorName(err);
         reporter.errMsg(name);
         break :blk 1;
     };
+    // A build ended by Ctrl-C ends as a process killed by it does (decision 878).
+    if (sigint_interrupted.load(.acquire)) std.process.exit(SIGINT_EXIT);
     if (exit_code != 0) std.process.exit(exit_code);
+}
+
+/// The exit status of a build the user interrupted: 128 + SIGINT.
+const SIGINT_EXIT: u8 = 130;
+
+/// Set by the SIGINT handler when it interrupted a running comptime body.
+var sigint_interrupted: std.atomic.Value(bool) = .init(false);
+
+/// Decision 878 — Ctrl-C while a comptime body runs interrupts that body
+/// (`persistent_wat.interrupt()`): the build ends as `comptime-interrupted`,
+/// located at the body, exit 130. With no body running, or on a second
+/// Ctrl-C, the default action ends the process as before.
+fn onSigint(sig: std.posix.SIG) callconv(.c) void {
+    if (bp.comptime_runtime.running() and !sigint_interrupted.swap(true, .acq_rel)) {
+        bp.comptime_runtime.interrupt();
+        return;
+    }
+    const dfl: std.posix.Sigaction = .{
+        .handler = .{ .handler = std.posix.SIG.DFL },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(sig, &dfl, null);
+    std.posix.raise(sig) catch {};
+}
+
+fn installSigint() void {
+    if (comptime builtin.os.tag == .windows or builtin.os.tag == .wasi) return;
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .handler = onSigint },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(.INT, &act, null);
 }
 
 /// Exit code of a command-line usage error (unknown flag, bad target, …).

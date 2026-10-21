@@ -1882,7 +1882,7 @@ pub fn evaluate(
     return switch (response) {
         .ok => |stdout| parseReply(arena, stdout, printed),
         .compile_error => |detail| .{ .err = try std.fmt.allocPrint(arena, "the comptime block's module did not compile: {s}", .{clip(detail)}) },
-        .runtime_error => |detail| .{ .err = try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{clip(detail)}) },
+        .runtime_error => |detail| .{ .err = hostRuntime.interruptedText(detail) orelse try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{clip(detail)}) },
     };
 }
 

@@ -29,6 +29,83 @@ const Lexer = bp.Lexer;
 /// the server writes nothing for it — nothing under `$HOME`.
 pub const LSP_STORE = "lsp";
 
+/// The integer id of a request, else -1 (a notification, a string id).
+fn requestId(m: *const messages.Message) i64 {
+    return switch (m.id()) {
+        .integer => |i| i,
+        else => -1,
+    };
+}
+
+/// The messages the reader thread took from stdin, in order. The reader also
+/// interrupts a running comptime body (decision 878) on `shutdown` and on a
+/// `$/cancelRequest` naming the request being dispatched (`active_id`, an
+/// integer id; a string id is never interrupted).
+const Inbox = struct {
+    mutex: std.Io.Mutex = .init,
+    cond: std.Io.Condition = .init,
+    queue: std.ArrayListUnmanaged(messages.Message) = .empty,
+    closed: bool = false,
+    active_id: std.atomic.Value(i64) = .init(-1),
+
+    fn push(self: *Inbox, io: std.Io, gpa: std.mem.Allocator, m: messages.Message) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.queue.append(gpa, m) catch {
+            var dropped = m;
+            dropped.deinit(gpa);
+            return;
+        };
+        self.cond.signal(io);
+    }
+
+    fn close(self: *Inbox, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.closed = true;
+        self.cond.signal(io);
+    }
+
+    /// The next message; null once stdin ended and the queue is empty.
+    fn pop(self: *Inbox, io: std.Io) ?messages.Message {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        while (self.queue.items.len == 0) {
+            if (self.closed) return null;
+            self.cond.waitUncancelable(io, &self.mutex);
+        }
+        return self.queue.orderedRemove(0);
+    }
+
+    fn read(self: *Inbox, io: std.Io, gpa: std.mem.Allocator) void {
+        var buf: [65536]u8 = undefined;
+        var file_reader = std.Io.File.stdin().reader(io, &buf);
+        while (true) {
+            const msg = messages.readMessage(&file_reader.interface, gpa) catch |err| {
+                std.log.err("error reading message: {}", .{err});
+                continue;
+            } orelse break;
+            if (self.interrupts(&msg)) bp.comptime_runtime.interrupt();
+            self.push(io, gpa, msg);
+        }
+        self.close(io);
+    }
+
+    fn interrupts(self: *const Inbox, m: *const messages.Message) bool {
+        if (!bp.comptime_runtime.running()) return false;
+        const method = m.method();
+        if (std.mem.eql(u8, method, "shutdown")) return true;
+        if (!std.mem.eql(u8, method, "$/cancelRequest")) return false;
+        const params = m.params();
+        if (params != .object) return false;
+        const id = params.object.get("id") orelse return false;
+        return switch (id) {
+            .integer => |i| i == self.active_id.load(.acquire),
+            else => false,
+        };
+    }
+};
+
 pub const Server = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -173,8 +250,33 @@ pub const Server = struct {
         return lsp_compiler.compile(entries);
     }
 
-    /// Main loop: reads messages from stdin and dispatches until shutdown.
+    /// Main loop: dispatches the messages a reader thread takes from stdin, until
+    /// shutdown. The reader exists so a `$/cancelRequest` of the request whose
+    /// `comptime` body is running, and a `shutdown`, reach the body while this
+    /// thread is inside it: each calls `interrupt()` (decision 878), and the
+    /// body ends as `comptime-interrupted`.
     pub fn run(self: *Server) !void {
+        var inbox: Inbox = .{};
+        const reader = std.Thread.spawn(.{}, Inbox.read, .{ &inbox, self.io, self.gpa }) catch {
+            return self.runInline();
+        };
+        reader.detach();
+        while (true) {
+            var m = inbox.pop(self.io) orelse break; // EOF
+            defer m.deinit(self.gpa);
+
+            inbox.active_id.store(requestId(&m), .release);
+            self.dispatch(&m) catch |err| {
+                std.log.err("error dispatching message: {}", .{err});
+            };
+            inbox.active_id.store(-1, .release);
+
+            if (self.shutdown_requested) break;
+        }
+    }
+
+    /// The loop without the reader thread, for a platform that cannot spawn one.
+    fn runInline(self: *Server) !void {
         var buf: [65536]u8 = undefined;
         var file_reader = std.Io.File.stdin().reader(self.io, &buf);
 

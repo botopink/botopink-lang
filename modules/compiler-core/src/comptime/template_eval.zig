@@ -223,7 +223,7 @@ pub fn evaluate(
     return switch (response) {
         .ok => |stdout| parseOutcomeExtras(arena, stdout, extras),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
-        .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
+        .runtime_error => |detail| .{ .err = hostRuntime.interruptedText(detail) orelse try errorText(arena, "the template body raised", detail) },
     };
 }
 

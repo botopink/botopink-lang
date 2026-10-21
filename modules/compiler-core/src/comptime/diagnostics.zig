@@ -370,6 +370,12 @@ pub const comptime_host_cell_unavailable: []const u8 = "comptime-host-cell-unava
 /// `badarith`, in Erlang's words, located at the expression and naming it. Fires
 /// from `comptime/block_eval.zig`'s `badarithRefusal`.
 pub const comptime_badarith: []const u8 = "comptime-badarith";
+/// Decision 878 — the build was interrupted (the CLI's SIGINT, the language
+/// server's `$/cancelRequest` or `shutdown`) while a `comptime`, decorator or
+/// template body was being evaluated: located at that body. Fires from
+/// `comptime/runtime/runtime.zig`'s `interruptedText`, read by the three
+/// evaluators.
+pub const comptime_interrupted: []const u8 = "comptime-interrupted";
 /// Decision 343 — a decorator body writes a module-level `var`: each
 /// invocation is independent. Fires from `comptime/decorator_eval.zig`
 /// `moduleVarWrite`, located at the write.
@@ -1041,6 +1047,7 @@ pub const all_codes = [_][]const u8{
     bytes_type_test,
     comptime_host_cell_unavailable,
     comptime_badarith,
+    comptime_interrupted,
     decorator_writes_module_var,
     is_type_outside_value_or_type,
     type_arg_read,

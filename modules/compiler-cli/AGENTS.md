@@ -136,7 +136,7 @@ compiler-cli/
 │   │                          suite declares; the library's entry must exist
 └── src/
     ├── AGENTS.md
-    ├── main.zig         ← argv parser, subcommand dispatcher
+    ├── main.zig         ← argv parser, subcommand dispatcher; the SIGINT handler that interrupts a running comptime body (exit 130, decision 878)
     └── cli/             ← one file per subcommand + shared helpers
         └── AGENTS.md
 ```

@@ -11,7 +11,7 @@ JSON-RPC server, protocol types, feature engine and test harness.
 src/
 ├── AGENTS.md          ← you are here
 ├── main.zig           ← process entry — constructs and runs Server
-├── server.zig         ← JSON-RPC message loop + LSP method dispatch
+├── server.zig         ← JSON-RPC message loop (a reader thread feeds it; `$/cancelRequest` of the running request and `shutdown` call `interrupt()` on a running comptime body, decision 878) + LSP method dispatch
 ├── messages.zig       ← frame parser/writer (Content-Length protocol)
 ├── protocol.zig       ← LSP + JSON-RPC serializable types
 ├── engine.zig         ← LSP feature implementations; `importDiagnostics` = `check`'s import-source refusals (206/242) via `cli_resolver`

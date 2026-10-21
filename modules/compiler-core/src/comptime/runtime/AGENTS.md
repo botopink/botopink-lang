@@ -50,12 +50,20 @@ What the comptime runtime does not do — the only runtime's limits (decision 43
 is refused) where a body meets it, and a fixture in `persistent_wat.zig` pins it — except the
 second, which has nothing to pin.
 
-1. **No isolation, no timeout.** A runaway body is a runaway wasmtime call on a thread of the
-   compiler: nothing bounds it (decision 380 (2): no budget). Ctrl-C ends the process as it ends any
-   process (the engine handles only its own traps' signals, never `SIGINT`), and the engine runs with
-   epoch interruption, so `persistent_wat.interrupt()` — signal-safe — stops every body in flight with
-   a `wasmtime: interrupted` trap; a store's deadline is the next tick, which nothing but `interrupt`
-   gives.
+1. **No isolation, no budget; an interrupt.** A runaway body is a runaway wasmtime call on a
+   thread of the compiler: nothing bounds it (decision 380 (2): no budget), and the engine stays
+   Cranelift with the compiled-module cache (decision 878). The engine runs with epoch
+   interruption, so `persistent_wat.interrupt()` — signal-safe — stops every body in flight with
+   a `wasmtime: interrupted` trap, which `runtime.interruptedText` reads in the three evaluators
+   as `comptime-interrupted`, located at the body being evaluated (380 (2)'s shape). Two callers:
+   the CLI's SIGINT handler (`compiler-cli/src/main.zig`) — while a body runs, the first Ctrl-C
+   interrupts it and the build ends exit 130, a second (or one with no body running) ends the
+   process as any process ends — and the language server's reader thread, on `$/cancelRequest`
+   of the request being dispatched and on `shutdown`. A store's deadline is the next tick, which
+   nothing but `interrupt` gives; `running()` tells whether a body is in flight. `attempt` at
+   build catches what a wasm program's catches: `@panic`, `@todo`, a failed `assert` and an
+   integer division by zero (`host_cells.attempt_at_build`, decision 878 (3)). Fixtures: `decision 878`
+   in `persistent_wat.zig` (an unbounded body interrupted from another thread answers, no hang).
    No generated module spawns, receives or touches ETS, and the lowering refuses all three by name
    before anything runs (`spawn/1` as an undefined function, `` `receive` ``, `ets:new/2` not in
    the runtime) — fixture `limit 1`.

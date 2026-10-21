@@ -78,6 +78,19 @@ pub fn interrupt() void {
     if (comptime !is_wasm) Wasmtime.interrupt();
 }
 
+/// The runtime error an interrupted body answers (decision 878): the trap
+/// code's name behind the engine's prefix. The evaluators read it as the
+/// `comptime-interrupted` refusal.
+pub const interrupted_reply = "wasmtime: interrupted";
+
+/// Whether a comptime body is running now, on any thread. Signal-safe: the
+/// CLI's SIGINT handler interrupts only then, and otherwise ends the process
+/// as any process ends (decision 878).
+pub fn running() bool {
+    if (comptime is_wasm) return false;
+    return Wasmtime.bodies.load(.acquire) != 0;
+}
+
 // ── the page's engine (`modules/compiler-web`) ───────────────────────────────
 
 const Page = struct {
@@ -207,6 +220,9 @@ const Wasmtime = struct {
         engine = c.wasm_engine_new_with_config(config) orelse return error.OutOfMemory;
         return engine.?;
     }
+
+    /// The bodies running now (`instantiateAndRun`), for `running`.
+    var bodies: std.atomic.Value(u32) = .init(0);
 
     fn interrupt() void {
         if (@atomicLoad(?*c.wasm_engine_t, &engine, .acquire)) |e| c.wasmtime_engine_increment_epoch(e);
@@ -363,6 +379,8 @@ const Wasmtime = struct {
 
         fn instantiateAndRun(job: *Job) Error!Response {
             const alloc = job.alloc;
+            _ = bodies.fetchAdd(1, .acq_rel);
+            defer _ = bodies.fetchSub(1, .acq_rel);
             const store = c.wasmtime_store_new(try theEngine(), null, null) orelse return error.OutOfMemory;
             defer c.wasmtime_store_delete(store);
             const ctx = c.wasmtime_store_context(store).?;
@@ -605,6 +623,42 @@ test "an exception and an engine trap are runtime errors, and the next evaluatio
     defer alloc.free(deep.payload());
     try std.testing.expectEqualStrings("{\"depth\":100000}", deep.ok);
     try std.testing.expectEqual(@as(usize, 1), keptCount(module));
+}
+
+/// Waits (bounded) until a body runs, lets it settle into its loop, then
+/// interrupts it from this other thread.
+fn interruptWhenRunning(io: std.Io) void {
+    var waited: u32 = 0;
+    while (!running() and waited < 20_000) : (waited += 1) io.sleep(std.Io.Duration.fromMilliseconds(1), .awake) catch {};
+    io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
+    interrupt();
+}
+
+test "decision 878: an unbounded body interrupted from another thread answers the interrupted reply, and the next one runs" {
+    const alloc = std.testing.allocator;
+    const module = "bp@wat_test_interrupt";
+    // About 10^12 steps over one shared list: no bound a test could wait out,
+    // and no growing stack or heap to trap first.
+    const code =
+        \\-module(bp@wat_test_interrupt).
+        \\-export([main/1]).
+        \\
+        \\main({Arg0}) ->
+        \\    L = lists:seq(1, 1000000),
+        \\    lists:foreach(fun(_) -> lists:foreach(fun(_) -> ok end, L) end, lists:seq(1, Arg0)),
+        \\    json:encode(#{done => Arg0}).
+    ;
+    const killer = try std.Thread.spawn(.{}, interruptWhenRunning, .{std.testing.io});
+    const stopped = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 1_000_000 }}));
+    killer.join();
+    defer alloc.free(stopped.payload());
+    try std.testing.expectEqualStrings(interrupted_reply, stopped.runtime_error);
+    try std.testing.expect(!running());
+
+    // A store of its own and a deadline from the current epoch: the next body runs.
+    const after = try runSource(alloc, module, code, Term.tupleOf(&.{.{ .integer = 1 }}));
+    defer alloc.free(after.payload());
+    try std.testing.expectEqualStrings("{\"done\":1}", after.ok);
 }
 
 /// `text` (the wat text format) compiled by the engine's own reader.
