@@ -27373,6 +27373,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         env.lastError = TypeError.custom(msg, "A `use` reads its provider in a render tree; compute the value in the program, below the render's provider, or reach what the `comptime` needs through its arguments (01-compiler/14 question `14s8-e`).").withLoc(loc);
         return error.TypeError;
     }
+    const printed_from = env.buildOutput.items.len;
     const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces, &env.buildOutput) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => {
@@ -27383,6 +27384,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
             return error.TypeError;
         },
     };
+    if (env.buildOutput.items.len > printed_from) try env.buildRuns.append(env.arena, .{ .start = printed_from, .len = env.buildOutput.items.len - printed_from });
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {

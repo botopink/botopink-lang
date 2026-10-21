@@ -1574,6 +1574,27 @@ fn withNested(arena: std.mem.Allocator, assoc: []const []const u8, t: ast.TypeDe
 /// runtime traces over, ahead of any pass-2 (template) evaluations.
 fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
     try pass_two.comptimeTraces.insertSlice(pass_two.arena, 0, pass_one.comptimeTraces.items);
+    // A `comptime` node of the source is inferred again by the re-analysis
+    // (a decorator's output spliced, decisions 788 (2), 793 (5)): what it
+    // prints once is the build's line, so each run pass 1 wrote is dropped
+    // from pass 2's output once (the multiset of texts), a node only the
+    // re-analysis meets (one a decorator wrote) keeping its own.
+    var carried: std.ArrayListUnmanaged(bool) = .empty;
+    defer carried.deinit(pass_two.arena);
+    try carried.appendNTimes(pass_two.arena, false, pass_one.buildRuns.items.len);
+    var i = pass_two.buildRuns.items.len;
+    while (i > 0) {
+        i -= 1;
+        const run = pass_two.buildRuns.items[i];
+        const text = pass_two.buildOutput.items[run.start .. run.start + run.len];
+        for (pass_one.buildRuns.items, 0..) |r1, k| {
+            if (carried.items[k]) continue;
+            if (!std.mem.eql(u8, pass_one.buildOutput.items[r1.start .. r1.start + r1.len], text)) continue;
+            carried.items[k] = true;
+            try pass_two.buildOutput.replaceRange(pass_two.arena, run.start, run.len, &.{});
+            break;
+        }
+    }
     try pass_two.buildOutput.insertSlice(pass_two.arena, 0, pass_one.buildOutput.items);
 }
 

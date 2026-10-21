@@ -1813,6 +1813,10 @@ pub const Env = struct {
     /// decorator's, a top-level `comptime { … }`'s), in the order they ran:
     /// the build's output (`OkData.build_output`).
     buildOutput: std.ArrayListUnmanaged(u8) = .empty,
+    /// The byte ranges of `buildOutput` the module's `comptime` nodes wrote
+    /// (`foldBodyComptime`), so the re-analysis over a decorator's output does
+    /// not print again what the first analysis printed (`keepPassOneTraces`).
+    buildRuns: std.ArrayListUnmanaged(struct { start: usize, len: usize }) = .empty,
     /// Question s29-b — the typed meta a method's decorators recorded
     /// (decision 298 on a method, 313), in recording order: the owner's own
     /// decorators run after its methods' and read it on `decl.methods`

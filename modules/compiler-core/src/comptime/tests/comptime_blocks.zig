@@ -220,6 +220,35 @@ test "decision 793 (5): a `comptime { … }` inside a function body writes its p
     try std.testing.expectEqualStrings("first\nsecond\n", got);
 }
 
+// Decisions 788 (2), 793 (5), 789 (1): a function body's `comptime { … }` prints once also
+// in a module holding a top-level block, whose own print and `compiler.init` are not re-run.
+test "body_block_prints_once_beside_top_level_block" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\fn f(comptime n: string) -> void {
+        \\    print("build " + n);
+        \\    compiler.init({ -> print("init " + n) });
+        \\}
+        \\
+        \\comptime {
+        \\    print("top");
+        \\    f("a");
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    comptime {
+        \\        print("body");
+        \\    };
+        \\}
+        \\
+    ;
+    const got = try buildOutput(gpa, src);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("top\nbuild a\nbody\n", got);
+}
+
 test "decision 808 (4): a `comptime { … }` in a function body runs its lines and the expanded function's at build, in order; the executor is the run's" {
     const gpa = std.testing.allocator;
     const src =
