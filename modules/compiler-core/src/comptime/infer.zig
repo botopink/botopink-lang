@@ -1519,6 +1519,14 @@ fn writeSigType(w: *std.Io.Writer, t: ast.TypeRef, s: SigScope, depth: u8) std.I
     }
 }
 
+/// A `syntax x: T` parameter's type: the tree type the parser keeps for it.
+fn isSyntaxTypeRef(t: ast.TypeRef) bool {
+    return switch (t) {
+        .generic => |g| g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, ast.expr_type_name) or std.mem.eql(u8, g.name, ast.expr_custom_type_name)),
+        else => false,
+    };
+}
+
 fn sigTypeText(t: ast.TypeRef, s: SigScope) (std.mem.Allocator.Error || std.Io.Writer.Error)![]const u8 {
     var out: std.Io.Writer.Allocating = .init(s.env.arena);
     try writeSigType(&out.writer, t, s, 0);
@@ -1557,6 +1565,9 @@ fn sigText(m: SigMember, s: SigScope, named: bool) (std.mem.Allocator.Error || s
     try w.writeAll("(");
     for (m.params, 0..) |p, i| {
         if (i > 0) try w.writeAll(", ");
+        // Decision 871 (3) — a parameter's `comptime` marker is part of the
+        // signature; a `syntax` parameter writes its own (`writeSigType`).
+        if (p.modifier == .@"comptime" and !isSyntaxTypeRef(p.typeRef)) try w.writeAll("comptime ");
         if (named) try w.print("{s}: ", .{p.name});
         try writeSigType(w, p.typeRef, s, 0);
     }

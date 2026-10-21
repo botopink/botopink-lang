@@ -2913,7 +2913,8 @@ member and an overridden `default fn` alike. Both sides render through `writeSig
 (bare or `Self<…>`) as the implementing type (`Name<T, …>` for a generic one), the behavior's type parameters as the
 clause's arguments, the written member's own type parameters as the contract member's by position, a type alias read
 through, `Array<T>` as `T[]` and a prelude wrapper with or without its `@` one spelling; parameter names, labels and
-defaults are left out of the comparison. Decision 8 (A1) holds: under a plain implementer a type parameter the member
+defaults are left out of the comparison; a parameter's `comptime` marker is part of it (decision 871 (3): `sigText` writes
+`comptime ` before the type, a `syntax` parameter its own `syntax `). Decision 8 (A1) holds: under a plain implementer a type parameter the member
 introduces in `Self<…>`'s arguments is bound to the clause's argument at its place (`bindSelfArgs` —
 `map<U>(…) -> Self<U>` under `implement Mappable<i32>` is `U = i32`). A difference is
 `implement-signature-differs` at the member's name, naming both signatures (`contract: fn label(self: Tag) -> string ·

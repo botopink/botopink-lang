@@ -1,0 +1,19 @@
+//// Decision 871 — 800's "identical" is over types, not spellings; a member's type parameter inside `Self<…>` takes the clause's argument; a parameter's `comptime` marker is part of the signature.
+
+import {io.terminal.print} from "std";
+
+behavior Scaled {
+    fn scale(self: Self, comptime n: i32) -> i32;
+}
+
+// The contract's `n` is known at build; the member's is not. Refused at
+// `scale`, `implement-signature-differs`.
+type Box(v: i32) implement Scaled {
+    fn scale(self: Self, n: i32) -> i32 {
+        return self.v * n;
+    }
+}
+
+pub fn main() -> void {
+    print(Box(v: 2).scale(3));
+}

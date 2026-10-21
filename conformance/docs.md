@@ -1304,6 +1304,18 @@ met by `-> string`. A difference is refused at the member,
 
 <!-- example: modules/implement_signature_same -->
 
+Identical is over types, not spellings (decision 871): `array<T>` and `T[]`, an
+alias and its target, are one type, and under `implement Mappable<i32>` a
+member's `Self<U>` takes the clause's argument (`-> Box` meets `-> Self<U>` with
+`U = i32`). A parameter's `comptime` marker is part of the signature: a
+contract's `comptime n: i32` is not met by `n: i32`, nor the reverse.
+
+<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_comptime_marker_dropped -->
+
+<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_comptime_marker_added -->
+
+<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_signature_spellings_met -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the
