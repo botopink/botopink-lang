@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = type(tag: string, n: i32) implement Renderable
+val E = type(tag: string, n: i32)
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }

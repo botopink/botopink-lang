@@ -12291,7 +12291,7 @@ fn locateLast(env: *Env, err: InferError, loc: ast.Loc) InferError {
 fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // `Children` coercion — applied before unification since `unifyAt` is
     // always called target-first (`unifyAt(param, arg)`).
-    if (childrenCoercion(a, b)) return;
+    if (childrenCoercion(env, a, b)) return;
     // Decision 8 §6 T7 — read before `unify` links anything.
     const ta = a.deref();
     const tb = b.deref();
@@ -12436,16 +12436,20 @@ fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferErr
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
 /// parameter (the builder children model a markup DSL's `div { … }` needs)
 /// accepts another `Children`, any array (`Element[]` — the list form), a
-/// or a `string` (→ a text child). Coercion is one-directional: it only fires
-/// when the *declared* type (`target`) is `Children`, never the reverse.
-fn childrenCoercion(target: *T.Type, source: *T.Type) bool {
+/// a `string` (→ a text child), or a single value of a type the program
+/// declares (an `Element` → a one-element list; the marker `Renderable` that
+/// named the node type left with decision 804 (2), and `Children` itself
+/// leaves with 804 (4)). Coercion is one-directional: it only fires when the
+/// *declared* type (`target`) is `Children`, never the reverse.
+fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
     const t = target.deref();
     if (t.* != .named or !std.mem.eql(u8, t.named.name, "Children")) return false;
     const s = source.deref();
     return switch (s.*) {
         .named => |n| std.mem.eql(u8, n.name, "Children") or
             std.mem.eql(u8, n.name, "array") or
-            std.mem.eql(u8, n.name, "string"),
+            std.mem.eql(u8, n.name, "string") or
+            env.lookupTypeDef(n.name) != null,
         else => false,
     };
 }
@@ -21192,6 +21196,15 @@ fn refuseBehaviorUnknownMember(env: *Env, recvTy: *T.Type, member: []const u8, i
     if (t.* != .named) return;
     const name = t.named.name;
     if (env.lookupTypeDef(name) != null) return;
+    // Decisions 791, 809 (1) — a `Component<T>` is a `Composition<T>` or a
+    // `Composable<T>`: it has no member of its own.
+    if (std.mem.eql(u8, name, "Component") and t.named.args.len == 1 and env.typeAliases.get(name) == null) {
+        const shown = try snapshotMod.typeNameOf(env.arena, t);
+        const what: []const u8 = if (is_call) "method" else "field";
+        const msg = try std.fmt.allocPrint(env.arena, "unknown {s} '{s}' on '{s}': a component has no members — it is a `Composition` or a `Composable` (decision 809 (1))", .{ what, member, shown });
+        env.lastError = TypeError.custom(msg, "A component is resolved by `use c` in a component body, or run from a root with `await run(c)` (decisions 791, 822).").withLoc(loc);
+        return error.TypeError;
+    }
     if (memberBehaviorDecl(env, name) == null) return;
     if (behaviorNamesMember(env, name, member, 0)) return;
     // Decision 596 — a sequence's helpers (`take`, `map`, `toArray`, …) are

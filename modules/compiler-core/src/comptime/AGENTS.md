@@ -2942,7 +2942,7 @@ counts a primitive's member (`primitiveAnswers`) and a record's (`getInherentMet
 members. A field read or a method call on a value a behavior types — `Component<P>`, `Async<string>`, a
 behavior of the program's own — names a field or a method the behavior, or one it extends, declares, or an
 extension of it; anything else is refused at the name (`infer.zig` `refuseBehaviorUnknownMember`: `unknown
-field 'zzz' on 'Component<View>': the behavior `Component` declares `run``) — it used to be typed a fresh
+field 'zzz' on 'Async<string>': the behavior `Async` declares no members``; a `Component<T>` has no member of its own, 809 (1)) — it used to be typed a fresh
 variable and reach the backends (`modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/behavior_value_unknown_field`, `modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/behavior_value_unknown_method`).
 A `return` of a component in a body written `-> Component<R>` (which answers `R`) resolves it before
 the body answers (decision 809 (4); `modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_return_needs_use`).

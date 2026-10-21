@@ -6641,7 +6641,6 @@ Decision 354 leaves one wrapper, `Component<R>` (and decision 804 (2) takes the 
 
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/refused/src/cases/component_base_parameter -->
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_marker_removed -->
-<!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cells/renderable_type_argument -->
 
 Four changes are not a rename and are reviewed by hand:
 

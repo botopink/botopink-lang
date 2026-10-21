@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type() implement Renderable
+val Element = type()
 component fn Card() -> Component<Element> {
     return Element();
 }

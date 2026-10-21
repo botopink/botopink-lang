@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = type(tag: string, n: i32) implement Renderable
+val E = type(tag: string, n: i32)
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
@@ -77,7 +77,6 @@ class E {
     }
 }
 E.prototype.__bp = "E";
-E.prototype["__bp_b_Renderable"] = true;
 
 function mk() {
     return new E("x", 5);
