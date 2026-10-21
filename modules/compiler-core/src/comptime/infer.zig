@@ -27710,7 +27710,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const value = switch (outcome) {
         .value => |v| v,
         .err => |msg| {
-            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, msg, tail) else null) |r| {
+            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, msg, tail, &.{}, support) else null) |r| {
                 env.lastError = TypeError.custom(r.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.").withLoc(r.loc);
                 return error.TypeError;
             }
@@ -27721,7 +27721,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         // file; every call of the chain is a `called from`, down to the
         // `comptime` that ran it.
         .raised => |r| {
-            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, r.message, tail) else null) |br| {
+            if (if (comptimeTail(ct)) |tail| try blockEval.badarithRefusal(env, r.message, tail, r.frames, support) else null) |br| {
                 env.lastError = try blockEval.raisedError(env, br.message, "Raised while the `comptime` ran at build time (decisions 331, 472): an arithmetic error reads as Erlang's `badarith`, whatever the target.", r.frames, loc);
                 return error.TypeError;
             }

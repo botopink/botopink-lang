@@ -48,6 +48,7 @@ const trace = @import("./trace.zig");
 const diagnostics = @import("./diagnostics.zig");
 const formatMod = @import("../format.zig");
 const hostCells = @import("./host_cells.zig");
+const std_namespace = @import("./std_namespace.zig");
 const transform = @import("./transform.zig");
 
 pub const Error = error{OutOfMemory};
@@ -1898,31 +1899,88 @@ pub const division_by_zero_raised = erlang.division_by_zero_text;
 /// divisor (`erlang.zig`'s `'__bp_cdz'/1`).
 const division_by_zero_term = "{error,{bp_wat_runtime,<<\"" ++ erlang.division_by_zero_text ++ "\">>}}";
 
-/// Decision 472, 533 — the refusal for an arithmetic error at build, when `msg`
-/// is `evaluate`'s text for one: `comptime-badarith: an error occurred when
-/// evaluating an arithmetic expression — \`<e>\`` (and `(division by zero)`
-/// when the raise was a division or a remainder by zero, whatever its place in
-/// `e`: alone, inside a larger expression, or in a function `e` calls).
-/// `loc` is where `e` starts, the place of a raise no call located (the
-/// frames of a located one, decision 532, are the caller's). Null when `msg`
-/// is anything else.
-pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr) Error!?struct { message: []const u8, loc: ast.Loc } {
+/// Decision 472, 533, 869 — the refusal for an arithmetic error at build, when
+/// `msg` is `evaluate`'s text for one: `comptime-badarith: an error occurred
+/// when evaluating an arithmetic expression — \`<op>\``, `<op>` the source of
+/// the `binaryOp` whose operator the reply located (`frames[0]`: the dividing
+/// `6 / (3 - 3)`, or `a / b` in the helper's own file), never the enclosing
+/// expression, and `(division by zero)` when the raise was a division or a
+/// remainder by zero. The caret is that operator, text and caret agreeing; the
+/// chain is the `from` lines (decision 532, the caller's frames). A raise no
+/// frame located names `e` as written, at where `e` starts. Null when `msg` is
+/// anything else.
+pub fn badarithRefusal(env: *Env, msg: []const u8, e: ast.Expr, frames: []const Frame, support: Support) Error!?struct { message: []const u8, loc: ast.Loc } {
     const by_zero = std.mem.eql(u8, msg, division_by_zero_raised);
     if (!by_zero and !std.mem.eql(u8, msg, badarith_raised)) return null;
+    var named: ?ast.Expr = null;
+    if (frames.len > 0) {
+        const at = frames[0];
+        if (std.mem.eql(u8, at.file, support.own_file)) {
+            const one = [_]ast.Expr{e};
+            named = findOperatorAt(@as([]const ast.Expr, &one), at.loc);
+        }
+        if (named == null) for (support.fns) |f| {
+            const file = for (support.located) |l| {
+                if (std.mem.eql(u8, l.name, f.name)) break l.file;
+            } else support.own_file;
+            if (!std.mem.eql(u8, file, at.file)) continue;
+            named = findOperatorAt(f.body, at.loc);
+            if (named != null) break;
+        };
+    }
+    const shown = named orelse e;
     var f = formatMod.Formatter.init(env.arena);
-    const doc = f.fmtExpr(e) catch return null;
+    const doc = f.fmtExpr(shown) catch return null;
     const text = formatMod.render(env.arena, doc, std.math.maxInt(u16)) catch return null;
-    const cause: []const u8 = if (by_zero or (e == .binaryOp and e.binaryOp.op == .div)) " (division by zero)" else "";
-    var at = e;
-    while (at == .binaryOp) at = at.binaryOp.lhs.*;
+    const cause: []const u8 = if (by_zero or (shown == .binaryOp and shown.binaryOp.op == .div)) " (division by zero)" else "";
+    var start = shown;
+    while (start == .binaryOp) start = start.binaryOp.lhs.*;
     return .{
         .message = try std.fmt.allocPrint(
             env.arena,
             "{s}: an error occurred when evaluating an arithmetic expression — `{s}`{s}",
             .{ diagnostics.comptime_badarith, text, cause },
         ),
-        .loc = at.getLoc(),
+        .loc = if (named != null) frames[0].loc else start.getLoc(),
     };
+}
+
+/// The `binaryOp` of `root` whose operator sits at `loc` (a `binaryOp`'s `loc`
+/// is its operator's), innermost first.
+fn findOperatorAt(root: anytype, loc: ast.Loc) ?ast.Expr {
+    var found: ?ast.Expr = null;
+    walkOperator(@TypeOf(root), &root, loc, &found);
+    return found;
+}
+
+fn walkOperator(comptime Node: type, ptr: *const Node, loc: ast.Loc, found: *?ast.Expr) void {
+    if (found.* != null) return;
+    if (Node == ast.ImportDecl) return;
+    switch (@typeInfo(Node)) {
+        .@"struct" => |s| inline for (s.fields) |f| {
+            if (f.is_comptime) continue;
+            if (comptime std_namespace.mayHoldExpr(f.type)) walkOperator(f.type, &@field(ptr.*, f.name), loc, found);
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (comptime std_namespace.mayHoldExpr(@TypeOf(payload.*))) {
+                    walkOperator(@TypeOf(payload.*), payload, loc, found);
+                },
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| walkOperator(o.child, inner, loc, found),
+        .pointer => |p| switch (p.size) {
+            .one => if (comptime std_namespace.mayHoldExpr(p.child)) walkOperator(p.child, ptr.*, loc, found),
+            .slice => if (comptime std_namespace.mayHoldExpr(p.child)) {
+                for (ptr.*) |*e| walkOperator(p.child, e, loc, found);
+            },
+            else => {},
+        },
+        else => {},
+    }
+    if (found.* == null and Node == ast.Expr) {
+        if (ptr.* == .binaryOp and ptr.binaryOp.loc.line == loc.line and ptr.binaryOp.loc.col == loc.col) found.* = ptr.*;
+    }
 }
 
 /// Decision 532 — the refusal of a raise at build, located at the call that
@@ -2527,11 +2585,11 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     };
     return switch (outcome) {
         .value => |v| if (try valueTerm(env.arena, v)) |t| .{ .build = t } else .render,
-        .err => |msg| if (try badarithRefusal(env, msg, hole.*)) |r|
+        .err => |msg| if (try badarithRefusal(env, msg, hole.*, &.{}, support)) |r|
             .{ .refused = .{ .message = r.message, .loc = r.loc } }
         else
             .{ .refused = .{ .message = msg, .loc = loc } },
-        .raised => |r| if (try badarithRefusal(env, r.message, hole.*)) |br|
+        .raised => |r| if (try badarithRefusal(env, r.message, hole.*, r.frames, support)) |br|
             .{ .refused = .{ .message = br.message, .loc = br.loc, .frames = r.frames } }
         else
             .{ .refused = .{ .message = r.message, .loc = loc, .frames = r.frames } },

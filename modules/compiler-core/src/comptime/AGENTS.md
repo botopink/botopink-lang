@@ -1748,8 +1748,8 @@ which `inferLiteralExpr` joins with `+` — answers "no text to join"). `==` / `
 `InstanceLowering.prim = .bytes` at the operator, which wasm reads to compare the bytes. A `std:`
 cell spells `?Bytes` (`spelledType`). Cells: `modules/bytes/cases/bytes_*`.
 
-Decisions 472, 533 — an arithmetic error while a `comptime` runs (the runtime's `{error,badarith}`) is
-`comptime-badarith: an error occurred when evaluating an arithmetic expression — \`<expression>\``,
+Decisions 472, 533, 869 — an arithmetic error while a `comptime` runs (the runtime's `{error,badarith}`) is
+`comptime-badarith: an error occurred when evaluating an arithmetic expression — \`<operation>\``,
 built by `block_eval.badarithRefusal` at the two places that run a block (`foldBodyComptime`,
 `holeValue`). A division or a remainder by zero adds `(division by zero)` wherever it is — alone, inside a
 larger expression, in a function the block calls — and is located at the operator that divides: a
@@ -1757,8 +1757,10 @@ comptime module lowers `/` and `%` through `'__bp_cdz'/1` (`codegen/erlang.zig` 
 raises `{bp_wat_runtime, <<"division by zero">>}` on a `0` divisor (integer or float), inside
 a frame at the operator (decision 532); `parseReply` / the decorator and template
 replies read that term as the plain text `division by zero` (`block_eval.divisionByZero`, as an unseeded
-draw), and `badarithRefusal` names the cause. Any other `badarith` (a float overflow) stays without it,
-located at the innermost located call it left, else at the expression. Cells:
+draw), and `badarithRefusal` names the cause. `<operation>` is the source of the `binaryOp` whose operator the first
+frame located (`findOperatorAt`: `6 / (3 - 3)`, or `a / b` in the helper's own file), never the enclosing expression
+(decision 869); the `from` lines are the chain. Any other `badarith` (a float overflow) stays without a cause,
+and with no frame names the expression, at where it starts. Cells:
 `modules/decisions-taken/comptime_badarith_message-472/cells/comptime_float_division_by_zero`, `comptime_integer_division_by_zero`,
 `comptime_remainder_by_zero`, `comptime_nested_division_by_zero`, `comptime_division_by_zero_in_helper`,
 `hole_any_call_raises`; the deep-equality cell is
