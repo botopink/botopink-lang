@@ -716,6 +716,15 @@ codegen/
   imported by `find` alone: `modules/optional/run/src/cases/optional_enum_method_sibling`, a pin); without it the call stayed a
   member call, `b?.str is not a function`. A type name two modules declare is
   contested and stays the member call.
+- **A method its own field hides** (decision 811 (4), std's opaque `Module`
+  with fields `name` / `path` and `pub fn name()` / `pub fn path()`): a field
+  is an own property of the instance and hides the prototype's method of the
+  same name, so a call `recv.name()` whose receiver inference typed as such a
+  record (`.type_` / `.unplaced_type` lowering) lowers to
+  `Module.prototype.name.call(recv)` (`shadowedMethodOwner`): this module's
+  records from `shadowed_methods`, another module's from the export index
+  (`fields` and `methods` sharing the name), required under
+  `__bp_enum_<Type>` as `reached_enums` are.
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into
   every local record that implements it and does not define the method

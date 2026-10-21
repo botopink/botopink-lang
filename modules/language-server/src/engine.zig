@@ -4326,7 +4326,8 @@ fn nextSignificantIndex(tokens: []const Token, i: usize) ?usize {
 /// `loop` / `while` / `for` (the prefixed loops, decision 125 — the parser's
 /// `genLoopPrefixAhead`), and the body markers of decision 553 — `async`,
 /// `iter`, `async iter` and `component` right before `fn` or right after a
-/// lambda's `{` (the parser's `markerAt`, decision 584). Anywhere else the word is an ordinary name:
+/// lambda's `{` (the parser's `markerAt`, decision 584), and `opaque` right before `type` (decision 811 (1)).
+/// Anywhere else the word is an ordinary name:
 /// `g.iter()`, `val stream = 1`, `http.stream(…)`, `import {async} from "std"`
 /// and `async.allOf(…)` stay identifiers.
 fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
@@ -4363,6 +4364,8 @@ fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
     if (std.mem.eql(u8, word, "stream"))
         return nk == .loop or nk == .@"while" or nk == .@"for";
     if (std.mem.eql(u8, word, "component")) return nk == .@"fn" or opensLambda;
+    // Decision 811 (1) — `[pub] opaque type X(…)`: the modifier before `type`.
+    if (std.mem.eql(u8, word, "opaque")) return nk == .type;
     return false;
 }
 

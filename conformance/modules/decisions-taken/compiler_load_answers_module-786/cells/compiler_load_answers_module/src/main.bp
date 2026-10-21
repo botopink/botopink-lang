@@ -6,8 +6,8 @@
 import {compiler, io.terminal.print} from "std";
 
 fn show(m: compiler.Module) -> void {
-    print("name=" + m.name);
-    print("path=" + m.path);
+    print("name=" + m.name());
+    print("path=" + m.path());
 }
 
 pub fn main() -> void {
@@ -24,8 +24,8 @@ pub fn main() -> void {
         Ok(m) -> print("never");
         Error(r) {
             print(r.diagnostics.length > 0);
-            print("refused " + r.module.path);
-            print("refused name=" + r.module.name);
+            print("refused " + r.module.path());
+            print("refused name=" + r.module.name());
         }
     }
 }

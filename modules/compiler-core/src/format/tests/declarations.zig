@@ -1416,3 +1416,17 @@ test "format: fn expression ---- typed in every position, its tail as written" {
     try h.assertFormat(std.testing.allocator, src);
     try h.assertIdempotent(std.testing.allocator, src);
 }
+
+test "format: an opaque type keeps its modifier (decision 811)" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub opaque type Token(value: string) {
+        \\    fn of(value: string) -> Token {
+        \\        return Token(value: value);
+        \\    }
+        \\
+        \\    pub fn value(self: Self) -> string {
+        \\        return self.value;
+        \\    }
+        \\}
+    );
+}

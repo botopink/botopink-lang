@@ -289,14 +289,14 @@ pub type Diagnostic(
     label: ?string,
 )
 
-// ── What `compiler.load` answers (decisions 786, 787, 792) ───────────────
-// The loaded file (decisions 786 (1), 805 (4)): `name` the directory it sits
-// in (`<case>` for `src/cases/<case>/mod.bp`), `path` the file relative to
-// the package (as a `Diagnostic`'s `file`). No target — comptime reads none —
-// and no dependency list: the loaded package still resolves its own to
-// compile. Opaque (decision 792 (3)): only
-// `compiler.load` answers one — `Module(…)` written outside std is
-// `module-construction` —, its fields readable.
+// ── What `compiler.load` answers (decisions 786, 787, 792, 811) ──────────
+// The loaded file (decisions 786 (1), 805 (4)): `name()` the directory it
+// sits in (`<case>` for `src/cases/<case>/mod.bp`), `path()` the file
+// relative to the package (as a `Diagnostic`'s `file`). No target — comptime
+// reads none — and no dependency list: the loaded package still resolves its
+// own to compile. Opaque (decision 811 (4)): only `compiler.load` answers one,
+// through `of`, which no program names — `Module(…)` written outside is
+// `opaque-construction`, `m.name` `opaque-field`.
 //
 // `m.run() -> Result<void, RunFailure>` (decisions 787, 792, 806) runs the
 // loaded package's `main`. It is written directly in a `compiler.init` body
@@ -311,10 +311,23 @@ pub type Diagnostic(
 // `Module`; each call is lowered by the checker (`comptime/infer.zig`
 // `inferModuleRun`) to the loaded package's `main`, so the body below never
 // runs.
-pub type Module(
+pub opaque type Module(
     name: string,
     path: string,
 ) {
+    // What `compiler.load`'s answer is built by (`comptime/load.zig`).
+    fn of(name: string, path: string) -> Module {
+        return Module(name: name, path: path);
+    }
+
+    pub fn name(self: Self) -> string {
+        return self.name;
+    }
+
+    pub fn path(self: Self) -> string {
+        return self.path;
+    }
+
     pub fn run(self: Self) -> Result<void, RunFailure> {
         throw RunFailure(kind: .Abort, message: "Module.run: every call is lowered to the loaded main");
     }
@@ -1294,6 +1307,42 @@ pub type HookNode = __HookNode;
         "path": "string"
       },
       "methods": [
+        {
+          "name": "of",
+          "params": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "return_type": "Module"
+        },
+        {
+          "name": "name",
+          "is_pub": true,
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "string"
+        },
+        {
+          "name": "path",
+          "is_pub": true,
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "string"
+        },
         {
           "name": "run",
           "is_pub": true,

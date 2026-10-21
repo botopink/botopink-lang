@@ -125,7 +125,7 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\fn show(m: compiler.Module) -> void {
-        \\    print("${m.name} ${m.path}");
+        \\    print("${m.name()} ${m.path()}");
         \\}
         \\
         \\pub fn main() -> void {
@@ -199,7 +199,7 @@ test "decision 787: a load no `run()` reaches stays out of the program" {
         \\comptime {
         \\    val loaded = comptime compiler.load("src/cases/fine.bp");
         \\    case loaded {
-        \\        Ok(m) -> compiler.init({ -> print(m.path) });
+        \\        Ok(m) -> compiler.init({ -> print(m.path()) });
         \\        Error(r) -> print("refused");
         \\    }
         \\}
@@ -244,14 +244,14 @@ test "decision 787: a read's path is known as written — a literal, or a `+` of
     try std.testing.expect((try loadMod.foldedPath(arena, &an)) == null);
 }
 
-test "decision 787: a `Module` a body handed an executor is written back as its constructor" {
+test "decision 787: a `Module` a body handed an executor is written back as its maker's call (811 (4))" {
     const loadMod = @import("../load.zig");
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"src/cases/fine/mod.bp\"}", .{});
     try std.testing.expectEqualStrings(
-        loadMod.module_alias ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\")",
+        loadMod.module_fn ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\")",
         (try loadMod.recordSource(arena, parsed)).?,
     );
     try std.testing.expectEqualStrings("src/cases/fine/mod.bp", loadMod.valuePath(parsed, null).?);
@@ -325,7 +325,7 @@ test "decision 789 (4): an expanded function's handled load that returns takes i
         \\
         \\fn runCase(comptime name: string) -> void {
         \\    val loaded = try comptime compiler.load("src/cases/" + name + ".bp") catch { r ->
-        \\        compiler.init({ -> print("refused " + r.module.path) });
+        \\        compiler.init({ -> print("refused " + r.module.path()) });
         \\        return;
         \\    };
         \\    compiler.init({ -> try loaded.run() catch { f -> print(f.message) }; });

@@ -389,6 +389,10 @@ pub const ParseErrorType = enum {
     /// a behavior's bodyless member: a marker says how a body compiles, and a
     /// declaration has none (open point B-116-b). Located at the marker.
     markerOnDeclaration,
+    /// Decision 811 (1) — `opaque` written before a type with no field list
+    /// (an enum, a namespace type) or before a type alias: the modifier
+    /// closes a record's constructor and fields. Located at `opaque`.
+    opaqueNotRecord,
 };
 
 pub const ParseErrorInfo = struct {
@@ -677,7 +681,7 @@ pub const Parser = struct {
                 break :blk .{ .@"fn" = d };
             } else if (this.isTypeAliasAt(0)) blk: {
                 break :blk .{ .typeAlias = try this.parseTypeAliasDecl(alloc) };
-            } else if (this.checkShorthandNamed(.type)) blk: {
+            } else if (this.checkShorthandNamed(.type) or this.checkOpaqueType()) blk: {
                 const d = try this.parseShorthandTypeDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .type_ = d };
@@ -757,6 +761,8 @@ pub const Parser = struct {
                         const off = if (isPub) annEnd + 1 else annEnd;
                         // Decision 553 (1) — `#[…] [pub] <marker> fn`.
                         if (this.markedFnAt(off)) break :blk2 DeclKind{ .@"fn" = try this.parseFnDecl(alloc) };
+                        // Decision 811 (1) — `#[…] [pub] opaque type X(…)`.
+                        if (this.opaqueTypeAt(off)) break :blk2 DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) };
                         if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
                         return ParseError.UnexpectedToken;
                     },
@@ -1021,6 +1027,20 @@ pub const Parser = struct {
         if (this.check(kind)) return this.peekAt(1).kind == .identifier;
         if (this.check(.@"pub")) return this.peekAt(1).kind == kind and this.peekAt(2).kind == .identifier;
         return false;
+    }
+
+    /// Decision 811 (1) — the contextual word `opaque` at `offset`, followed
+    /// by `type` and a name: the modifier of a type declaration. `opaque`
+    /// stays a free identifier everywhere else.
+    pub fn opaqueTypeAt(this: *This, offset: usize) bool {
+        const t = this.peekAt(offset);
+        return t.kind == .identifier and std.mem.eql(u8, t.lexeme, "opaque") and
+            this.peekAt(offset + 1).kind == .type and this.peekAt(offset + 2).kind == .identifier;
+    }
+
+    /// `[pub] opaque type Name` next (decision 811 (1)).
+    pub fn checkOpaqueType(this: *This) bool {
+        return this.opaqueTypeAt(0) or (this.check(.@"pub") and this.opaqueTypeAt(1));
     }
 
     /// true for a named shorthand decl `Name <kind> …` or `pub Name <kind> …`,
@@ -1891,6 +1911,8 @@ pub const Parser = struct {
         annotations: []Annotation,
         /// Where the name is written.
         nameLoc: ast.Loc = .{ .line = 0, .col = 0 },
+        /// Decision 811 (1) — `opaque` written before `type` (shorthand only).
+        opaqueTok: ?Token = null,
     };
 
     /// Frees an owned annotation slice (used on declaration parse-error paths).
@@ -1909,10 +1931,13 @@ pub const Parser = struct {
             const annotations = try this.parseAnnotations(alloc);
             errdefer freeAnnotations(alloc, annotations);
             const isPub = this.match(.@"pub");
+            // Decision 811 (1) — `[pub] opaque type X(…)`: the contextual
+            // word before `type` (the lexer reads it as an identifier).
+            const opaqueTok: ?Token = if (keyword == .type and this.opaqueTypeAt(0)) this.advance() else null;
             _ = try this.consume(keyword);
             const nameTok = try this.consume(.identifier);
             _ = this.tryParseId();
-            return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok) };
+            return .{ .isPub = isPub, .name = nameTok.lexeme, .annotations = annotations, .nameLoc = locFromToken(nameTok), .opaqueTok = opaqueTok };
         }
         const isPub = this.match(.@"pub");
         _ = try this.consume(.val);

@@ -150,6 +150,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "remove the marker",
             .hint = "A marker says how a body compiles (decision 553); a bodyless declaration has none, and its return type alone says what it answers.",
         },
+        .opaqueNotRecord => .{
+            .code = "opaque-not-record",
+            .message = "`opaque` closes a record's constructor and fields, and this type has none",
+            .caretCaption = "write `opaque` before a type with a field list",
+            .hint = "An opaque type is a record whose constructor and fields are used only inside its own methods (decision 811): `pub opaque type Token(value: string) { pub fn of(value: string) -> Token { return Token(value: value); } }`. An enum, a namespace type and a type alias take no `opaque`.",
+        },
         .nestedFnDecl => .{
             .code = "nested-fn-decl",
             .message = "a `fn` is declared at module level, not inside a body",

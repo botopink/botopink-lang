@@ -1608,11 +1608,28 @@ pub fn parseTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl 
 
 /// Shorthand: `#[…] [pub] type Name<G>(fields) implement B { … }`.
 pub fn parseShorthandTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
-    const startLoc = parser.Parser.locFromToken(this.peekAt(this.skipAnnotationsLookaheadFrom(0)));
+    const annEnd = this.skipAnnotationsLookaheadFrom(0);
+    const startLoc = parser.Parser.locFromToken(this.peekAt(annEnd));
+    // Decision 811 (1) — `opaque type X = …` is an alias, no type of its own.
+    const opaqueAt = if (this.peekAt(annEnd).kind == .@"pub") annEnd + 1 else annEnd;
+    if (this.opaqueTypeAt(opaqueAt) and this.isTypeAliasAt(opaqueAt + 1)) {
+        this.parseError = ParseErrorInfo.fromToken(.opaqueNotRecord, this.peekAt(opaqueAt));
+        return ParseError.UnexpectedToken;
+    }
     const p = try this.parseDeclPreamble(alloc, .type, true);
     errdefer freeAnnotations(alloc, p.annotations);
     var t = try this.parseTypeDeclRest(alloc, p.name, p.annotations, p.isPub);
     t.startLoc = startLoc;
+    if (p.opaqueTok) |ot| {
+        // Decision 811 (1) — the modifier closes a record's constructor and
+        // fields: a type with no field list has neither.
+        if (!t.isRecord() or t.isNamespace or t.isPrimitive) {
+            t.deinit(alloc);
+            this.parseError = ParseErrorInfo.fromToken(.opaqueNotRecord, ot);
+            return ParseError.UnexpectedToken;
+        }
+        t.isOpaque = true;
+    }
     return t;
 }
 

@@ -91,7 +91,8 @@ under `deps/<lib>/…` — wherever the cell is checked from.
 A type is declared with `type` and a contract with `behavior`; `record`, `enum`
 and `interface` are gone, and so are `auto`, `derive`, `get`, `macro`,
 `opaque`, `private`, `set`, `new` and `delegate` — all of them are ordinary
-identifiers now. An anonymous group of values is a tuple, `#(…)`, which
+identifiers now (`opaque` right before `type` is the modifier of decision 811,
+§ `opaque` types). An anonymous group of values is a tuple, `#(…)`, which
 replaces the old anonymous record. Repetition is three keywords with one meaning
 each — `for (xs) { x -> … }`, `while (cond) { … }`, `loop { … }` — and `loop (…)`
 reports an error naming `for` and `while`. A host template numbers its parameters
@@ -1100,6 +1101,30 @@ index, a module-level tuple's read inside a function too:
 A tuple's `toString()` is the text `print` writes for it — `#(1, 2)`, its string elements quoted, a nested tuple inside — and it joins a string in a `+` the same way:
 
 <!-- example: modules/tuple/run/src/cases/tuple_to_string -->
+
+### `opaque` types
+
+`opaque`, written before `type` (`[pub] opaque type X(…) { … }`, as `component` is
+before `fn`), closes a record to everything outside its own methods (decisions 811,
+814): `X(…)` is written only inside `X`'s methods, and a field is read only there —
+not elsewhere in `X`'s module either; outside, an `X` is named, passed, stored,
+compared with `==` and tested with `is`, never built nor opened. A method written
+without `pub` is called anywhere in `X`'s module, as every declaration without `pub`
+is, and from no other — the compiler's own lowering reaches one from any module,
+under a name no source spells. A method may share a field's name: outside,
+`t.value()` is the method.
+
+<!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_type_through_methods -->
+
+`X(…)` written outside `X`'s methods is `opaque-construction`, at the call, naming
+the `pub` methods that make one; a field read there, or a pattern of the fields
+(`case t { X(f: v) -> … }`), is `opaque-field`; a method without `pub` called from
+another module is `opaque-method`, at the call.
+
+<!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_construction -->
+<!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_field -->
+<!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_method -->
+<!-- example: modules/decisions-taken/opaque_type_modifier-811/cells/opaque_pattern -->
 
 ### type — enums
 
@@ -4131,9 +4156,10 @@ A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `comp
 
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_catch_without_try -->
 
-The `Module` (decision 786) is the loaded file's, on both sides: `name` the directory it sits in,
-`path` the file relative to the package (as a `Diagnostic`'s `file`). It carries no target
+The `Module` (decision 786) is the loaded file's, on both sides: `name()` the directory it sits in,
+`path()` the file relative to the package (as a `Diagnostic`'s `file`). It carries no target
 (decision 805 (4)) and no dependency list: the loaded package still resolves its own to compile.
+It is an opaque type (decision 811 (4)): its fields are read through `name()` and `path()`.
 
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
 
@@ -4169,7 +4195,7 @@ contar();`) is computed once and never again by a `run()`.
 outside its init, in a function the init body calls, in a body that runs when the program runs — is
 `run-outside-init`, at the call. `run()` on the `module` of a `Refused` is `run-module-refused`, and
 on a loaded file that declares no `main` `load-no-main`, each at the call. A `Module` is answered by
-`compiler.load` alone: `Module(…)` written by hand is `module-construction`.
+`compiler.load` alone: `Module(…)` written by hand is `opaque-construction` (decision 811 (4)).
 
 <!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/run_outside_init -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/run_in_called_function -->

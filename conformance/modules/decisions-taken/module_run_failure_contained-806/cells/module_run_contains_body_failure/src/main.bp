@@ -20,7 +20,7 @@ fn runCase(comptime name: string) -> void {
             }
             print("end " + name);
         });
-        Error(refused) -> compiler.init({ -> print("refused " + refused.module.path) });
+        Error(refused) -> compiler.init({ -> print("refused " + refused.module.path()) });
     }
 }
 

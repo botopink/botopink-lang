@@ -65,6 +65,12 @@ pub const TypeDef = union(enum) {
         /// True when this type implements the marker `@Renderable` (decision
         /// 354): a `@Component<R>` with this `R` is a component, not a hook.
         renderable: bool = false,
+        /// Decision 811 (1) — `opaque type`: built, opened and its methods
+        /// without `pub` called only inside its own methods (`opaque_types.zig`).
+        opaque_: bool = false,
+        /// Decision 811 (1) — the `pub` methods answering the type, which
+        /// `opaque-construction` names.
+        makers: []const []const u8 = &.{},
     };
 
     pub const Struct = struct {
@@ -1173,11 +1179,9 @@ pub const Env = struct {
     /// Decisions 771, 774 — the local names a leaf import of std's `hooks`
     /// module binds to its `memo` hook (`import {hooks.memo} from "std"`).
     stdMemoNames: std.StringHashMapUnmanaged(void) = .empty,
-    /// Decision 792 (3) — the local names a leaf import binds std's
-    /// `compiler.Module` to: a call of one is `module-construction` (only
-    /// `compiler.load` answers a `Module`). The name the load helper imports
-    /// it under (`load.module_alias`) is the compiler's and never recorded.
-    stdModuleCtorNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 811 (1) — the type whose method body is being checked
+    /// (`inferTypeMethods`): inside it, an opaque type is built and opened.
+    opaqueOwner: ?[]const u8 = null,
     /// Decisions 755, 771 — each `use memo(make)`, by the `use`'s location:
     /// the `T` it answers. The scope lowering gives each one a slot made with
     /// the component's value (`context_lower.zig`).
@@ -1845,6 +1849,11 @@ pub const Env = struct {
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.
     importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The constructor `registerImportedTypeAlias` bound each alias to: the
+    /// alias still names the type while its binding is that one, even after
+    /// the declared name was bound again (std's `compiler.Module`, decision
+    /// 811 (4): `Bp__LoadModule.of(…)` read as `Module.of(…)`).
+    importedTypeAliasCtors: std.StringHashMapUnmanaged(*T.Type) = .empty,
     /// An import item whose name another module the backends' name-keyed
     /// lookup would also read declares, out of the checker's reach: a BUNDLED
     /// package's module beside a shorthand `import {x};` (decision 170), a

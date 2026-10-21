@@ -166,6 +166,13 @@ A trailing `{` without `->` is a block too (`TrailingLambda.isBlock`, located at
 checker refuses it where the call expects a function, and `botopink format` writes it back as
 `{ -> … }`. `@block` is a parse error, `removed-block-builtin`, at the builtin.
 
+**Decision 811 (1) — `opaque`.** A contextual word too: `opaqueTypeAt` reads `opaque` followed by `type` and a
+name, `checkOpaqueType` that or `pub` before it; the top-level dispatcher and the annotated one send it to
+`parseShorthandTypeDecl`, whose preamble (`parseDeclPreamble`) consumes it into `DeclPreamble.opaqueTok`, and the
+declaration is `TypeDecl.isOpaque` (left out of the dump when false). Before a type with no field list (an enum,
+a namespace or primitive type) or a type alias it is `opaque-not-record`, at the word. Anywhere else `opaque`
+stays a name. The checker's rules are `comptime/opaque_types.zig`'s.
+
 **Decision 553 (1) — the body markers.** `async`, `iter`, `async iter` and `component` stay contextual
 words (the lexer reads identifiers); `decls.markerAt` reads one at an offset, `markedFnAt` one followed
 by `fn`. A declaration takes it right before `fn` — `[#[…]] [pub] [default] [declare] <marker> fn`

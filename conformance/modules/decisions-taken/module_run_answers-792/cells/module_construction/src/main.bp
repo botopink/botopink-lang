@@ -1,10 +1,10 @@
-//// Decision 792 (3) — a `Module` is answered by `compiler.load` alone: its constructor is
-//// std's, and `Module(…)` written by hand is refused `module-construction`, located at the
-//// call. Its fields stay readable on the `Module` a load answers.
+//// Decisions 792 (3), 811 (4) — a `Module` is answered by `compiler.load` alone: std's `Module`
+//// is opaque, and `Module(…)` written by hand is refused `opaque-construction`, located at the
+//// call. Its fields are read through `name()` and `path()` on the `Module` a load answers.
 
 import {compiler.Module, io.terminal.print} from "std";
 
 pub fn main() -> void {
     val m = Module(name: "fine", path: "src/cases/fine/mod.bp");
-    print(m.path);
+    print(m.path());
 }

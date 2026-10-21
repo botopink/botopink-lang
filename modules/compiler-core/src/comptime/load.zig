@@ -13,7 +13,7 @@
 //!   program never sees the modules. Each refused module is one `Diagnostic`,
 //!   in the order `botopink build` prints them, with the text and the place it
 //!   prints (decision 780 (2), 781).
-//! - The answer is code (`rewrite`): `__bp_loaded(Bp__LoadModule(…),
+//! - The answer is code (`rewrite`): `__bp_loaded(__bp_load_module(…),
 //!   [Bp__LoadDiagnostic(…), …])`, a call of the function `withLoadHelper`
 //!   declares in the module that loads (`Ok(m)` for `[]`, `Error(Refused(m,
 //!   ds))` otherwise, decisions 782, 786), std's `compiler.Module`,
@@ -51,6 +51,13 @@ pub const helper_fn = "__bp_loaded";
 pub const diagnostic_alias = "Bp__LoadDiagnostic";
 /// The local name of std's `compiler.Module` in a module that loads.
 pub const module_alias = "Bp__LoadModule";
+/// Decision 811 (4) — the method of std's opaque `compiler.Module` written
+/// without `pub` that makes one: the lowering's call, no program's.
+pub const module_maker = "of";
+/// The function `withLoadHelper` declares over `module_maker`:
+/// `__bp_load_module(name:, path:)` answers `Bp__LoadModule.of(…)`. A read's
+/// answer and an executor's captured `Module` are written as its call.
+pub const module_fn = "__bp_load_module";
 /// The local name of std's `compiler.Refused` in a module that loads.
 pub const refused_alias = "Bp__LoadRefused";
 
@@ -68,6 +75,11 @@ pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
 const helper_first_line: usize = 3_000_000;
 /// Where each rewrite's line is: one line per call, from its location.
 const rewrite_first_line: usize = 4_000_000;
+// Decision 811 (4) — the helper (`module_fn`) is the compiler's own lowering,
+// which calls `Module.of`: its lines are past `opaque_types.lowering_first_line`.
+comptime {
+    std.debug.assert(helper_first_line >= @import("opaque_types.zig").lowering_first_line);
+}
 
 /// The caller build's modules, for the dependencies a loaded file's package
 /// shares with its caller (the caller's manifest): set by `comptime.compile`
@@ -254,7 +266,8 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         else => {},
     };
     const base = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
-        "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n";
+        "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n" ++
+        "fn " ++ module_fn ++ "(name: string, path: string) -> " ++ module_alias ++ " { return " ++ module_alias ++ "." ++ module_maker ++ "(name: name, path: path); }\n";
     // A module that writes a `run()` also gets what the call is rewritten to
     // (`runRewrite`): std's `compiler.RunFailure` and `run_fn` (decision 806).
     var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
@@ -303,7 +316,7 @@ pub const Loaded = struct {
     }
 };
 
-/// The call a read at `loc` is rewritten to: `__bp_loaded(Bp__LoadModule(…),
+/// The call a read at `loc` is rewritten to: `__bp_loaded(__bp_load_module(…),
 /// […])`, one `Bp__LoadDiagnostic(…)` per refusal, on a line of its own.
 pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []const Diagnostic) error{OutOfMemory}!*ast.Expr {
     var text: std.ArrayListUnmanaged(u8) = .empty;
@@ -414,7 +427,13 @@ pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds:
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.appendSlice(arena, "fn __bp_load_rewrite() { ");
     try text.appendSlice(arena, if (ds.len == 0) "Ok(" else "Error(" ++ refused_alias ++ "(module: ");
-    try writeModule(arena, &text, loaded);
+    // The comptime runtime's host record (`decorator_eval`), built by its
+    // constructor: no program reads it, and an executor writes it back as
+    // `__bp_load_module(…)` (`recordSource`).
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
+        try blockEval.stringLexeme(arena, loaded.name()),
+        try blockEval.stringLexeme(arena, loaded.path),
+    });
     if (ds.len > 0) {
         try text.appendSlice(arena, ", diagnostics: ");
         try writeDiagnostics(arena, &text, ds);
@@ -490,7 +509,7 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
             }
             const path = jsonString(o, "path") orelse return false;
             const name = jsonString(o, "name") orelse return false;
-            try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
+            try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\")", .{
                 try blockEval.stringLexeme(arena, name),
                 try blockEval.stringLexeme(arena, path),
             });
@@ -528,17 +547,18 @@ const run_fn_src =
 pub const run_alias_prefix = "__bp_run__";
 
 /// The path of the `Module` a `run()` is called on, read off the receiver as
-/// an executor holds it (`recordSource`): `Bp__LoadModule(…, path: "…", …)`,
+/// an executor holds it (`recordSource`): `__bp_load_module(…, path: "…")`,
 /// or `Bp__LoadRefused(module: …, …).module`. Null for any other receiver.
 pub fn receiverPath(arena: std.mem.Allocator, written: *const ast.Expr) !?[]const u8 {
-    // A splice stands parenthesised: `(Bp__LoadModule(…)).run()`.
+    // A splice stands parenthesised: `(__bp_load_module(…)).run()`.
     var e = written;
     while (e.* == .collection and e.collection.kind == .grouped) e = e.collection.kind.grouped;
     switch (e.*) {
         .call => |c| if (c.kind == .call) {
             const cc = c.kind.call;
+            // `__bp_load_module(…, path: "…")` (decision 811 (4)).
             if (cc.receiver != null or cc.is_builtin) return null;
-            if (!std.mem.eql(u8, cc.callee, module_alias)) return null;
+            if (!std.mem.eql(u8, cc.callee, module_fn)) return null;
             for (cc.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, "path")) return foldedPath(arena, a.value);
         },
         .identifier => |id| switch (id.kind) {
@@ -810,9 +830,11 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
     return out;
 }
 
-/// `Bp__LoadModule(name: …, path: …)`.
+/// `__bp_load_module(name: …, path: …)` — decision 811 (4): std's opaque
+/// `Module` made by its method without `pub` (`module_fn`'s body, the only
+/// call of it).
 fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded) !void {
-    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
+    try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\")", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
     });

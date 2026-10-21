@@ -1,0 +1,52 @@
+//// Decisions 811 (1), 814 — an opaque type is built and opened only inside its own methods:
+//// outside, a `Token` is made by `Token.of`, read through its `pub` methods, passed, stored,
+//// compared with `==` and tested with `is`; its methods without `pub` are called anywhere in
+//// its module.
+
+import {io.terminal.print} from "std";
+
+pub opaque type Token(value: string, uses: i32) {
+    pub fn of(value: string) -> Token {
+        return Token(value: value, uses: 0);
+    }
+
+    // Without `pub`: called only in this module (decision 814 (2)).
+    fn bumped(t: Token) -> Token {
+        return Token(value: t.value, uses: t.uses + 1);
+    }
+
+    pub fn used(self: Self) -> Token {
+        return Token.bumped(self);
+    }
+
+    // A method may share a field's name: outside, `t.value()` is the method.
+    pub fn value(self: Self) -> string {
+        return self.value;
+    }
+
+    pub fn uses(self: Self) -> i32 {
+        return self.uses;
+    }
+}
+
+// Decision 814 (2) — a method without `pub` is called anywhere in its module.
+fn twice(t: Token) -> Token {
+    return Token.bumped(Token.bumped(t));
+}
+
+fn describe(t: Token) -> string {
+    return t.value() + "×" + t.uses().toString();
+}
+
+pub fn main() -> void {
+    val a = Token.of("a");
+    val b = a.used().used();
+    print(describe(b));
+    print(describe(twice(a)));
+    val kept: Token[] = [a, b];
+    print(kept.length);
+    print(a == Token.of("a"));
+    print(a == b);
+    val x: Token | string = b;
+    print(x is Token);
+}

@@ -342,9 +342,15 @@ pub const run_module_refused: []const u8 = "run-module-refused";
 /// Decisions 787 (3), 792 (4) — `run()` on a loaded file that declares no
 /// `main`.
 pub const load_no_main: []const u8 = "load-no-main";
-/// Decision 792 (3) — a `compiler.Module` written by hand: only
-/// `compiler.load` answers one.
-pub const module_construction: []const u8 = "module-construction";
+/// Decision 811 (1) — `X(…)` of an opaque type written outside `X`'s own
+/// methods (decision 792 (3)'s `module-construction` among them).
+pub const opaque_construction: []const u8 = "opaque-construction";
+/// Decision 811 (1) — a field of an opaque type read (or opened by a pattern)
+/// outside its own methods.
+pub const opaque_field: []const u8 = "opaque-field";
+/// Decisions 811 (1), 814 (2) — a method of an opaque type written without
+/// `pub`, called outside the type's module.
+pub const opaque_method: []const u8 = "opaque-method";
 /// Decision 793 (1) — a `return` or a `throw` inside a top-level `comptime
 /// { … }` block: a block is a build body that answers nothing.
 pub const comptime_block_exit: []const u8 = "comptime-block-exit";
@@ -1027,7 +1033,9 @@ pub const all_codes = [_][]const u8{
     run_module_untraced,
     run_module_refused,
     load_no_main,
-    module_construction,
+    opaque_construction,
+    opaque_field,
+    opaque_method,
     comptime_block_exit,
     bytes_widened,
     bytes_type_test,

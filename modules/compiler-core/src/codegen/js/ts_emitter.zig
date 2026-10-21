@@ -188,6 +188,7 @@ fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
             try w.writeAll(";\n");
         },
         .ctor => |c| {
+            try w.writeAll(c.modifier);
             try w.writeAll("constructor");
             try writeParams(w, c.params);
             try w.writeAll(";\n");

@@ -536,15 +536,19 @@ const Builder = struct {
         defer self.self_type = saved_self;
         self.self_type = try self.selfTypeOf(r.name, r.genericParams);
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
-        for (r.recordFields()) |f| try members.append(self.b.arena, .{ .field = .{
+        // Decision 811 (1) — an opaque type is neither built nor opened
+        // outside its own methods: no field, a `private constructor`, and
+        // only its `pub` methods.
+        if (!r.isOpaque) for (r.recordFields()) |f| try members.append(self.b.arena, .{ .field = .{
             .modifier = "readonly ",
             .name = f.name,
             .type = try self.typeRef(f.typeRef),
         } });
         const ctor_params = try self.b.arena.alloc(js.TsParam, r.recordFields().len);
         for (r.recordFields(), 0..) |f, i| ctor_params[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
-        try members.append(self.b.arena, .{ .ctor = .{ .params = ctor_params } });
+        try members.append(self.b.arena, .{ .ctor = .{ .modifier = if (r.isOpaque) "private " else "", .params = ctor_params } });
         for (r.methods) |m| {
+            if (r.isOpaque and !m.isPub) continue;
             if (m.is_declare and !declaresHostMember(m)) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
             if (ast.templateTextIndex(m.params) != null) continue; // a template method (decision 578)

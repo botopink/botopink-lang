@@ -4815,6 +4815,11 @@ pub const TypeDecl = struct {
     /// gives it (`array<T>`'s `val length: i32;`). Empty on every other type;
     /// left out of the dump when empty.
     properties: []BehaviorField = &.{},
+    /// Decision 811 (1) — `[pub] opaque type X(…)`: `X(…)` is written and a
+    /// field read only inside `X`'s own methods, and a method without `pub`
+    /// is called only there (and by the compiler's own lowering). Left out of
+    /// the dump when false.
+    isOpaque: bool = false,
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -4872,7 +4877,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive", "properties" });
+        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive", "properties", "isOpaque" });
     }
 };
 

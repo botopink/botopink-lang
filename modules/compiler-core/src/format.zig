@@ -2878,6 +2878,8 @@ pub const Formatter = struct {
         var parts: std.ArrayList(*const Doc) = .empty;
         try parts.append(this.arena, try this.fmtAnnotations(t.annotations));
         if (t.isPub) try parts.append(this.arena, try this.text("pub "));
+        // Decision 811 (1) — the modifier before `type`.
+        if (t.isOpaque) try parts.append(this.arena, try this.text("opaque "));
         try parts.append(this.arena, try this.text("type "));
         try parts.append(this.arena, try this.text(t.name));
         try parts.append(this.arena, try this.fmtGenericParams(t.genericParams));

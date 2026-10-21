@@ -1541,9 +1541,24 @@ fn findType(env: *Env, name: []const u8) ?FoundType {
         // Decision 575 (6) — `Implementation` and its cells' enums, the
         // prelude's (`external.bp`): a source annotation builds one.
         if (externalPreludeType(env.arena, name)) |decl| return .{ .decl = decl, .helpers = &.{} };
+        // Decision 811 (4) — the `Module` a `compiler.load` read answers in a
+        // body that runs at build (`load.runtimeAnswer`, the host record
+        // `Bp__LoadModule`): std's opaque `compiler.Module`, carried under that
+        // name so `m.name()` / `m.path()` run.
+        if (std.mem.eql(u8, name, @import("load.zig").module_alias)) if (stdLoadModule(env)) |decl| return .{ .decl = decl, .helpers = &.{} };
         return sectionType(env, name);
     };
     return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
+}
+
+/// Decision 811 (4) — std's `compiler.Module`, named `load.module_alias`.
+fn stdLoadModule(env: *Env) ?ast.TypeDecl {
+    const registry = env.typeDeclRegistry orelse return null;
+    const d = (registry.get("std/compiler") orelse return null).get("Module") orelse return null;
+    if (d != .type_) return null;
+    var decl = d.type_;
+    decl.name = @import("load.zig").module_alias;
+    return decl;
 }
 
 /// The type `name` the scope of `owner`, a module other than the one this

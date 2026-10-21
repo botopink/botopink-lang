@@ -224,6 +224,27 @@ test "surface: braces holding functions declare a namespace type, whose function
     try expectError("type P { fn g() {} declare fn f(self: Self); }", .namespaceTypeSelf, 1, 33);
 }
 
+test "surface: `opaque` before `type` marks a record opaque, and stays a name elsewhere (decision 811)" {
+    var parsed = try parse("pub opaque type T(v: i32) { fn of(v: i32) -> T { return T(v: v); } }");
+    defer parsed.deinit();
+    const t = try onlyType(parsed);
+    try std.testing.expect(t.isOpaque);
+    try std.testing.expect(t.isPub);
+    try std.testing.expectEqualStrings("T", t.name);
+    var annotated = try parse("#[mark] opaque type U(v: i32)");
+    defer annotated.deinit();
+    try std.testing.expect((try onlyType(annotated)).isOpaque);
+    var plain = try parse("type P(v: i32)");
+    defer plain.deinit();
+    try std.testing.expect(!(try onlyType(plain)).isOpaque);
+    var named = try parse("fn f(opaque: i32) -> i32 { val opaque2 = opaque; return opaque2; }");
+    defer named.deinit();
+    // Not on an enum, a namespace type nor an alias: `opaque-not-record`, at the word.
+    try expectError("opaque type E { A, B }", .opaqueNotRecord, 1, 1);
+    try expectError("pub opaque type N { fn f() -> i32 { return 1; } }", .opaqueNotRecord, 1, 5);
+    try expectError("opaque type A = i32;", .opaqueNotRecord, 1, 1);
+}
+
 test "surface: a type declared in a type's body is its associated type (decision 330 (7))" {
     var parsed = try parse("type S { pub type P(x: i32) type K { A, B } fn f() -> i32 { return 1; } }");
     defer parsed.deinit();

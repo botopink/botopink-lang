@@ -110,6 +110,17 @@ test "decision 786: the records `compiler.load` answers are std's `compiler.Modu
         const fields = record.recordFields();
         try std.testing.expectEqual(r.fields.len, fields.len);
         for (r.fields, fields) |want, f| try std.testing.expectEqualStrings(want, f.name);
+        // Decision 811 (4) — `Module` is opaque, made by the method without
+        // `pub` the lowering calls (`load.module_maker`), its fields read
+        // through `pub fn name` / `pub fn path`; `pub fn run` (decision 806)
+        // beside them.
+        if (std.mem.eql(u8, r.name, "Module")) {
+            try std.testing.expect(record.isOpaque);
+            for (record.methods) |m| {
+                if (std.mem.eql(u8, m.name, loadMod.module_maker)) try std.testing.expect(!m.isPub) else try std.testing.expect(m.isPub);
+            }
+            try std.testing.expectEqual(@as(usize, 4), record.methods.len);
+        }
     }
     // `load` answers them: `Result<Module, Refused>`.
     const behavior = for (program.decls) |d| {

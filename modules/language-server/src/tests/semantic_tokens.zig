@@ -124,6 +124,18 @@ test "semanticTokens: body markers" {
     try run(std.testing.allocator, "semantic_tokens_body_markers", source);
 }
 
+// Decision 811 (1) — `opaque` is a keyword right before `type`; elsewhere the
+// word stays a name (`val opaque = 1`).
+test "semanticTokens: the opaque modifier" {
+    const source =
+        \\pub opaque type Token(v: i32) {
+        \\    pub fn of(v: i32) -> Token { return Token(v: v); }
+        \\}
+        \\val opaque = 1;
+    ;
+    try run(std.testing.allocator, "semantic_tokens_opaque_modifier", source);
+}
+
 // ── ST4 — builtin @Type classified as type + defaultLibrary ───────────────────
 
 test "semanticTokens: builtin @Type is type + defaultLibrary" {

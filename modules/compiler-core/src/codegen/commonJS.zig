@@ -1827,6 +1827,12 @@ const Emitter = struct {
     /// the module that emits it, in the order reached. The module requires each
     /// under `reached_enum_prefix ++ <type>` (`reachedEnumRequires`).
     reached_enums: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 811 (4) — `Type.method` for each method a record of this
+    /// module declares under the name of one of its own fields (`Module`'s
+    /// `name` / `path`): the field, an own property of the instance, shadows
+    /// the prototype's method, so `recv.name()` lowers to
+    /// `Type.prototype.name.call(recv)` (`shadowedMethodOwner`).
+    shadowed_methods: std.StringHashMapUnmanaged(void) = .empty,
     /// Every payload-less variant name declared by an enum in this module
     /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
     /// binding" — nothing more. The JS class the variant's singleton is an
@@ -2285,6 +2291,9 @@ const Emitter = struct {
                 const names = try self.arena().alloc([]const u8, r.recordFields().len);
                 for (r.recordFields(), 0..) |f, i| names[i] = f.name;
                 try self.record_fields.put(r.name, names);
+                for (r.methods) |m| for (names) |n| {
+                    if (std.mem.eql(u8, n, m.name)) try self.shadowed_methods.put(self.arena(), try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ r.name, m.name }), {});
+                };
             },
             // An imported record is a class in its own module — a
             // construction here (`App(8080, "/")`) still needs `new`.
@@ -2435,6 +2444,35 @@ const Emitter = struct {
             if (std.mem.eql(u8, m.name, method)) break true;
         } else false;
         if (!has) return null;
+        try self.reached_enums.put(self.arena(), type_name, info.module);
+        return try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{type_name});
+    }
+
+    /// Decision 811 (4) — the class whose method `recv.<method>(…)` calls when
+    /// that method shares its name with one of the record's fields: the field
+    /// is an own property of the instance and hides the method, so the call is
+    /// `<Class>.prototype.<method>.call(recv, …)`. The record is this module's
+    /// (`shadowed_methods`) or another's, required as `reached_enums` are.
+    /// Null for every other call.
+    fn shadowedMethodOwner(self: *Emitter, loc: ast.Loc, method: []const u8) !?[]const u8 {
+        const lw = self.lowerings orelse return null;
+        const type_name = switch (lw.get(loc) orelse return null) {
+            .type_, .unplaced_type => |n| n,
+            else => return null,
+        };
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ type_name, method }) catch return null;
+        if (self.shadowed_methods.contains(key)) return type_name;
+        const xc = self.cross orelse return null;
+        const info = xc.picked(type_name, null, null) orelse return null;
+        if (info.kind != .record) return null;
+        const field = for (info.fields) |f| {
+            if (std.mem.eql(u8, f, method)) break true;
+        } else false;
+        const has = for (info.methods) |m| {
+            if (std.mem.eql(u8, m.name, method)) break true;
+        } else false;
+        if (!field or !has) return null;
         try self.reached_enums.put(self.arena(), type_name, info.module);
         return try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{type_name});
     }
@@ -7232,6 +7270,13 @@ const Emitter = struct {
             // `Sym.m(recv, args)` at activated call sites.
             if (self.rewrites.get(loc)) |sym| {
                 callee = try self.b.member(.{ .name = sym }, cc.callee);
+                try args.append(self.arena(), try self.buildExpr(recv.*));
+            } else if (!cc.optional and try self.shadowedMethodOwner(loc, cc.callee) != null) {
+                // Decision 811 (4) — a method its own field hides:
+                // `Type.prototype.m.call(recv, args)`.
+                const owner = (try self.shadowedMethodOwner(loc, cc.callee)).?;
+                const proto = try self.b.member(.{ .name = owner }, "prototype");
+                callee = try self.b.member(try self.b.member(proto, cc.callee), "call");
                 try args.append(self.arena(), try self.buildExpr(recv.*));
             } else if (try self.enumMethodOwner(if (cc.optional) .{
                 .line = loc.line,

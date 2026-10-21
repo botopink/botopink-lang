@@ -517,8 +517,9 @@ pub const TsMember = union(enum) {
     getter: struct { name: []const u8, type: TsType },
     /// `set name(p: T);`
     setter: struct { name: []const u8, params: []const TsParam },
-    /// `constructor(params);`
-    ctor: struct { params: []const TsParam },
+    /// `<modifier>constructor(params);` — `private ` for an opaque type's
+    /// (decision 811).
+    ctor: struct { modifier: []const u8 = "", params: []const TsParam },
     /// `name = "name",` — an enum member.
     enum_member: struct { name: []const u8, value: []const u8 },
 };

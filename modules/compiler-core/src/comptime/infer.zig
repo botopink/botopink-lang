@@ -58,6 +58,7 @@ const writtenNames = @import("written_names.zig");
 const typedMeta = @import("typed_meta.zig");
 const typeIdentity = @import("type_identity.zig");
 const expandCall = @import("expand_call.zig");
+const opaqueTypes = @import("opaque_types.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -147,11 +148,6 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
         .module => |m| m,
         .root, .key => return,
     };
-    if (std.mem.eql(u8, module, "std/compiler")) {
-        // Decision 792 (3) — `Module` is made by `compiler.load` alone.
-        if (std.mem.eql(u8, imp.leaf(), "Module") and !std.mem.eql(u8, local, loadMod.module_alias)) try env.stdModuleCtorNames.put(env.arena, local, {});
-        return;
-    }
     if (std.mem.eql(u8, module, "std/hooks")) {
         // Decisions 771, 774 — std's `hooks.memo`, lowered where it is `use`d.
         if (std.mem.eql(u8, imp.leaf(), "memo")) try env.stdMemoNames.put(env.arena, local, {});
@@ -2984,6 +2980,8 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
         .fields = fields,
         .implements = implNames,
         .renderable = implementsRenderable(r.implement),
+        .opaque_ = r.isOpaque,
+        .makers = if (r.isOpaque) try opaqueTypes.makers(env.arena, r) else &.{},
     } });
 
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
@@ -9695,6 +9693,12 @@ fn inferTypeMethods(
         const outerScope = env.openBodyScope(&bodyLog);
         defer env.closeBodyScope(&bodyLog, outerScope, m.name);
 
+        // Decision 811 (1) — inside a method of `typeName`, an opaque
+        // `typeName` is built and opened.
+        const savedOpaqueOwner = env.opaqueOwner;
+        env.opaqueOwner = typeName;
+        defer env.opaqueOwner = savedOpaqueOwner;
+
         // `@src().fnName` inside a method is `Type.method` (decision 73).
         const savedFnName = env.currentFnName;
         env.currentFnName = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ typeName, m.name });
@@ -10310,7 +10314,10 @@ pub fn registerImportedTypeAlias(env: *Env, decl: ast.DeclKind, alias: []const u
         .targetLoc = loc,
     });
     try env.importedTypeAliases.put(env.arena, alias, real);
-    if (env.lookup(real)) |ctor| try env.bind(alias, ctor);
+    if (env.lookup(real)) |ctor| {
+        try env.bind(alias, ctor);
+        try env.importedTypeAliasCtors.put(env.arena, alias, ctor);
+    }
 }
 
 /// Decision 310 — `import {m1.T as A}` beside an import of another module's
@@ -15104,6 +15111,11 @@ fn bindPatternNamesForSubject(
                 for (v.payload.literals) |bound| try bindPatternNamesForSubject(env, bound, subjectType, snapshots);
                 return;
             }
+            // Decision 811 (1) — a record pattern opens the value: refused on
+            // an opaque type outside its own methods.
+            if (v.shape == .variant and !isEnumVariantNameForSubject(env, subjectType, v.name)) {
+                try opaqueTypes.refusePattern(env, env.importedTypeAliases.get(v.name) orelse v.name);
+            }
             // C8 — each payload binding takes the variant field's declared type,
             // instantiated against the subject's generic args. A record's
             // constructor pattern (`val assert Person(n, a) = p catch …`, the
@@ -17464,12 +17476,14 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         .call => |c| blk: {
             try noteKeyedRowRead(env, c);
             try checkStdContextCall(env, c);
+            try checkOpaqueCall(env, c);
             // Decisions 416, 722 — `inject(R)` names a type: the call answers
             // `@Component<R>`, typed here; `context(T)` with a bare type is
             // refused here, `context(ctx)` typed as any call.
             if (try contextReadCall(env, c)) |typed| break :blk typed;
             try noteTypeTokenHandOns(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
+            try checkOpaqueMethodCall(env, typedCall);
             try noteComponentCall(env, c, typedCall);
             try noteHostCall(env, c);
             try noteTypeTokenArgs(env, c, typedCall);
@@ -17775,8 +17789,9 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
 fn importedTypeAliasTarget(env: *Env, name: []const u8) ?[]const u8 {
     const real = env.importedTypeAliases.get(name) orelse return null;
     if (env.lookup(name)) |bound| {
-        const ctor = env.lookup(real) orelse return null;
-        if (bound != ctor) return null;
+        const own = if (env.importedTypeAliasCtors.get(name)) |c| c == bound else false;
+        const ctor = env.lookup(real) orelse return if (own) real else null;
+        if (bound != ctor and !own) return null;
     }
     return real;
 }
@@ -18099,6 +18114,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                         .record, .struct_ => {
                             if (td.findField(ia.member)) |f| {
                                 try refuseFieldBuildMember(env, recvNamed.name, ia.member, loc);
+                                try opaqueTypes.refuseField(env, recvNamed.name, ia.member, loc);
                                 // The receiver's type, for the backends that
                                 // store a record positionally — erlang and beam
                                 // under decision 21 read `element(N + 1, V)`,
@@ -22254,18 +22270,6 @@ fn noteMemoUse(env: *Env, operand: ast.Expr, typed: TypedExpr, loc: ast.Loc) Inf
 /// whole initializer of a module-level `val` (its identity is the
 /// declaration, 281).
 fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
-    // Decision 792 (3) — a `compiler.Module` is answered by `compiler.load`
-    // alone: its constructor is std's.
-    if (env.stdModuleCtorNames.count() > 0 and c.kind == .call) {
-        const call = c.kind.call;
-        if (call.receiver == null and !call.is_builtin and call.calleeExpr == null and env.localBindDepth(call.callee) == null and env.stdModuleCtorNames.contains(call.callee)) {
-            env.lastError = TypeError.custom(
-                diagnostics.module_construction ++ ": a `compiler.Module` is made only by `compiler.load` — its constructor is std's (decision 792 (3))",
-                "Load the file: `val m = try comptime compiler.load(\"src/cases/<case>/mod.bp\") catch { r -> … };` answers its `Module`, whose fields stay readable.",
-            ).withLoc(c.loc);
-            return error.TypeError;
-        }
-    }
     const which = stdContextCallee(env, c) orelse return;
     switch (which) {
         .context_type => {
@@ -22290,6 +22294,34 @@ fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
             return error.TypeError;
         },
     }
+}
+
+/// Decision 811 (1) — `X(…)` of an opaque `X`, or `X.m(…)` naming one of its
+/// methods without `pub`, outside `X`'s own methods (`opaque_types.zig`).
+fn checkOpaqueCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    if (c.kind != .call) return;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return;
+    if (call.receiver) |recv| {
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return;
+        const raw = recv.identifier.kind.ident;
+        if (env.localBindDepth(raw) != null) return;
+        const name = env.importedTypeAliases.get(raw) orelse raw;
+        return opaqueTypes.refuseMethod(env, name, call.callee, c.loc);
+    }
+    if (env.localBindDepth(call.callee) != null) return;
+    const name = env.importedTypeAliases.get(call.callee) orelse call.callee;
+    return opaqueTypes.refuseConstruction(env, name, c.loc);
+}
+
+/// Decision 811 (1) — `x.m(…)` on a value of an opaque type, `m` written
+/// without `pub`, outside the type's own methods.
+fn checkOpaqueMethodCall(env: *Env, typed: TypedExpr) InferError!void {
+    if (typed != .call or typed.call.kind != .call) return;
+    const call = typed.call.kind.call;
+    const recv = call.receiver orelse return;
+    const name = nominalName(recv.getType()) orelse return;
+    return opaqueTypes.refuseMethod(env, name, call.callee, typed.call.loc);
 }
 
 fn refuseContextHookWithoutUse(env: *Env, name: []const u8, loc: ast.Loc) InferError {
