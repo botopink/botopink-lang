@@ -1273,7 +1273,7 @@ class Scope {
     }
 }
 Scope.prototype.__bp = "Scope";
-Scope.prototype.__bp_b_Closeable = true;
+Scope.prototype["__bp_b_std@primitives@@Closeable"] = true;
 exports.Scope = Scope;
 
 // A root's tree: whether it is closed, the count of its cells, each cell's
@@ -1520,7 +1520,7 @@ function entryNext(e) {
 // value, or the task of a component that awaits —, nothing awaited inside.
 
 function resolve(c, scope, key) {
-    if ((c != null && c.__bp_b_Composable === true)) { return c.compose()(scope, key); }
+    if (c instanceof Composable) { return c.compose()(scope, key); }
     return c(scope, key);
 }
 exports.resolve = resolve;
