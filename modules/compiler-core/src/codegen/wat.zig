@@ -5841,6 +5841,9 @@ const Emitter = struct {
                     // (`gcMapTail`, what `gcArrayHof` builds).
                     if (cc.receiver) |recv| if (std.mem.eql(u8, cc.callee, "map") and cc.args.len == 1) if (lambdaAt(cc, 0)) |lam| {
                         if (self.wasmTypeOf(recv.*).isArrRef()) return .{ .ref = .{ .arr = gcElemClassOf(self.gcMapTail(lam, recv.*)) } };
+                    } else if (self.mapFnValueAnswer(cc.args[0].value.*)) |ans| {
+                        // `xs.map(f)` over a function value `f`: the class of what its type answers.
+                        if (self.wasmTypeOf(recv.*).isArrRef()) return .{ .ref = .{ .arr = gcElemClassOf(ans) } };
                     };
                     // `xs.reverse()` and the like answer an array of the receiver's class.
                     if (cc.receiver) |recv| if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
@@ -17948,6 +17951,16 @@ const Emitter = struct {
         return r;
     }
 
+    /// What a function named at `xs.map(f)` answers, from the function type a
+    /// local holding it was written with (`f: fn(x: f64) -> f64`).
+    fn mapFnValueAnswer(self: *Emitter, a: ast.Expr) ?Repr {
+        const n = plainIdentName(a) orelse return null;
+        if (!self.locals.contains(self.resolveName(n))) return null;
+        const t = self.local_typerefs.get(self.resolveName(n)) orelse return null;
+        if (t != .function) return null;
+        return self.reprOf(t.function.returnType.*);
+    }
+
     /// What the closure `lam` of `recv.map(lam)` answers for one element of
     /// the GC array `recv`: its tail's repr with the parameter bound as the
     /// walk binds it (`gcArrayHof`), a `bool` told from the word it is.
@@ -22586,7 +22599,8 @@ const Emitter = struct {
                 if (self.elemRecordOf(arg)) |r| return .{ .name = n, .ty = r };
                 return .{ .name = n, .ty = switch (self.elemKindOf(arg)) {
                     .str => "string",
-                    .f64 => return null,
+                    // A GC module's copy holds the array as `f64`s (a specialised copy).
+                    .f64 => if (self.mode == .gc) "f64" else return null,
                     .i32 => "i32",
                 } };
             },
