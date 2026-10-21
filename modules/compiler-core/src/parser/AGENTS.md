@@ -590,19 +590,19 @@ A guarded single name (`x if x > 3 -> 1`) still binds, and an
 upper-case name in the arrow form is a variant written bare (`NFKC -> true`), never a
 constant (`conformance/modules/case/refused/src/cases/case_bare_name_arrow_arm`).
 
-### Decision 54 — an optional is matched by `null` and a binder
+### Decision 54 — an optional is matched by `null` and `_` (decision 951)
 
 `null` is a pattern: `parseSimplePattern` lands it as `.ident` carrying the
 keyword's own lexeme, the way `true` and `false` already do. No new `Pattern`
 variant, so no consumer has to learn one — and `null` is a keyword token, so no
 binding can ever carry that name and be mistaken for it.
 
-The arm after a `null` arm is the optional's binder, which is the one place a
-bare lower-case name *is* a pattern. `parseCaseExpr` carries `sawNullArm` and
-passes it to `rejectNonPatternArm`; only the bare-name rewrite is lifted (a
-constant arm is still `case-constant-pattern`). The order is the form: a binder
-written first would match the absent value too, so `null` comes first and the
-parser accepts the binder only after it.
+The arm after a `null` arm is `_`, its body reading the value as `x!` (decision
+951 amends 54): a bare name there, `v { … }`, is `case-bare-name-arm` like a name
+alone in any other arm, and a constant is still `case-constant-pattern`
+(`conformance/modules/decisions-taken/case_optional_bare_name_refused-951`). The
+order is the form: `_` written first would match the absent value too, so
+`null` comes first.
 
 Everything else about the form is the checker's, because it needs the subject's
 type: `optionalNullCaseBinder` (`comptime/infer.zig`) requires the subject to be

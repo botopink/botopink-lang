@@ -16599,7 +16599,7 @@ fn optionalBinderName(pattern: ast.Pattern) ?[]const u8 {
 }
 
 /// Decision 54 — a `case` over a `?T` has exactly one spelling:
-/// `case x { null { … } v { … } }`. This validates it and answers the binder's
+/// `case x { null { … } _ { … x! … } }`. This validates it and answers the binder's
 /// name, or reds with a located diagnostic. Called only when an arm's pattern
 /// is `null`; the arms are the untyped ones, since the shape is a property of
 /// what was written.
@@ -16628,13 +16628,13 @@ fn optionalNullCaseBinder(
     if (optionalInner(subjectType) == null) {
         env.lastError = TypeError.custom(
             "`null` is a pattern only over an optional",
-            "`case x { null { … } v { … } }` matches a `?T` (decision 54). This subject is not one.",
+            "`case x { null { … } _ { … x! … } }` matches a `?T` (decision 54). This subject is not one.",
         ).withLoc(arms[nullIdx].patternLoc);
         return error.TypeError;
     }
 
-    const shapeError = "an optional is matched by `null` and a binder, in that order";
-    const shapeHint = "Decision 54: a `?T` has one pattern form — `case x { null { … } v { … } }`, two arms, no guards. `null` first, because a binder written first would match the absent value too.";
+    const shapeError = "an optional is matched by `null` and `_`, in that order";
+    const shapeHint = "Decision 54: a `?T` has one pattern form — `case x { null { … } _ { … x! … } }`, two arms, no guards, the value read `x!` (decision 951). `null` first, because `_` written first would match the absent value too.";
 
     if (arms.len != 2 or nullIdx != 0 or arms[0].guard != null or arms[1].guard != null) {
         env.lastError = TypeError.custom(shapeError, shapeHint).withLoc(loc);
@@ -16648,7 +16648,7 @@ fn optionalNullCaseBinder(
         if (arm.body == .function and arm.body.function.kind.params.len > 0) {
             env.lastError = TypeError.custom(
                 "an arm of a `?T` `case` takes no parameter",
-                "The binder is the payload already: `case x { null { … } v { … } }` binds `v` to the value inside the optional.",
+                "The `_` arm binds nothing: read the value inside the optional as `x!` (decision 951).",
             ).withLoc(arm.body.getLoc());
             return error.TypeError;
         }
@@ -16683,7 +16683,7 @@ fn refuseVariantPatternOverOptional(
         if (!isVariantShaped) continue;
         env.lastError = TypeError.custom(
             "an optional is matched by `null`, not by a variant",
-            "Decision 54: write `case x { null { … } v { … } }` — the shape `??` and `?.` already use. `Some` and `None` are not spellings this language has.",
+            "Decision 54: write `case x { null { … } _ { … x! … } }` — the shape `??` and `?.` already use. `Some` and `None` are not spellings this language has.",
         ).withLoc(arm.patternLoc);
         return error.TypeError;
     }
@@ -27560,7 +27560,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 if (isNullPattern(arm.pattern)) {
                     env.lastError = TypeError.custom(
                         "`null` is a pattern only over an optional",
-                        "`case x { null { … } v { … } }` matches one `?T` subject (decision 54).",
+                        "`case x { null { … } _ { … x! … } }` matches one `?T` subject (decision 54).",
                     ).withLoc(arm.patternLoc);
                     return error.TypeError;
                 }

@@ -2122,7 +2122,7 @@ this reason.
 |---|---|
 | `if (x)` on a `?T`, no binder | refused — "type mismatch: expected bool, got ?string". There is no truthiness on an optional; `if (x) { v -> … }` is the form (`modules/if/refused/src/cases/if_optional_needs_a_binder`) |
 | `o.inner != null` | only a plain NAME narrows, above. `o.inner.v` answers on commonJS and erlang today, by accident: nothing the rename touches is on that path |
-| `case x { null { … } v { … } }` | narrows already, and not through this channel — a 1-parameter arm binds the whole matched value narrowed by its own pattern (§ `case` and `comptime` block types), which is why the `null` arm leaves `v` the payload |
+| `case x { null { … } _ { … x! … } }` | the `_` arm reads the value as `x!` (decision 951); a binder arm is `case-bare-name-arm` |
 
 **Not implemented.** §4.3 (`a is string` on a statically-known `i32` is a *warning*, always false)
 needs the warning channel `comptime/**` does not have — the same gap §2.4 and §1.4 hit. §4.1's
@@ -2851,18 +2851,18 @@ as are the tuple and range shapes that ride the same node, and any variant whose
 declaration the env cannot resolve. `variantPayloadFieldNames` is the lookup —
 the names beside `variantPayloadTypes`' types.
 
-## Decision 54 — an optional is matched by `null` and a binder
+## Decision 54 — an optional is matched by `null` and `_` (decision 951)
 
-`case x { null { A } v { B } }` is the **one** pattern form a `?T` has, and it
+`case x { null { A } _ { B } }` is the **one** pattern form a `?T` has, and it
 is settled here because it is the subject's type that decides it. The parser
-reads `null` as a pattern and lets a bare name follow it
+reads `null` as a pattern and refuses a bare name after it
 (`parser/AGENTS.md` § decision 54); everything below is `infer.zig`'s:
 
 | Function | What it settles |
 |---|---|
 | `isNullPattern` | the `.ident "null"` spelling the parser lands; `null` is a keyword token, so nothing else can carry that name |
 | `optionalInner` | the `T` of a `?T` |
-| `optionalNullCaseBinder` | the subject is an optional; the arms are exactly two, unguarded, `null` then a binder; neither body takes a parameter (§5.1 P1's whole-value binder means nothing where the binder *is* the payload). Answers the binder's name, `""` for `_` |
+| `optionalNullCaseBinder` | the subject is an optional; the arms are exactly two, unguarded, `null` then `_`; neither body takes a parameter (§5.1 P1's whole-value binder means nothing where the binder *is* the payload). Answers the binder's name, `""` for `_` |
 | `refuseVariantPatternOverOptional` | `.Some(v)` / `.None` — and any variant-shaped arm — over a `?T` is a located error naming the `null` form |
 
 The binder is bound to the **payload**, narrowed, not to the optional, and the

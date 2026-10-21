@@ -10,7 +10,7 @@ import {io.stdin, io.terminal.print} from "std";
 fn show(line: ?string) -> string {
     return case line {
         null -> "<end of input>";
-        text -> "[" + text + "]";
+        _ -> "[" + line! + "]";
     };
 }
 

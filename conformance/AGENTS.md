@@ -1492,7 +1492,7 @@ right answer on another.
 **Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
 red the assignment — narrowing it would break programs that work today. `if (o.inner != null)`
-does not narrow either: only a plain NAME is rebindable. `case x { null { … } v { … } }` and `if (x)
+does not narrow either: only a plain NAME is rebindable. `case x { null { … } _ { … x! … } }` and `if (x)
 { v -> … }` narrow already, each through a channel of its own.
 
 `modules/narrowing/run/src/cases/narrowing_null_check` passes on all four targets since `00 · 05-wasm` landed the missing

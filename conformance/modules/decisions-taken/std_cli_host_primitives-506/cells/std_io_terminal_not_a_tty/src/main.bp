@@ -8,9 +8,10 @@
 import {io.terminal, io.terminal.print} from "std";
 
 fn sizeText() -> string {
-    return case terminal.size() {
+    val dims = terminal.size();
+    return case dims {
         null -> "no size";
-        dims -> "size " + dims.toString();
+        _ -> "size " + dims!.toString();
     };
 }
 

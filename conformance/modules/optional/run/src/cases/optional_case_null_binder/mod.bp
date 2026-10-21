@@ -6,8 +6,8 @@ pub fn runCase() -> void {
         null {
             "absent"
         }
-        v {
-            "present " + v.toString()
+        _ {
+            "present " + x!.toString()
         }
     };
     print(a);

@@ -1,5 +1,5 @@
-//// Decision 54 — a `?T` is matched by `null` and a binder: `case x { null { … }
-//// v { … } }`, the shape `??` and `?.` already use. Decided 2026-09-18; the
+//// Decision 54 — a `?T` is matched by `null` and `_`: `case x { null { … }
+//// _ { … x! … } }` (decision 951), the shape `??` and `?.` already use. Decided 2026-09-18; the
 //// variant spelling `.Some(v)` / `.None` becomes a located error
 //// (`reject/optional_variant_pattern.bp`).
 ////
@@ -24,8 +24,8 @@ pub fn main() -> void {
         null {
             "absent"
         }
-        v {
-            "present " + v.toString()
+        _ {
+            "present " + x!.toString()
         }
     };
     print(a);
@@ -35,8 +35,8 @@ pub fn main() -> void {
         null {
             "absent"
         }
-        v {
-            "present " + v.toString()
+        _ {
+            "present " + y!.toString()
         }
     };
     print(b);

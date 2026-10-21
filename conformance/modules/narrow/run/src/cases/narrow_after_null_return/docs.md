@@ -12,4 +12,4 @@ The reference text this cell shows (from `conformance/docs.md`, § Narrowing):
 > | `if (a != null && b != null)` | both names, in the branch |
 > | `if (a == null \|\| b == null) { return …; }` | both names, below the guard |
 > | `if (x) { v -> … }` | `v` is the payload; `x` itself is untouched |
-> | `case x { null { … } v { … } }` | `v` is the payload |
+> | `case x { null { … } _ { … x! … } }` | the value is read `x!` |

@@ -1763,7 +1763,7 @@ These shapes narrow:
 | `if (a != null && b != null)` | both names, in the branch |
 | `if (a == null \|\| b == null) { return …; }` | both names, below the guard |
 | `if (x) { v -> … }` | `v` is the payload; `x` itself is untouched |
-| `case x { null { … } v { … } }` | `v` is the payload |
+| `case x { null { … } _ { … x! … } }` | the value is read `x!` |
 
 <!-- example: modules/narrow/run/src/cases/narrow_after_null_return -->
 
@@ -2599,17 +2599,19 @@ included — a string here, as a `val`'s value and as an argument:
 
 <!-- example: modules/case/cells/case_binder_arm_string_value -->
 
-#### An optional is matched by `null` and a binder
+#### An optional is matched by `null` and `_`
 
-A `?T` has exactly one pattern form — `null` for the absent value, then a name
-that binds what is there, already unwrapped:
+A `?T` has exactly one pattern form — `null` for the absent value, then `_`,
+whose body reads what is there as `x!` (decisions 330, 951):
 
 <!-- example: modules/optional/run/src/cases/optional_case_null_binder -->
 
-Two arms, in that order, and no guards. `null` comes first because a binder
-written first would match the absent value too. The binder may be `_` when the
-body does not read the value, and the arms cover the `?T` between them, so no
-`_` arm is needed and none is allowed.
+Two arms, in that order, and no guards. `null` comes first because `_` written
+first would match the absent value too. A name after the `null` arm is
+`case-bare-name-arm` like a name alone in any other arm (decision 951; it
+amends 54's binder arm), and the arms cover the `?T` between them.
+
+<!-- example: modules/decisions-taken/case_optional_bare_name_refused-951/cells/case_optional_bare_name_refused -->
 
 An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
 `error: an optional is matched by ``null``, not by a variant`, located at the

@@ -54,10 +54,6 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         arms.deinit(alloc);
     }
 
-    // Decision 54 — set by a `null` arm, read by `rejectNonPatternArm`: the
-    // arm after it may be the bare binder the `?T` form is written with.
-    var sawNullArm = false;
-
     var trailingComments: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (trailingComments.items) |c| alloc.free(c);
@@ -142,7 +138,7 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         // shape the pre-decision-8 block arm already produced. An arm body with
         // one parameter can only come from this form.
         const body = if (this.check(.leftBrace)) blk: {
-            rejectArm(this, pattern, patTok, subjectToks.items, sawNullArm, .braced) catch |e| {
+            rejectArm(this, pattern, patTok, subjectToks.items, .braced) catch |e| {
                 @constCast(&pattern).deinit(alloc);
                 return e;
             };
@@ -156,7 +152,7 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
             // backend binds, and stays. A multi-subject arm is refused its bare
             // names, guarded or not (decision 602: `Shape.Square(side), m -> …`
             // is `case-bare-name-arm` at `m`; `_, _ if a > b -> …`).
-            if (this.check(.rightArrow) and ((guard == null and pattern == .ident) or pattern == .multi)) rejectArm(this, pattern, patTok, subjectToks.items, sawNullArm, .arrow) catch |e| {
+            if (this.check(.rightArrow) and ((guard == null and pattern == .ident) or pattern == .multi)) rejectArm(this, pattern, patTok, subjectToks.items, .arrow) catch |e| {
                 @constCast(&pattern).deinit(alloc);
                 return e;
             };
@@ -206,7 +202,6 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         if (!this.match(.semicolon)) {
             _ = this.match(.comma); // fallback to comma
         }
-        if (pattern == .ident and std.mem.eql(u8, pattern.ident, "null")) sawNullArm = true;
         try arms.append(alloc, .{
             .pattern = pattern,
             .body = body,
@@ -533,10 +528,10 @@ const ArmForm = enum { braced, arrow };
 
 /// `rejectNonPatternArm` over an arm: a multi-subject arm is judged subject by
 /// subject, each refusal located at its own pattern (decision 602).
-fn rejectArm(this: *This, pat: Pattern, tok: Token, subjectToks: []const Token, afterNullArm: bool, form: ArmForm) ParseError!void {
+fn rejectArm(this: *This, pat: Pattern, tok: Token, subjectToks: []const Token, form: ArmForm) ParseError!void {
     switch (pat) {
-        .multi => |pats| for (pats, 0..) |p, i| try rejectNonPatternArm(this, p, if (i < subjectToks.len) subjectToks[i] else tok, afterNullArm, form),
-        else => try rejectNonPatternArm(this, pat, tok, afterNullArm, form),
+        .multi => |pats| for (pats, 0..) |p, i| try rejectNonPatternArm(this, p, if (i < subjectToks.len) subjectToks[i] else tok, form),
+        else => try rejectNonPatternArm(this, pat, tok, form),
     }
 }
 
@@ -548,23 +543,21 @@ fn rejectArm(this: *This, pat: Pattern, tok: Token, subjectToks: []const Token, 
 /// Both arm forms are judged, the braced `Pattern { body }` and the
 /// `pattern -> value` one; a constant only in the braced form, where a bare
 /// upper-case variant is never written.
-fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool, form: ArmForm) ParseError!void {
+fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, form: ArmForm) ParseError!void {
     switch (pat) {
         .multi, .@"or" => |pats| {
-            for (pats) |p| try rejectNonPatternArm(this, p, tok, afterNullArm, form);
+            for (pats) |p| try rejectNonPatternArm(this, p, tok, form);
         },
         .ident => |name| {
             if (name.len == 0) return;
             // `Maybe.None`, `.None` — a variant path, never a binding.
             if (std.mem.indexOfScalar(u8, name, '.') != null) return;
             if (std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false")) return;
-            // Decision 54 — `null` is the optional's pattern, and the arm after
-            // a `null` arm is its binder: `case x { null { … } v { … } }` is the
-            // one spelling a `?T` has. The binder is a pattern only there, and
-            // only after the `null` arm: written first it would match the absent
-            // value too, so the order is the form. Whether the subject really is
-            // a `?T`, and whether the two arms are the only two, is the
-            // checker's (`optionalNullCase` in `comptime/infer.zig`).
+            // Decision 54 — `null` is the optional's pattern; its other arm is
+            // `_` (decision 951: a name alone is `case-bare-name-arm` there as
+            // anywhere), the value read `x!`. Whether the subject really is a
+            // `?T`, and whether the two arms are the only two, is the checker's
+            // (`optionalNullCaseBinder` in `comptime/infer.zig`).
             if (std.mem.eql(u8, name, "null")) return;
             if (isPrimitiveTypeName(name)) return;
             // An upper-case name in a `pattern -> value` arm is a variant
@@ -574,9 +567,6 @@ fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool
                 this.parseError = ParseErrorInfo.fromTokenDetail(.caseConstantPattern, tok, name);
                 return ParseError.UnexpectedToken;
             }
-            // The binder of decision 54's `?T` form — a lower-case name is a
-            // pattern here and only here. A constant is still refused above.
-            if (afterNullArm) return;
             if (std.ascii.isLower(name[0])) {
                 this.parseError = ParseErrorInfo.fromTokenDetail(.caseBareNameArm, tok, name);
                 return ParseError.UnexpectedToken;

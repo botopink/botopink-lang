@@ -101,7 +101,7 @@
                             },
                             {
                               "pattern": {
-                                "ident": "v"
+                                "wildcard": {}
                               },
                               "body": {
                                 "function": {
