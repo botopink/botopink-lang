@@ -3578,10 +3578,9 @@ two modules are two. The identity is the mark each implementing type carries:
   module exporting `'__bp_behaviors'/0` that lists the behavior's atom; an enum's module exports it too.
 - **wat** — a unit links every module statically, so `registerTypes` records each behavior's
   implementing types (`behavior_impls`) and `typeDescriptors` / `gcTypeTests` answer the union of
-  theirs: the test is the implementors' own descriptor (or GC type) tests. It is keyed by the
-  behavior's written name (`ast.behaviorTestName`, an identity's name half), not yet by
-  `behaviorMarks` (decision 831 (1)): two same-named behaviors, an aliased import and a parent through
-  `extends` are not told apart there (cell `behavior_identity_by_module` on wasm).
+  theirs: the test is the implementors' own descriptor (or GC type) tests. It is keyed by each
+  type's `behaviorMarks` and looked up by `ast.behaviorTestIdentity` (decision 831 (1)); a type no
+  checker marked is keyed by its written `implement` names.
 
 A generic function over a union parameter (`fn first<T>(v: Box<T> | Pair<T>)`) binds `T` on wat from
 the member the argument's type names (`bindParam`), as the member written alone would; it printed a

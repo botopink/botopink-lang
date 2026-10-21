@@ -3765,15 +3765,25 @@ const Emitter = struct {
     /// construction calls can be distinguished from ordinary function calls.
     fn registerTypes(self: *Emitter, program: ast.Program) !void {
         const ra = self.reg_arena.allocator();
-        for (program.decls) |decl| if (decl == .type_) for (decl.type_.implement) |im| {
-            const bn = switch (im) {
-                .named => |n| n,
-                .generic => |g| g.name,
-                else => continue,
+        // Decision 831 — keyed by the behavior's identity (the checker's
+        // `behaviorMarks`: the declaration, through an alias and `extends`);
+        // the written names only for a type no checker marked.
+        for (program.decls) |decl| if (decl == .type_) {
+            for (decl.type_.behaviorMarks) |id| {
+                const gop = try self.behavior_impls.getOrPut(ra, id);
+                if (!gop.found_existing) gop.value_ptr.* = .empty;
+                try gop.value_ptr.append(ra, decl.type_.name);
+            }
+            if (decl.type_.behaviorMarks.len == 0) for (decl.type_.implement) |im| {
+                const bn = switch (im) {
+                    .named => |n| n,
+                    .generic => |g| g.name,
+                    else => continue,
+                };
+                const gop = try self.behavior_impls.getOrPut(ra, bn);
+                if (!gop.found_existing) gop.value_ptr.* = .empty;
+                try gop.value_ptr.append(ra, decl.type_.name);
             };
-            const gop = try self.behavior_impls.getOrPut(ra, bn);
-            if (!gop.found_existing) gop.value_ptr.* = .empty;
-            try gop.value_ptr.append(ra, decl.type_.name);
         };
         for (program.decls) |decl| switch (decl) {
             .type_ => |tdecl| switch (tdecl.shape) {
@@ -4874,7 +4884,7 @@ const Emitter = struct {
     /// variant for an enum, none for anything wasm cannot place.
     fn typeDescriptors(self: *Emitter, t: ast.TypeRef) anyerror![]const u32 {
         // Decision 810 (1) — a behavior: every implementing type's own.
-        if (ast.behaviorTestName(t)) |bn| {
+        if (ast.behaviorTestIdentity(t)) |bn| {
             var out: std.ArrayListUnmanaged(u32) = .empty;
             if (self.behavior_impls.get(bn)) |impls| for (impls.items) |tn| {
                 try out.appendSlice(self.arena(), try self.typeDescriptors(.{ .named = tn }));
@@ -6419,7 +6429,7 @@ const Emitter = struct {
     /// record's struct, a payload enum's variants, one variant by its path.
     fn gcTypeTests(self: *Emitter, t: ast.TypeRef) anyerror![]const ValType {
         // Decision 810 (1) — a behavior: every implementing type's own.
-        if (ast.behaviorTestName(t)) |bn| {
+        if (ast.behaviorTestIdentity(t)) |bn| {
             var out: std.ArrayListUnmanaged(ValType) = .empty;
             if (self.behavior_impls.get(bn)) |impls| for (impls.items) |tn| {
                 try out.appendSlice(self.arena(), try self.gcTypeTests(.{ .named = tn }));
