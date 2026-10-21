@@ -3186,3 +3186,7 @@ no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed s
 ## `hook-name-use-prefix` (decision 926)
 
 `refuseHookNameUsePrefix` (`infer.zig`, first thing in `inferFnDecl`) refuses a `fn` answering `Component<R>` (marker or written return) named `use` followed by an upper-case letter, located at the name: `hook-name-use-prefix: a hook is read with use — name it thing`. Cell `conformance/modules/decisions-taken/hook_name_use_prefix_refused-926`. Methods, `default fn` and typed lambdas are not yet reached.
+
+## `noreturn-falls-through` (decision 929)
+
+`refuseNoreturnFallThrough` (`infer.zig`, after `refuseFallingOffTheEnd`) refuses a plain `fn` declared `-> noreturn` whose body `stmtsMayFallThrough`, located at the name: `noreturn-falls-through: …`. Cell `conformance/modules/decisions-taken/noreturn_body_falls_through_refused-929`. A typed lambda declared `-> noreturn` is not yet reached.

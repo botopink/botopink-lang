@@ -9544,6 +9544,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     if (answersNothing(f.returnType) and f.typeGuardParam == null)
         try refuseValueTailInVoid(env, try std.fmt.allocPrint(env.arena, "`{s}`", .{f.name}), f.body, tailTy);
     try refuseFallingOffTheEnd(env, f, retType);
+    try refuseNoreturnFallThrough(env, f, retType);
     if (recordsHooks) try finishHookNode(env, f, &hookBuilder);
 
     // Generalize (HM let-polymorphism): declared generic params still unbound
@@ -9890,6 +9891,21 @@ fn refuseHookNameUsePrefix(env: *Env, f: ast.FnDecl) InferError!void {
     const suggested = try std.fmt.allocPrint(env.arena, "{c}{s}", .{ std.ascii.toLower(f.name[3]), f.name[4..] });
     const msg = try std.fmt.allocPrint(env.arena, "hook-name-use-prefix: a hook is read with use — name it {s}", .{suggested});
     var err = TypeError.custom(msg, "Decision 926: name the hook for what it yields, `use actionState(…)` rather than `useActionState(…)`.");
+    if (f.nameLoc.line > 0) err = err.withLoc(f.nameLoc);
+    env.lastError = err;
+    return error.TypeError;
+}
+
+/// Decision 929 (`noreturn-falls-through`) — a `-> noreturn` body whose last path
+/// can complete is refused at the function's name (`stmtsMayFallThrough`, the
+/// reading `stmtsAlwaysExit` shares).
+fn refuseNoreturnFallThrough(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
+    if (f.returnType == null or f.effect != null or f.isDeclare or f.isExternal()) return;
+    if (env.inTemplateFn) return;
+    if (!retType.deref().isNamed("noreturn")) return;
+    if (!stmtsMayFallThrough(env, f.body)) return;
+    const msg = try std.fmt.allocPrint(env.arena, "noreturn-falls-through: `{s}` declares `-> noreturn` and its body can complete", .{f.name});
+    var err = TypeError.custom(msg, "Decision 929: end every path with a call to a `noreturn` function, a `throw`, or a `loop` without `break`.");
     if (f.nameLoc.line > 0) err = err.withLoc(f.nameLoc);
     env.lastError = err;
     return error.TypeError;
