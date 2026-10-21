@@ -25123,6 +25123,13 @@ const Emitter = struct {
                     if (cc.receiver == null or self.isNamespaceReceiver(cc)) if (self.genericRetByFnArg(cc) catch null) |t| {
                         if (resultShapeOfTypeRef(taskValueTypeRef(t) orelse t)) |sh| break :blk sh;
                     };
+                    // A method of a record answering a `@Result`, the record
+                    // another module declares included (`Shop(…).num()`): the
+                    // method's own declared shape.
+                    if (cc.receiver != null and !cc.is_builtin) if (self.recordMethodSym(cc, c.loc)) |sym| {
+                        if (self.result_shape_fns.get(sym)) |sh| break :blk sh;
+                        if (self.fn_ret_typerefs.get(sym)) |t| if (resultShapeOfTypeRef(t)) |sh| break :blk sh;
+                    };
                     // A primitive's method is not the module's free function
                     // of its name (`actual.contains(needle)` in a module that
                     // declares `contains(…) -> Result<…>`).
