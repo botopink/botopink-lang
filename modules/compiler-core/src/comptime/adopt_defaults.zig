@@ -133,10 +133,103 @@ fn adoptForBlocks(
         nt.methods = try std.mem.concat(arena, ast.BehaviorMethod, &.{ t.methods, added.items });
         out[di] = .{ .type_ = nt };
     }
+    const with_types = if (decls) |nd| blk: {
+        var p = program;
+        p.decls = nd;
+        break :blk p;
+    } else program;
+    return adoptForImportedTargets(arena, with_types, imported, copies_in);
+}
+
+/// Decision 872 — a block of this module for a record another module declares
+/// (`import {types.Tag}; pub TagShout implement Shout for Tag {}`): the type's
+/// module is compiled without the block, so the contract's `default fn`s are
+/// added to the block as methods of its own (`fn shout(self: Self)`), the way
+/// a block's written method reaches the record, here and in every importer
+/// that activates the block. A block for a type of this module is
+/// `adoptForBlocks`'s; one for a primitive, `adoptForPrimitives`'s.
+fn adoptForImportedTargets(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    copies_in: *usize,
+) Error!ast.Program {
+    var decls: ?[]ast.DeclKind = null;
+    var copies = copies_in.*;
+    defer copies_in.* = copies;
+    for (program.decls, 0..) |d, di| {
+        if (d != .implement) continue;
+        const im = d.implement;
+        if (primitiveHolder(im.target) != null or !importsName(program, im.target)) continue;
+        var added: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        for (im.methods) |m| try seen.put(arena, m.name, {});
+        for (im.interfaces) |ref| {
+            const name = switch (ref) {
+                .named => |n| n,
+                else => continue,
+            };
+            try collectForImported(arena, program, imported, name, &added, &seen, &copies, 0);
+        }
+        if (added.items.len == 0) continue;
+        const out = decls orelse blk: {
+            const fresh = try arena.dupe(ast.DeclKind, program.decls);
+            decls = fresh;
+            break :blk fresh;
+        };
+        const methods = try arena.alloc(ast.ImplementMethod, added.items.len);
+        for (added.items, methods) |m, *o| o.* = .{
+            .qualifier = null,
+            .name = m.name,
+            .params = m.params,
+            .body = m.body.?,
+            .returnType = m.returnType,
+            .loc = m.nameLoc,
+            .marker = m.marker,
+            .markerLoc = m.markerLoc,
+        };
+        var ni = im;
+        ni.methods = try std.mem.concat(arena, ast.ImplementMethod, &.{ im.methods, methods });
+        out[di] = .{ .implement = ni };
+    }
     const new_decls = decls orelse return program;
     var p = program;
     p.decls = new_decls;
     return p;
+}
+
+/// True when `program` imports a symbol bound as `name`.
+fn importsName(program: ast.Program, name: []const u8) bool {
+    for (program.decls) |d| {
+        if (d != .use) continue;
+        for (d.use.imports) |item| if (std.mem.eql(u8, item.name(), name)) return true;
+    }
+    return false;
+}
+
+fn collectForImported(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    imported: *const std.StringHashMapUnmanaged(ast.BehaviorDecl),
+    name: []const u8,
+    added: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+    seen: *std.StringHashMapUnmanaged(void),
+    copies: *usize,
+    depth: usize,
+) Error!void {
+    if (depth >= 16) return;
+    const b = ownBehavior(program, name) orelse imported.get(name) orelse return;
+    if (b.genericParams.len > 0) return;
+    for (b.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+        if (seen.contains(m.name)) continue;
+        try seen.put(arena, m.name, {});
+        const dl = first_line + copies.* * block;
+        copies.* += 1;
+        try added.append(arena, try shift(ast.BehaviorMethod, arena, m, dl));
+    }
+    for (b.extends) |parent| try collectForImported(arena, program, imported, parent, added, seen, copies, depth + 1);
 }
 
 fn collectForBlock(

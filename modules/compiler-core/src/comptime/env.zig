@@ -164,6 +164,8 @@ pub const ExtEntry = struct {
     interfaces: []const ast.TypeRef = &.{},
     /// Method names declared in the block.
     methods: []const []const u8,
+    /// The return type each method of `methods` writes, parallel to it.
+    returns: []const ?ast.TypeRef = &.{},
 };
 
 /// The declaration a type import item resolved to (`Env.importedTypeDecls`).

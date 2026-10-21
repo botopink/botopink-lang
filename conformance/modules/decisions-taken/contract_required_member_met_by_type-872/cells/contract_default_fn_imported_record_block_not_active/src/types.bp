@@ -1,0 +1,5 @@
+pub type Tag(name: string) {
+    pub fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
+        return "#" + self.name;
+    }
+}

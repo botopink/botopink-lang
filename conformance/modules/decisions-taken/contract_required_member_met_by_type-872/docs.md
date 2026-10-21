@@ -6,3 +6,5 @@ A contract's required member that the implemented type already has is met by the
 [cells/contract_required_member_signature_differs/src/main.bp](cells/contract_required_member_signature_differs/src/main.bp)
 [cells/contract_default_fn_type_has_refused/src/main.bp](cells/contract_default_fn_type_has_refused/src/main.bp)
 [cells/contract_default_fn_called_on_target/src/main.bp](cells/contract_default_fn_called_on_target/src/main.bp)
+[cells/contract_default_fn_called_on_imported_record/src/main.bp](cells/contract_default_fn_called_on_imported_record/src/main.bp)
+[cells/contract_default_fn_imported_record_block_not_active/src/main.bp](cells/contract_default_fn_imported_record_block_not_active/src/main.bp)

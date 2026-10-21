@@ -1967,6 +1967,10 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             if (d.primitiveType) return null;
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
         },
+        .implement => |im| {
+            try inferAdoptedBlockBodies(env, im);
+            return null;
+        },
         // Handled in `inferProgramTyped` — each import name is looked up in env.
         // `from "std"` imports must be marked here too — the untyped path
         // (tests, LSP) otherwise leaves qualified-call receivers unbound.
@@ -2470,6 +2474,7 @@ pub fn registerImportedExtension(env: *Env, im: ast.ImplementDecl) !void {
         .target = im.target,
         .interfaces = im.interfaces,
         .methods = try collectImplMethodNames(env, im.methods),
+        .returns = try collectImplMethodReturns(env, im.methods),
     });
 }
 
@@ -2634,6 +2639,7 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
                     .target = im.target,
                     .interfaces = im.interfaces,
                     .methods = try collectImplMethodNames(env, im.methods),
+                    .returns = try collectImplMethodReturns(env, im.methods),
                 });
                 // Bind the symbol as a value so a qualified call `Sym.m(obj)` can
                 // infer `Sym` as its receiver expression (it names a namespace of
@@ -2710,6 +2716,12 @@ fn buildScopeSnapshot(env: *Env, program: ast.Program) InferError!void {
         else => {},
     };
     env.scopeSnapshot = snap;
+}
+
+fn collectImplMethodReturns(env: *Env, methods: []const ast.ImplementMethod) ![]const ?ast.TypeRef {
+    var out = try env.arena.alloc(?ast.TypeRef, methods.len);
+    for (methods, 0..) |m, i| out[i] = m.returnType;
+    return out;
 }
 
 fn collectImplMethodNames(env: *Env, methods: []const ast.ImplementMethod) ![]const []const u8 {
@@ -9625,6 +9637,31 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     }
 
     return env.funcType(paramTypes, retType);
+}
+
+/// Decision 872 — the `default fn`s a block for a type of another module
+/// carries (`adopt_defaults.zig` `adoptForImportedTargets`, copies at lines of
+/// their own) are checked as methods of the target, `Self` the target, so the
+/// calls in their bodies are recorded for the backends: a block's written
+/// methods are not walked, and `self.slice(0)` over an imported record fell to
+/// the primitive's `slice`.
+fn inferAdoptedBlockBodies(env: *Env, im: ast.ImplementDecl) InferError!void {
+    var ms: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+    for (im.methods) |m| {
+        if (m.loc.line < adoptDefaults.first_line) continue;
+        try ms.append(env.arena, .{
+            .name = m.name,
+            .nameLoc = m.loc,
+            .params = m.params,
+            .returnType = m.returnType,
+            .body = m.body,
+            .is_default = true,
+            .marker = m.marker,
+            .markerLoc = m.markerLoc,
+        });
+    }
+    if (ms.items.len == 0) return;
+    try inferTypeMethods(env, im.target, &.{}, ms.items);
 }
 
 /// A behavior's `default fn` bodies are checked like any method body, against
@@ -21606,10 +21643,24 @@ fn resolveReceiverCall(
         return try makeMethodCall(env, recvPtr, callee, typedArgs, typedTrailing, loc);
     }
 
-    // Rule 2 — an `implement` block providing `callee` for this type. Every entry
-    // in `env.extensions` is declared in the current module (imports do not register
-    // here), so all are auto-applied: no activation is required (Rule B). Two local
-    // impls of the same method for the same type are ambiguous.
+    return resolveExtensionMethod(env, typeName, recvPtr, callee, typedArgs, typedTrailing, loc);
+}
+
+/// Rule 2 — an `implement` block providing `callee` for the type `typeName`.
+/// Every entry in `env.extensions` is visible in the current module — declared
+/// here, or imported and activated — so all are applied: no activation is
+/// asked of it (Rule B). Two blocks giving the same method to the same type are
+/// ambiguous. A receiver that is an expression (`Tag(name: "b").shout()`) is
+/// resolved the same way as a bound name (decision 872).
+fn resolveExtensionMethod(
+    env: *Env,
+    typeName: []const u8,
+    recvPtr: ?*ast.TypedExpr,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?TypedExpr {
     var matchSym: ?[]const u8 = null;
     var ambiguousWith: ?[]const u8 = null;
     var it = env.extensions.valueIterator();
@@ -21630,7 +21681,25 @@ fn resolveReceiverCall(
         }
         // External dispatch: lower `recv.callee(args)` → `sym.callee(recv, args)`.
         try env.dispatchRewrites.put(loc, sym);
-        return try makeMethodCall(env, recvPtr, callee, typedArgs, typedTrailing, loc);
+        const call = try makeMethodCall(env, recvPtr, callee, typedArgs, typedTrailing, loc);
+        // Decision 872 — the call answers what the block writes after `->`
+        // when that is a builtin or `Self`; a name of the block's own module
+        // stays untyped here.
+        if (env.extensions.get(sym)) |ext| for (ext.methods, 0..) |mn, i| {
+            if (!std.mem.eql(u8, mn, callee) or i >= ext.returns.len) continue;
+            const rt = ext.returns[i] orelse break;
+            if (rt != .named) break;
+            const n = rt.named;
+            if (!std.mem.eql(u8, n, "Self") and !isPrimitiveTypeName(n)) break;
+            if (call == .call and call.call.type_.deref().* == .typeVar) {
+                var gm = std.StringHashMap(*T.Type).init(env.arena);
+                if (recvPtr) |rp| try gm.put("Self", rp.getType());
+                const resolved = resolveTypeRefInContext(env, rt, gm) catch break;
+                try unifyAt(env, call.call.type_, resolved, loc);
+            }
+            break;
+        };
+        return call;
     }
 
     return null;
@@ -25689,6 +25758,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     if (env.hasInherentMethod(tn, call.callee)) {
                         try recordInstanceCall(env, loc, tn);
                         return try makeMethodCall(env, recvPtr, call.callee, typedArgs, typedTrailing, loc);
+                    }
+                    if (env.lookupTypeDef(tn) != null) {
+                        if (try resolveExtensionMethod(env, tn, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
                     }
                     // A receiver whose static type is a `behavior` declaring
                     // `callee` without a body: the method is the VALUE's —

@@ -90,11 +90,11 @@ val splash = donald.swim();
     {
       "ast": "val",
       "ident": "splash",
-      "return_type": "?",
+      "return_type": "i32",
       "expr": {
         "ast": "call",
         "params": [],
-        "return_type": "?"
+        "return_type": "i32"
       }
     },
     {

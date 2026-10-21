@@ -1,0 +1,16 @@
+import {types.Tag};
+
+pub behavior Shout {
+    fn slice(self: Self, start: i32, end: ?i32 = null) -> string;
+
+    default fn shout(self: Self) -> string {
+        return self.slice(0) + "!";
+    }
+}
+
+// The block is written in a module other than the record's: `Tag` is `types.bp`'s.
+pub TagShout implement Shout for Tag {};
+
+pub fn local() -> string {
+    return Tag(name: "a").shout();
+}

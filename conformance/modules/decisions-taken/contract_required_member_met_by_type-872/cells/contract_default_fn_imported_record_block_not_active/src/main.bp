@@ -1,0 +1,10 @@
+//// Decision 872 — a contract's `default fn` is a member of a record only where the extension block is visible; a module that does not import the block does not see it.
+
+import {types.Tag};
+import {loud.local};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(local());
+    print(Tag(name: "b").shout());
+}

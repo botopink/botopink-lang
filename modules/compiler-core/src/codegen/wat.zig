@@ -3678,6 +3678,15 @@ const Emitter = struct {
                 .params = params,
                 .result = if (methodHasResult(m.body)) .i32 else null,
             });
+            // The shape the method answers, under the symbol its call emits:
+            // `@print` picks its printer from it, and a block's method (an
+            // imported one, `print(Tag(name: "b").shout())`) printed a
+            // string's pointer without it (decision 872).
+            if (m.returnType) |rt| {
+                try self.fn_ret_typerefs.put(sym, rt);
+                if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
+                if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
+            }
         }
     }
 
