@@ -1,0 +1,157 @@
+//// The tests of `cell_snap.zig`, ported one for one onto `records.bp`, with the
+//// same inputs and the same expected texts; then the `build` record's own (789).
+
+import {records.parse, records.render, records.matches, records.candidate, records.diff};
+import {records.Snap, records.Refusal, records.Malformed};
+
+fn roundTrip(snap: Snap) -> Snap {
+    return try parse(render(snap)) catch Snap(stdout: "malformed");
+}
+
+fn malformedLine(text: string) -> i32 {
+    return case parse(text) {
+        Ok(_) -> 0;
+        Error(m) -> m.line;
+    };
+}
+
+test "a program's output renders one `out` line per printed line" {
+    assert render(Snap(stdout: "55\n\nok\n"))
+        == "botopink-cell 1\nout 55\nout\nout ok\n";
+}
+
+test "a last line without its newline is written, and read back, as such" {
+    assert render(Snap(stdout: "a\nb"))
+        == "botopink-cell 1\nout a\nout b\nno-final-newline\n";
+    assert roundTrip(Snap(stdout: "a\nb")).stdout == "a\nb";
+}
+
+test "an abort and its stderr claims, and a located refusal, round-trip" {
+    val aborted = roundTrip(Snap(stdout: "1\n", abort: true, stderr: ["integer overflow: + on i32 at src/main.bp:7:14"]));
+    assert aborted.abort;
+    assert (aborted.stderr.at(0) ?? "")
+        == "integer overflow: + on i32 at src/main.bp:7:14";
+    val refused = roundTrip(Snap(refusals: [Refusal(message: "error[x]: no", at: "src/main.bp:7:15"), Refusal(message: "error: unlocated")]));
+    assert refused.refusals.length == 2;
+    assert refused.refusals.at(0)?.at == "src/main.bp:7:15";
+    assert (refused.refusals.at(1) ?? Refusal(message: "", at: "x")).at == null;
+}
+
+test "a label follows its `at`, round-trips, and is compared" {
+    val back = roundTrip(Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:7:9", label: "use _ { n -> … } to bind")]));
+    assert back.refusals.at(0)?.label == "use _ { n -> … } to bind";
+    val accepted = Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2", label: "x")]);
+    assert matches(accepted, accepted, "");
+    // a label that changes, and one that disappears
+    assert !matches(accepted, Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2", label: "y")]), "");
+    assert !matches(accepted, Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2")]), "");
+    // a label that appears where none is accepted
+    assert !matches(Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2")]), accepted, "");
+}
+
+test "a from record follows its at, round-trips, and is compared (decision 532)" {
+    val back = roundTrip(Snap(refusals: [Refusal(message: "error: boom", at: "src/lib.bp:3:5", frames: ["src/main.bp:9:3", "src/main.bp:12:1"])]));
+    val frames = (back.refusals.at(0) ?? Refusal(message: "")).frames;
+    assert frames.length == 2;
+    assert (frames.at(1) ?? "") == "src/main.bp:12:1";
+    val accepted = Snap(refusals: [Refusal(message: "error: boom", at: "src/lib.bp:3:5", frames: ["src/main.bp:9:3"])]);
+    assert matches(accepted, accepted, "");
+    // a call that changes, one that disappears, one that appears
+    assert !matches(accepted, Snap(refusals: [Refusal(message: "error: boom", at: "src/lib.bp:3:5", frames: ["src/main.bp:9:4"])]), "");
+    assert !matches(accepted, Snap(refusals: [Refusal(message: "error: boom", at: "src/lib.bp:3:5")]), "");
+    assert !matches(Snap(refusals: [Refusal(message: "error: boom", at: "src/lib.bp:3:5")]), accepted, "");
+    // `from` follows `at`
+    assert malformedLine("botopink-cell 1\nrefused error: x\nfrom a:1:1\n")
+        == 3;
+}
+
+test "the header alone is the empty answer" {
+    val snap = try parse("botopink-cell 1\n") catch Snap(stdout: "malformed");
+    assert snap.isEmpty();
+}
+
+test "a malformed .snap names its line" {
+    val cases: #(string, i32)[] = [
+        #("botopink-snap 1\n", 1),
+        #("botopink-cell 1\nout a", 2),
+        #("botopink-cell 1\nout a\nrefused error: x\n", 3),
+        #("botopink-cell 1\nout a\nstderr boom\n", 3),
+        #("botopink-cell 1\nabort\nout a\n", 3),
+        #("botopink-cell 1\nat src/main.bp:1:1\n", 2),
+        #("botopink-cell 1\nrefused error: x\nat a:1:1\nat b:1:1\n", 4),
+        #("botopink-cell 1\nout \n", 2),
+        #("botopink-cell 1\nout\nno-final-newline\n", 3),
+        #("botopink-cell 1\nabort 1\n", 2),
+        #("botopink-cell 1\nexit 0\n", 2),
+        #("botopink-cell 1\nabort\nabort\n", 3),
+        #("botopink-cell 1\nout a\nlabel x\n", 3),
+        #("botopink-cell 1\nlabel x\n", 2),
+        #("botopink-cell 1\nrefused error: x\nlabel x\n", 3),
+        #("botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nlabel y\n", 5),
+        #("botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nat b:1:1\n", 5),
+    ];
+    for (cases) { c ->
+        assert malformedLine(c._0) == c._1, c._0;
+    }
+}
+
+test "matches compares output, abort and refusals exactly, stderr by containment" {
+    val accepted = Snap(stdout: "1\n", abort: true, stderr: ["overflow"]);
+    assert matches(accepted, Snap(stdout: "1\n", abort: true), "Error: integer overflow at x");
+    assert !matches(accepted, Snap(stdout: "1\n", abort: true), "wasm trap");
+    assert !matches(accepted, Snap(stdout: "1\n", abort: false), "overflow");
+    assert !matches(accepted, Snap(stdout: "1", abort: true), "overflow");
+    val refused = Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2")]);
+    assert matches(refused, Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:2")]), "");
+    assert !matches(refused, Snap(refusals: [Refusal(message: "error: no", at: "src/main.bp:1:3")]), "");
+    assert !matches(refused, Snap(refusals: [Refusal(message: "error: no")]), "");
+    assert matches(Snap(), Snap(), "noise on stderr");
+}
+
+test "a candidate keeps the stderr claims that still hold and invents none" {
+    val accepted = Snap(stdout: "1\n", abort: true, stderr: ["overflow", "gone"]);
+    val c = candidate(accepted, Snap(stdout: "2\n", abort: true), "integer overflow");
+    assert c.stderr.length == 1;
+    assert (c.stderr.at(0) ?? "") == "overflow";
+    val fresh = candidate(null, Snap(stdout: "2\n", abort: true), "integer overflow");
+    assert fresh.stderr.length == 0;
+}
+
+test "diff marks the lines each side alone has" {
+    val d = diff("botopink-cell 1\nout 1\nout 2\n", "botopink-cell 1\nout 1\nout 3\nabort\n");
+    assert d == "  botopink-cell 1\n  out 1\n- out 2\n+ out 3\n+ abort\n";
+}
+
+// ── the `build` record (decision 789) ─────────────────────────────────────────
+
+test "build lines come after the refusals and before the output, and round-trip" {
+    val snap = Snap(build: ["hello at build", ""], stdout: "1\n");
+    val text = render(snap);
+    assert text == "botopink-cell 1\nbuild hello at build\nbuild\nout 1\n";
+    val back = roundTrip(snap);
+    assert back.build.length == 2;
+    assert (back.build.at(0) ?? "") == "hello at build";
+    assert (back.build.at(1) ?? "x") == "";
+    assert back.stdout == "1\n";
+    val refused = Snap(refusals: [Refusal(message: "error: boom", at: "src/main.bp:2:3")], build: ["before"]);
+    assert render(refused)
+        == "botopink-cell 1\nrefused error: boom\nat src/main.bp:2:3\nbuild before\n";
+    assert roundTrip(refused).build.length == 1;
+    assert !Snap(build: ["x"]).isEmpty();
+}
+
+test "build lines are compared exactly" {
+    val accepted = Snap(build: ["a"], stdout: "1\n");
+    assert matches(accepted, accepted, "");
+    assert !matches(accepted, Snap(build: ["b"], stdout: "1\n"), "");
+    assert !matches(accepted, Snap(stdout: "1\n"), "");
+    assert !matches(Snap(stdout: "1\n"), accepted, "");
+}
+
+test "a build record out of order names its line" {
+    assert malformedLine("botopink-cell 1\nout a\nbuild x\n") == 3;
+    assert malformedLine("botopink-cell 1\nabort\nbuild x\n") == 3;
+    assert malformedLine("botopink-cell 1\nbuild x\nrefused error: x\n") == 3;
+    assert malformedLine("botopink-cell 1\nbuild \n") == 2;
+    assert malformedLine("botopink-cell 1\nbuild x\nabort\nstderr boom\n") == 0;
+}

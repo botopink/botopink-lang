@@ -771,7 +771,8 @@ run, and a malformed `.snap` (named `<file>:<line>: <reason>`) fail the cell.
 ### The `.snap` format
 
 One module's answer, a record per line; `src/cli/cell_snap.zig` is the one
-place it is written, read and compared:
+place it is written, read and compared (`conformance/check/src/records.bp` is its port for the program
+of decision 790, with 789's `build` record; the two agree until the switch):
 
 ```text
 botopink-cell 1                 the format and its version — always line 1

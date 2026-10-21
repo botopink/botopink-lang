@@ -26,6 +26,7 @@ conformance/
 ├── AGENTS.md                ← you are here
 ├── docs.md                  ← the language reference (decisions 461, 462): its index, the text no one cell owns, the manifest schema; every example a `<!-- example: … -->` line naming a cell or a suite
 ├── run.sh                   ← the runner: `zig build test-conformance`, the gate's stage 9
+├── check/                   ← `cell check` as a botopink program (decision 790), run on commonJS; no cell — see check/AGENTS.md
 ├── modules/botopink.json    ← the workspace whose members are the cells (decision 512 (5); its `"workspaces"` name each module's `run/` and `refused/` packages and its `cells/*`, decision 779, and a 765 `cases/*` while one remains):
 │                              what every cell shares — here the version alone; a library's declares its cells'
 │                              dependencies and targets — so a cell writes only what is its own, and every cell's

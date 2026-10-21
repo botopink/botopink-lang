@@ -1,0 +1,5 @@
+//// `cell check` as a botopink program (decision 790). Only the records module
+//// (`records.bp`) is written yet; `main` finds, builds, runs and compares
+//// nothing until the next piece of B-161 lands.
+
+pub fn main() -> void {}
