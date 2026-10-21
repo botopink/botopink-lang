@@ -3,14 +3,14 @@
 //// stream), on every target (decision 434 (5)): one seed, the same draws on
 //// every build. The draws are lifted into the program as text.
 
-import {io, io.terminal.print} from "std";
+import {io.terminal.print, io.random} from "std";
 
 fn draws(s: i32) -> string {
-    io.random.seed(s);
-    val a = io.random.seededFloat();
-    val b = io.random.seededFloat();
-    io.random.seed(s);
-    val again = io.random.seededFloat();
+    random.seed(s);
+    val a = random.seededFloat();
+    val b = random.seededFloat();
+    random.seed(s);
+    val again = random.seededFloat();
     return a.toString() + " " + b.toString() + " " + again.toString();
 }
 

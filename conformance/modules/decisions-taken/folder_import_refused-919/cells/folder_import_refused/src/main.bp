@@ -1,0 +1,6 @@
+//// `io` is a folder of std, not a module: refused, naming its leaves,
+//// never rewritten to a namespace (decision 919).
+
+import {io} from "std";
+
+pub fn main() -> void {}

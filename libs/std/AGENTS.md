@@ -18,7 +18,7 @@ std/
 │   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces, `String.parseInt` / `parseFloat`, the integer methods past 2^53 and the conversions included (green on commonJS + erlang)
 │   ├── primitives_gaps_test.bp ← primitive tests that hit a compiler gap, each gap named with its owning front
 │   └── unicode_test.bp      ← `unicode.normalize` against `tools/unicode-gen/NormalizationTest.txt`, every line of its six parts (§ unicode)
-├── tools/unicode-gen/       ← the generator of `src/unicode_tables.bp` and of std-wasm's `case_tables.zig` (Zig, run by `zig build gen-unicode` — not part of the package) and the vendored Unicode data it reads (§ unicode)
+├── tools/unicode-gen/       ← the generator of `src/internal/unicode_tables.bp` and of std-wasm's `case_tables.zig` (Zig, run by `zig build gen-unicode` — not part of the package) and the vendored Unicode data it reads (§ unicode)
 └── src/
     ├── root.bp              ← module-tree root: twenty-four `pub mod` lines — the twenty-two root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
@@ -29,7 +29,7 @@ std/
     ├── collections.bp       ← `Dict`, `Set`, `Queue`, `Order` (was `dict`, `sets`, `queue`, `order`)
     ├── decimal.bp           ← `Decimal` and `Rounding` (decision 332 (2)): Java's `BigDecimal` in pure botopink over `bigint`
     ├── math.bp  path.bp  url.bp  querystring.bp  json.bp  regex.bp  unicode.bp  string_builder.bp
-    ├── unicode_tables.bp    ← GENERATED (`zig build gen-unicode`), never edited: `unicode`'s normalization data; a private `mod` of `root.bp` (§ unicode)
+    ├── internal/            ← decision 913: private to std, importable by no other package — `unicode_tables.bp`, GENERATED (`zig build gen-unicode`), never edited: `unicode`'s normalization data (§ unicode)
     ├── encoding.bp          ← base64 (was `base64`), hex, percent, the form codec
     ├── hash.bp              ← hex digests (was `crypto`), the base64url/HMAC digests, content hashes (was `content_hash`)
     ├── functions.bp         ← `identity`, `compose`, `flip`, `constant` (decision 738: no `Function` behavior; a pair is the tuple `#(A, B)`, no `Pair`)
@@ -142,10 +142,8 @@ exactly one, the build panics on both or neither — and a folder index's own
 `std/<dir>/<name>`, depth-first (decision 106's `io/` and `testing/`). A
 consumer reaches it by path: `import {<dir>.<name>} from "std"` (the
 namespace), `import {<dir>: {<name>: {f}}} from "std"` (a leaf), or
-`import {<dir>} from "std"` and `<dir>.<name>.f()` — the folder index holds
-`mod` lines only and is not a module of the registry, so the folder leaf is a
-namespace of its submodules (decision 110), rewritten by
-`comptime/std_namespace.zig` into the first form for each module reached.
+`import {<dir>} from "std"` is refused — a folder is not importable (decision 919),
+`infer.checkImportScope` names the leaves.
 
 Two things a module's own inline tests cannot see, because they only show when
 a CONSUMER imports it (measured by front 01 from a scratch package importing
@@ -318,7 +316,7 @@ decompose recursively (compatibility mappings too for NFKC / NFKD), put each
 run of non-starters in canonical order (a stable sort by combining class),
 then for NFC / NFKC recompose every unblocked pair whose primary composite is
 not excluded; Hangul syllables decompose and compose by the algorithm
-(Unicode §3.12). Its data is `src/unicode_tables.bp`, **generated, never
+(Unicode §3.12). Its data is `src/internal/unicode_tables.bp`, **generated, never
 edited**: `combiningClass(cp)`, `canonicalDecomposition(cp)` and
 `compatibilityDecomposition(cp)` (one level each — a tagged mapping only in the
 second), `primaryComposite(first, second)` (0 for none) and `version()`. Each is
@@ -353,14 +351,10 @@ for one function — and the file is written at the formatter's canonical form.
   SHA-256 and the version into `manifest.json`, run `zig build gen-unicode`,
   update the version and the per-part line counts `test/unicode_test.bp` pins,
   and run the conformance test on commonJS and erlang.
-- **Where the tables live** — a flat sibling, `src/unicode_tables.bp`, declared
-  `mod unicode_tables;` (private) in `root.bp` and imported by `unicode.bp` as
-  `import {unicode_tables as tables};` (private in std's own tree; the embedded
-  registry carries no visibility, so a consumer's `import {unicode_tables} from
-  "std"` still resolves — front 97's compiler residual 11). The module tree resolves a `mod` only to
-  `<name>.bp` or `<name>/mod.bp` beside the declaring file, so a
-  `unicode/tables.bp` under the file module `unicode.bp` is unreachable
-  (`decisions-pending.md` 97-s16-a).
+- **Where the tables live** — `src/internal/unicode_tables.bp` (decision 913:
+  `internal/` is private to its package; an import of it from another package is
+  refused, located), imported by `unicode.bp` as
+  `import {internal.unicode_tables as tables};`. `mod internal;` in `root.bp` declares the folder.
 
 ## Tests
 

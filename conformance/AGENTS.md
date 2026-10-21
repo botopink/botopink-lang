@@ -88,7 +88,7 @@ the alias to the owner's mangled declaration); `modules/decisions-taken/import_a
 expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
 `S.Custom(9)`) — which inference renames to the declared type for the backends.
 Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace`
-— `import {io} from "std"` and `io.clock.nowMillis()` beside the leaf `io.clock as clock`, on
+— the leaf `io.clock as clock` and `clock.nowMillis()` (`import {io}` is refused, decision 919: `modules/decisions-taken/folder_import_refused-919`), on
 commonJS, erlang and beam, refused on wasm by STD-001 (`snapshot/targets/wasm/`) as the leaf form is — and
 `modules/decisions-taken/collections_constructors_type_scoped-111/cells/import_std_type_through_module` — `collections.Dict.empty()`, `collections.Set.fromList`,
 `collections.Queue.fromList` after `import {collections}`, beside `collections.lt()` and an alias

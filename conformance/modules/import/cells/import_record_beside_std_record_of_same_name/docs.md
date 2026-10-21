@@ -5,10 +5,9 @@ The reference text this cell shows (from `conformance/docs.md`, § Imports):
 > What an item binds is its **leaf** — `name`,
 > `seven` — never the segments before it
 
-> A leaf that names a folder is a namespace of
-> its submodules (decision 110): after `import {io} from "std"`, `io.fs.readText(p)`
-> calls `io/fs`'s `readText` — only the modules the program reaches are imported —
-> and a module namespace reaches its types, so `import {collections} from "std"`
+> A folder of std is no module and is not
+> importable (decision 919): `import {io} from "std"` is refused, located, naming
+> the leaves (`import {io.fs}`); a module namespace reaches its types, so `import {collections} from "std"`
 > allows `collections.Dict.empty()` beside `collections.lt()` (decision 111's
 > constructors are type-scoped).
 

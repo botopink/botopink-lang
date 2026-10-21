@@ -200,6 +200,53 @@ fn checkStdRootPurity(env: *Env, u: ast.ImportDecl) InferError!void {
     }
 }
 
+/// Decision 919 — a folder of std (`io`, `testing`) is no module and is not
+/// importable: `import {io} from "std"` is refused, located, naming the
+/// leaves (`io.fs`, `io.clock`, …). Decision 913 — `internal/` is private to
+/// its package: an item whose path has an `internal` segment, imported from a
+/// package other than the importing module's own (std's included), is refused,
+/// located. Neither has a list or a flag (decision 67).
+fn checkImportScope(env: *Env, u: ast.ImportDecl) InferError!void {
+    // An embedded std module reads its own imports as `from "std"`
+    // (`embeddedStdProgram`); `internal/` is std's own there.
+    if (env.inStd) return;
+    const pkg = switch (u.source) {
+        .module => |m| m,
+        .root, .key => return,
+    };
+    const from_std = std.mem.eql(u8, pkg, "std");
+    for (u.imports) |imp| {
+        for (imp.segments) |seg| {
+            if (!std.mem.eql(u8, seg, "internal")) continue;
+            if (std.mem.eql(u8, pkg, u.ownPackage)) break;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is in `internal/` of package `{s}`, which is private to that package", .{ diagnostics.internal_import, try imp.dotted(env.arena), pkg });
+            env.lastError = TypeError.custom(msg, "Import what the package exports from outside `internal/`; a package's `src/internal/` is reached only by its own modules.").withLoc(imp.loc);
+            return error.TypeError;
+        }
+        if (!from_std) continue;
+        const whole = try imp.fullPath(env.arena);
+        if (env.stdModules.contains(whole)) continue;
+        var leaves: std.ArrayListUnmanaged([]const u8) = .empty;
+        var it = env.stdModules.keyIterator();
+        while (it.next()) |k| {
+            const key = k.*;
+            if (key.len <= whole.len + 1 or !std.mem.startsWith(u8, key, whole) or key[whole.len] != '/') continue;
+            if (std.mem.indexOfScalar(u8, key[whole.len + 1 ..], '/') != null) continue;
+            try leaves.append(env.arena, try std.mem.replaceOwned(u8, env.arena, key, "/", "."));
+        }
+        if (leaves.items.len == 0) continue;
+        std.mem.sort([]const u8, leaves.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a folder of std, not a module, and a folder is not importable", .{ diagnostics.folder_import, try imp.dotted(env.arena) });
+        const hint = try std.fmt.allocPrint(env.arena, "Import a leaf of it: `import {{{s}}} from \"std\"` (the folder holds {s}).", .{ leaves.items[0], try std.mem.join(env.arena, ", ", leaves.items) });
+        env.lastError = TypeError.custom(msg, hint).withLoc(imp.loc);
+        return error.TypeError;
+    }
+}
+
 /// `import {bool} from "std"` — marks each imported std module in
 /// `env.stdImports` so qualified calls (`bool.negate(x)`) resolve against
 /// `env.stdModules`. Returns true when the decl was a `from "std"` import
@@ -212,6 +259,7 @@ fn checkStdRootPurity(env: *Env, u: ast.ImportDecl) InferError!void {
 /// leaf enters scope — neither `io` nor `fs` is bound by the last two.
 fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
     try checkStdRootPurity(env, u);
+    try checkImportScope(env, u);
     try noteImportBindings(env, u);
     const from_std = switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),

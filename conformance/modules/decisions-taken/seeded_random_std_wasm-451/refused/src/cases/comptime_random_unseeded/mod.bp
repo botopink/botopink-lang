@@ -3,9 +3,9 @@
 //// before any `seed` is refused, located, rather than drawn from a fixed
 //// seed the program never wrote.
 
-import {io, io.terminal.print} from "std";
+import {io.terminal.print, io.random} from "std";
 
 pub fn main() -> void {
-    val atBuild = comptime io.random.seededFloat();
+    val atBuild = comptime random.seededFloat();
     print(atBuild);
 }

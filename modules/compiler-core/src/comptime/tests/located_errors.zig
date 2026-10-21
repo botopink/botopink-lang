@@ -184,7 +184,7 @@ test "an embedded std module that does not parse is located at its libs/std/src 
 }
 
 // Decision 451 (3) — a raise inside a decorator body or a `comptime` body is
-// located at the call that raised (`io.random.float()`, a `@panic` in a
+// located at the call that raised (`random.float()`, a `@panic` in a
 // function the body calls), not at the annotation or the `comptime`
 // expression that ran it; the calls of the chain are the `called from` lines
 // (decision 532), the last one the annotation or the `comptime`.
@@ -195,10 +195,10 @@ test "a raise inside a decorator or a comptime is located at the call that raise
     const cases = [_]struct { src: []const u8, line: u32, col: u32, entry: [2]u32 }{
         .{
             .src =
-            \\import {io} from "std";
+            \\import {io.random} from "std";
             \\
             \\fn drawn(syntax decl: unknown) -> void {
-            \\    val x = io.random.float();
+            \\    val x = random.float();
             \\    @emit("pub fn label() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
             \\}
             \\
@@ -219,10 +219,10 @@ test "a raise inside a decorator or a comptime is located at the call that raise
         },
         .{
             .src =
-            \\import {io} from "std";
+            \\import {io.random} from "std";
             \\
             \\pub fn main() -> void {
-            \\    val atBuild = comptime io.random.float();
+            \\    val atBuild = comptime random.float();
             \\    print(atBuild);
             \\}
             \\
@@ -319,10 +319,10 @@ test "a raise inside a decorator is located in its own build when an earlier bui
     const io = std.testing.io;
     const build_root = test_scratch.path(io, "comptime/raise_location_moved");
     const decorated =
-        \\import {io} from "std";
+        \\import {io.random} from "std";
         \\
         \\fn drawn(syntax decl: unknown) -> void {
-        \\    val x = io.random.float();
+        \\    val x = random.float();
         \\    @emit("pub fn moved() -> string { return \"" + compiler.name(decl)! + " ${x}\"; }");
         \\}
         \\

@@ -66,7 +66,7 @@ zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.s
 zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every example of conformance/docs.md (and each cell's docs.md, README.md) names a conformance cell (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
-zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
+zig build gen-unicode   # regenerate libs/std/src/internal/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
 zig build std-wasm      # modules/std-wasm → zig-out/lib/std_wasm.wasm, the side module a wasm program and the comptime runtime decode (decisions 440, 450)
 zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)

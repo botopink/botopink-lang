@@ -1,0 +1,6 @@
+//// `internal/` is private to its package: std's `internal/unicode_tables` is
+//// reached only by std's own `unicode` module (decision 913).
+
+import {internal.unicode_tables} from "std";
+
+pub fn main() -> void {}

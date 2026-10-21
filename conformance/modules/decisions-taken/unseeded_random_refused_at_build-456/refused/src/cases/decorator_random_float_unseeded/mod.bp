@@ -5,10 +5,10 @@
 //// `comptime-host-cell-unavailable`, never the nested namespace `io.random`
 //// read as unbound (144 B-46).
 
-import {io, compiler, io.terminal.print} from "std";
+import {compiler, io.terminal.print, io.random} from "std";
 
 fn drawn(syntax decl: unknown) -> void {
-    val x = io.random.float();
+    val x = random.float();
     @emit("pub fn label() -> string { return \""
         + compiler.name(decl)!
         + " ${x}\"; }");

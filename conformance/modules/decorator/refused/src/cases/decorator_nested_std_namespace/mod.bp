@@ -6,10 +6,10 @@
 //// located at the field — never the namespace read as unbound
 //// (`unbound variable '__bp_ns_io_random'`).
 
-import {io, io.terminal.print} from "std";
+import {io.terminal.print, io.random} from "std";
 
 fn tagged(syntax decl: unknown) -> void {
-    io.random.seed(7);
+    random.seed(7);
     val n = decl.nope;
 }
 

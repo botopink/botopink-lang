@@ -1,0 +1,4 @@
+//// std/internal — what std's own modules share and no other package reaches
+//// (decision 913): an import of `internal/` from outside std is refused.
+
+pub mod unicode_tables;

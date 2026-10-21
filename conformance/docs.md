@@ -375,10 +375,9 @@ Without an alias the second item binds the name again (`import-name-collision`,
 decision 170); a type this module declares beside an aliased import of a
 same-named type is two types (decision 603), the alias the other module's type here,
 a std type's included (`own_type_beside_std_type_import`). An activation cannot be
-renamed (`import-alias-on-activation`). A leaf that names a folder is a namespace of
-its submodules (decision 110): after `import {io} from "std"`, `io.fs.readText(p)`
-calls `io/fs`'s `readText` — only the modules the program reaches are imported —
-and a module namespace reaches its types, so `import {collections} from "std"`
+renamed (`import-alias-on-activation`). A folder of std is no module and is not
+importable (decision 919): `import {io} from "std"` is refused, located, naming
+the leaves (`import {io.fs}`); a module namespace reaches its types, so `import {collections} from "std"`
 allows `collections.Dict.empty()` beside `collections.lt()` (decision 111's
 constructors are type-scoped).
 
@@ -4563,7 +4562,7 @@ of the chain is a `called from` line, down to the annotation that ran the body
 <!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/refused/src/cases/decorator_random_float_unseeded -->
 
 A decorator's body reaches the std modules its module imports, a nested
-namespace included (`io.random.seed(7)` after `import {io} from "std"`); a body
+namespace included (`random.seed(7)` after `import {io.random} from "std"`); a body
 whose run fails is checked with them bound, so its answer is its own error —
 never the namespace read as unbound:
 

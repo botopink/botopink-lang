@@ -17,7 +17,7 @@
 //// flattened into the global type env rather than imported, so they are wired
 //// separately by the build and are not declared here.
 ////
-//// `mod unicode_tables;` (private) is the generated data of `unicode`
+//// `mod internal;` (private) holds `internal/unicode_tables.bp`, the generated data of `unicode`
 //// (`zig build gen-unicode`, decision 333 (A)) — not an importable module.
 
 pub mod collections;
@@ -29,7 +29,7 @@ pub mod querystring;
 pub mod json;
 pub mod regex;
 pub mod unicode;
-mod unicode_tables;
+mod internal;
 pub mod string_builder;
 pub mod encoding;
 pub mod hash;

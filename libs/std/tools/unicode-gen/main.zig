@@ -2,7 +2,7 @@
 //! std-wasm's case mapping (decision 443).
 //!
 //! `zig build gen-unicode` runs this with three arguments — this directory,
-//! the output file (`libs/std/src/unicode_tables.bp`) and std-wasm's case
+//! the output file (`libs/std/src/internal/unicode_tables.bp`) and std-wasm's case
 //! tables (`modules/std-wasm/src/case_tables.zig`) — and it:
 //!
 //!   1. checks every file `manifest.json` names against its SHA-256 (a file

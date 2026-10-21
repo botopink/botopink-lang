@@ -596,6 +596,15 @@ pub const import_alias_on_activation: []const u8 = "import-alias-on-activation";
 /// from "std"`). Located at the item; `io/` and `testing/` are free; no flag.
 pub const std_root_imports_io: []const u8 = "std-root-imports-io";
 
+/// Decision 919 — `import {io} from "std"`: a folder of std is no module and
+/// is not importable. Located at the item; the hint names the leaves.
+pub const folder_import: []const u8 = "folder-import";
+
+/// Decision 913 — an import of another package's `src/internal/`
+/// (`import {internal.unicode_tables} from "std"`), std's included. Located at
+/// the item.
+pub const internal_import: []const u8 = "internal-import";
+
 // ── D1–D6: fn-param-default-expansion diagnostics ────────────────────────────
 // Authored in `tasks/v0.beta.20/specs/prim-op.md` §"fn-param-default-expansion"
 // F2 — six diagnostics shared by every call surface (fn call / annotation /
@@ -985,6 +994,8 @@ pub const all_codes = [_][]const u8{
     module_item_collision,
     import_alias_on_activation,
     std_root_imports_io,
+    folder_import,
+    internal_import,
     fn_param_default_trailing_only,
     fn_param_positional_after_named,
     fn_param_default_arity_mismatch,

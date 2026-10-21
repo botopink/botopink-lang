@@ -2374,15 +2374,15 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
 // `$__wasi_random_f64`), and `seed`'s `-> void` answers the 0 its caller drops.
 test "wat: std-wasm ---- seed and seededFloat draw the sidecar's Mulberry32 stream" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\import {io} from "std";
+        \\import {io.random} from "std";
         \\fn main() -> void {
-        \\    val before = io.random.seededFloat();
+        \\    val before = random.seededFloat();
         \\    print(before >= 0.0 && before < 1.0);
-        \\    io.random.seed(42);
-        \\    print((io.random.seededFloat() * 65536.0).floor());
-        \\    print((io.random.seededFloat() * 65536.0).floor());
-        \\    io.random.seed(0 - 7);
-        \\    print((io.random.seededFloat() * 65536.0).floor());
+        \\    random.seed(42);
+        \\    print((random.seededFloat() * 65536.0).floor());
+        \\    print((random.seededFloat() * 65536.0).floor());
+        \\    random.seed(0 - 7);
+        \\    print((random.seededFloat() * 65536.0).floor());
         \\}
         \\
         \\import {io.terminal.print} from "std";

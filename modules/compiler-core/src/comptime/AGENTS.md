@@ -40,8 +40,8 @@ comptime/
 ├── default_fn.zig     ← decision 289: an anonymous `pub default fn (…)` named `default` (a keyword no source spells); decision 582: `packageNamespaces` — `import pkg;` / `import x[, {…}] from "p"` read as the brace form `import {pkg} from "pkg"` / `import {x, …} from "p"`; `callableNamespaces` — a module namespace (`import {m.card};`) written as a value (called, passed, bound) rewritten to a local `__bp_default_<card>` bound by the added item `m.card.<default> as __bp_default_<card>` (the namespace item kept for its members), `namespace-not-a-value` at the use when the module declares no default; a parameter or local of the name shadows it (`analyzeSource`, after `mod_namespace`; the default registered under `default_fn.key(path)` in `templateRegistry` by `registerExports`)
 ├── mod_tree.zig       ← decision 337: the session's module tree (a backtick `mod` name or path segment keys the module by the file name it spells, decision 561 — `keyIn`, the child keys) (`Reflection.modTree`, built by `compile` / `compileTypesOnly` from every non-std module; `buildWith` takes a module's `Known` entry and re-exports instead of parsing it — level B's hit, `knownOf` what a recording group stores): each module's `mod` children (a root's child is top-level, a folder's nests), its `pub` names and types, and the re-exports (`pub val f = ns.f;` / `pub type T = ns.T;`, a namespace then the same name); `known` is false for file-path keys (the language server's session)
 ├── mod_namespace.zig  ← decision 337 (2)–(3): `mod m;` binds the namespace `m` — the item `import {m};` (the child's path) added when the module reads it — in a body (a member read, or the namespace written as a value, decision 582), or at the head of a dotted name in a decorator argument's lexeme (`#[each(markers.email)]`, outside a string); `ns.child` (a `mod` child, `private-module` from outside a plain `mod`'s parent), `ns.Type` (type, constructor, variant path) and `ns.value` (value position) rewritten as `std_namespace` does for std, over the package's own modules and a dependency's module an item `from "<pkg>"` names whole (`import {shapes} from "kit"`, its items added in a `use … from "<pkg>"` of their own, 144 B-10); a re-exporting type alias dropped for the item that brings the type under its name; `redundant-module-import` and a declaration named like a `mod` (`module-item-collision`, decision 582 (4)); `chains` — every dotted name a module reads, for the CLI resolver's order (`analyzeSource`, first)
-├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace, `collections.Dict.empty()` and a type's constructor `url.Url(…)` through a module one, rewritten on the parsed program into the one-dot / leaf forms (`analyzeSource`, `expandStdImports`)
 ├── std_calls.zig      ← decision 606 (2): a call of std's `print` (`io/terminal.bp`) or `panic` (`failure.bp`) — through its imported item (`import {io.terminal.print}`, an alias included), its module's namespace (`terminal.print(x)`) or, inside that module, bare — rewritten into the one call node the checker and the backends read (no receiver, `is_builtin`); the item leaves the import list when every use of it was a call (a namespace too: `import {io.terminal}` whose only use is `terminal.print(x)` binds nothing, so the module and the hosts of its other members are not linked — `modules/terminal/cells/terminal_namespace_import_print`), and `expandStdImports` / `stdImportsOf` count no dependency for it (`analyzeSource` after `std_namespace`, `registerStdlib`); std's `compiler` value item (decision 579) leaves it too (`isBuildOnlyItem`: every read of it is the compiler's, so `std/compiler` is no dependency of a module that imports it); decision 669: `itemsOf` lists what a module's std imports bind to the two before `expand` drops them (`analyzeSource` records it in `Reflection.stdCalls`), and `rewriteWith` rewrites code that module wrote as text with them (a `compiler.addMember(source)` member, `comptime.zig` `mergeMembers`; a tree another module's template or `syntax` expression function builds, `infer.applyAstHygiene`, decisions 170, 578 — `modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_code_names_imported_std_function`); `declarations` / `declarationsText` are the two declarations as their modules write them — what `registerBuiltinDecls`, `stdlibFnDecls`, `prelude_cache.builtins` (the backends' dispatch) and `comptime/builtins.zig`'s drift test read
+├── std_namespace.zig  ← decision 111 on the use side (a folder is not importable, 919): `collections.Dict.empty()` and a type's constructor `url.Url(…)` through a module one, rewritten on the parsed program into the one-dot / leaf forms (`analyzeSource`, `expandStdImports`)
 ├── template.zig       ← templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)
@@ -606,19 +606,18 @@ a plain name); `comptime.zig`'s `withImportTypeAliasesErased` drops the alias fr
 the import items the backends read, so no backend sees it. A `resolveImports`
 refusal is the module's `typeError`, like one from inference.
 
-**A std namespace reached through two dots (decisions 110 rule 2, 111).**
-`std_namespace.expand` runs on the parsed program before `resolveImports`
-(and in `expandStdImports`, so the reached modules are embedded):
-`import {io} from "std"` names a FOLDER of std (no module of that key, some
-module under it) and `io.fs.f()` becomes the namespace of `io/fs` bound as
-`__bp_ns_io_fs` (a name no source can spell), with the item `io.fs as
-__bp_ns_io_fs` added; `collections.Dict` after `import {collections}` becomes
-`Dict` with the item `collections.Dict` added — the leaf form, so the checker
-and the four backends see nothing new. The folder item leaves the list, only the
-modules the program reaches are imported (STD-001 checks those), a module that
-declares its own top-level `Dict` keeps `collections.Dict` as written, and a
-member that names nothing (`io.nope`) stays and is refused as the unbound
-folder name, located. The same leaf rule holds in TYPE position — `fn f() ->
+**A std module namespace (decisions 111, 919).** `std_namespace.expand` runs
+on the parsed program before `resolveImports` (and in `expandStdImports`, so the
+reached modules are embedded): `collections.Dict` after `import {collections}`
+becomes `Dict` with the item `collections.Dict` added — the leaf form, so the
+checker and the four backends see nothing new; a module that declares its own
+top-level `Dict` keeps `collections.Dict` as written. A FOLDER of std (`io`,
+`testing`: no module of that key, some module under it) is no module and is not
+importable (decision 919): `infer.checkImportScope` refuses `import {io} from
+"std"` at the item, naming the leaves (`io.fs`, `io.random`, …), and an item whose
+path has an `internal` segment, imported from a package other than the importing
+module's own (std's included), is refused the same way (decision 913,
+`internal-import`). The same leaf rule holds in TYPE position — `fn f() ->
 collections.Dict<string, i32>` is `Dict` with the item added (`rewriteTypeRef`,
 a `.named` or a non-builtin `.generic`); a module declaring its own `Dict` keeps
 the dotted name, and the checker refuses it as an unknown type (the `.generic`
