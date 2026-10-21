@@ -1284,7 +1284,7 @@ entryNext(E) ->
 % value, or the task of a component that awaits —, nothing awaited inside.
 
 resolve(C, Scope, Key) ->
-    case '__bp_implements'(C, 'Composable') of
+    case false of
         true ->
             ('__bp_method'(compose, C, []))(Scope, Key);
         _ ->
@@ -1667,21 +1667,6 @@ sameKey(A, B) ->
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
-'__bp_implements'(__BpA0, __BpA1) ->
-    T = case erlang:is_tuple(__BpA0) andalso (erlang:tuple_size(__BpA0) > 0) of
-true -> erlang:element(1, __BpA0);
-false -> __BpA0
-end,
-case erlang:is_atom(T) andalso (T =/= true) andalso (T =/= false) andalso (T =/= undefined) of
-true ->
-M = case string:split(erlang:atom_to_list(T), "__v__") of
-[P, _] -> erlang:list_to_atom(P);
-_ -> T
-end,
-(code:ensure_loaded(M) =:= {module, M}) andalso erlang:function_exported(M, '__bp_behaviors', 0) andalso lists:member(__BpA1, erlang:apply(M, '__bp_behaviors', []));
-false -> false
-end.
-
 '__bp_priv__array_range'(A0, A1) -> array_range(A0, A1).
 
 '__bp_priv__array_repeat'(A0, A1) -> array_repeat(A0, A1).
@@ -1844,7 +1829,7 @@ carriedRef(Self) ->
 
 '__bp_format'(V) -> {record, "Scope", [{"scopeStore", erlang:element(2, V)}, {"scopeCell", erlang:element(3, V)}, {"scopeOwner", erlang:element(4, V)}, {"scopeCarried", erlang:element(5, V)}]}.
 
-'__bp_behaviors'() -> ['Closeable'].
+'__bp_behaviors'() -> [std@primitives@@Closeable].
 ```
 
 ----- ERLANG -- std@context@@ScopeTree.erl

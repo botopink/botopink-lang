@@ -727,7 +727,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 {module, std@context}.
 {exports, [{createContext, 1}, {provide, 1}, {context, 1}, {inject, 1}, {all, 1}, {resolve, 3}, {run, 2}, {enter, 2}, {received, 1}, {provideIn, 3}, {find, 3}, {answer, 1}, {nowhere, 0}, {root, 0}, {stamp, 3}, {stampPlain, 3}, {stampKeyed, 3}, {memoIn, 3}, {allIn, 3}, {countNew, 0}, {countEnd, 1}, {storeOf, 1}, {openChild, 5}, {closeStore, 1}, {framesAt, 4}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__carriedFrames', 1}, {'__bp_priv__cellOf', 2}, {'__bp_priv__countAt', 5}, {'__bp_priv__countIn', 2}, {'__bp_priv__countNext', 2}, {'__bp_priv__countRest', 1}, {'__bp_priv__entryCounts', 1}, {'__bp_priv__entryFrames', 1}, {'__bp_priv__entryNext', 1}, {'__bp_priv__entrySlot', 1}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}, {'__bp_priv__keyText', 1}, {'__bp_priv__linkAt', 3}, {'__bp_priv__linkNext', 1}, {'__bp_priv__linkSelf', 1}, {'__bp_priv__placeKey', 1}, {'__bp_priv__placed', 2}, {'__bp_priv__provideAt', 6}, {'__bp_priv__sameKey', 2}, {'__bp_priv__samePlace', 2}, {'__bp_priv__settled', 1}, {'__bp_priv__slotAt', 5}, {'__bp_priv__treeCells', 1}, {'__bp_priv__treeLinks', 1}, {'__bp_priv__treeOf', 3}, {'__bp_priv__withCell', 2}]}.
 {attributes, []}.
-{labels, 510}.
+{labels, 477}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -2203,8 +2203,12 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {atom, 'Composable'}, {x, 1}}.
-    {call, 2, {f, 323}}.
+    {jump, {f, 322}}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 323}}.
+  {label, 322}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 323}.
     {test, is_eq, {f, 321}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
@@ -2212,7 +2216,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, compose}, {x, 0}}.
-    {call, 3, {f, 358}}.
+    {call, 3, {f, 325}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
@@ -2241,7 +2245,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_ne_exact, {f, 365}, [{y, 1}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 332}, [{y, 1}, {atom, undefined}]}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
@@ -2249,24 +2253,24 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call, 3, {f, 67}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {jump, {f, 367}}.
+    {jump, {f, 334}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 368}}.
-  {label, 367}.
+    {jump, {f, 335}}.
+  {label, 334}.
     {move, {atom, false}, {x, 0}}.
-  {label, 368}.
-    {test, is_eq, {f, 366}, [{x, 0}, {atom, true}]}.
+  {label, 335}.
+    {test, is_eq, {f, 333}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 366}.
+  {label, 333}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 365}.
+  {label, 332}.
     {call_ext, 0, {extfunc, std@context@@Scope, root, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {'try', {y, 14}, {f, 369}}.
+    {'try', {y, 14}, {f, 336}}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {y, 3}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
@@ -2274,13 +2278,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call, 3, {f, 67}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 371}}.
+    {jump, {f, 338}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 372}}.
-  {label, 371}.
+    {jump, {f, 339}}.
+  {label, 338}.
     {move, {atom, false}, {x, 0}}.
-  {label, 372}.
-    {test, is_eq, {f, 370}, [{x, 0}, {atom, true}]}.
+  {label, 339}.
+    {test, is_eq, {f, 337}, [{x, 0}, {atom, true}]}.
     {move, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {try_end, {y, 14}}.
@@ -2289,7 +2293,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 4}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 370}.
+  {label, 337}.
     {move, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {try_end, {y, 14}}.
@@ -2298,7 +2302,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 4}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 369}.
+  {label, 336}.
     {try_case, {y, 14}}.
     {move, {x, 1}, {y, 5}}.
     {move, {x, 2}, {y, 6}}.
@@ -2332,30 +2336,30 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 375}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 342}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 376}}.
-  {label, 375}.
+    {jump, {f, 343}}.
+  {label, 342}.
     {move, {atom, false}, {x, 0}}.
-  {label, 376}.
-    {test, is_eq, {f, 374}, [{x, 0}, {atom, true}]}.
+  {label, 343}.
+    {test, is_eq, {f, 341}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 378}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 345}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 379}}.
-  {label, 378}.
+    {jump, {f, 346}}.
+  {label, 345}.
     {move, {atom, false}, {x, 0}}.
-  {label, 379}.
-    {test, is_eq, {f, 377}, [{x, 0}, {atom, true}]}.
+  {label, 346}.
+    {test, is_eq, {f, 344}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, std@context@@Scope, childAt, 2}, 4}.
-  {label, 377}.
+  {label, 344}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 2, {extfunc, std@context@@Scope, childAt, 2}, 4}.
-  {label, 374}.
+  {label, 341}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2374,13 +2378,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 381}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 348}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 382}}.
-  {label, 381}.
+    {jump, {f, 349}}.
+  {label, 348}.
     {move, {atom, false}, {x, 0}}.
-  {label, 382}.
-    {test, is_eq, {f, 380}, [{x, 0}, {atom, true}]}.
+  {label, 349}.
+    {test, is_eq, {f, 347}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -2397,7 +2401,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 3}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {call_last, 4, {f, 43}, 5}.
-  {label, 380}.
+  {label, 347}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2419,13 +2423,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 384}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 351}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 385}}.
-  {label, 384}.
+    {jump, {f, 352}}.
+  {label, 351}.
     {move, {atom, false}, {x, 0}}.
-  {label, 385}.
-    {test, is_eq, {f, 383}, [{x, 0}, {atom, true}]}.
+  {label, 352}.
+    {test, is_eq, {f, 350}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
     {move, {x, 0}, {y, 3}}.
@@ -2447,7 +2451,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 9}.
     return.
-  {label, 383}.
+  {label, 350}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2472,38 +2476,38 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {line, [{location, "std@context.erl", 51}]}.
-  {label, 386}.
+  {label, 353}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 387}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 354}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 389}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 356}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 390}}.
-  {label, 389}.
+    {jump, {f, 357}}.
+  {label, 356}.
     {move, {atom, false}, {x, 0}}.
-  {label, 390}.
-    {test, is_eq, {f, 388}, [{x, 0}, {atom, true}]}.
+  {label, 357}.
+    {test, is_eq, {f, 355}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 392}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 359}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 392}.
-    {test, is_eq_exact, {f, 391}, [{x, 0}, {y, 1}]}.
+  {label, 359}.
+    {test, is_eq_exact, {f, 358}, [{x, 0}, {y, 1}]}.
     {move, {y, 4}, {x, 0}}.
     {call_last, 1, {f, 105}, 5}.
-  {label, 391}.
+  {label, 358}.
     {move, {y, 4}, {x, 0}}.
     {call, 1, {f, 107}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 393}}.
-  {label, 388}.
+    {jump, {f, 360}}.
+  {label, 355}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {atom, undefined}]}}.
     {call_last, 1, {f, 105}, 5}.
-  {label, 393}.
-    {jump, {f, 386}}.
-  {label, 387}.
+  {label, 360}.
+    {jump, {f, 353}}.
+  {label, 354}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 5}.
     return.
@@ -2561,13 +2565,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 395}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 362}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 396}}.
-  {label, 395}.
+    {jump, {f, 363}}.
+  {label, 362}.
     {move, {atom, false}, {x, 0}}.
-  {label, 396}.
-    {test, is_eq, {f, 394}, [{x, 0}, {atom, true}]}.
+  {label, 363}.
+    {test, is_eq, {f, 361}, [{x, 0}, {atom, true}]}.
     {move, {atom, std@context@@PlaceItem__v__body}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
@@ -2594,7 +2598,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_last, 2, {f, 91}, 15}.
-  {label, 394}.
+  {label, 361}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2656,7 +2660,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 398}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+    {make_fun3, {f, 365}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
     {deallocate, 2}.
     return.
 % `use memo(make)` written as call `callNo` of a body: the slot of its own
@@ -2673,13 +2677,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 403}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 370}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 404}}.
-  {label, 403}.
+    {jump, {f, 371}}.
+  {label, 370}.
     {move, {atom, false}, {x, 0}}.
-  {label, 404}.
-    {test, is_eq, {f, 402}, [{x, 0}, {atom, true}]}.
+  {label, 371}.
+    {test, is_eq, {f, 369}, [{x, 0}, {atom, true}]}.
     {move, {atom, std@context@@PlaceItem__v__body}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
@@ -2724,7 +2728,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 11}, {x, 2}}.
     {move, {y, 9}, {x, 0}}.
     {call_last, 5, {f, 55}, 21}.
-  {label, 402}.
+  {label, 369}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2748,13 +2752,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 406}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 373}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 407}}.
-  {label, 406}.
+    {jump, {f, 374}}.
+  {label, 373}.
     {move, {atom, false}, {x, 0}}.
-  {label, 407}.
-    {test, is_eq, {f, 405}, [{x, 0}, {atom, true}]}.
+  {label, 374}.
+    {test, is_eq, {f, 372}, [{x, 0}, {atom, true}]}.
     {move, {atom, std@context@@PlaceItem__v__body}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
@@ -2795,21 +2799,21 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {put_tuple2, {x, 1}, {list, [{y, 10}, {y, 9}]}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 409}, 0, 0, {x, 0}, {list, [{y, 2}, {y, 8}]}}.
+    {make_fun3, {f, 376}, 0, 0, {x, 0}, {list, [{y, 2}, {y, 8}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {bif, element, {f, 0}, [{integer, 1}, {x, 0}], {x, 1}}.
     {move, {x, 1}, {y, 10}}.
     {bif, element, {f, 0}, [{integer, 2}, {x, 0}], {x, 1}}.
     {move, {x, 1}, {y, 9}}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq, {f, 420}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 387}, [{x, 0}, {atom, true}]}.
     {move, {y, 9}, {x, 0}}.
     {call_last, 1, {f, 97}, 18}.
-  {label, 420}.
+  {label, 387}.
     {move, {y, 9}, {x, 0}}.
     {deallocate, 18}.
     return.
-  {label, 405}.
+  {label, 372}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -2834,7 +2838,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 422}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 389}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
@@ -2862,7 +2866,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, undefined}, {x, 1}}.
-    {call, 2, {f, 428}}.
+    {call, 2, {f, 395}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
@@ -2878,32 +2882,32 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 435}}.
-    {test, is_eq, {f, 433}, [{x, 0}, {atom, true}]}.
+    {call, 1, {f, 402}}.
+    {test, is_eq, {f, 400}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 438}}.
-    {jump, {f, 436}}.
-  {label, 433}.
+    {call, 1, {f, 405}}.
+    {jump, {f, 403}}.
+  {label, 400}.
     {move, {atom, undefined}, {x, 0}}.
-  {label, 436}.
+  {label, 403}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 51}}.
     {move, {x, 0}, {y, 3}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 445}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 445}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 446}}.
-  {label, 445}.
+    {test, is_ge, {f, 412}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 412}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 413}}.
+  {label, 412}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:612:9">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 446}.
+  {label, 413}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@PlaceCount}, {y, 1}, {x, 0}, {y, 2}]}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 440}}.
+    {call, 2, {f, 407}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 6}.
     return.
@@ -2917,9 +2921,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 447}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 414}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 447}.
+  {label, 414}.
     {deallocate, 1}.
     return.
 
@@ -2932,9 +2936,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 448}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 415}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 448}.
+  {label, 415}.
     {deallocate, 1}.
     return.
 % ── the store's host side (decision 824) ─────────────────────────────────────
@@ -2949,12 +2953,12 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_eq, {f, 449}, [{y, 0}, {y, 1}]}.
+    {test, is_eq, {f, 416}, [{y, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 450}}.
-  {label, 449}.
+    {jump, {f, 417}}.
+  {label, 416}.
     {move, {atom, false}, {x, 0}}.
-  {label, 450}.
+  {label, 417}.
     {deallocate, 2}.
     return.
 % The closed tree written over the root's: on erlang and beam the entry goes
@@ -2964,207 +2968,207 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % Whether `owner` is another process than this one: never off the BEAM (an
 % owner token there is an empty cell).
 
-{function, '__bp_priv__array_range', 2, 453}.
-  {label, 452}.
+{function, '__bp_priv__array_range', 2, 420}.
+  {label, 419}.
     {line, [{location, "std@context.erl", 68}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 453}.
+  {label, 420}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 455}.
-  {label, 454}.
+{function, '__bp_priv__array_repeat', 2, 422}.
+  {label, 421}.
     {line, [{location, "std@context.erl", 69}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 455}.
+  {label, 422}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__carriedFrames', 1, 457}.
-  {label, 456}.
+{function, '__bp_priv__carriedFrames', 1, 424}.
+  {label, 423}.
     {line, [{location, "std@context.erl", 70}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__carriedFrames'}, 1}.
-  {label, 457}.
+  {label, 424}.
     {call_only, 1, {f, 45}}.
 
-{function, '__bp_priv__cellOf', 2, 459}.
-  {label, 458}.
+{function, '__bp_priv__cellOf', 2, 426}.
+  {label, 425}.
     {line, [{location, "std@context.erl", 71}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__cellOf'}, 2}.
-  {label, 459}.
+  {label, 426}.
     {call_only, 2, {f, 31}}.
 
-{function, '__bp_priv__countAt', 5, 461}.
-  {label, 460}.
+{function, '__bp_priv__countAt', 5, 428}.
+  {label, 427}.
     {line, [{location, "std@context.erl", 72}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__countAt'}, 5}.
-  {label, 461}.
+  {label, 428}.
     {call_only, 5, {f, 49}}.
 
-{function, '__bp_priv__countIn', 2, 463}.
-  {label, 462}.
+{function, '__bp_priv__countIn', 2, 430}.
+  {label, 429}.
     {line, [{location, "std@context.erl", 73}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__countIn'}, 2}.
-  {label, 463}.
+  {label, 430}.
     {call_only, 2, {f, 51}}.
 
-{function, '__bp_priv__countNext', 2, 465}.
-  {label, 464}.
+{function, '__bp_priv__countNext', 2, 432}.
+  {label, 431}.
     {line, [{location, "std@context.erl", 74}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__countNext'}, 2}.
-  {label, 465}.
+  {label, 432}.
     {call_only, 2, {f, 103}}.
 
-{function, '__bp_priv__countRest', 1, 467}.
-  {label, 466}.
+{function, '__bp_priv__countRest', 1, 434}.
+  {label, 433}.
     {line, [{location, "std@context.erl", 75}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__countRest'}, 1}.
-  {label, 467}.
+  {label, 434}.
     {call_only, 1, {f, 53}}.
 
-{function, '__bp_priv__entryCounts', 1, 469}.
-  {label, 468}.
+{function, '__bp_priv__entryCounts', 1, 436}.
+  {label, 435}.
     {line, [{location, "std@context.erl", 76}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__entryCounts'}, 1}.
-  {label, 469}.
+  {label, 436}.
     {call_only, 1, {f, 63}}.
 
-{function, '__bp_priv__entryFrames', 1, 471}.
-  {label, 470}.
+{function, '__bp_priv__entryFrames', 1, 438}.
+  {label, 437}.
     {line, [{location, "std@context.erl", 77}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__entryFrames'}, 1}.
-  {label, 471}.
+  {label, 438}.
     {call_only, 1, {f, 59}}.
 
-{function, '__bp_priv__entryNext', 1, 473}.
-  {label, 472}.
+{function, '__bp_priv__entryNext', 1, 440}.
+  {label, 439}.
     {line, [{location, "std@context.erl", 78}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__entryNext'}, 1}.
-  {label, 473}.
+  {label, 440}.
     {call_only, 1, {f, 65}}.
 
-{function, '__bp_priv__entrySlot', 1, 475}.
-  {label, 474}.
+{function, '__bp_priv__entrySlot', 1, 442}.
+  {label, 441}.
     {line, [{location, "std@context.erl", 79}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__entrySlot'}, 1}.
-  {label, 475}.
+  {label, 442}.
     {call_only, 1, {f, 61}}.
 
-{function, '__bp_priv__frameParent', 1, 477}.
-  {label, 476}.
+{function, '__bp_priv__frameParent', 1, 444}.
+  {label, 443}.
     {line, [{location, "std@context.erl", 80}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
-  {label, 477}.
+  {label, 444}.
     {call_only, 1, {f, 107}}.
 
-{function, '__bp_priv__frameValue', 1, 479}.
-  {label, 478}.
+{function, '__bp_priv__frameValue', 1, 446}.
+  {label, 445}.
     {line, [{location, "std@context.erl", 81}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
-  {label, 479}.
+  {label, 446}.
     {call_only, 1, {f, 105}}.
 
-{function, '__bp_priv__keyText', 1, 481}.
-  {label, 480}.
+{function, '__bp_priv__keyText', 1, 448}.
+  {label, 447}.
     {line, [{location, "std@context.erl", 82}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__keyText'}, 1}.
-  {label, 481}.
+  {label, 448}.
     {call_only, 1, {f, 41}}.
 
-{function, '__bp_priv__linkAt', 3, 483}.
-  {label, 482}.
+{function, '__bp_priv__linkAt', 3, 450}.
+  {label, 449}.
     {line, [{location, "std@context.erl", 83}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__linkAt'}, 3}.
-  {label, 483}.
+  {label, 450}.
     {call_only, 3, {f, 35}}.
 
-{function, '__bp_priv__linkNext', 1, 485}.
-  {label, 484}.
+{function, '__bp_priv__linkNext', 1, 452}.
+  {label, 451}.
     {line, [{location, "std@context.erl", 84}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__linkNext'}, 1}.
-  {label, 485}.
+  {label, 452}.
     {call_only, 1, {f, 39}}.
 
-{function, '__bp_priv__linkSelf', 1, 487}.
-  {label, 486}.
+{function, '__bp_priv__linkSelf', 1, 454}.
+  {label, 453}.
     {line, [{location, "std@context.erl", 85}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__linkSelf'}, 1}.
-  {label, 487}.
+  {label, 454}.
     {call_only, 1, {f, 37}}.
 
-{function, '__bp_priv__placeKey', 1, 489}.
-  {label, 488}.
+{function, '__bp_priv__placeKey', 1, 456}.
+  {label, 455}.
     {line, [{location, "std@context.erl", 86}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__placeKey'}, 1}.
-  {label, 489}.
+  {label, 456}.
     {call_only, 1, {f, 19}}.
 
-{function, '__bp_priv__placed', 2, 491}.
-  {label, 490}.
+{function, '__bp_priv__placed', 2, 458}.
+  {label, 457}.
     {line, [{location, "std@context.erl", 87}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__placed'}, 2}.
-  {label, 491}.
+  {label, 458}.
     {call_only, 2, {f, 91}}.
 
-{function, '__bp_priv__provideAt', 6, 493}.
-  {label, 492}.
+{function, '__bp_priv__provideAt', 6, 460}.
+  {label, 459}.
     {line, [{location, "std@context.erl", 88}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__provideAt'}, 6}.
-  {label, 493}.
+  {label, 460}.
     {call_only, 6, {f, 47}}.
 
-{function, '__bp_priv__sameKey', 2, 495}.
-  {label, 494}.
+{function, '__bp_priv__sameKey', 2, 462}.
+  {label, 461}.
     {line, [{location, "std@context.erl", 89}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__sameKey'}, 2}.
-  {label, 495}.
+  {label, 462}.
     {call_only, 2, {f, 109}}.
 
-{function, '__bp_priv__samePlace', 2, 497}.
-  {label, 496}.
+{function, '__bp_priv__samePlace', 2, 464}.
+  {label, 463}.
     {line, [{location, "std@context.erl", 90}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__samePlace'}, 2}.
-  {label, 497}.
+  {label, 464}.
     {call_only, 2, {f, 17}}.
 
-{function, '__bp_priv__settled', 1, 499}.
-  {label, 498}.
+{function, '__bp_priv__settled', 1, 466}.
+  {label, 465}.
     {line, [{location, "std@context.erl", 91}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__settled'}, 1}.
-  {label, 499}.
+  {label, 466}.
     {call_only, 1, {f, 97}}.
 
-{function, '__bp_priv__slotAt', 5, 501}.
-  {label, 500}.
+{function, '__bp_priv__slotAt', 5, 468}.
+  {label, 467}.
     {line, [{location, "std@context.erl", 92}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__slotAt'}, 5}.
-  {label, 501}.
+  {label, 468}.
     {call_only, 5, {f, 55}}.
 
-{function, '__bp_priv__treeCells', 1, 503}.
-  {label, 502}.
+{function, '__bp_priv__treeCells', 1, 470}.
+  {label, 469}.
     {line, [{location, "std@context.erl", 93}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__treeCells'}, 1}.
-  {label, 503}.
+  {label, 470}.
     {call_only, 1, {f, 25}}.
 
-{function, '__bp_priv__treeLinks', 1, 505}.
-  {label, 504}.
+{function, '__bp_priv__treeLinks', 1, 472}.
+  {label, 471}.
     {line, [{location, "std@context.erl", 94}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__treeLinks'}, 1}.
-  {label, 505}.
+  {label, 472}.
     {call_only, 1, {f, 27}}.
 
-{function, '__bp_priv__treeOf', 3, 507}.
-  {label, 506}.
+{function, '__bp_priv__treeOf', 3, 474}.
+  {label, 473}.
     {line, [{location, "std@context.erl", 95}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__treeOf'}, 3}.
-  {label, 507}.
+  {label, 474}.
     {call_only, 3, {f, 23}}.
 
-{function, '__bp_priv__withCell', 2, 509}.
-  {label, 508}.
+{function, '__bp_priv__withCell', 2, 476}.
+  {label, 475}.
     {line, [{location, "std@context.erl", 96}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__withCell'}, 2}.
-  {label, 509}.
+  {label, 476}.
     {call_only, 2, {f, 29}}.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 145}.
@@ -3572,254 +3576,50 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_5', 2, 323}.
-  {label, 322}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_5'}, 2}.
-  {label, 323}.
-    {allocate, 12, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, is_tuple, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 326}, [{x, 0}, {atom, true}]}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '>', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 4}}.
-    {jump, {f, 328}}.
-  {label, 326}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 327}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 4}}.
-    {jump, {f, 328}}.
-  {label, 327}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 328}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 330}, [{x, 0}, {atom, true}]}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 5}}.
-    {jump, {f, 329}}.
-  {label, 330}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 331}, [{x, 0}, {atom, false}]}.
-    {move, {y, 2}, {y, 5}}.
-    {jump, {f, 329}}.
-  {label, 331}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 329}.
-    {move, {y, 5}, {y, 0}}.
-    {jump, {f, 333}}.
-  {label, 333}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, is_atom, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 334}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {atom, true}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {atom, false}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {atom, undefined}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 10}, {y, 8}}.
-    {jump, {f, 342}}.
-  {label, 340}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 341}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 8}}.
-    {jump, {f, 342}}.
-  {label, 341}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 9}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 342}.
-    {move, {y, 8}, {y, 6}}.
-    {jump, {f, 339}}.
-  {label, 337}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 338}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 6}}.
-    {jump, {f, 339}}.
-  {label, 338}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 7}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 339}.
-    {move, {y, 6}, {y, 4}}.
-    {jump, {f, 336}}.
-  {label, 334}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 335}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 4}}.
-    {jump, {f, 336}}.
-  {label, 335}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 336}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 344}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {literal, [95, 95, 118, 95, 95]}, {x, 1}}.
-    {call_ext, 2, {extfunc, string, split, 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_nonempty_list, {f, 346}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 7}, {y, 8}}.
-    {move, {y, 7}, {y, 1}}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_nonempty_list, {f, 346}, [{x, 0}]}.
-    {get_list, {x, 0}, {y, 9}, {y, 10}}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 346}, [{x, 0}]}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {y, 6}}.
-    {jump, {f, 345}}.
-  {label, 346}.
-    {move, {y, 0}, {y, 6}}.
-    {jump, {f, 345}}.
-  {label, 345}.
-    {move, {y, 6}, {y, 0}}.
-    {jump, {f, 349}}.
-  {label, 349}.
-    {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
-    {move, {x, 0}, {y, 6}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, module}, {y, 0}]}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 350}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {atom, '__bp_behaviors'}, {x, 1}}.
-    {move, {integer, 0}, {x, 2}}.
-    {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 353}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {atom, '__bp_behaviors'}, {x, 1}}.
-    {move, nil, {x, 2}}.
-    {call_ext, 3, {extfunc, erlang, apply, 3}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 9}, {x, 1}}.
-    {call_ext, 2, {extfunc, lists, member, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 7}}.
-    {jump, {f, 355}}.
-  {label, 353}.
-    {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 354}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 7}}.
-    {jump, {f, 355}}.
-  {label, 354}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 8}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 355}.
-    {move, {y, 7}, {y, 5}}.
-    {jump, {f, 352}}.
-  {label, 350}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 351}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 5}}.
-    {jump, {f, 352}}.
-  {label, 351}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 6}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 352}.
-    {move, {y, 5}, {x, 0}}.
-    {deallocate, 12}.
-    return.
-  {label, 344}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 356}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {x, 0}}.
-    {deallocate, 12}.
-    return.
-  {label, 356}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-
-{function, '-bp_method-', 3, 358}.
-  {label, 357}.
+{function, '-bp_method-', 3, 325}.
+  {label, 324}.
     {line, [{location, "std@context.erl", 46}]}.
     {func_info, {atom, std@context}, {atom, '-bp_method-'}, 3}.
-  {label, 358}.
-    {test, is_map, {f, 359}, [{x, 1}]}.
+  {label, 325}.
+    {test, is_map, {f, 326}, [{x, 1}]}.
     {bif, map_get, {f, 0}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {call_ext_only, 2, {extfunc, erlang, apply, 2}}.
-  {label, 359}.
+  {label, 326}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 2}, {y, 1}}.
-    {test, is_tuple, {f, 360}, [{x, 1}]}.
+    {test, is_tuple, {f, 327}, [{x, 1}]}.
     {bif, element, {f, 0}, [{integer, 1}, {x, 1}], {x, 0}}.
-    {jump, {f, 361}}.
-  {label, 360}.
+    {jump, {f, 328}}.
+  {label, 327}.
     {move, {x, 1}, {x, 0}}.
-  {label, 361}.
+  {label, 328}.
     {move, {x, 0}, {y, 2}}.
     {call_ext, 1, {extfunc, erlang, atom_to_binary, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, binary, split, 2}}.
-    {test, is_nonempty_list, {f, 362}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 329}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
-    {test, is_nil, {f, 363}, [{x, 2}]}.
-    {jump, {f, 362}}.
-  {label, 363}.
+    {test, is_nil, {f, 330}, [{x, 2}]}.
+    {jump, {f, 329}}.
+  {label, 330}.
     {move, {x, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, binary_to_atom, 1}}.
-    {jump, {f, 364}}.
-  {label, 362}.
+    {jump, {f, 331}}.
+  {label, 329}.
     {move, {y, 2}, {x, 0}}.
-  {label, 364}.
+  {label, 331}.
     {move, {y, 0}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_ext_last, 3, {extfunc, erlang, apply, 3}, 3}.
 
-{function, '-placed/2-fun-0-', 4, 398}.
-  {label, 397}.
+{function, '-placed/2-fun-0-', 4, 365}.
+  {label, 364}.
     {line, [{location, "std@context.erl", 58}]}.
     {func_info, {atom, std@context}, {atom, '-placed/2-fun-0-'}, 4}.
-  {label, 398}.
+  {label, 365}.
     {allocate, 7, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -3827,17 +3627,17 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 2}, {y, 2}}.
     {move, {x, 3}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 400}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 367}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 5, {x, 0}}.
-  {label, 400}.
-    {test, is_eq, {f, 399}, [{x, 0}, {atom, true}]}.
+  {label, 367}.
+    {test, is_eq, {f, 366}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 401}}.
-  {label, 399}.
+    {jump, {f, 368}}.
+  {label, 366}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@context@@Place, with, 2}}.
-  {label, 401}.
+  {label, 368}.
     {move, {y, 0}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -3845,38 +3645,38 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 7}.
     return.
 
-{function, '-bp_at-', 2, 412}.
-  {label, 411}.
+{function, '-bp_at-', 2, 379}.
+  {label, 378}.
     {line, [{location, "std@context.erl", 60}]}.
     {func_info, {atom, std@context}, {atom, '-bp_at-'}, 2}.
-  {label, 412}.
+  {label, 379}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 0}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {test, is_ge, {f, 414}, [{y, 0}, {integer, 0}]}.
-    {test, is_lt, {f, 413}, [{y, 0}, {x, 0}]}.
+    {test, is_ge, {f, 381}, [{y, 0}, {integer, 0}]}.
+    {test, is_lt, {f, 380}, [{y, 0}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 414}.
+  {label, 381}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 413}, [{x, 0}, {integer, 0}]}.
+    {test, is_ge, {f, 380}, [{x, 0}, {integer, 0}]}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 413}.
+  {label, 380}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '-allIn/3-fun-1-', 4, 409}.
-  {label, 408}.
+{function, '-allIn/3-fun-1-', 4, 376}.
+  {label, 375}.
     {line, [{location, "std@context.erl", 60}]}.
     {func_info, {atom, std@context}, {atom, '-allIn/3-fun-1-'}, 4}.
-  {label, 409}.
+  {label, 376}.
     {allocate, 12, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -3889,17 +3689,17 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 5}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
-    {call, 2, {f, 412}}.
-    {test, is_ne_exact, {f, 410}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 379}}.
+    {test, is_ne_exact, {f, 377}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 415}}.
-  {label, 410}.
+    {jump, {f, 382}}.
+  {label, 377}.
     {move, {literal, <<"value is null \x{E2}\x{80}\x{94} cs[i]! at src/context.bp:574:29">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 415}.
+  {label, 382}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, std@context@@Place, index, 1}}.
@@ -3909,18 +3709,18 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call, 3, {f, 67}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {jump, {f, 417}}.
+    {jump, {f, 384}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 418}}.
-  {label, 417}.
+    {jump, {f, 385}}.
+  {label, 384}.
     {move, {atom, false}, {x, 0}}.
-  {label, 418}.
-    {test, is_eq, {f, 416}, [{x, 0}, {atom, true}]}.
+  {label, 385}.
+    {test, is_eq, {f, 383}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 419}}.
-  {label, 416}.
-  {label, 419}.
+    {jump, {f, 386}}.
+  {label, 383}.
+  {label, 386}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
@@ -3936,23 +3736,23 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 12}.
     return.
 
-{function, '-settled/1-fun-2-', 2, 422}.
-  {label, 421}.
+{function, '-settled/1-fun-2-', 2, 389}.
+  {label, 388}.
     {line, [{location, "std@context.erl", 61}]}.
     {func_info, {atom, std@context}, {atom, '-settled/1-fun-2-'}, 2}.
-  {label, 422}.
+  {label, 389}.
     {allocate, 5, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {jump, {f, 424}}.
+    {jump, {f, 391}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 425}}.
-  {label, 424}.
+    {jump, {f, 392}}.
+  {label, 391}.
     {move, {atom, false}, {x, 0}}.
-  {label, 425}.
-    {test, is_eq, {f, 423}, [{x, 0}, {atom, true}]}.
+  {label, 392}.
+    {test, is_eq, {f, 390}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, nil, {x, 0}}.
@@ -3965,8 +3765,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 426}}.
-  {label, 423}.
+    {jump, {f, 393}}.
+  {label, 390}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 0}, {x, 0}}.
@@ -3977,15 +3777,15 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 426}.
+  {label, 393}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 5}.
     return.
 
-{function, '__bp_tpl_6-t/2-fun-0-', 2, 432}.
-  {label, 431}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_6-t/2-fun-0-'}, 2}.
-  {label, 432}.
+{function, '__bp_tpl_5-t/2-fun-0-', 2, 399}.
+  {label, 398}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_5-t/2-fun-0-'}, 2}.
+  {label, 399}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4000,16 +3800,16 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_6', 2, 428}.
-  {label, 427}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_6'}, 2}.
-  {label, 428}.
+{function, '__bp_tpl_5', 2, 395}.
+  {label, 394}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_5'}, 2}.
+  {label, 395}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 432}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 399}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -4018,10 +3818,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_7', 1, 435}.
-  {label, 434}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_7'}, 1}.
-  {label, 435}.
+{function, '__bp_tpl_6', 1, 402}.
+  {label, 401}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_6'}, 1}.
+  {label, 402}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4039,10 +3839,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_8', 1, 438}.
-  {label, 437}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_8'}, 1}.
-  {label, 438}.
+{function, '__bp_tpl_7', 1, 405}.
+  {label, 404}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_7'}, 1}.
+  {label, 405}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4052,10 +3852,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, get, 1}, 2}.
 
-{function, '__bp_tpl_9-t/2-fun-0-', 2, 444}.
-  {label, 443}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_9-t/2-fun-0-'}, 2}.
-  {label, 444}.
+{function, '__bp_tpl_8-t/2-fun-0-', 2, 411}.
+  {label, 410}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_8-t/2-fun-0-'}, 2}.
+  {label, 411}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4071,16 +3871,16 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_9', 2, 440}.
-  {label, 439}.
-    {func_info, {atom, std@context}, {atom, '__bp_tpl_9'}, 2}.
-  {label, 440}.
+{function, '__bp_tpl_8', 2, 407}.
+  {label, 406}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_8'}, 2}.
+  {label, 407}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 444}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 411}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -4099,11 +3899,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 451}, [{x, 0}]}.
+    {test, is_list, {f, 418}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 451}.
+  {label, 418}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -4710,7 +4510,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {line, [{location, "std@context@@Scope.erl", 22}]}.
     {func_info, {atom, std@context@@Scope}, {atom, '__bp_behaviors'}, 0}.
   {label, 45}.
-    {move, {literal, ['Closeable']}, {x, 0}}.
+    {move, {literal, [std@primitives@@Closeable]}, {x, 0}}.
     return.
 
 {function, '__bp_tpl_0', 0, 19}.
