@@ -2,14 +2,14 @@
 //// `f(x)`; decisions 102/104 (front 21) — and decision 128 — a hook
 //// is `fn … -> Component<T>` with any `T`, a component the same wrapper
 //// with `T: @Renderable`, and every caller runs a component from the root,
-//// `c.run(RenderScope.root())`, and awaits that run (commonJS emits every
+//// `run(c)`, and awaits that run (commonJS emits every
 //// `#[@use]` body as an `async function`; erlang, wasm and beam are eager and
 //// `await` is the identity). So `run` runs each component in turn and the
 //// values print in the same order on every target.
 //// A `use` inside a nested closure is refused (`reject/use_in_closure.bp`). The
 //// owner type is declared here (no library).
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run as runRoot, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -79,18 +79,18 @@ fn Loading() -> Element {
 }
 
 async fn run() -> Async<i32> {
-    val e0 = (await Widget(41).run(RenderScope.root())).value;
+    val e0 = await runRoot(Widget(41));
     print(e0.count);
-    val e1 = (await Fields().run(RenderScope.root())).value;
+    val e1 = await runRoot(Fields());
     print(e1.count);
-    val e2 = (await Composed().run(RenderScope.root())).value;
+    val e2 = await runRoot(Composed());
     print(e2.count);
-    val e3 = (await Positional().run(RenderScope.root())).value;
+    val e3 = await runRoot(Positional());
     print(e3.count);
-    val e4 = (await Effectful().run(RenderScope.root())).value;
+    val e4 = await runRoot(Effectful());
     print(e4.count);
     print(Loading().count);
-    val e5 = (await Liked().run(RenderScope.root())).value;
+    val e5 = await runRoot(Liked());
     print(e5.count);
     return 0;
 }

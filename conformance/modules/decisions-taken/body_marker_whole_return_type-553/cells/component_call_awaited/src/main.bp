@@ -4,7 +4,7 @@
 //// record field's function answers, and `view(child: Element)` takes the
 //// `Element` a `use Title()` answered, never the call itself.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 pub type Element(tag: string, kids: Element[]) implement Renderable
 
@@ -39,6 +39,6 @@ fn render(e: Element) -> string {
 }
 
 pub async fn main() -> Async<void> {
-    val page = (await Page(Slot(view: { c -> Wrap(c) })).run(RenderScope.root())).value;
+    val page = await run(Page(Slot(view: { c -> Wrap(c) })));
     print(render(page));
 }

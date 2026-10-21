@@ -4139,7 +4139,8 @@ pub const rule_read_behaviors = [_][]const u8{
     "Async",
     "Iter",
     "AsyncIter",
-    "Component",
+    // The component behavior a type implements (decisions 809 (1), 826 (3)).
+    "Composable",
     // Markers whose `implement` a rule of `infer.zig` reads:
     // `implementsAnnotation`, `implementsRenderable` and
     // `decorator_type_name`.

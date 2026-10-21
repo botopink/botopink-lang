@@ -4,7 +4,7 @@
 //// on the host and answers its value once the task settles; `load("")` takes
 //// the `catch` value and waits the same way — the `catch` never leaves early.
 
-import {context.RenderScope, async.delay, io.terminal.print} from "std";
+import {context.run, async.delay, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -25,8 +25,8 @@ component fn Page(s: string) -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val a = (await Page("x").run(RenderScope.root())).value;
+    val a = await run(Page("x"));
     print(a.text);
-    val b = (await Page("").run(RenderScope.root())).value;
+    val b = await run(Page(""));
     print(b.text);
 }

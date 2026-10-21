@@ -206,10 +206,6 @@ pub const use_outside_render_tree: []const u8 = "use-outside-render-tree";
 /// value to what a component renders below it, and a hook renders nothing.
 pub const context_provide_outside_component: []const u8 = "context-provide-outside-component";
 
-/// Decision 354 — `use provide(…)` after the body rendered a component: the
-/// child rendered before it would not see the value.
-pub const context_provide_after_render: []const u8 = "context-provide-after-render";
-
 /// Decision 354 — std's `provide` / `context` referenced other than as the
 /// operand of a `use` (called for a value, passed, bound).
 pub const context_hook_without_use: []const u8 = "context-hook-without-use";
@@ -217,7 +213,6 @@ pub const context_hook_without_use: []const u8 = "context-hook-without-use";
 /// Decision 354 (2) — a `Context<T>()` that is not a module-level `val`'s
 /// whole initializer: a context's identity is its declaration (281).
 pub const context_not_declared: []const u8 = "context-not-declared";
-pub const render_scope_construction: []const u8 = "render-scope-construction";
 
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
@@ -962,8 +957,6 @@ pub const all_codes = [_][]const u8{
     use_outside_render_tree,
     context_provide_outside_component,
     context_not_declared,
-    render_scope_construction,
-    context_provide_after_render,
     context_hook_without_use,
     variadic_spread,
     call_spread,

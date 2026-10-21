@@ -2,9 +2,9 @@
 //// component body too: `mk(2)` in `Sheet`, a body written
 //// `-> Component<string>`, answers `Component<Prop>`, so it binds to a `val`
 //// written with that type and sits in a list of them; nothing runs (`ran`
-//// never prints). The root is run by `Sheet().run(RenderScope.root())`.
+//// never prints). The root is run by `run(Sheet())`.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type Prop(d: string) implement Renderable
 
@@ -20,6 +20,6 @@ component fn Sheet() -> Component<string> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Sheet().run(RenderScope.root());
-    print(r.value);
+    val r = await run(Sheet());
+    print(r);
 }

@@ -202,9 +202,8 @@ pub const FnContext = struct {
     composeHelperOf: ?[]const u8 = null,
 };
 
-/// Decision 354 — what a name imported from std's `context` module declares;
-/// decision 388's `RenderScope`, made only by `RenderScope.root()`.
-pub const StdContextName = enum { context_type, create_context, provide, context, inject, render_scope };
+/// Decision 354 — what a name imported from std's `context` module declares.
+pub const StdContextName = enum { context_type, create_context, provide, context, inject };
 
 /// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
 /// identity (`declIdentity`) of the decorator the argument names, or null when
@@ -1198,12 +1197,6 @@ pub const Env = struct {
     /// the `T` it answers. The scope lowering gives each one a slot made with
     /// the component's value (`context_lower.zig`).
     memoUses: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 354 — where the body of the `@Component<R>` fn being inferred
-    /// first renders a component (decision 791: a `use c` of it, or an `await`
-    /// of it while 388 (4) stands): a `use provide(…)` after it is refused, since the child rendered
-    /// before it would not see the value. Null until one renders; saved and
-    /// restored around each fn body.
-    firstRenderAt: ?ast.Loc = null,
     /// Decision 357 — the construct enclosing the position being inferred
     /// that makes a `use` there conditional or repeated (an `if` / `else`,
     /// a loop, a lambda, …): a `use` is written at the top level of a
@@ -1331,11 +1324,6 @@ pub const Env = struct {
     /// `@Component<R>`, by location, with that type: a call makes the
     /// component's lambda and runs nothing (decision 791 (1)).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 791 (3) — every `use c` whose operand is a component, by the
-    /// `use`'s location: in a component body it runs `c` with the body's
-    /// children scope and answers its `R` (`context_lower.zig`), where a hook's
-    /// `use` runs it with the scope the body received.
-    componentUses: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 804 (1) — the module's type components, as
     /// `component_types.zig` rewrote them: the record a `compose` body's
     /// `self` reads (`Card__Self`) to the component's name (`Card`). A helper
@@ -1357,10 +1345,6 @@ pub const Env = struct {
     /// Decision 432 — every `async { … }` whose value is a `@Result` its body
     /// builds (`failing_task_block`), by the block's location.
     failingTaskBlocks: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
-    /// Decision 388 (2) — every `c.run(scope)` on a `@Component<R>` value, by
-    /// the call's location, with that `R`: lowered to the call of the lambda
-    /// `c` is, its `Rendered<R>` carried for wasm (`context_lower.zig`).
-    componentRuns: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 388 — every call of a host function (a bodyless `declare fn`,
     /// an `#[@External…]` binding — this module's or an imported one), by
     /// location: a host answering `@Component<R>` answers the host's own
@@ -2613,7 +2597,11 @@ pub const Env = struct {
     pub fn behaviorDecl(self: *const Env, name: []const u8) ?ast.BehaviorDecl {
         if (self.assocInterfaceDecls.get(name) orelse self.importedBehaviorDecls.get(name)) |d| return d;
         if (self.typeDefs.contains(name)) return null;
-        return self.ambientBehaviorDecls.get(name);
+        if (self.ambientBehaviorDecls.get(name)) |d| return d;
+        // Decision 826 (3) — `Composable`, the prelude's, a rule reads: named
+        // with no import, as `Component<T>`'s member.
+        if (std.mem.eql(u8, name, "Composable")) return self.ruleReadBehaviorDecls.get(name);
+        return null;
     }
 
     /// The type alias `name` names, if one is in scope.

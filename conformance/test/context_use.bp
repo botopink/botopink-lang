@@ -3,12 +3,12 @@
 //// `fn <noun>(…) -> Component<R>` (decision 128) (no `use` prefix in its name);
 //// `val x = use <noun>(…)` binds `R` inside a `#[@use]` body — a component
 //// (`-> Component<Element>`) or another hook (`-> Component<_>`). A
-//// component is run from the root by its caller, `c.run(RenderScope.root())`
+//// component is run from the root by its caller, `run(c)`
 //// (a `test` body runs in a future context, so it awaits that run; decision
 //// 791 (4): no `await` of a component). The owner type is declared here: the
 //// suite depends on no library.
 
-import {context.RenderScope} from "std";
+import {context.run, context.RenderScope} from "std";
 
 type Element(count: i32, name: string) implement Renderable
 
@@ -87,36 +87,36 @@ fn Loading() -> Element {
 }
 
 test "val c = use state(n) binds R, the hook's yield" {
-    val e = (await Widget(41).run(RenderScope.root())).value;
+    val e = await run(Widget(41));
     assert e.count == 42;
     assert e.name == "state";
 }
 
 test "val {a, b} = use … destructures R by field name" {
-    val e = (await Fields().run(RenderScope.root())).value;
+    val e = await run(Fields());
     assert e.count == 5;
     assert e.name == "state";
 }
 
 test "a custom hook composes hooks under the same owner" {
-    val e = (await Composed().run(RenderScope.root())).value;
+    val e = await run(Composed());
     assert e.count == 20;
     assert e.name == "state";
 }
 
 test "val #(a, b) = use … destructures a tuple R positionally" {
-    val e = (await Positional().run(RenderScope.root())).value;
+    val e = await run(Positional());
     assert e.count == 7;
 }
 
 test "val #(a, b) = use … binds each name to its element of R" {
-    val e = (await Liked().run(RenderScope.root())).value;
+    val e = await run(Liked());
     assert e.count == 24;
     assert e.name == "optimistic";
 }
 
 test "a bare use statement activates a void hook" {
-    val e = (await Effectful().run(RenderScope.root())).value;
+    val e = await run(Effectful());
     assert e.count == 1;
 }
 

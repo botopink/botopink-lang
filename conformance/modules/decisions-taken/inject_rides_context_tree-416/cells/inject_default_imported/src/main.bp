@@ -6,7 +6,7 @@
 pub mod clock;
 
 import {clock.Clock};
-import {context.RenderScope, context.createContext, context.provide, context.inject, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.inject, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -24,8 +24,8 @@ component fn Root() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val outside = (await Page().run(RenderScope.root())).value;
+    val outside = await run(Page());
     print(outside.text);
-    val inside = (await Root().run(RenderScope.root())).value;
+    val inside = await run(Root());
     print(inside.text);
 }

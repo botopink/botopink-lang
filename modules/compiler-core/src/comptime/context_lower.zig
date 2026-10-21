@@ -1,58 +1,62 @@
-//! Decision 388 — a `@Component<R>` at run time is a lambda over an opaque
-//! `RenderScope`, lowered on the transformed AST for every backend at once.
+//! Decisions 809 (8), 812, 819 — a `Component<R>` at run time is a function
+//! over a `Scope` and a `Place`, lowered on the transformed AST for every
+//! backend at once.
 //!
-//! A function whose resolved return is `@Component<R>` (a hook's and a
-//! component's alike) answers the lambda; calling it runs nothing:
+//! A function whose resolved return is `Component<R>` (a hook's and a
+//! component's alike) answers the function; calling it runs nothing:
 //!
-//!   fn Card(item: Item) -> @Component<View> { body }
-//!     →  fn Card(item: Item) -> fn(unknown) -> unknown { return { bpScope__ -> body' }; }
+//!   fn Card(item: Item) -> Component<View> { body }
+//!     →  fn Card(item: Item) -> fn(unknown, unknown) -> unknown {
+//!            return { bpScope__, bpKey__ -> val bpCell__N = bpScopeEnter__(bpScope__, bpKey__); body' };
+//!        }
 //!
-//! In `body'` the lambda's parameter is the scope the body received, and the
-//! children's scope starts as it:
+//! The body opens its own cell, the child at `key` of the scope it was handed
+//! (819 (1)), and `body'` reads and writes it:
 //!
-//!   use provide(c);      →  val bpScopeKids__N = bpScopePush__(<kids>, "<T's identity>", c);
-//!   use context(ctx)     →  bpScopeFind__(bpScope__, "<ctx's type's identity>", ctx)
+//!   use provide(c);      →  bpScopeProvide__(bpCell__N, "<T's identity>", c);
+//!   use context(ctx)     →  bpScopeFind__(bpRecv__N, "<ctx's type's identity>", ctx)
 //!
-//! where a `Context<T>` is its value at run time: `createContext(v)` is `v`.
-//!   use h(…)             →  bpScopeValue__(await (h(…))(bpScope__))    — a hook is part of the body
-//!   use c                →  bpScopeValue__(await (c)(<kids>))          — a component resolved (791 (3))
-//!   return v             →  return bpScopeRendered__(v, <kids>)
+//! where a `Context<T>` is its value at run time (`createContext(v)` is `v`)
+//! and `bpRecv__N = bpScopeReceived__(bpCell__N)`, bound at the body's entry,
+//! is what the cell held then — a body reads the contexts it received, never
+//! its own provides (354 (2), 809 (8)).
 //!
-//! and a body that ends without a `return` answers `rendered(null, <kids>)`.
+//!   use h(…) / use c     →  await (h(…))(bpCell__N, bpScopeNowhere__())   — a child cell of the body's (812 (1), 818 (1))
+//!   return v             →  return bpScopeAnswer__(v)
+//!
+//! and a body that ends without a `return` answers `answer(null)`. A `use
+//! provide` writes the cell where it is written, so what the body resolves
+//! after it reads it and what it resolved before does not (812 (3)).
 //! Decisions 755, 771 — each `use memo(make)` position of the body is a slot
-//! made with the component's value, before its lambda, and read in the body:
+//! made with the component's value, before its function, and read in the
+//! body:
 //!
-//!   fn Page(…) -> … { val bpMemoSlot__N = bpMemoNew__(); return { bpScope__ -> … bpMemoRead__(bpMemoSlot__N, make) … }; }
+//!   fn Page(…) -> … { val bpMemoSlot__N = bpMemoNew__(); return { bpScope__, bpKey__ -> … bpMemoRead__(bpMemoSlot__N, make) … }; }
 //!
 //! so one `Page(…)` call is one instance: its first render fills the slot
 //! (`read` runs `make`), a later render of the same value reads it.
 //! A `{ component x -> body }` lambda (decision 574, `Env.componentLambdas`)
 //! is lowered the same way, its tail made its `return`:
-//! `{ x -> return { bpScope__ -> body' }; }` — its parameters and what it
-//! captures closed over by the inner lambda.
-//! A component call makes its lambda wherever it is written, a component body
-//! included (decision 791 (1)): it is run by the tree that holds it as a child,
-//! or resolved by a `use` of it in a body, with the children's scope; an
-//! `await` of it is refused (791 (4)). The render library runs the root with
-//! `c.run(RenderScope.root())`, the call of the lambda `c` is
-//! (`Env.componentRuns`): it holds the scopes explicitly. Nothing is captured:
-//! a lambda written in a body is outside it.
+//! `{ x -> return { bpScope__, bpKey__ -> body' }; }` — its parameters and
+//! what it captures closed over by the inner lambda.
+//! A component call makes its function wherever it is written, a component
+//! body included (decision 791 (1)): it is resolved by a `use` of it in a body,
+//! by a render library's `resolve`, or by a root's `run` (std's `context`,
+//! 809 (6), 822). Nothing is captured: a lambda written in a body is outside it.
 //!
 //! On commonJS the `await` is left out where the target's node is
 //! synchronous (`Env.syncCalls`, decision 375), so a synchronous component's
-//! lambda awaits nothing and stays a plain arrow. A host function answering
-//! `@Component<R>` (`Env.hostCalls`) answers the host's own value: a `use` of
+//! function awaits nothing and stays a plain arrow. A host function answering
+//! `Component<R>` (`Env.hostCalls`) answers the host's own value: a `use` of
 //! it runs nothing.
 //!
-//! The `bpScope…__` functions are std's `context.push` / `find` / `rendered`
-//! / `valueOf` / `root`, imported under those names when the module needs
-//! them (the import is added here). A context's identity is its value's type
-//! (379), recorded by the checker in `Env.contextUses`: a read's fallback is
-//! the context value it names (723), an `inject` field's the `val` that
-//! declares its type's default (another module's through a hidden import,
-//! `Env.contextDefaultImports`). A provide binds a fresh `val`, so a `return` after it
-//! answers the scope as it was there (the checker refuses a provide after the
-//! body rendered a component and a `use` after an early return).
+//! The `bpScope…__` functions are std's `context.enter` / `received` /
+//! `provideIn` / `find` / `answer` / `nowhere` / `root`, imported under those
+//! names when the module needs them (the import is added here). A context's
+//! identity is its value's type (379), recorded by the checker in
+//! `Env.contextUses`: a read's fallback is the context value it names (723),
+//! an `inject` field's the `val` that declares its type's default (another
+//! module's through a hidden import, `Env.contextDefaultImports`).
 //!
 //! The comptime runtimes evaluate the parsed program (`erlang.zig`
 //! `emitComptimeModule`) and do not run this pass (`language-gaps.md`).
@@ -64,38 +68,49 @@ const infer = @import("infer.zig");
 
 const Env = envMod.Env;
 
-/// The parameter of a component's lambda: the scope its body received.
+/// The parameters of a component's function: the scope it is handed and its
+/// place (819 (1)).
 pub const scope_param = "bpScope__";
+pub const key_param = "bpKey__";
 /// The local names std's lowering functions are imported under.
-pub const push_fn = "bpScopePush__";
+pub const enter_fn = "bpScopeEnter__";
+pub const received_fn = "bpScopeReceived__";
+pub const provide_fn = "bpScopeProvide__";
 pub const find_fn = "bpScopeFind__";
-pub const rendered_fn = "bpScopeRendered__";
-pub const value_fn = "bpScopeValue__";
+pub const answer_fn = "bpScopeAnswer__";
+pub const nowhere_fn = "bpScopeNowhere__";
 pub const root_fn = "bpScopeRoot__";
 /// std's `hooks.slot` / `hooks.read` (decision 771), imported under these.
 pub const memo_new_fn = "bpMemoNew__";
 pub const memo_read_fn = "bpMemoRead__";
+/// The type argument a run's call carries (`(c)(cell, place)`): its one
+/// argument is the `R` the run answers (decision 504, `wat/scope_carry.zig`).
+pub const run_mark = "bpRun__";
 
-/// The children's scope a `use provide` binds (`bpScopeKids__<n>`).
-const kids_prefix = "bpScopeKids__";
+/// The cell a body opens (`bpCell__<n>`) and the contexts it received
+/// (`bpRecv__<n>`).
+const cell_prefix = "bpCell__";
+const recv_prefix = "bpRecv__";
 /// A `use memo` position's slot (`bpMemoSlot__<n>`).
 const memo_slot_prefix = "bpMemoSlot__";
 /// The inner closure's answer, in a body that keeps a bare `try`.
 const result_local = "bpScopeResult__";
 
 /// The lowering's functions, as `wat.zig` refuses them.
-pub const lowered_fns = [_][]const u8{ push_fn, find_fn, rendered_fn, value_fn, root_fn, memo_new_fn, memo_read_fn };
+pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn };
 
 const Frame = struct {
-    /// The scope this body received (its lambda's parameter).
-    received: []const u8,
-    /// The scope its children receive: `received` until a `use provide`.
-    kids: []const u8,
-    /// Each `return v` answers `rendered(v, kids)`; false when the body runs
-    /// as an inner closure (a bare `try` in it, `lowerComponentBody`).
+    /// The cell this body opened.
+    cell: []const u8,
+    /// The contexts the cell held at the body's entry.
+    recv: []const u8,
+    /// Whether the body reads `recv` (a `use context`, an `inject`).
+    reads: bool = false,
+    /// Each `return v` answers `answer(v)`; false when the body runs as an
+    /// inner closure (a bare `try` in it, `lowerComponentBody`).
     wraps_returns: bool = true,
-    /// The `R` of the `@Component<R>` the body answers, as written — what
-    /// each `rendered(v, kids)` carries (`carry`).
+    /// The `R` of the `Component<R>` the body answers, as written — what
+    /// each `answer(v)` carries (`carry`).
     renders: ?ast.TypeRef = null,
 };
 
@@ -105,7 +120,7 @@ const Lowering = struct {
     /// One entry per body being walked: a component body's frame, or null
     /// for a body that is none (a lambda, a plain function, a test).
     frames: std.ArrayListUnmanaged(?Frame) = .empty,
-    kids_count: usize = 0,
+    body_count: usize = 0,
     uses_std: bool = false,
     /// Decision 771 — the slots of the `use memo` positions of the bodies
     /// being walked; a component body takes the ones its walk added.
@@ -165,14 +180,13 @@ const Lowering = struct {
     }
 
     /// Decision 504 — the type a value has where it crosses one of std's
-    /// `unknown` slots (`push`'s and `rendered`'s value, `find`'s and
-    /// `valueOf`'s answer, the `Rendered<R>` a `c.run(scope)` answers),
-    /// written as the call's one type argument. The checker never reads
-    /// these calls (they are made after inference) and erlang, beam and
-    /// commonJS ignore a call's type arguments; wasm, which boxes and unboxes
-    /// only by a static type, moves the value's own word through the slot by
-    /// it. Nothing is written when the type is not resolved: wasm then
-    /// refuses the call.
+    /// `unknown` slots (`provideIn`'s and `answer`'s value, `find`'s answer,
+    /// the `R` a run answers), written as the call's one type argument. The
+    /// checker never reads these calls (they are made after inference) and
+    /// erlang, beam and commonJS ignore a call's type arguments; wasm, which
+    /// boxes and unboxes only by a static type, moves the value's own word
+    /// through the slot by it. Nothing is written when the type is not
+    /// resolved: wasm then refuses the call.
     fn carry(self: *Lowering, e: *ast.Expr, carried: ?ast.TypeRef) !void {
         const t = carried orelse return;
         const args = try self.arena.alloc(ast.TypeRef, 1);
@@ -200,40 +214,47 @@ const Lowering = struct {
         return e;
     }
 
-    /// The scope a component value runs with here: in a body the children's
-    /// scope (`renders`) or the received one (a hook, part of the body);
-    /// outside every body `RenderScope.root()`.
-    fn scopeArg(self: *Lowering, renders: bool, loc: ast.Loc) !*ast.Expr {
+    /// The cell a `use` resolves under: the body's own; outside every body
+    /// a fresh root.
+    fn cellArg(self: *Lowering, loc: ast.Loc) !*ast.Expr {
         const f = self.current() orelse return self.call(root_fn, &.{}, loc);
-        return self.ident(if (renders) f.kids else f.received, loc);
+        return self.ident(f.cell, loc);
     }
 
-    /// `valueOf(await (c)(scope))` — run a component value, answer its
-    /// result, the `R` it renders carried (`carry`).
-    fn run(self: *Lowering, c: *ast.Expr, scope: *ast.Expr, awaited: bool, r: ?*T.Type, loc: ast.Loc) !ast.Expr {
-        var ran = try self.callValue(c, &.{scope}, loc);
-        // The run itself answers `Rendered<R>`: wasm reads the lambda's
-        // mark there (decision 504, `codegen/wat/scope_carry.zig`).
-        if (r) |t| try self.carry(ran, try self.renderedOf(t));
+    /// The contexts a `use context` reads: what the body's cell held at its
+    /// entry; outside every body nothing (each read answers its default).
+    fn recvArg(self: *Lowering, loc: ast.Loc) !*ast.Expr {
+        if (self.frames.items.len == 0) return self.nullLit(loc);
+        const top = &self.frames.items[self.frames.items.len - 1];
+        if (top.*) |*f| {
+            f.reads = true;
+            return self.ident(f.recv, loc);
+        }
+        return self.nullLit(loc);
+    }
+
+    /// `(c)(cell, nowhere())` — run a component value under the body's cell
+    /// (812 (1)), awaited where its node is asynchronous, the `R` it answers
+    /// carried (`carry`).
+    fn run(self: *Lowering, c: *ast.Expr, awaited: bool, r: ?*T.Type, loc: ast.Loc) !ast.Expr {
+        var ran = try self.callValue(c, &.{ try self.cellArg(loc), try self.call(nowhere_fn, &.{}, loc) }, loc);
+        // The run answers `R`: wasm reads the function's mark there
+        // (decision 504, `codegen/wat/scope_carry.zig`).
+        if (r) |t| if (try self.typeRefOfType(t)) |rr| {
+            const args = try self.arena.alloc(ast.TypeRef, 1);
+            args[0] = rr;
+            try self.carry(ran, .{ .generic = .{ .name = run_mark, .args = args, .is_builtin = false } });
+        };
         if (awaited) {
             const w = try self.arena.create(ast.Expr);
             w.* = .{ .jump = .{ .loc = loc, .kind = .{ .await_ = ran } } };
             ran = w;
         }
-        const carried = if (r) |t| try self.typeRefOfType(t) else null;
-        return (try self.callCarrying(value_fn, &.{ran}, carried, loc)).*;
-    }
-
-    /// `Rendered<R>`, written, for the `R` a run renders.
-    fn renderedOf(self: *Lowering, r: *T.Type) !?ast.TypeRef {
-        const rr = (try self.typeRefOfType(r)) orelse return null;
-        const args = try self.arena.alloc(ast.TypeRef, 1);
-        args[0] = rr;
-        return .{ .generic = .{ .name = "Rendered", .args = args, .is_builtin = false } };
+        return ran.*;
     }
 
     /// The `R` the hook call `inner` renders, when the checker typed it
-    /// `@Component<R>`.
+    /// `Component<R>`.
     fn hookRenders(self: *Lowering, inner: *const ast.Expr) ?*T.Type {
         if (inner.* != .call) return null;
         const ty = self.env.componentCalls.get(inner.call.loc) orelse return null;
@@ -241,7 +262,7 @@ const Lowering = struct {
     }
 
     /// The `R` a component value of `ty` renders, when `ty` resolved to
-    /// `@Component<R>`.
+    /// `Component<R>`.
     fn componentOf(ty: *T.Type) ?*T.Type {
         const d = ty.deref();
         if (d.* != .named or !std.mem.eql(u8, d.named.name, "Component") or d.named.args.len < 1) return null;
@@ -256,21 +277,16 @@ const Lowering = struct {
         return false;
     }
 
-    /// `use provide(C, v)` as a whole statement: bind the children's scope.
+    /// `use provide(ctx)` as a whole statement: the body's cell holds the
+    /// context's value under its type from here on (379 (2), 812 (3)).
     fn lowerProvideStmt(self: *Lowering, stmt: *ast.Stmt, use: envMod.ContextUse) !void {
         const inner = stmt.expr.useHook.kind.inner;
         const loc = stmt.expr.getLoc();
-        // Decision 379 (2) — `use provide(ctx)`: the children's scope holds
-        // the context's value under its type.
         const ctx = inner.call.kind.call.args[0].value;
         try self.walk(ast.Expr, ctx);
-        const value = ctx;
         const f = self.current() orelse return error.ContextLowering;
-        const name = try std.fmt.allocPrint(self.arena, kids_prefix ++ "{d}", .{self.kids_count});
-        self.kids_count += 1;
-        const pushed = try self.callCarrying(push_fn, &.{ try self.ident(f.kids, loc), try self.string(use.key, loc), value }, try self.typeRefOfType(use.value_type), loc);
-        stmt.expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = name, .value = pushed, .mutable = false } } } };
-        self.frames.items[self.frames.items.len - 1].?.kids = name;
+        const provided = try self.callCarrying(provide_fn, &.{ try self.ident(f.cell, loc), try self.string(use.key, loc), ctx }, try self.typeRefOfType(use.value_type), loc);
+        stmt.expr = provided.*;
     }
 
     /// Decision 416 (1) — `use inject(R)` is `R(f: <read of f's type>, …)`:
@@ -284,8 +300,8 @@ const Lowering = struct {
                     try self.ident(ref, loc)
                 else
                     try deepCopy(*ast.Expr, self.arena, @constCast(f.field_default orelse return error.ContextLowering));
-                const scope = try self.scopeArg(false, loc);
-                break :blk try self.callCarrying(find_fn, &.{ scope, try self.string(key, loc), fallback }, try self.typeRefOfType(f.value_type), loc);
+                const recv = try self.recvArg(loc);
+                break :blk try self.callCarrying(find_fn, &.{ recv, try self.string(key, loc), fallback }, try self.typeRefOfType(f.value_type), loc);
             } else try deepCopy(*ast.Expr, self.arena, @constCast(f.field_default orelse return error.ContextLowering));
             args[i] = .{ .label = f.name, .value = value, .comments = &.{} };
         }
@@ -336,12 +352,12 @@ const Lowering = struct {
                         e.* = (try self.injectRecord(use, uh.loc)).*;
                         return true;
                     }
-                    const scope = try self.scopeArg(false, uh.loc);
+                    const recv = try self.recvArg(uh.loc);
                     // Decisions 378 (3), 723 — no read is unbound: the
                     // default of the value it names when nothing of its
                     // type is provided above.
                     const fallback = try self.ident(use.default_ref orelse return error.ContextLowering, uh.loc);
-                    e.* = (try self.callCarrying(find_fn, &.{ scope, try self.string(use.key, uh.loc), fallback }, try self.typeRefOfType(use.value_type), uh.loc)).*;
+                    e.* = (try self.callCarrying(find_fn, &.{ recv, try self.string(use.key, uh.loc), fallback }, try self.typeRefOfType(use.value_type), uh.loc)).*;
                     return true;
                 }
                 const inner = uh.kind.inner;
@@ -349,41 +365,25 @@ const Lowering = struct {
                 const renders = self.hookRenders(inner) orelse
                     (if (self.env.useOperandTypes.get(uh.loc)) |t| componentOf(t) else null);
                 try self.walk(ast.Expr, inner);
-                // Decision 791 (3) — a component `use`d runs with the
-                // children's scope; a hook, part of the body, with the
-                // received one.
-                const component = self.env.componentUses.contains(uh.loc) or
-                    (if (renders) |r| isRenderable(self.env, r) else false);
-                const scope = try self.scopeArg(component, uh.loc);
-                e.* = try self.run(inner, scope, !self.syncAt(inner, uh.loc), renders, uh.loc);
+                // Decisions 812 (1), 818 (1) — every `use` that answers a
+                // value, a hook's or a component's, runs under a child cell
+                // of the body's.
+                e.* = try self.run(inner, !self.syncAt(inner, uh.loc), renders, uh.loc);
                 return true;
             },
             .jump => |*j| switch (j.kind) {
                 .@"return" => |value| if (self.current()) |f| if (f.wraps_returns) {
                     if (value) |v| try self.walk(ast.Expr, v);
-                    const kids = self.current().?.kids;
                     const v = value orelse try self.nullLit(j.loc);
-                    j.kind = .{ .@"return" = try self.callCarrying(rendered_fn, &.{ v, try self.ident(kids, j.loc) }, f.renders, j.loc) };
+                    j.kind = .{ .@"return" = try self.callCarrying(answer_fn, &.{v}, f.renders, j.loc) };
                     return true;
                 },
                 else => {},
             },
-            .call => |*c| if (c.kind == .call and self.env.componentRuns.get(c.loc) != null) {
-                const cc = c.kind.call;
-                const recv = cc.receiver orelse return false;
-                // The `R` the value renders: the run answers `Rendered<R>`.
-                const renders = self.env.componentRuns.get(c.loc).?;
-                try self.walk(ast.Expr, recv);
-                try self.walk(ast.Expr, cc.args[0].value);
-                const ran = try self.callValue(recv, &.{cc.args[0].value}, c.loc);
-                try self.carry(ran, try self.renderedOf(renders));
-                e.* = ran.*;
-                return true;
-            },
             .function => |*f| {
                 // Decision 574 — a `{ component -> … }` lambda is a
-                // `component fn`: its body becomes the lambda over the scope,
-                // the lambda's parameters and captures closed over by it.
+                // `component fn`: its body becomes the function over the
+                // scope, the lambda's parameters and captures closed over by it.
                 if (f.kind.marker == .component) if (self.env.componentLambdas.get(f.loc)) |r| {
                     try self.lowerComponentLambda(f, r);
                     return true;
@@ -441,29 +441,35 @@ const Lowering = struct {
         for (body) |*s| try self.walk(ast.Stmt, s);
     }
 
-    /// A component's body as its lambda: `[return { bpScope__ -> body' }]`.
+    /// A component's body as its function: `[return { bpScope__, bpKey__ ->
+    /// val bpCell__N = enter(bpScope__, bpKey__); [val bpRecv__N =
+    /// received(bpCell__N);] body' }]`.
     ///
     /// A body that keeps a bare `try` (one the transform did not turn into a
     /// `return`) runs its statements after the last `use provide` as an inner
     /// closure, whose answer — the value, or the error a `try` returns early,
     /// which every backend lowers as the closure's own return — is the
     /// body's result: `val bpScopeResult__ = ({ -> rest })(); return
-    /// rendered(bpScopeResult__, kids);`. Nothing before the last provide can
-    /// leave early (357: no `use` after an early exit).
+    /// answer(bpScopeResult__);`. Nothing before the last provide can leave
+    /// early (357: no `use` after an early exit).
     fn lowerComponentBody(self: *Lowering, body: []ast.Stmt, renders: ?ast.TypeRef, loc: ast.Loc) ![]ast.Stmt {
         const inner_closure = hasBareTry(body);
-        try self.frames.append(self.arena, Frame{ .received = scope_param, .kids = scope_param, .wraps_returns = !inner_closure, .renders = renders });
-        defer _ = self.frames.pop();
+        const n = self.body_count;
+        self.body_count += 1;
+        const cell = try std.fmt.allocPrint(self.arena, cell_prefix ++ "{d}", .{n});
+        const recv = try std.fmt.allocPrint(self.arena, recv_prefix ++ "{d}", .{n});
+        try self.frames.append(self.arena, Frame{ .cell = cell, .recv = recv, .wraps_returns = !inner_closure, .renders = renders });
         const memo_start = self.memo_slots.items.len;
         for (body) |*s| try self.walk(ast.Stmt, s);
+        const reads = self.current().?.reads;
+        _ = self.frames.pop();
         // Decision 771 — this body's `use memo` slots, made with the value.
         const slots = try self.arena.dupe([]const u8, self.memo_slots.items[memo_start..]);
         self.memo_slots.shrinkRetainingCapacity(memo_start);
-        const kids = self.current().?.kids;
-        const inner: []ast.Stmt = if (inner_closure) blk: {
+        const rest: []ast.Stmt = if (inner_closure) blk: {
             var split: usize = 0;
-            for (body, 0..) |st, i| if (st.expr == .binding and st.expr.binding.kind == .localBind and
-                std.mem.startsWith(u8, st.expr.binding.kind.localBind.name, kids_prefix))
+            for (body, 0..) |st, i| if (st.expr == .call and st.expr.call.kind == .call and
+                std.mem.eql(u8, st.expr.call.kind.call.callee, provide_fn))
             {
                 split = i + 1;
             };
@@ -478,7 +484,7 @@ const Lowering = struct {
             const out = try self.arena.alloc(ast.Stmt, split + 2);
             @memcpy(out[0..split], body[0..split]);
             out[split] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = result_local, .value = result, .mutable = false, .typeAnnotation = renders } } } } };
-            const ret = try self.callCarrying(rendered_fn, &.{ try self.ident(result_local, loc), try self.ident(kids, loc) }, renders, loc);
+            const ret = try self.callCarrying(answer_fn, &.{try self.ident(result_local, loc)}, renders, loc);
             out[split + 1] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = ret } } } };
             break :blk out;
         } else if (body.len > 0 and body[body.len - 1].expr == .jump and body[body.len - 1].expr.jump.kind == .@"return")
@@ -486,14 +492,30 @@ const Lowering = struct {
         else blk: {
             const grown = try self.arena.alloc(ast.Stmt, body.len + 1);
             @memcpy(grown[0..body.len], body);
-            const ret = try self.callCarrying(rendered_fn, &.{ try self.nullLit(loc), try self.ident(kids, loc) }, renders, loc);
+            const ret = try self.callCarrying(answer_fn, &.{try self.nullLit(loc)}, renders, loc);
             grown[body.len] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = ret } } } };
             break :blk grown;
         };
-        const params = try self.arena.alloc([]const u8, 1);
+        // The body's entry: its own cell, and what that cell held then.
+        const head: usize = if (reads) 2 else 1;
+        const inner = try self.arena.alloc(ast.Stmt, head + rest.len);
+        const opened = try self.call(enter_fn, &.{ try self.ident(scope_param, loc), try self.ident(key_param, loc) }, loc);
+        inner[0] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = cell, .value = opened, .mutable = false } } } } };
+        if (reads) {
+            const got = try self.call(received_fn, &.{try self.ident(cell, loc)}, loc);
+            inner[1] = .{ .expr = .{ .binding = .{ .loc = loc, .kind = .{ .localBind = .{ .name = recv, .value = got, .mutable = false } } } } };
+        }
+        @memcpy(inner[head..], rest);
+        const params = try self.arena.alloc([]const u8, 2);
         params[0] = scope_param;
+        params[1] = key_param;
         const lambda = try self.arena.create(ast.Expr);
-        lambda.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = inner } } };
+        // Typed `unknown`, as the function type a component answers is: wasm
+        // passes the scope and the place on as the words they are.
+        const ptypes = try self.arena.alloc(ast.TypeRef, 2);
+        ptypes[0] = .{ .named = ast.unknown_type_name };
+        ptypes[1] = .{ .named = ast.unknown_type_name };
+        lambda.* = .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = inner, .paramTypes = ptypes } } };
         const out = try self.arena.alloc(ast.Stmt, slots.len + 1);
         for (slots, 0..) |name, i| {
             const made = try self.call(memo_new_fn, &.{}, loc);
@@ -503,10 +525,10 @@ const Lowering = struct {
         return out;
     }
 
-    /// Decision 574 — `{ component x -> body }` as `{ x -> return { bpScope__
-    /// -> body' }; }`, the body a `component fn`'s (`lowerComponentBody`).
-    /// The tail the body answers (decision 541 (1)) is its `return`, so it
-    /// is rendered as a `return` is.
+    /// Decision 574 — `{ component x -> body }` as `{ x -> return {
+    /// bpScope__, bpKey__ -> body' }; }`, the body a `component fn`'s
+    /// (`lowerComponentBody`). The tail the body answers (decision 541 (1)) is
+    /// its `return`, so it is answered as a `return` is.
     fn lowerComponentLambda(self: *Lowering, f: anytype, r: *T.Type) !void {
         const body = f.kind.body;
         if (body.len > 0) {
@@ -528,11 +550,12 @@ const Lowering = struct {
         f.kind.marker = null;
     }
 
-    /// `fn(unknown) -> unknown` — what a component function answers once
-    /// lowered: no effect, so no backend wraps it in a Async.
+    /// `fn(unknown, unknown) -> unknown` — what a component function answers
+    /// once lowered: no effect, so no backend wraps it in a Async.
     fn lambdaType(self: *Lowering) !ast.TypeRef {
-        const params = try self.arena.alloc(ast.TypeRef, 1);
+        const params = try self.arena.alloc(ast.TypeRef, 2);
         params[0] = .{ .named = ast.unknown_type_name };
+        params[1] = .{ .named = ast.unknown_type_name };
         const ret = try self.arena.create(ast.TypeRef);
         ret.* = .{ .named = ast.unknown_type_name };
         return .{ .function = .{ .params = params, .returnType = ret } };
@@ -629,15 +652,6 @@ pub fn deepCopy(comptime N: type, arena: std.mem.Allocator, v: N) anyerror!N {
     }
 }
 
-/// True when `r` resolved to a type that implements `Renderable`: the
-/// `Component<R>` a `use` runs is a component (791 (3)), not a hook.
-fn isRenderable(env: *Env, r: *T.Type) bool {
-    const d = r.deref();
-    if (d.* != .named) return false;
-    const td = env.lookupTypeDef(d.named.name) orelse return false;
-    return td.isRenderable();
-}
-
 /// The `R` of a written `@Component<R>`.
 fn writtenRenders(rt: ?ast.TypeRef) ?ast.TypeRef {
     const r = rt orelse return null;
@@ -679,7 +693,6 @@ fn implementMethodComponent(env: *Env, program: ast.Program, im: ast.ImplementDe
 /// True when the module holds anything the lowering reaches.
 fn needed(env: *Env, program: ast.Program) bool {
     if (env.contextUses.count() > 0 or env.componentCalls.count() > 0 or
-        env.componentRuns.count() > 0 or
         env.componentLambdas.count() > 0 or env.createContextCalls.count() > 0 or env.memoUses.count() > 0 or env.liftedStdTypes.contains("Context")) return true;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (writesComponent(f.returnType)) return true,
@@ -690,7 +703,8 @@ fn needed(env: *Env, program: ast.Program) bool {
     return false;
 }
 
-/// Lower decision 388's render scope over `program` (the transformed module).
+/// Lower the component model's scope (decisions 809 (8), 819) over `program`
+/// (the transformed module).
 pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const Env) !ast.Program {
     const env = @constCast(env_const);
     // std's `context` module declares the hooks the lowering replaces where
@@ -753,10 +767,12 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
     if (!low.uses_std) return .{ .decls = decls };
     // std's lowering functions, under names no source can collide with.
     const names = [_][3][]const u8{
-        .{ "context", "push", push_fn },
+        .{ "context", "enter", enter_fn },
+        .{ "context", "received", received_fn },
+        .{ "context", "provideIn", provide_fn },
         .{ "context", "find", find_fn },
-        .{ "context", "rendered", rendered_fn },
-        .{ "context", "valueOf", value_fn },
+        .{ "context", "answer", answer_fn },
+        .{ "context", "nowhere", nowhere_fn },
         .{ "context", "root", root_fn },
         .{ "hooks", "slot", memo_new_fn },
         .{ "hooks", "read", memo_read_fn },

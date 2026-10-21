@@ -2,7 +2,7 @@
 //// whose body is its `fn compose(self: Self) -> Component<R>`; one that
 //// declares no `compose` is refused at the type.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -13,6 +13,6 @@ type Card(title: string) implement Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Card(title: "x").run(RenderScope.root());
-    print(r.value.text);
+    val r = await run(Card(title: "x"));
+    print(r.text);
 }

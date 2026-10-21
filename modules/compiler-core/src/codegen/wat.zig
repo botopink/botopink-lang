@@ -18,10 +18,10 @@ const context_lower = @import("../comptime/context_lower.zig");
 const scopeCarry = @import("wat/scope_carry.zig");
 
 /// Decision 504 — one of std's `context` functions the scope lowering calls
-/// that answers a value of the scope (`find`, `valueOf`), or takes one
-/// (`push`, `rendered`): called only from `wat/scope_carry.zig`'s wrappers.
+/// that answers a value of the scope (`find`), or takes one (`provideIn`,
+/// `answer`): called only from `wat/scope_carry.zig`'s wrappers.
 fn isScopeReadFn(name: []const u8) bool {
-    for ([_][]const u8{ context_lower.find_fn, context_lower.value_fn, context_lower.push_fn, context_lower.rendered_fn, context_lower.memo_read_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
+    for ([_][]const u8{ context_lower.find_fn, context_lower.enter_fn, context_lower.provide_fn, context_lower.answer_fn, context_lower.memo_read_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
     return false;
 }
 
@@ -4368,6 +4368,21 @@ const Emitter = struct {
             try self.emit(opOf(.i32, "eq"));
             try self.emit(opOf(.i32, "and"));
             return;
+        }
+        // Decision 810 (1) — a behavior no type of the program implements
+        // (`c is Composable<unknown>` before any type does, 809 (6)): no value
+        // is one, and the test is `false`.
+        if (ast.behaviorTestName(t)) |bn| {
+            const none = if (self.behavior_impls.get(bn)) |impls| impls.items.len == 0 else true;
+            if (none) {
+                const operand = cc.args[0].value.*;
+                if (operand != .identifier) {
+                    try self.lowerCoerced(operand, self.wasmTypeOf(operand));
+                    try self.emit(.drop);
+                }
+                try self.emit(try self.constInt(0));
+                return;
+            }
         }
         if (self.mode == .gc) {
             if (t.tupleElems() != null) return self.gcFail("an is test over a tuple");
@@ -19654,14 +19669,14 @@ const Emitter = struct {
     /// Decision 504 — a run of a component value `c` with a scope
     /// (`bpScopeRaw__run<n>(c, scope)`, `scope_carry.zig`): the lambda is
     /// called, and its mark (the word behind its closure cell) says what the
-    /// call answered — a direct lambda its `Rendered`, a state machine its
+    /// call answered — a direct function its value, a state machine its
     /// task. A task is awaited where the run is (`awaited`, in a state
     /// machine: suspending while it waits), else run until it settles
     /// (`$__task_block_on`); the word of a direct run is its value, so a
     /// synchronous component pays nothing and a task's address and a
-    /// `Rendered` are never told apart by their word.
+    /// value are never told apart by their word.
     fn lowerRun(self: *Emitter, cc: anytype, awaited: bool) anyerror!void {
-        if (cc.args.len != 2) return self.refuse(self.call_loc, "a component run takes the component and the scope", .{});
+        if (cc.args.len != 3) return self.refuse(self.call_loc, "a component run takes the component, the scope and the place", .{});
         if (self.mode == .gc) return self.gcRun(cc, awaited);
         const ra = self.reg_arena.allocator();
         const k = self.loop_seq;
@@ -19682,7 +19697,8 @@ const Emitter = struct {
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = cv });
         try self.lowerCoerced(cc.args[1].value.*, .i32);
-        try self.emitIndirect(cv, 1);
+        try self.lowerCoerced(cc.args[2].value.*, .i32);
+        try self.emitIndirect(cv, 2);
         const op_seq = self.seal(&op_c, .{ .value = .i32 });
         if (awaited and self.machine != null) return self.emitSuspension(lo, op_seq, mk, .{ .load = load });
         for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
@@ -19724,7 +19740,8 @@ const Emitter = struct {
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = cv });
         try self.lowerCoerced(cc.args[1].value.*, .{ .ref = .unknown });
-        try self.gcEmitIndirect(cv, 1);
+        try self.lowerCoerced(cc.args[2].value.*, .{ .ref = .unknown });
+        try self.gcEmitIndirect(cv, 2);
         const op_seq = self.seal(&op_c, .{ .value = .anyref });
         // Decision 504 — a marked lambda answers its task: awaited where
         // the run is awaited inside a machine, else run until it settles.
@@ -20533,11 +20550,11 @@ const Emitter = struct {
             .owner_tparams = self.owner_tparams,
             .param_seen = param_seen,
         });
-        // Decision 504 — a component's lambda (the scope lowering's `{
-        // bpScope__ -> … }`) is a state machine only when its body awaits;
-        // its closure cell carries that mark one word behind it, which a
-        // run reads (`lowerRun`).
-        const mark: ?bool = if (params.len == 1 and std.mem.eql(u8, params[0], context_lower.scope_param))
+        // Decision 504 — a component's function (the scope lowering's `{
+        // bpScope__, bpKey__ -> … }`) is a state machine only when its body
+        // awaits; its closure cell carries that mark one word behind it,
+        // which a run reads (`lowerRun`).
+        const mark: ?bool = if (params.len == 2 and std.mem.eql(u8, params[0], context_lower.scope_param) and std.mem.eql(u8, params[1], context_lower.key_param))
             context_lower.containsAwait(body)
         else
             null;

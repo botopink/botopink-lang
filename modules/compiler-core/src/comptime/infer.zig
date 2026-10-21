@@ -166,8 +166,6 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
         .provide
     else if (std.mem.eql(u8, leaf, "context"))
         .context
-    else if (std.mem.eql(u8, leaf, "RenderScope"))
-        .render_scope
     else
         return;
     try env.stdContextNames.put(env.arena, local, which);
@@ -356,6 +354,13 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                 };
                 try env.bind(imp.name(), ty);
                 try env.stdLeafFns.put(env.arena, imp.name(), .{ .module = mod_name, .name = leaf });
+                // C-04 — a std function's trailing defaults fill a short
+                // call through a leaf import as through its module
+                // (`await run(App())`, decision 825 (1)).
+                if (try stdFnParams(env, mod_name, leaf)) |ps| for (ps) |p| if (p.default != null) {
+                    try env.fnParams.put(imp.name(), ps);
+                    break;
+                };
             }
             continue;
         }
@@ -3034,7 +3039,7 @@ fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
 fn refuseAwaitComponent(env: *Env, ty: *T.Type, loc: ast.Loc) InferError {
     const shown = try snapshotMod.typeNameOf(env.arena, ty.deref());
     const msg = try std.fmt.allocPrint(env.arena, "{s}: `await` takes an `Async<T>`, and this is a `{s}` — a component is resolved by `use c` inside a component body, or placed in the tree as a child `c` (decision 791 (4))", .{ diagnostics.await_component, shown });
-    env.lastError = TypeError.custom(msg, "In a component body write `val v = use c;`; elsewhere place `c` as a node's child, or run a root with `c.run(RenderScope.root())`.").withLoc(loc);
+    env.lastError = TypeError.custom(msg, "In a component body write `val v = use c;`; elsewhere place `c` as a node's child, or run a root with `await run(c)` (std's `context.run`, decision 822).").withLoc(loc);
     return error.TypeError;
 }
 
@@ -9459,9 +9464,6 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // Decision 354 — a component's body (its `R` implements `@Renderable`)
     // may `use provide`; where it first renders a child is tracked per body.
     if (env.fnContext) |*fc| fc.renderable = f.effect == .component and isComponentType(env, retType);
-    const savedFirstRender = env.firstRenderAt;
-    env.firstRenderAt = null;
-    defer env.firstRenderAt = savedFirstRender;
     // Decision 357 — each body starts at its own top level.
     const savedUseConstruct = env.useConstruct;
     env.useConstruct = null;
@@ -14095,6 +14097,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "AsyncIter")) return 1;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Component")) return 1;
+    if (eq(u8, name, "Composition")) return 1;
     if (eq(u8, name, "Renderable")) return 0;
     if (eq(u8, name, ast.expr_type_name)) return 1;
     if (eq(u8, name, ast.expr_custom_type_name)) return 1;
@@ -14384,7 +14387,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
                 for (members) |m| {
                     const mt = try resolveTypeRefInContext(env, m, genericMap);
-                    try appendUnionMember(env, &flat, mt);
+                    try appendWrittenUnionMember(env, &flat, mt);
                 }
                 // `finishUnion` collapses `A | A` to `A`: the grammar allows the
                 // spelling and nothing downstream should meet a one-member union.
@@ -14510,6 +14513,12 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 if (hd.* != .named) return head;
                 return env.namedTypeArgs(hd.named.name, args);
             }
+            // Decisions 815 (1), 819 (1), 826 — `Composition<T>` is the
+            // function a component is at run time.
+            // `primitives.bp` writes it bare beside its own declaration
+            // (`Composable`'s `compose`), which no program sees.
+            if (std.mem.eql(u8, name, "Composition") and args.len == 1 and
+                (b.is_builtin or (env.typeAliases.get(name) == null and env.lookupTypeDef(name) == null))) return compositionType(env, args[0]);
             // A generic application's head name is looked up like the bare
             // name: recorded here, refused `unknown type` by
             // `checkPendingTypeNames` once every declaration is registered.
@@ -14530,6 +14539,31 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         // unifies field-by-field with a `record { … }` literal (same field set,
         // declaration order; see unify.zig).
     }
+}
+
+/// Decisions 815 (1), 819 (1), 826 — `Composition<T>`, the function a
+/// component is at run time: `fn(scope: Scope, key: Place) -> T | Async<T>`,
+/// `Scope` and `Place` std's `context` module's, named with no import (826 (1)).
+pub fn compositionType(env: *Env, t: *T.Type) InferError!*T.Type {
+    const params = try env.arena.alloc(*T.Type, 2);
+    params[0] = try env.namedType("Scope");
+    params[1] = try env.namedType("Place");
+    const members = try env.arena.alloc(*T.Type, 2);
+    members[0] = t;
+    members[1] = try env.namedTypeArgs("Async", &.{t});
+    return env.funcType(params, try env.unionType(members));
+}
+
+/// Decisions 809 (1), 810, 826 (4) — the two members a `Component<T>` opens
+/// into at an `is` / `case`: its `Composition<T>` and its `Composable<T>`.
+/// Null for any other type.
+fn componentMembers(env: *Env, ty: *T.Type) InferError!?*T.Type {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "Component") or d.named.args.len != 1) return null;
+    const members = try env.arena.alloc(*T.Type, 2);
+    members[0] = try compositionType(env, d.named.args[0]);
+    members[1] = try env.namedTypeArgs("Composable", &.{d.named.args[0]});
+    return try env.unionType(members);
 }
 
 /// Resolve an `ast.TypeRef` annotation to a `*T.Type` (no generic context).
@@ -15915,7 +15949,7 @@ fn boundTypeTestIdentity(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc
     } else true;
     if (allUnknown) return null;
     const want = try resolveTypeRef(env, tested);
-    if (staticMemberMatching(valueType, want) == null) return null;
+    if (staticMemberMatching(try componentMembers(env, valueType) orelse valueType, want) == null) return null;
     const args = try env.arena.alloc(ast.TypeRef, g.args.len);
     for (args) |*a| a.* = .{ .named = ast.unknown_type_name };
     return ast.TypeRef{ .generic = .{ .name = g.name, .args = args, .is_builtin = g.is_builtin, .bare = g.bare } };
@@ -15964,6 +15998,8 @@ fn behaviorDeclaredName(env: *Env, name: []const u8) ?[]const u8 {
     for (env.moduleDecls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return name;
     if (env.importedBehaviorDecls.get(name)) |b| return b.name;
     if (env.ambientBehaviorDecls.get(name)) |b| return b.name;
+    // Decision 826 (3) — `Composable`, the prelude's, a rule reads.
+    if (env.ruleReadBehaviorDecls.get(name)) |b| if (std.mem.eql(u8, b.name, "Composable")) return b.name;
     return null;
 }
 
@@ -16444,7 +16480,7 @@ fn collectCondNarrowings(
         .call => {
             const n = isNarrowingOf(cond) orelse return;
             const bound = env.lookup(n.name) orelse return;
-            const b = bound.deref();
+            const b = (try componentMembers(env, bound) orelse bound).deref();
             if (b.* != .union_) return;
             const tested = resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref) catch return;
             var rest: std.ArrayListUnmanaged(*T.Type) = .empty;
@@ -16483,9 +16519,9 @@ fn memberTestedBy(m: *T.Type, tested: *T.Type) bool {
 /// Decision 810 (1), (2) — the member of a union-typed `x` that `x is tested`
 /// narrows it to inside the branch: the member itself, its arguments from
 /// `x`'s type. Null when `x`'s type is no union or no member is the one.
-fn testedUnionMember(env: *Env, name: []const u8, tested: *T.Type) ?*T.Type {
+fn testedUnionMember(env: *Env, name: []const u8, tested: *T.Type) InferError!?*T.Type {
     const bound = env.lookup(name) orelse return null;
-    const b = bound.deref();
+    const b = (try componentMembers(env, bound) orelse bound).deref();
     if (b.* != .union_) return null;
     var found: ?*T.Type = null;
     for (b.union_) |m| if (memberTestedBy(m, tested)) {
@@ -19328,7 +19364,7 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                     const tested = try resolveTypeRef(env, typeTokenRef(env, n.ref) orelse runtimeTokenRef(env, n.ref) orelse n.ref);
                     // Decision 810 (1) — over a union, the member tested, its
                     // arguments from the value's own type.
-                    const member = if (typeTokenRef(env, n.ref) == null and runtimeTokenRef(env, n.ref) == null) testedUnionMember(env, n.name, tested) else null;
+                    const member = if (typeTokenRef(env, n.ref) == null and runtimeTokenRef(env, n.ref) == null) try testedUnionMember(env, n.name, tested) else null;
                     try narrowings.append(env.arena, .{ .name = n.name, .then_ = member orelse tested });
                 }
                 // The null test: `if (x != null)` rebinds `x` to the `?T`'s
@@ -21219,43 +21255,6 @@ fn refuseBehaviorUnknownMember(env: *Env, recvTy: *T.Type, member: []const u8, i
     return error.TypeError;
 }
 
-/// Decision 388 (2) — `c.run(scope)` on a `@Component<R>` value: runs the
-/// lambda the component value is with `scope` (a `RenderScope`, std's
-/// `context` module), answering `@Async<Rendered<R>>` — the body's result and
-/// the scope its `use provide`s made for its children; a `@Async` because
-/// whether the node is asynchronous (375) is not in the type. Recorded for
-/// the lowering (`Env.componentRuns`, `context_lower.zig`). Null for any other
-/// receiver or method.
-fn inferComponentRun(
-    env: *Env,
-    recvPtr: *ast.TypedExpr,
-    callee: []const u8,
-    typedArgs: []ast.CallArgOf(.typed),
-    typedTrailing: []ast.TrailingLambdaOf(.typed),
-    loc: ast.Loc,
-) InferError!?ast.TypedExpr {
-    if (!std.mem.eql(u8, callee, "run")) return null;
-    const recvTy = recvPtr.getType().deref();
-    if (recvTy.* != .named or !std.mem.eql(u8, recvTy.named.name, "Component") or recvTy.named.args.len != 1) return null;
-    if (typedArgs.len != 1 or typedArgs[0].label != null or typedTrailing.len != 0) {
-        env.lastError = TypeError.custom(
-            "`run` takes the scope to run the component with, and nothing else: `c.run(scope)` (decision 388)",
-            "Pass a `RenderScope` — `RenderScope.root()` outside every render, or the scope a parent's `run` answered.",
-        ).withLoc(loc);
-        return error.TypeError;
-    }
-    try unifyAt(env, try env.namedType("RenderScope"), typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
-    const rendered = try env.namedTypeArgs("Rendered", &.{recvTy.named.args[0]});
-    try env.componentRuns.put(env.arena, loc, recvTy.named.args[0]);
-    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs("Async", &.{rendered}), .kind = .{ .call = .{
-        .receiver = recvPtr,
-        .callee = callee,
-        .is_builtin = false,
-        .args = typedArgs,
-        .trailing = typedTrailing,
-    } } } };
-}
-
 /// Resolve a builtin method call on a `@Result<R, E>` or `@Option<T>` receiver
 /// (`.map` / `.flatMap` / `.unwrapOr` / `.isOk` / `.isError`).
 ///
@@ -22315,12 +22314,6 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseOperand(env, valTyped.getType(), loc);
     try env.useOperandTypes.put(env.arena, loc, valTyped.getType());
-    // Decision 791 (3) — `use c` over a component resolves it: the body
-    // renders a child here (354 (2)), run with its children's scope.
-    if (isComponentType(env, valTyped.getType())) {
-        try env.componentUses.put(env.arena, loc, {});
-        if (env.firstRenderAt == null) env.firstRenderAt = loc;
-    }
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     try noteMemoUse(env, uh.kind.inner.*, valTyped, loc);
     try noteHookUse(env, uh.kind.inner.*, valTyped, loc);
@@ -22420,7 +22413,6 @@ fn stdContextCallee(env: *Env, c: ast.CallExprOf(.untyped)) ?envMod.StdContextNa
         if (std.mem.eql(u8, call.callee, "inject")) return .inject;
         if (std.mem.eql(u8, call.callee, "provide")) return .provide;
         if (std.mem.eql(u8, call.callee, "context")) return .context;
-        if (std.mem.eql(u8, call.callee, "RenderScope")) return .render_scope;
         return null;
     }
     if (env.localBindDepth(call.callee) != null) return null;
@@ -22471,15 +22463,6 @@ fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
         .provide, .context, .inject => {
             if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
             return refuseContextHookWithoutUse(env, c.kind.call.callee, c.loc);
-        },
-        // Decision 388 (2) — a scope is opaque: the render library holds the
-        // ones `run` answers, and the first comes from `RenderScope.root()`.
-        .render_scope => {
-            env.lastError = TypeError.custom(
-                diagnostics.render_scope_construction ++ ": a `RenderScope` is made only by `RenderScope.root()` — every other scope is the one a component's `run` answered (decision 388)",
-                "Start a render with `c.run(RenderScope.root())` and run each child with the `scope` its parent's `Rendered` holds.",
-            ).withLoc(c.loc);
-            return error.TypeError;
         },
     }
 }
@@ -22616,11 +22599,6 @@ fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnC
         if (!fc.renderable) {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` in '{s}', which returns '{s}' — a provider gives its value to what a COMPONENT renders below it, and this body is no component (its `R` does not implement `@Renderable`)", .{ diagnostics.context_provide_outside_component, fc.fnName, fc.returnDisplay });
             env.lastError = TypeError.custom(msg, "Provide the context in the component that renders the children which read it (`component fn App() -> Component<Element> { use provide(…); … }`).").withLoc(loc);
-            return error.TypeError;
-        }
-        if (env.firstRenderAt) |r| {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` after this body renders a component on line {d} — that child would not see the value", .{ diagnostics.context_provide_after_render, r.line });
-            env.lastError = TypeError.custom(msg, "Move every `use provide(…)` before the first component the body renders.").withLoc(loc);
             return error.TypeError;
         }
     }
@@ -22856,7 +22834,7 @@ fn hookCalleeDecl(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.D
     if (call.is_builtin or call.calleeExpr != null) return null;
     if (stdContextCallee(env, c)) |which| return switch (which) {
         .provide, .context, .inject => .{ .module = "std/context", .name = call.callee },
-        .context_type, .create_context, .render_scope => null,
+        .context_type, .create_context => null,
     };
     if (call.receiver) |r| {
         if (r.* != .identifier or r.identifier.kind != .ident) return null;
@@ -25659,11 +25637,6 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     return dispatched;
                 }
 
-                // Decision 388 (2) — `c.run(scope)` on a component value.
-                if (try inferComponentRun(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |ran| {
-                    return ran;
-                }
-
                 // Builtin `@Result` / `@Option` methods — type-check and record
                 // the lowering decision.
                 if (try inferResultOptionMethod(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
@@ -26470,6 +26443,26 @@ fn appendUnionMember(
     for (into.items) |existing| {
         if (sameTypeShape(existing, m)) return;
         if (existing.isUnbound()) return unifyUnlocated(env, existing, m);
+    }
+    try into.append(env.arena, m);
+}
+
+/// A member of a union as written (`T | Async<T>`): a type parameter is a
+/// member of its own, never merged into the others as an undecided variable
+/// is (`appendUnionMember`), so `T | Async<T>` keeps both (decision 809 (6)).
+fn appendWrittenUnionMember(
+    env: *Env,
+    into: *std.ArrayListUnmanaged(*T.Type),
+    member: *T.Type,
+) InferError!void {
+    const m = member.deref();
+    if (m.* == .union_) {
+        for (m.union_) |inner| try appendWrittenUnionMember(env, into, inner);
+        return;
+    }
+    for (into.items) |existing| {
+        if (existing.deref() == m) return;
+        if (!m.isUnbound() and !existing.isUnbound() and sameTypeShape(existing, m)) return;
     }
     try into.append(env.arena, m);
 }
@@ -27410,14 +27403,12 @@ fn inferFunctionExprExpectedInner(
     const savedInContextLambda = env.inContextFn;
     const savedFnCtxLambda = env.fnContext;
     const savedHookBuilderLambda = env.hookBuilder;
-    const savedFirstRenderLambda = env.firstRenderAt;
     const savedAliasWrapperLambda = env.aliasWrapper;
     defer {
         env.fnEffect = savedFnEffectLambda;
         env.inContextFn = savedInContextLambda;
         env.fnContext = savedFnCtxLambda;
         env.hookBuilder = savedHookBuilderLambda;
-        env.firstRenderAt = savedFirstRenderLambda;
         env.aliasWrapper = savedAliasWrapperLambda;
     }
     // The `R` the body answers and the `@Component<R>` the lambda returns.
@@ -27444,7 +27435,6 @@ fn inferFunctionExprExpectedInner(
             .renderable = isComponentType(env, whole),
         };
         env.hookBuilder = null;
-        env.firstRenderAt = null;
         env.aliasWrapper = null;
     }
 

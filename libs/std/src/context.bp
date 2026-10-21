@@ -18,20 +18,24 @@
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
 //// only in a component's body (a `Component<R>` whose `R` implements
-//// `@Renderable`), before it renders a child. `use` exists only where there
+//// `@Renderable`), in the order written: what the body resolves after it
+//// reads it, what it resolved before does not (decision 812 (3)). `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
 //// `comptime { … }` have none (`use-outside-render-tree`). A read naming a
 //// bare type (`use context(Theme)`) is refused at the argument
 //// (`context-read-by-type`).
 ////
-//// A component at run time is a lambda over a `RenderScope` (decision 388):
-//// calling `Card(item)` only makes the lambda, and the render library runs it
-//// — `c.run(scope)` answers a `Rendered`, the body's result and the scope its
-//// `use provide(…)`s made for its children. The library runs the root with
-//// `RenderScope.root()` and each child with the scope its parent answered;
-//// inside a component body `use c` runs `c` with the body's children scope
-//// (decision 791 (3)), and an `await` of a component is refused (791 (4)).
-//// The scope travels explicitly: no "current context", on any target.
+//// A component at run time is a function over a `Scope` and a `Place`
+//// (decisions 809, 815, 819): calling `Card(item)` only makes it, and std's
+//// `resolve(c, scope, key)` runs it — the one way a component runs: `use c`
+//// in a component body, each child a render library meets, and the root,
+//// which a program runs with `await run(App())` (decisions 822, 825). Each
+//// component body opens its own cell, `scope.childAt(key)`, a child of the
+//// cell it was handed; a `use provide(…)` writes the body's cell, so what
+//// the body resolves after it — its subtree — reads it, and a `use
+//// context(…)` reads the contexts the cell held when the body entered
+//// (decisions 809 (8), 812). The scope travels explicitly: no "current
+//// context", on any target.
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
@@ -40,7 +44,7 @@
 //// refuses every reference to them but a `use`'s operand, and the bodies
 //// panic.
 
-import {failure.panic};
+import {compiler, failure.panic};
 
 // A context of `T`: the value a provider gives, or a type's declared default.
 pub type Context<T>(contextValue: T)
@@ -81,51 +85,223 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
-// ── the render scope (decision 388) ──────────────────────────────────────────
+// ── the place (decisions 819, 820) ───────────────────────────────────────────
 
-// The scope a component's lambda runs with: the contexts provided above it.
-// Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
-// every other scope is one a component's `run` answered.
-pub type RenderScope(frames: unknown) {
-    // The empty scope a render starts from: nothing provided.
-    pub fn root() -> RenderScope {
-        return RenderScope(frames: null);
+// Where a component stands among its siblings: the number of the call that
+// made it and the item's, or a key in the item's stead (819 (2)). A program
+// passes `Place.none()`, the place the value carries; the numbers a call
+// stamps and `Place.key(k)` come with 820's stamp.
+pub type Place(callNo: i32, itemNo: i32, keyed: bool, keyValue: unknown) {
+    // The place the component's value carries (820 (2)): what `use c`, a
+    // render library's child and a root pass.
+    pub fn none() -> Place {
+        return Place(callNo: 0, itemNo: 0, keyed: false, keyValue: null);
+    }
+
+    // This place with `key`'s key in the item's stead, or as it is when
+    // `key` is `Place.none()` (820 (2)).
+    pub fn with(self: Self, key: Place) -> Place {
+        if (key.keyed) return Place(callNo: self.callNo, itemNo: self.itemNo, keyed: true, keyValue: key.keyValue);
+        return self;
     }
 }
 
-// What `c.run(scope)` answers: the component body's result and the scope its
-// `use provide(…)`s made for the children it renders (the scope it received
-// when it provides nothing).
-pub type Rendered<R>(value: R, scope: RenderScope)
+// ── the scope (decisions 809 (8), 817, 824, 825) ─────────────────────────────
 
-// ── what the scope lowering calls (decision 388) ─────────────────────────────
+// A cell of a render's tree: the contexts provided above it, a persistent map
+// keyed by each context's identity. Opaque — made only by `Scope.root()`, a
+// cell's `childAt` and `detach`. A root's whole tree is one entry: on erlang
+// and beam an entry `{bp_scope, Ref}` of the process dictionary of the
+// process that made the root, ended by that process or by `close()`; on
+// commonJS a plain object, on wasm a heap cell (824). A scope used after its
+// root's `close()` fails `scope-closed` on every target (825 (2)); one read in
+// another process than the root's fails `scope-foreign` (824 (3)).
+pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown) implement Closeable {
+    // A new root: an empty tree, nothing provided. Closed by whoever made it
+    // (`run` closes its own, 825 (1)).
+    pub fn root() -> Scope {
+        return Scope(scopeStore: storeOf(null), scopeCell: 0, scopeOwner: ownerSelf());
+    }
+
+    // The child cell of this one at `key`: it starts from this cell's contexts
+    // as they stand (817 (5)). Each component body opens its own with it.
+    pub fn childAt(self: Self, key: Place) -> Scope {
+        return Scope(scopeStore: self.scopeStore, scopeCell: grow(self.scopeStore, self.scopeOwner, self.scopeCell), scopeOwner: self.scopeOwner);
+    }
+
+    // Ends the root's tree (`Closeable`, 539): every scope of it fails
+    // `scope-closed` after, and on erlang and beam its process-dictionary
+    // entry is erased (825 (2)). Closing a closed root does nothing.
+    pub fn close(self: Self) -> void {
+        closeStore(self.scopeStore);
+    }
+
+    // A new root over this cell's contexts as they stand, with no tree — what
+    // crosses a process (824 (3)); closed by whoever made it.
+    pub fn detach(self: Self) -> Scope {
+        return Scope(scopeStore: storeOf(framesAt(self.scopeStore, self.scopeOwner, self.scopeCell)), scopeCell: 0, scopeOwner: ownerSelf());
+    }
+
+    // The root's store, the cell's id and the root's process — what the
+    // lowering's functions below read the tree by.
+    fn storeRef(self: Self) -> unknown {
+        return self.scopeStore;
+    }
+
+    fn cellId(self: Self) -> i32 {
+        return self.scopeCell;
+    }
+
+    fn ownerRef(self: Self) -> unknown {
+        return self.scopeOwner;
+    }
+}
+
+// A root's tree: whether it is closed, the count of its cells, and each
+// cell's contexts, the latest entry for an id first. Public as `Frame` is: a
+// program never names it.
+pub type ScopeTree(treeClosed: bool, treeCount: i32, treeCells: unknown)
+
+// One cell's contexts in a root's tree.
+pub type CellEntry(cellNo: i32, cellFrames: unknown, cellNext: unknown)
+
+// A new root's store, its one cell holding `frames`.
+fn storeOf(frames: unknown) -> unknown {
+    val store = storeNew();
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: frames, cellNext: null)));
+    return store;
+}
+
+// The root's tree, live and in its own process.
+fn treeOf(store: unknown, owner: unknown) -> ScopeTree {
+    if (ownerForeign(owner)) panic("scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))");
+    if (storeLive(store)) {
+        val raw = storeGet(store);
+        if (raw is ScopeTree) {
+            val t: ScopeTree = raw;
+            if (!t.treeClosed) return t;
+        }
+    }
+    panic("scope-closed: a scope is used after its root's `close()` (decision 825 (2))");
+}
+
+// A new cell under cell `parent`, starting from its contexts: its id.
+fn grow(store: unknown, owner: unknown, parent: i32) -> i32 {
+    val t = treeOf(store, owner);
+    val id = t.treeCount;
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: id + 1, treeCells: CellEntry(cellNo: id, cellFrames: framesOf(t.treeCells, parent), cellNext: t.treeCells)));
+    return id;
+}
+
+// The contexts cell `id` holds now.
+fn framesAt(store: unknown, owner: unknown, id: i32) -> unknown {
+    return framesOf(treeOf(store, owner).treeCells, id);
+}
+
+// `value` provided for `key` in cell `id`.
+fn provideAt(store: unknown, owner: unknown, id: i32, key: string, value: unknown) -> void {
+    val t = treeOf(store, owner);
+    val frames = Frame(key: key, value: value, parent: framesOf(t.treeCells, id));
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: t.treeCount, treeCells: CellEntry(cellNo: id, cellFrames: frames, cellNext: t.treeCells)));
+}
+
+// The root's tree closed; a closed one is left as it is.
+fn closeStore(store: unknown) -> void {
+    if (!storeLive(store)) return;
+    storeClose(store, ScopeTree(treeClosed: true, treeCount: 0, treeCells: null));
+}
+
+// The contexts of cell `id` in `cells`.
+fn framesOf(cells: unknown, id: i32) -> unknown {
+    var cur = cells;
+    loop {
+        if (cur is CellEntry) {
+            val e: CellEntry = cur;
+            if (e.cellNo == id) return entryFrames(e);
+            cur = entryNext(e);
+        } else return null;
+    }
+}
+
+fn entryFrames(e: CellEntry) -> unknown {
+    return e.cellFrames;
+}
+
+fn entryNext(e: CellEntry) -> unknown {
+    return e.cellNext;
+}
+
+// ── resolving and running (decisions 809 (6), 815 (5), 819, 822, 825) ───────
+
+// Runs `c` over `scope` at `key` and hands back its answer as it came — a
+// value, or the task of a component that awaits —, nothing awaited inside.
+pub fn resolve<T>(c: Component<T>, scope: Scope, key: Place) -> T | Async<T> {
+    if (c is Composable<T>) return c.compose()(scope, key);
+    return c(scope, key);
+}
+
+// Runs a root: `c` resolved over `scope`, or over a root of its own that it
+// closes when `c` settles or fails (825 (1)), awaited only when it answered a
+// task (822, 823): `val page = await run(App());`.
+pub async fn run<T>(c: Component<T>, scope: ?Scope = null) -> Async<T> {
+    if (scope != null) {
+        val handed = resolve(c, scope, Place.none());
+        if (handed is Async<unknown>) return await handed;
+        return handed;
+    }
+    val root = Scope.root();
+    defer root.close();
+    val r = resolve(c, root, Place.none());
+    if (r is Async<unknown>) return await r;
+    return r;
+}
+
+// ── what the scope lowering calls (decisions 809 (8), 812, 819) ──────────────
 //
 // A program never names these: the compiler imports them under names no
-// source can spell. A `Component` function answers `{ scope -> … }`; each
-// `return v` of its body answers `rendered(v, <children's scope>)`; `use
-// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
-// children (a context is its value at run time: the compiler writes
-// `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
-// <ctx's type's identity>, ctx)`,
-// a `use` of a hook or of a component value runs the lambda and reads
-// `valueOf` of what it answers. A context's identity is its value's type
-// (379) — the compiler writes it, never a program.
+// source can spell. A component body is lowered to `{ scope, key -> … }`
+// opening `enter(scope, key)`, its own cell; `use provide(c)` is
+// `provideIn(<cell>, <T's identity>, c)` (a context is its value at run time:
+// the compiler writes `createContext(v)` as `v`), `use context(ctx)` is
+// `find(<the cell's contexts at entry>, <ctx's type's identity>, ctx)`, a
+// `use` of a hook or a component calls its value with the cell and
+// `Place.none()`, and each `return v` answers `answer(v)`. A context's
+// identity is its value's type (379) — the compiler writes it, never a
+// program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
 
-// The children's scope: `value` provided for `key` over `scope`.
-pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
-    return RenderScope(
-        frames: Frame(key: key, value: value, parent: scope.frames),
-    );
+// The cell a body opens: `scope`'s child at `key`.
+pub fn enter(scope: unknown, key: unknown) -> unknown {
+    if (scope is Scope) {
+        if (key is Place) return scope.childAt(key);
+        return scope.childAt(Place.none());
+    }
+    panic("a component is run with a `Scope` (decision 819)");
 }
 
-// The value provided nearest above for `key`, else `fallback` — the type's
-// declared default (decision 378 (3): no read is unbound).
+// The contexts `cell` holds now — what a body's `use context` reads.
+pub fn received(cell: unknown) -> unknown {
+    if (cell is Scope) return framesAt(cell.storeRef(), cell.ownerRef(), cell.cellId());
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// `value` provided for `key` in `cell`: what is resolved under it afterwards
+// reads it (809 (8), 812 (3)).
+pub fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
+    if (cell is Scope) {
+        provideAt(cell.storeRef(), cell.ownerRef(), cell.cellId(), key, value);
+        return null;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// The value provided nearest above for `key` in `frames`, else `fallback` —
+// the type's declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
-    var cur = scope.frames;
+pub fn find(frames: unknown, key: string, fallback: unknown) -> unknown {
+    var cur = frames;
     loop {
         if (cur is Frame) {
             val f: Frame = cur;
@@ -135,19 +311,19 @@ pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
     }
 }
 
-// A body's answer: its result over its children's scope.
-pub fn rendered(value: unknown, scope: RenderScope) -> Rendered<unknown> {
-    return Rendered(value: value, scope: scope);
+// A body's answer, as it is (the word wasm moves through it, decision 504).
+pub fn answer(value: unknown) -> unknown {
+    return value;
 }
 
-// The result a run answered.
-pub fn valueOf(r: Rendered<unknown>) -> unknown {
-    return r.value;
+// The place a `use` passes (820 (2)).
+pub fn nowhere() -> unknown {
+    return Place.none();
 }
 
-// The empty scope, the root's (`RenderScope.root()`).
-pub fn root() -> RenderScope {
-    return RenderScope.root();
+// A fresh root, for a `use` written outside every component body.
+pub fn root() -> unknown {
+    return Scope.root();
 }
 
 fn frameValue(f: Frame) -> unknown {
@@ -157,3 +333,60 @@ fn frameValue(f: Frame) -> unknown {
 fn frameParent(f: Frame) -> unknown {
     return f.parent;
 }
+
+// ── the store's host side (decision 824) ─────────────────────────────────────
+
+#[compiler.external(
+    .JavaScript("""({ v: undefined })"""),
+    .Erlang("""erlang:make_ref()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn storeNew() -> unknown;
+
+#[compiler.external(
+    .JavaScript("""($0.v !== undefined)"""),
+    .Erlang("""(erlang:get({bp_scope, $0}) =/= undefined)"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn storeLive(store: unknown) -> bool;
+
+#[compiler.external(
+    .JavaScript("""$0.v"""),
+    .Erlang("""erlang:get({bp_scope, $0})"""),
+    .Wasm(wasi: .CellGet),
+)]
+declare fn storeGet(store: unknown) -> unknown;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn storeSet(store: unknown, value: unknown) -> void;
+
+// The closed tree written over the root's: on erlang and beam the entry goes
+// instead, so the process keeps no `{bp_scope, _}` (825 (2), (3)).
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, _) -> erlang:erase({bp_scope, __S}), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn storeClose(store: unknown, closed: unknown) -> void;
+
+// The process a root is made in: its pid on erlang and beam; elsewhere one
+// process holds every root, and a token no test reads stands for it.
+#[compiler.external(
+    .JavaScript("""null"""),
+    .Erlang("""self()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn ownerSelf() -> unknown;
+
+// Whether `owner` is another process than this one: never off the BEAM (an
+// owner token there is an empty cell).
+#[compiler.external(
+    .JavaScript("""false"""),
+    .Erlang("""($0 =/= self())"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn ownerForeign(owner: unknown) -> bool;

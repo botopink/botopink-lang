@@ -4,7 +4,7 @@
 //// `Repository`, and both `use context(repoContext)` and an `inject` field
 //// typed `Repository` read it.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -41,8 +41,8 @@ component fn Root() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val outside = (await Lookup().run(RenderScope.root())).value;
+    val outside = await run(Lookup());
     print(outside.text);
-    val inside = (await Root().run(RenderScope.root())).value;
+    val inside = await run(Root());
     print(inside.text);
 }

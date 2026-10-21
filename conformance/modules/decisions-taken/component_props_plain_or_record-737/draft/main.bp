@@ -1,6 +1,6 @@
 //// Decision 737 — (a): a component takes its props as plain parameters or as one record parameter `..props: R` — 529 (1), (2) stand whole.
 
-import {io.terminal} from "std";
+import {context.run, io.terminal} from "std";
 import {context.RenderScope} from "std";
 
 type Element(text: string) implement Renderable
@@ -20,7 +20,7 @@ component fn RecordCard(..props: CardProps) -> Component<Element> {
 }
 
 fn text(c: Component<Element>) -> string {
-    return c.run(RenderScope.root()).value.text;
+    return run(c).value.text;
 }
 
 pub fn main() -> void {
