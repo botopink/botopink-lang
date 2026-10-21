@@ -544,6 +544,18 @@ to the child: the parent no longer ends on them, and ends when the child does.
 
 <!-- example: modules/decisions-taken/std_cli_host_primitives-506/cells/std_io_process_forward_signals -->
 
+`io.process.start(cmd, args, cwd, env)` starts a child with no shell, in `cwd` and with the `NAME=value` entries of `env` added to the parent's environment, and answers `Result<Captured, ProcessError>`; `Captured.wait()` is an `Async<Exit>` holding the status and the child's stdout and stderr apart, and answers the same again; `Captured.kill(s)` is `NoSuchProcess` once the child has ended. commonJS only.
+
+<!-- example: modules/decisions-taken/cell_check_program-790/cells/std_io_process_start -->
+
+Several `Captured` children run at once and their `wait()`s are awaited together (`async.runAll`): the answers come back in the order of the tasks, each with its own stdout, stderr and status.
+
+<!-- example: modules/decisions-taken/cell_check_program-790/cells/std_io_process_start_parallel -->
+
+`io.process.start` works on commonJS alone: on erlang and beam it answers `Error(Unsupported)`, on wasm the call is refused at the call (`std-unsupported-on-target`); importing `io.process` is fine everywhere.
+
+<!-- example: modules/decisions-taken/cell_check_program-790/cells/std_io_process_start_refused_off_node -->
+
 ### The file system, `io.fs`
 
 Every `io.fs` function that can fail answers `Result<…, FsError>` (decision 540) — never a `string`

@@ -1,0 +1,31 @@
+//// Decision 790 (1), 798 (6) — several started children run at once and their `wait`s are awaited
+//// together: the slower child is started first and the answers still come back in the order of the
+//// tasks (`async.runAll`), each with its own stdout, stderr and status.
+
+import {async, io.process, io.terminal.print} from "std";
+
+async fn runOne(label: string, millis: i32, status: i32) -> Async<process.Exit> {
+    val script = "setTimeout(() => { process.stdout.write('" + label
+        + "'); process.stderr.write('e" + label + "'); process.exit("
+        + status.toString() + ") }, " + millis.toString() + ")";
+    val r = process.start("node", ["-e", script], null, []);
+    return case r {
+        Ok(c) -> await c.wait();
+        Error(e) -> process.Exit(status: -1, stdout: "", stderr: "not started");
+    };
+}
+
+async fn scenario() -> Async<void> {
+    val all = await async.runAll([
+        { -> runOne("slow", 300, 1) },
+        { -> runOne("fast", 10, 2) },
+        { -> runOne("mid", 100, 0) },
+    ]);
+    for (all) { r ->
+        print(r.stdout + " " + r.stderr + " " + r.status.toString());
+    }
+}
+
+pub fn main() -> void {
+    scenario();
+}
