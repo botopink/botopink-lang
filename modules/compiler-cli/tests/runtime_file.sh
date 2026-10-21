@@ -29,7 +29,10 @@
 #     (`runtime-target-required`), a `.bpr` of another compiler
 #     (`runtime-other-compiler`), a dependency's `.bpr` as the program
 #     (`runtime-not-a-program`), a package's `.bpr` missing beside the root's
-#     (`runtime-missing`), `--emit-runtime` without its directory.
+#     (`runtime-missing`), `--emit-runtime` without its directory;
+#   • a `.bpr` is built from the directory of the project that wrote it (decision
+#     838 (3)): `app.bpr` over a directory with no `botopink.json` or over `lib/`
+#     is `runtime-other-project`, naming both, for `build` and `run`.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -114,6 +117,19 @@ refused "a .bpr of another compiler" runtime-other-compiler build --target commo
 refused "a dependency's .bpr as the program" runtime-not-a-program build --target commonJS --out "$WORK/o" "$RT-commonJS/lib.bpr"
 mkdir -p "$WORK/lone" && cp "$RT-commonJS/app.bpr" "$WORK/lone/"
 refused "a package's .bpr missing beside the root's" runtime-missing build --target commonJS --out "$WORK/o" "$WORK/lone/app.bpr"
+# The project's directory (838 (3)): `app.bpr` from a directory with no manifest and from `lib/`.
+mkdir -p "$WORK/nowhere"
+for from in "$WORK/nowhere" "$WORK/lib"; do
+  for cmd in build run; do
+    if bpin "$from" "$WORK/other.log" "$cmd" --target commonJS --out "$WORK/o" "$RT-commonJS/app.bpr"; then
+      fail "$cmd over app.bpr from ${from#$WORK/}: exit 0"
+    elif ! grep -q 'error\[runtime-other-project\]' "$WORK/other.log" || ! grep -q '`app`' "$WORK/other.log"; then
+      fail "$cmd over app.bpr from ${from#$WORK/}: no error[runtime-other-project] naming app"
+      sed 's/^/      /' "$WORK/other.log" >&2
+    fi
+  done
+done
+grep -q '`lib`' "$WORK/other.log" || fail "runtime-other-project from lib/ does not name the directory's project"
 if bp "$WORK/refused.log" build --emit-runtime; then fail "--emit-runtime without its directory: exit 0"; fi
 
 # The wasm host: `web` declares `"wasm": { "host": "browser" }`.

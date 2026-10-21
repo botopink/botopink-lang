@@ -69,14 +69,14 @@ const HELP =
     \\  --cold                       Read nothing from the code cache; write what is compiled
     \\  --emit-resolved <dir>        Write the resolved program (no comptime left) to <dir>/<package>.bp, for reading
     \\  --emit-runtime <dir>         Write each package's resolved tree to <dir>/<package>.bpr, to build any target from later
-    \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required)
+    \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache; write what is compiled
-    \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required)
+    \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\  --                           Pass remaining args to the program
     \\
     \\Options for `test`:

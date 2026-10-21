@@ -366,6 +366,10 @@ pub fn runRuntime(
         return .{ .exit = 1 };
     }
 
+    // A `.bpr` is built from the directory of the project that wrote it (decision 838 (3)):
+    // its host files are found from there, as a direct build finds them.
+    if (!inItsProject(arena, io, file, meta.root)) return .{ .exit = 1 };
+
     // Each package's file once, beside the root's.
     const dir = std.fs.path.dirname(file) orelse ".";
     var files: std.StringHashMapUnmanaged(runtime_file.Decoded) = .empty;
@@ -421,6 +425,23 @@ pub fn runRuntime(
     return .{ .exit = 0, .root = meta.root, .has_main = has_main, .wasm_host = meta.wasm_host };
 }
 
+/// Whether the working directory is the project `root` wrote `file` from — its
+/// `botopink.json` names `root` (decision 838 (3)); else the refusal printed,
+/// naming both.
+fn inItsProject(arena: std.mem.Allocator, io: std.Io, file: []const u8, root: []const u8) bool {
+    const here = config.load(arena, io) catch |err| switch (err) {
+        error.ConfigNotFound => {
+            reporter.errCode(runtime_codes.other_project, std.fmt.allocPrint(arena, "{s} is the .bpr of project `{s}`, and the working directory holds no botopink.json; build it from the directory of `{s}`", .{ file, root, root }) catch "the working directory holds no botopink.json");
+            return false;
+        },
+        // The manifest's own refusal is printed.
+        else => return false,
+    };
+    if (std.mem.eql(u8, here.name, root)) return true;
+    reporter.errCode(runtime_codes.other_project, std.fmt.allocPrint(arena, "{s} is the .bpr of project `{s}`, and the working directory holds project `{s}`; build it from the directory of `{s}`", .{ file, root, here.name, root }) catch "the working directory is another project");
+    return false;
+}
+
 /// Whether the analysed module `name` of `outputs` declares a top-level
 /// `fn main` (decision 517, read from the tree a `.bpr` holds).
 fn declaresMain(outputs: []const bp.codegen.ComptimeOutput, name: []const u8) bool {
@@ -447,6 +468,9 @@ pub const runtime_codes = struct {
     pub const missing = "runtime-missing";
     /// A dependency's `.bpr` handed as the program.
     pub const not_a_program = "runtime-not-a-program";
+    /// The working directory holds no `botopink.json`, or the manifest of another project
+    /// than the one that wrote the `.bpr` (decision 838 (3)).
+    pub const other_project = "runtime-other-project";
 };
 
 /// The `.bpr` at `path`, decoded — else its refusal printed and null.
