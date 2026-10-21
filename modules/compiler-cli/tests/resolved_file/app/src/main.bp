@@ -1,8 +1,8 @@
 //// The program `resolved_file.sh` prints one file per module: a module of
 //// its own package, a dependency's decorator and templates, a std module, a
-//// folded context.
+//// folded context, a catalogue read.
 
-import {context.createContext, io.terminal.print, math.clamp} from "std";
+import {compiler, context.createContext, io.terminal.print, math.clamp} from "std";
 import {tools.shout} from "lib";
 
 pub mod util;
@@ -13,8 +13,24 @@ pub val loud = shout @`hello`;
 
 pub val prefix = comptime createContext("#");
 
+fn job(syntax decl: unknown) -> void {
+    compiler.setMeta(Job(kind: "job"));
+}
+
+// What `#[job]` records.
+type Job(kind: string)
+
+#[job]
+pub fn count() -> i32 {
+    return 1;
+}
+
 pub fn main() -> void {
     print(loud);
     print(greet());
     print(clamp(9.5, 0.0, 2.5).toString());
+    val jobs: Declared<unknown>[] = @TypeInfo.all(with: job);
+    for (jobs) { d ->
+        print(d.name);
+    }
 }

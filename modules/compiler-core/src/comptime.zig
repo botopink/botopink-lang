@@ -361,7 +361,12 @@ fn resolvedProgram(
     var it = fn_decls.iterator();
     while (it.next()) |e| try decls.put(e.key_ptr.*, try context_lower.deepCopy(ast.FnDecl, arena, e.value_ptr.*));
     const erased = try syntax_param.eraseProgram(arena, try withoutExpandedFns(arena, copied), infer.isDecoratorParams);
-    const t = try transform.transform(arena, erased, decls, comptime_arrays, &ml, &env.templateExpansions, &env.srcRewrites, &rj, &sa, &es, &env.indexRewrites, &onc, std.StringHashMap([]const ast.Param).init(arena), &di, &rp, &ns, &env.localCalleeCalls, &ec, .resolved);
+    // Decision 835 (3) — a `@TypeInfo.all(…)` read stays the read as written
+    // (its answer is no value a program writes), until 576 (7) removes it.
+    var splices = try env.srcRewrites.clone();
+    var cit = env.typeinfoAll.keyIterator();
+    while (cit.next()) |loc| _ = splices.remove(loc.*);
+    const t = try transform.transform(arena, erased, decls, comptime_arrays, &ml, &env.templateExpansions, &splices, &rj, &sa, &es, &env.indexRewrites, &onc, std.StringHashMap([]const ast.Param).init(arena), &di, &rp, &ns, &env.localCalleeCalls, &ec, .resolved);
     // What expanded code and folded values name that the module does not
     // declare: the template's imports, the prelude records a value is built
     // from (`SourceLocation`, `Declared`, `Asset`, `__Source`).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Decisions 834 (1), (2), 835 (1) — `--emit-resolved <dir>` against the real CLI, over
+# Decisions 834 (1), (2), 835 (1), (3) — `--emit-resolved <dir>` against the real CLI, over
 # `resolved_file/`: `app` (a root module `main`, a module `util` of its own
 # package) over a dependency `lib` whose decorator and templates run at the
 # build, and std's `math`.
@@ -13,7 +13,8 @@
 #     alias import, `wrap` declared in `lib/tools.bp`;
 #   • what ran at build is gone with its import: `entity`, `shout`, `boxed`;
 #   • a folded value the language cannot write is printed as the run-time call
-#     that builds it (decision 835 (1)): a context, `createContext(v)`.
+#     that builds it (decision 835 (1)): a context, `createContext(v)`;
+#   • a `@TypeInfo.all(…)` read stays the read as written (835 (3)).
 # The printed tree re-read as a project, on every target, is the oracle of
 # `compiler-core`'s `codegen/tests/resolved_print.zig` (its names are the
 # compiler's, refused in a written program, 805 (6)).
@@ -74,6 +75,7 @@ lacks app/util.bp 'tools.entity'
 lacks app/main.bp 'tools.shout'
 has app/main.bp 'pub val prefix = createContext("#");'
 lacks app/main.bp 'contextValue'
+has app/main.bp 'val jobs: Declared<unknown>[] = @TypeInfo.all(with: job);'
 
 if (( failures > 0 )); then
   echo "resolved_file.sh: $failures failure(s)" >&2

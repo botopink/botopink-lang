@@ -21,14 +21,15 @@ const h = @import("helpers.zig");
 
 const cells_dir = "../../conformance/modules";
 
-/// The cells, by path under `conformance/modules`.
+/// The cells, by path under `conformance/modules`. A cell reading
+/// `@TypeInfo.all` is out until B-137: its read is printed as written
+/// (decision 835 (3)), which no program without comptime answers.
 const cells = [_][]const u8{
     // Decorators: an added member, an `@emit`, a meta read, `compiler.init`.
     "decorator/cells/decorator_entity_table",
     "decorator/cells/decorator_arguments_meta",
     "decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main",
     "decisions-taken/ast_fn_node_builds_mock_member-753/cells/ast_fn_node_builds_mock_member",
-    "decisions-taken/bodyless_declarations_two_only-604/cells/decorator_marker_empty_body",
     "decisions-taken/typed_member_reads_own_meta-395/cells/member_reads_own_meta",
     "decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/decl_member_owner",
     // Templates.
