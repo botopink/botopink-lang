@@ -1110,7 +1110,12 @@ class beside them. What each number is here, and what is refused:
   return of the `?fn(…) -> T` the operand holds; `lowerIfExpr`), so `?? d` and
   `@print` read it as any `?T` (`modules/decisions-taken/optional_typescript_operators-330/cells/optional_call_operator`,
   `modules/decisions-taken/optional_typescript_operators-330/cells/optional_call_plain_answers`); a link whose type is not known here is
-  refused at the operand. `o ?? d` reads its shape and
+  refused at the operand. Over an optional array of records, `xs?.[k]` / `xs?.at(k)` answer the record's own
+  pointer (`optLinkElemRecord`, `chainedCallOpt`), so `first!.name` and `p?.title` read the record's slot
+  (`modules/decisions-taken/optional_typescript_operators-330/cells/optional_index_record_field`,
+  `modules/decisions-taken/optional_typescript_operators-330/cells/optional_array_at_record`); an array or a tuple
+  element of a tuple literal bound by `val #(a, b) = …` keeps its shape (`noteTupleElemShape`,
+  `modules/decisions-taken/prelude_has_no_pair_or_function-738/cells/tuple_destructure_array_element`). `o ?? d` reads its shape and
   its bool-ness as `o.unwrapOr(d)` does (`nullishParts`):
   `(rs.at(1) ?? #("", ""))._1` printed the string's address. `xs.map({ n -> Y(…) })`
   holds the record its lambda answers (`elemRecordOf`), so `built.at(1)?.id` reads the field

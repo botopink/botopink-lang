@@ -25035,6 +25035,9 @@ const Emitter = struct {
         if (i >= elems.len) return;
         if (self.isStringExpr(elems[i])) try self.str_locals.put(name, {});
         if (self.isBoolExpr(elems[i])) try self.bool_locals.put(name, {});
+        // An element that is an array or a tuple (`xs.map(…)`, `[5, 6]`) is
+        // that container once bound: its shape is what prints and reads it.
+        if (try self.printShapeOf(elems[i])) |sh| if (sh.len > 0 and (sh[0] == '[' or sh[0] == '(')) try self.noteTupleElemLocal(name, sh);
     }
 
     /// Front 164 s2 — the type a GC module's `case` answers when it is not the
