@@ -22199,6 +22199,20 @@ fn receiverNamesPrimitiveType(env: *Env, recv: ?*ast.Expr) bool {
     return true;
 }
 
+/// The extension block that writes `callee` as a method of its own for the
+/// primitive `recvTy`, when neither the type nor its contract holder declares it.
+fn primBlockSymbol(env: *Env, recvTy: *T.Type, callee: []const u8) ?[]const u8 {
+    if (recvTy.* != .named) return null;
+    if (env.hasInherentMethod(recvTy.named.name, callee)) return null;
+    const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return null;
+    var it = env.extensions.valueIterator();
+    while (it.next()) |ext| {
+        if (!std.mem.eql(u8, ext.target, recvTy.named.name) and !std.mem.eql(u8, ext.target, ifaceName)) continue;
+        if (namesContain(ext.methods, callee)) return ext.name;
+    }
+    return null;
+}
+
 fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, loc: ast.Loc, statics: bool) InferError!void {
     const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return;
     if (env.assocInterfaceDecls.get(ifaceName) == null) return;
@@ -25864,6 +25878,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                                 .trailing = typedTrailing,
                             } } } };
                         }
+                        // Decision 799 — a method an extension block of a contract
+                        // writes for the primitive (`StringShout implement Shout for
+                        // string { fn label(self: Self) … }`) is the block's function:
+                        // the call is rewritten to `StringShout.label(recv)` as an
+                        // identifier receiver's is (F6), on every backend.
+                        if (primBlockSymbol(env, recvTy, call.callee)) |sym| try env.dispatchRewrites.put(loc, sym);
                         try refuseUndeclaredPrimMethod(env, recvTy, call.callee, loc, receiverNamesPrimitiveType(env, call.receiver));
                     }
                 }
