@@ -4,6 +4,7 @@
 [run/src/cases/float_text_everywhere/mod.bp](run/src/cases/float_text_everywhere/mod.bp)
 [run/src/cases/generic_float_text/mod.bp](run/src/cases/generic_float_text/mod.bp)
 [cells/generic_fn_value_takes_shape/src/main.bp](cells/generic_fn_value_takes_shape/src/main.bp)
+[cells/generic_fn_value_called_untyped/src/main.bp](cells/generic_fn_value_called_untyped/src/main.bp)
 [cells/generic_array_of_floats/src/main.bp](cells/generic_array_of_floats/src/main.bp)
 [run/src/cases/optional_chain_string_text/mod.bp](run/src/cases/optional_chain_string_text/mod.bp)
 [run/src/cases/string_lower_final_sigma/mod.bp](run/src/cases/string_lower_final_sigma/mod.bp)

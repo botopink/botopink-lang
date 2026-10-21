@@ -2419,6 +2419,11 @@ const Emitter = struct {
     /// Decision 210 — a `val`'s composite type when nothing else recovers it
     /// (`eqTypeOf` over its initialiser), by the local's symbol.
     eq_local_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
+    /// A local bound to a generic `fn` named as a value (`val f = show`) →
+    /// that function: `f(3.0)` is the call `show(3.0)`, which binds `T` from
+    /// its arguments (a copy per binding) instead of going through the
+    /// function value's one body.
+    generic_fn_aliases: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 214 — whether `$__f64_eq` was called.
     float_eq_used: bool = false,
     /// Node factory: owns the arena every built node borrows from and the set
@@ -9038,6 +9043,7 @@ const Emitter = struct {
     fn resetFnState(self: *Emitter, result_type: ?Repr) void {
         self.locals.clearRetainingCapacity();
         self.eq_local_types.clearRetainingCapacity();
+        self.generic_fn_aliases.clearRetainingCapacity();
         self.bound_names.clearRetainingCapacity();
         self.field_closures.clearRetainingCapacity();
         self.ctor_lambdas.clearRetainingCapacity();
@@ -11927,6 +11933,11 @@ const Emitter = struct {
                         return .none;
                     };
                     try self.declareLocal(lb.name, self.bindingLocalType(lb.typeAnnotation, lb.value.*));
+                    _ = self.generic_fn_aliases.remove(lb.name);
+                    if (self.mode == .gc and lb.typeAnnotation == null) if (plainIdentName(lb.value.*)) |vn| if (!self.locals.contains(self.resolveName(vn))) {
+                        const gname = self.import_aliases.get(vn) orelse vn;
+                        if (self.generic_fns.contains(gname)) try self.generic_fn_aliases.put(self.arena(), lb.name, gname);
+                    };
                     // A function NAMED as the value (`val g = greet`) types the
                     // local by its declaration, as a written `fn(…) -> T` does:
                     // `g()` then answers `greet`'s declared return. Without it the
@@ -15858,6 +15869,11 @@ const Emitter = struct {
     /// bodyless `declare fn` with no `#[@External.<Target>(…)]` at all. Both
     /// used to lower to `unreachable` "so the module still loads".
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
+        if (cc.receiver == null and cc.calleeExpr == null) if (self.generic_fn_aliases.get(self.resolveName(cc.callee))) |g| {
+            var direct = cc;
+            direct.callee = g;
+            return self.lowerPlainCall(direct, loc);
+        };
         // A local shadows a function of its name: `val #(n, push) = …;
         // push(n)` beside std's linked `push` called the function.
         if (cc.receiver == null and cc.calleeExpr == null and self.locals.contains(cc.callee))
