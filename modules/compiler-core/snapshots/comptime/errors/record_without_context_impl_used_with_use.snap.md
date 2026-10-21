@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type() implement Renderable
+val Element = type()
 val Plain = type(x: i32)
 fn make() -> Plain {
     return Plain(x: 0);

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = type(tag: string, n: i32) implement Renderable
+val E = type(tag: string, n: i32)
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
@@ -330,9 +330,9 @@ import {io.terminal.print} from "std";
 ----- BEAM ASSEMBLY -- test@main@@E.S
 ```erlang
 {module, test@main@@E}.
-{exports, [{'__bp_get', 2}, {'__bp_format', 1}, {'__bp_behaviors', 0}]}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
@@ -376,14 +376,6 @@ import {io.terminal.print} from "std";
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"E">>}, {y, 1}]}}.
     {deallocate, 2}.
-    return.
-
-{function, '__bp_behaviors', 0, 9}.
-  {label, 8}.
-    {line, [{location, "test@main@@E.erl", 1}]}.
-    {func_info, {atom, test@main@@E}, {atom, '__bp_behaviors'}, 0}.
-  {label, 9}.
-    {move, {literal, ['Renderable']}, {x, 0}}.
     return.
 ```
 

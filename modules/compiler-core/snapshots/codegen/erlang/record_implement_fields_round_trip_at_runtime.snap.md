@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = type(tag: string, n: i32) implement Renderable
+val E = type(tag: string, n: i32)
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
@@ -62,14 +62,12 @@ main(_Args) ->
 ----- ERLANG -- test@main@@E.erl
 ```erlang
 -module(test@main@@E).
--export(['__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
+-export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, tag) -> erlang:element(2, V);
 '__bp_get'(V, n) -> erlang:element(3, V).
 
 '__bp_format'(V) -> {record, "E", [{"tag", erlang:element(2, V)}, {"n", erlang:element(3, V)}]}.
-
-'__bp_behaviors'() -> ['Renderable'].
 ```
 
 ----- RUN LOG -----

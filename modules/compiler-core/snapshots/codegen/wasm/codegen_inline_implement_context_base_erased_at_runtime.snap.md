@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 fn render() -> Element {
     return Element();
 }

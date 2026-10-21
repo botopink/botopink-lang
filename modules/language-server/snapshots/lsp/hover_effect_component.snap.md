@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 component fn state(initial: i32) -> Component<i32> {
              ↑
     return initial;

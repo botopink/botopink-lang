@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 fn render() -> Element {
     return Element();
 }
@@ -11,7 +11,6 @@ fn render() -> Element {
 class Element {
 }
 Element.prototype.__bp = "Element";
-Element.prototype["__bp_b_Renderable"] = true;
 
 function render() {
     return new Element();

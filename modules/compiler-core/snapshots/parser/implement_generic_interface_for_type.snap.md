@@ -40,11 +40,7 @@
         "moduleComment": null,
         "interfaces": [
           {
-            "generic": {
-              "name": "Renderable",
-              "args": [],
-              "is_builtin": true
-            }
+            "named": "Display"
           }
         ],
         "target": "E",

@@ -11,9 +11,9 @@ component fn flag() -> Component<bool> {
 component fn Banner(ready: bool) -> Component<Element> {
     val shown = use flag();
     val both = ready && use flag();
-    return Element(text: if (shown && both) { "on" } else { "off" });
+    return Element(text: if (shown && both) "on" else "off");
 }
 
-pub fn main() -> void {
-    terminal.print(run(Banner(true)).value.text);
+pub async fn main() -> Async<void> {
+    terminal.print((await run(Banner(true))).text);
 }
