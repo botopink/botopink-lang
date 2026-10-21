@@ -13,6 +13,7 @@
 [cells/optional_call_operator/src/main.bp](cells/optional_call_operator/src/main.bp)
 [cells/optional_call_plain_answers/src/main.bp](cells/optional_call_plain_answers/src/main.bp)
 [cells/optional_chain_field_after_call/src/main.bp](cells/optional_chain_field_after_call/src/main.bp)
+[cells/optional_chain_lambda_array_method/src/main.bp](cells/optional_chain_lambda_array_method/src/main.bp)
 [cells/optional_chain_record_fields/src/main.bp](cells/optional_chain_record_fields/src/main.bp)
 [cells/optional_enum_method_absent_receiver/src/main.bp](cells/optional_enum_method_absent_receiver/src/main.bp)
 [run/src/cases/optional_enum_method_call/mod.bp](run/src/cases/optional_enum_method_call/mod.bp)

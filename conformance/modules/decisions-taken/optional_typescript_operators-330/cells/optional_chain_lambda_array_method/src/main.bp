@@ -1,0 +1,21 @@
+//// Decision 330 — `?.` calling a method of an optional array, read through an
+//// untyped lambda's parameter another function types (`fn(h: ?Holder[])`):
+//// the lambda takes the parameter's type before its body is read, so
+//// `a?.length()` is the array's length when present and absent when not, as
+//// the typed `fn(h: ?Holder[]) -> i32 { … }` form answers, on every target.
+
+import {io.terminal.print} from "std";
+
+type Holder(n: i32)
+
+fn count(xs: ?Holder[], f: fn(h: ?Holder[]) -> i32) -> i32 {
+    return f(xs);
+}
+
+pub fn main() -> void {
+    print(count([Holder(n: 1), Holder(n: 2)], { a -> a?.length() ?? 0 }));
+    print(count(null, { a -> a?.length() ?? 0 }));
+    print(count([Holder(n: 3)], fn(h: ?Holder[]) -> i32 {
+        return h?.length() ?? 0;
+    }));
+}

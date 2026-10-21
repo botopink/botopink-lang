@@ -25002,8 +25002,22 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 // Decision 148 — a `forEach` body may write a captured `var`.
                 if (arg.value.* == .function and typedReceiver != null and std.mem.eql(u8, call.callee, "forEach") and (isArrayType(typedReceiver.?.getType()) or typedReceiver.?.getType().deref().* == .typeVar))
                     env.nextLambdaExempt = true;
+                // An untyped lambda handed to a parameter whose function type
+                // is ground takes its parameter types from it before its body
+                // is read, as a primitive method's does: `{ a -> a?.length() }`
+                // for `fn(h: ?Holder[]) -> i32` read `a?.length()` over a type
+                // variable, and commonJS called the property.
+                const groundFnExpected: ?*T.Type = if (expected == null and arg.value.* == .function) blk: {
+                    const w = argExpected orelse break :blk null;
+                    const d = w.deref();
+                    if (d.* != .func or d.func.params.len != arg.value.function.kind.params.len) break :blk null;
+                    for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
+                    break :blk w;
+                } else null;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
+                else if (groundFnExpected) |w|
+                    try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, w, true)
                 else
                     try inferExprTypedExpecting(env, arg.value.*, argExpected);
                 env.nextLambdaExempt = false;
