@@ -459,7 +459,7 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main@@Bag.erl", 4}]}.
     {func_info, {atom, test@main@@Bag}, {atom, '__bp_behaviors'}, 0}.
   {label, 19}.
-    {move, {literal, ['Counted']}, {x, 0}}.
+    {move, {literal, [test@main@@Counted, test@main@@Sized]}, {x, 0}}.
     return.
 ```
 

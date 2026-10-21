@@ -2103,8 +2103,12 @@ through the same rule (`checkTypePatternArgs`); a type pattern over a union is t
 (`typePatternType`), so the binder reads the member's fields at the subject's arguments. A behavior is
 a type pattern too (`isKnownTypeName`). A test of a behavior (`v is Shown<unknown>`, a type pattern
 `Shown<…>`) is recorded in `Env.behaviorTests` under the call's loc or the arm's `patternLoc` with the
-name the backends test (`behaviorTestRef`: `ast.behavior_test_prefix` and the behavior's declared name),
-written into the program by `type_token.apply`.
+name the backends test (`behaviorTestRef`: `ast.behavior_test_prefix` and the behavior's identity,
+its declaring module's path and its name, decision 831), written into the program by
+`type_token.apply`, which also writes each type's `behaviorMarks` (`infer.behaviorMarksOf`: the
+implemented behaviors' identities and, through `extends`, their parents'). An imported behavior is
+bound under the name its import gives it, an alias included (`Env.importedBehaviorDecls`), its marks
+computed in its declaring module (`comptime.zig` `appendBehaviorMarks`, `Env.importedBehaviorMarks`).
 
 Three statement walks had to agree, and each was its own `for` loop: `inferStmtsTyped` (branch
 bodies, loop bodies, lambda and trailing-lambda bodies, `comptime` blocks) and `inferBodyStmts`,

@@ -17,6 +17,7 @@
           }
         ],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {

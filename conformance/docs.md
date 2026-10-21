@@ -1677,6 +1677,13 @@ parameter nothing binds: `x: unknown`, `x is Box<T>`.
 
 <!-- example: modules/decisions-taken/union_narrowing_flow_and_case-810/refused/src/cases/is_unbound_type_argument -->
 
+A behavior's run-time identity is its declaration — the module's id and its name, the atom a type's is
+(`<package>@<path>@@<B>`): two same-named behaviors of two modules are two, the mark is the declared
+behavior's whatever the import calls it, and a type implementing `Sub extends Super` carries `Super`'s
+mark too (decision 831).
+
+<!-- example: modules/decisions-taken/behavior_identity_by_module-831/run/src/cases/behavior_identity_by_module -->
+
 A type to test against travels as a `comptime t: type<T>` parameter — `fn
 count<T>(self: Registry, comptime t: type<T>) -> i32 { … if (e is t) … }`, called
 `r.count(Users)`, `T` inferred from `t`. The parameter is the function's

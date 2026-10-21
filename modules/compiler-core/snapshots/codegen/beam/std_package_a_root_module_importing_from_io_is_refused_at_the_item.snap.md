@@ -10802,7 +10802,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {line, [{location, "std@io@fs@@File.erl", 30}]}.
     {func_info, {atom, std@io@fs@@File}, {atom, '__bp_behaviors'}, 0}.
   {label, 494}.
-    {move, {literal, ['Closeable']}, {x, 0}}.
+    {move, {literal, [std@primitives@@Closeable]}, {x, 0}}.
     return.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 31}.

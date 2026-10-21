@@ -104,7 +104,7 @@ clamp(Self, Lo, Hi) ->
 
 '__bp_format'(V) -> {record, "Money", [{"cents", erlang:element(2, V)}]}.
 
-'__bp_behaviors'() -> ['Bounded'].
+'__bp_behaviors'() -> [test@main@@Bounded].
 ```
 
 ----- RUN LOG -----

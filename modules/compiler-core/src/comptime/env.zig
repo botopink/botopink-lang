@@ -1613,6 +1613,12 @@ pub const Env = struct {
     /// method (`InstanceLowering.behavior`). Kept apart from
     /// `assocInterfaceDecls`, whose entries codegen emits.
     importedBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// Decision 831 (1), (2) — the identities (`<module path>@@<B>`,
+    /// `ast.behaviorIdentity`) a type implementing an imported behavior
+    /// carries, by the name this module binds it under (its alias, when one is
+    /// written): the declared behavior's own first, then each behavior it
+    /// `extends`, resolved in its declaring module.
+    importedBehaviorMarks: std.StringHashMapUnmanaged([]const []const u8) = .empty,
     /// Decision 539 (6) — the ambient behaviors of `primitives.bp`'s compiler section a program
     /// names with no import (`Display`, `Closeable`), by name. Read last, after a
     /// module's own and its imported behaviors: a parameter typed by one

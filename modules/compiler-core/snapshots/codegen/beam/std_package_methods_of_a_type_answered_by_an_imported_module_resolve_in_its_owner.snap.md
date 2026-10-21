@@ -1572,7 +1572,7 @@ test "order case over Order" {
     {line, [{location, "std@collections@@Dict.erl", 18}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '__bp_behaviors'}, 0}.
   {label, 127}.
-    {move, {literal, ['Index', 'Display']}, {x, 0}}.
+    {move, {literal, [std@primitives@@Index, std@primitives@@Display]}, {x, 0}}.
     return.
 
 {function, '__bp_print', 1, 35}.

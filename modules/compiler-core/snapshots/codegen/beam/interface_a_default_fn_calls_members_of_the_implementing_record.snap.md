@@ -455,7 +455,7 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main@@Money.erl", 4}]}.
     {func_info, {atom, test@main@@Money}, {atom, '__bp_behaviors'}, 0}.
   {label, 22}.
-    {move, {literal, ['Bounded']}, {x, 0}}.
+    {move, {literal, [test@main@@Bounded]}, {x, 0}}.
     return.
 ```
 

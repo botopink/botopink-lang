@@ -16,6 +16,7 @@
             "named": "Serializable"
           }
         ],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {

@@ -16,6 +16,7 @@
             "named": "Printable"
           }
         ],
+        "behaviorMarks": [],
         "shape": {
           "enum_": {
             "variants": [

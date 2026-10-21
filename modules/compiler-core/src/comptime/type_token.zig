@@ -23,6 +23,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 const memberFn = @import("member_fn.zig");
+const infer = @import("infer.zig");
 
 /// A callable of this module whose `comptime t: type<T>` parameters
 /// specialise it.
@@ -147,7 +148,39 @@ pub fn copyName(arena: std.mem.Allocator, owner: []const u8, name: []const u8, t
 }
 
 /// `program` with every type token specialised away (see the file's doc).
-pub fn apply(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.Env) !ast.Program {
+/// Decision 831 (1), (2) — each type's `behaviorMarks`: the identities of
+/// the behaviors it implements, an import alias resolved to the declaration
+/// and every behavior an implemented one `extends` included, which the
+/// backends emit as the type's marks.
+fn withBehaviorMarks(arena: std.mem.Allocator, program: ast.Program, env: *const envMod.Env) !ast.Program {
+    var any = false;
+    for (program.decls) |d| if (d == .type_ and d.type_.implement.len > 0) {
+        any = true;
+    };
+    if (!any) return program;
+    const decls = try arena.dupe(ast.DeclKind, program.decls);
+    for (decls) |*d| if (d.* == .type_ and d.type_.implement.len > 0) {
+        var marks: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (d.type_.implement) |im| {
+            const name = switch (im) {
+                .named => |n| n,
+                .generic => |g| g.name,
+                else => continue,
+            };
+            for (try infer.behaviorMarksOf(env, name)) |m| {
+                const seen = for (marks.items) |x| {
+                    if (std.mem.eql(u8, x, m)) break true;
+                } else false;
+                if (!seen) try marks.append(arena, m);
+            }
+        }
+        d.type_.behaviorMarks = try marks.toOwnedSlice(arena);
+    };
+    return .{ .decls = decls };
+}
+
+pub fn apply(arena: std.mem.Allocator, written: ast.Program, env: *const envMod.Env) !ast.Program {
+    const program = try withBehaviorMarks(arena, written, env);
     var callables: std.StringArrayHashMapUnmanaged(Callable) = .empty;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| {

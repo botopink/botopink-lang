@@ -681,6 +681,27 @@ pub fn typeAtom(alloc: std.mem.Allocator, id: ModuleId, decl: []const u8) (std.m
     return declAtom(alloc, id, decl);
 }
 
+/// Decision 831 (1) — the atom of a behavior identity the checker hands on
+/// (`ast.behaviorIdentity`, `<path>@@<B>`): the atom a type's is,
+/// `declAtom(idOf(path), B)` — `app@a@m@@Shown`. Outside a cross-module
+/// compilation, or for an identity whose module renders no atom, the
+/// identity's text with `/` as `@`, still one per declaration.
+pub fn behaviorAtom(alloc: std.mem.Allocator, cross: ?*const CrossModule, identity: []const u8) std.mem.Allocator.Error![]const u8 {
+    const parts = ast.behaviorIdentityParts(identity);
+    if (parts.path.len == 0) return parts.name;
+    if (cross) |xc| {
+        if (declAtom(alloc, xc.idOf(parts.path), parts.name)) |a| return a else |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {},
+        }
+    }
+    const out = try alloc.dupe(u8, identity);
+    for (out[0..parts.path.len]) |*c| if (c.* == '/') {
+        c.* = '@';
+    };
+    return out;
+}
+
 /// The `__v__` segment: a variant's tag, qualified by the enum it belongs to
 /// and the module that declares the enum —
 /// `typeAtom(id, decl) ++ "__v__" ++ lower(variant)`, so `Shape.Circle` in

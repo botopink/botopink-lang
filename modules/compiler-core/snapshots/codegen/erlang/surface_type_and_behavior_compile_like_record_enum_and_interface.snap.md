@@ -105,7 +105,7 @@ area(Self) ->
 
 '__bp_format'(V) -> {record, "Square", [{"side", erlang:element(2, V)}]}.
 
-'__bp_behaviors'() -> ['Shape'].
+'__bp_behaviors'() -> [test@main@@Shape].
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

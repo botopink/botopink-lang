@@ -11003,7 +11003,7 @@ const Emitter = struct {
     /// payload variants as tagged tuples.
     fn typeTestNode(this: *Emitter, b: Ast.Builder, t: ast.TypeRef, subject: Ast.Expr) anyerror!?Ast.Expr {
         // Decision 810 (1) — a behavior: the value's type module answers it.
-        if (ast.behaviorTestName(t)) |bn| return try this.genCall(b, .implements, &.{ subject, Ast.Expr.a(bn) });
+        if (ast.behaviorTestIdentity(t)) |id| return try this.genCall(b, .implements, &.{ subject, Ast.Expr.a(try crossModule.behaviorAtom(b.arena, this.cross, id)) });
         switch (t) {
             .named => |n| {
                 if (std.mem.eql(u8, n, "string")) return try b.remote("erlang", "is_binary", &.{subject});
@@ -11856,15 +11856,19 @@ const Emitter = struct {
             .layout = .inline_,
         }}) } } });
         try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
-        try behaviorsForm(b, unit, r.implement);
+        try behaviorsForm(b, unit, this.cross, r);
     }
 
-    /// Decision 810 (1) — `'__bp_behaviors'() -> ['Shown', …]`: the behaviors
-    /// the type implements, which `'__bp_implements'/2` reads for `v is B`.
-    fn behaviorsForm(b: Ast.Builder, unit: *SavedUnitState, implement: []const ast.TypeRef) !void {
-        if (implement.len == 0) return;
+    /// Decision 810 (1) — `'__bp_behaviors'() -> [app@a@m@@Shown, …]`: the
+    /// behaviors the type implements, which `'__bp_implements'/2` reads for
+    /// `v is B`; each the atom of its declaration, through `extends` too
+    /// (decision 831, the checker's `behaviorMarks`).
+    fn behaviorsForm(b: Ast.Builder, unit: *SavedUnitState, cross: ?*const CrossModule, t: ast.TypeDecl) !void {
+        if (t.implement.len == 0) return;
         var names: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-        for (implement) |im| switch (im) {
+        if (t.behaviorMarks.len > 0) {
+            for (t.behaviorMarks) |id| try names.append(b.arena, Ast.Expr.a(try crossModule.behaviorAtom(b.arena, cross, id)));
+        } else for (t.implement) |im| switch (im) {
             .named => |n| try names.append(b.arena, Ast.Expr.a(n)),
             .generic => |g| try names.append(b.arena, Ast.Expr.a(g.name)),
             else => {},
@@ -11928,7 +11932,7 @@ const Emitter = struct {
         }
         try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_format", .clauses = clauses } } });
         try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
-        try behaviorsForm(b, unit, e.implement);
+        try behaviorsForm(b, unit, this.cross, e);
     }
 
     /// The method a type renders itself through (decision 8 §7's `Display`):

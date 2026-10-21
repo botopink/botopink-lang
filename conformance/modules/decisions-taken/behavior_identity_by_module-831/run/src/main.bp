@@ -1,0 +1,5 @@
+mod cases;
+
+pub fn main() -> void {
+    cases.behavior_identity_by_module.runCase();
+}

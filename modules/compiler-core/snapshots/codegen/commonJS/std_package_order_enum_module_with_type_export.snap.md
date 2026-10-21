@@ -960,8 +960,8 @@ class Dict {
     }
 }
 Dict.prototype.__bp = "Dict";
-Dict.prototype.__bp_b_Index = true;
-Dict.prototype.__bp_b_Display = true;
+Dict.prototype["__bp_b_std@primitives@@Index"] = true;
+Dict.prototype["__bp_b_std@primitives@@Display"] = true;
 Dict.prototype.__bp_s = { pairs: ["[", ["#", null, null]] };
 exports.Dict = Dict;
 

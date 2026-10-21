@@ -943,7 +943,7 @@ ofEntries(Entries) ->
 
 '__bp_format'(V) -> {text, display(V)}.
 
-'__bp_behaviors'() -> ['Index', 'Display'].
+'__bp_behaviors'() -> [std@primitives@@Index, std@primitives@@Display].
 
 '__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.

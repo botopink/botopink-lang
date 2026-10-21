@@ -33,6 +33,7 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {

@@ -12,6 +12,7 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {
@@ -80,6 +81,7 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {
@@ -107,6 +109,7 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "enum_": {
             "variants": [

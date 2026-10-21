@@ -15814,6 +15814,38 @@ fn behaviorDeclaredName(env: *Env, name: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Decision 831 (1), (2) — the identities (`ast.behaviorIdentity`) a type
+/// implementing the behavior this module names `name` carries: the declared
+/// behavior's own first — its declaring module's path and its name, whatever
+/// an import alias calls it — then, through `extends`, each parent's. Empty
+/// when `name` names no behavior.
+pub fn behaviorMarksOf(env: *const Env, name: []const u8) ![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    try appendBehaviorMarksOf(env, name, &out, 0);
+    return out.toOwnedSlice(env.arena);
+}
+
+fn appendBehaviorMarksOf(env: *const Env, name: []const u8, out: *std.ArrayListUnmanaged([]const u8), depth: usize) !void {
+    if (env.importedBehaviorMarks.get(name)) |marks| {
+        for (marks) |m| try appendMark(env, out, m);
+        return;
+    }
+    const own: ?ast.BehaviorDecl = for (env.moduleDecls) |d| {
+        if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) break d.behavior;
+    } else null;
+    const decl, const path = if (own) |b| .{ b, env.modulePath } else if (env.ambientBehaviorDecls.get(name)) |b| .{ b, ast.ambient_behavior_module } else return;
+    const id = try ast.behaviorIdentity(env.arena, path, decl.name);
+    for (out.items) |seen| if (std.mem.eql(u8, seen, id)) return;
+    try out.append(env.arena, id);
+    if (depth >= 16) return;
+    for (decl.extends) |parent| try appendBehaviorMarksOf(env, parent, out, depth + 1);
+}
+
+fn appendMark(env: *const Env, out: *std.ArrayListUnmanaged([]const u8), mark: []const u8) !void {
+    for (out.items) |seen| if (std.mem.eql(u8, seen, mark)) return;
+    try out.append(env.arena, mark);
+}
+
 /// Decision 810 (1) — the tested type the backends lower: a behavior's
 /// (`v is Composable<unknown>`) is `ast.behavior_test_prefix` and its declared
 /// name, the identity every implementing type carries; any other unchanged.
@@ -15824,8 +15856,11 @@ fn behaviorTestRef(env: *Env, ref: ast.TypeRef) InferError!ast.TypeRef {
         else => return ref,
     };
     if (env.lookupTypeDef(name) != null) return ref;
-    const declared = behaviorDeclaredName(env, name) orelse return ref;
-    return .{ .named = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ ast.behavior_test_prefix, declared }) };
+    if (behaviorDeclaredName(env, name) == null) return ref;
+    // Decision 831 (1) — the declaration's identity, not its name alone.
+    const marks = try behaviorMarksOf(env, name);
+    if (marks.len == 0) return ref;
+    return .{ .named = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ ast.behavior_test_prefix, marks[0] }) };
 }
 
 /// Decision 810 (1) — `x is List<T>` with `T` a type parameter of the

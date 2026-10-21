@@ -3207,17 +3207,45 @@ pub const is_builtin_name = "is";
 /// own tests on wasm).
 pub const behavior_test_prefix = "__bp_behavior__";
 
-/// The behavior a tested type names under `behavior_test_prefix`, or null.
+/// The behavior a tested type names under `behavior_test_prefix` — its
+/// declared name, the identity's last half — or null.
 pub fn behaviorTestName(ref: TypeRef) ?[]const u8 {
-    if (ref != .named or !std.mem.startsWith(u8, ref.named, behavior_test_prefix)) return null;
-    return ref.named[behavior_test_prefix.len..];
+    const id = behaviorTestIdentity(ref) orelse return null;
+    return behaviorIdentityParts(id).name;
 }
 
-/// `behaviorTestName` for a pattern's written name.
+/// Decision 831 — the identity (`behaviorIdentity`) a tested type names under
+/// `behavior_test_prefix`, or null.
+pub fn behaviorTestIdentity(ref: TypeRef) ?[]const u8 {
+    if (ref != .named) return null;
+    return behaviorPatternName(ref.named);
+}
+
+/// The identity a pattern's written name holds under `behavior_test_prefix`.
 pub fn behaviorPatternName(name: []const u8) ?[]const u8 {
     if (!std.mem.startsWith(u8, name, behavior_test_prefix)) return null;
     return name[behavior_test_prefix.len..];
 }
+
+/// Decision 831 (1) — a behavior's run-time identity as the checker hands it
+/// to the backends: its declaring module's path and its declared name,
+/// `<path>@@<B>` (`a/m@@Shown`); each backend renders it as the atom a type's
+/// is (`crossModule.behaviorAtom`: `<package>@<path>@@<B>`). The root
+/// module's empty path is `main`.
+pub fn behaviorIdentity(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}@@{s}", .{ if (path.len == 0) "main" else path, name });
+}
+
+/// `behaviorIdentity`'s two halves; an identity with no module half (a
+/// mark written by hand) is its name alone.
+pub fn behaviorIdentityParts(id: []const u8) struct { path: []const u8, name: []const u8 } {
+    const at = std.mem.lastIndexOf(u8, id, "@@") orelse return .{ .path = "", .name = id };
+    return .{ .path = id[0..at], .name = id[at + 2 ..] };
+}
+
+/// Decision 831 — the module the ambient behaviors (`primitives.bp`'s,
+/// decision 539 (6)) are declared in, the first half of their identity.
+pub const ambient_behavior_module = "std/primitives";
 
 /// The reserved builtin-call name that carries [decision 30](../../../specs)'s
 /// index expression: `call{ .callee = index_builtin_name, .is_builtin = true,
@@ -4683,6 +4711,11 @@ pub const TypeDecl = struct {
     genericParams: []GenericParam = &.{},
     /// Inline behavior implementations: `record(...) implement I1 { }`.
     implement: []TypeRef = &.{},
+    /// Decision 831 (1), (2) — the behavior identities (`behaviorIdentity`)
+    /// a value of this type answers `is` for: each `implement`ed behavior's
+    /// declaration and, through `extends`, its parents'. Set by the checker's
+    /// lowering (`type_token.apply`); empty before it.
+    behaviorMarks: []const []const u8 = &.{},
     shape: TypeShape,
     /// Whether the last field/variant had a trailing comma in the source.
     trailingComma: bool = false,

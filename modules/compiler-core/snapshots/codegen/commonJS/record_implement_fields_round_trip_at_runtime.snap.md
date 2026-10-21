@@ -77,7 +77,7 @@ class E {
     }
 }
 E.prototype.__bp = "E";
-E.prototype.__bp_b_Renderable = true;
+E.prototype["__bp_b_Renderable"] = true;
 
 function mk() {
     return new E("x", 5);

@@ -3471,7 +3471,7 @@ class File {
     }
 }
 File.prototype.__bp = "File";
-File.prototype.__bp_b_Closeable = true;
+File.prototype["__bp_b_std@primitives@@Closeable"] = true;
 exports.File = File;
 
 // Open the file at `path` for reading. A directory is `IsDirectory` on every target.

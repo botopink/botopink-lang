@@ -3251,7 +3251,7 @@ const Emitter = struct {
         const marker = try self.protoName(r.name, r.printedName());
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
         try out.appendSlice(self.arena(), &.{ class, marker });
-        try self.appendBehaviorMarks(&out, r.name, r.implement);
+        try self.appendBehaviorMarks(&out, r.name, r);
         if (try self.protoShapes(r.name, r.recordFields())) |shapes| try out.append(self.arena(), shapes);
         if (r.isPub) try out.append(self.arena(), try self.pubExport(r.name));
         return self.b.group(out.items);
@@ -3387,25 +3387,29 @@ const Emitter = struct {
 
     /// Decision 810 (1) — the identity `v is B<…>` tests for a behavior `B`:
     /// a key on the prototype of every class whose type implements it,
-    /// `Tag.prototype.__bp_b_Shown = true`, so it crosses every module.
-    fn appendBehaviorMarks(self: *Emitter, out: *std.ArrayListUnmanaged(js.Stmt), class_name: []const u8, implement: []const ast.TypeRef) !void {
-        for (implement) |im| {
-            const b = switch (im) {
-                .named => |n| n,
-                .generic => |g| g.name,
-                else => continue,
-            };
-            try out.append(self.arena(), .{ .expr = try self.b.assign(
-                try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), try behaviorMarkKey(self.arena(), b)),
-                "=",
-                .{ .name = "true" },
-            ) });
-        }
+    /// `Tag.prototype["__bp_b_app@a@m@@Shown"] = true`, so it crosses every
+    /// module; one per declaration, through `extends` too (decision 831, the
+    /// checker's `behaviorMarks`).
+    fn appendBehaviorMarks(self: *Emitter, out: *std.ArrayListUnmanaged(js.Stmt), class_name: []const u8, t: ast.TypeDecl) !void {
+        if (t.implement.len == 0) return;
+        var ids: std.ArrayListUnmanaged([]const u8) = .empty;
+        try ids.appendSlice(self.arena(), t.behaviorMarks);
+        if (t.behaviorMarks.len == 0) for (t.implement) |im| switch (im) {
+            .named => |n| try ids.append(self.arena(), n),
+            .generic => |g| try ids.append(self.arena(), g.name),
+            else => {},
+        };
+        for (ids.items) |id| try out.append(self.arena(), .{ .expr = try self.b.assign(
+            try self.b.index(try self.b.member(.{ .name = class_name }, "prototype"), .{ .quoted = try self.behaviorMarkKey(id) }, false),
+            "=",
+            .{ .name = "true" },
+        ) });
     }
 
-    /// The prototype key a behavior's identity is: `__bp_b_<name>`.
-    fn behaviorMarkKey(ar: std.mem.Allocator, behavior: []const u8) ![]const u8 {
-        return std.fmt.allocPrint(ar, "__bp_b_{s}", .{behavior});
+    /// The prototype key a behavior's identity is: `__bp_b_<atom>`, the atom
+    /// erlang's is (`crossModule.behaviorAtom`).
+    fn behaviorMarkKey(self: *Emitter, identity: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "__bp_b_{s}", .{try crossModule.behaviorAtom(self.arena(), self.cross, identity)});
     }
 
     /// The JS class name of one variant of `enum_name` — `Shape$Circle`.
@@ -3644,7 +3648,7 @@ const Emitter = struct {
         // Only the base class is marked: every variant inherits `__bp` and
         // adds its own `tag`, which is how the formatter spells `Shape.Square`.
         try out.append(self.arena(), try self.protoName(e.name, e.printedName()));
-        try self.appendBehaviorMarks(&out, e.name, e.implement);
+        try self.appendBehaviorMarks(&out, e.name, e);
         for (tail.items) |st| try out.append(self.arena(), st);
         if (e.isPub) try out.append(self.arena(), try self.pubExport(e.name));
         return self.b.group(try out.toOwnedSlice(self.arena()));
@@ -7620,10 +7624,10 @@ const Emitter = struct {
     /// emitting something that is not JavaScript.
     fn isTest(self: *Emitter, t: ast.TypeRef, subject: js.Expr) anyerror!js.Expr {
         // Decision 810 (1) — a behavior: the mark its implementors carry.
-        if (ast.behaviorTestName(t)) |b| return self.b.paren(try self.b.binaryBare(
+        if (ast.behaviorTestIdentity(t)) |id| return self.b.paren(try self.b.binaryBare(
             "&&",
             try self.b.binaryBare("!=", subject, .null_),
-            try self.b.binaryBare("===", try self.b.member(subject, try behaviorMarkKey(self.arena(), b)), .{ .name = "true" }),
+            try self.b.binaryBare("===", try self.b.index(subject, .{ .quoted = try self.behaviorMarkKey(id) }, false), .{ .name = "true" }),
         ));
         switch (t) {
             .named => |n| {

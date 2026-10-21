@@ -3554,25 +3554,34 @@ std's body stopped calling a method on an optional and the erlang emitter types 
 `default fn` body's locals (§ erlang, "A `default fn` body's locals"); wasm's
 std-wasm's `array.unique` answers the same (`modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique`).
 
-## A behavior's identity at run time (decision 810 (1))
+## A behavior's identity at run time (decisions 810 (1), 831)
 
 `v is B<…>` over a behavior `B` reaches every backend as the tested type `.named`
-`ast.behavior_test_prefix ++ "B"` (`ast.behaviorTestName`; the checker records it, `type_token.apply`
-writes it), and a `case` arm naming a behavior reaches them already rewritten to that `is` test
-(`comptime/type_token.zig` `behaviorCase`). The identity is the mark each implementing type carries:
+`ast.behavior_test_prefix ++ "<path>@@<B>"` — the behavior's identity, its declaring module's path and
+its declared name (`ast.behaviorIdentity`, read back by `ast.behaviorTestIdentity`; the checker records
+it, `type_token.apply` writes it) —, and a `case` arm naming a behavior reaches them already rewritten
+to that `is` test (`comptime/type_token.zig` `behaviorCase`). Each record and enum carries
+`TypeDecl.behaviorMarks`, the identities of the behaviors it implements: an import alias resolved to
+the declaration, every behavior an implemented one `extends` included (`type_token.apply`'s
+`withBehaviorMarks`). Every backend renders an identity as the atom a type's is,
+`crossModule.behaviorAtom` (`<package>@<path>@@<B>`, `app@a@m@@Shown`), so two same-named behaviors of
+two modules are two. The identity is the mark each implementing type carries:
 
-- **commonJS** — `Tag.prototype.__bp_b_Shown = true;` after the class of every record and enum whose
-  `implement` names `Shown` (`appendBehaviorMarks`); the test is `(v != null && v.__bp_b_Shown ===
-  true)`, which crosses every module. `x is Async<…>` is `instanceof Promise` (a failing task's
+- **commonJS** — `Tag.prototype["__bp_b_app@a@m@@Shown"] = true;` after the class of every record and
+  enum, one per mark (`appendBehaviorMarks`); the test is `(v != null && v["__bp_b_app@a@m@@Shown"]
+  === true)`, which crosses every module. `x is Async<…>` is `instanceof Promise` (a failing task's
   `__bp_task` is one too).
-- **erlang / beam** — a record's type module exports `'__bp_behaviors'/0`, the list of the behaviors
-  its type implements (`behaviorsForm`, beam's `emitBehaviors`); the test is the shared runtime helper
+- **erlang / beam** — a record's type module exports `'__bp_behaviors'/0`, the list of its marks'
+  atoms (`behaviorsForm`, beam's `emitBehaviors`); the test is the shared runtime helper
   `'__bp_implements'/2` (`beam/gen_runtime.zig` `.implements`): the value's tag (a record's or a
   payload variant's first element, a unit variant's atom), its `__v__` segment cut off, is a loaded
-  module exporting `'__bp_behaviors'/0` that lists the behavior; an enum's module exports it too.
+  module exporting `'__bp_behaviors'/0` that lists the behavior's atom; an enum's module exports it too.
 - **wat** — a unit links every module statically, so `registerTypes` records each behavior's
   implementing types (`behavior_impls`) and `typeDescriptors` / `gcTypeTests` answer the union of
-  theirs: the test is the implementors' own descriptor (or GC type) tests.
+  theirs: the test is the implementors' own descriptor (or GC type) tests. It is keyed by the
+  behavior's written name (`ast.behaviorTestName`, an identity's name half), not yet by
+  `behaviorMarks` (decision 831 (1)): two same-named behaviors, an aliased import and a parent through
+  `extends` are not told apart there (cell `behavior_identity_by_module` on wasm).
 
 A generic function over a union parameter (`fn first<T>(v: Box<T> | Pair<T>)`) binds `T` on wat from
 the member the argument's type names (`bindParam`), as the member written alone would; it printed a

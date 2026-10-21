@@ -448,7 +448,7 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main@@Square.erl", 2}]}.
     {func_info, {atom, test@main@@Square}, {atom, '__bp_behaviors'}, 0}.
   {label, 14}.
-    {move, {literal, ['Shape']}, {x, 0}}.
+    {move, {literal, [test@main@@Shape]}, {x, 0}}.
     return.
 ```
 

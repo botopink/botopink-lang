@@ -3287,7 +3287,7 @@ close(Self) ->
 
 '__bp_format'(V) -> {record, "File", [{"location", erlang:element(2, V)}, {"handle", erlang:element(3, V)}]}.
 
-'__bp_behaviors'() -> ['Closeable'].
+'__bp_behaviors'() -> [std@primitives@@Closeable].
 
 -compile({inline,['__bp_int'/4]}).
 '__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;

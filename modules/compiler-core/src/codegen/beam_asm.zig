@@ -3679,9 +3679,9 @@ const Emitter = struct {
         try self.lowerExprIntoX0(cc.args[0].value.*);
         // Decision 810 (1) — a behavior: the value's type module answers it
         // (`beam/gen_runtime.zig`'s `'__bp_implements'/2`, erlang's too).
-        if (ast.behaviorTestName(t)) |bn| {
+        if (ast.behaviorTestIdentity(t)) |id| {
             var buf: [512]u8 = undefined;
-            const atom = try self.atom_arena.allocator().dupe(u8, try atomName(bn, &buf));
+            const atom = try self.atom_arena.allocator().dupe(u8, try atomName(try crossModule.behaviorAtom(self.atom_arena.allocator(), self.cross, id), &buf));
             try beamEmitter.writeMoveOp(self.out, Op.atom(atom), Dst.xr(1));
             try self.callGenHelper(.implements);
             return;
@@ -4227,23 +4227,29 @@ const Emitter = struct {
                 const fields = r.recordFields();
                 if (fields.len > 0) try self.emitFieldGetter(fields, unit);
                 try self.emitRecordFormat(r.printedName(), r, unit);
-                try self.emitBehaviors(r.implement, unit);
+                try self.emitBehaviors(r, unit);
             },
             .enum_ => |e| {
                 if (e.variants().len == 0) return;
                 try self.emitEnumFormat(e.printedName(), e, unit);
-                try self.emitBehaviors(e.implement, unit);
+                try self.emitBehaviors(e, unit);
             },
         }
     }
 
     /// Decision 810 (1) — `'__bp_behaviors'() -> ['Shown', …]`, the behaviors
     /// the type implements, which `'__bp_implements'/2` reads for `v is B`.
-    fn emitBehaviors(self: *Emitter, implement: []const ast.TypeRef, unit: *SavedBeamUnit) !void {
-        if (implement.len == 0) return;
+    /// Each the atom of its declaration, through `extends` too (decision
+    /// 831, the checker's `behaviorMarks`).
+    fn emitBehaviors(self: *Emitter, t: ast.TypeDecl, unit: *SavedBeamUnit) !void {
+        if (t.implement.len == 0) return;
         const ar = self.atom_arena.allocator();
         var names: std.ArrayListUnmanaged(Term) = .empty;
-        for (implement) |im| {
+        for (t.behaviorMarks) |id| {
+            var buf: [512]u8 = undefined;
+            try names.append(ar, Term.atomOf(try ar.dupe(u8, try atomName(try crossModule.behaviorAtom(ar, self.cross, id), &buf))));
+        }
+        if (t.behaviorMarks.len == 0) for (t.implement) |im| {
             const n = switch (im) {
                 .named => |x| x,
                 .generic => |g| g.name,
@@ -4251,7 +4257,7 @@ const Emitter = struct {
             };
             var buf: [512]u8 = undefined;
             try names.append(ar, Term.atomOf(try ar.dupe(u8, try atomName(n, &buf))));
-        }
+        };
         const name = "'__bp_behaviors'";
         try self.reserveFn(name, 0);
         try unit.exports.append(self.alloc, .{ .name = name, .arity = 0 });

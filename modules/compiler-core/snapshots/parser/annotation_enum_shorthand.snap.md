@@ -20,6 +20,7 @@
         ],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "enum_": {
             "variants": [

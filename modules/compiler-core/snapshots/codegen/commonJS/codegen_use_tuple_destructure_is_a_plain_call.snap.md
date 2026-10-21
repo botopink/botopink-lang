@@ -518,7 +518,7 @@ const { push: bpScopePush__, find: bpScopeFind__, rendered: bpScopeRendered__, v
 class Element {
 }
 Element.prototype.__bp = "Element";
-Element.prototype.__bp_b_Renderable = true;
+Element.prototype["__bp_b_Renderable"] = true;
 
 function optimistic(base, f) {
     return (bpScope__) => {

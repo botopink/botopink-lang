@@ -57,6 +57,7 @@
             "named": "A"
           }
         ],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {
@@ -148,6 +149,7 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
+        "behaviorMarks": [],
         "shape": {
           "record": [
             {

@@ -3135,7 +3135,13 @@ fn resolveImports(
                                 // its value binding below stays what it was,
                                 // and the importer only learns its methods.
                                 if (type_decl == .behavior) {
-                                    try env.importedBehaviorDecls.put(env.arena, name, type_decl.behavior);
+                                    // Decision 831 (2) — bound under the name
+                                    // the import gives it, an alias included;
+                                    // its marks are its declaration's.
+                                    try env.importedBehaviorDecls.put(env.arena, local, type_decl.behavior);
+                                    var marks: std.ArrayListUnmanaged([]const u8) = .empty;
+                                    try appendBehaviorMarks(env, typeDeclRegistry, e.key_ptr.*, type_decl.behavior, &marks, 0);
+                                    try env.importedBehaviorMarks.put(env.arena, local, try marks.toOwnedSlice(env.arena));
                                     if (imp.alias == null) infer.takeNameFromPrelude(env, name);
                                     bound_behavior = true;
                                     break;
@@ -4143,6 +4149,43 @@ pub const rule_read_behaviors = [_][]const u8{
 
 /// True when `b`, a behavior of `primitives.bp`'s compiler section, is ambient: public, and read
 /// by no compiler rule (`rule_read_behaviors`).
+/// Decision 831 (1), (2) — the identities a type implementing behavior `b`,
+/// declared in module `path`, carries: `b`'s own, then through `extends` each
+/// parent's, a parent resolved in `path`'s own declarations first, then among
+/// the ambient behaviors, then as the one module of the program declaring a
+/// behavior of that name. `depth` bounds a cyclic chain.
+fn appendBehaviorMarks(
+    env: *envMod.Env,
+    registry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+    path: []const u8,
+    b: ast.BehaviorDecl,
+    out: *std.ArrayListUnmanaged([]const u8),
+    depth: usize,
+) !void {
+    const id = try ast.behaviorIdentity(env.arena, path, b.name);
+    for (out.items) |seen| if (std.mem.eql(u8, seen, id)) return;
+    try out.append(env.arena, id);
+    if (depth >= 16) return;
+    for (b.extends) |parent| {
+        if (registry.get(path)) |decls| if (decls.get(parent)) |d| if (d == .behavior) {
+            try appendBehaviorMarks(env, registry, path, d.behavior, out, depth + 1);
+            continue;
+        };
+        if (env.ambientBehaviorDecls.get(parent)) |a| {
+            try appendBehaviorMarks(env, registry, ast.ambient_behavior_module, a, out, depth + 1);
+            continue;
+        }
+        var only: ?struct { path: []const u8, decl: ast.BehaviorDecl } = null;
+        var count: usize = 0;
+        var it = registry.iterator();
+        while (it.next()) |e| if (e.value_ptr.get(parent)) |d| if (d == .behavior) {
+            count += 1;
+            only = .{ .path = e.key_ptr.*, .decl = d.behavior };
+        };
+        if (count == 1) try appendBehaviorMarks(env, registry, only.?.path, only.?.decl, out, depth + 1);
+    }
+}
+
 pub fn isAmbientBehavior(b: ast.BehaviorDecl) bool {
     if (!b.isPub) return false;
     for (rule_read_behaviors) |name| if (std.mem.eql(u8, b.name, name)) return false;
