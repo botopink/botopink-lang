@@ -6,7 +6,7 @@ are a small stand-in for `rakun-data`'s, keeping the shape the decision fixes. `
 form `` #[query @`…`] ``, whose text is handed to the template as written — `${id}` included, a hole the real library
 binds as a typed parameter —, and `named` with `#[nativeQuery("…")]`, the driver's SQL as a comptime literal, its
 `:name` placeholder answering the parameter of that name. Each records an `Sql` meta on its method. `#[repository]`
-reads every method's meta through `compiler.methods(decl)` and `compiler.meta<Sql>(m)` — a method's meta being kept for
+reads every method's meta through `compiler.methods(decl)` and `compiler.meta(m, Sql)` — a method's meta being kept for
 its owner, whose decorator runs after its methods' —, refuses a method with neither annotation at that method, and
 records the statement inventory as the behavior's own meta, the list a `/actuator/sql` would read. Every method answers
 `Result<…, StoreError>`. `main` reads the inventory and prints the two statements:

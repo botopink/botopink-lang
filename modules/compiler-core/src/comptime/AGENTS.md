@@ -421,7 +421,7 @@ caller and captured **unevaluated**:
   module whose `.hooks` reader has not run (decision 372) carries
   `{'__bp_pending', Name}` for `meta`, and the prelude's
   `'__bp_methodMetaAll'/2` refuses its read `typeinfo-meta-hooks-pending` at
-  the literal. `compiler.meta<T>(d)` / `compiler.metaAll<T>(d)` on any declaration handle in a template body
+  the literal. `compiler.meta(d, T)` / `compiler.metaAll(d, T)` on any declaration handle in a template body
   is `inferTagMetaRead` (a record with a `syntax` field is
   `template-lookup-meta-expr-field`), lowered by `syntax_param.eraseMetaReads`
   (run when the body annotates or looks up). `setMeta` / `addMeta` /
@@ -944,7 +944,7 @@ the template's body as a decorator's.
   Typed meta is the one channel (`decorator-meta-twice` at the second
   `setMeta` of a type on a tag); `addMember`, `addType`, `@emit` and the
   string `setMeta` are `tag-annotation-output`. The body reads
-  `compiler.meta<T>(d)` / `compiler.metaAll<T>(d)` (`inferTagMetaRead`, refused on a
+  `compiler.meta(d, T)` / `compiler.metaAll(d, T)` (`inferTagMetaRead`, refused on a
   decorator's own handle), lowered by `syntax_param.eraseMetaReads` to the
   prelude's `'__bp_methodMeta'/2`; `compiler.attr(d, name)` is `attr/2` in both
   preludes. Cells: `modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta`,

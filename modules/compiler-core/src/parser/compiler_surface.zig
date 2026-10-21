@@ -543,14 +543,7 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
         }
         return fieldRead(ctx, loc, first, field);
     }
-    // `compiler.meta<M>(d)` → `d.meta(M)` (298).
-    if (std.mem.eql(u8, name, "meta") or std.mem.eql(u8, name, "metaAll")) {
-        const ta = c.typeArgs orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}<M>(d)` names the meta type `M`", .{name}), "Write the record type the decorator set: `compiler.meta<Entity>(d)` (decision 298).");
-        if (ta.len != 1 or ta[0] != .named) return refusal(ctx, loc, diagnostics.compiler_member_unknown, "the meta type is one named record type", "Write the record type the decorator set: `compiler.meta<Entity>(d)` (decision 298).");
-        const one = try ctx.alloc.alloc(ast.CallArg, 1);
-        one[0] = .{ .label = null, .value = try ident(ctx, ta[0].named, loc) };
-        return methodCall(ctx, loc, first, name, one, c.trailing, null);
-    }
+    // `compiler.meta(d, M)` / `compiler.metaAll(d, M)` are called as declared (840).
     return methodCall(ctx, loc, first, name, rest, c.trailing, c.typeArgs);
 }
 

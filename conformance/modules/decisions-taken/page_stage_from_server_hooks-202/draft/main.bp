@@ -24,6 +24,6 @@ component fn Account() -> Component<Element> {
 }
 
 pub fn main() -> void {
-    terminal.print("Home", comptime compiler.meta<PageStage>(Home)!.kind);
-    terminal.print("Account", comptime compiler.meta<PageStage>(Account)!.kind);
+    terminal.print("Home", comptime compiler.meta(Home, PageStage)!.kind);
+    terminal.print("Account", comptime compiler.meta(Account, PageStage)!.kind);
 }

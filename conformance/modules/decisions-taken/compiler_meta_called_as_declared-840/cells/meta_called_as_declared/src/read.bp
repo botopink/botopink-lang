@@ -1,0 +1,16 @@
+//// The template reads the meta back with the declared call, the type passed as the argument.
+
+import {orm.Entity, orm.Index};
+import {compiler} from "std";
+
+pub fn describe(syntax q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val e = compiler.meta(decl, Entity) ?? compiler.fail("no entity", at: q);
+    val columns = compiler
+        .metaAll(decl, Index)
+        .map({ i -> i.column })
+        .join(",");
+    return compiler.build("\"" + e.table + ":" + columns + "\"");
+}

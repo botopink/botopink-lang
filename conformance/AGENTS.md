@@ -199,10 +199,10 @@ Decision 316 (`decl.wrapWith`, 144 B-11) added `modules/decisions-taken/compiler
 `wrapWith` (decision 714).
 Decision 302 (a tag is a declaration handle, 144 B-15) adds `modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta`, `tag_annotation_add_member`,
 `tag_annotation_meta_twice` and `type_named_like_decl_kind`; its Conformance step adds `modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta_read`
-(`compiler.meta<T>(d)` read back, `compiler.attr(d, name)` absent and `compiler.component(d)` on an element `null`, four targets),
+(`compiler.meta(d, T)` read back, `compiler.attr(d, name)` absent and `compiler.component(d)` on an element `null`, four targets),
 `tag_annotation_add_type` (`tag-annotation-output`), `tag_annotation_unknown_name`
 and `tag_annotation_not_decorator` (no decorator named, at the annotation) and `tag_annotation_reads_meta`
-(`compiler.meta<T>(decl)` in an annotation, question B-15-c as built) — each red on B-15's parent, which had no `compiler.tagDecl`.
+(`compiler.meta(decl, T)` in an annotation, question B-15-c as built) — each red on B-15's parent, which had no `compiler.tagDecl`.
 Decisions 311 (3), 415 and 426 (templates, 144 B-18) add `modules/decisions-taken/query_template_assembled_at_build-415/run/src/cases/template_method_call`, the `template_lookup_*`
 cells and the `template_call_*` / `template_build_outside_bound` / `template_note_on_mismatch` cells; its
 Conformance step adds `modules/decisions-taken/query_template_assembled_at_build-415/run/src/cases/template_lookup_decl_members` (`variants`, `methods`, `params` of a looked-up

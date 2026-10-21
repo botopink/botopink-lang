@@ -7,6 +7,6 @@ import {comptime.sql.sql, comptime.sql.Query};
 pub fn users() -> void {}
 
 pub fn main() -> void {
-    terminal.print(comptime compiler.meta<Query>(users)?.sql ?? "-");
+    terminal.print(comptime compiler.meta(users, Query)?.sql ?? "-");
     sql @`select 1`;
 }

@@ -3962,7 +3962,7 @@ too.
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/cells/template_bindings_decls -->
 <!-- example: modules/decisions-taken/query_template_assembled_at_build-415/cells/decorator_decl_module -->
 
-On a handle, `compiler.meta<T>(d)` (`?T`) and `compiler.metaAll<T>(d)` (`T[]`)
+On a handle, `compiler.meta(d, T)` (`?T`) and `compiler.metaAll(d, T)` (`T[]`)
 answer at build what the declaration's decorators recorded, when the record `T`
 is data — each field a string, a number, a `bool`, a variant, an array or an
 optional of those; a field the value left out reads its default. A record with a field that holds code — a function filled from a
@@ -4343,7 +4343,7 @@ the outputs a decorator's only (`compiler-output-outside-decorator`):
 | Place | Written | Read |
 |---|---|---|
 | a member of the annotated type | `compiler.addMember("table", fn() -> string { … })` — the member a function expression at the call | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
-| comptime meta, a typed value keyed by its type (decision 298) | `compiler.setMeta(Entity(table: "cities"))`, `compiler.addMeta(Index(column: "name"))` | `compiler.typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and `compiler.meta<Entity>(d)` / `compiler.metaAll<Index>(d)` on a handle — the values written back where they are read |
+| comptime meta, a typed value keyed by its type (decision 298) | `compiler.setMeta(Entity(table: "cities"))`, `compiler.addMeta(Index(column: "name"))` | `compiler.typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and `compiler.meta(d, Entity)` / `compiler.metaAll(d, Index)` on a handle — the values written back where they are read |
 | an associated type | `compiler.addType("Columns", compiler.buildType(…))` — a type built from its fields, never from record text (decisions 625 (3), 629 (1)) | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the run-time registry | `compiler.init({ -> themes.set(decl); })` — the decorator registers its own declaration (decision 665) | the registry, read by the program at run time |
 
@@ -4717,7 +4717,7 @@ decorator's name: `compiler.setMeta(Entity(table: table))` records one
 `Entity` on the declaration, `compiler.addMeta(Index(column: c))` one more
 `Index` each time. A reader names the type — `compiler.typeInfo(City).meta(Entity)` is
 an `?Entity` (`null` when nothing recorded one), `compiler.typeInfo(City).metaAll(Index)`
-an `Index[]`, `compiler.meta<Entity>(d)` and `compiler.metaAll<Index>(d)` the
+an `Index[]`, `compiler.meta(d, Entity)` and `compiler.metaAll(d, Index)` the
 same on a declaration handle —, so a renamed decorator changes no reader, two
 decorators may write one type, and who may read is who sees the type. The values are built at
 build time and written back as their constructors where they are read: each
@@ -4766,7 +4766,7 @@ body that runs when the program runs it is written under `comptime` (§ `compile
 build: a decorator registers its own declaration with an executor
 (`compiler.init({ -> themes.set(decl); })`, § Decorators) and the program reads the
 registry at run time; a `compiler.*` read inside the executor
-(`compiler.meta<Entity>(decl)`) is folded at build after every annotation of the
+(`compiler.meta(decl, Entity)`) is folded at build after every annotation of the
 declaration ran, so it reads a settled value and a declaration's meta travels into
 its entry (decision 680). A second `#[theme]` is the registering executor's refusal
 at init, before `main`. No `comptime` default is a catalogue query: a framework's
@@ -4955,8 +4955,8 @@ is `template-annotation-only` at the call.
 A method's decorators — a template annotation and a `#[d(…)]` alike — run
 before its owner's, and the typed meta they record (`compiler.setMeta(v)`,
 `compiler.addMeta(v)`) is read by the owner's decorator on a
-`compiler.methods(decl)` entry: `compiler.meta<T>(m)` is a `?T`,
-`compiler.metaAll<T>(m)` a `T[]`, `T` the record written by its declared name.
+`compiler.methods(decl)` entry: `compiler.meta(m, T)` is a `?T`,
+`compiler.metaAll(m, T)` a `T[]`, `T` the record written by its declared name.
 A field's decorator still records no meta (`decorator-meta-on-member`).
 
 <!-- example: modules/decisions-taken/template_called_with_raw_text-577/cells/template_annotation -->
@@ -4976,8 +4976,8 @@ handle with what the annotation recorded. In the annotation,
 `compiler.attr(decl, name)` is a static attribute as written (`null` when the
 tag has none, and on every declaration) and `compiler.component(decl)` the
 component's own handle (`null` on an element). Typed meta is the one channel:
-the template body reads it back by type, `compiler.meta<T>(d)` (`?T`) and
-`compiler.metaAll<T>(d)` (`T[]`), so one annotation function serves a tag and a
+the template body reads it back by type, `compiler.meta(d, T)` (`?T`) and
+`compiler.metaAll(d, T)` (`T[]`), so one annotation function serves a tag and a
 declaration alike.
 
 <!-- example: modules/decisions-taken/tag_annotation_is_decorator-302/run/src/cases/tag_decl_meta -->
@@ -4986,7 +4986,7 @@ declaration alike.
 Refused at the annotation, in the caller's text: `compiler.addMember` and
 `compiler.addType` (`tag-annotation-output`); a second `compiler.setMeta` of one type on the tag (`decorator-meta-twice`); a name the
 caller's scope does not declare, and one that names no decorator. Inside an
-annotation `compiler.meta<T>(decl)` is refused (question B-15-c): meta is read
+annotation `compiler.meta(decl, T)` is refused (question B-15-c): meta is read
 by the code that consumes it, after every annotation ran, so annotations do not
 depend on their written order.
 

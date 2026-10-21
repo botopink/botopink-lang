@@ -11,7 +11,7 @@ pub fn raw(syntax decl: unknown, comptime reason: string) -> void {
 pub fn kinds(syntax q: string) -> string {
     var out: string[] = [];
     for (compiler.bindings(q)) { d ->
-        val m = compiler.meta<RawBody>(d);
+        val m = compiler.meta(d, RawBody);
         out.push(compiler.name(d)! + " " + (m?.reason ?? "plain"));
     }
     val text = out.join(", ");

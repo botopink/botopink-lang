@@ -29,7 +29,7 @@ fn sql(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);
-    val t = compiler.meta<Table>(decl) ?? compiler.fail("`"
+    val t = compiler.meta(decl, Table) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not an entity", at: q);
     val cached = if (t.cached) "yes" else "no";
@@ -43,7 +43,7 @@ fn sql(syntax q: string) -> string {
         + size
         + " tags="
         + t.tags.join(",");
-    for (compiler.metaAll<Index>(decl)) { i ->
+    for (compiler.metaAll(decl, Index)) { i ->
         text = text + " index=" + i.column;
     }
     return compiler.build("\"" + text + "\"");
@@ -53,8 +53,8 @@ fn entity(syntax q: string) -> bool {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);
-    val found = if (compiler.meta<Table>(decl) == null
-        && compiler.metaAll<Index>(decl).length == 0)
+    val found = if (compiler.meta(decl, Table) == null
+        && compiler.metaAll(decl, Index).length == 0)
         "false"
     else
         "true";

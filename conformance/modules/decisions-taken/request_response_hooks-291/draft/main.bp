@@ -7,6 +7,6 @@ import {comptime.stages.Stage};
 pub async fn main() -> Async<void> {
     print((await NotFound()).text);
     print(written().join(", "));
-    print(comptime compiler.meta<Stage>(NotFound)?.kind ?? "?");
-    print(comptime compiler.meta<Stage>(About)?.kind ?? "?");
+    print(comptime compiler.meta(NotFound, Stage)?.kind ?? "?");
+    print(comptime compiler.meta(About, Stage)?.kind ?? "?");
 }

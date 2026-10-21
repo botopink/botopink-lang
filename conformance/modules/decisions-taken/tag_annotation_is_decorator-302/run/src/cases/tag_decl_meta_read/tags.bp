@@ -20,7 +20,7 @@ pub fn markup(syntax q: string) -> string {
     val tag = compiler.tagDecl(DeclKind.Element, name, []);
     val d = compiler.annotate(tag, Span(start: text.indexOf("#[")
         + 2, end: text.indexOf("]>"), line: 1));
-    val h = compiler.meta<Hydrate>(d);
+    val h = compiler.meta(d, Hydrate);
     if (h == null) return "none";
     return compiler.name(d)! + " " + h.level.toString() + " " + h.note;
 }

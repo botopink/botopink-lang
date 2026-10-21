@@ -8,11 +8,11 @@ pub fn entity(syntax decl: unknown, comptime table: string) -> void {
 
 pub fn register(syntax decl: unknown) -> void {
     compiler.init({ ->
-        print("registered " + (compiler.meta<Entity>(decl)?.table ?? "none"));
+        print("registered " + (compiler.meta(decl, Entity)?.table ?? "none"));
     });
 }
 
 pub fn peek(syntax decl: unknown) -> void {
-    val seen = compiler.meta<Entity>(decl);
+    val seen = compiler.meta(decl, Entity);
     compiler.setMeta(Entity(table: (seen?.table ?? "none") + "-seen"));
 }

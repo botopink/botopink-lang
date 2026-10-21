@@ -9,7 +9,7 @@ pub fn blogPost() -> string {
 }
 
 pub fn main() -> void {
-    val m = comptime compiler.meta<PageMeta>(blogPost)!;
+    val m = comptime compiler.meta(blogPost, PageMeta)!;
     terminal.print(m.route);
     terminal.print(m.file, m.line);
 }

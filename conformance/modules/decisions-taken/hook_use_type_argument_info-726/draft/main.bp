@@ -6,6 +6,6 @@ import {pages.Post, pages.HookArgs};
 
 // `#[args]` runs after the bodies of `pages`, so its meta is read here.
 pub fn main() -> void {
-    val uses: string[] = comptime compiler.meta<HookArgs>(Post)?.uses ?? [];
+    val uses: string[] = comptime compiler.meta(Post, HookArgs)?.uses ?? [];
     terminal.print(uses.join(" "));
 }

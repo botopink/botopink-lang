@@ -19,7 +19,7 @@ fn page() -> string {
 
 fn uses(syntax q: string) -> i32 {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`" + compiler.text(q) + "` is not in scope", at: q);
-    val c = compiler.meta<Count>(decl) ?? compiler.fail("`" + compiler.text(q) + "` records no count", at: q);
+    val c = compiler.meta(decl, Count) ?? compiler.fail("`" + compiler.text(q) + "` records no count", at: q);
     return compiler.build(c.uses.toString());
 }
 

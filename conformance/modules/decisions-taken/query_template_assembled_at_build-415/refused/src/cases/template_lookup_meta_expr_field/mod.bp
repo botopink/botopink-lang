@@ -16,7 +16,7 @@ type Amount(n: i32)
 
 fn rules(syntax q: string) -> i32 {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`" + compiler.text(q) + "` is not in scope", at: q);
-    val found = compiler.metaAll<Check>(decl);
+    val found = compiler.metaAll(decl, Check);
     return compiler.build(found.length.toString());
 }
 

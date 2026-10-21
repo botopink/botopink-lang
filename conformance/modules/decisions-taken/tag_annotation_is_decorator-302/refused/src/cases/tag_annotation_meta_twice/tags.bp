@@ -19,5 +19,5 @@ pub fn markup(syntax q: string) -> string {
     val tag = compiler.tagDecl(DeclKind.Element, "div", []);
     val once = compiler.annotate(tag, Span(start: firstStart, end: firstEnd, line: 1));
     val twice = compiler.annotate(once, Span(start: secondStart, end: secondEnd, line: 1));
-    return compiler.meta<Hydrate>(twice)?.level ?? 0;
+    return compiler.meta(twice, Hydrate)?.level ?? 0;
 }

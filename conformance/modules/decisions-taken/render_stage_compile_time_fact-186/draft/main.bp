@@ -5,6 +5,6 @@ import {pages.Home, pages.Search};
 import {comptime.stages.Stage};
 
 pub fn main() -> void {
-    print(comptime compiler.meta<Stage>(Home)?.kind ?? "?");
-    print(comptime compiler.meta<Stage>(Search)?.kind ?? "?");
+    print(comptime compiler.meta(Home, Stage)?.kind ?? "?");
+    print(comptime compiler.meta(Search, Stage)?.kind ?? "?");
 }

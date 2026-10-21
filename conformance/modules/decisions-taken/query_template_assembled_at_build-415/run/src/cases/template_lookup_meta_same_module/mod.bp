@@ -11,7 +11,7 @@ fn tableOf(syntax q: string) -> string {
     val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not in scope", at: q);
-    val t = compiler.meta<Table>(decl) ?? compiler.fail("`"
+    val t = compiler.meta(decl, Table) ?? compiler.fail("`"
         + compiler.text(q)
         + "` is not an entity", at: q);
     return compiler.build("\"" + t.name + "\"");
