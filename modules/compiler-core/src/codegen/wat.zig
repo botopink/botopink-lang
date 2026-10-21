@@ -16245,6 +16245,15 @@ const Emitter = struct {
     /// float result has no box here.
     fn chainedCallOpt(self: *Emitter, cc: anytype, loc: ast.Loc) ?OptInfo {
         const k = self.chainedCallKind(cc, loc) orelse return null;
+        // `ps?.at(0)` over an optional array of records (or of strings or
+        // containers): the element is its own pointer, `0` absent — never boxed,
+        // so the record reads back as it is (`p?.title` printed garbage).
+        if (k == .array and cc.args.len <= 1 and cc.receiver != null and
+            (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "pop")))
+        {
+            const oi = self.arrayElemOpt(cc.receiver.?.*);
+            if (!oi.boxed) return oi;
+        }
         return switch (primCallRes(k, cc) orelse return null) {
             .i32 => .{ .boxed = true },
             .bool_ => .{ .boxed = true, .bool_ = true },
@@ -16293,6 +16302,9 @@ const Emitter = struct {
         if (k == .array) if (self.typeRefOf(recv)) |tr| if (arrayElemOfTypeRef(tr)) |ek| {
             try self.arr_locals.put(pname, {});
             try self.arr_elem_locals.put(pname, ek);
+            // Records stay records: `ps?.at(0)` over `?Post[]` reads the
+            // element as the pointer it is, not a box.
+            if (self.elemRecordOf(recv)) |rec| try self.arr_elem_recs.put(pname, rec);
         };
         const payload = try self.arena().create(ast.Expr);
         payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = pname } } };

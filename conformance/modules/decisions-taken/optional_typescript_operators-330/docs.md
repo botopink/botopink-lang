@@ -7,6 +7,7 @@
 [cells/nullish_default_namespace_call/src/main.bp](cells/nullish_default_namespace_call/src/main.bp)
 [refused/src/cases/nullish_never_null/mod.bp](refused/src/cases/nullish_never_null/mod.bp)
 [cells/nullish_optional_call_default/src/main.bp](cells/nullish_optional_call_default/src/main.bp)
+[cells/optional_array_at_record/src/main.bp](cells/optional_array_at_record/src/main.bp)
 [cells/optional_bang_aborts/src/main.bp](cells/optional_bang_aborts/src/main.bp)
 [cells/optional_bang_in_lambda/src/main.bp](cells/optional_bang_in_lambda/src/main.bp)
 [cells/optional_call_operator/src/main.bp](cells/optional_call_operator/src/main.bp)
