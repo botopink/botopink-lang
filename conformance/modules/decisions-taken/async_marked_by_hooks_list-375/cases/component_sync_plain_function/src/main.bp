@@ -1,17 +1,17 @@
 //// Decision 375 (2), as 388 amends it — a component's lambda runs
 //// synchronously or asynchronously as its hooks node is marked: on commonJS
-//// a synchronous one is a plain arrow that answers its `Rendered` at once, an
+//// a synchronous one is a plain arrow that answers its value at once, an
 //// asynchronous one an `async` arrow answering a `Promise`, and a call or
 //// `use` of a synchronous one is not awaited. `Card` `use`s the synchronous
-//// hook `label` and awaits nothing, so `Card("direct").run(scope)` answers the
-//// `Rendered` itself, not a `Promise`. `Comments` awaits and `Post` renders
-//// it: `Post`'s run answers a `Promise`. `Post` renders `Card` twice (a call
+//// hook `label` and awaits nothing, so `resolve(Card("direct"), …)` answers
+//// the value itself, not a `Promise` (809 (6)). `Comments` awaits and `Post`
+//// renders it: resolving `Post` answers a `Promise`. `Post` renders `Card` twice (a call
 //// only makes the lambda, 791 (1)) and reads both.
 ////
 //// commonJS only: `pending` asks the host whether a value is a `Promise`, and
 //// only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.run, compiler, io.terminal.print} from "std";
+import {context.run, context.resolve, context.Scope, context.Place, compiler, io.terminal.print} from "std";
 
 type Element(text: string)
 
@@ -49,12 +49,10 @@ component fn Post() -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val card = run(Card("direct"));
-    print(pending(card));
-    val post = run(Post());
-    print(pending(post));
-    val p = await post;
-    print(p.value.text);
-    val c = await card;
-    print(c.value.text);
+    print(pending(resolve(Card("direct"), Scope.root(), Place.none())));
+    print(pending(resolve(Post(), Scope.root(), Place.none())));
+    val p = await run(Post());
+    print(p.text);
+    val c = await run(Card("direct"));
+    print(c.text);
 }

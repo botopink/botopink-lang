@@ -1,0 +1,27 @@
+//// Decision 826 — `Composition<T>`, `Composable<T>` and `Component<T>` are
+//// prelude names, written bare with no import: a component call answers a
+//// `Component<View>`, which is no `Composable` — it is its `Composition` —,
+//// and a function over the scope and the place written `Composition<View>`
+//// runs where a `Component<View>` is expected.
+
+import {context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Card(title: string) -> Component<View> {
+    return View(text: "card " + title);
+}
+
+fn kind(c: Component<View>) -> string {
+    if (c is Composable<View>) return "composable";
+    return "composition";
+}
+
+pub async fn main() -> Async<void> {
+    val c: Component<View> = Card("a");
+    val f: Composition<View> = { scope, key -> View(text: "by hand") };
+    print(kind(c));
+    print(kind(f));
+    print((await run(c)).text);
+    print((await run(f)).text);
+}

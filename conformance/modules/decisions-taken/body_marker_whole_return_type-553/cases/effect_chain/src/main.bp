@@ -41,7 +41,7 @@ component fn widget(n: i32) -> Component<Result<i32, string>> {
 }
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
-// it, which runs it with `RenderScope.root()`.
+// it, which runs it over a root of its own (`await run(c)`, decision 825).
 pub async fn main() -> Async<void> {
     print(try doubled(21) catch 0);
     print(try doubled(0 - 1) catch 7);

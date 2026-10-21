@@ -1,7 +1,7 @@
-//// Decision 791 (1), (3) — a component body written `-> Component<View>`
-//// answers `View`. `mk(1)` only makes the component's lambda, a
-//// `Component<View>`, so `return mk(1)` returns the wrong type: a type
-//// mismatch, whose hint names `use` (`val v = use mk(1); return v;`).
+//// Decisions 791 (1), 809 (4) — a component body written `-> Component<View>`
+//// answers `View`. `mk(1)` only makes the component, a `Component<View>`, and
+//// a body answering a component resolves it before it returns: `return
+//// mk(1)` answers `mk`'s `View`, with no `use`.
 
 import {context.run, io.terminal.print} from "std";
 

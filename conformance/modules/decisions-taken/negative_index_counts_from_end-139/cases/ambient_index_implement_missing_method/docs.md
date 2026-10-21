@@ -9,7 +9,7 @@ The reference text this cell shows (from `conformance/docs.md`, § behavior):
 > against the declaration as a behavior of the module's own is (a required method
 > the type does not write is refused at the type). Every public behavior of
 > `primitives.bp` that no rule of the compiler reads is ambient; `Async`,
-> `Iter`, `AsyncIter`, `Component` and `Renderable`
+> `Iter`, `AsyncIter` and `Composable`
 > each have a rule of their own. A module's own `behavior` of the
 > same name, or an imported one, is the one its name reads, and so is a type of
 > the name it declares or imports.

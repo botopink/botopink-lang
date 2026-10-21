@@ -1,9 +1,9 @@
-//// Decision 388 (2) — a `RenderScope` is opaque, made only by
-//// `RenderScope.root()`: every other scope is one a component's `run`
-//// answered, so constructing one is refused at the call.
+//// Decisions 809 (8), 811 — a `Scope` is opaque: made only by
+//// `Scope.root()`, a cell's `childAt` and `detach`; its constructor written
+//// anywhere else is refused at the call (`opaque-construction`).
 
-import {context.RenderScope} from "std";
+import {context.Scope} from "std";
 
 pub fn main() -> void {
-    val s = RenderScope(frames: null);
+    val s = Scope(scopeStore: null, scopeCell: 0, scopeOwner: null);
 }

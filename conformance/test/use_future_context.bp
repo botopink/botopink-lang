@@ -6,7 +6,7 @@
 //// `test` body runs in a future context, so it runs the component from the
 //// root and awaits that run (decision 791 (4): no `await` of a component).
 
-import {context.run, context.RenderScope} from "std";
+import {context.run} from "std";
 
 type Element(count: i32)
 

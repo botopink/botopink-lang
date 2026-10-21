@@ -1,0 +1,21 @@
+//// Decision 888 — an untyped lambda may write fewer parameters than its
+//// expected function type: `{ s -> … }` and `{ -> … }` run as a
+//// `Composition<View>`, a function over the scope and the place, and
+//// `{ x -> x }` as a `fn(i32, i32) -> i32`; the omitted parameters are
+//// trailing and unnamed, and every backend emits the type's arity.
+
+import {context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+fn apply(f: fn(i32, i32) -> i32) -> i32 {
+    return f(4, 9);
+}
+
+pub async fn main() -> Async<void> {
+    val one: Component<View> = { s -> View(text: "one parameter") };
+    val none: Composition<View> = { -> View(text: "no parameter") };
+    print((await run(one)).text);
+    print((await run(none)).text);
+    print(apply({ x -> x }));
+}

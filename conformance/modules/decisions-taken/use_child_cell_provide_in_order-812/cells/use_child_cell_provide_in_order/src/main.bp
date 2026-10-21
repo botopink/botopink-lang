@@ -1,0 +1,52 @@
+//// Decision 812 — a `use provide` counts in the order written, after a `use`
+//// too: `Header`, resolved before the provide, reads the default; `Body` and
+//// the returned `Footer()`, resolved after it, read the dark theme. A child's
+//// own provide (`Header`'s small font) reaches its subtree alone, never the
+//// parent's later reads nor its siblings (`Body` reads the default font).
+
+import {context.createContext, context.provide, context.context, context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+type Theme(mode: string)
+
+type Font(size: string)
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+pub val fontContext = comptime createContext(Font(size: "normal"));
+
+component fn Note() -> Component<View> {
+    val t = use context(themeContext);
+    val f = use context(fontContext);
+    return View(text: t.mode + "/" + f.size);
+}
+
+component fn Header() -> Component<View> {
+    use provide(createContext(Font(size: "small")));
+    val n = use Note();
+    return View(text: "header " + n.text);
+}
+
+component fn Body() -> Component<View> {
+    val n = use Note();
+    return View(text: "body " + n.text);
+}
+
+component fn Footer() -> Component<View> {
+    val n = use Note();
+    return View(text: "footer " + n.text);
+}
+
+component fn Page() -> Component<View> {
+    val h = use Header();
+    use provide(createContext(Theme(mode: "dark")));
+    val b = use Body();
+    print(h.text);
+    print(b.text);
+    return Footer();
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

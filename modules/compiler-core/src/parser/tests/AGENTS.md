@@ -36,7 +36,8 @@ cases: an annotated `val` shorthand (`#[compiler.beamMemory(.Ets)] val add = fn 
 `expressions.zig`'s `use multiple hooks in function` and `errors.zig`'s `lambda return
 does not end the enclosing static prefix` pin what parses: where a `use` may stand is
 the checker's rule (decision 357), not the parser's. `effect_rejections.zig` pins decision
-354's three parse refusals (`@Renderable`, `@Component<R>` at the base, `@Renderable<…>`).
+354's parse refusals (`@Context<C>`, `@Component<R>` at the base); `Renderable` left with
+decision 804 (2).
 
 `type_alias.zig` holds the type-alias declaration (decision 118 rule 1): `[pub] type Name<A, B> = T;`
 parses to `DeclKind.typeAlias` (structural assertions), `type Box<T>(v: T)` stays a record, and the

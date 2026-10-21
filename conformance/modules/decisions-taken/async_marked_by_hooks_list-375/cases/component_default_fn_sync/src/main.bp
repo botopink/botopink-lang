@@ -1,14 +1,14 @@
 //// Decision 375 (2), question 04s12-a's answer (1) — a behavior's `default
 //// fn` and an enum's method answering `Component<R>` are marked by their own
 //// bodies, as a top-level function and a type's method are: `Widget.badge`
-//// awaits nothing, so its lambda answers its `Rendered` at once and `Plain`,
+//// awaits nothing, so its function answers its value at once (`resolve`, 809 (6)) and `Plain`,
 //// which renders it, is synchronous; `Widget.later` awaits, and so is `Slow`;
 //// `Tone.swatch` awaits nothing, and `Tinted` is synchronous.
 ////
 //// commonJS only: `pending` asks the host whether a value is a `Promise`,
 //// and only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.run, compiler, io.terminal.print} from "std";
+import {context.run, context.resolve, context.Scope, context.Place, compiler, io.terminal.print} from "std";
 
 type Element(text: string)
 
@@ -65,11 +65,11 @@ component fn Slow() -> Component<Element> {
 
 pub async fn main() -> Async<void> {
     val b = Box(n: "z");
-    print(pending(run(b.badge())));
-    print(pending(run(b.later())));
-    print(pending(run(Plain())));
-    print(pending(run(Slow())));
-    print(pending(run(Tinted())));
+    print(pending(resolve(b.badge(), Scope.root(), Place.none())));
+    print(pending(resolve(b.later(), Scope.root(), Place.none())));
+    print(pending(resolve(Plain(), Scope.root(), Place.none())));
+    print(pending(resolve(Slow(), Scope.root(), Place.none())));
+    print(pending(resolve(Tinted(), Scope.root(), Place.none())));
     val p = await run(Plain());
     print(p.text);
     val q = await run(Slow());

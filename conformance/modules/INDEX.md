@@ -394,8 +394,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/context_provide_in_hook | modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_in_hook | 354 |  | b |
 | modules/context_provide_made_in_body | modules/decisions-taken/context_provide_made_in_body-723/cases/context_provide_made_in_body | 723 |  | b |
 | modules/context_provide_read | modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_read | 354 |  | b |
-| modules/context_read_by_type_refused | modules/decisions-taken/context_read_by_value-722/cases/context_read_by_type_refused | 722 |  | b |
-| modules/context_read_by_value | modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_by_value | 723 | 722 | b |
+| modules/context_read_by_type_refused | modules/decisions-taken/context_read_by_value-722/cases/context_read_by_type_refused | 722 |  | b || modules/context_read_by_value | modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_by_value | 723 | 722 | b |
 | modules/context_read_of_parameter | modules/decisions-taken/context_provide_made_in_body-723/cases/context_read_of_parameter | 723 | 722 | b |
 | modules/context_sheet_registers | modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_sheet_registers | 354 | 352 | b |
 | modules/context_use | modules/decisions-taken/body_marker_whole_return_type-553/cells/context_use | 553 | 378 | b |
@@ -1311,8 +1310,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/result_void_falls_off_end | modules/result/cases/result_void_falls_off_end |  |  | t |
 | modules/result_wide_payloads | modules/decisions-taken/result_declared_in_primitives-609/cases/result_wide_payloads | 609 |  | a |
 | modules/return_in_case_arm_statement | modules/return/cases/return_in_case_arm_statement |  |  | c |
-| modules/return_nested_in_if_block | modules/return/cases/return_nested_in_if_block |  |  | c |
-| modules/run_without_main | modules/run/cells/run_without_main |  |  | c |
+| modules/return_nested_in_if_block | modules/return/cases/return_nested_in_if_block |  |  | c || modules/run_without_main | modules/run/cells/run_without_main |  |  | c |
 | modules/section_body_method | modules/decisions-taken/enum_section_body_method_refused-151/cases/section_body_method | 151 |  | b |
 | modules/section_leaf_without_expectation | modules/section/cases/section_leaf_without_expectation |  |  | c |
 | modules/section_numeric_leaf_standalone | modules/section/cases/section_numeric_leaf_standalone |  |  | c |

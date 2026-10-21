@@ -1,7 +1,6 @@
 //// Decision 737 — (a): a component takes its props as plain parameters or as one record parameter `..props: R` — 529 (1), (2) stand whole.
 
 import {context.run, io.terminal} from "std";
-import {context.RenderScope} from "std";
 
 type Element(text: string)
 

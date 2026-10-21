@@ -328,7 +328,7 @@ test "context error: use without @Component on a -> Element body" {
 }
 
 // Decisions 102/128: a hook (`@Component<T>`, any `T`) and a component
-// (`@Component<T>`, `T: @Renderable`) under the one annotation; hooks compose.
+// (`@Component<T>`) under the one annotation; hooks compose.
 test "context: @Component hook and component compose" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type()
