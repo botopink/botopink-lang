@@ -1,6 +1,8 @@
 pub mod generator_body_lazy;
 pub mod generator_captured_var_shared;
 pub mod generator_defer_lazy;
+pub mod generator_for_break_outer_closes;
+pub mod generator_for_return_closes;
 pub mod generator_handle_stateful;
 pub mod generator_item_untyped_lazy;
 pub mod generator_to_array_printed;

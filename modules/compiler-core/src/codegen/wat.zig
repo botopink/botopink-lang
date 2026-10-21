@@ -1078,6 +1078,10 @@ const DeferEntry = struct {
     stmt: ast.Stmt,
     names: []const DeferName = &.{},
     ran_flag: ?[]const u8 = null,
+    /// 144 B-142 — no statement: the local of a `for` over a generator
+    /// (`lowerGenFor`), closed (`$__gen_close`) by a `return`, a
+    /// `break :outer` or another exit that leaves the loop past its end.
+    gen_close: ?[]const u8 = null,
 };
 
 /// How a body that holds a `defer` writes its last statement: the sites that
@@ -11643,6 +11647,7 @@ const Emitter = struct {
     /// beneath it survives.
     fn writeDefer(self: *Emitter, idx: usize) anyerror!void {
         const entry = self.defer_stack.items[idx];
+        if (entry.gen_close) |base| return self.emitGenClose(base);
         var hidden: std.ArrayListUnmanaged(DeferEntry) = .empty;
         defer hidden.deinit(self.alloc);
         try hidden.appendSlice(self.alloc, self.defer_stack.items[idx..]);
@@ -26643,7 +26648,13 @@ const Emitter = struct {
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = step } } });
             } else for (step.lines) |l| try self.cur.?.append(self.arena(), l);
         }
+        // 144 B-142 — an exit past the loop (`return`, `break :outer`, a
+        // propagating `try`) closes the handle as the loop's end does: it is
+        // pending under the iteration's own defers, below the loop's floor,
+        // so a plain `break` / `continue` leaves it to the close after it.
+        try self.defer_stack.append(self.alloc, .{ .stmt = undefined, .gen_close = base });
         try self.emitIterationBody(lp.body, lp.label);
+        _ = self.defer_stack.pop();
         try self.emit(.{ .br = continue_label });
         const loop_seq = self.seal(&loop_c, .terminated);
         try self.emitLoopBlock(loop_seq, lp.label);

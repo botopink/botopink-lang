@@ -41,6 +41,21 @@ out before
 out 1
 out closed
 out done
+out before
+out 11
+out closed
+out left
+out before
+out closed
+out 1
+out before
+out after
+out closed
+out 2
+out before
+out iteration
+out closed
+out 1
 out 1
 out 2
 out fn literals done

@@ -4,6 +4,8 @@ pub fn main() -> void {
     cases.generator_body_lazy.runCase();
     cases.generator_captured_var_shared.runCase();
     cases.generator_defer_lazy.runCase();
+    cases.generator_for_break_outer_closes.runCase();
+    cases.generator_for_return_closes.runCase();
     cases.generator_handle_stateful.runCase();
     cases.generator_item_untyped_lazy.runCase();
     cases.generator_to_array_printed.runCase();

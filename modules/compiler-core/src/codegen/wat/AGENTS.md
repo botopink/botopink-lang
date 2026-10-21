@@ -451,7 +451,10 @@ stateful (a second `for` over an exhausted one reads nothing).
   (`gen_close_arms`), and the body, entered with `left` at -1, runs the arm of the point it rests on and
   answers `0`. `$__gen_close(g)` (`genCloseFunc`) closes a derived iterator's source, enters a live body
   that way, and ends the handle; a `for` and a walk call it once they are done (`emitGenClose`), a no-op
-  on an exhausted handle. A `return` or a `break :outer` out of the `for` does not close it.
+  on an exhausted handle. A `return`, a `break :outer` or another exit past the `for` closes it too: while
+  its body is lowered the handle is pending on `defer_stack` (a `DeferEntry` whose `gen_close` names it),
+  below the iteration's own defers and the loop's floor, so the exit runs them first and then `$__gen_close`,
+  and a plain `break` / `continue` leaves it to the close after the loop.
 - **A `@AsyncIter<T>`** (144 B-142) is the same handle (`reprOf`, `isIteratorTypeRef`): a `@AsyncIter` fn, a
   method answering one, a `stream` loop; `for await` steps it as `for` does. An `await` in its body runs the
   task to its end where the step is taken (`$__task_block_on`, `lowerAwait`): the machine suspends at its
