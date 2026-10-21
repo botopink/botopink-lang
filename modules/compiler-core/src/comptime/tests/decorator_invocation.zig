@@ -543,12 +543,49 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
     try std.testing.expect(found);
 }
 
+/// Wraps an allocator and counts the bytes it holds live: the exact measure of
+/// what a session keeps, unlike the process's resident set, which another
+/// test's allocations, the page cache and the host's load all move.
+const LiveBytes = struct {
+    child: std.mem.Allocator,
+    live: usize = 0,
+
+    fn allocator(self: *LiveBytes) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{ .alloc = allocFn, .resize = resizeFn, .remap = remapFn, .free = freeFn } };
+    }
+    fn allocFn(ctx: *anyopaque, len: usize, a: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        const r = self.child.rawAlloc(len, a, ra) orelse return null;
+        self.live += len;
+        return r;
+    }
+    fn resizeFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, n: usize, ra: usize) bool {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        if (!self.child.rawResize(m, a, n, ra)) return false;
+        self.live = self.live - m.len + n;
+        return true;
+    }
+    fn remapFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, n: usize, ra: usize) ?[*]u8 {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        const r = self.child.rawRemap(m, a, n, ra) orelse return null;
+        self.live = self.live - m.len + n;
+        return r;
+    }
+    fn freeFn(ctx: *anyopaque, m: []u8, a: std.mem.Alignment, ra: usize) void {
+        const self: *LiveBytes = @ptrCast(@alignCast(ctx));
+        self.child.rawFree(m, a, ra);
+        self.live -= m.len;
+    }
+};
+
 // 144 B-117 — a decorator call keeps its outcome and its trace entry, never
 // what it was made from: the module's source and tree, the erased copy of every
 // function the body reaches, the encoded argument and the runtime's reply were
 // the session arena's, so a project of many call sites held ~20 MB each until
-// the session ended (73 refused markers, 8 GB). The memory the session holds
-// after the calls is about what their traces keep.
+// the session ended (73 refused markers, 8 GB). The bytes the session holds
+// after the calls (counted on the allocator it was given, not read from the
+// process's resident set, which a busy machine moves — B-155) are about what
+// their traces keep.
 test "decorator invocation: a call holds its trace and outcome only, not the scratch it ran from" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
@@ -569,14 +606,15 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
         defer session.deinit(alloc);
         try std.testing.expect(session.outputs.items[session.outputs.items.len - 1].outcome == .ok);
     }
-    const rss0 = h.residentBytes() orelse return error.SkipZigTest;
+    var counted: LiveBytes = .{ .child = alloc };
+    const calloc = counted.allocator();
     var src: std.ArrayListUnmanaged(u8) = .empty;
     defer src.deinit(alloc);
     try src.appendSlice(alloc, body.items);
     var t: usize = 0;
     while (t < calls) : (t += 1) try src.print(alloc, "#[big]\ntype T{d}(x: i32)\n", .{t});
-    var session = try comptimeMod.compile(alloc, &.{.{ .path = "", .source = src.items }}, io, build_root);
-    defer session.deinit(alloc);
+    var session = try comptimeMod.compile(calloc, &.{.{ .path = "", .source = src.items }}, io, build_root);
+    defer session.deinit(calloc);
     const outcome = session.outputs.items[session.outputs.items.len - 1].outcome;
     try std.testing.expect(outcome == .ok);
     try std.testing.expectEqual(@as(usize, calls), outcome.ok.comptime_traces.len);
@@ -585,8 +623,7 @@ test "decorator invocation: a call holds its trace and outcome only, not the scr
     // kept per call.
     var kept: usize = 0;
     for (outcome.ok.comptime_traces) |e| kept += e.listing.module.len + e.listing.text.len + e.reply.len;
-    const rss1 = h.residentBytes() orelse return error.SkipZigTest;
-    const grown = if (rss1 > rss0) rss1 - rss0 else 0;
+    const grown = counted.live;
     var listed: usize = 0;
     for (outcome.ok.comptime_traces) |e| {
         const listing = try e.listing.render(alloc);
