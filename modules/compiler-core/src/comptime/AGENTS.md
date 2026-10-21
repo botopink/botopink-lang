@@ -3182,3 +3182,7 @@ no `Closeable` rule exists (539 (6)). `Stmt.deferred` is copied onto the typed s
 `defer_refuses_return` / `_break` / `_continue` / `_yield` / `_await` / `_throw` / `_try`, and `defer_try_catch_inside` (run).
 
 - `registerTypeDecl` (`infer.zig`) notes an imported type in `ownTypeDecls`, so a recursive imported `type Node` is not read as std's `compiler.Node` value; `locateInImported` (`comptime.zig`) locates a registration refusal in the declaring file.
+
+## `hook-name-use-prefix` (decision 926)
+
+`refuseHookNameUsePrefix` (`infer.zig`, first thing in `inferFnDecl`) refuses a `fn` answering `Component<R>` (marker or written return) named `use` followed by an upper-case letter, located at the name: `hook-name-use-prefix: a hook is read with use — name it thing`. Cell `conformance/modules/decisions-taken/hook_name_use_prefix_refused-926`. Methods, `default fn` and typed lambdas are not yet reached.

@@ -9267,6 +9267,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const outerScope = env.openBodyScope(&bodyLog);
     defer env.closeBodyScope(&bodyLog, outerScope, f.name);
     try checkRecordParams(env, f);
+    try refuseHookNameUsePrefix(env, f);
 
     // Build generic map.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
@@ -9874,6 +9875,24 @@ fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
         ).withLoc(value.branch.loc);
         return error.TypeError;
     }
+}
+
+/// Decision 926 (`hook-name-use-prefix`) — a hook is a `Component<R>` read with
+/// `use h(…)`, so a declaration answering `Component<R>` named `use` followed by
+/// an upper-case letter spells the verb twice. Refused at its name.
+fn refuseHookNameUsePrefix(env: *Env, f: ast.FnDecl) InferError!void {
+    if (f.returnType == null or f.isDeclare) return;
+    const isComponent = (f.effect != null and f.effect.? == .component) or
+        (ast.EffectKind.fromReturnType(f.returnType) orelse .task) == .component;
+    if (!isComponent) return;
+    if (f.name.len < 4 or !std.mem.startsWith(u8, f.name, "use")) return;
+    if (f.name[3] < 'A' or f.name[3] > 'Z') return;
+    const suggested = try std.fmt.allocPrint(env.arena, "{c}{s}", .{ std.ascii.toLower(f.name[3]), f.name[4..] });
+    const msg = try std.fmt.allocPrint(env.arena, "hook-name-use-prefix: a hook is read with use — name it {s}", .{suggested});
+    var err = TypeError.custom(msg, "Decision 926: name the hook for what it yields, `use actionState(…)` rather than `useActionState(…)`.");
+    if (f.nameLoc.line > 0) err = err.withLoc(f.nameLoc);
+    env.lastError = err;
+    return error.TypeError;
 }
 
 fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
