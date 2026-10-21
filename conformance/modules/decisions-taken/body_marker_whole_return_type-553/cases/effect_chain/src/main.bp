@@ -13,7 +13,7 @@
 //// its caller reads a promise there and the value elsewhere: `Widget` prints
 //// its own count from inside the body, after `main`'s two lines.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -45,5 +45,5 @@ component fn widget(n: i32) -> Component<Result<i32, string>> {
 pub async fn main() -> Async<void> {
     print(try doubled(21) catch 0);
     print(try doubled(0 - 1) catch 7);
-    await widget(41).run(RenderScope.root());
+    await run(widget(41));
 }

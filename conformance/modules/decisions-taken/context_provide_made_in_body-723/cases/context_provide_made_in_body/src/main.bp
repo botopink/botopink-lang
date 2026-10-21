@@ -5,7 +5,7 @@
 //// context `Dark` made, under `Again` the declared default provided again,
 //// with no provider the handle's default.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -32,10 +32,10 @@ component fn Again() -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val l = (await Label().run(RenderScope.root())).value;
+    val l = await run(Label());
     print(l.text);
-    val d = (await Dark().run(RenderScope.root())).value;
+    val d = await run(Dark());
     print(d.text);
-    val a = (await Again().run(RenderScope.root())).value;
+    val a = await run(Again());
     print(a.text);
 }

@@ -2,7 +2,7 @@
 //// declared, no default of its own — is refused at build, at the `inject`,
 //// naming the field.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, context.inject, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -16,6 +16,6 @@ component fn Page() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val p = (await Page().run(RenderScope.root())).value;
+    val p = await run(Page());
     print(p.text);
 }

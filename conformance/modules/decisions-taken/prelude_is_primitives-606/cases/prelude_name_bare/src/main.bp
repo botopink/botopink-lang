@@ -2,7 +2,7 @@
 //// `Result`, `Async`, `Iter`, `Component` and the marker `Renderable`, in a return, a
 //// parameter, an `implement` clause and as a type argument of another.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type Badge(label: string) implement Renderable
 
@@ -40,5 +40,5 @@ pub async fn main() -> Async<void> {
     print(parse("1"), parse("2"));
     print(await later(21));
     print(joined(upTo(4)));
-    await Card("hi").run(RenderScope.root());
+    await run(Card("hi"));
 }

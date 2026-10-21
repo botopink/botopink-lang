@@ -3,7 +3,7 @@
 //// render goes on once it settles. `Fast` awaits nothing and stays direct;
 //// `Page` composes both.
 
-import {context.RenderScope, async.delay, io.terminal.print} from "std";
+import {context.run, async.delay, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -23,6 +23,6 @@ component fn Page() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val p = (await Page().run(RenderScope.root())).value;
+    val p = await run(Page());
     print(p.text);
 }

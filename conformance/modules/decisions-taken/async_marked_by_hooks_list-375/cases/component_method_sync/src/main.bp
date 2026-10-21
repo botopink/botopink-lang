@@ -8,7 +8,7 @@
 //// commonJS only: `pending` asks the host whether a value is a `Promise`,
 //// and only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.RenderScope, compiler, io.terminal.print} from "std";
+import {context.run, compiler, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
@@ -44,11 +44,11 @@ component fn Plain() -> Component<Element> {
 
 pub async fn main() -> Async<void> {
     val m = Menu(title: "a");
-    print(pending(m.render().run(RenderScope.root())));
-    print(pending(m.slow().run(RenderScope.root())));
-    print(pending(Plain().run(RenderScope.root())));
-    val p = await Page().run(RenderScope.root());
-    print(p.value.text);
-    val q = await Plain().run(RenderScope.root());
-    print(q.value.text);
+    print(pending(run(m.render())));
+    print(pending(run(m.slow())));
+    print(pending(run(Plain())));
+    val p = await run(Page());
+    print(p.text);
+    val q = await run(Plain());
+    print(q.text);
 }

@@ -4,7 +4,7 @@
 //// component (`Kid`). Nothing runs `Counter` (`counter ran` never prints):
 //// the tree holds it, and the renderer runs it from its place.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 pub type Element(tag: string, kids: Kid[]) implement Renderable
 
@@ -28,8 +28,8 @@ pub component fn Page() -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Page().run(RenderScope.root());
-    val page = r.value;
+    val r = await run(Page());
+    val page = r;
     print(page.tag);
     for (page.kids) { k ->
         if (k is Element) print("node") else print("component");

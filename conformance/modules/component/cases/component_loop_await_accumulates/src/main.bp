@@ -5,7 +5,7 @@
 //// `use`, which a loop cannot hold (357), and `await` takes an `Async` alone
 //// (decision 791 (4)), so the item is a task.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 pub type Piece(text: string) implement Renderable
 
@@ -29,6 +29,6 @@ component fn joined(texts: string[], parts: string[]) -> Component<string> {
 }
 
 pub async fn main() -> Async<void> {
-    val s = (await joined(["<", "|", "|", ">"], ["a", "b", "c"]).run(RenderScope.root())).value;
+    val s = await run(joined(["<", "|", "|", ">"], ["a", "b", "c"]));
     print(s);
 }

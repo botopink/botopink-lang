@@ -5,7 +5,7 @@
 //// only, never a sibling: `Sibling`, rendered by `Outer` after `Inner`, reads
 //// `Outer`'s depth. Depth and step are two types over one `i32` (379 (5)).
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
@@ -44,6 +44,6 @@ component fn Outer() -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val e = (await Outer().run(RenderScope.root())).value;
+    val e = await run(Outer());
     print(e.text);
 }

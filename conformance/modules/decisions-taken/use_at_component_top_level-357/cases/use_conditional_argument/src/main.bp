@@ -4,7 +4,7 @@
 //// an `if` that does not return before a `use` leaves it at the top level
 //// too.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -29,8 +29,8 @@ component fn App(dark: bool) -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val a = (await App(true).run(RenderScope.root())).value;
+    val a = await run(App(true));
     print(a.text);
-    val b = (await App(false).run(RenderScope.root())).value;
+    val b = await run(App(false));
     print(b.text);
 }

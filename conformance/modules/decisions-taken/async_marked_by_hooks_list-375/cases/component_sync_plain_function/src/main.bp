@@ -11,7 +11,7 @@
 //// commonJS only: `pending` asks the host whether a value is a `Promise`, and
 //// only Node has one (`await` is the identity on erlang, beam and wasm).
 
-import {context.RenderScope, context.Rendered, compiler, io.terminal.print} from "std";
+import {context.run, compiler, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
@@ -49,9 +49,9 @@ component fn Post() -> Component<Element> {
 }
 
 pub async fn main() -> Async<void> {
-    val card = Card("direct").run(RenderScope.root());
+    val card = run(Card("direct"));
     print(pending(card));
-    val post = Post().run(RenderScope.root());
+    val post = run(Post());
     print(pending(post));
     val p = await post;
     print(p.value.text);

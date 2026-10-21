@@ -1,6 +1,6 @@
 //// Decision 378 — A context always declares its default; a read answers the nearest provider above or the default; `context-unbound` goes.
 
-import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(primary: string, radius: i32)
 
@@ -30,7 +30,7 @@ component fn Outer() -> Component<View> {
 }
 
 // A component called at build: its read answers the declared default.
-pub val swatchAtBuild = comptime Swatch().run(RenderScope.root()).value.text;
+pub val swatchAtBuild = comptime run(Swatch()).value.text;
 
 pub async fn main() -> Async<void> {
     print((await Swatch()).text);

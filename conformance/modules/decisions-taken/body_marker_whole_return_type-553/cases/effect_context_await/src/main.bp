@@ -12,7 +12,7 @@
 //// resume one turn in and `Widget` two, which is the order the eager targets
 //// print them in as well.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -50,7 +50,7 @@ component fn Plain(n: i32) -> Component<Element> {
 // Decision 388 — a call only makes the component's lambda: `main` awaits
 // it, which runs it with `RenderScope.root()`.
 pub async fn main() -> Async<void> {
-    await Plain(40).run(RenderScope.root());
-    await page(41).run(RenderScope.root());
-    await Widget(41).run(RenderScope.root());
+    await run(Plain(40));
+    await run(page(41));
+    await run(Widget(41));
 }

@@ -7,7 +7,7 @@
 //// `suffix` it captures reach the body. The body answers its last
 //// expression.
 
-import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -27,9 +27,9 @@ pub async fn main() -> Async<void> {
     };
     val c = Card("a");
     print("made");
-    val v = (await c.run(RenderScope.root())).value;
+    val v = await run(c);
     print(v.text);
-    val r = await Shell().run(RenderScope.root());
+    val r = await run(Shell());
     val m = await Card("b").run(r.scope);
     print(m.value.text);
 }

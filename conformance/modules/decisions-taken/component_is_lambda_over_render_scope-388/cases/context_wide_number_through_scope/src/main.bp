@@ -4,7 +4,7 @@
 //// and the hooks `rate` and `total` render an `f64` and an `i64` that `Label`
 //// reads with `use` — each one the number it was, on every target.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -37,6 +37,6 @@ component fn Root() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val v = (await Root().run(RenderScope.root())).value;
+    val v = await run(Root());
     print(v.text);
 }

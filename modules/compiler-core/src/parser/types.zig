@@ -268,7 +268,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
 
 /// The prelude's wrappers and markers a type position names bare (decision
 /// 606 (1)): what `@Name` spelled before.
-pub const prelude_wrapper_names = [_][]const u8{ "Result", "Async", "Component", "Iter", "AsyncIter", "Renderable" };
+pub const prelude_wrapper_names = [_][]const u8{ "Result", "Async", "Component", "Composition", "Iter", "AsyncIter", "Renderable" };
 
 pub fn isPreludeWrapperName(name: []const u8) bool {
     for (prelude_wrapper_names) |n| if (std.mem.eql(u8, n, name)) return true;

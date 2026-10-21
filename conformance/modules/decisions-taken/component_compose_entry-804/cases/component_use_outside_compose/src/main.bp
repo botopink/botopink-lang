@@ -2,7 +2,7 @@
 //// a helper method is an ordinary function, and a `use` in it is refused at
 //// the `use`.
 
-import {context.createContext, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.run, context.createContext, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -22,6 +22,6 @@ type Card(title: string) implement Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Card(title: "x").run(RenderScope.root());
-    print(r.value.text);
+    val r = await run(Card(title: "x"));
+    print(r.text);
 }

@@ -3,7 +3,7 @@
 //// so its `use` is `use-without-component`, at the `use`, naming
 //// `component fn`.
 
-import {context.createContext, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.run, context.createContext, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -15,6 +15,6 @@ fn Badge() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Badge().run(RenderScope.root());
-    print(r.value.text);
+    val r = await run(Badge());
+    print(r.text);
 }

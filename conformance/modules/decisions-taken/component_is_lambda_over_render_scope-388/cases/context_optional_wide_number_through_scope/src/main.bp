@@ -5,7 +5,7 @@
 //// absent, on every target. A context is named by its value's type (379),
 //// so each optional travels in a type of its own.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string) implement Renderable
 
@@ -34,8 +34,8 @@ component fn Root(rate: ?f64, total: ?i64) -> Component<View> {
 
 pub async fn main() -> Async<void> {
     val big: i64 = 9000000000;
-    val some = (await Root(1.25, big).run(RenderScope.root())).value;
+    val some = await run(Root(1.25, big));
     print(some.text);
-    val none = (await Root(null, null).run(RenderScope.root())).value;
+    val none = await run(Root(null, null));
     print(none.text);
 }

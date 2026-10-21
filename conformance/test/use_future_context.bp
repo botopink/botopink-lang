@@ -6,7 +6,7 @@
 //// `test` body runs in a future context, so it runs the component from the
 //// root and awaits that run (decision 791 (4): no `await` of a component).
 
-import {context.RenderScope} from "std";
+import {context.run, context.RenderScope} from "std";
 
 type Element(count: i32) implement Renderable
 
@@ -30,12 +30,12 @@ component fn Page() -> Component<Element> {
 
 // The component composes with a `#[@future]` caller that runs it.
 async fn rendered() -> Async<i32> {
-    val e = (await Page().run(RenderScope.root())).value;
+    val e = await run(Page());
     return e.count;
 }
 
 test "a component uses and awaits" {
-    val e = (await Page().run(RenderScope.root())).value;
+    val e = await run(Page());
     assert e.count == 8;
 }
 

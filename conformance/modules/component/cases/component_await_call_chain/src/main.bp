@@ -2,7 +2,7 @@
 //// lambda and `m` the answer of a call: the component runs and the `use` answers its
 //// service, as it does when the call is bound to a typed `val` first (decision 791 (3)).
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.run, io.terminal.print} from "std";
 
 type Service(name: string)
 
@@ -28,8 +28,8 @@ component fn Direct(name: string) -> Component<Service> {
 }
 
 pub async fn main() -> Async<void> {
-    val b = (await Bound("card").run(RenderScope.root())).value;
+    val b = await run(Bound("card"));
     print(b.name);
-    val d = (await Direct("card").run(RenderScope.root())).value;
+    val d = await run(Direct("card"));
     print(d.name);
 }

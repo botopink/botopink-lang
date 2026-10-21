@@ -5,7 +5,7 @@
 //// value reads it. `a` rendered twice makes its label and its count once;
 //// `b`, another value of the same component, makes its own.
 
-import {context.RenderScope, hooks.memo, io.terminal.print} from "std";
+import {context.run, hooks.memo, io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
@@ -24,12 +24,12 @@ component fn Page(name: string) -> Component<Element> {
 pub async fn main() -> Async<void> {
     val a = Page("a");
     val b = Page("bb");
-    val first = (await a.run(RenderScope.root())).value;
+    val first = await run(a);
     print(first.text);
-    val again = (await a.run(RenderScope.root())).value;
+    val again = await run(a);
     print(again.text);
-    val other = (await b.run(RenderScope.root())).value;
+    val other = await run(b);
     print(other.text);
-    val last = (await a.run(RenderScope.root())).value;
+    val last = await run(a);
     print(last.text);
 }
