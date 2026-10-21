@@ -1520,7 +1520,7 @@ function entryNext(e) {
 // value, or the task of a component that awaits —, nothing awaited inside.
 
 function resolve(c, scope, key) {
-    if (c instanceof Composable) { return c.compose()(scope, key); }
+    if ((c != null && c["__bp_b_std@primitives@@Composable"] === true)) { return c.compose()(scope, key); }
     return c(scope, key);
 }
 exports.resolve = resolve;
