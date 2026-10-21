@@ -389,9 +389,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/context_marker_removed | modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_marker_removed | 354 |  | b |
 | modules/context_nearest_wins | modules/decisions-taken/context_named_by_value_type-379/cells/context_nearest_wins | 379 | 354 | b |
 | modules/context_optional_wide_number_through_scope | modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope | 388 | 504, 379, 354 | t |
-| modules/context_provide_after_render | modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_after_render | 354 |  | b |
 | modules/context_provide_bound | modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_bound | 354 |  | b |
-| modules/context_provide_in_hook | modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_in_hook | 354 |  | b |
 | modules/context_provide_made_in_body | modules/decisions-taken/context_provide_made_in_body-723/cells/context_provide_made_in_body | 723 |  | b |
 | modules/context_provide_read | modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_read | 354 |  | b |
 | modules/context_read_by_type_refused | modules/decisions-taken/context_read_by_value-722/cells/context_read_by_type_refused | 722 |  | b |
@@ -1287,7 +1285,6 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/removed_type_bare_param | modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/removed_type_bare_param | 575 |  | b |
 | modules/render_scope_construction | modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction | 388 |  | b |
 | modules/render_scope_library | modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_library | 388 |  | b |
-| modules/renderable_type_argument | modules/decisions-taken/component_wrapper_and_contexts-354/cells/renderable_type_argument | 354 |  | b |
 | modules/renderer_record_field_shapes | modules/renderer/cells/renderer_record_field_shapes |  |  | c |
 | modules/reserved_word_as_binding_name | modules/reserved/refused/src/cases/reserved_word_as_binding_name |  |  | c |
 | modules/reserved_word_field_name | modules/reserved/refused/src/cases/reserved_word_field_name |  |  | c |

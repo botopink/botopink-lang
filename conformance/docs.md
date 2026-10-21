@@ -1313,7 +1313,7 @@ no import — as a type, a parameter's included and with its arguments
 against the declaration as a behavior of the module's own is (a required method
 the type does not write is refused at the type). Every public behavior of
 `primitives.bp` that no rule of the compiler reads is ambient; `Async`,
-`Iter`, `AsyncIter`, `Component` and `Renderable`
+`Iter`, `AsyncIter` and `Composable`
 each have a rule of their own. A module's own `behavior` of the
 same name, or an imported one, is the one its name reads, and so is a type of
 the name it declares or imports.
@@ -1327,7 +1327,7 @@ the name it declares or imports.
 <!-- example: modules/decisions-taken/negative_index_counts_from_end-139/refused/src/cases/ambient_index_implement_missing_method -->
 
 That holds for every name the prelude gives — a type (`Result`),
-a behavior (`Component`, `Renderable`), a bare variant (`Stage.Any`):
+a behavior (`Composable`), a bare variant (`Stage.Any`):
 a `behavior` the module declares or imports under that name is what the name
 reads in every type position — an annotation, a decorator's `syntax decl: …`, an
 `implement` clause — and the prelude's declaration is out of that module's
@@ -2788,13 +2788,11 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 (`notAnExtension`).
 
 **Expression role.** `Component<R>` is the one wrapper of `use` (decisions
-104, 118, 128, 354). A function returning it is a **component** when its `R`
-implements the marker `Renderable` (`type Element(…) implement Renderable`):
-a component is **called** (`Widget(1)`, or as a tag), which only makes its
-lambda, and inside a component body `use Widget(1)` resolves it (decision 791
-(3)). Any other
-`Component<R>` is **read with `use`** — what React calls a hook: `val x = use
-<f>(…)` runs it and binds `R`, a bare `use <f>(…);` runs one whose `R` is
+104, 118, 128, 354), and a hook and a component are one thing (decision 804
+(3)): a function returning it is **called** (`Widget(1)`, or as a tag), which
+only makes the component, and inside a component body `use Widget(1)`
+resolves it (decision 791 (3)). A `Component<R>` is **read with `use`** — what
+React calls a hook: `val x = use <f>(…)` runs it and binds `R`, a bare `use <f>(…);` runs one whose `R` is
 `void`, and `val {a, b} = use …` binds `R`'s fields by name. Such a function is
 named by its noun (`state`, `effect`, `router`, `pathname` — never
 `useState`), because the keyword *is* the activation. The body that `use`s is
@@ -2819,8 +2817,7 @@ The rules, each with its diagnostic:
   128's base — is refused where it is written, at the base: `` `Component`
   takes one type argument, `Component<R>` — its base parameter was removed
   (decision 354) `` (`generic-arg-count-exceeded`). The owner marker
-  `@Context<C>` left with it (`context-marker-removed`, naming `implement
-  Renderable`), and `Renderable` takes no type argument. An aliased return
+  `@Context<C>` left with it (`context-marker-removed`). An aliased return
   (`type Comp<T> = Component<T>`) types the function but grants nothing
   (`effect-wrapper-behind-alias`).
 - **A component never propagates** (decision 121). `throw` and `try` are legal
@@ -2831,10 +2828,12 @@ The rules, each with its diagnostic:
   `Component<Result<T, E>>`, and then its body may `try`.
 - **The operand is read with `use`.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `Component<R>` ``,
-  and `use Card()` where `Card` is a component (its `R` implements
-  `Renderable`) resolves it: it runs `Card` with the body's children scope
-  and answers its `R` (decision 791 (3)); a component is otherwise called,
-  `Card()`, which only makes its lambda.
+  and `use Card()` resolves `Card` under a child cell of the body's and
+  answers its `R` (decisions 791 (3), 812 (1)); a component is otherwise
+  called, `Card()`, which only makes it. A body that returns a component —
+  `return Card()`, `return div([…])` — resolves it under a child cell before it
+  answers, so the body answers `R` and `Component<Component<R>>` never arises
+  (decisions 809 (4), 816 (6)).
 - **The rules of hooks** (decision 357). A `use` is written at the top level of
   its `Component` body and runs on every call, in the same order and the same
   number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /
@@ -2901,7 +2900,7 @@ on `self`, the type's other methods ordinary helpers — and `Card(…)` answers
 the component, never a record, so a caller cannot tell the two forms apart.
 Refused, located: a type with no `compose` (`component-compose-missing`), a
 `compose` of another signature (`implement-signature-differs`, decision 800),
-a field typed `RenderScope` (`component-scope-field`, 388 (5)), a `use` in a
+a field typed `Scope` (`component-scope-field`, 388 (5)), a `use` in a
 helper (`component-use-outside-compose`) and `Card.compose()` called by hand
 (`component-compose-called`).
 
@@ -2922,17 +2921,20 @@ hooks of std's `context` module work it, `use`d and nothing else
 (`context-hook-without-use`):
 
 - `use provide(ctx);` in a **component's** body gives the context value `ctx`
-  to everything that component renders below it — descendants only, never
-  itself or a sibling; the nearest provider of a type wins. It takes the
+  to everything that body resolves after it — descendants only, never
+  itself or a sibling; the nearest provider of a type wins. It counts in the
+  order written, after a `use` too: a component resolved at an earlier `use`
+  does not see it, one resolved later does (decision 812 (3)), and a child's
+  own provide reaches its subtree alone. It takes the
   context alone: a body that provides another value makes a context of the
   same type in its body — `use provide(createContext(Theme(mode: "dark")));`,
   or `val c = comptime createContext(Theme(mode: "dark"));` then `use
   provide(c);`, or, for a value known only at run time, `val c = use memo({ ->
   createContext(Theme(mode: mode)) });` then `use provide(c);` (made on the
   component instance's first render and kept for it) — and `use
-  provide(themeContext)` gives the declared default again. In a body whose `R` is not `Renderable` it is
-  `context-provide-outside-component`, and after the body rendered a component
-  it is `context-provide-after-render` (that child would not see it).
+  provide(themeContext)` gives the declared default again. In a body that is no
+  `component` body answering `Component<R>` it is
+  `context-provide-outside-component`.
 - `val t = use context(themeContext);` reads through a context value the module
   declares or imports (`import {theme.themeContext};`): it answers the nearest
   context of `themeContext`'s type, `Theme`, provided above, else
@@ -3017,22 +3019,37 @@ context per dependency, so a test's root swaps one.
 
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_read -->
 
-A component is a lambda over a render scope (decision 388): `fn C(…) ->
-Component<R>` answers a function of std's opaque `RenderScope`, and calling
-`C` runs nothing (`itens.map(Card)` answers lambdas, which the render runs with
-the scope of the body that places them) — in a component body too, where the
-call answers `Component<R>` as anywhere else (decision 791 (1)):
+A component is a function over a scope and a place (decisions 809, 815, 819):
+`Composition<T>` is `fn(scope: Scope, key: Place) -> T | Async<T>`,
+`Composable<T>` the behavior a type implements, and `Component<T>` their
+union — three prelude names written bare (decision 826), `Scope` and `Place`
+std's `context` module's. `fn C(…) -> Component<R>` answers its
+`Composition`, and calling `C` runs nothing (`itens.map(Card)` answers
+components) — in a component body too, where the call answers `Component<R>`
+as anywhere else (decision 791 (1)):
 
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_call_lambda_in_body -->
 
-In the body, `use provide(ctx)` makes
-the scope its children receive, `use context(ctx)` finds the identity of
-`ctx`'s type in the scope the body received, else `ctx`'s own default, and `use c`
-(decision 791 (3)) runs `c` with the children's scope:
+<!-- example: modules/decisions-taken/component_names_in_prelude-826/cells/component_names_in_prelude -->
+
+A lambda written with fewer parameters than the function type it meets takes
+that type's arity, the omitted ones trailing and unnamed (decision 888):
+`{ s -> v }` and `{ -> v }` run as a `Composition<T>`.
+
+<!-- example: modules/decisions-taken/lambda_omits_trailing_parameters-888/cells/lambda_omits_trailing_parameters -->
+
+Each component body opens its own cell, `scope.childAt(key)`, a child of the
+cell it was handed (decision 819 (1)). In the body, `use provide(ctx)` writes
+that cell, `use context(ctx)` finds the identity of `ctx`'s type in the
+contexts the cell held when the body entered, else `ctx`'s own default, and
+`use c` (decisions 791 (3), 812 (1)) resolves `c` under a child cell of the
+body's:
 
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_use_in_body -->
 
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_resolved_by_use_or_tree -->
+
+<!-- example: modules/decisions-taken/use_child_cell_provide_in_order-812/cells/use_child_cell_provide_in_order -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
@@ -3042,11 +3059,29 @@ alone, and the message names `use c` and `c` placed in the tree as a child.
 
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/await_component_at_root -->
 
-Outside every body — `main`, a test, a plain function, a lambda — the root is
-run by the render library: `c.run(scope)` answers the result and the children's
-scope (`c.run(RenderScope.root())` for the root), so a render library holds the
-scopes explicitly; `RenderScope(…)` is refused
-(`comptime/context_lower.zig`). A `Context<T>` is its value at run time. A
+Outside every body — `main`, a test, a plain function, a lambda — a root runs
+with std's `run`: `val page = await run(App());` resolves `App()` over a root
+of its own, `Scope.root()`, awaits it only when it answered a task (`is
+Async<unknown>`, decision 823) and closes the root when it settles (decisions
+822, 825); handed a scope, `await run(c, scope)` runs over it and leaves the
+closing to whoever made it. std's `resolve(c, scope, key)` is the one way a
+component runs, its answer handed back as it came (decision 809 (6)). `Scope`
+is opaque — made by `Scope.root()`, a cell's `childAt` and `detach` —
+(`opaque-construction`); on erlang and beam a root's tree is one
+process-dictionary entry `{bp_scope, Ref}` of the process that made it, a
+scope crosses a process only as `scope.detach()` (`scope-foreign` otherwise),
+and a scope used after its root's `close()` fails `scope-closed` on every
+target (decisions 824, 825) (`comptime/context_lower.zig`).
+
+<!-- example: modules/decisions-taken/component_root_run-822/cells/component_root_run -->
+
+<!-- example: modules/decisions-taken/root_closed_by_run-825/cells/root_closed_by_run -->
+
+<!-- example: modules/decisions-taken/scope_tree_lives_with_its_process-824/cells/scope_tree_lives_with_its_process -->
+
+<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction -->
+
+A `Context<T>` is its value at run time. A
 lambda written in a body is outside it: it takes the scope of the call that
 runs it. erlang, beam, commonJS and wasm run it — on wasm a value crosses the
 scope as its own word, typed where it is read back by the checker's type the
@@ -3348,7 +3383,7 @@ The quick reference:
 | an asynchronous function | `fn f() -> Async<T>` | `await f()`, with an await channel |
 | an asynchronous function that can fail | `fn f() -> Async<Result<T, E>>` | `try await f()` · `try await f() catch x` · `case (await f())` |
 | a task in the middle of a function | `async { … }` | pass it along, `await` it |
-| a `Component` read with `use` | `fn h() -> Component<T>` (`T` not `Renderable`) | `use h()`, at the top level of a `Component` body |
+| a `Component` read with `use` | `fn h() -> Component<T>` | `use h()`, at the top level of a `Component` body |
 | a component, page or layout | `fn C() -> Component<Element>` | `C()`, an ordinary call |
 | a sequence | `fn g() -> Iter<T>` | `for (g()) { x -> … }`, in any function |
 | a sequence of items that fail | `fn g() -> Iter<Result<T, E>>` | `for` + `try r` or `case` |
@@ -5846,7 +5881,7 @@ refuses too, and there is no flag that restores the trap.
 ## Prelude
 
 The prelude is std's `primitives.bp` (decision 606 (1)): what it declares — the primitives,
-`array`, and the types and behaviors `Result`, `Async`, `Component`, `Renderable`,
+`array`, and the types and behaviors `Result`, `Async`, `Component`, `Composition`, `Composable`,
 `Iter`, `AsyncIter`, `Future`, `Use`, `Display`, `Closeable`, `Index` and `Slice` —
 is visible in every module with no import and is written bare, in every type position.
 
@@ -6633,7 +6668,7 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `loop (xs) { x -> }` · `loop (cond)` · `loop await` | `for (xs) { x -> }` · `while (cond)` · `for await` |
 | `-> Element` on a component that uses a hook | `-> Component<Element>` |
 | `Component<C, R>` (decision 128's base) | `Component<R>` (decision 354) |
-| `type T(…) implement @Context<C>` | `type T(…) implement Renderable` |
+| `type T(…) implement @Context<C>` | `type T(…)` |
 | `val c = use @getContext(T);` | `T`'s default declared with `createContext(…)`, `use provide(themeContext)` in the component that renders the reader, `val c = use context(themeContext);` |
 
 Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py`
@@ -6641,7 +6676,7 @@ Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py
 @getContext(T)` at its line — which component provides the context is the
 author's choice.
 
-Decision 354 leaves one wrapper, `Component<R>`, and `Renderable` as a bare marker: `Component<C, R>` is a type-arity error (`generic-arg-count-exceeded`) naming `Component<R>`, located on the base; `Renderable<T>` is the same error at the `<`, naming `Renderable`; and the owner marker `@Context<C>` is `context-marker-removed`, naming `implement Renderable`.
+Decision 354 leaves one wrapper, `Component<R>` (and decision 804 (2) takes the marker `Renderable` out): `Component<C, R>` is a type-arity error (`generic-arg-count-exceeded`) naming `Component<R>`, located on the base; and the owner marker `@Context<C>` is `context-marker-removed`.
 
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/refused/src/cases/component_base_parameter -->
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_marker_removed -->

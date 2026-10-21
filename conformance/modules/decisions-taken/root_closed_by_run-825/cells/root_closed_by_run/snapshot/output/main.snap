@@ -1,0 +1,6 @@
+botopink-cell 1
+out page
+out 0
+out page
+out 0
+out scope-closed: a scope is used after its root's `close()` (decision 825 (2))

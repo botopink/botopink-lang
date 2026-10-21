@@ -1,0 +1,32 @@
+//// Decision 825 — std's `run` makes and closes its own root unless handed
+//// one: after `await run(Page())` the process holds no `{bp_scope, _}` entry
+//// (825 (3)); a root a program makes holds one until its `close()`, and a
+//// scope used after it fails `scope-closed` on every target (825 (2)).
+
+import {context.run, context.Scope, compiler, failure.attemptTask, io.terminal.print} from "std";
+
+type View(text: string)
+
+#[compiler.external(
+    .JavaScript("""0"""),
+    .Erlang("""length([K || {{bp_scope, _} = K, _} <- erlang:get()])"""),
+)]
+declare fn scopeEntries() -> i32;
+
+component fn Page() -> Component<View> {
+    return View(text: "page");
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+    print(scopeEntries());
+    val root = Scope.root();
+    print((await run(Page(), root)).text);
+    root.close();
+    print(scopeEntries());
+    val after = await attemptTask({ -> run(Page(), root) });
+    case after {
+        Ok(v) -> print(v.text);
+        Error(f) -> print(f.message);
+    }
+}

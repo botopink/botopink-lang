@@ -271,7 +271,7 @@ pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 pub const ContextUse = struct {
     kind: enum { provide, read, inject },
     /// The context's identity: its value's type (379), the run-time key in a
-    /// `RenderScope` (388).
+    /// `Scope` cell's contexts (809 (8)).
     key: []const u8,
     /// The type as written, for a message.
     name: []const u8,

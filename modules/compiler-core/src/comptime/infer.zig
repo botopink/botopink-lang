@@ -1346,7 +1346,7 @@ fn interfaceHasMethod(d: ast.BehaviorDecl, name: []const u8) bool {
 }
 
 /// The bare name of an interface type ref — the identifier the interface was
-/// declared under. Generic interfaces (`Iface<A, B>`, `@Renderable`) reduce to
+/// declared under. Generic interfaces (`Iface<A, B>`) reduce to
 /// their head name (`Iface`, `Context`); non-name refs yield "".
 fn interfaceRefName(ref: ast.TypeRef) []const u8 {
     return switch (ref) {
@@ -21490,8 +21490,8 @@ fn inferTemplateMethod(
             retType = try env.namedType("__Source");
         } else if (std.mem.eql(u8, callee, "context")) {
             // The full second-layer input: source + text + shape. The record is
-            // `ExprContext`, not `Context`: `@Renderable` is the owner
-            // marker and one name cannot mean both (front 20 F1).
+            // `ExprContext`, not `Context`: `Context<T>` is std's
+            // context and one name cannot mean both (front 20 F1).
             op = .context;
             retType = try env.namedType("__ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
@@ -22434,7 +22434,7 @@ fn hostCallee(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.DeclR
 }
 
 /// Decision 388 — a call of a host function: what a host answers is the
-/// host's own value, never a lambda over a `RenderScope`, so a `use` or an
+/// host's own value, never a function over a `Scope`, so a `use` or an
 /// `await` of it runs nothing (`context_lower.zig`).
 fn noteHostCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
     if (c.kind != .call or c.kind.call.is_builtin) return;
@@ -22626,7 +22626,7 @@ fn stdImportsContextModule(env: *Env) bool {
     return false;
 }
 
-/// Decision 379 — a context's identity, the run-time key in a `RenderScope`:
+/// Decision 379 — a context's identity, the run-time key in a `Scope` cell:
 /// its value's type, by its declared name — the name the checker and the
 /// backends tell types apart by (decision 170), whichever module reads or
 /// provides it and whatever it imports. Null for a type that names no
@@ -25245,7 +25245,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 const groundFnExpected: ?*T.Type = if (expected == null and arg.value.* == .function) blk: {
                     const w = argExpected orelse break :blk null;
                     const d = w.deref();
-                    if (d.* != .func or d.func.params.len != arg.value.function.kind.params.len) break :blk null;
+                    // Decision 888 — an untyped lambda may write fewer.
+                    if (d.* != .func or d.func.params.len < arg.value.function.kind.params.len) break :blk null;
+                    if (d.func.params.len != arg.value.function.kind.params.len and arg.value.function.kind.isTyped()) break :blk null;
                     for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
                     break :blk w;
                 } else null;

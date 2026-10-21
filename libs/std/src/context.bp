@@ -136,17 +136,17 @@ pub type PlaceItem { Absent, Body, Plain, Index, Key }
 // commonJS a plain object, on wasm a heap cell (824). A scope used after its
 // root's `close()` fails `scope-closed` on every target (825 (2)); one read in
 // another process than the root's fails `scope-foreign` (824 (3)).
-pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown) implement Closeable {
+pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown, scopeCarried: unknown) implement Closeable {
     // A new root: an empty tree, nothing provided. Closed by whoever made it
     // (`run` closes its own, 825 (1)).
     pub fn root() -> Scope {
-        return Scope(scopeStore: storeOf(null), scopeCell: 0, scopeOwner: ownerSelf());
+        return Scope(scopeStore: storeOf(null), scopeCell: 0, scopeOwner: ownerSelf(), scopeCarried: null);
     }
 
     // The child cell of this one at `key`: it starts from this cell's contexts
     // as they stand (817 (5)). Each component body opens its own with it.
     pub fn childAt(self: Self, key: Place) -> Scope {
-        return Scope(scopeStore: self.scopeStore, scopeCell: grow(self.scopeStore, self.scopeOwner, self.scopeCell), scopeOwner: self.scopeOwner);
+        return Scope(scopeStore: self.scopeStore, scopeCell: grow(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell), scopeOwner: self.scopeOwner, scopeCarried: self.scopeCarried);
     }
 
     // Ends the root's tree (`Closeable`, 539): every scope of it fails
@@ -157,9 +157,11 @@ pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown) 
     }
 
     // A new root over this cell's contexts as they stand, with no tree — what
-    // crosses a process (824 (3)); closed by whoever made it.
+    // crosses a process (824 (3)): it carries the contexts, and each process
+    // that reads it keeps its tree in its own entry; closed by whoever made it.
     pub fn detach(self: Self) -> Scope {
-        return Scope(scopeStore: storeOf(framesAt(self.scopeStore, self.scopeOwner, self.scopeCell)), scopeCell: 0, scopeOwner: ownerSelf());
+        val carried = Carried(frames: framesAt(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell));
+        return Scope(scopeStore: storeNew(), scopeCell: 0, scopeOwner: null, scopeCarried: carried);
     }
 
     // The root's store, the cell's id and the root's process — what the
@@ -175,12 +177,19 @@ pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown) 
     fn ownerRef(self: Self) -> unknown {
         return self.scopeOwner;
     }
+
+    fn carriedRef(self: Self) -> unknown {
+        return self.scopeCarried;
+    }
 }
 
 // A root's tree: whether it is closed, the count of its cells, and each
 // cell's contexts, the latest entry for an id first. Public as `Frame` is: a
 // program never names it.
 pub type ScopeTree(treeClosed: bool, treeCount: i32, treeCells: unknown)
+
+// The contexts a detached root carries across processes (824 (3)).
+pub type Carried(frames: unknown)
 
 // One cell's contexts in a root's tree.
 pub type CellEntry(cellNo: i32, cellFrames: unknown, cellNext: unknown)
@@ -192,9 +201,18 @@ fn storeOf(frames: unknown) -> unknown {
     return store;
 }
 
-// The root's tree, live and in its own process.
-fn treeOf(store: unknown, owner: unknown) -> ScopeTree {
+// The root's tree, live and in its own process; a detached root's starts in
+// each process that reads it from the contexts it carries.
+fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
     if (ownerForeign(owner)) panic("scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))");
+    if (!storeLive(store)) {
+        if (carried is Carried) {
+            val c: Carried = carried;
+            val t = ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: carriedFrames(c), cellNext: null));
+            storeSet(store, t);
+            return t;
+        }
+    }
     if (storeLive(store)) {
         val raw = storeGet(store);
         if (raw is ScopeTree) {
@@ -206,21 +224,25 @@ fn treeOf(store: unknown, owner: unknown) -> ScopeTree {
 }
 
 // A new cell under cell `parent`, starting from its contexts: its id.
-fn grow(store: unknown, owner: unknown, parent: i32) -> i32 {
-    val t = treeOf(store, owner);
+fn grow(store: unknown, owner: unknown, carried: unknown, parent: i32) -> i32 {
+    val t = treeOf(store, owner, carried);
     val id = t.treeCount;
     storeSet(store, ScopeTree(treeClosed: false, treeCount: id + 1, treeCells: CellEntry(cellNo: id, cellFrames: framesOf(t.treeCells, parent), cellNext: t.treeCells)));
     return id;
 }
 
 // The contexts cell `id` holds now.
-fn framesAt(store: unknown, owner: unknown, id: i32) -> unknown {
-    return framesOf(treeOf(store, owner).treeCells, id);
+fn framesAt(store: unknown, owner: unknown, carried: unknown, id: i32) -> unknown {
+    return framesOf(treeOf(store, owner, carried).treeCells, id);
+}
+
+fn carriedFrames(c: Carried) -> unknown {
+    return c.frames;
 }
 
 // `value` provided for `key` in cell `id`.
-fn provideAt(store: unknown, owner: unknown, id: i32, key: string, value: unknown) -> void {
-    val t = treeOf(store, owner);
+fn provideAt(store: unknown, owner: unknown, carried: unknown, id: i32, key: string, value: unknown) -> void {
+    val t = treeOf(store, owner, carried);
     val frames = Frame(key: key, value: value, parent: framesOf(t.treeCells, id));
     storeSet(store, ScopeTree(treeClosed: false, treeCount: t.treeCount, treeCells: CellEntry(cellNo: id, cellFrames: frames, cellNext: t.treeCells)));
 }
@@ -303,7 +325,7 @@ pub fn enter(scope: unknown, key: unknown) -> unknown {
 
 // The contexts `cell` holds now — what a body's `use context` reads.
 pub fn received(cell: unknown) -> unknown {
-    if (cell is Scope) return framesAt(cell.storeRef(), cell.ownerRef(), cell.cellId());
+    if (cell is Scope) return framesAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId());
     panic("a component is run with a `Scope` (decision 819)");
 }
 
@@ -311,7 +333,7 @@ pub fn received(cell: unknown) -> unknown {
 // reads it (809 (8), 812 (3)).
 pub fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
     if (cell is Scope) {
-        provideAt(cell.storeRef(), cell.ownerRef(), cell.cellId(), key, value);
+        provideAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), key, value);
         return null;
     }
     panic("a component is run with a `Scope` (decision 819)");
@@ -406,7 +428,7 @@ declare fn ownerSelf() -> unknown;
 // owner token there is an empty cell).
 #[compiler.external(
     .JavaScript("""false"""),
-    .Erlang("""($0 =/= self())"""),
+    .Erlang("""(($0 =/= undefined) andalso ($0 =/= self()))"""),
     .Wasm(wasi: .CellFilled),
 )]
 declare fn ownerForeign(owner: unknown) -> bool;

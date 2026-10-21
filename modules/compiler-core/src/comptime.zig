@@ -2616,10 +2616,10 @@ fn stdNeedsOf(arena: std.mem.Allocator, mod: Module) ![]const usize {
     defer scratch_state.deinit();
     const scratch = scratch_state.allocator();
     collect: {
-        // Decision 388 — a program that writes `@Component` needs std's
-        // `context` module: every component is lowered to a lambda over its
-        // `RenderScope`, and an `await` of one in any module runs it with
-        // `RenderScope.root()` (`comptime/context_lower.zig`).
+        // Decisions 388, 819 — a program that writes `@Component` needs std's
+        // `context` module: every component is lowered to a function over its
+        // `Scope` and `Place`, which std's functions open and run
+        // (`comptime/context_lower.zig`).
         if (!isStdPkgPath(mod.path) and std.mem.indexOf(u8, mod.source, "@Component") != null) {
             if (stdIndex("std/context")) |i| needed[i] = true;
         }

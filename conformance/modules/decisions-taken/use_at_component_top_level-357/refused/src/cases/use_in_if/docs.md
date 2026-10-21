@@ -14,8 +14,7 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 >   128's base — is refused where it is written, at the base: `` `Component`
 >   takes one type argument, `Component<R>` — its base parameter was removed
 >   (decision 354) `` (`generic-arg-count-exceeded`). The owner marker
->   `@Context<C>` left with it (`context-marker-removed`, naming `implement
->   Renderable`), and `Renderable` takes no type argument. An aliased return
+>   `@Context<C>` left with it (`context-marker-removed`). An aliased return
 >   (`type Comp<T> = Component<T>`) types the function but grants nothing
 >   (`effect-wrapper-behind-alias`).
 > - **A component never propagates** (decision 121). `throw` and `try` are legal
@@ -26,10 +25,12 @@ The reference text this cell shows (from `conformance/docs.md`, § use — impor
 >   `Component<Result<T, E>>`, and then its body may `try`.
 > - **The operand is read with `use`.** `use plain()` where `plain : -> User` is
 >   `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `Component<R>` ``,
->   and `use Card()` where `Card` is a component (its `R` implements
->   `Renderable`) resolves it: it runs `Card` with the body's children scope
->   and answers its `R` (decision 791 (3)); a component is otherwise called,
->   `Card()`, which only makes its lambda.
+>   and `use Card()` resolves `Card` under a child cell of the body's and
+>   answers its `R` (decisions 791 (3), 812 (1)); a component is otherwise
+>   called, `Card()`, which only makes it. A body that returns a component —
+>   `return Card()`, `return div([…])` — resolves it under a child cell before it
+>   answers, so the body answers `R` and `Component<Component<R>>` never arises
+>   (decisions 809 (4), 816 (6)).
 > - **The rules of hooks** (decision 357). A `use` is written at the top level of
 >   its `Component` body and runs on every call, in the same order and the same
 >   number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /

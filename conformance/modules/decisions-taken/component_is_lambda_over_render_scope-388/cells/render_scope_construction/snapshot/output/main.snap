@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: render-scope-construction: a `RenderScope` is made only by `RenderScope.root()` — every other scope is the one a component's `run` answered (decision 388)
+refused error: opaque-construction: `Scope` is an opaque type — `Scope(…)` is written only inside its own methods (decisions 811, 814)
 at src/main.bp:8:13

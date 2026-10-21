@@ -8,7 +8,7 @@
 //// 791 (4): no `await` of a component). The owner type is declared here: the
 //// suite depends on no library.
 
-import {context.run, context.RenderScope} from "std";
+import {context.run} from "std";
 
 type Element(count: i32, name: string)
 

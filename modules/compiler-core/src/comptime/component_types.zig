@@ -25,7 +25,7 @@
 //! Refused here, located: `implement Component<R>` with no `compose`
 //! (`component-compose-missing`); a `compose` of another signature (800's
 //! `implement-signature-differs`, the contract `fn compose(self: Self) ->
-//! Component<R>`); a `RenderScope` field (`component-scope-field`, 388 (5)).
+//! Component<R>`); a `Scope` field (`component-scope-field`, 388 (5)).
 //! The checker refuses the other two with the names this pass records
 //! (`Composed`): a `use` in a helper (`component-use-outside-compose`) and
 //! `Card.compose()` (`component-compose-called`).
@@ -126,9 +126,9 @@ fn rewrite(arena: std.mem.Allocator, td: ast.TypeDecl, clause: usize) Error!Rewr
     const fields = td.recordFields();
 
     // 388 (5) — the scope is never a field: the renderer hands it at each run.
-    for (fields) |f| if (isRenderScope(f.typeRef)) {
+    for (fields) |f| if (isScopeType(f.typeRef)) {
         return refuse(
-            try std.fmt.allocPrint(arena, "{s}: `{s}.{s}` is a `RenderScope` — a component holds no scope: the renderer hands it to `compose` at each run (decision 388 (5))", .{ diagnostics.component_scope_field, td.name, f.name }),
+            try std.fmt.allocPrint(arena, "{s}: `{s}.{s}` is a `Scope` — a component holds no scope: the renderer hands it to `compose` at each run (decision 388 (5))", .{ diagnostics.component_scope_field, td.name, f.name }),
             "Drop the field; what the body reads from above it is a context, `use context(ctx)` in `compose`.",
             if (f.typeLoc.line != 0) f.typeLoc else td.loc,
         );
@@ -227,10 +227,10 @@ fn rewrite(arena: std.mem.Allocator, td: ast.TypeDecl, clause: usize) Error!Rewr
     return .{ .ok = .{ .record = record, .component = component } };
 }
 
-fn isRenderScope(t: ast.TypeRef) bool {
+fn isScopeType(t: ast.TypeRef) bool {
     return switch (t) {
-        .named => |n| std.mem.eql(u8, n, "RenderScope") or std.mem.endsWith(u8, n, ".RenderScope"),
-        .optional => |inner| isRenderScope(inner.*),
+        .named => |n| std.mem.eql(u8, n, "Scope") or std.mem.endsWith(u8, n, ".Scope"),
+        .optional => |inner| isScopeType(inner.*),
         else => false,
     };
 }
