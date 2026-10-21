@@ -6,7 +6,4 @@ beside `Set.fromList` and `Queue.fromList`, which keep their names. A key that r
 `size()` prints `2`, `a` reads `3` and `b` reads `2`. The same dict built by `insert` calls in the same order is equal to
 it under `==`, which prints `true`. The answer is the same on every target.
 
-Cells that also bear on it: `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed`
-(an `Ets(keyed: true)` seed written with a repeated key, erlang and beam).
-
 [draft/main.bp](draft/main.bp)

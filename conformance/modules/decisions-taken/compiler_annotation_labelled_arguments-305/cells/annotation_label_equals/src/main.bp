@@ -2,11 +2,11 @@
 //// as a call's is. `label = value` is a located parse error at the label,
 //// naming the form to write.
 
-import {collections.Dict, io.terminal.print} from "std";
+import {io.terminal.print} from "std";
 
-#[compiler.beamMemory(.Ets(keyed = true))]
-var counts: Dict<string, i32> = Dict.empty();
+#[compiler.external(.Erlang("erlang:abs($0)", inline = true))]
+declare fn magnitude(n: i32) -> i32;
 
 pub fn main() -> void {
-    print(counts.at("a"));
+    print(magnitude(-3));
 }

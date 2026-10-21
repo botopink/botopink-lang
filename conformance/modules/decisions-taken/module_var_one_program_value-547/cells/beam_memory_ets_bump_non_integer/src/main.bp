@@ -1,7 +1,6 @@
-//// Decision 40 — an increment under `beamMemory(.Ets)` is the host's atomic
-//// counter (`ets:update_counter`), which answers `badarg` for anything but an
-//// integer. On an `f64` the `+=` would have to become read, add, write — the
-//// recomputation the rule beside it refuses — so it is refused too.
+//// Decision 547 (ii) — `+=` on an `f64` `#[compiler.beamMemory(.Ets)]` var reads the `var` it
+//// writes, so on the BEAM it is the compare-and-swap like any `x = f(x)`, whatever the type:
+//// `1.5`. It used to be refused, as the host's atomic counter counts integers alone.
 
 import {io.terminal.print} from "std";
 

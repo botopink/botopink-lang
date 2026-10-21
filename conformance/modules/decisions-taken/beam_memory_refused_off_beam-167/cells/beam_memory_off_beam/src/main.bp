@@ -1,14 +1,11 @@
-//// Decision 167 (amends 43) — `#[compiler.beamMemory(…)]` names BEAM storage, and a
-//// target whose execution context is the whole program has none: commonJS
-//// and wasm refuse the annotation where it is written
-//// (`.commonJS.expect`, `.wasm.expect`). It used to be a silent no-op there,
-//// so this program built and printed `2` on every target while its
-//// `ProcessDict` var meant one value per process only on the BEAM. On erlang
-//// and beam the var is written through a `fn` and read back.
+//// Decision 547 (amends 167) — `#[compiler.beamMemory(…)]` only picks how the BEAM holds a
+//// `var`; the `var` means the same on every target, so off the BEAM the annotation is
+//// accepted and changes nothing. It used to be refused on commonJS and wasm. The `var`
+//// is written through a `fn` and read back: `2` on the four targets.
 
 import {io.terminal.print} from "std";
 
-#[compiler.beamMemory(.ProcessDict)]
+#[compiler.beamMemory(.Ets)]
 var hits: i32 = 0;
 
 fn bump() -> void {

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `counts` is a `compiler.beamMemory(.Ets)` var: a write that recomputes it from its own value can lose one of two concurrent runs
-at src/main.bp:11:5

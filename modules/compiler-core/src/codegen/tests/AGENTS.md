@@ -52,15 +52,13 @@ all, and what it does with a sibling `compile:file/2` refuses — which no
 `test { }` block can observe from the inside and no snapshot of a green program
 shows. Both live in `std_package.zig`.
 `beam_memory.zig` holds front 17's module-`var` fixtures (`beamMemory`, steps
-4–5): each runs its program with `assertErlangRunLog` and asserts what it
-printed across processes — `std/async`'s `allOf` spawns one process per task —
-because the three modes read alike inside one process: `ProcessDict` answers
-`[3, 3, 3, 3, 3]` then `0`, `Ets` reads `15` after five requests × three
-increments (decision 39's owner), `PersistentTerm` is put at load and read by a
-spawned process. A `keyed: true` `Dict` (decision 168) runs on both BEAM
-targets (`assertErlangRunLog`, `assertBeamRunLog`): two processes writing their
-own key 2 000 times each keep both, the seed's repeated key keeps its last value
-and a key with no row reads `null`.
+4–5, decision 547): each runs its program with `assertErlangRunLog` and asserts
+what it printed across processes — `std/async`'s `runAll` spawns one process per
+task — because a value per process would read alike inside one: `Ets` reads `15`
+after five requests × three increments (decision 39's owner, `etsSwap`),
+`PersistentTerm` is put at load and read by a spawned process, and
+`Dict.bump` on a module `var` loses no concurrent increment on both BEAM
+targets (`assertErlangRunLog`, `assertBeamRunLog`).
 `assertLibrarySameUnder(alloc, target, deps, lib, plain, crowded)` compiles a library under two consumers (as package `app` over `deps`) and fails when any file of the library — its code, its type units, its `.d.ts` — differs: decision 509 (2)'s invariant, one test per backend (`erlang.zig`, `beam.zig`, `commonjs.zig`) over the fixture `closure_shelf` / `closure_rival` / `closure_plain` / `closure_crowded`.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS

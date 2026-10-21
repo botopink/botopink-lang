@@ -1,7 +1,7 @@
-//// Design §5(d), front 17 step 4 — a missing `Ets` table is re-created and
-//// re-seeded from the declaration at a moment nobody chose, so the seed must be
-//// a literal or a `comptime` expression. Not purity, which the compiler cannot
-//// decide: `registry()` prints, and passes every other check.
+//// Decision 547 (i) — an `Ets` var's initialiser is any expression, run once: at
+//// boot on the BEAM, at module load on commonJS and wasm. `registry()` prints, so
+//// `side effect` is printed once, before `main` prints the value. It used to be
+//// refused: the seed had to be a literal or a `comptime` expression.
 
 import {io.terminal.print} from "std";
 

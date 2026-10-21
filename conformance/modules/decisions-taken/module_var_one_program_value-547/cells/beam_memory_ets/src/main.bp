@@ -2,9 +2,8 @@
 //// increments each, on one `#[compiler.beamMemory(.Ets)]` var: `15`. Without the
 //// registered owner the table died with the request that created it, every
 //// request read `3` and the counter ended at `0`. `hits = hits + 1` and
-//// `hits += 1` are both the increment, lowered to the host's atomic counter
-//// (decision 40). The per-request reads are not printed: their order is the
-//// scheduler's.
+//// `hits += 1` read the `var` they write: the compare-and-swap (decision 547
+//// (ii)). The per-request reads are not printed: their order is the scheduler's.
 
 import {async, io.terminal.print} from "std";
 

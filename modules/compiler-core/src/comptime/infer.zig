@@ -668,15 +668,6 @@ fn recordStdCall(env: *Env, mod_name: []const u8, name: []const u8, loc: ast.Loc
     if (env.targetTrace) |t| try t.calls.append(env.arena, call);
 }
 
-/// Decision 167 — the module's first `#[compiler.beamMemory(…)]`, kept for
-/// the target's checks once the program's validation passed: a refusal of
-/// the module after this point answers the annotation's refusal off the BEAM
-/// (`envMod.TargetTrace`).
-fn traceBeamMemory(env: *Env) void {
-    const t = env.targetTrace orelse return;
-    if (t.beam_memory_at == null) t.beam_memory_at = env.beamMemoryAt;
-}
-
 /// The host-bound declarations of std module `mod_name` a call of `name`
 /// reaches — `name` itself when it is one, else the ones its body reaches
 /// through the module's own functions —, in the order the call is followed.
@@ -889,7 +880,6 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
     try validateProgram(env, program);
-    traceBeamMemory(env);
     try publishHookFns(env, program);
     // Decisions 384, 385 — what each name resolves to here, for the code
     // another module reads from this one.
@@ -1174,7 +1164,6 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
     try validateProgram(env, program);
-    traceBeamMemory(env);
     try publishHookFns(env, program);
     // Decisions 384, 385 — what each name resolves to here, for the code
     // another module reads from this one.
@@ -9099,16 +9088,15 @@ fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
     return error.TypeError;
 }
 
-/// `#[compiler.beamMemory(.<Mode>(…))]` on a module binding — front 17 step 3,
-/// decisions 41, 51 and 663. A misread memory annotation does not fail, it
-/// moves where the state lives, so every part is checked in the commit the
-/// carrier was born in: the binding is a `var`; the mode is one of
-/// `ProcessDict` (the default, said out loud), `Ets` or `PersistentTerm`;
-/// every argument of the mode is the one it takes, `keyed`, with a
-/// `true`/`false` value; and `keyed: true` names a `Dict` — an `i32` has no
-/// key, and neither has a list (51).
+/// `#[compiler.beamMemory(.<Mode>)]` on a module binding — front 17 step 3,
+/// decisions 41, 547 and 663. A misread memory annotation does not fail, it
+/// moves where the state lives, so every part is checked: the binding is a
+/// `var`, and the mode is `BeamMemory`'s `Ets` (what a `var` with no
+/// annotation means) or `PersistentTerm`, with no argument. Off the BEAM the
+/// annotation is accepted and changes nothing (547, amending 167).
 fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
-    const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
+    _ = bindTy;
+    const members = [_][]const u8{ "Ets", "PersistentTerm" };
     for (v.annotations) |a| {
         const arg = a.beamMemoryOf() orelse continue;
         const loc = a.loc orelse v.value.getLoc();
@@ -9124,230 +9112,19 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
             env,
             loc,
             if (arg.case.len == 0)
-                "`#[compiler.beamMemory(…)]` takes one argument, the mode — expected `.ProcessDict`, `.Ets` or `.PersistentTerm`"
+                "`#[compiler.beamMemory(…)]` takes one argument, the mode — expected `.Ets` or `.PersistentTerm`"
             else
-                try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{arg.case}),
-            "The member names where the `var` lives on the BEAM; `ProcessDict` is what a `var` with no annotation means.",
+                try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `BeamMemory` — expected `Ets` or `PersistentTerm`", .{arg.case}),
+            "The member names how the BEAM holds the `var`; `Ets` is what a `var` with no annotation means.",
         );
         var items = arg.items();
-        while (items.next()) |item| {
-            const label = item.label orelse item.value;
-            if (!std.mem.eql(u8, label, "keyed")) return failAt(
-                env,
-                loc,
-                try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
-                try std.fmt.allocPrint(env.arena, "Write `#[compiler.beamMemory(.{s}(keyed: true))]`.", .{arg.case}),
-            );
-            const is_true = std.mem.eql(u8, item.value, "true");
-            if (!is_true and !std.mem.eql(u8, item.value, "false")) return failAt(
-                env,
-                loc,
-                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{item.value}),
-                null,
-            );
-            if (is_true and !typeIsDict(bindTy)) return failAt(
-                env,
-                loc,
-                try std.fmt.allocPrint(env.arena, "`keyed` needs a keyed container — {s} has no key", .{try describeForKeyed(env, bindTy)}),
-                "Only a `Dict<K, V>` is keyed; a list stores its whole value (decision 51).",
-            );
-        }
-        // Decision 167 (amends 43) — the annotation names BEAM storage. A
-        // target whose execution context is the whole program has none to
-        // name, and reading the annotation as a no-op there would build a
-        // program whose `ProcessDict` / `Ets` behaviour silently differs from
-        // the one written: refused at the annotation on such a target. The
-        // annotation's own rules answer first and on every target; the
-        // refusal is `codegen/target_check.zig`'s, at emit, since inference
-        // never reads the target (decision 798 (4)).
-        if (env.beamMemoryAt == null) env.beamMemoryAt = .{ .loc = loc };
-    }
-    const mem = v.memory() orelse return;
-    if (mem.keyed) {
-        // Decision 168 — `keyed: true` stores a `Dict` one ETS row per key,
-        // so it is `Ets`'s argument; the process dictionary and
-        // `persistent_term` hold one value per name.
-        if (mem.mode != .ets) return failAt(
-            env,
-            mem.loc orelse v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "`keyed: true` stores one row per key in an ETS table — it is an argument of `.Ets`, not of `.{s}`", .{mem.mode.spelling()}),
-            "Write `#[compiler.beamMemory(.Ets(keyed: true))]`, or drop `keyed`.",
-        );
-        // Its rows are read and written in THIS module, one at a time; an
-        // importer would read the binding whole, and there is no whole value.
-        if (v.isPub) return failAt(
-            env,
-            mem.loc orelse v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "a `keyed: true` var is not `pub` — `{s}` is read one row at a time, and another module would read it whole", .{v.name}),
-            try std.fmt.allocPrint(env.arena, "Export a `fn` that reads the row instead: `pub fn rowOf(key: K) -> ?V {{ return {s}.at(key); }}`.", .{v.name}),
-        );
-        // The seed is the table's rows (decisions 168, 174): `Dict.empty()`,
-        // or `Dict.ofEntries([…])` of literal `#(key, value)` entries — what
-        // a re-created table can be re-seeded from at any moment (§5(d)).
-        if (!isKeyedSeed(v.value.*)) return failAt(
-            env,
-            v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "a `keyed: true` var is re-seeded one row per entry whenever its table is re-created — `{s}`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries", .{v.name}),
-            try std.fmt.allocPrint(env.arena, "Write `var {s} = Dict.empty();`, or its rows as literals: `Dict.ofEntries([#(\"a\", 1)])`.", .{v.name}),
-        );
-    } else if (mem.mode == .ets and !mem.implicit and !ast.isMemorySeed(v.value.*)) return failAt(
-        // Design §5(d), step 4: an `Ets` table that goes missing is re-created
-        // and re-seeded from the declaration at a moment nobody chose, so the
-        // seed is a literal or a `comptime` expression — not a purity
-        // judgement, which the compiler cannot make.
-        env,
-        v.value.getLoc(),
-        try std.fmt.allocPrint(env.arena, "a `compiler.beamMemory(.Ets)` var is re-seeded from its initialiser whenever its table is re-created — `{s}`'s initialiser must be a literal or a `comptime` expression", .{v.name}),
-        try std.fmt.allocPrint(env.arena, "Write the value (`var {s} = 0;`), fold it with `comptime`, or keep the var in `ProcessDict` / `PersistentTerm`, whose initialiser runs once.", .{v.name}),
-    );
-    try env.memoryVars.put(env.arena, v.name, .{ .memory = mem, .ty = bindTy });
-}
-
-/// Front 17 step 4 — the writes `beamMemory` cannot honour, refused at the
-/// assignment on every target (the annotation's contract does not depend on
-/// where the program runs, only its lowering does):
-///
-/// - a `PersistentTerm` var is written once, at load (design §5(a)): every
-///   `persistent_term:put` scans every process heap, and `-on_load` re-runs on
-///   every code reload, so a run-time write is erased by the next one;
-/// - under `Ets`, a write that recomputes the value from what it just read
-///   loses one of two concurrent runs (§5(b)) — except the increment
-///   (`x += n`, `x = x + n`), which lowers to the host's atomic counter, and
-///   that only on an integer (decision 40).
-fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
-    const mv = env.memoryVars.get(name) orelse return;
-    // A local or parameter of the same name shadows the module binding.
-    const bound = env.lookup(name) orelse return;
-    if (bound != mv.ty) return;
-    // Decisions 547, 877 — the unannotated default: every write is atomic,
-    // one that reads the `var` a compare-and-swap, so none is refused.
-    if (mv.memory.implicit) return;
-    switch (mv.memory.mode) {
-        .processDict => {},
-        .persistentTerm => return failAt(
+        if (items.next()) |item| return failAt(
             env,
             loc,
-            try std.fmt.allocPrint(env.arena, "a `PersistentTerm` var is written once, at load — `{s}` cannot be assigned", .{name}),
-            if (typeIsDict(mv.ty))
-                "Initialise it in the declaration, or use `#[compiler.beamMemory(.Ets(keyed: true))]` if it changes."
-            else
-                "Initialise it in the declaration, or use `#[compiler.beamMemory(.Ets)]` if it changes.",
-        ),
-        .ets => switch (ast.classifyMemoryWrite(name, plus, value)) {
-            .whole => {},
-            // A `Dict` rewritten through its own methods is decision 42's
-            // documented case, not this rule's: under `keyed: false` it is
-            // read, updated and stored whole — concurrent writes to different
-            // keys can be lost, which `conformance/docs.md` states with the figure and the
-            // compiler deliberately does not warn about — and `keyed: true`
-            // is the one-row-per-key form that exists to remove the race.
-            .recompose => if (!typeIsDict(mv.ty)) return failAt(
-                env,
-                loc,
-                try std.fmt.allocPrint(env.arena, "`{s}` is a `compiler.beamMemory(.Ets)` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
-                try std.fmt.allocPrint(env.arena, "An increment — `{s} += n` or `{s} = {s} + n` — is atomic on an integer; any other write must not read `{s}`.", .{ name, name, name, name }),
-            ) else {},
-            .bump => if (!isIntType(mv.ty.deref())) return failAt(
-                env,
-                loc,
-                try std.fmt.allocPrint(env.arena, "an increment of a `compiler.beamMemory(.Ets)` var is atomic only on an integer — `{s}` is {s}", .{ name, try describeForKeyed(env, mv.ty) }),
-                try std.fmt.allocPrint(env.arena, "Declare `{s}` an integer, or write the whole value without reading `{s}`.", .{ name, name }),
-            ),
-        },
-    }
-}
-
-/// Decision 168 — the accepted seed of a `keyed: true` var: `Dict.empty()`,
-/// or `Dict.ofEntries([…])` whose entries are `#(key, value)` tuple literals
-/// of literal seeds (`ast.isMemorySeed`). The BEAM emitters fold the same
-/// shape into the table's rows (`erlang.zig` `keyedSeedRows`).
-fn isKeyedSeed(e: ast.Expr) bool {
-    if (e != .call or e.call.kind != .call) return false;
-    const cc = e.call.kind.call;
-    if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.calleeExpr != null) return false;
-    const recv = cc.receiver orelse return false;
-    if (!(recv.* == .identifier and recv.identifier.kind == .ident and std.mem.eql(u8, recv.identifier.kind.ident, "Dict"))) return false;
-    if (std.mem.eql(u8, cc.callee, "empty")) return cc.args.len == 0;
-    if (!std.mem.eql(u8, cc.callee, "ofEntries") or cc.args.len != 1) return false;
-    const list = cc.args[0].value.*;
-    if (list != .collection or list.collection.kind != .arrayLit) return false;
-    const al = list.collection.kind.arrayLit;
-    if (al.spread != null or al.spreadExpr != null) return false;
-    for (al.elems) |entry| {
-        if (entry != .collection or entry.collection.kind != .tupleLit) return false;
-        const tl = entry.collection.kind.tupleLit;
-        if (tl.elems.len != 2 or !ast.isMemorySeed(tl.elems[0]) or !ast.isMemorySeed(tl.elems[1])) return false;
-    }
-    return true;
-}
-
-/// The module `var` `name` if it is a `keyed: true` one and no local
-/// shadows it here.
-fn keyedVar(env: *Env, name: []const u8) ?Env.MemoryVar {
-    const mv = env.memoryVars.get(name) orelse return null;
-    if (!mv.memory.keyed) return null;
-    const bound = env.lookup(name) orelse return null;
-    if (bound != mv.ty) return null;
-    return mv;
-}
-
-/// Decision 168 — a `keyed: true` var is read one row at a time:
-/// `name.at(key)` is `ets:lookup` on the key, and the receiver is the one
-/// place the binding may be named in an expression (`refuseKeyedWholeRead`).
-fn noteKeyedRowRead(env: *Env, c: anytype) !void {
-    if (env.memoryVars.count() == 0 or c.kind != .call) return;
-    const cc = c.kind.call;
-    if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.args.len != 1) return;
-    if (!std.mem.eql(u8, cc.callee, "at")) return;
-    const recv = cc.receiver orelse return;
-    if (!(recv.* == .identifier and recv.identifier.kind == .ident)) return;
-    if (keyedVar(env, recv.identifier.kind.ident) == null) return;
-    try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
-}
-
-/// Decision 168 — a `keyed: true` var is written one row at a time, and only
-/// as `name = name.insert(key, value)` with a key and a value that do not
-/// read `name`: that is `ets:insert` of the one row. Any other write — a
-/// whole value, `+=`, a row computed from the var's own rows — is refused
-/// before the value is inferred, with the diagnostic of the write it is.
-/// Decision 340 adds the increment `name = name.bump(key, by)` — `ets:update_counter`
-/// of the one row, atomic — with the same rule for its key and its amount; the written
-/// read-modify-write `name.insert(k, (name.at(k) ?? 0) + n)` stays refused as a row
-/// computed from the var's own rows (no pattern is recognised).
-fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
-    if (keyedVar(env, name) == null) return;
-    const row: ?*const ast.Expr = blk: {
-        if (plus or value.* != .call or value.call.kind != .call) break :blk null;
-        const cc = value.call.kind.call;
-        if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.args.len != 2) break :blk null;
-        if (!std.mem.eql(u8, cc.callee, "insert") and !std.mem.eql(u8, cc.callee, "bump")) break :blk null;
-        const recv = cc.receiver orelse break :blk null;
-        if (!(recv.* == .identifier and recv.identifier.kind == .ident and std.mem.eql(u8, recv.identifier.kind.ident, name))) break :blk null;
-        break :blk recv;
-    };
-    const recv = row orelse return failAt(
-        env,
-        loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed: true` var: it is written one row at a time, as `{s} = {s}.insert(key, value)`", .{ name, name, name }),
-        "Under `keyed: true` the `Dict` lives one ETS row per key; there is no whole value to replace.",
-    );
-    const cc = value.call.kind.call;
-    if (std.mem.eql(u8, cc.callee, "bump")) {
-        const vt = keyedValueType(keyedVar(env, name).?.ty);
-        if (vt) |t| if (!isIntType(t.deref())) return failAt(
-            env,
-            loc,
-            try std.fmt.allocPrint(env.arena, "`{s}.bump` is atomic only on an integer — the rows of `{s}` are {s}", .{ name, name, try describeForKeyed(env, t) }),
-            try std.fmt.allocPrint(env.arena, "Declare `{s}` a `Dict` of integers, or write a row whole with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
+            try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — `.{s}` takes none", .{ item.label orelse item.value, arg.case }),
+            try std.fmt.allocPrint(env.arena, "Write `#[compiler.beamMemory(.{s})]`.", .{arg.case}),
         );
     }
-    if (ast.exprMentions(cc.args[0].value.*, name) or ast.exprMentions(cc.args[1].value.*, name)) return failAt(
-        env,
-        loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is a `compiler.beamMemory(.Ets)` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
-        try std.fmt.allocPrint(env.arena, "Under `keyed: true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
-    );
-    try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
 }
 
 /// The value type `V` of a `Dict<K, V>`, or null when it is not spelled out.
@@ -9357,20 +9134,6 @@ fn keyedValueType(t: *T.Type) ?*T.Type {
         .named => |n| if (n.args.len == 2) n.args[1] else null,
         else => null,
     };
-}
-
-/// Decision 168 — `name` read anywhere but as the receiver of its own row
-/// read or row write (`noteKeyedRowRead`, `checkKeyedWrite`).
-fn refuseKeyedWholeRead(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
-    if (env.memoryVars.count() == 0) return;
-    const mv = keyedVar(env, name) orelse return;
-    if (mv.ty != ty or env.keyedRowAccess.contains(loc)) return;
-    return failAt(
-        env,
-        loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed: true` var: it is read one row at a time, as `{s}.at(key)`", .{ name, name }),
-        try std.fmt.allocPrint(env.arena, "Under `keyed: true` the `Dict` lives one ETS row per key; there is no whole value to read. Read a row with `{s}.at(key)`, write one with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
-    );
 }
 
 fn failAt(env: *Env, loc: ast.Loc, msg: []const u8, hint: ?[]const u8) InferError {
@@ -17621,7 +17384,6 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
 
         // ── call expressions ───────────────────────────────────────────────────
         .call => |c| blk: {
-            try noteKeyedRowRead(env, c);
             try checkStdContextCall(env, c);
             try checkOpaqueCall(env, c);
             // Decisions 416, 722 — `inject(R)` names a type: the call answers
@@ -17969,7 +17731,6 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             }
             if (env.lookup(name)) |ty| {
                 try refuseBareVariant(env, name, ty, loc, false);
-                try refuseKeyedWholeRead(env, name, ty, loc);
                 if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which == .provide or which == .context)
                     return refuseContextHookWithoutUse(env, name, loc);
                 // A template function exists only while the program
@@ -19874,10 +19635,6 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
         },
 
         .assign => |a| {
-            switch (a.target) {
-                .name => |name| try checkKeyedWrite(env, name, a.op == .plusAssign, a.value, loc),
-                .fieldAccess => {},
-            }
             const prevExpected = env.expectedType;
             const valTyped = inferExprTyped(env, a.value.*) catch |err| {
                 env.expectedType = prevExpected;
@@ -19896,7 +19653,6 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                 .name => |name| blk: {
                                     if (env.lookup(name)) |ty| {
                                         try refuseValAssign(env, name, loc);
-                                        try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
                                         try refuseCapturedVarWrite(env, name, loc);
                                         // A narrowed `var` is assigned its DECLARED type, and
                                         // the assignment ends the narrowing.

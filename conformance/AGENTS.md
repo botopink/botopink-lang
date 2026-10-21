@@ -2161,20 +2161,7 @@ backend, and a gap is a row of the backend's front, never an entry in `"targets"
 narrowing that names an unknown target, the same target twice, or every target of its kind (it narrows nothing — delete the field). No flag,
 list or environment variable turns the audit off (decision 67).
 
-A third refusal stands a narrowing too — decision 167 (amending 43): a module `var` under
-`#[compiler.beamMemory(.<mode>)]` binds BEAM storage, and commonJS and wasm refuse the annotation where it is
-written,
-
-```
-`#[compiler.beamMemory(…)]` has no meaning on the <t> backend
-```
-
-so a cell that declares one leaves those two out on the compiler's word, never on its own source's
-(the structural exemption the runner used to read off the source is gone). erlang and beam accept
-the annotation, so it never excuses either. `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_off_beam` pins the refusal itself
-(its commonJS and wasm departures, located at the annotation) and prints `2` on the BEAM.
-
-A fourth stands one too — decisions 676 and 770: a build for a target one of the cell's dependencies
+A third stands one too — decisions 676 and 770: a build for a target one of the cell's dependencies
 does not hold is refused at the dependant's manifest, on that dependency's line,
 
 ```
@@ -2194,9 +2181,6 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 
 | Cell | Runs on | Excluded — the binding it lacks |
 |---|---|---|
-| `modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets`, `modules/beam/cells/beam_memory_persistent_term` | erlang beam | wasm, commonJS — `#[compiler.beamMemory(…)]` (decision 167) |
-| `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_process_dict`, `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed` | erlang beam | wasm, commonJS — `#[compiler.beamMemory(…)]` (decision 167) |
-| `modules/beam/cells/beam_memory_annotations`, `modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump` | erlang beam | wasm, commonJS — `#[compiler.beamMemory(…)]` (decision 167) |
 | `modules/behavior/cells/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |
 | `modules/external/cells/external_erlang_host_module_missing` | erlang beam (each refuses it: `output/main.snap`) | commonJS, wasm — `total` |
 | `modules/external/cells/external_host_record`, `modules/external/cells/external_returns_record` | commonJS erlang beam | wasm — `hostPoint` |
@@ -2547,10 +2531,7 @@ The Conformance steps of 144 B-13, B-26, B-31 … B-35, B-37 … B-41 (boxes 3, 
 step's base and green on the tip unless named a pin: `modules/decisions-taken/store_answers_result_store_error-304/cells/behavior_method_result_dispatch` (a
 behavior method `-> @Result` through a behavior-typed parameter, its `default fn` included — a pin:
 B-13 changed no code); `modules/decisions-taken/dict_bump_counts-340/cells/dict_bump` (`Dict.bump` on a plain dict, four targets),
-`modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump_non_integer` (a keyed `Dict` of `f64` rows),
-`modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump_reads_itself` (a `bump` whose amount reads the var, the recompose
-refusal) and `modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_read_modify_write` (the increment written out stays
-refused — a pin) for B-26; `modules/decisions-taken/comptime_badarith_message-472/cells/comptime_integer_division_by_zero` (`7 / 0` at build is
+`modules/decisions-taken/dict_bump_counts-340/cells/dict_bump_on_module_var` (`Dict.bump` on a module `var`, atomic on the BEAM, decision 547 (ii)) for B-26; `modules/decisions-taken/comptime_badarith_message-472/cells/comptime_integer_division_by_zero` (`7 / 0` at build is
 `comptime-badarith`) for B-32; the wasm cell refusals of decision 481 for B-33 —
 `modules/decisions-taken/external_wasm_labelled_cells-481/refused/src/cases/external_wasm_fn_cell_string`, `external_wasm_op_cell_not_string`,
 `external_wasm_wasi_cell_not_enum`, `external_wasm_std_cell_not_string` (a value of another kind, at

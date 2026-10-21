@@ -758,8 +758,7 @@ in a scratch copy, and runs on those — (an array of target names, in any
 order; an unknown target, one named twice, none, all four or a value that is
 not an array is malformed), and each target it leaves out is **audited**:
 `botopink build --target <t>` must refuse the cell on a host binding (`has no #[@external(.<Target>(…))]`,
-`std-unsupported-on-target:`, `` `#[compiler.beamMemory(…)]` has no meaning on the <t>
-backend``) — a build that accepts it, or refuses it otherwise, fails the cell
+`std-unsupported-on-target:`) — a build that accepts it, or refuses it otherwise, fails the cell
 (`conformance/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything
 but `output/` and `targets/<t>/`, a departure for a target the cell does not
 run, and a malformed `.snap` (named `<file>:<line>: <reason>`) fail the cell.

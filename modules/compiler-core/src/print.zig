@@ -193,7 +193,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write",
             .lexemeInCaption = true,
             .lexemeSuffix = ":",
-            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[compiler.beamMemory(.Ets(keyed: true))]`, `#[compiler.external(.Erlang(\"…\", inline: true))]`, `#[mark(level: .High)]`.",
+            .hint = "A labelled argument is `label: value` everywhere, in an annotation as in a call (decision 305): `#[compiler.external(.Erlang(\"…\", inline: true))]`, `#[mark(level: .High)]`.",
         },
         .tupleLiteralLabel => .{
             .code = "tuple-literal-label",

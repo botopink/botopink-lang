@@ -1031,8 +1031,6 @@ const Scratch = struct {
         if (code == 0) return try std.fmt.allocPrint(a, "excluded by \"targets\", but `botopink build --target {s}` accepts the cell — a narrowing stands on a host-binding refusal: let it run on {s}", .{ t.toString(), t.toString() });
         const text = try stripAnsi(a, captured.written());
         for (HOST_BINDING_REFUSALS) |phrase| if (std.mem.indexOf(u8, text, phrase) != null) return null;
-        const beam_memory = try std.fmt.allocPrint(a, "`#[compiler.beamMemory(…)]` has no meaning on the {s} backend", .{t.toString()});
-        if (std.mem.indexOf(u8, text, beam_memory) != null) return null;
         const first = firstErrorLine(text) orelse "no error line";
         return try std.fmt.allocPrint(a, "excluded by \"targets\", and {s} refuses it for another reason than a host binding ({s}) — let it run there, its refusal answered in snapshot/targets/{s}/", .{ t.toString(), first, t.toString() });
     }

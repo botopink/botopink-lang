@@ -175,14 +175,14 @@ pub default declare val compiler: Compiler;
 // refused at the argument (`infer.zig` `hostStage`).
 pub fn stage(syntax decl: unknown, comptime s: Stage) -> void {}
 
-// Where a module `var` lives on the BEAM (decisions 41, 43, 51):
-// `#[compiler.beamMemory(.Ets(keyed: true))] var hits: Dict<string, i32> = …;`.
-// `ProcessDict` is what a `var` with no annotation means; `keyed` is `Ets`'s
-// alone and needs a `Dict`; off the BEAM the annotation is refused (decision
-// 167; `ast.zig` `ValDecl.memory`, `infer.zig` `validateMemoryAnnotations`).
+// How the BEAM holds a module `var` (decision 547): a `var` is one value for
+// the whole program on every target; `Ets`, what a `var` with no annotation
+// means, is a one-row ETS table, `x = f(x)` atomic; `PersistentTerm` suits a
+// `var` written rarely and read much — a write scans every process. Off the
+// BEAM the annotation is accepted and changes nothing (`ast.zig`
+// `ValDecl.memory`, `infer.zig` `validateMemoryAnnotations`).
 pub type BeamMemory {
-    ProcessDict,
-    Ets(keyed: bool = false),
+    Ets,
     PersistentTerm,
 }
 

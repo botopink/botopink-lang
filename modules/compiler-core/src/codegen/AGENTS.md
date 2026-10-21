@@ -87,7 +87,7 @@ codegen/
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`, `packages` — decision 109's package owner of each module, `analysis_store` — the code cache's level B the comptime pass reads and stages entries through, 144 B-60, null for none, `level_b_code` — the entries' CODE, set by `codegen.generateWith`, `test_mode` too (B-60 S4, decision 513)), `cachedUnit(alloc, name)` — a module's unit read back from its entry's CODE, which every backend's `codegenEmit` takes instead of emitting the module, asked right where it would emit it (after the program's refusals: a host-fn binding, an ambiguous import, an atom fault), `recordsCode(name)` — the module's unit goes into its entry (commonJS then emits its `.d.ts` whether or not `typeDefLanguage` asks; `generateWith` drops it after), `codeEmit()`; `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang`. The comptime pass runs on the wasm runtime whatever the target (decision 434): nothing to configure. |
 | `moduleOutput.zig` | `AmbiguousVariant` (a bare variant name more than one enum of the program declares, written where nothing says which — `variant`, and two of the enums; `diagnostic(alloc)` renders the refusal with both qualified spellings, and the erlang emitter raises it through the same errdefer slot pattern `MissingExternal` uses). `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@external(.<Target>(…))]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `std_funcs`, `comptime_script`, `comptime_err`, `diagnostic`, `warnings`, `run_output`; `failed()`; `warnings` are the module's `OkData.warnings` (decision 57), rendered and owned — `codegen.zig`'s `attachWarnings` copies them by module name before the comptime session is freed, so `build` and `test` print them as `check` does, front 26 step 4) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models@@Person` — decision 109) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `target_check.zig` | **The target leaves comptime** (decision 798 (4)). `codegen.analyse` passes no target; `emit` (through `emitChecked`) runs `apply(arena, outputs, lookupName(config))` first: a module whose `OkData.std_host_calls` holds a call whose first reached host declaration has no implementation for the lookup is refused at the call (`std-unsupported-on-target`, decision 518 (4)), and one with `OkData.beam_memory_at` off erlang/beam at the annotation (decision 167) — the texts, codes and places inference gave when it read the target. The refused module's outcome is a `typeError` for the backend only; `restore` hands the analysis back once the emit returns, so one analysis can be emitted for another target, and `generateWith` attaches no warnings or build output to it. `withoutBeamStorage` leaves `std/beam` (analysed for every module-level `var`, `comptime.zig` `expandStdImports`) out of a non-BEAM emit unless a module imports it; `writeBack` returns what the emit rewrote. A module whose analysis was refused (a type or validation error) carries its `ComptimeOutput.target_trace` (`comptime/env.zig` `TargetTrace`: the std calls inference met before the error, the `beamMemory` once validation passed): a refusal of the target found there replaces the analysis' error, as it came first when inference read the target. `botopink check` calls `apply` over its session. Pinned by `comptime/tests/std_target_gating.zig`, `infer_errors.zig`'s decision 167 rows and every `std_unsupported*` / `beam_memory*` cell |
+| `target_check.zig` | **The target leaves comptime** (decision 798 (4)). `codegen.analyse` passes no target; `emit` (through `emitChecked`) runs `apply(arena, outputs, lookupName(config))` first: a module whose `OkData.std_host_calls` holds a call whose first reached host declaration has no implementation for the lookup is refused at the call (`std-unsupported-on-target`, decision 518 (4)) — the texts, codes and places inference gave when it read the target. The refused module's outcome is a `typeError` for the backend only; `restore` hands the analysis back once the emit returns, so one analysis can be emitted for another target, and `generateWith` attaches no warnings or build output to it. `withoutBeamStorage` leaves `std/beam` (analysed for every module-level `var`, `comptime.zig` `expandStdImports`) out of a non-BEAM emit unless a module imports it; `writeBack` returns what the emit rewrote. A module whose analysis was refused (a type or validation error) carries its `ComptimeOutput.target_trace` (`comptime/env.zig` `TargetTrace`: the std calls inference met before the error): a refusal of the target found there replaces the analysis' error, as it came first when inference read the target. `botopink check` calls `apply` over its session. Pinned by `comptime/tests/std_target_gating.zig`, and every `std_unsupported*` / `beam_memory*` cell |
 | `hostFnBinding.zig` | **`fn:<name>` on every backend** (decisions 238, 259, 263). `resolve(ar, f, name, prog, module, label)` is the one check of a `fn:` binding — the declaring module has a bodied, non-`pub` `fn <name>` of the same written parameter types in order and the same return (`sameSignature` over `TypeRef.format`, a linked module's own qualification dropped by `typeText`) — and answers the private fn or the refusal text (`` `#[@External.<Label>("fn:<name>")]` on `<f>`: … ``); `annotationLoc(f, label)` is the annotation's location. wasm calls it from `wat.zig` `checkHostBindings`. commonJS, erlang and beam call `Lowering.apply(alloc, outputs, .node / .erlang / .beam)` first thing in their `codegenEmit`: every `.ok` module's `declare fn` whose binding for the target is `fn:<name>` (`beam`: `.Erlang`, the one BEAM annotation, decision 437) is replaced, in a copy of the program's declarations, by an ordinary `fn` of the same signature whose body is `return <name>(<parameters>);`, its `External.*` annotations dropped — so the cross-module index, the exports, a local call and a consumer's call see a plain function, and no backend reads a fourth binding shape. A refused binding fails its module with a located diagnostic at the annotation (`refusal(name)` → `Refusal.failed`), the module is not emitted. `Lowering.deinit` restores the original declarations before the arena goes. Pinned by `tests/externals.zig`'s `fn: binds a declare fn to a private body` (js, erlang, beam) and the four refusals on each host backend, and by `tests/wat.zig`'s host-binding fixtures |
 | `hostMethods.zig` | **Host-backed methods** — a bodyless `declare fn` written inside a `type` body, with its `#[@external(.<Target>(…))]` bindings (`isHostMethod`; one with no binding at all binds no backend, so every call to it is refused). Every backend lowers one as a REAL method of the type whose body is the binding applied to the method's own parameters — the method twin of the wrapper a `pub` module-level `declare fn` gets — so a call site (`sock.recv(n)`, local or on an imported type) is an ordinary method call and knows nothing of the host: commonJS `hostMethodMember` (a class member; `$0` is `this`, or the `self` parameter of an enum's static; a `(module, symbol)` binding is called with the receiver first; `result: true` goes through `wrapResult` — `__bp_host_result` / `__bp_host_result_task`), erlang `hostMethodForms` (a function of the type's module, exported, rendered by `templateNode` with the receiver as `Self`; a record return is adopted as `adoptRecord`; `collectLocalFnArities` indexes it as a method owner like a bodied method, so an untyped receiver whose `name/arity` a module function shares still reaches the type's module), beam `withHostMethodBodies` (the method gets the body `return <Type>.<m>(self, …)` and a hidden non-`pub` `declare fn <Type>.<m>` carries the annotations, so `lowerExternalCall` renders it and the ordinary method machinery reserves, emits and exports it; an arity-branched binding is resolved to its branch first) and `typescript.zig` (`declaresHostMember`: declared when `node` binds it). The markers were translated by `parser/template_markers.zig` — on a `self`-first method `$0` is the receiver on every target. `binds(m, target)` says which backend reads a binding (`beam`: `.Erlang`; `wasm`: nothing — no host). A method a backend has no binding for is not emitted, and `missingAt` refuses a CALL to it where it is written — the receiver's type is inference's `.type_` lowering, the method `CrossModule.host_methods["<Type>.<m>"]` — with the `MissingExternal` diagnostic naming `Type.method`; commonJS, erlang, beam and wat each ask it on their receiver-call path. `inline: true` is accepted on a method's `.Erlang` and changes nothing (there is no hand-coded shape to keep). Pinned by `tests/externals.zig`'s four `a host-backed method …` fixtures and `conformance/modules/external/{run,refused}/src/cases/external_method_*`, `conformance/modules/external/cells/external_method_*`, `modules/external/cells/external_method_imported` |
 | `prelude_cache.zig` | The embedded `primitives.bp` prelude parsed once for the life of the process (`primitives()`, its own arena over the page allocator, a spin lock for the test runner's threads), and `freeFn(name)`, the prelude's free `fn` of that name. Decision 641: `dissolvedTypesAsMemberTables` (inside `withWidthMembers`, so every reader sees it) holds each primitive type that implements no contract — `pub type string { … }`, `bool`, `bigint`, `bytes`, `array<T>` — as the `BehaviorDecl` of the type's own name (`primitiveType`), its `declare fn`s with their cells, a `fn` with a body a member with that body, a `.T(body: f)` cell turned into the member's body (`f`'s first parameter read as `self`, `template_eval.renameIdentifier`); `isMemberTableStatic(name, method)` is what each backend reads a static call through the type's lowercase name by (`array.range(0, 3)` — erlang's `'array_range'`, commonJS's `Array.range`, beam's local). erlang's `collectPrimErlangDispatch` / `collectPreludeInstanceDefaults` read it; wat's `adoptPreludeHostFn` adopts a free host `declare fn` a prelude `default fn`'s copy calls (`stringSlice0` in `String.parseFloat`) — its signature and its `#[@external(.Wasm(std: "…"))]` binding — when the module declares none |
@@ -1777,63 +1777,36 @@ codegen/
   body as an applied `fun`. Each val function starts a fresh variable scope.
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
   `undefined`, bare `throw;` → `erlang:throw(undefined)`.
-- **Module-level `var`s — `beamMemory`** (front 17 step 4, decisions 39, 40,
-  43, 547, 877; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `loadForms`):
-  a `var` with no annotation is one value for the whole program (decisions 547,
-  877: `ast.Memory.implicit`, an `Ets` row); `#[compiler.beamMemory(.<Mode>)]`
-  picks `ProcessDict` (one value per process), `Ets` or `PersistentTerm`. The
-  unannotated one reaches its table through `'__bp_tab_<var>'/0`
-  (`etsTabForms`): the table's name once its owner holds it, else the guard
-  `'__bp_ets'` seeded by the initialiser, lowered there alone — any expression,
-  run once, at boot for one that can have an effect (`'_botopink_init'/0`
-  reads it). A write that does not read the `var` is one `etsPut`; one that
-  does (`x = f(x)`, `x += n`, `xs.push(v)`) is `std@beam:etsSwap(Tab, fun(X) ->
-  New end)` (`swapFun`), the compare-and-swap of 547 (ii) — `ets:select_replace`
-  against the value read, retried when another process wrote between — and the
-  checker refuses none of its writes. A read is still the call `name()`;
-  the reader and every write that no local shadows (`bindExpr` →
-  `memoryWrite`) lower onto `std/beam`'s host primitives as remote calls into
-  `std@beam` (`beamPrim`) — this file names no ETS, `persistent_term` or
-  process-dictionary function (decision 43's layer 2), and `comptime.zig`'s
+- **Module-level `var`s — `beamMemory`** (front 17 step 4, decisions 39, 43,
+  547, 877; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `etsTabForms`,
+  `loadForms`): a module `var` is one value for the whole program.
+  `#[compiler.beamMemory(.<Mode>)]` picks how the BEAM holds it — `Ets`, what a
+  `var` with no annotation means, or `PersistentTerm` (547). A read is still
+  the call `name()`; the reader and every write that no local shadows
+  (`bindExpr` → `memoryWrite`) lower onto `std/beam`'s host primitives as
+  remote calls into `std@beam` (`beamPrim`), and `comptime.zig`'s
   `expandStdImports` pulls `std/beam` into an erlang/beam build of a module
   that declares a `var`. The storage is named `'<module atom>@@<var>'`
-  (`memoryKey`). `ProcessDict`: `pdGet`, the value boxed as
-  `{'__bp_var', V}` (a `null` is `undefined`, which is also what an absent key
-  reads), the initialiser evaluated and put on a process's first read.
-  `Ets`: every read and write goes through `'__bp_ets'(Name, Seed)`, which
-  answers the table once its owner is registered under the table's name; the
-  owner (`'__bp_ets_owner'/2`, spawned by `'__bp_ets_wait'/3`) wins
-  `etsNew(named_table)`, seeds the row, registers and parks in
-  `timer:sleep(infinity)`, so "registered" also means "seeded", and a dead
-  owner's table is re-created and re-seeded by the next caller. An increment
-  (`x += n`, `x = x + n`, `x = n + x`, `x = x - n` — `ast.classifyMemoryWrite`,
-  the reading the checker shares) is `etsBump`; any other write `etsPut`s the
-  whole value. `PersistentTerm`: `ptGet`, put by `'__bp_load'/0` from
-  `-on_load` — except under `botopink test`, whose escript loads its own module
-  before `std@beam`: there `'__bp_load'/0` is exported and the runner calls it
-  (its own after the siblings load, each sibling's from `'__bp_load_siblings'`).
-  What the modes cannot honour the checker refuses (`infer.zig`
-  `refuseMemoryWrite`). **`keyed: true`** (decision 168, 1.0.11 front 17
-  step 1) stores the `Dict` one ETS row per key in the var's table: the
-  checker admits the seed `Dict.empty()` / `Dict.ofEntries([…])` of literals,
-  the row read `name.at(K)` and the row write `name = name.insert(K, V)`, and
-  nothing else (`checkKeyedWrite`, `refuseKeyedWholeRead`). `callNode` →
-  `keyedRowRead` lowers the read to `'__bp_ets_at'(Name, Rows, K)` (`etsLookup`
-  through the guard: the row's value, `undefined` without one) and
-  `memoryWrite` → `keyedRowWrite` the write to `'__bp_ets_row'(Name, Rows,
-  {K, V})` (`etsPut` of the one row); decision 340's `name = name.bump(K, N)` (std `Dict.bump`, integer `V`)
-  to `'__bp_ets_bump'(Name, Rows, K, N)` (`etsBumpFrom`: `ets:update_counter(T, K, N, {K, 0})`, atomic;
-  `modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump`; beam's twin is `emitKeyedRowWrite`'s `bump` branch and a 4-arity helper). `Rows` is the seed folded at compile time
-  (`keyedSeedRows`, `pub` for the beam backend: a repeated key keeps its last
-  value, decision 174), carried to the owner tagged `{'__bp_rows', Rows}` —
-  in a module with a keyed var the owner inserts a tagged seed as the table's
-  rows and any other as the row `{Name, Seed}` (a module without one keeps the
-  plain row, byte for byte). The reader `name/0` of a keyed var is the guard
-  (`'_botopink_init'/0` calls it, so the table exists from load); nothing else
-  reads it whole. Two processes writing their own key 20 000 times each keep
-  both (`modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed`); stored whole, one write put the other's
-  stale row back — 19 996 of 20 000 measured on beam. `beam_asm.zig` carries
-  the same modes in assembly (step 5).
+  (`memoryKey`). `Ets`: the table is reached through `'__bp_tab_<var>'/0`
+  (`etsTabForms`): its name once its owner holds it, else the guard
+  `'__bp_ets'(Name, Init)` seeded by the initialiser, lowered there alone — any
+  expression, run once, at boot for one that can have an effect
+  (`'_botopink_init'/0` reads it). The guard answers the table once its owner
+  is registered under the table's name; the owner (`'__bp_ets_owner'/2`,
+  spawned by `'__bp_ets_wait'/3`) wins `etsNew(named_table)`, seeds the row,
+  registers and parks in `timer:sleep(infinity)`, so "registered" also means
+  "seeded". A write that does not read the `var` is one `etsPut`; one that does
+  (`x = f(x)`, `x += n`, `xs.push(v)`, `counts = counts.bump(k, n)` —
+  `ast.writeReadsVar`) is `std@beam:etsSwap(Tab, fun(X) -> New end)`
+  (`swapFun`), the compare-and-swap of 547 (ii) — `ets:select_replace` against
+  the value read, retried when another process wrote between. The checker
+  refuses no write and no initialiser. `PersistentTerm`: `ptGet`, put by
+  `'__bp_load'/0` from `-on_load` — except under `botopink test`, whose escript
+  loads its own module before `std@beam`: there `'__bp_load'/0` is exported
+  and the runner calls it (its own after the siblings load, each sibling's
+  from `'__bp_load_siblings'`); a write is a `ptPut`, which scans every
+  process (the writer's cost, 547). `beam_asm.zig` carries the same modes in
+  assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
   evaluated ONCE, in declaration order, at module load — `conformance/docs.md` § `val`, and
   what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
@@ -1886,8 +1859,7 @@ codegen/
   `'_botopink_init'/0` calls of its closure and its own; each module of the
   package with run-time state (`hasRunState`: a cached `val`, a module `var` of
   any `BeamMemory`) has an init that first erases that state
-  (`persistent_term:erase`, `erlang:erase`), reseeds each `Ets` var's table (a
-  `keyed: true` one emptied, then its seed rows put) and puts each
+  (`persistent_term:erase`), puts each `Ets` var's row back at its initialiser and puts each
   `PersistentTerm` var — no `-on_load` for it —, so every `run()` starts clean
   (806 (3)).
   wasm links a loaded package into the program's one module by name: its modules are never
@@ -2209,31 +2181,18 @@ codegen/
   write no register shadows (`emitAssign` → `emitMemoryWrite`) reach
   `std/beam`'s primitives as `call_ext`s into `std@beam`, under
   `'<file atom>@@<var>'` (`memoryKey` — the FILE's atom inside a type unit
-  too). A write only stages its operands into `x0..x2` and calls one of the
-  module's fixed helpers, written instruction by instruction:
-  `'__bp_pd_set'/2` (box and `pdPut`), `'__bp_ets'/2` + `'__bp_ets_wait'/3` +
-  `'__bp_ets_owner'/2` (the guard, the wait loop and the registered owner of
-  decision 39 — `etsNew` under `try`, seed, `register`, `timer:sleep(infinity)`),
-  `'__bp_ets_add'/3` (`etsBump`, the increment of `ast.classifyMemoryWrite`)
-  and `'__bp_ets_set'/3` (`etsPut` of the whole value). An unannotated `var`
-  (decisions 547, 877, `emitImplicitHelpers`) has three of its own:
-  `'__bp_tab_<var>'/0` (the table, the initialiser lowered there alone),
-  `'__bp_set_<var>'/1` (`etsPut`) and `'__bp_swap_<var>'/1` (`etsSwap` of the
-  lambda `{ x -> New }` the write site lowers). A `PersistentTerm` var
-  is put by `'__bp_load'/0`, named by `{attributes, [{on_load, [{'__bp_load',
-  0}]}]}` (`beamEmitter.writeOnLoadAttributes`) — the one attribute this
-  backend writes. **`keyed: true`** (decision 168): `lowerCall` →
-  `emitKeyedRowRead` and `emitMemoryWrite` → `emitKeyedRowWrite` stage
-  `(K, Rows)` / `({K, V}, Rows)` — the rows LAST, a literal list that calls
-  nothing, so no operand before it is parked and the frame counted for the
-  checked shape suffices — and call `'__bp_ets_at'/3` / `'__bp_ets_row'/3`
-  (`emitKeyedHelpers`: tag the seed `{'__bp_rows', Rows}`, call the guard,
-  `etsLookup` → `is_nonempty_list`, `get_list`, `is_tuple` + `test_arity` —
-  the validator wants the row's shape tested — and its element 2, else
-  `undefined`; `etsPut` of the row). The owner tests the seed with
-  `is_tagged_tuple` only in a module with a keyed var (`anyKeyedVar`), so no
-  other module's `.S` moved. The rows come from `erlang.zig`'s
-  `keyedSeedRows`. The language cells `run/beam_memory_*` and `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var`
+  too). A write only stages its operand into `x0` and calls one of the
+  module's helpers, written instruction by instruction: `'__bp_ets'/2` +
+  `'__bp_ets_wait'/3` + `'__bp_ets_owner'/2` (the guard, the wait loop and the
+  registered owner of decision 39 — `etsNew` under `try`, seed, `register`,
+  `timer:sleep(infinity)`), and for each `Ets` var three of its own
+  (decisions 547, 877, `emitImplicitHelpers`): `'__bp_tab_<var>'/0` (the table,
+  the initialiser lowered there alone), `'__bp_set_<var>'/1` (`etsPut`) and
+  `'__bp_swap_<var>'/1` (`etsSwap` of the lambda `{ x -> New }` the write site
+  lowers). A `PersistentTerm` var is put by `'__bp_load'/0`, named by
+  `{attributes, [{on_load, [{'__bp_load', 0}]}]}`
+  (`beamEmitter.writeOnLoadAttributes`) — the one attribute this backend
+  writes. The language cells `run/beam_memory_*` and `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var`
   print the erlang backend's values on beam.
 
 - **One module per `type` — policy 3, the same split `erlang.zig` made.** A

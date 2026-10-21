@@ -175,25 +175,15 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
 /// that evaluates to this atom recomputes its initialiser on every read, which
 /// is only observable for an initialiser that is both effectful and returns it.
 /// Front 17 — the helper functions a module with a module `var` carries
-/// (`memoryVarForms`, `etsOwnerForms`, `loadForms`) and the box a
-/// `ProcessDict` value is stored in.
+/// (`memoryVarForms`, `etsOwnerForms`, `loadForms`).
 const MEM_ETS_GUARD = "__bp_ets";
 const MEM_ETS_WAIT = "__bp_ets_wait";
 const MEM_ETS_OWNER = "__bp_ets_owner";
 const MEM_LOST = "__bp_lost";
 const MEM_LOAD = "__bp_load";
-const MEM_BOX = "__bp_var";
-/// Decision 168 — a `keyed: true` var's row read and row write, and the tag
-/// its seed carries to the owner: `{'__bp_rows', Rows}` is inserted as the
-/// table's rows, any other seed as the one row `{Name, Seed}`. No botopink
-/// value is a tuple led by this atom (the `MEM_BOX` reasoning).
-const MEM_ETS_AT = "__bp_ets_at";
-const MEM_ETS_ROW = "__bp_ets_row";
-const MEM_ETS_BUMP = "__bp_ets_bump";
-const MEM_ROWS = "__bp_rows";
-/// Decisions 547, 877 — `'__bp_tab_<var>'/0`, the table of an unannotated
-/// module `var`: its name once the owner holds it, else the guard seeded by
-/// the initialiser, evaluated there alone — any expression, run once.
+/// Decisions 547, 877 — `'__bp_tab_<var>'/0`, the table of an `Ets` module
+/// `var`: its name once the owner holds it, else the guard seeded by the
+/// initialiser, evaluated there alone — any expression, run once.
 const MEM_ETS_TAB = "__bp_tab_";
 
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
@@ -207,78 +197,6 @@ pub const PRIV_PREFIX = "__bp_priv__";
 /// Decision 513 (1): the prefix of a module's test unit — `'__test__@<pkg>@<mod>'`
 /// on erlang and beam, `__test__/<module path>` on commonJS and wasm.
 pub const TEST_UNIT_PREFIX = "__test__";
-
-/// Decision 168 — the rows of a `keyed: true` var's seed, as the
-/// `#(key, value)` entries of `Dict.ofEntries([…])` (none for
-/// `Dict.empty()`), folded at compile time: a key written twice keeps its
-/// LAST value at the place of that last entry (decision 174, what a chain of
-/// `insert` answers) — `ets:insert` of a list that repeats a key keeps an
-/// unspecified one. The checker admitted the shape (`infer.zig`
-/// `isKeyedSeed`); the beam backend reads the same rows.
-pub fn keyedSeedRows(arena: std.mem.Allocator, seed: ast.Expr) ![]const ast.Expr {
-    const cc = seed.call.kind.call;
-    if (cc.args.len == 0) return &.{};
-    const elems = cc.args[0].value.collection.kind.arrayLit.elems;
-    var rows: std.ArrayListUnmanaged(ast.Expr) = .empty;
-    var keys: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (elems) |entry| {
-        const key = try seedKeyText(arena, entry.collection.kind.tupleLit.elems[0]);
-        for (keys.items, 0..) |k, i| if (std.mem.eql(u8, k, key)) {
-            _ = keys.orderedRemove(i);
-            _ = rows.orderedRemove(i);
-            break;
-        };
-        try keys.append(arena, key);
-        try rows.append(arena, entry);
-    }
-    return rows.items;
-}
-
-/// A key no other key equals: a `comptime` one, by where it is written.
-fn uniqueKeyText(arena: std.mem.Allocator, e: ast.Expr) ![]const u8 {
-    const loc = e.getLoc();
-    return std.fmt.allocPrint(arena, "@{d}:{d}:{d}", .{ loc.line, loc.col, loc.expansion });
-}
-
-/// A seed key as text two equal keys share — the literal path of
-/// `ast.isMemorySeed` (an integer by its value, so `0x1` is `1`); a
-/// `comptime` key is its own (two of them are never folded together).
-fn seedKeyText(arena: std.mem.Allocator, e: ast.Expr) ![]const u8 {
-    return switch (e) {
-        .literal => |l| switch (l.kind) {
-            .numberLit => |n| blk: {
-                var digits: std.ArrayListUnmanaged(u8) = .empty;
-                for (n) |c| if (c != '_') try digits.append(arena, c);
-                if (std.fmt.parseInt(i128, digits.items, 0)) |v| break :blk std.fmt.allocPrint(arena, "i:{d}", .{v}) else |_| {}
-                break :blk std.fmt.allocPrint(arena, "f:{s}", .{n});
-            },
-            .stringLit => |t| std.fmt.allocPrint(arena, "s:{d}:{s}", .{ t.len, t }),
-            .null_ => "null",
-            else => uniqueKeyText(arena, e),
-        },
-        .identifier => |id| switch (id.kind) {
-            .ident => |n| n,
-            else => uniqueKeyText(arena, e),
-        },
-        .unaryOp => |uo| std.fmt.allocPrint(arena, "-({s})", .{try seedKeyText(arena, uo.expr.*)}),
-        .collection => |c| switch (c.kind) {
-            .grouped => |g| seedKeyText(arena, g.*),
-            .arrayLit, .tupleLit => blk: {
-                const items = if (c.kind == .arrayLit) c.kind.arrayLit.elems else c.kind.tupleLit.elems;
-                var out: std.ArrayListUnmanaged(u8) = .empty;
-                try out.appendSlice(arena, if (c.kind == .arrayLit) "[" else "#(");
-                for (items) |x| {
-                    try out.appendSlice(arena, try seedKeyText(arena, x));
-                    try out.append(arena, ',');
-                }
-                try out.append(arena, ')');
-                break :blk out.items;
-            },
-            else => uniqueKeyText(arena, e),
-        },
-        else => uniqueKeyText(arena, e),
-    };
-}
 
 /// True when EVALUATING this expression can be observed — it calls something,
 /// branches, loops, binds, or is a host/comptime construct whose shape this
@@ -312,11 +230,10 @@ pub fn hasRunState(program: ast.Program) bool {
     return false;
 }
 
-const RunState = enum { none, cached, process_dict, ets, persistent_term };
+const RunState = enum { none, cached, ets, persistent_term };
 
 fn runStateOf(v: ast.ValDecl) RunState {
     if (v.memory()) |mem| return switch (mem.mode) {
-        .processDict => .process_dict,
         .ets => .ets,
         .persistentTerm => .persistent_term,
     };
@@ -2296,7 +2213,6 @@ fn emitErlangModule(
         switch (mem.mode) {
             .ets => any_ets_var = true,
             .persistentTerm => try pt_vars.append(alloc, v),
-            .processDict => {},
         }
     }
 
@@ -6040,8 +5956,7 @@ const Emitter = struct {
     ///
     /// Decision 806 (3) — `clear` (a loaded package's module): the init first
     /// erases what an earlier `run()` left — each cached `val`'s
-    /// `persistent_term` entry, each `ProcessDict` `var`'s key —, reseeds each
-    /// `Ets` var's table and puts each `PersistentTerm` var (`loadForms` is
+    /// `persistent_term` entry —, reseeds each `Ets` var's row and puts each `PersistentTerm` var (`loadForms` is
     /// not emitted for it), so the body runs whole again and every `var`
     /// starts from its declaration.
     fn initForms(this: *Emitter, b: Ast.Builder, out: *Forms, body: []const ast.ValDecl, clear: ?ast.Program) !void {
@@ -6054,7 +5969,6 @@ const Emitter = struct {
             .val => |v| switch (runStateOf(v)) {
                 .none => {},
                 .cached => try stmts.append(b.arena, try b.remote("persistent_term", "erase", &.{try b.tuple(&.{ Ast.Expr.a(this.erl_atom), Ast.Expr.a(v.name) })})),
-                .process_dict => try stmts.append(b.arena, try b.remote("erlang", "erase", &.{try this.memoryKey(b, v.name)})),
                 .ets => try this.etsReseed(b, &stmts, v),
                 .persistent_term => try stmts.append(b.arena, try this.beamPrim(b, "ptPut", &.{ try this.memoryKey(b, v.name), try this.memoryInit(b, v) })),
             },
@@ -6076,14 +5990,13 @@ const Emitter = struct {
 
     // ── module `var` storage (front 17, `beamMemory`) ────────────────────────
     //
-    // A module-level `var` is one value per execution context — on the BEAM,
-    // per PROCESS — and `#[compiler.beamMemory(.<Mode>)]` widens it. Every read is still
-    // the 0-arity reader `name()`; the reader and every write lower onto the
-    // host primitives of `std/beam` (decision 43's layer 1), reached as remote
-    // calls into `std@beam`, so no line here names the process dictionary, ETS
-    // or `persistent_term`. The storage is named `'<module atom>@@<var>'` —
-    // the process-dictionary key, the ETS table and its registered owner, the
-    // `persistent_term` key — so two modules declaring the same `var` name keep
+    // A module-level `var` is one value for the whole program (decision 547):
+    // a one-row ETS table, or `persistent_term` under
+    // `#[compiler.beamMemory(.PersistentTerm)]`. Every read is still the
+    // 0-arity reader `name()`; the reader and every write lower onto the host
+    // primitives of `std/beam` (decision 43's layer 1), reached as remote calls
+    // into `std@beam`. The storage is named `'<module atom>@@<var>'` — the ETS
+    // table and its registered owner, the `persistent_term` key — so two modules declaring the same `var` name keep
     // two values (decision 109's `@@` separator, which no path atom contains).
 
     /// `'<module atom>@@<name>'` — where module `var` `name` is stored.
@@ -6097,46 +6010,22 @@ const Emitter = struct {
     }
 
     /// The reader of a module `var`, per mode:
-    /// - `ProcessDict` — the value this process put, else the declaration's,
-    ///   evaluated and put on the first read so an effectful initialiser runs
-    ///   once per process. The value is stored boxed (`{'__bp_var', V}`): a
-    ///   botopink `null` is `undefined`, which is also what an absent key reads.
-    /// - `Ets` — `lookup_element` on the table the guard answers (`etsOwnerForms`).
+    /// - `Ets` — `lookup_element` on the table `'__bp_tab_<var>'/0` answers
+    ///   (`etsTabForms`, `etsOwnerForms`).
     /// - `PersistentTerm` — the term `'__bp_load'/0` put when the module loaded.
     fn memoryVarForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl, mem: ast.Memory) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(if (mem.implicit)
-            try std.fmt.allocPrint(b.arena, "var {s} — the program's one value, an ETS row", .{v.name})
-        else
-            try std.fmt.allocPrint(b.arena, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() })) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "var {s} — beamMemory(.{s})", .{ v.name, mem.mode.spelling() })) });
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;
         this.resetLocals();
         const key = try this.memoryKey(b, v.name);
         const body: Ast.Expr = switch (mem.mode) {
-            .processDict => blk: {
-                const boxed = Ast.Expr.v("__BpV");
-                const fresh = Ast.Expr.v("__BpInit");
-                break :blk try b.caseOf(try this.beamPrim(b, "pdGet", &.{key}), &.{
-                    try b.clause(&.{try b.tuple(&.{ Ast.Expr.a(MEM_BOX), boxed })}, &.{}, &.{boxed}),
-                    try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{
-                        try b.match(fresh, try this.memoryInit(b, v)),
-                        try this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), fresh }) }),
-                        fresh,
-                    }),
-                });
-            },
-            // A `keyed: true` var has no whole value to read (the checker
-            // reads it one row at a time); its reader is the guard, which
-            // `'_botopink_init'/0` calls, so the table exists from load.
-            .ets => if (mem.keyed)
-                try this.fileCall(b, MEM_ETS_GUARD, &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_ROWS), try this.keyedRows(b, v.name) }) })
-            else
-                try this.beamPrim(b, "etsGet", &.{ try this.etsTable(b, v.name), key, .{ .number = "2" } }),
+            .ets => try this.beamPrim(b, "etsGet", &.{ try this.etsTable(b, v.name), key, .{ .number = "2" } }),
             .persistentTerm => try this.beamPrim(b, "ptGet", &.{key}),
         };
         try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{body})));
-        if (mem.implicit) try this.etsTabForms(b, out, v);
+        if (mem.mode == .ets) try this.etsTabForms(b, out, v);
     }
 
     /// Decisions 547, 877 — `'__bp_tab_<var>'() -> case erlang:whereis(Key)
@@ -6168,64 +6057,32 @@ const Emitter = struct {
         return this.exprNode(b, v.value.*);
     }
 
-    /// `'__bp_ets'(Name, Seed)` — the table of `Ets` var `name`, created and
-    /// seeded by its owner the first time anything reaches it (the guard every
-    /// read and write goes through, decision 39). The seed is the declaration's
-    /// initialiser, a literal or a `comptime` value (the checker's rule), so it
-    /// can be written at every site.
+    /// `'__bp_tab_<var>'()` — the table of `Ets` var `name` (`etsTabForms`).
     fn etsTable(this: *Emitter, b: Ast.Builder, name: []const u8) !Ast.Expr {
-        const decl = this.module_var_decls.get(name).?;
-        if (decl.memory().?.implicit) return this.fileCall(b, try this.etsTabName(b, name), &.{});
-        return this.fileCall(b, MEM_ETS_GUARD, &.{ try this.memoryKey(b, name), try this.memoryInit(b, decl) });
+        return this.fileCall(b, try this.etsTabName(b, name), &.{});
     }
 
-    /// Decision 806 (3) — `Ets` var `v`'s table back at its seed: a plain
-    /// var's one row rewritten, a `keyed: true` var's rows emptied and the
-    /// seed's rows put again.
+    /// Decision 806 (3) — `Ets` var `v`'s one row back at its initialiser.
     fn etsReseed(this: *Emitter, b: Ast.Builder, stmts: *std.ArrayListUnmanaged(Ast.Expr), v: ast.ValDecl) !void {
         const key = try this.memoryKey(b, v.name);
-        if (v.memory().?.keyed) {
-            const tab = try this.fileCall(b, MEM_ETS_GUARD, &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_ROWS), try this.keyedRows(b, v.name) }) });
-            try stmts.append(b.arena, try b.remote("ets", "delete_all_objects", &.{tab}));
-            try stmts.append(b.arena, try this.beamPrim(b, "etsPut", &.{ tab, try this.keyedRows(b, v.name) }));
-            return;
-        }
         try stmts.append(b.arena, try this.beamPrim(b, "etsPut", &.{ try this.etsTable(b, v.name), try b.tuple(&.{ key, try this.memoryInit(b, v) }) }));
     }
 
     /// A write to module `var` `name` (`name = value` / `name += value`).
+    /// `Ets` (decisions 547 (ii), 877): a write that reads the `var` is
+    /// `std@beam:etsSwap(Tab, fun(X) -> New end)`, the new value computed from
+    /// the one read and stored only if no other process wrote between, else
+    /// read again; one that does not read it is one insert. `PersistentTerm`:
+    /// a put, which scans every process (the writer's cost, 547).
     fn memoryWrite(this: *Emitter, b: Ast.Builder, name: []const u8, mem: ast.Memory, plus: bool, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
         const key = try this.memoryKey(b, name);
-        switch (mem.mode) {
-            .ets => {
-                if (mem.keyed) return this.keyedRowWrite(b, name, value);
-                const tab = try this.etsTable(b, name);
-                // Decisions 547 (ii), 877 — the unannotated default: a write
-                // that reads the `var` is `std@beam:etsSwap(Tab, fun(X) -> New
-                // end)`, the new value computed from the one read and stored
-                // only if no other process wrote between, else read again; one
-                // that does not read it is one insert.
-                if (mem.implicit) return switch (ast.classifyMemoryWrite(name, plus, &value)) {
-                    .whole => this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
-                    .bump, .recompose => this.beamPrim(b, "etsSwap", &.{ tab, try this.swapFun(b, name, plus, value, at) }),
-                };
-                switch (ast.classifyMemoryWrite(name, plus, &value)) {
-                    // Decision 40: an increment is the host's atomic counter —
-                    // integers only, which the checker has already enforced.
-                    .bump => |bump| {
-                        const incr = try this.exprNode(b, bump.incr.*);
-                        const by: Ast.Expr = if (bump.negate) .{ .unop = .{ .op = "-", .operand = try b.ptr(incr) } } else incr;
-                        return this.beamPrim(b, "etsBump", &.{ tab, key, by });
-                    },
-                    // `recompose` is refused by the checker (design §5(b)).
-                    .whole, .recompose => return this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
-                }
-            },
-            .processDict => return this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), try this.memoryNewValue(b, name, plus, value, at) }) }),
-            // Refused by the checker (design §5(a)); written as a put so a
-            // program that reaches here unchecked still means what it says.
-            .persistentTerm => return this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
-        }
+        return switch (mem.mode) {
+            .ets => if (ast.writeReadsVar(name, plus, &value))
+                this.beamPrim(b, "etsSwap", &.{ try this.etsTable(b, name), try this.swapFun(b, name, plus, value, at) })
+            else
+                this.beamPrim(b, "etsPut", &.{ try this.etsTable(b, name), try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
+            .persistentTerm => this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
+        };
     }
 
     /// `fun(X) -> New end` — the new value of module `var` `name` as a
@@ -6250,75 +6107,6 @@ const Emitter = struct {
         const rhs = try b.arena.create(ast.Expr);
         rhs.* = value;
         return this.exprNode(b, .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = lhs, .rhs = rhs } });
-    }
-
-    // ── `keyed: true` (decision 168) ─────────────────────────────────────────
-    //
-    // A `keyed: true` `Dict` is one ETS row per key in the var's table. The
-    // checker admits three shapes (`infer.zig` `checkKeyedWrite`,
-    // `noteKeyedRowRead`): the seed `Dict.empty()` / `Dict.ofEntries([…])` of
-    // literals, the row read `name.at(key)` and the row write
-    // `name = name.insert(key, value)`. Each lowers onto the module's helpers
-    // (`etsOwnerForms`), which reach the table through the same guard and
-    // registered owner as a whole-value `Ets` var, seeded with
-    // `{'__bp_rows', Rows}`:
-    //
-    //     counts.at(K)                     '__bp_ets_at'(Name, Rows, K)
-    //     counts = counts.insert(K, V)     '__bp_ets_row'(Name, Rows, {K, V})
-    //     counts = counts.bump(K, N)       '__bp_ets_bump'(Name, Rows, K, N)
-    //                                      (ets:update_counter(T, K, N, {K, 0}), decision 340)
-
-    /// The row read `name.at(key)` of a `keyed: true` var, or null for any
-    /// other call.
-    fn keyedRowRead(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!?Ast.Expr {
-        if (cc.is_builtin or cc.optional or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "at")) return null;
-        const recv = cc.receiver orelse return null;
-        if (!(recv.* == .identifier and recv.identifier.kind == .ident)) return null;
-        const name = recv.identifier.kind.ident;
-        if (this.locals.contains(name)) return null;
-        const mem = this.module_vars.get(name) orelse return null;
-        if (!mem.keyed) return null;
-        return try this.fileCall(b, MEM_ETS_AT, &.{
-            try this.memoryKey(b, name),
-            try this.keyedRows(b, name),
-            try this.exprNode(b, cc.args[0].value.*),
-        });
-    }
-
-    /// The row write `name = name.insert(key, value)` — `ets:insert` of the
-    /// one row `{Key, Value}`.
-    fn keyedRowWrite(this: *Emitter, b: Ast.Builder, name: []const u8, value: ast.Expr) anyerror!Ast.Expr {
-        const cc = value.call.kind.call;
-        if (std.mem.eql(u8, cc.callee, "bump")) return this.fileCall(b, MEM_ETS_BUMP, &.{
-            try this.memoryKey(b, name),
-            try this.keyedRows(b, name),
-            try this.exprNode(b, cc.args[0].value.*),
-            try this.exprNode(b, cc.args[1].value.*),
-        });
-        return this.fileCall(b, MEM_ETS_ROW, &.{
-            try this.memoryKey(b, name),
-            try this.keyedRows(b, name),
-            try b.tuple(&.{ try this.exprNode(b, cc.args[0].value.*), try this.exprNode(b, cc.args[1].value.*) }),
-        });
-    }
-
-    /// The seed of `keyed: true` var `name` as the table's rows,
-    /// `[{K, V}, …]` (`keyedSeedRows`).
-    fn keyedRows(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
-        const decl = this.module_var_decls.get(name).?;
-        const entries = try keyedSeedRows(b.arena, decl.value.*);
-        var rows: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-        for (entries) |entry| {
-            const tl = entry.collection.kind.tupleLit;
-            try rows.append(b.arena, try b.tuple(&.{ try this.exprNode(b, tl.elems[0]), try this.exprNode(b, tl.elems[1]) }));
-        }
-        return b.list(rows.items);
-    }
-
-    fn anyKeyedVar(this: *const Emitter) bool {
-        var it = this.module_vars.valueIterator();
-        while (it.next()) |mem| if (mem.mode == .ets and mem.keyed) return true;
-        return false;
     }
 
     /// The `Ets` guard and the table owner, once per module (decision 39):
@@ -6378,15 +6166,7 @@ const Emitter = struct {
                 .body = try b.body(&.{A(MEM_LOST)}),
             }}),
         } };
-        // Decision 168: a module with a `keyed: true` var seeds by the
-        // seed's tag — `{'__bp_rows', Rows}` is the table's rows, any other
-        // seed the one row `{Name, Seed}`. A module without one keeps the
-        // plain row.
-        const keyed = this.anyKeyedVar();
-        const seeded: Ast.Expr = if (keyed) try b.caseOf(seed, &.{
-            try b.clause(&.{try b.tuple(&.{ A(MEM_ROWS), V("Rows") })}, &.{}, &.{V("Rows")}),
-            try b.clause(&.{V("_")}, &.{}, &.{try b.tuple(&.{ name, seed })}),
-        }) else try b.tuple(&.{ name, seed });
+        const seeded = try b.tuple(&.{ name, seed });
         const own = try b.caseOf(created, &.{
             try b.clause(&.{A(MEM_LOST)}, &.{}, &.{A("ok")}),
             .{ .patterns = try b.exprs(&.{V("_")}), .body = try b.body(&.{
@@ -6403,37 +6183,12 @@ const Emitter = struct {
             .blank,
             try blockFunction(b, MEM_ETS_OWNER, &.{ name, seed }, try b.body(&.{own})),
         });
-        if (!keyed) return;
-        // '__bp_ets_at'(Name, Rows, Key) — the row's value, `undefined` (null)
-        // when the key has no row; '__bp_ets_row'(Name, Rows, Row) — one row.
-        const rows_seed = try b.tuple(&.{ A(MEM_ROWS), V("Rows") });
-        const at = try b.caseOf(try this.beamPrim(b, "etsLookup", &.{ try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }), V("Key") }), &.{
-            try b.clause(&.{try b.list(&.{try b.tuple(&.{ V("_"), V("Value") })})}, &.{}, &.{V("Value")}),
-            try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
-        });
-        try out.appendSlice(b.arena, &.{
-            .blank,
-            try blockFunction(b, MEM_ETS_AT, &.{ name, V("Rows"), V("Key") }, try b.body(&.{at})),
-            .blank,
-            try blockFunction(b, MEM_ETS_ROW, &.{ name, V("Rows"), V("Row") }, try b.body(&.{
-                try this.beamPrim(b, "etsPut", &.{ try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }), V("Row") }),
-            })),
-            .blank,
-            try blockFunction(b, MEM_ETS_BUMP, &.{ name, V("Rows"), V("Key"), V("By") }, try b.body(&.{
-                try this.beamPrim(b, "etsBumpFrom", &.{
-                    try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }),
-                    V("Key"),
-                    V("By"),
-                    try b.tuple(&.{ V("Key"), Ast.Expr{ .number = "0" } }),
-                }),
-            })),
-        });
     }
 
     /// `'__bp_load'/0`, the module's `-on_load` function: every
     /// `PersistentTerm` var put under its key, in declaration order. It runs
-    /// once per load — and again on every code reload, which is why a
-    /// run-time write to one is refused rather than lowered.
+    /// once per load — and again on every code reload, which puts back the
+    /// declaration's value over a run-time write.
     fn loadForms(this: *Emitter, b: Ast.Builder, out: *Forms, vars: []const ast.ValDecl) !void {
         const saved = this.indent;
         this.indent = 1;
@@ -9156,7 +8911,6 @@ const Emitter = struct {
     // ── calls ─────────────────────────────────────────────────────────────────
 
     fn callNode(this: *Emitter, b: Ast.Builder, c: anytype) anyerror!Ast.Expr {
-        if (c.kind == .call) if (try this.keyedRowRead(b, c.kind.call)) |row| return row;
         return switch (c.kind) {
             .pipeline => |p| this.pipelineNode(b, p),
             .call => |cc| if (cc.is_builtin)
@@ -12419,9 +12173,9 @@ const Emitter = struct {
             },
             else => {},
         };
-        for ([_][]const u8{ MEM_ETS_GUARD, MEM_ETS_AT, MEM_ETS_ROW, MEM_ETS_BUMP }) |n| try names.put(b.arena, n, {});
+        try names.put(b.arena, MEM_ETS_GUARD, {});
         for (program.decls) |decl| switch (decl) {
-            .val => |v| if (v.memory()) |mem| if (mem.implicit) try names.put(b.arena, try std.fmt.allocPrint(b.arena, MEM_ETS_TAB ++ "{s}", .{v.name}), {}),
+            .val => |v| if (v.memory()) |mem| if (mem.mode == .ets) try names.put(b.arena, try std.fmt.allocPrint(b.arena, MEM_ETS_TAB ++ "{s}", .{v.name}), {}),
             else => {},
         };
         _ = this;

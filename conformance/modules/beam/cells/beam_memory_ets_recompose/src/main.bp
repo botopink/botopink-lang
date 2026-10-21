@@ -1,7 +1,7 @@
-//// Design §5(b) — under `beamMemory(.Ets)`, a write that recomputes the value
-//// from what it just read loses one of two concurrent runs. The increment
-//// (`hits += n`, `hits = hits + n`) is the one exception, because it lowers to
-//// the host's atomic counter; `hits * 2 + 1` is not an increment.
+//// Decision 547 (ii) — under `beamMemory(.Ets)`, a write that recomputes the
+//// value from what it just read (`hits * 2 + 1`) is atomic on the BEAM, a
+//// compare-and-swap retried when another process wrote between: `3`. It used to
+//// be refused, the increment alone being atomic.
 
 import {io.terminal.print} from "std";
 

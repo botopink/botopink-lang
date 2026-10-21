@@ -199,10 +199,6 @@ pub const ComptimeOutput = struct {
         /// `codegen/target_check.zig` refuses at emit the first whose host has
         /// no binding for the target (decision 798 (4)).
         std_host_calls: []const envMod.StdCall = &.{},
-        /// Decision 167 — this module's first `#[compiler.beamMemory(…)]`
-        /// (`Env.beamMemoryAt`), refused at emit off the BEAM
-        /// (`codegen/target_check.zig`).
-        beam_memory_at: ?envMod.TargetSite = null,
         /// Decision 798 (1) — the resolved program: the module as written once
         /// comptime has run (folded values spliced, template expansions and
         /// specialised copies in place, the decorators' contributions merged,
@@ -2144,7 +2140,6 @@ fn analyzeSource(
                 // The target's refusals are the emit's (decision 798 (4)),
                 // located as an inference error here would be.
                 for (reanalysis.success.env.stdHostCalls.items) |*c| c.site = locateSite(arena, c.site, source, &env);
-                if (reanalysis.success.env.beamMemoryAt) |*b| b.* = locateSite(arena, b.*, source, &env);
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
                 return reanalysis;
@@ -4792,7 +4787,6 @@ pub fn compileTypesOnly(
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
                         .std_host_calls = succ.env.stdHostCalls.items,
-                        .beam_memory_at = succ.env.beamMemoryAt,
                     } },
                 });
             },
@@ -5216,7 +5210,6 @@ fn compileOnce(
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
                         .std_host_calls = succ.env.stdHostCalls.items,
-                        .beam_memory_at = succ.env.beamMemoryAt,
                     } },
                 });
             },

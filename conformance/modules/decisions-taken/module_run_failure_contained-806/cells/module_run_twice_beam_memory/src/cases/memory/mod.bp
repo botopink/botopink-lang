@@ -11,7 +11,6 @@ var versao: i32 = marcar(101);
 #[compiler.beamMemory(.Ets)]
 var hits: i32 = 0;
 
-#[compiler.beamMemory(.Ets(keyed: true))]
 var counts: Dict<string, i32> = Dict.empty();
 
 pub fn main() -> void {

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: a `keyed: true` var is re-seeded one row per entry whenever its table is re-created — `counts`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries
-at src/main.bp:9:46

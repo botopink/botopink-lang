@@ -158,15 +158,15 @@ fi
 
 echo "==> check and build print a type error's hint under its excerpt"
 P="$(project hint)"
-printf '#[compiler.beamMemory(.PersistentTerm)]\nvar version: i32 = 101;\n\npub fn main() -> void {\n    version = 102;\n}\n' >"$P/src/main.bp"
+printf 'val version: i32 = 101;\n\npub fn main() -> void {\n    version = 102;\n}\n' >"$P/src/main.bp"
 run "$P" check
-expect_code 1 "check of a PersistentTerm write"
+expect_code 1 "check of a val write"
 expect_out "= hint: " "check prints the type error's hint"
-expect_out "#[compiler.beamMemory(.Ets)]" "check's hint names the fix"
+expect_out "Declare it \`var version = …\`" "check's hint names the fix"
 run "$P" build
-expect_code 1 "build of a PersistentTerm write"
+expect_code 1 "build of a val write"
 expect_out "= hint: " "build prints the type error's hint"
-expect_out "#[compiler.beamMemory(.Ets)]" "build's hint names the fix"
+expect_out "Declare it \`var version = …\`" "build's hint names the fix"
 
 # ── build does not execute the program it compiles ───────────────────────────
 # erlang and beam are the targets whose build spawns anything, and it is one
@@ -1515,23 +1515,13 @@ if have node && have erl && have erlc && have wasmtime; then
   run "$CELLS" cell check another_reason
   expect_code 1 "a narrowing whose excluded target refuses for another reason"
   expect_out 'wasm: excluded by "targets", and wasm refuses it for another reason than a host binding' "names the refusal that is not a host binding"
-  # Decision 167: BEAM storage stands a narrowing on commonJS and wasm, and
-  # never excuses beam, which binds it.
-  mkdir -p "$CELLS/beam_memory/src"
-  printf 'import {io.terminal.print} from "std";\n#[compiler.beamMemory(.ProcessDict)]\nvar seen: i32 = 0;\n\npub fn main() -> void {\n    seen = 1;\n    print("ok");\n}\n' >"$CELLS/beam_memory/src/main.bp"
-  printf '{ "name": "beam_memory", "version": "0.0.1", "src": "src/", "targets": ["erlang"] }\n' >"$CELLS/beam_memory/botopink.json"
-  run "$CELLS" cell check beam_memory
-  expect_code 1 "a #[compiler.beamMemory(…)] narrowing that leaves beam out"
-  expect_out 'beam: excluded by "targets", but `botopink build --target beam` accepts the cell' "beam binds BEAM storage: the narrowing is refused"
-  expect_no_out 'commonJS: excluded' "commonJS's #[compiler.beamMemory(…)] refusal stands the narrowing"
-  expect_no_out 'wasm: excluded' "wasm's refusal stands the narrowing"
   # A cell is a project like any other: no manifest, no cell (decision 475).
   mkdir -p "$CELLS/no_manifest/src"
   printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("x");\n}\n' >"$CELLS/no_manifest/src/main.bp"
   run "$CELLS" cell check no_manifest
   expect_code 1 "a cell without botopink.json"
   expect_out "a cell holds botopink.json — its own manifest" "names the missing manifest"
-  rm -rf "$CELLS/another_reason" "$CELLS/beam_memory" "$CELLS/no_manifest"
+  rm -rf "$CELLS/another_reason" "$CELLS/no_manifest"
 
   # The label under the caret (decision 485): `label <text>` after `at`, compared
   # exactly; a label that changes or disappears is a red, never overwritten.

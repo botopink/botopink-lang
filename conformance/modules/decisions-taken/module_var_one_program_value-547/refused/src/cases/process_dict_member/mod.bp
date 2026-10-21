@@ -1,0 +1,10 @@
+//// Decision 547 — `ProcessDict` left `BeamMemory`: a module `var` is one value for the whole
+//// program, never one per process, so the member is refused at the annotation as any
+//// unknown member is.
+
+#[compiler.beamMemory(.ProcessDict)]
+var hits: i32 = 0;
+
+pub fn read() -> i32 {
+    return hits;
+}

@@ -1,1 +1,1 @@
-{ "name": "beam_memory_persistent_term", "targets": ["erlang", "beam"] }
+{ "name": "beam_memory_persistent_term" }

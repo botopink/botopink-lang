@@ -1,7 +1,7 @@
 //! codegen: module-level `var` storage on the BEAM — front 17 steps 4–5
-//! (`beamMemory`, decisions 39, 40 and 43). A module `var` with no annotation
-//! is one value for the whole program, a one-row ETS table (decisions 547,
-//! 877); `#[compiler.beamMemory(.ProcessDict)]` still keeps one per process. Every fixture
+//! (`beamMemory`, decisions 39, 43, 547 and 877). A module `var` is one value
+//! for the whole program: a one-row ETS table (`Ets`, the default) or a
+//! `persistent_term` (`#[compiler.beamMemory(.PersistentTerm)]`). Every fixture
 //! here runs its program and asserts what it PRINTED, because the property is
 //! behaviour across processes: the three modes are indistinguishable in one
 //! process, and a mode that silently fell back to another would still print
@@ -13,41 +13,11 @@
 const std = @import("std");
 const h = @import("helpers.zig");
 
-// `ProcessDict` (the default, said out loud): each spawned request starts
-// from the declaration's value and sees only its own three writes; the
-// process that spawned them never sees any of them.
-test "erlang: beam memory ---- a ProcessDict var is one value per process" {
-    try h.assertErlangRunLog(std.testing.allocator,
-        \\import {async} from "std";
-        \\
-        \\#[compiler.beamMemory(.ProcessDict)]
-        \\var hits: i32 = 0;
-        \\
-        \\async fn request() -> Async<i32> {
-        \\    hits = hits + 1;
-        \\    hits = hits + 1;
-        \\    hits = hits + 1;
-        \\    return hits;
-        \\}
-        \\
-        \\async fn main() -> Async<void> {
-        \\    val seen = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
-        \\    print(seen);
-        \\    print(hits);
-        \\}
-        \\
-        \\import {io.terminal.print} from "std";
-    , "[3, 3, 3, 3, 3]\n0\n", &.{
-        "std@beam:pdGet(",
-        "std@beam:pdPut(",
-    });
-}
-
 // Decision 39's fixture: five requests × three increments on one `Ets` var
 // read `15`. Without the registered owner the table died with whichever
 // request created it — each request read `3` and the counter ended at `0`.
-// `hits = hits + 1` is the increment form, lowered to the host's atomic
-// counter (decision 40).
+// `hits = hits + 1` reads the `var` it writes: a compare-and-swap
+// (`etsSwap`, decision 547 (ii)), so no increment is lost.
 test "erlang: beam memory ---- an Ets var is one value per node, and survives the process that created it" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
@@ -70,12 +40,12 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\
         \\import {io.terminal.print} from "std";
     , "5\n15\n", &.{
-        "std@beam:etsBump(",
+        "std@beam:etsSwap(",
         "'__bp_ets_owner'(Name, Seed) ->",
     });
 }
 
-// A whole-value write under `Ets` (`hits = 40`) is a put, not an increment,
+// A whole-value write under `Ets` (`hits = 40`) is a put, not a swap,
 // and the next reader — in any process — sees it.
 test "erlang: beam memory ---- an Ets var written whole is read back from another process" {
     try h.assertErlangRunLog(std.testing.allocator,
@@ -102,8 +72,7 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
 }
 
 // `PersistentTerm`: put once, at load, by the module's `-on_load` function —
-// which is why a process spawned later reads it, and why the checker refuses
-// a write after load.
+// which is why a process spawned later reads it.
 test "erlang: beam memory ---- a PersistentTerm var is put at load and read from any process" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {async} from "std";
@@ -128,60 +97,12 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
     });
 }
 
-// Decision 168 — `keyed: true` stores the `Dict` one ETS row per key: two
-// processes each writing their own key keep both, where a whole-value write
-// would put one process's stale row back over the other's. The seed is the
-// table's rows, a repeated key keeping its last value (decision 174), and a
-// key with no row reads `null`.
-const keyed_program =
-    \\import {async, collections.Dict} from "std";
-    \\
-    \\#[compiler.beamMemory(.Ets(keyed: true))]
-    \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
-    \\
-    \\async fn writer(key: string) -> Async<i32> {
-    \\    var i = 0;
-    \\    while (i < 2000) {
-    \\        i += 1;
-    \\        counts = counts.insert(key, i);
-    \\    }
-    \\    return i;
-    \\}
-    \\
-    \\async fn main() -> Async<void> {
-    \\    val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
-    \\    print(done);
-    \\    print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
-    \\}
-    \\
-    \\import {io.terminal.print} from "std";
-;
-
-test "erlang: beam memory ---- a keyed Ets var writes and reads one row per key" {
-    try h.assertErlangRunLog(std.testing.allocator, keyed_program, "[2000, 2000]\n2000 2000 7 null\n", &.{
-        "'__bp_ets_row'(test@main@@counts, [{<<\"seed\">>, 7}], {Key, I@2})",
-        "'__bp_ets_at'(Name, Rows, Key) ->",
-        "std@beam:etsLookup(",
-        "{'__bp_rows', Rows} -> Rows;",
-    });
-}
-
-test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
-    try h.assertBeamRunLog(std.testing.allocator, keyed_program, "[2000, 2000]\n2000 2000 7 null\n", &.{
-        "{function, '__bp_ets_at', 3,",
-        "{function, '__bp_ets_row', 3,",
-        "{extfunc, std@beam, etsLookup, 2}",
-        "{test, is_tagged_tuple, {f, ",
-    });
-}
-
-// Decision 340 — `counts = counts.bump(k, n)` on a keyed var is one
-// `ets:update_counter(T, K, N, {K, 0})`: two processes bumping the SAME key lose none, and an
-// absent key counts from 0.
+// Decisions 340, 547 (ii) — `counts = counts.bump(k, n)` on a module `var` is
+// an `x = f(x)`, the compare-and-swap: two processes bumping the SAME key lose
+// none, and an absent key counts from 0.
 const bump_program =
     \\import {async, collections.Dict} from "std";
     \\
-    \\#[compiler.beamMemory(.Ets(keyed: true))]
     \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
     \\
     \\async fn worker(n: i32) -> Async<i32> {
@@ -203,18 +124,16 @@ const bump_program =
     \\import {io.terminal.print} from "std";
 ;
 
-test "erlang: beam memory ---- bump on a keyed Ets var loses no concurrent increment of one key" {
+test "erlang: beam memory ---- Dict.bump on a module var loses no concurrent increment of one key" {
     try h.assertErlangRunLog(std.testing.allocator, bump_program, "[2000, 2000]\n6000 15 null\n", &.{
-        "'__bp_ets_bump'(Name, Rows, Key, By) ->",
-        "std@beam:etsBumpFrom(",
-        "{Key, 0}",
+        "std@beam:etsSwap(",
     });
 }
 
-test "beam: beam memory ---- bump on a keyed Ets var loses no concurrent increment of one key" {
+test "beam: beam memory ---- Dict.bump on a module var loses no concurrent increment of one key" {
     try h.assertBeamRunLog(std.testing.allocator, bump_program, "[2000, 2000]\n6000 15 null\n", &.{
-        "{function, '__bp_ets_bump', 4,",
-        "{extfunc, std@beam, etsBumpFrom, 4}",
+        "{function, '__bp_swap_counts', 1,",
+        "{extfunc, std@beam, etsSwap, 2}",
     });
 }
 

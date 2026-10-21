@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[compiler.beamMemory(…)]` has no meaning on the commonJS backend
-at src/main.bp:11:3

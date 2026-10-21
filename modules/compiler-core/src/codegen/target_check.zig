@@ -7,8 +7,6 @@
 //!   (`std-unsupported-on-target`). Inference recorded each such call and the
 //!   host declarations it reaches, in order (`OkData.std_host_calls`); the
 //!   first call whose first unbound host is found is the refusal.
-//! - **Decision 167**: `#[compiler.beamMemory(…)]` off the BEAM is refused at
-//!   the module's first annotation (`OkData.beam_memory_at`).
 //! - **`std/beam`** (front 17): the analysis holds it for every module-level
 //!   `var`; a target that is not the BEAM emits it only when a module imports
 //!   it (`withoutBeamStorage`).
@@ -46,29 +44,25 @@ fn isBeam(lookup: []const u8) bool {
 /// The refusal of analysed module `ok` on the target `lookup` names, its
 /// texts allocated with `arena`, or null when the target takes it.
 pub fn refusalOf(arena: std.mem.Allocator, ok: ComptimeOutput.OkData, lookup: []const u8) !?TypeError {
-    return refusalIn(arena, ok.std_host_calls, ok.beam_memory_at, lookup);
+    return refusalIn(arena, ok.std_host_calls, lookup);
 }
 
-/// The refusal of the std calls `calls` (in inference order) and the
-/// `compiler.beamMemory` at `beam_memory_at` on the target `lookup` names.
-fn refusalIn(arena: std.mem.Allocator, calls: []const envMod.StdCall, beam_memory_at: ?envMod.TargetSite, lookup: []const u8) !?TypeError {
+/// The refusal of the std calls `calls` (in inference order) on the target
+/// `lookup` names.
+fn refusalIn(arena: std.mem.Allocator, calls: []const envMod.StdCall, lookup: []const u8) !?TypeError {
     for (calls) |call| {
         for (call.hosts) |h| if (ast.implementationFor(h.implementations, lookup) == null) {
             return located(try stdUnsupported(arena, call.module, call.name, h.name, lookup), call.site);
         };
     }
-    if (beam_memory_at) |site| if (!isBeam(lookup)) {
-        return located(try offBeamMemory(arena, lookup), site);
-    };
     return null;
 }
 
 /// The refusal of the target that comes before the refusal of a module's
 /// analysis (`ComptimeOutput.target_trace`): a std call inference met before
-/// the error, or a `compiler.beamMemory` once validation passed — the one the
-/// module answered when inference read the target.
+/// the error — the one the module answered when inference read the target.
 fn refusalBefore(arena: std.mem.Allocator, trace: *const envMod.TargetTrace, lookup: []const u8) !?TypeError {
-    return refusalIn(arena, trace.calls.items, trace.beam_memory_at, lookup);
+    return refusalIn(arena, trace.calls.items, lookup);
 }
 
 /// `te` at `site`, as inference located its errors (a rewritten
@@ -193,15 +187,4 @@ fn stdUnsupported(arena: std.mem.Allocator, mod_name: []const u8, name: []const 
         try std.fmt.allocPrint(arena, "{s}: std/{s}.{s} reaches `{s}`, which has no `.{s}(…)` implementation for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, reached, sp.member, sp.target });
     const hint = try std.fmt.allocPrint(arena, "The call is refused, not the import: the function reaches a host declaration with no binding for this target. Call it on a target the module supports (see libs/std/src/examples.md per-target coverage matrix), or give the declaration a `.{s}(…)` implementation (`#[external(…)]`).", .{sp.member});
     return TypeError.custom(msg, hint);
-}
-
-/// Decision 167 — the target is named as `--target` spells it (`node` is
-/// commonJS's lookup name).
-fn offBeamMemory(arena: std.mem.Allocator, tgt: []const u8) !TypeError {
-    const lookup = ast.ExternalLookup.of(tgt).member;
-    const t = if (std.mem.eql(u8, lookup, "node")) "commonJS" else lookup;
-    return TypeError.custom(
-        try std.fmt.allocPrint(arena, "`#[compiler.beamMemory(…)]` has no meaning on the {s} backend", .{t}),
-        try std.fmt.allocPrint(arena, "`compiler.beamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
-    );
 }

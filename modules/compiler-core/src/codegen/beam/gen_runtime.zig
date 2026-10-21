@@ -23,7 +23,7 @@
 //!   * `Ref` is the consumer's monitor of the generator, so a request to one
 //!     that already ended answers `done`;
 //!   * `Dict` is the sender's process dictionary, which the receiver takes
-//!     whole: a module `var` (`ProcessDict`), a `defer`'s watched names and an
+//!     whole: a `defer`'s watched names and an
 //!     `iter` loop's captured `var`s (a cell each, `erlang.zig`'s `GenCell`) read the same on both
 //!     sides. The generator's own reply address, `'__bp_gen_self'`, never
 //!     travels.

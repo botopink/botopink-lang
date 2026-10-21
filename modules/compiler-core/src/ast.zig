@@ -3547,42 +3547,33 @@ pub const ValDecl = struct {
 
     /// Where a module `var` lives on the BEAM (front 17, decision 43's layer
     /// 2): the `#[compiler.beamMemory(.<Mode>)]` it carries (decision 663),
-    /// and when it carries none the program's one value (decisions 547, 877):
-    /// a one-row ETS table, `implicit`. Null for a `val`. An unknown member
-    /// reads as the default here because inference has already refused it
-    /// (decision 41).
+    /// `Ets` when it carries none (decisions 547, 877). Null for a `val`. An
+    /// unknown member reads as the default here because inference has already
+    /// refused it (decision 41).
     pub fn memory(this: ValDecl) ?Memory {
         if (!this.mutable) return null;
         for (this.annotations) |a| {
             const arg = a.beamMemoryOf() orelse continue;
-            const mode: MemoryMode = if (std.mem.eql(u8, arg.case, "Ets"))
-                .ets
-            else if (std.mem.eql(u8, arg.case, "PersistentTerm"))
-                .persistentTerm
-            else
-                .processDict;
-            var keyed = false;
-            var it = arg.items();
-            while (it.next()) |item| {
-                const label = item.label orelse continue;
-                if (std.mem.eql(u8, label, "keyed")) keyed = std.mem.eql(u8, item.value, "true");
-            }
-            return .{ .mode = mode, .keyed = keyed, .loc = a.loc };
+            const mode: MemoryMode = if (std.mem.eql(u8, arg.case, "PersistentTerm")) .persistentTerm else .ets;
+            return .{ .mode = mode, .loc = a.loc };
         }
-        return .{ .mode = .ets, .implicit = true };
+        return .{ .mode = .ets };
     }
 };
 
-/// The three members of `BeamMemory` (decision 41). A module `var` with no
-/// annotation is `ets`, `Memory.implicit` (decisions 547, 877).
+/// The two members of `BeamMemory` (decision 547). `ets`, what a module `var`
+/// with no annotation means, is one value for the whole program, a one-row ETS
+/// table whose initialiser is any expression, run once, and whose every write
+/// is atomic — a write that reads the `var` it writes (`x = f(x)`) a
+/// compare-and-swap retried until no other process wrote between
+/// (`ets:select_replace`, 547 (ii)). `persistentTerm` is put once at load and
+/// read from any process; a write scans every process (the writer's cost).
 pub const MemoryMode = enum {
-    processDict,
     ets,
     persistentTerm,
 
     pub fn spelling(self: MemoryMode) []const u8 {
         return switch (self) {
-            .processDict => "ProcessDict",
             .ets => "Ets",
             .persistentTerm => "PersistentTerm",
         };
@@ -3592,67 +3583,15 @@ pub const MemoryMode = enum {
 /// A module `var`'s storage on the BEAM — `ValDecl.memory`.
 pub const Memory = struct {
     mode: MemoryMode,
-    /// `keyed: true` — a `Dict` stored one row per key (decision 51).
-    keyed: bool = false,
     /// The annotation's location; null for the unannotated default.
     loc: ?Loc = null,
-    /// Decisions 547, 877 — the unannotated default: one value for the whole
-    /// program, a one-row ETS table on the BEAM whose initialiser is any
-    /// expression, run once, and whose every write is atomic — a write that
-    /// reads the `var` it writes (`x = f(x)`) a compare-and-swap retried until
-    /// no other process wrote between (`ets:select_replace`).
-    implicit: bool = false,
 };
 
-/// What an assignment to the module `var` `name` does with the value it
-/// replaces — the shape `beamMemory(.Ets)` lowers and the checker refuses
-/// (design §5(b), decision 40). One reading, shared by `infer.zig` (which
-/// refuses `recompose`) and the BEAM emitters (which lower `bump` to the
-/// host's atomic increment), so the two can never disagree about which
-/// write is atomic.
-pub const MemoryWrite = union(enum) {
-    /// `x = e` where `e` does not read `x`: the whole value is replaced.
-    whole,
-    /// `x += e`, `x = x + e`, `x = e + x` or `x = x - e`, `e` not reading `x`:
-    /// an increment by `incr`, subtracted when `negate`.
-    bump: struct { incr: *const Expr, negate: bool = false },
-    /// The new value is computed from `x` any other way — read, recompute,
-    /// write: one of two concurrent runs can be lost.
-    recompose,
-};
-
-/// Classify the write `name <op> value` — `plus` is `+=`.
-pub fn classifyMemoryWrite(name: []const u8, plus: bool, value: *const Expr) MemoryWrite {
-    if (plus) {
-        if (exprMentions(value.*, name)) return .recompose;
-        return .{ .bump = .{ .incr = value } };
-    }
-    if (!exprMentions(value.*, name)) return .whole;
-    const inner = ungroup(value);
-    if (inner.* == .binaryOp) {
-        const bo = inner.binaryOp;
-        const lhs_is = isIdentNamed(ungroup(bo.lhs).*, name);
-        const rhs_is = isIdentNamed(ungroup(bo.rhs).*, name);
-        switch (bo.op) {
-            .add => {
-                if (lhs_is and !exprMentions(bo.rhs.*, name)) return .{ .bump = .{ .incr = bo.rhs } };
-                if (rhs_is and !exprMentions(bo.lhs.*, name)) return .{ .bump = .{ .incr = bo.lhs } };
-            },
-            .sub => if (lhs_is and !exprMentions(bo.rhs.*, name)) return .{ .bump = .{ .incr = bo.rhs, .negate = true } },
-            else => {},
-        }
-    }
-    return .recompose;
-}
-
-fn ungroup(e: *const Expr) *const Expr {
-    var cur = e;
-    while (cur.* == .collection and cur.collection.kind == .grouped) cur = cur.collection.kind.grouped;
-    return cur;
-}
-
-fn isIdentNamed(e: Expr, name: []const u8) bool {
-    return e == .identifier and e.identifier.kind == .ident and std.mem.eql(u8, e.identifier.kind.ident, name);
+/// Decision 547 (ii) — whether the write `name <op> value` (`plus` is `+=`)
+/// reads the module `var` it writes: such a write is the BEAM's
+/// compare-and-swap, any other one insert. One reading for both BEAM emitters.
+pub fn writeReadsVar(name: []const u8, plus: bool, value: *const Expr) bool {
+    return plus or exprMentions(value.*, name);
 }
 
 /// Does `e` read the name `name` anywhere? Conservative: a node kind this walk
@@ -3730,42 +3669,6 @@ pub fn exprMentions(e: Expr, name: []const u8) bool {
 fn stmtsMention(stmts: []const Stmt, name: []const u8) bool {
     for (stmts) |s| if (exprMentions(s.expr, name)) return true;
     return false;
-}
-
-/// The initialiser rule of `beamMemory(.Ets)` (design §5(d), step 4): the
-/// value a missing table is re-seeded from must be one that can be computed
-/// again at any moment nobody chose, so it is a literal or a `comptime`
-/// expression — `isComptimeExpr()` plus the literal path — and **not** a
-/// purity judgement, which the compiler cannot make (`EffectKind` is the
-/// declared return wrappers). The literal path: a number, string or `null`
-/// literal, a negated one, and an array or tuple literal of them.
-pub fn isMemorySeed(e: Expr) bool {
-    if (e.isComptimeExpr()) return true;
-    return switch (e) {
-        .literal => |l| switch (l.kind) {
-            .numberLit, .stringLit, .null_ => true,
-            else => false,
-        },
-        .identifier => |id| switch (id.kind) {
-            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
-            else => false,
-        },
-        .unaryOp => |uo| uo.op == .neg and isMemorySeed(uo.expr.*),
-        .collection => |c| switch (c.kind) {
-            .arrayLit => |al| blk: {
-                if (al.spread != null or al.spreadExpr != null) break :blk false;
-                for (al.elems) |x| if (!isMemorySeed(x)) break :blk false;
-                break :blk true;
-            },
-            .tupleLit => |tl| blk: {
-                for (tl.elems) |x| if (!isMemorySeed(x)) break :blk false;
-                break :blk true;
-            },
-            .grouped => |g| isMemorySeed(g.*),
-            else => false,
-        },
-        else => false,
-    };
 }
 
 /// Top-level test declaration: `test { body }` or `test "name" { body }`.

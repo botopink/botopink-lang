@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `keyed` needs a keyed container — an `i32` has no key
-at src/main.bp:6:3

@@ -1,0 +1,24 @@
+//// Decisions 340 and 547 (ii) — `counts = counts.bump(k, n)` on a module `var` is a plain
+//// `Dict.bump`, and an `x = f(x)`: atomic on the BEAM, so two processes bumping the SAME key
+//// 2 000 times each, by 1 and by 2, lose none (`6000`); a key with no entry counts from 0,
+//// the seed's from its seed (`10 + 5`), and a key never bumped reads `null`.
+
+import {async, collections.Dict, io.terminal.print} from "std";
+
+var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 10)]);
+
+async fn worker(by: i32) -> Async<i32> {
+    var i = 0;
+    while (i < 2000) {
+        i += 1;
+        counts = counts.bump("hot", by);
+    }
+    return i;
+}
+
+pub async fn main() -> Async<void> {
+    val done = await async.runAll([{ -> worker(1) }, { -> worker(2) }]);
+    counts = counts.bump("seed", 5);
+    print(done);
+    print(counts.at("hot"), counts.at("seed"), counts.at("none"));
+}

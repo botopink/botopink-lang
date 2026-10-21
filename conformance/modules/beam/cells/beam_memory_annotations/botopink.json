@@ -1,1 +1,1 @@
-{ "name": "beam_memory_annotations", "targets": ["erlang", "beam"] }
+{ "name": "beam_memory_annotations" }

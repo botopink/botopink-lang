@@ -503,13 +503,11 @@ pub const TemplateEvalCtx = struct {
 
 /// What `codegen/target_check.zig` reads of a module whose analysis was
 /// refused (a type or validation error): the std calls reaching a host
-/// declaration inference met before the refusal, in order, and the module's
-/// first `#[compiler.beamMemory(…)]` once the program's validation passed. A
+/// declaration inference met before the refusal, in order. A
 /// refusal of the target there came first when inference read the target, so
 /// it is the one the module answers on that target (decision 798 (4)).
 pub const TargetTrace = struct {
     calls: std.ArrayListUnmanaged(StdCall) = .empty,
-    beam_memory_at: ?TargetSite = null,
 };
 
 /// Constraint metadata for one `comptime ...: typeparam` parameter of a function.
@@ -1000,21 +998,6 @@ pub const Env = struct {
     /// `while (x != null)` assigns a `?Node`) and ends the narrowing: the name
     /// takes its declared type back for the rest of the scope.
     narrowedDecl: std.StringHashMapUnmanaged(*T.Type) = .empty,
-    /// Front 17 — every module `var` of this module, by name → its
-    /// `beamMemory` storage and the type it was bound with. The type pointer
-    /// is how an assignment tells the module binding from a local that
-    /// shadows it (`lookup(name)` answers the local's type then). Read by
-    /// `infer.zig`'s `refuseMemoryWrite`.
-    memoryVars: std.StringHashMapUnmanaged(MemoryVar) = .empty,
-    /// Decision 168 — where a `keyed: true` module `var` may be named: the
-    /// receiver of its row read `name.at(key)` or of its row write
-    /// `name = name.insert(key, value)`, by the identifier's loc. Any other
-    /// read of the binding is refused (`infer.zig` `refuseKeyedWholeRead`).
-    keyedRowAccess: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
-    /// Decision 167 — the first `#[compiler.beamMemory(…)]` annotation of the
-    /// module, whatever the target: `codegen/target_check.zig` refuses it at
-    /// emit on a target that is not the BEAM (decision 798 (4)).
-    beamMemoryAt: ?TargetSite = null,
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.
@@ -2575,9 +2558,6 @@ pub const Env = struct {
         }
         log.clearRetainingCapacity();
     }
-
-    /// A module `var`'s storage and bound type — see `memoryVars`.
-    pub const MemoryVar = struct { memory: ast.Memory, ty: *T.Type };
 
     /// `bind` for a `val` — local or module-level: the name is then refused
     /// as an assignment target until something else binds it (decision 38).
