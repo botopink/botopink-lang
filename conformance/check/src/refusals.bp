@@ -20,7 +20,7 @@ pub fn isSummary(line: string) -> bool {
 
 /// The first refusal line of `text`, or null.
 pub fn firstErrorLine(text: string) -> ?string {
-    for raw in text.split("\n") {
+    for (text.split("\n")) { raw ->
         val line = trimEndOf(raw, " \r");
         if (isErrorLine(line) && !isSummary(line)) return line;
     }
@@ -50,7 +50,7 @@ pub fn refusalsOf(text: string) -> ModuleSnap[] {
     var flat: Refusal[] = [];
     var open = false;
     var caretRead = false;
-    for raw in text.split("\n") {
+    for (text.split("\n")) { raw ->
         val line = trimEndOf(raw, " \r");
         val t = trimStartOf(line, " ");
         val last = flat.at(flat.length - 1) ?? Refusal(message: "");
@@ -76,7 +76,7 @@ pub fn refusalsOf(text: string) -> ModuleSnap[] {
         }
     }
     var out: ModuleSnap[] = [];
-    for r in flat {
+    for (flat) { r ->
         val module = moduleOfOptional(r.at);
         val before = find(out, module) ?? Snap();
         out = put(out, module, Snap(refusals: before.refusals.append([r])));

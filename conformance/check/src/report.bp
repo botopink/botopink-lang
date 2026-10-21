@@ -26,7 +26,7 @@ fn indentDetail(detail: string) -> string {
     val text = trimEndOf(detail, "\n");
     if (text == "") return "";
     var out = "";
-    for l in text.split("\n") {
+    for (text.split("\n")) { l ->
         out = out + "\n      " + l;
     }
     return out;
@@ -139,10 +139,10 @@ async fn checkBuilt(ctx: Ctx, cell: string, r: string, written: string[], writes
     }
     if (toolErrors.length > 0 || audits.length > 0) {
         var text = "FAIL " + r + "\n";
-        for e in toolErrors {
+        for (toolErrors) { e ->
             text = text + "  " + e + "\n";
         }
-        for e in audits {
+        for (audits) { e ->
             text = text + "  " + e + "\n";
         }
         return Verdict(ok: false, text: text);

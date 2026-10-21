@@ -36,7 +36,7 @@ fn walk(root: string, found: Found) -> Found {
     if (hasCases) {
         var cells = found.cells;
         var refused = found.refused;
-        for name in childNames(cases, "dirs") {
+        for (childNames(cases, "dirs")) { name ->
             if (!name.startsWith(".")) {
                 val one = cases + "/" + name;
                 if (!isDir(one + "/src"))
@@ -49,7 +49,7 @@ fn walk(root: string, found: Found) -> Found {
         return Found(cells: cells, refused: refused);
     }
     var acc = found;
-    for name in childNames(root, "dirs") {
+    for (childNames(root, "dirs")) { name ->
         if (!name.startsWith(".") && name != "node_modules" && name != "deps")
             acc = walk(root + "/" + name, acc);
     }

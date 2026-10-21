@@ -87,13 +87,13 @@ async fn checkAll() -> Async<void> {
         return refuse("cell check needs a cell or a directory of cells");
 
     var cells: string[] = [];
-    for path in paths {
+    for (paths) { path ->
         if (cells.length >= 0) {
             val root = resolve([home, path]);
             if (!isDir(root)) return refuse(path + " is not a directory");
             val found = discover(root);
             if (found.refused.length > 0) {
-                for why in found.refused {
+                for (found.refused) { why ->
                     writeErr("error: " + why + "\n");
                 }
                 setExitCode(1);
@@ -103,7 +103,7 @@ async fn checkAll() -> Async<void> {
                 return refuse("no cell under "
                     + path
                     + " — a cell is a directory holding src/main.bp");
-            for c in found.cells {
+            for (found.cells) { c ->
                 if (!cells.contains(c)) cells.push(c);
             }
         }
@@ -120,8 +120,8 @@ async fn checkAll() -> Async<void> {
     }
     val shares = await async.runAll(workers);
     var verdicts: array<?Verdict> = cells.map({ c -> null });
-    for share in shares {
-        for p in share {
+    for (shares) { share ->
+        for (share) { p ->
             verdicts = verdicts
                 .slice(0, p.index)
                 .append([p.verdict])
@@ -130,7 +130,7 @@ async fn checkAll() -> Async<void> {
     }
     var out = "";
     var passed = 0;
-    for v in verdicts {
+    for (verdicts) { v ->
         if (v) {
             x ->
             out = out + x.text;

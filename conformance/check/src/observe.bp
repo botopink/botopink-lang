@@ -146,7 +146,7 @@ fn parseBuilt(ran: Ran) -> Built {
     var build: string[] = [];
     var refused: ModuleSnap[] = [];
     var root: ?string = null;
-    for line in ran.stdout.split("\n") {
+    for (ran.stdout.split("\n")) { line ->
         if (line.startsWith("{"))
             case json.decode(line) {
                 Ok(e) {
@@ -339,7 +339,7 @@ pub fn sameLines(a: string[], b: string[]) -> bool {
 
 pub fn indented(lines: string[]) -> string {
     var out = "";
-    for l in lines {
+    for (lines) { l ->
         out = out + "  " + l + "\n";
     }
     return out;
@@ -353,7 +353,7 @@ fn sameAnswer(x: Answer, y: Answer) -> bool {
         || !refusesOnly(y)
         || x.modules.length != y.modules.length)
         return false;
-    for m in x.modules {
+    for (x.modules) { m ->
         val ys = find(y.modules, m.name);
         if (ys == null) return false;
         val yr = ys.refusals;
@@ -378,9 +378,9 @@ fn refusesOnly(ans: Answer) -> bool {
 /// Every module's `.snap` text of an answer, one after the other.
 pub fn describe(ans: Answer) -> string {
     var out = "";
-    for m in ans.modules {
+    for (ans.modules) { m ->
         out = out + "  " + m.name + ".snap:\n";
-        for l in trimEndOf(render(m.snap), "\n").split("\n") {
+        for (trimEndOf(render(m.snap), "\n").split("\n")) { l ->
             out = out + "    " + l + "\n";
         }
     }
@@ -409,7 +409,7 @@ fn auditOf(b: Built, t: string) -> ?string {
             + "` accepts the cell — a narrowing stands on a host-binding refusal: let it run on "
             + t;
     val text = stripAnsi(b.stderr);
-    for phrase in HOST_BINDING_REFUSALS {
+    for (HOST_BINDING_REFUSALS) { phrase ->
         if (text.contains(phrase)) return null;
     }
     val firstLine = firstErrorLine(text) ?? "no error line";
