@@ -1609,7 +1609,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         }
 
         // Check for @name{ ... } syntax (trailing lambda with no args)
-        if (this.check(.leftBrace)) {
+        if (!this.noTrailingLambda and this.check(.leftBrace)) {
             const trailing = try this.parseTrailingLambdas(alloc);
             errdefer {
                 for (trailing) |*t| t.deinit(alloc);
@@ -2375,6 +2375,10 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
 /// Parses zero or more trailing lambda blocks:
 ///   `{ params? -> body }`  or  `label: { params? -> body }`
 pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]TrailingLambda {
+    // Where the context refuses a trailing lambda (a `for` iterable, decision
+    // 950; an operand after `try` / `await`), no call form takes one: the
+    // `{` is the construct's own.
+    if (this.noTrailingLambda) return alloc.alloc(TrailingLambda, 0);
     var lambdas: std.ArrayList(TrailingLambda) = .empty;
     errdefer {
         for (lambdas.items) |*t| t.deinit(alloc);
