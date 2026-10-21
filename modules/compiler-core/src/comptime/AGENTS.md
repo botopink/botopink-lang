@@ -2923,6 +2923,12 @@ it reads are the program's own and the ambient ones, an imported one (`importedB
 (`ruleReadBehaviorDecls`). `registerStdlib` runs it (`checkProgramSignatures`) on the parsed prelude before
 `preludeForInference` drops the primitive types, so `pub type i32 implement Signed { … }` is checked too
 (`modules/implement_signature_differs{,_default_fn,_extension_block,_no_variance}`, `modules/implement_signature_same`).
+An extension block's required member the block does not write is the target's own (decision 872 (2)): `validateImplement`
+counts a primitive's member (`primitiveAnswers`) and a record's (`getInherentMethodDecl`) as covering it, and
+`checkImplementSignatures` compares that member (`suppliedMember`, the holder's type parameters read as the block's
+`targetArgs`) with the contract's, at the block. A record's own method without `pub` of a type another module declares
+(`importedTypeDecls`) does not meet it: `method-not-pub` at the block, naming the type, the method and the module
+(decision 886); the prelude's members are its `pub` surface (859 (3)). A property (`array`'s `length`) is not compared.
 
 **A member of a behavior-typed value (B-162).** The rule-read behaviors' declarations are kept too, in
 `Env.ruleReadBehaviorDecls` (`registerBuiltinDecls`, cloned like the ambient ones), read only for their

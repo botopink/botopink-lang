@@ -1,0 +1,12 @@
+//// Decision 886 — A type's own method meets an extension block's contract only when it is `pub` or the block is in the method's module; else `method-not-pub` at the block, naming the type, the method and the module; narrows 872 (2), keeps 859 (2).
+
+import {box.Box, box.Crate, shout.Shout};
+import {io.terminal.print} from "std";
+
+// `Box.label` is `pub`: a block in another module reaches it.
+BoxShout implement Shout for Box {};
+
+pub fn main() -> void {
+    print(Box(n: 1).label());
+    print(Crate(n: 2).n);
+}

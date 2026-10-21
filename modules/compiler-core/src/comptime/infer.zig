@@ -1388,6 +1388,9 @@ fn validateImplement(
             // required one: `StringShout implement Shout for string {}` over
             // `fn length(self: Self) -> i32;` is met by `string`'s `length`.
             if (!covered and primitiveAnswers(env, impl.target, am.name)) covered = true;
+            // Decision 872 (2) — a record's own method meets it alike, compared
+            // with the contract's member in `checkImplementSignatures`.
+            if (!covered and env.getInherentMethodDecl(impl.target, am.name) != null) covered = true;
             if (!covered) {
                 env.lastError = locatedAt(TypeError.missingMethod(impl.target, iname, am.name), impl.loc);
                 return error.TypeError;
@@ -1540,6 +1543,9 @@ const SigMember = struct {
     params: []const ast.Param,
     ret: ?ast.TypeRef,
     loc: ?ast.Loc = null,
+    /// Names the written member reads as something else (a holder's type
+    /// parameter as the block's target argument, decision 872 (2)).
+    names: []const SigName = &.{},
 };
 
 /// `fn name<G>(p: T, …) -> R` in `s` — with the parameter names for the
@@ -1633,10 +1639,11 @@ fn checkMemberSignature(env: *Env, behavior: []const u8, self_name: []const u8, 
     }
     const cs: SigScope = .{ .env = env, .self_name = self_name, .names = names.items };
     // The member's own type parameters read as the contract member's, by position.
-    var ws: SigScope = .{ .env = env, .self_name = self_name };
+    var ws: SigScope = .{ .env = env, .self_name = self_name, .names = written.names };
     if (written.generics.len == generics.items.len and written.generics.len > 0) {
-        const wnames = try env.arena.alloc(SigName, written.generics.len);
+        const wnames = try env.arena.alloc(SigName, written.generics.len + written.names.len);
         for (written.generics, generics.items, 0..) |wg, cg, i| wnames[i] = .{ .name = wg.name, .as = cg.name };
+        @memcpy(wnames[written.generics.len..], written.names);
         ws.names = wnames;
     }
     const cm: SigMember = .{ .name = contract.name, .generics = generics.items, .params = contract.params, .ret = contract.returnType };
@@ -1722,7 +1729,10 @@ fn checkTypeSignatures(env: *Env, td: ast.TypeDecl, interfaces: *const std.Strin
 
 /// Decision 800 (3) — an extension block (`Sym implement B for T`): each
 /// member against the contract that declares it (its qualifier's, when
-/// written).
+/// written). Decision 872 (2) — a required member the block does not write is
+/// the type's own (a primitive's, a record's), compared alike at the block;
+/// decision 886 — a record's own method meets it only when it is `pub` or the
+/// block is in the type's module, else `method-not-pub` at the block.
 fn checkImplementSignatures(env: *Env, impl: ast.ImplementDecl, interfaces: *const std.StringHashMap(ast.BehaviorDecl)) InferError!void {
     for (impl.methods) |m| for (impl.interfaces) |iface| {
         const iname = interfaceRefName(iface);
@@ -1737,6 +1747,79 @@ fn checkImplementSignatures(env: *Env, impl: ast.ImplementDecl, interfaces: *con
             .loc = m.loc,
         });
     };
+    for (impl.interfaces) |iface| {
+        const iname = interfaceRefName(iface);
+        const b = sigBehavior(env, interfaces, iname) orelse continue;
+        for (b.methods) |am| {
+            if (am.body != null) continue;
+            if (blockWrites(impl, iname, am.name)) continue;
+            const own = try suppliedMember(env, impl, am.name) orelse continue;
+            if (own.private_to) |module| {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is private to module `{s}` — `{s} implement {s} for {s}` is written in another module and cannot meet `{s}.{s}` with it", .{ diagnostics.method_not_pub, impl.target, am.name, module, impl.name, iname, impl.target, iname, am.name });
+                return implError(env, impl.loc, msg, try std.fmt.allocPrint(env.arena, "Write `pub fn {s}` in `{s}`, or write the block in `{s}` (decision 886).", .{ am.name, module, module }));
+            }
+            const names = try contractNames(b, iface, .{ .env = env, .self_name = impl.target });
+            try checkMemberSignature(env, b.name, impl.target, names, am, own.member);
+        }
+    }
+}
+
+/// Whether the block writes `name` for contract `iname` (unqualified, or
+/// qualified with `iname`).
+fn blockWrites(impl: ast.ImplementDecl, iname: []const u8, name: []const u8) bool {
+    for (impl.methods) |m| {
+        if (!std.mem.eql(u8, m.name, name)) continue;
+        const q = m.qualifier orelse return true;
+        if (std.mem.eql(u8, q, iname)) return true;
+    }
+    return false;
+}
+
+/// The member a type supplies to an extension block's contract (decision 872
+/// (2)): a record's own method, or a primitive's own member (its type's
+/// table and what that extends), its signature located at the block. A
+/// record's method without `pub` of a type another module declares is
+/// `private_to` that module (decision 886). The prelude's methods are its
+/// `pub` surface (859 (3)).
+const Supplied = struct { member: SigMember, private_to: ?[]const u8 = null };
+
+fn suppliedMember(env: *Env, impl: ast.ImplementDecl, name: []const u8) InferError!?Supplied {
+    if (env.getInherentMethodDecl(impl.target, name)) |m| {
+        var supplied: Supplied = .{ .member = .{ .name = name, .generics = m.genericParams, .params = m.params, .ret = m.returnType, .loc = impl.loc } };
+        if (!m.isPub) if (env.importedTypeDecls.get(impl.target)) |it| {
+            supplied.private_to = it.module;
+        };
+        if (env.lookupTypeDef(impl.target)) |td| switch (td) {
+            .record => |r| supplied.member.names = try holderNames(env, r.genericParams, impl.targetArgs),
+            else => {},
+        };
+        return supplied;
+    }
+    var current: ?[]const u8 = primitiveInterfaceName(impl.target) orelse return null;
+    var guard: usize = 0;
+    while (current) |cname| : (guard += 1) {
+        if (guard >= 16) return null;
+        const decl = env.stdBehaviorBase.get(cname) orelse env.assocInterfaceDecls.get(cname) orelse return null;
+        for (decl.methods) |m| {
+            if (m.adoptedBy != null or !std.mem.eql(u8, m.name, name)) continue;
+            const gps = try env.arena.alloc([]const u8, decl.genericParams.len);
+            for (decl.genericParams, 0..) |gp, i| gps[i] = gp.name;
+            return .{ .member = .{ .name = name, .generics = m.genericParams, .params = m.params, .ret = m.returnType, .loc = impl.loc, .names = try holderNames(env, gps, impl.targetArgs) } };
+        }
+        // A property (`array`'s `length`) is no signature to compare.
+        for (decl.fields) |f| if (std.mem.eql(u8, f.name, name)) return null;
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    return null;
+}
+
+/// The holder's type parameters read as the block's target arguments
+/// (`array<T>`'s `T` as `E` in `… for array<E>`).
+fn holderNames(env: *Env, params: []const []const u8, args: []const ast.TypeRef) InferError![]const SigName {
+    if (params.len == 0 or params.len != args.len) return &.{};
+    const names = try env.arena.alloc(SigName, params.len);
+    for (params, args, 0..) |p, a, i| names[i] = .{ .name = p, .as = sigTypeText(a, .{ .env = env, .self_name = "" }) catch return error.OutOfMemory };
+    return names;
 }
 
 /// Decision 800 over a whole program — every type's own clause and every

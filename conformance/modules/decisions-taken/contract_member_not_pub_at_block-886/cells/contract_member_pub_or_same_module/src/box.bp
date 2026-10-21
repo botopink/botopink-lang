@@ -1,0 +1,16 @@
+import {shout.Shout};
+
+pub type Box(n: i32) {
+    pub fn label(self: Self) -> string {
+        return "box " + self.n.toString();
+    }
+}
+
+pub type Crate(n: i32) {
+    fn label(self: Self) -> string {
+        return "crate " + self.n.toString();
+    }
+}
+
+// `Crate.label` is private, and this block is in its module.
+CrateShout implement Shout for Crate {};

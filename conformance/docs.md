@@ -1316,6 +1316,26 @@ contract's `comptime n: i32` is not met by `n: i32`, nor the reverse.
 
 <!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_signature_spellings_met -->
 
+A required member the implemented type already has is met by the type's own
+method — a primitive's (`string`'s `slice`) or a record's — and that method is
+compared with the contract's member as any implementor's is (decision 872): a
+contract's one-parameter `slice` for `string` is refused at the block,
+`implement-signature-differs`. A bodied `default fn` the type already has stays
+`behavior-member-redeclared` (799 (4)). A record's own method meets an extension
+block's contract only when it is `pub` or the block is written in the type's
+module; else the block is refused, `method-not-pub`, naming the type, the method
+and the module (decision 886):
+
+<!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_required_member_met_by_type -->
+
+<!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_required_member_signature_differs -->
+
+<!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_default_fn_type_has_refused -->
+
+<!-- example: modules/decisions-taken/contract_member_not_pub_at_block-886/cells/contract_member_not_pub_at_block -->
+
+<!-- example: modules/decisions-taken/contract_member_not_pub_at_block-886/cells/contract_member_pub_or_same_module -->
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the

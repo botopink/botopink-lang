@@ -468,6 +468,10 @@ pub const external_on_behavior: []const u8 = "external-on-behavior";
 /// the implementing type (a required member and an overridden `default fn`
 /// alike, a type's own clause and an extension block alike).
 pub const implement_signature_differs: []const u8 = "implement-signature-differs";
+/// Decisions 859, 886 — a method written without `pub` reached from another
+/// module: here, a type's own method that would meet an extension block's
+/// contract from a block outside the type's module.
+pub const method_not_pub: []const u8 = "method-not-pub";
 /// Decision 621 — a second unlabelled argument of a cell of
 /// `Implementation`: only the `template` is positional.
 pub const external_field_unlabelled: []const u8 = "external-field-unlabelled";
