@@ -1,0 +1,20 @@
+//// Decision 824 (3) — a scope crosses a process as `scope.detach()`: a
+//// fresh root over its contexts, which the task `async.runAll` runs reads
+//// on every target, closed by whoever made it.
+
+import {context.run, context.Scope, async, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Page() -> Component<View> {
+    return View(text: "page");
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    val detached = root.detach();
+    val crossed = await async.runAll([{ -> run(Page(), detached) }]);
+    print(crossed.map({ v -> v.text }).join(","));
+    detached.close();
+    root.close();
+}
