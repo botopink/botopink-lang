@@ -448,7 +448,7 @@ pub const TypeError = struct {
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
         const raw = try this.rawMessage(gpa);
-        return assocTypesShown(gpa, try namedByOwner(gpa, raw));
+        return assocTypesShown(gpa, try calledShown(gpa, try namedByOwner(gpa, raw)));
     }
 
     fn rawMessage(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
@@ -540,6 +540,25 @@ pub fn namedByOwner(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
         i += 1;
     }
     return out.toOwnedSlice(gpa);
+}
+
+/// Decision 907 — the copy of a function in the call's form
+/// (`ast.syntax_called_prefix`) is named in every diagnostic as the function
+/// written. Takes ownership of `raw`.
+pub fn calledShown(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
+    const n = std.mem.count(u8, raw, ast.syntax_called_prefix);
+    if (n == 0) return raw;
+    defer gpa.free(raw);
+    const out = try gpa.alloc(u8, raw.len - n * ast.syntax_called_prefix.len);
+    _ = std.mem.replace(u8, raw, ast.syntax_called_prefix, "", out);
+    return out;
+}
+
+test "a function's copy in the call's form is named as written" {
+    const gpa = std.testing.allocator;
+    const out = try calledShown(gpa, try gpa.dupe(u8, "'__bp_called_log' expects 1 argument(s), got 2"));
+    defer gpa.free(out);
+    try std.testing.expectEqualStrings("'log' expects 1 argument(s), got 2", out);
 }
 
 /// An internal type (`__Decl`, `__Expr` — decision 576 (1)) as a diagnostic

@@ -194,7 +194,7 @@ pub fn expandProgram(alloc: std.mem.Allocator, program: *ast.Program) error{OutO
             // code of type `T` (`void` included), `anyvalue` or `anytype`.
             // One that writes no return is left to the checker's
             // `fn-return-missing` (622).
-            const syntaxFn = !f.isDeclare and f.returnType != null and ast.isSyntaxExprFn(f.params, f.returnType);
+            const syntaxFn = !f.isDeclare and f.returnType != null and ast.expandedAtCall(f.*);
             try expandFn(P, f.name, f.params, &f.returnType, &f.genericParams, &f.body, syntaxFn);
         },
         .type_ => |*t| try expandType(P, t),

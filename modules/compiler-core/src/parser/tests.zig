@@ -24,5 +24,6 @@ test {
     _ = @import("tests/decision579.zig");
     _ = @import("tests/decision539.zig");
     _ = @import("syntax_params.zig");
+    _ = @import("syntax_use.zig");
     _ = @import("compiler_surface.zig");
 }

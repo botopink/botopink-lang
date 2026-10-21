@@ -13,6 +13,7 @@ const exprs = @import("parser/exprs.zig");
 const template_markers = @import("parser/template_markers.zig");
 const implementations = @import("parser/implementations.zig");
 const syntax_params = @import("parser/syntax_params.zig");
+pub const syntax_use = @import("parser/syntax_use.zig");
 pub const compiler_surface = @import("parser/compiler_surface.zig");
 pub const comptime_blocks = @import("parser/comptime_blocks.zig");
 
@@ -620,6 +621,13 @@ pub const Parser = struct {
         if (!this.keep_surface) comptime_blocks.expandProgram(alloc, &program) catch |err| {
             program.deinit(alloc);
             return if (err == error.OutOfMemory) ParseError.OutOfMemory else ParseError.UnexpectedToken;
+        };
+        // Decision 907: a function with a `syntax` parameter takes the form
+        // its uses ask for — `#[f]` a decorator's, `f(e)` the call's
+        // (`parser/syntax_use.zig`).
+        if (!this.keep_surface) syntax_use.applyProgram(alloc, &program) catch {
+            program.deinit(alloc);
+            return ParseError.OutOfMemory;
         };
         // Decision 364: a non-template function's `comptime x: @Expr<T>`
         // carries `T` in its `typeRef` (`parser/syntax_params.zig`).

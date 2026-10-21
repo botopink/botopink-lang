@@ -3919,9 +3919,16 @@ parameter takes, as `markup("…")` is for a `syntax q: string` one:
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_string_param_needs_template_text -->
 
-A decorator's `syntax decl` is the annotated declaration (576, 716) and a
-template method's `syntax self: R` its receiver (578 (1)): neither is this
-form.
+A function with a `syntax` parameter is one kind, and the place it is used
+decides how it is read (907): `#[f]` applies it as a decorator, the annotated
+declaration its first `syntax` parameter (663, 716); `f(e)` expands it at the
+call, the written expression its `syntax` parameter. The signature decides
+nothing: one declaration may be annotated and called, each use checked by its
+own rules against the one declared type:
+
+<!-- example: modules/decisions-taken/syntax_fn_use_decides_kind-907/cells/syntax_fn_use_decides_kind -->
+
+A template method's `syntax self: R` is its receiver (578 (1)), not this form.
 
 **A template** is a function whose first parameter (after a `syntax self: R`
 receiver) is `syntax q: string` — its **template text** — and nothing else

@@ -1957,7 +1957,7 @@ pub fn templateTextIndex(params: []const Param) ?usize {
 /// Null for any other function. A `syntax self: R` receiver is a template
 /// method's (578 (1)) and counts for nothing here; whether the function is a
 /// decorator (its first `syntax` the annotated declaration, 576) is the
-/// caller's question — `isSyntaxExprFn`.
+/// caller's question — `expandedAtCall`.
 pub fn syntaxExprIndex(params: []const Param) ?usize {
     if (templateTextIndex(params) != null) return null;
     for (params, 0..) |p, i| {
@@ -1977,15 +1977,26 @@ pub fn answersNothing(rt: ?TypeRef) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
-/// Decision 719 — a top-level function expanded at its ordinary call: it
-/// takes a `syntax` expression parameter (`syntaxExprIndex`) and is no
-/// decorator — a decorator returns nothing and its first parameter is the
-/// annotated declaration (576), so a function that writes a return, or whose
-/// first parameter is no `syntax` one, is this form.
-pub fn isSyntaxExprFn(params: []const Param, returnType: ?TypeRef) bool {
-    const i = syntaxExprIndex(params) orelse return false;
-    if (!answersNothing(returnType)) return true;
-    return i > 0 and params[0].arrival != .syntax;
+/// Decision 907 — how a function with a `syntax` parameter is read where it
+/// is used: `#[f]` applies it as a decorator (its first `syntax` parameter the
+/// annotated declaration, 663, 716), `f(e)` expands it at the call (719,
+/// 841). `parser/syntax_use.zig` sets it from the module's uses; null where
+/// the module neither annotates with the function nor calls it.
+pub const SyntaxUse = enum { decorator, call };
+
+/// Decisions 719, 907 — whether a top-level function is read in the form
+/// expanded at its call: it takes a `syntax` expression parameter
+/// (`syntaxExprIndex`) and is used at a call. One whose first parameter is no
+/// `syntax` one is never a decorator (907 (2)); one whose first parameter is
+/// takes the form its use gave it (`FnDecl.syntaxUse`). A function its module
+/// neither annotates with nor calls — one only another module uses — keeps
+/// the form its signature gives until the use travels with the import (B-69):
+/// a return that answers something is the call's.
+pub fn expandedAtCall(f: FnDecl) bool {
+    const i = syntaxExprIndex(f.params) orelse return false;
+    if (i > 0 and f.params[0].arrival != .syntax) return true;
+    if (f.syntaxUse) |u| return u == .call;
+    return !answersNothing(f.returnType);
 }
 
 /// Decision 578 (2) — a value whose type is known once its code is built: a
@@ -2193,6 +2204,10 @@ pub fn isTemplateMethodSignature(params: []const Param, returnType: ?TypeRef) bo
 /// read onto (`__bp_comptime_<k>`, its anchor `__bp_comptime_<k>_at`;
 /// `parser/comptime_blocks.zig`). A diagnostic names it `comptime`.
 pub const comptime_block_prefix = "__bp_comptime_";
+/// Decision 907 — the prefix of the copy of a function its module both
+/// annotates with and calls, in the call's form (`parser/syntax_use.zig`);
+/// a diagnostic names it without the prefix (`comptime/error.zig`).
+pub const syntax_called_prefix = "__bp_called_";
 
 /// Whether `name` is a block's decorator or anchor (`comptime_block_prefix`
 /// then digits, `_at` after them for the anchor).
@@ -4466,6 +4481,10 @@ pub const FnDecl = struct {
     /// (`#[@resultGenerator] fn f() -> @ResultGenerator<T, E> :gen`), used to
     /// disambiguate `yield :label` / `break :label` from an enclosing loop's.
     label: ?[]const u8 = null,
+    /// Decision 907 — the form a function with a `syntax` parameter is read
+    /// in, as its module uses it (`parser/syntax_use.zig`); null when unused
+    /// there. Left out of the AST dump.
+    syntaxUse: ?SyntaxUse = null,
     name: []const u8,
     /// Where the name is written (`fn link` → `link`) — the location a refusal
     /// of the name points at. `{0,0}` when synthesised; left out of the AST
@@ -4538,7 +4557,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "startLoc", "markerLoc", "implementations", "arrowOmittedHint" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "startLoc", "markerLoc", "implementations", "arrowOmittedHint", "syntaxUse" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {

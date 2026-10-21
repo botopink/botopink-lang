@@ -23,7 +23,7 @@ pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
         .@"fn" => |*f| {
             // Decision 719 — a function with a `syntax` expression parameter
             // is expanded at its call: its trees stay, as a template's.
-            if (!f.isDeclare and ast.isSyntaxExprFn(f.params, f.returnType)) continue;
+            if (!f.isDeclare and ast.expandedAtCall(f.*)) continue;
             declHandle(alloc, f.params, f.returnType);
             unwrap(alloc, f.params, f.returnType);
         },
