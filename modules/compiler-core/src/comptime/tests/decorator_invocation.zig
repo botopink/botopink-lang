@@ -175,7 +175,7 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
         \\        out = out + " field " + f.name + ":" + f.typeName;
         \\        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
         \\    };
-        \\    for (compiler.variants(decl)) { v -> out = out + " variant " + v; };
+        \\    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
         \\    for (compiler.methods(decl)) { m ->
         \\        var ps = "";
         \\        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };

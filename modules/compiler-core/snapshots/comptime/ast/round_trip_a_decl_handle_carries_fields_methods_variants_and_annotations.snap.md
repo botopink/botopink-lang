@@ -8,7 +8,7 @@ fn describe(syntax decl: unknown, comptime label: string) -> void {
         out = out + " field " + f.name + ":" + f.typeName;
         for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for (compiler.variants(decl)) { v -> out = out + " variant " + v; };
+    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
     for (compiler.methods(decl)) { m ->
         var ps = "";
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
@@ -119,7 +119,7 @@ pub fn describeMode() -> string {
           "source": "for (compiler.fields(decl)) { f ->"
         },
         {
-          "source": "for (compiler.variants(decl)) { v -> out = out + \" variant \" + v; };"
+          "source": "for (compiler.variants(decl)) { v -> out = out + \" variant \" + v.name; };"
         },
         {
           "source": "for (compiler.methods(decl)) { m ->"

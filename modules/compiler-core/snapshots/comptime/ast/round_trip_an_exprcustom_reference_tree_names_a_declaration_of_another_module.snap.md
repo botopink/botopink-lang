@@ -140,7 +140,7 @@ pub behavior Compiler {
     fn returnType(self: Self, syntax d: unknown) -> string;
     fn owner(self: Self, syntax d: unknown) -> unknown;
     fn annotations(self: Self, syntax d: unknown) -> DeclAnnotation[];
-    fn variants(self: Self, syntax d: unknown) -> string[];
+    fn variants(self: Self, syntax d: unknown) -> Variant[];
 
     // ── The program ───────────────────────────────────────────────────────
     // The declarations marked with a decorator (decisions 253, 581 (3)),
@@ -373,6 +373,8 @@ pub type Param = __Decl__Param;
 pub type Field = __Decl__Field;
 
 pub type Method = __Decl__Method;
+
+pub type Variant = __Decl__Variant;
 
 pub type HookNode = __HookNode;
 
@@ -997,7 +999,7 @@ pub type HookNode = __HookNode;
               "is_comptime": true
             }
           ],
-          "return_type": "string[]"
+          "return_type": "__Decl__Variant[]"
         },
         {
           "name": "find",
@@ -1383,6 +1385,9 @@ pub type HookNode = __HookNode;
         "module": "Module",
         "diagnostics": "Diagnostic[]"
       }
+    },
+    {
+      "ast": "typeAlias"
     },
     {
       "ast": "typeAlias"

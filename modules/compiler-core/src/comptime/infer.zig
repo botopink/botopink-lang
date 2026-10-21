@@ -6564,6 +6564,46 @@ fn decoratorArgError(env: *Env, a: ast.Annotation, i: usize, message: []const u8
 /// `@Async<HandlerResponse>`. Never erased to a head and never empty: a
 /// decorator that admits `Array<string>` must be able to refuse
 /// `Array<Element>`.
+/// Decision 848 — `compiler.variants(d)`: one entry per constructible variant.
+/// The enum's own variants, then for each section (depth-first) its wrapper
+/// constructor (`Token.Color`, one field holding the section) and its leaves,
+/// a leaf's `section` the enclosing sections' names joined by `.`.
+fn variantHandles(env: *Env, tdecl: ast.TypeDecl) InferError![]const decoratorEval.VariantHandle {
+    var out: std.ArrayListUnmanaged(decoratorEval.VariantHandle) = .empty;
+    for (tdecl.variants()) |v| try out.append(env.arena, try variantHandle(env, v, null));
+    for (tdecl.sections()) |sec| try appendSectionHandles(env, &out, tdecl.name, sec, null);
+    return out.items;
+}
+
+fn appendSectionHandles(
+    env: *Env,
+    out: *std.ArrayListUnmanaged(decoratorEval.VariantHandle),
+    enumName: []const u8,
+    sec: ast.EnumSection,
+    parent: ?[]const u8,
+) InferError!void {
+    const path = if (parent) |p| try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ p, sec.name }) else sec.name;
+    const wrapper = try env.arena.alloc(decoratorEval.FieldHandle, 1);
+    wrapper[0] = .{
+        .name = "value",
+        .typeName = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ enumName, path }),
+        .annotations = &.{},
+    };
+    try out.append(env.arena, .{ .name = sec.name, .fields = wrapper, .section = parent });
+    for (sec.variants) |v| try out.append(env.arena, try variantHandle(env, v, path));
+    for (sec.sections) |sub| try appendSectionHandles(env, out, enumName, sub, path);
+}
+
+fn variantHandle(env: *Env, v: ast.EnumVariant, section: ?[]const u8) InferError!decoratorEval.VariantHandle {
+    const fields = try env.arena.alloc(decoratorEval.FieldHandle, v.fields.len);
+    for (v.fields, 0..) |f, i| fields[i] = .{
+        .name = f.name,
+        .typeName = try declTypeName(env.arena, f.typeRef),
+        .annotations = f.annotations,
+    };
+    return .{ .name = v.name, .fields = fields, .section = section };
+}
+
 fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
     return switch (tr) {
         .named => |n| n,
@@ -8537,11 +8577,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
             },
             .enum_ => {
                 env.decoratedDeclIndex = di;
-                const vs = tdecl.variants();
-                const secs = tdecl.sections();
-                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
-                for (vs, 0..) |v, i| names[i] = v.name;
-                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
+                const names = try variantHandles(env, tdecl);
                 // Question s29-b — a method's decorators run before its
                 // owner's, which read the typed meta they recorded on
                 // `decl.methods` (`m.meta(T)`, 313's repository).
@@ -10846,12 +10882,7 @@ fn lookupHandle(env: *Env, entry: template.ScopeEntry) InferError!decoratorEval.
             for (t.recordFields(), 0..) |fld, i| fields[i] = .{ .name = fld.name, .typeName = try declTypeName(env.arena, fld.typeRef), .annotations = fld.annotations };
             h.fields = fields;
             if (t.shape == .enum_) {
-                const vs = t.variants();
-                const secs = t.sections();
-                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
-                for (vs, 0..) |v, i| names[i] = v.name;
-                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
-                h.variants = names;
+                h.variants = try variantHandles(env, t);
             }
         },
         .behavior => |b| {

@@ -1,0 +1,21 @@
+//// A decorator that records, per constructible variant of the enum it
+//// annotates, its name, its payload fields, its annotations and its section.
+
+import {compiler} from "std";
+
+pub type Outline(text: string)
+
+pub fn outline(syntax decl: unknown) -> void {
+    val rows = compiler
+        .variants(decl)
+        .map({ v ->
+            v.name
+                + "("
+                + v.fields.map({ f -> f.name + ":" + f.typeName }).join(",")
+                + ")@"
+                + (v.section ?? "-")
+                + "#"
+                + v.annotations.length.toString()
+        });
+    compiler.setMeta(Outline(text: rows.join(" ")));
+}

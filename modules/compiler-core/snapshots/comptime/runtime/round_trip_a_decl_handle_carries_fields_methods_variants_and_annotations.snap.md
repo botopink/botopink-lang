@@ -8,7 +8,7 @@ fn describe(syntax decl: unknown, comptime label: string) -> void {
         out = out + " field " + f.name + ":" + f.typeName;
         for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     };
-    for (compiler.variants(decl)) { v -> out = out + " variant " + v; };
+    for (compiler.variants(decl)) { v -> out = out + " variant " + v.name; };
     for (compiler.methods(decl)) { m ->
         var ps = "";
         for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
@@ -874,7 +874,15 @@ import {compiler} from "std";
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 4
+  call $rt_atom
   local.get $s0
+  call $rt_maps_get
+  call $rt_pending
+  br_if $raise
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
@@ -2249,7 +2257,15 @@ import {compiler} from "std";
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 4
+  call $rt_atom
   local.get $s0
+  call $rt_maps_get
+  call $rt_pending
+  br_if $raise
   call $bp_comptime_decorator:__bp_add/2
   call $rt_pending
   br_if $raise
@@ -2733,7 +2749,10 @@ import {compiler} from "std";
 ;;     kind => 'Type',
 ;;     name => <<"Mode">>,
 ;;     fields => [],
-;;     variants => [<<"Fast">>, <<"Slow">>],
+;;     variants => [
+;;         #{name => <<"Fast">>, fields => [], annotations => [], section => undefined},
+;;         #{name => <<"Slow">>, fields => [], annotations => [], section => undefined}
+;;     ],
 ;;     methods => [
 ;;         #{
 ;;             name => <<"label">>,

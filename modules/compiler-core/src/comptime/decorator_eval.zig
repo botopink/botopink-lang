@@ -46,11 +46,13 @@ pub const DeclHandle = struct {
     kind: []const u8,
     name: []const u8,
     fields: []const FieldHandle,
-    /// The variant names of an enum-shaped `type` (top-level variants, then
-    /// section names); empty for every other declaration. With `DeclKind.Type`
-    /// covering both shapes, this is how a decorator tells a record from an
-    /// enum (`decl.kind == DeclKind.Type && decl.variants.length == 0`).
-    variants: []const []const u8 = &.{},
+    /// Decision 848 — the constructible variants of an enum-shaped `type`
+    /// (`compiler.variants(d)`): top-level variants, section leaves with their
+    /// enclosing sections' path, each section's wrapper constructor; empty for
+    /// every other declaration. With `DeclKind.Type` covering both shapes, this
+    /// is how a decorator tells a record from an enum
+    /// (`compiler.variants(d).length == 0`).
+    variants: []const VariantHandle = &.{},
     methods: []const ast.BehaviorMethod,
     returnType: []const u8,
     annotations: []const ast.Annotation,
@@ -136,6 +138,16 @@ pub const FieldHandle = struct {
     name: []const u8,
     typeName: []const u8,
     annotations: []const ast.Annotation,
+};
+
+/// One entry of `compiler.variants(d)` (decision 848): the variant's name, its
+/// payload fields, its own annotations, and the enclosing sections' names
+/// joined by `.` (null at the top level).
+pub const VariantHandle = struct {
+    name: []const u8,
+    fields: []const FieldHandle = &.{},
+    annotations: []const ast.Annotation = &.{},
+    section: ?[]const u8 = null,
 };
 
 /// One output of a decorator body, in call order (decision 216): a loose
@@ -676,14 +688,7 @@ fn annotationPlans(
 /// (`decl.kind`, `decl.fields`, …). `kind` is an atom so it matches the lowering
 /// of `DeclKind.Type` (`'Type'`); names and type names are binaries.
 pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Allocator.Error!Term {
-    const fields = try arena.alloc(Term, handle.fields.len);
-    for (handle.fields, 0..) |f, i| {
-        const entries = try arena.alloc(Term.MapEntry, 3);
-        entries[0] = Term.field("name", Term.str(f.name));
-        entries[1] = Term.field("typeName", Term.str(f.typeName));
-        entries[2] = Term.field("annotations", try annotationsToTerm(arena, f.annotations, handle.decoratorIds));
-        fields[i] = Term.mapOf(entries);
-    }
+    const fields = try fieldsToTerm(arena, handle.fields, handle.decoratorIds);
 
     const methods = try arena.alloc(Term, handle.methods.len);
     for (handle.methods, 0..) |m, i| {
@@ -714,7 +719,14 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     }
 
     const variants = try arena.alloc(Term, handle.variants.len);
-    for (handle.variants, 0..) |v, i| variants[i] = Term.str(v);
+    for (handle.variants, 0..) |v, i| {
+        const entries = try arena.alloc(Term.MapEntry, 4);
+        entries[0] = Term.field("name", Term.str(v.name));
+        entries[1] = Term.field("fields", try fieldsToTerm(arena, v.fields, handle.decoratorIds));
+        entries[2] = Term.field("annotations", try annotationsToTerm(arena, v.annotations, handle.decoratorIds));
+        entries[3] = Term.field("section", if (v.section) |sec| Term.str(sec) else Term.undefined_atom);
+        variants[i] = Term.mapOf(entries);
+    }
 
     const params = try arena.alloc(Term, handle.params.len);
     for (handle.params, 0..) |p, i| {
@@ -729,7 +741,7 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     const entries = try arena.alloc(Term.MapEntry, 13 + extra);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
-    entries[2] = Term.field("fields", Term.listOf(fields));
+    entries[2] = Term.field("fields", fields);
     entries[3] = Term.field("variants", Term.listOf(variants));
     entries[4] = Term.field("methods", Term.listOf(methods));
     entries[5] = Term.field("returnType", Term.str(handle.returnType));
@@ -758,6 +770,19 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         entries[14] = Term.field("meta", try metaListTerm(arena, handle.tagMeta));
     }
     return Term.mapOf(entries);
+}
+
+/// The `Field` maps of a handle's (or a variant's) payload.
+fn fieldsToTerm(arena: std.mem.Allocator, fields: []const FieldHandle, ids: []const DecoratorId) std.mem.Allocator.Error!Term {
+    const out = try arena.alloc(Term, fields.len);
+    for (fields, 0..) |f, i| {
+        const entries = try arena.alloc(Term.MapEntry, 3);
+        entries[0] = Term.field("name", Term.str(f.name));
+        entries[1] = Term.field("typeName", Term.str(f.typeName));
+        entries[2] = Term.field("annotations", try annotationsToTerm(arena, f.annotations, ids));
+        out[i] = Term.mapOf(entries);
+    }
+    return Term.listOf(out);
 }
 
 /// `[#{type => <<"ClassName">>, value => V}]`, what `'__bp_methodMeta'/2`

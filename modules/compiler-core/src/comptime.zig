@@ -2299,6 +2299,7 @@ pub const decl_reflection_src =
     \\pub type __Decl__Param(name: string, typeName: string)
     \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
     \\pub type __Decl__Method(name: string, params: __Decl__Param[], returnType: string, annotations: __Decl__Annotation[])
+    \\pub type __Decl__Variant(name: string, fields: __Decl__Field[], annotations: __Decl__Annotation[], section: ?string)
     \\pub type DeclaredMeta(key: string, value: string)
     \\pub type DeclaredTypedMeta(key: string, value: unknown)
     \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T, typedMeta: DeclaredTypedMeta[])
@@ -2323,7 +2324,7 @@ pub const decl_reflection_src =
     \\    kind: __DeclKind,
     \\    name: string,
     \\    fields: __Decl__Field[],
-    \\    variants: string[],
+    \\    variants: __Decl__Variant[],
     \\    methods: __Decl__Method[],
     \\    returnType: string,
     \\    annotations: __Decl__Annotation[],

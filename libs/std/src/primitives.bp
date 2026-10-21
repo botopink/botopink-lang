@@ -2251,6 +2251,18 @@ pub type __Decl__Method(
     annotations: __Decl__Annotation[],
 )
 
+// One constructible variant of a reflected enum (decision 848): its payload
+// fields as `fields` answers them (empty for a unit variant), its own
+// annotations, and the enclosing sections' names joined by `.` (`Color.Warm`),
+// `null` at the top level. A section is no entry; its wrapper constructor
+// (`Token.Color`) is, with its one field.
+pub type __Decl__Variant(
+    name: string,
+    fields: __Decl__Field[],
+    annotations: __Decl__Annotation[],
+    section: ?string,
+)
+
 // Decision 216 (4) — what `@TypeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);

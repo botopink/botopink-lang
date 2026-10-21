@@ -4361,6 +4361,15 @@ that parameter. `decl` is an opaque handle, read through `compiler`
 `compiler.returnType(decl)`, `compiler.annotations(decl)`,
 `compiler.owner(decl)`, a function's or a method's own `compiler.params(decl)`,
 and a function's `compiler.hooks(decl)` (§ The hooks a function reaches).
+`compiler.variants(decl)` answers `compiler.Variant[]` (decision 848), one
+entry per constructible variant — `name`, the payload `fields` (empty for a unit
+variant), the variant's own `annotations` and its `section`, the enclosing
+sections' names joined by `.` (`Color.Warm`), `null` at the top level. A section
+is no entry, its wrapper constructor (`Token.Color`) is, with its one field; a
+numeric leaf is named by its digits.
+
+<!-- example: modules/decisions-taken/compiler_variants_typed_entries-848/cells/compiler_variants_typed_entries -->
+
 `compiler.fail(message, at: decl)` refuses it at the annotation, and what the
 decorator produces goes to one of four places (decisions 216, 575 (3), 576),
 the outputs a decorator's only (`compiler-output-outside-decorator`):
