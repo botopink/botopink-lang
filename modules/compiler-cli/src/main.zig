@@ -356,6 +356,18 @@ fn flagValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgD
     return args[i.*];
 }
 
+/// The directory `--emit-runtime` / `--emit-resolved` write into (decision
+/// 798 (3)): required, so a flag standing where it goes is no directory
+/// (`--emit-resolved --target commonJS` names none).
+fn dirValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgDiag) ArgError![]const u8 {
+    const v = try flagValue(args, i, flag, diag);
+    if (flag.inline_value == null and isFlag(v)) {
+        diag.token = flag.name;
+        return error.MissingArgument;
+    }
+    return v;
+}
+
 fn targetValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgDiag) ArgError!cfg.Target {
     const v = try flagValue(args, i, flag, diag);
     return cfg.Target.fromString(v) orelse {
@@ -393,9 +405,9 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             try noValue(flag, diag);
             opts.cold = true;
         } else if (std.mem.eql(u8, flag.name, "--emit-resolved")) {
-            opts.emit_resolved = try flagValue(args, &i, flag, diag);
+            opts.emit_resolved = try dirValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--emit-runtime")) {
-            opts.emit_runtime = try flagValue(args, &i, flag, diag);
+            opts.emit_runtime = try dirValue(args, &i, flag, diag);
         } else if (isRuntimeFile(args[i]) and opts.runtime_input == null) {
             opts.runtime_input = args[i];
         } else return reject(args[i], diag);
@@ -609,6 +621,8 @@ test "B-163: build takes --emit-resolved <dir>, and the flag needs its directory
     try std.testing.expectEqualStrings("res", (try parseBuildOpts(argv(&.{ "--emit-resolved", "res" }), &d)).emit_resolved.?);
     try std.testing.expectEqualStrings("res", (try parseBuildOpts(argv(&.{"--emit-resolved=res"}), &d)).emit_resolved.?);
     try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{"--emit-resolved"}), &d));
+    try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{ "--emit-resolved", "--target", "commonJS" }), &d));
+    try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{"--emit-resolved="}), &d));
     try std.testing.expect((try parseBuildOpts(argv(&.{}), &d)).emit_resolved == null);
 }
 
@@ -630,6 +644,7 @@ test "B-163: build takes --emit-runtime <dir> and one .bpr to build; run takes o
     try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{ "--emit-runtime", "rt" }), &d)).emit_runtime.?);
     try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{"--emit-runtime=rt"}), &d)).emit_runtime.?);
     try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{"--emit-runtime"}), &d));
+    try std.testing.expectError(error.MissingArgument, parseBuildOpts(argv(&.{ "--emit-runtime", "--out", "o" }), &d));
     const b = try parseBuildOpts(argv(&.{ "--target", "wasm", "rt/app.bpr" }), &d);
     try std.testing.expectEqualStrings("rt/app.bpr", b.runtime_input.?);
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "rt/app.bpr", "rt/lib.bpr" }), &d));

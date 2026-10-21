@@ -1,0 +1,26 @@
+//// The decorators and the template `main` uses, run at its build.
+
+import {compiler} from "std";
+import {registry.register};
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+// `#[registered]` registers the annotated declaration's name at init.
+pub fn registered(syntax decl: unknown) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> register(name) });
+}
+
+// `#[entity("…")]` adds a `table()` member.
+pub fn entity(syntax decl: unknown, comptime table: string) -> void {
+    compiler.addMember("pub fn table() -> string { return "
+        + quoted(table)
+        + "; }");
+}
+
+// `shout @`…`` builds the upper-cased text at the call.
+pub fn shout(syntax q: string) -> string {
+    return compiler.build("(" + quoted(compiler.text(q)) + ").toUpper()");
+}

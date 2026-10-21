@@ -120,6 +120,16 @@ compiler-cli/
 │   │                          with its import; each piece's origin comment
 │   │                          (decision 798 (2)) over it
 │   ├── resolved_file/       ← its fixture: `app` and `lib`
+│   ├── build_modes_same_answer.sh ← cell `build_modes_same_answer` as a CLI case
+│   │                          (decision 798 (5); the suite builds a package one
+│   │                          way): `build_modes/app` (a decorator's member and
+│   │                          executor, a template, a top-level `comptime` block,
+│   │                          a folded value) built directly and from its `.bpr`,
+│   │                          the same files and the same `run` on commonJS,
+│   │                          erlang, beam and wasm; `--emit-runtime` /
+│   │                          `--emit-resolved` with no directory (last, before
+│   │                          another flag, `=` empty) refused, nothing written
+│   ├── build_modes/         ← its fixture: `app`
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —
@@ -182,6 +192,7 @@ bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing an
 bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
 bash modules/compiler-cli/tests/runtime_file.sh      # every target built from a package's .bpr as built directly (805)
 bash modules/compiler-cli/tests/resolved_file.sh     # --emit-resolved writes one file per module (834)
+bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and from the intermediate, the same answer (798 (5))
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime

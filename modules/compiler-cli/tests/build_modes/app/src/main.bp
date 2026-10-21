@@ -1,0 +1,31 @@
+//// The program `build_modes_same_answer.sh` builds directly and from its
+//// intermediate: a decorator's member and executor, a template, a top-level
+//// `comptime` block, a folded value.
+
+import {compiler, io.terminal.print} from "std";
+
+pub mod registry;
+pub mod marks;
+
+import {registry.register, registry.names};
+import {marks.registered, marks.entity, marks.shout};
+
+comptime {
+    compiler.init({ -> register("block") });
+}
+
+#[entity("towns")]
+pub type Town(name: string)
+
+#[registered]
+pub fn own() -> string {
+    return "own";
+}
+
+pub val answer = comptime 6 * 7;
+
+pub fn main() -> void {
+    print(names());
+    print(shout @`hello`);
+    print(Town.table() + " " + own() + " " + answer.toString());
+}
