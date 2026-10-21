@@ -104,7 +104,7 @@ pub const count_new_fn = "bpCountNew__";
 pub const count_end_fn = "bpCountEnd__";
 /// The column a stamp's call is written at past the call it wraps: its loc
 /// keys none of the checker's plans of the wrapped call (`ast.optional_synthetic_col`'s reason).
-const stamp_col: usize = 3_000_000;
+const stamp_col: usize = ast.stamp_synthetic_col;
 /// The type argument a run's call carries (`(c)(cell, place)`): its one
 /// argument is the `R` the run answers (decision 504, `wat/scope_carry.zig`).
 pub const run_mark = "bpRun__";
@@ -193,6 +193,13 @@ const Lowering = struct {
     fn stampLoc(loc: ast.Loc) ast.Loc {
         var l = loc;
         l.col += stamp_col;
+        return l;
+    }
+
+    /// The loc of the call inside the lambda a function value's stamp builds.
+    fn stampLambdaLoc(loc: ast.Loc) ast.Loc {
+        var l = loc;
+        l.col += ast.stamp_lambda_col;
         return l;
     }
 
@@ -486,7 +493,7 @@ const Lowering = struct {
                     args[i] = try self.ident(params[i], loc);
                 }
                 const made = try self.arena.create(ast.Expr);
-                made.* = .{ .call = .{ .loc = stampLoc(stampLoc(loc)), .kind = .{ .call = .{
+                made.* = .{ .call = .{ .loc = stampLambdaLoc(loc), .kind = .{ .call = .{
                     .receiver = null,
                     .callee = e.identifier.kind.ident,
                     .is_builtin = false,
