@@ -6,7 +6,7 @@ the first line is `#e11d48/4`. No `context-unbound` exists to fall into. `Dark` 
 `Swatch` below it, which answers that value: `dark #111827/0`. `Outer` provides a third `Theme` and renders `Dark`
 inside it. The `Swatch` under `Dark` still sees `#111827`, the nearest provider winning, while `Outer`'s own `Swatch`
 sees `#2563eb/8`. The last line comes from a component called at build. `swatchAtBuild` runs `Swatch` on the comptime
-runtime with `RenderScope.root()`, where no provider exists, so its read is the default, known at build, and the
+runtime with `await run(c)` over a root of its own, where no provider exists, so its read is the default, known at build, and the
 module `val` is the string constant `#e11d48/4`.
 
 Cells in this repository that also bear on it: `modules/decisions-taken/context_named_by_value_type-379/cells/context_default`,

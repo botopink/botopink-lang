@@ -2,7 +2,7 @@
 //// called by hand: `Card.compose()` is refused at the call, naming
 //// `Card(…)`.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {io.terminal.print} from "std";
 
 type View(text: string)
 

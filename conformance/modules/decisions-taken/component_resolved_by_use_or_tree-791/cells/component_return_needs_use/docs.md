@@ -1,3 +1,3 @@
 # component_return_needs_use
 
-Decision 791 (1), (3): a body written `-> Component<View>` answers `View`, and a component call only makes its lambda, a `Component<View>`; `return mk(1)` is a type mismatch, the hint naming `use` — `val v = use mk(1); return v;` resolves it.
+Decisions 791 (1), 809 (4): a body written `-> Component<View>` answers `View`, and a component call only makes the component, a `Component<View>`; a body answering a component resolves it before it returns, so `return mk(1)` answers `mk`'s `View` — `Component<Component<T>>` never arises.

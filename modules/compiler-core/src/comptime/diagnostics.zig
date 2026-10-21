@@ -78,7 +78,7 @@ pub const await_component: []const u8 = "await-component";
 /// Decision 804 (1) — a type implementing `Component<R>` that declares no
 /// `fn compose(self: Self) -> Component<R>`, its body. Located at the type.
 pub const component_compose_missing: []const u8 = "component-compose-missing";
-/// Decisions 804 (1), 388 (5) — a type component's field typed `RenderScope`:
+/// Decisions 804 (1), 388 (5) — a type component's field typed `Scope`:
 /// the renderer hands the scope to `compose` at each run. Located at the
 /// field's type.
 pub const component_scope_field: []const u8 = "component-scope-field";
@@ -201,9 +201,9 @@ pub const context_marker_removed: []const u8 = "context-marker-removed";
 /// `comptime { … }`: compile-time evaluation has no render tree.
 pub const use_outside_render_tree: []const u8 = "use-outside-render-tree";
 
-/// Decision 354 — `use provide(…)` outside a component's body (a hook's, or
-/// a `@Component<R>` whose `R` is not `@Renderable`): a provider gives its
-/// value to what a component renders below it, and a hook renders nothing.
+/// Decision 354 — `use provide(…)` outside a `component` body answering
+/// `Component<R>`: a provider gives its value to what that body resolves after
+/// it.
 pub const context_provide_outside_component: []const u8 = "context-provide-outside-component";
 
 /// Decision 354 — std's `provide` / `context` referenced other than as the

@@ -363,8 +363,8 @@ the suffix; never re-add a wrap loop to an arm.**
 with `<…>` wraps, and two additions for record/builder ergonomics:
 
 - **A prelude wrapper written bare is the builtin generic** (decision 606 (1)) —
-  `Result<…>`, `Async<…>`, `Component<…>`, `Iter<…>`, `AsyncIter<…>` and the
-  marker `Renderable` (`prelude_wrapper_names`) parse as `@Name` did
+  `Result<…>`, `Async<…>`, `Component<…>`, `Composition<…>` (decision 826),
+  `Iter<…>` and `AsyncIter<…>` (`prelude_wrapper_names`) parse as `@Name` did
   (`parseBuiltinTypeTail`, its refusals included), `generic.bare` set so the
   formatter and `TypeRef.format` print them as written — unless the file
   declares or imports one of that name (`preludeNameShadowed`: a `type` /

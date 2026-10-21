@@ -294,8 +294,8 @@ does not see its own provide), `modules/decisions-taken/context_named_by_value_t
 see another's) and `modules/context_unbound` (`context-unbound` at run time, `abort` nonzero and the
 message on stderr) — erlang, beam and commonJS run them, the wasm backend refuses the `use` where it is
 written (`snapshot/targets/wasm/`, `language-gaps.md`); and the refusals `modules/decisions-taken/component_wrapper_and_contexts-354/refused/src/cases/component_base_parameter`
-(`@Component<C, R>` at the base), `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_marker_removed`, `modules/decisions-taken/component_wrapper_and_contexts-354/cells/renderable_type_argument`,
-`modules/decisions-taken/context_named_by_value_type-379/refused/src/cases/getcontext_removed`, `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_in_hook`, `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_provide_after_render`,
+(`@Component<C, R>` at the base), `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_marker_removed`,
+`modules/decisions-taken/context_named_by_value_type-379/refused/src/cases/getcontext_removed`,
 `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_hook_without_use`, `modules/decisions-taken/component_wrapper_and_contexts-354/cells/context_hook_as_value`, `modules/context_not_declared`,
 `modules/decisions-taken/context_named_by_value_type-379/refused/src/cases/context_val_alias`, `modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_of_parameter`, `modules/decisions-taken/component_wrapper_and_contexts-354/cells/use_in_comptime_block`,
 `modules/decisions-taken/component_wrapper_and_contexts-354/cells/use_in_decorator_body` and `modules/decisions-taken/component_wrapper_and_contexts-354/cells/use_in_template_body` (`use-outside-render-tree`), each red on
@@ -328,7 +328,16 @@ value>)`, removed `context_undeclared_type` and `context_behavior_undeclared` (a
 carries its default) and added `modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_by_value` (an imported handle: its default, then a provided
 context of its type), `modules/decisions-taken/context_provide_made_in_body-723/cells/context_provide_made_in_body` (`val c = comptime createContext(…)` then `use
 provide(c)`) and `modules/decisions-taken/context_read_by_value-722/cells/context_read_by_type_refused` (`context-read-by-type` at the argument), red on the parent.
-Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
+B-162 P1 (decisions 809, 812, 815–826, 884, 888) respelled the scope: a component is a function over
+std's `Scope` and `Place`, a root runs with `await run(c)` (the codemod over every cell's
+`c.run(RenderScope.root())`), `Rendered` and its children's scope left, a body answering a component resolves
+it (809 (4), `component_return_needs_use` now a run cell), and `Renderable` left with its three 354 refusal
+cells (`renderable_type_argument`, `context_provide_in_hook`, `context_provide_after_render`). Its cells:
+`component_names_in_prelude-826`, `component_root_run-822`, `use_child_cell_provide_in_order-812`,
+`scope_tree_lives_with_its_process-824`, `root_closed_by_run-825` and `lambda_omits_trailing_parameters-888`
+(under `modules/decisions-taken/`), green on commonJS, erlang and beam; wasm cannot run std's `run` /
+`resolve` yet (164). The render-library cells below still hold the scope a `run` answered and wait on a
+question. Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
 374's capture: the cell `context_host_thunk` left with it, and `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_library` holds the scope in
 the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the
 scope its parent's `run` answered, hands a host a thunk `{ -> c.run(scope) }` at once and keeps one the
@@ -338,7 +347,7 @@ answers lambdas a tree's runner runs with `Lista`'s scope; generic code keeps th
 `RenderScope.root()`), `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_try_in_body` (a bare `try` in a `@Component<@Result<…>>` body),
 `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_alias_answers_value` (a function typed by an alias of `@Component` is no component body, 118:
 it answers the lambda another body made — `styled`'s `-> StyledView`) and
-`modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction` (`RenderScope(…)` refused, `render-scope-construction`) cover the rest;
+`modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction` (now `Scope(…)` refused, `opaque-construction`) cover the rest;
 all four targets run them (on wasm since decision 504: the scope's values typed by the checker's type the lowering
 carries; `decl_hooks_direct` and `render_scope_library` are narrowed to commonJS, erlang and beam, their hosts having
 no wasm binding), and `modules/decisions-taken/components_compose_by_data-504/cells/component_awaits_host_task` pins 504's rule (a component awaiting a host `delay` is a
@@ -2462,7 +2471,7 @@ four since `13-module-identity` half 3 put the declaration inside the value.
 
 **`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
 (front 21): `test/context_use.bp`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/context_use` and the `use_*` refusal cells declare
-their own owner type (`type Element(…) implement @Renderable`, decision 354), hooks as
+their own node type (`type Element(…)`; the marker `Renderable` left with decision 804 (2)), hooks as
 `fn … -> @Component<T>` and components as `fn … -> @Component<Element>`, and
 pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
 void `use`, an unannotated `fn … -> Element` as an ordinary function, the rules of hooks (decision 357,

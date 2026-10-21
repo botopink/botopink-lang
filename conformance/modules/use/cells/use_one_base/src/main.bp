@@ -33,7 +33,7 @@ component fn Widget(n: i32) -> Component<Element> {
 }
 
 // Decision 388 — a call only makes the component's lambda: `main` awaits
-// it, which runs it with `RenderScope.root()`.
+// it, which runs it over a root of its own (`await run(c)`, decision 825).
 pub async fn main() -> Async<void> {
     await run(Widget(10));
 }

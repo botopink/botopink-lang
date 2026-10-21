@@ -1,0 +1,37 @@
+//// Decisions 822, 825 (1) — a root runs a component with std's `run`: `await
+//// run(App())` answers the component's value whether its body awaits or not.
+//// Handed a scope, `run` runs over it and leaves the closing to whoever made
+//// it: two runs over one root. `resolve` hands a component's answer back as
+//// it came: the value itself for one that awaits nothing.
+
+import {context.run, context.resolve, context.Scope, context.Place, io.terminal.print} from "std";
+
+type View(text: string)
+
+async fn later() -> Async<string> {
+    return "later";
+}
+
+component fn Sync() -> Component<View> {
+    return View(text: "sync");
+}
+
+component fn Slow() -> Component<View> {
+    val t = await later();
+    return View(text: t);
+}
+
+component fn Count(n: i32) -> Component<i32> {
+    return n * 2;
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Sync())).text);
+    print((await run(Slow())).text);
+    val root = Scope.root();
+    print(await run(Count(2), root));
+    print(await run(Count(5), root));
+    root.close();
+    val v = resolve(Count(4), Scope.root(), Place.none());
+    if (v is Async<unknown>) print("task") else print(v);
+}

@@ -1,0 +1,13 @@
+//// Decision 888 (1) — a lambda may write fewer parameters than its expected
+//// function type, never more: `{ a, b, c -> a }` as a `fn(i32, i32) -> i32`
+//// is still `arity`.
+
+import {io.terminal.print} from "std";
+
+fn apply(f: fn(i32, i32) -> i32) -> i32 {
+    return f(4, 9);
+}
+
+pub fn main() -> void {
+    print(apply({ a, b, c -> a }));
+}

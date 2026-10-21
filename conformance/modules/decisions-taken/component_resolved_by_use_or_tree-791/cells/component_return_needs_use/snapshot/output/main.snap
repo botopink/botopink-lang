@@ -1,3 +1,2 @@
 botopink-cell 1
-refused error: type mismatch: expected View, got Component<View> — a body written `-> Component<View>` answers `View`, and a component call only makes its lambda: resolve it with `use` (decision 791)
-at src/main.bp:15:12
+out mk 1

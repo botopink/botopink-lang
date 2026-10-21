@@ -1,7 +1,6 @@
 //// Decision 410 — `use` is refused as the right operand of `&&`, `||` and `??`
 
 import {context.run, io.terminal} from "std";
-import {context.RenderScope} from "std";
 
 type Element(text: string)
 
