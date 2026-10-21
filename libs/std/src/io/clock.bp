@@ -39,13 +39,9 @@
 ////
 //// `formatIso8601(epochMillis)` renders an RFC-3339 / ISO-8601 string
 //// for an epoch-milliseconds reading. Node uses `new Date($0).toISOString()`
-//// (chained host call, §A2-wired); Erlang gates the divisor down to
-//// whole seconds and supplies `[{unit, second}]` to
-//// `calendar:system_time_to_rfc3339/2`. The cross-backend output agrees
-//// modulo the fractional-second suffix — Node always renders `.000` for
-//// integer-millisecond inputs, Erlang's BIF omits the fractional part
-//// when `unit=second`. Callers that need byte-identical output across
-//// backends should strip the `.000` suffix.
+//// (chained host call, §A2-wired); Erlang supplies `[{unit, millisecond}]` to
+//// `calendar:system_time_to_rfc3339/2`. The output is byte-identical on every
+//// target, `YYYY-MM-DDTHH:MM:SS.sssZ`, milliseconds always (decision 849).
 
 // Internal: read the host's current millisecond clock. The `unit`
 // argument is `1000` for millis; Node `Date.now` ignores it, Erlang
@@ -85,16 +81,15 @@ pub fn monotonicMillis() -> i64 {
 
 // Render `epochMillis` as an ISO-8601 / RFC-3339 timestamp string.
 // Node: `new Date($0).toISOString()` (renders `YYYY-MM-DDTHH:MM:SS.sssZ`).
-// Erlang: `calendar:system_time_to_rfc3339/2` with the `second` unit and
-// the `Z` offset — the i64 millis floored to whole seconds before
-// the BIF runs; the resulting binary lacks the millisecond fraction Node always
-// emits. The `Z` offset keeps `calendar` from reading the host's local time,
-// which ERTS refuses before 1902.
+// Erlang: `calendar:system_time_to_rfc3339/2` with the `millisecond` unit and
+// the `Z` offset on the millis as they are (decision 849): milliseconds are
+// always written, `YYYY-MM-DDTHH:MM:SS.sssZ`, as Node's are. The `Z` offset keeps
+// `calendar` from reading the host's local time, which ERTS refuses before 1902.
 // Its domain is RFC 3339's (decision 497): past it the call aborts,
 // naming the value, on every target (`checkRfc3339Domain`).
 #[compiler.external(
     .JavaScript("""(new Date($0).toISOString())"""),
-    .Erlang("""(fun(__M) -> list_to_binary(calendar:system_time_to_rfc3339((__M - (((__M rem 1000) + 1000) rem 1000)) div 1000, [{unit, second}, {offset, "Z"}])) end)($0)"""),
+    .Erlang("""list_to_binary(calendar:system_time_to_rfc3339($0, [{unit, millisecond}, {offset, "Z"}]))"""),
 )]
 declare fn formatIso8601Host(epochMillis: i64) -> string;
 
@@ -399,14 +394,11 @@ test "clock.formatIso8601 renders an ISO-8601 prefix for the current time" {
     assert s.contains("T");
 }
 
-test "clock.parseIso8601 reads back formatIso8601 to the whole second" {
+test "clock.parseIso8601 reads back formatIso8601 exactly" {
     val t = nowMillis();
     val whole = t - (t % wide(1000));
-    // Erlang renders whole seconds, Node keeps the milliseconds: the read-back
-    // lies between the truncated and the exact reading on both.
-    val back = parseIso8601(formatIso8601(t)).unwrapOr(wide(0));
-    assert back >= whole;
-    assert back <= t;
+    // Both targets render the milliseconds (decision 849): the read-back is exact.
+    assert parseIso8601(formatIso8601(t)).unwrapOr(wide(0)) == t;
     assert parseIso8601(formatIso8601(whole)).unwrapOr(wide(0)) == whole;
 }
 
