@@ -105,6 +105,12 @@ out false
 out before
 out after
 out 3
+out before
+out twice 1
+out after
+out twice 2
+out closed
+out [1, 10, 2]
 out twice 0
 out 0
 out 0

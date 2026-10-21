@@ -25984,7 +25984,7 @@ const Emitter = struct {
             if (!m.derives() and m != .to_array and m != .next) return null;
             const src = (try self.genItemOf(cc.receiver.?.*)) orelse return null;
             if (m != .map and m != .flat_map) return src;
-            const lam = genMethodLambda(cc) orelse return null;
+            const lam = self.genMethodLambda(cc) orelse return null;
             if (lam.params.len != 1) return null;
             if (m == .flat_map) return self.lambdaGenItemOver(lam.params[0], src, lam.body);
             return self.lambdaAnswerOver(lam.params[0], src, lam.body);
@@ -26000,11 +26000,16 @@ const Emitter = struct {
 
     /// The lambda a `map` / `filter` over a generator is given, written at
     /// the call (an argument or a trailing block).
-    fn genMethodLambda(cc: anytype) ?GenLambda {
+    fn genMethodLambda(self: *Emitter, cc: anytype) ?GenLambda {
         if (cc.trailing.len == 1) return .{ .params = cc.trailing[0].params, .body = cc.trailing[0].body };
         if (cc.args.len != 1) return null;
         const v = cc.args[0].value.*;
-        if (v != .function or v.function.kind.syntax != .lambda) return null;
+        if (v != .function or v.function.kind.syntax != .lambda) {
+            // A function named as a value (`g.flatMap(twice)`) is the lambda
+            // `{ v -> twice(v) }` calling it.
+            const le = self.resultClosureArg(cc.args[0].value) orelse return null;
+            return .{ .params = le.function.kind.params, .body = le.function.kind.body };
+        }
         return .{ .params = v.function.kind.params, .body = v.function.kind.body };
     }
 
@@ -26792,7 +26797,7 @@ const Emitter = struct {
             },
             .map, .filter, .flat_map => {
                 const src = (try self.genItemOf(recv)) orelse return self.gcFail("a map or filter over a generator whose yitem type is not known");
-                const lam = genMethodLambda(cc) orelse return self.gcFail("a map or filter over a generator of no lambda written at the call");
+                const lam = self.genMethodLambda(cc) orelse return self.gcFail("a map or filter over a generator of no lambda written at the call");
                 if (lam.params.len != 1) return self.gcFail("a map or filter over a generator of a lambda of no one parameter");
                 const idx = self.lambdas.items.len;
                 try self.lowerLambdaValue(lam.params, lam.body, self.call_loc);
