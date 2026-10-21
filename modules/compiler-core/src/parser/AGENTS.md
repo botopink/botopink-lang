@@ -62,9 +62,14 @@ parser/
 │                     none (`FunctionExpr.paramTypes` / `.returnType`), admitted by the checker only as a decorator's
 │                     `decl.addMember(name, fn…)` (`comptime/member_fn.zig`). The loops are decision 105's three keywords,
 │                     one parser each and one `LoopExpr` node (`keyword` says which): `parseForExpr` —
-│                     `for [await] [:label] (iter) { x -> … }` over a collection, a range (`a..b` exclusive,
-│                     `a...b` inclusive — `parseRangeExpr` reads both tokens) or a generator, binding exactly one
-│                     name (`for-without-binder` / `for-binds-one-name`; `paramsLoc` locates it); `parseWhileExpr` —
+│                     `for [await] [:label] <binder> in <iter> { … }` (decision 950; `in` is contextual) over a
+│                     collection, a range (`a..b` exclusive, `a...b` inclusive — `parseRangeExpr` reads both tokens)
+│                     or an iterator, binding exactly one name (`for-without-binder` / `for-binds-one-name`;
+│                     `paramsLoc` locates it) or a pattern — `parseBindAfterKeyword` with the loop's item
+│                     `__bp_for_item<depth>` as its value, the `val <pattern> = <item>;` the body opens with
+│                     (`binderDestruct`); the iterable is read with `noTrailingLambda` (`(…)` and call arguments
+│                     lift it). 105's `for (xs) { x -> … }` is `for-parenthesised` at the `(`, read only under
+│                     `keep_surface` (`parseParenthesisedFor`) so the formatter prints it in the new form; `parseWhileExpr` —
 │                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
 │                     `loop [:label] { … }` (`condition` over the literal `true`); `break [:label]` and `continue [:label]`
 │                     carry the label in the AST (the checker's `checkJumpLabel` reads both). A binder on `while`/`loop` is

@@ -1284,7 +1284,7 @@ pub type array<T> {
         var out: array<Self<T>> = [];
         if (n <= 0) return out;
         val len = self.length;
-        for (0..len) { k ->
+        for k in 0..len {
             if (k % n == 0) out = out.append([self.slice(k, k + n)]);
         }
         return out;
@@ -1298,7 +1298,7 @@ pub type array<T> {
         if (n <= 0) return out;
         val windows = self.length - n + 1;
         if (windows <= 0) return out;
-        for (0..windows) { k ->
+        for k in 0..windows {
             out = out.append([self.slice(k, k + n)]);
         }
         return out;

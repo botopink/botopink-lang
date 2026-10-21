@@ -226,7 +226,7 @@ fn exponentAt(text: string) -> i32 {
 fn allDigits(s: string) -> bool {
     if (s.length() == 0) return false;
     var ok = true;
-    for (s.chars()) { c ->
+    for c in s.chars() {
         if ("0123456789".indexOf(c) < 0) ok = false;
     }
     return ok;
@@ -251,7 +251,7 @@ fn exponentValue(exponent: string) -> i32 {
     if (digits.length() > 9)
         return if (negative) 0 - 1000000000 else 1000000000;
     var n = 0;
-    for (digits.chars()) { c ->
+    for c in digits.chars() {
         n = n * 10 + "0123456789".indexOf(c);
     }
     return if (negative) 0 - n else n;

@@ -1,4 +1,4 @@
 botopink-cell 1
 refused error[removed-loop-parenthesised]: `loop (…)` does not exist — `for` iterates, `while` repeats
 at src/cases/loop_parenthesised/mod.bp:9:5
-label write `for (xs) { x -> … }` or `while (cond) { … }`
+label write `for x in xs { … }` or `while (cond) { … }`

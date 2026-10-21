@@ -18871,7 +18871,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc) else TypeError.custom(
                     diagnostics.iter_mixed_yield_return ++
                         ": this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)",
-                    "Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for (xs) { x -> … };`).",
+                    "Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for x in xs { … };`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -19658,7 +19658,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
                 diagnostics.for_await_expects_stream ++ ": `for await` expects an `AsyncIter<T>` value",
-                "An `Iter<T>` is iterated by `for (it) { x -> … }`; only an `AsyncIter` suspends between items.",
+                "An `Iter<T>` is iterated by `for x in it { … }`; only an `AsyncIter` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -19678,7 +19678,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "AsyncIter")) {
             env.lastError = TypeError.custom(
                 diagnostics.for_over_stream ++ ": an `AsyncIter` suspends between items — iterate it with `for await`",
-                "`for await (s) { x -> … }` where there is an await channel.",
+                "`for await x in s { … }` where there is an await channel.",
             ).withLoc(loc);
             return error.TypeError;
         } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Iter")) {

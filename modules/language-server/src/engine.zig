@@ -4366,7 +4366,44 @@ fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
     if (std.mem.eql(u8, word, "component")) return nk == .@"fn" or opensLambda;
     // Decision 811 (1) — `[pub] opaque type X(…)`: the modifier before `type`.
     if (std.mem.eql(u8, word, "opaque")) return nk == .type;
+    // Decision 950 — the `in` of `for x in xs` / `for #(k, v) in d.entries()`.
+    if (std.mem.eql(u8, word, "in")) return isForInAt(tokens, i);
     return false;
+}
+
+/// True when the `in` at `i` closes a `for` binder: a name, `_` or a
+/// bracketed pattern (`#(…)`, `{…}`, `[…]`, `Ctor(…)`) right after `for`,
+/// `for await` or a loop label (decision 950).
+fn isForInAt(tokens: []const Token, i: usize) bool {
+    var j = prevSignificantIndex(tokens, i) orelse return false;
+    switch (tokens[j].kind) {
+        .identifier, .underscore => {},
+        .rightParenthesis, .rightBrace, .rightSquareBracket => {
+            var depth: usize = 0;
+            while (true) {
+                switch (tokens[j].kind) {
+                    .rightParenthesis, .rightBrace, .rightSquareBracket => depth += 1,
+                    .leftParenthesis, .leftBrace, .leftSquareBracket => {
+                        depth -= 1;
+                        if (depth == 0) break;
+                    },
+                    else => {},
+                }
+                j = prevSignificantIndex(tokens, j) orelse return false;
+            }
+            // `#(…)` or `Ctor(…)`: the token before the opener belongs to the pattern.
+            if (prevSignificantIndex(tokens, j)) |p| if (tokens[p].kind == .hash or tokens[p].kind == .identifier) {
+                j = p;
+            };
+        },
+        else => return false,
+    }
+    const before = prevSignificantIndex(tokens, j) orelse return false;
+    return switch (tokens[before].kind) {
+        .@"for", .await => true,
+        .identifier => if (prevSignificantIndex(tokens, before)) |c| tokens[c].kind == .colon else false,
+        else => false,
+    };
 }
 
 /// True when the identifier at `i` is a loop label — syntax, not a binding:

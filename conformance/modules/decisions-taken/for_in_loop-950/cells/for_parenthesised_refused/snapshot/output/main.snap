@@ -1,0 +1,4 @@
+botopink-cell 1
+refused error[for-parenthesised]: a `for` names its item before `in`: `for x in xs { … }`
+at src/main.bp:9:9
+label write `for x in xs {` — no parentheses, no `x ->`

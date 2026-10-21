@@ -1,4 +1,4 @@
 botopink-cell 1
-refused error[loop-binds-nothing]: `while` and `loop` bind nothing — only `for` takes `{ x -> … }`
+refused error[loop-binds-nothing]: `while` and `loop` bind nothing — only `for` binds the item, `for x in xs`
 at src/cases/loop_condition_parameter/mod.bp:8:21
 label remove the binder

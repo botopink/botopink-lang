@@ -156,7 +156,7 @@ fn fullDecomposition(cp: i32, compat: bool) -> array<i32> {
         canonical;
     if (mapping.length == 0) return [cp];
     var out: array<i32> = [];
-    for (mapping) { m ->
+    for m in mapping {
         out = out.append(fullDecomposition(m, compat));
     }
     return out;
@@ -164,7 +164,7 @@ fn fullDecomposition(cp: i32, compat: bool) -> array<i32> {
 
 fn decompose(cps: array<i32>, compat: bool) -> array<i32> {
     var out: array<i32> = [];
-    for (cps) { c ->
+    for c in cps {
         out = out.append(fullDecomposition(c, compat));
     }
     return out;
@@ -175,7 +175,7 @@ fn decompose(cps: array<i32>, compat: bool) -> array<i32> {
 fn canonicalOrder(cps: array<i32>) -> array<i32> {
     var out: array<i32> = [];
     var run: array<i32> = [];
-    for (cps) { c ->
+    for c in cps {
         val k = tables.combiningClass(c);
         if (k == 0) {
             out = out.append(run).append([c]);
@@ -204,7 +204,7 @@ fn recompose(cps: array<i32>) -> array<i32> {
     var starter = -1;
     var pending: array<i32> = [];
     var lastClass = 0;
-    for (cps) { c ->
+    for c in cps {
         val k = tables.combiningClass(c);
         val adjacent = pending.length == 0;
         val unblocked = adjacent || lastClass < k;

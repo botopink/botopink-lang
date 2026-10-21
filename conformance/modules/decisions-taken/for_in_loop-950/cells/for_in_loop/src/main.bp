@@ -1,0 +1,71 @@
+//// Decision 950 — the collection loop is `for x in xs { … }`: a binder before `in`, the body a
+//// block. It walks a collection, a range (`a..b` exclusive, `a...b` inclusive) and an `Iter`;
+//// `for await x in s { … }` walks an `AsyncIter`; `for x in try e { … }` propagates the
+//// `Result` the iterable answers; a pattern binds as a `val` binds it; a label goes after the
+//// keyword, and a body is a loop body (`break`, `continue :outer`).
+
+import {io.terminal.print} from "std";
+
+iter fn upTo(n: i32) -> Iter<i32> {
+    var i = 0;
+    while (i < n) {
+        yield i;
+        i = i + 1;
+    }
+}
+
+pub async fn double(x: i32) -> Async<i32> {
+    return x * 2;
+}
+
+async iter fn doubled(n: i32) -> AsyncIter<i32> {
+    for x in upTo(n) {
+        yield await double(x);
+    }
+}
+
+fn parsed(ok: bool) -> Result<i32[], string> {
+    if (ok) return [7, 8];
+    throw "refused";
+}
+
+fn sumParsed(ok: bool) -> Result<i32, string> {
+    var acc = 0;
+    for n in try parsed(ok) {
+        acc = acc + n;
+    }
+    return acc;
+}
+
+pub async fn main() -> Async<void> {
+    for x in [1, 2, 3] {
+        print(x);
+    }
+    for i in 0..2 {
+        print(i);
+    }
+    for i in 1...2 {
+        print(i);
+    }
+    for x in upTo(3) {
+        print(x * 10);
+    }
+    for await x in doubled(2) {
+        print(x);
+    }
+    for #(k, v) in [#("a", 1), #("b", 2)] {
+        print(k + "=" + v.toString());
+    }
+    for :outer a in [1, 2, 3] {
+        for b in [1, 2, 3] {
+            if (b == 2) continue :outer;
+            if (a == 3) break :outer;
+            print(a * 100 + b);
+        }
+    }
+    for _ in 0..2 {
+        print("tick");
+    }
+    print(sumParsed(true).unwrapOr(-1));
+    print(sumParsed(false).unwrapOr(-1));
+}

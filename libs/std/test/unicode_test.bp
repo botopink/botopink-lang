@@ -78,7 +78,7 @@ fn checkPart(part: string) -> #(i32, array<string>) {
     var inPart = false;
     var count = 0;
     var failures: array<string> = [];
-    for (file.split("\n")) { line ->
+    for line in file.split("\n") {
         if (line.startsWith("@Part")) inPart = line.startsWith(header) else {
             val data = inPart && !line.startsWith("#") && line != "";
             if (data) {

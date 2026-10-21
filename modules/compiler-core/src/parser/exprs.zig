@@ -784,9 +784,37 @@ fn assertFatalHandler(alloc: std.mem.Allocator, assertTok: Token) ParseError!Exp
 pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     const mutable = this.peek().kind == .@"var";
     const bindTok = this.advance(); // consume 'val' or 'var'
+    return parseBindAfterKeyword(this, alloc, mutable, bindTok, null);
+}
 
+/// The value a destructuring binding reads: `= expr` after a `val` / `var`
+/// pattern, or — `forItem` set, a `for` binder (decision 950) — the `in`
+/// that closes the pattern, the value being the loop's own item `forItem`.
+fn bindValue(this: *This, alloc: std.mem.Allocator, forItem: ?[]const u8, bindTok: Token) ParseError!*Expr {
+    if (forItem) |item| {
+        if (!checkIn(this)) {
+            this.parseError = ParseErrorInfo.fromToken(.forWithoutBinder, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        _ = this.advance();
+        return this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(bindTok), .kind = .{ .ident = item } } });
+    }
+    _ = try this.consume(.equal);
+    return this.boxExpr(alloc, try this.parseExpr(alloc));
+}
+
+/// The contextual `in` of `for x in xs` (decision 950): an identifier
+/// spelled `in`, a keyword nowhere else.
+fn checkIn(this: *This) bool {
+    return this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "in");
+}
+
+/// A binding's pattern and value after `val` / `var` (`forItem` null), or a
+/// `for` binder's pattern before `in` (`forItem` the loop item's name; the
+/// binding is then the `val <pattern> = <item>` the loop's body opens with).
+fn parseBindAfterKeyword(this: *This, alloc: std.mem.Allocator, mutable: bool, bindTok: Token, forItem: ?[]const u8) ParseError!Expr {
     // Pattern assertion: val assert Pattern = expr catch handler
-    if (this.check(.assert)) {
+    if (forItem == null and this.check(.assert)) {
         const savedPos = this.current;
         const assertTok = this.advance(); // consume 'assert'
 
@@ -879,8 +907,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightBrace);
-        _ = try this.consume(.equal);
-        const valPtr = try this.boxExpr(alloc, try this.parseExpr(alloc));
+        const valPtr = try bindValue(this, alloc, forItem, bindTok);
         return Expr{ .binding = .{ .loc = locFromToken(bindTok), .kind = .{ .localBindDestruct = .{
             .pattern = .{ .names = .{ .fields = try fields.toOwnedSlice(alloc), .hasSpread = hasSpread } },
             .value = valPtr,
@@ -905,8 +932,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
-        _ = try this.consume(.equal);
-        const valPtr = try this.boxExpr(alloc, try this.parseExpr(alloc));
+        const valPtr = try bindValue(this, alloc, forItem, bindTok);
         return Expr{ .binding = .{ .loc = locFromToken(bindTok), .kind = .{ .localBindDestruct = .{
             .pattern = .{ .tuple_ = try names.toOwnedSlice(alloc) },
             .value = valPtr,
@@ -917,8 +943,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
     // List destructuring: val [...] = expr
     if (this.check(.leftSquareBracket)) {
         const listPattern = try this.parseListPattern(alloc);
-        _ = try this.consume(.equal);
-        const valPtr = try this.boxExpr(alloc, try this.parseExpr(alloc));
+        const valPtr = try bindValue(this, alloc, forItem, bindTok);
         return Expr{ .binding = .{ .loc = locFromToken(bindTok), .kind = .{ .localBindDestruct = .{
             .pattern = .{ .list = listPattern },
             .value = valPtr,
@@ -942,8 +967,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                 if (!this.match(.comma)) break;
             }
             _ = try this.consume(.rightParenthesis);
-            _ = try this.consume(.equal);
-            const valPtr = try this.boxExpr(alloc, try this.parseExpr(alloc));
+            const valPtr = try bindValue(this, alloc, forItem, bindTok);
             return Expr{ .binding = .{ .loc = locFromToken(bindTok), .kind = .{ .localBindDestruct = .{
                 .pattern = .{ .ctor = .{ .variant = .{ .name = ctorName, .payload = .{ .literals = try args.toOwnedSlice(alloc) } } } },
                 .value = valPtr,
@@ -955,6 +979,10 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
 
     // Plain binding: val name [: TypeRef] = expr
     const nameTok = this.tokens[this.current];
+    if (forItem != null) {
+        this.parseError = ParseErrorInfo.fromToken(.forWithoutBinder, nameTok);
+        return ParseError.UnexpectedToken;
+    }
     if (nameTok.kind != .identifier and nameTok.kind != .underscore) {
         return ParseError.UnexpectedToken;
     }
@@ -1874,7 +1902,16 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             this.parseError = ParseErrorInfo.fromToken(.ifOperand, this.peek());
             return ParseError.UnexpectedToken;
         }
-        const inner = try this.parseExpr(alloc);
+        // Parentheses delimit their own expression: a trailing lambda is
+        // legal inside them even where the context refuses one
+        // (`for y in (xs.map { x -> f(x) }) {`, decision 950).
+        const savedNoTrailing = this.noTrailingLambda;
+        this.noTrailingLambda = false;
+        const inner = this.parseExpr(alloc) catch |err| {
+            this.noTrailingLambda = savedNoTrailing;
+            return err;
+        };
+        this.noTrailingLambda = savedNoTrailing;
         _ = try this.consume(.rightParenthesis);
         const innerPtr = try this.boxExpr(alloc, inner);
         const grouped = Expr{ .collection = .{ .loc = locFromToken(parenTok), .kind = .{ .grouped = innerPtr } } };
@@ -2259,6 +2296,11 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
 
 pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg {
     _ = try this.consume(.leftParenthesis);
+    // The parentheses delimit the arguments: a trailing lambda inside them is
+    // legal where the context refuses one (a `for` iterable, decision 950).
+    const savedNoTrailing = this.noTrailingLambda;
+    this.noTrailingLambda = false;
+    defer this.noTrailingLambda = savedNoTrailing;
     var args: std.ArrayList(CallArg) = .empty;
     errdefer {
         for (args.items) |*a| a.deinit(alloc);
@@ -2477,17 +2519,114 @@ pub fn parseWhileExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr
     };
 }
 
-/// `for [await] [:label] (iter) { x -> … }` — iterates a collection, a range
-/// (`a..b` exclusive, `a...b` inclusive) or a generator, binding exactly one
-/// name; `for await` iterates an `@FutureGenerator`. A body that does not
-/// open with `x ->` is `for-without-binder`; two names are `for-binds-one-name`.
+/// `for [await] [:label] <binder> in <iter> { … }` (decision 950) — iterates a
+/// collection, a range (`a..b` exclusive, `a...b` inclusive) or an iterator;
+/// `for await` walks an `AsyncIter`, and `for x in try xs` reads the iterable
+/// through a propagating `try`. The binder is a name, `_`, or a pattern bound
+/// as a `val` binds it (738): `for #(k, v) in d.entries() { … }` is the loop
+/// over one item whose body opens with `val #(k, v) = <item>;`
+/// (`binderDestruct`). The iterable takes no trailing lambda — the `{` is the
+/// body's. 105's `for (xs) { x -> … }` is `for-parenthesised` at its `(`; the
+/// formatter (`keep_surface`) still reads it, to print it back in the new form.
 pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const forTok = this.advance(); // consume 'for'
     const awaitLoop = this.match(.await);
     const label = try parseLoopLabel(this);
+    if (this.check(.leftParenthesis)) {
+        if (this.keep_surface) return parseParenthesisedFor(this, alloc, forTok, awaitLoop, label);
+        this.parseError = ParseErrorInfo.fromToken(.forParenthesised, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const paramsLoc = locFromToken(this.peek());
+    const params = try alloc.alloc([]const u8, 1);
+    errdefer alloc.free(params);
+    // `x in` / `_ in`: the item's own name. Anything else is a pattern.
+    var destruct: ?Expr = null;
+    errdefer if (destruct) |*d| d.deinit(alloc);
+    if ((this.check(.identifier) or this.check(.underscore)) and this.peekAt(1).kind == .identifier and
+        std.mem.eql(u8, this.peekAt(1).lexeme, "in"))
+    {
+        const nameTok = this.advance();
+        params[0] = if (nameTok.kind == .underscore) "_" else nameTok.lexeme;
+        _ = this.advance(); // `in`
+    } else if (this.check(.identifier) and this.peekAt(1).kind == .comma) {
+        this.parseError = ParseErrorInfo.fromToken(.forBindsOneName, this.peekAt(2));
+        return ParseError.UnexpectedToken;
+    } else if (this.check(.hash) or this.check(.leftBrace) or this.check(.leftSquareBracket) or
+        (this.check(.identifier) and this.peekAt(1).kind == .leftParenthesis))
+    {
+        const depth = this.forDestructDepth;
+        if (depth >= for_item_names.len) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        params[0] = for_item_names[depth];
+        destruct = try parseBindAfterKeyword(this, alloc, false, forTok, params[0]);
+    } else {
+        this.parseError = ParseErrorInfo.fromToken(.forWithoutBinder, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const iterExpr = try parseForIterable(this, alloc);
+    const iterPtr = try this.boxExprOwned(alloc, iterExpr);
+    errdefer {
+        iterPtr.deinit(alloc);
+        alloc.destroy(iterPtr);
+    }
+    _ = try this.consume(.leftBrace);
+    if (destruct != null) this.forDestructDepth += 1;
+    const written = blk: {
+        defer if (destruct != null) {
+            this.forDestructDepth -= 1;
+        };
+        break :blk try parseLoopBody(this, alloc);
+    };
+    const hasDestruct = destruct != null;
+    var body = written;
+    if (destruct) |d| {
+        body = try alloc.alloc(Stmt, written.len + 1);
+        body[0] = .{ .expr = d };
+        @memcpy(body[1..], written);
+        alloc.free(written);
+        destruct = null;
+    }
+    return .{
+        .loc = locFromToken(forTok),
+        .keyword = .for_,
+        .generator = null,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = params,
+        .paramsLoc = paramsLoc,
+        .condition = false,
+        .body = body,
+        .awaitLoop = awaitLoop,
+        .label = label,
+        .binderDestruct = hasDestruct,
+    };
+}
+
+/// The item names of the `for` loops whose binder is a pattern, one per
+/// nesting level (decision 950): the body's first statement destructures it.
+const for_item_names = [_][]const u8{
+    "__bp_for_item0", "__bp_for_item1", "__bp_for_item2", "__bp_for_item3",
+    "__bp_for_item4", "__bp_for_item5", "__bp_for_item6", "__bp_for_item7",
+};
+
+/// The iterable of a `for`, up to the body's `{`: a range, or an expression
+/// that may begin with `try`, `await` or `comptime` (decision 395 (3)). It
+/// takes no trailing lambda, so `for x in xs {` leaves the `{` to the body.
+fn parseForIterable(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    const saved = this.noTrailingLambda;
+    this.noTrailingLambda = true;
+    defer this.noTrailingLambda = saved;
+    if (this.check(.@"try") or this.check(.await) or this.check(.@"comptime")) return this.parseExpr(alloc);
+    return this.parseRangeExpr(alloc);
+}
+
+/// 105's `for [await] [:label] (iter) { x -> … }`, read only by the formatter
+/// (decision 950 (2)): the loop it means, printed back as `for x in iter {`.
+fn parseParenthesisedFor(this: *This, alloc: std.mem.Allocator, forTok: Token, awaitLoop: bool, label: ?[]const u8) ParseError!LoopExpr {
     _ = try this.consume(.leftParenthesis);
-    // Decision 395 (3) — `for (comptime @typeInfo(T).metaAll(C)) { c -> … }`:
-    // a `comptime` begins the iterable as `try` and `await` do.
     const iterExpr = if (this.check(.@"try") or this.check(.await) or this.check(.@"comptime")) try this.parseExpr(alloc) else try this.parseRangeExpr(alloc);
     const iterPtr = try this.boxExprOwned(alloc, iterExpr);
     errdefer {
@@ -2664,8 +2803,10 @@ pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     }
     // Optional end: `0..10` vs `0..`
     // `]` closes an open-ended slice `xs[0..]`, like `)` closes `for (0..)`.
+    // `{` closes `for i in 0.. {` (decision 950): the body's brace.
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
-        !this.check(.rightSquareBracket) and !this.check(.endOfFile);
+        !this.check(.rightSquareBracket) and !this.check(.endOfFile) and
+        !(this.noTrailingLambda and this.check(.leftBrace));
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
         const endPtr = try this.boxExprOwned(alloc, end);

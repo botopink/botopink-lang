@@ -164,5 +164,5 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   modifier on a fn name comes from a look-ahead over its signature
   (`fnReturnsEffectWrapper`: generics, parameters, `->`, then one of the five
   effect wrappers as the outermost return); contextual `async` / `iter` /
-  `stream`, `opaque` before `type` (decision 811) and loop labels are decided from their neighbours
+  `stream`, `opaque` before `type` (decision 811), the `in` closing a `for` binder (decision 950, `isForInAt`) and loop labels are decided from their neighbours
   (`isContextualKeywordAt`, `isLabelAt`), never from state.

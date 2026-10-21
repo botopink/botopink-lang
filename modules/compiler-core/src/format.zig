@@ -874,7 +874,7 @@ pub const Formatter = struct {
                 // Decision 105's three keywords, printed back as written:
                 //   `[iter |stream ]loop [:label] {`
                 //   `[iter |stream ]while [:label] (cond) {`
-                //   `[iter |stream ]for [await] [:label] (iter) { x ->`
+                //   `[iter |stream ]for [await] [:label] x in iter {` (decision 950)
                 // A prefixed `while` / `for` is held as the prefixed
                 // `loop { <written loop>; break; }` (decision 125): print the
                 // prefix and the written loop.
@@ -888,28 +888,39 @@ pub const Formatter = struct {
                 if (lp.label) |lbl| {
                     doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, " :{s}", .{lbl})));
                 }
+                // Decision 950 — `for <binder> in <iter> {`: the binder is the
+                // item's name, or the pattern `body[0]` destructures it with.
+                var body = lp.body;
                 if (lp.keyword == .loop) {
+                    doc = try this.concat(doc, try this.text(" {"));
+                } else if (lp.keyword == .for_) {
+                    doc = try this.concat(doc, try this.text(" "));
+                    if (lp.binderDestruct and body.len > 0 and body[0].expr == .binding and body[0].expr.binding.kind == .localBindDestruct) {
+                        doc = try this.concat(doc, try this.fmtParamDestruct(body[0].expr.binding.kind.localBindDestruct.pattern));
+                        body = body[1..];
+                    } else {
+                        doc = try this.concat(doc, try this.text(if (lp.params.len > 0) lp.params[0] else "_"));
+                    }
+                    doc = try this.concat(doc, try this.text(" in "));
+                    // An iterable that ends in a trailing lambda is wrapped:
+                    // the `{` after it is the body's.
+                    const iterDoc = try this.fmtExpr(lp.iter.*);
+                    doc = try this.concat(doc, if (endsInTrailingLambda(lp.iter.*)) try this.concatAll(&.{ try this.text("("), iterDoc, try this.text(")") }) else iterDoc);
                     doc = try this.concat(doc, try this.text(" {"));
                 } else {
                     doc = try this.concat(doc, try this.text(" ("));
                     doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
                     doc = try this.concat(doc, try this.text(") {"));
                 }
-                for (lp.params, 0..) |p, i| {
-                    doc = try this.concat(doc, if (i == 0) try this.text(" ") else try this.text(", "));
-                    doc = try this.concat(doc, try this.text(p));
-                }
-                // A `while` and a `loop` bind nothing: no `->`.
-                if (lp.params.len > 0) doc = try this.concat(doc, try this.text(" ->"));
                 // Each body statement keeps its `;` — printing them bare made a
                 // loop of two statements unparseable.
-                if (lp.body.len == 0) {
+                if (body.len == 0) {
                     doc = try this.concat(doc, try this.text(" }"));
                     break :blk doc;
                 }
                 break :blk this.forceBreak(try this.concatAll(&.{
                     doc,
-                    try this.nest(INDENT, try this.concat(this.hardline(), try this.fmtStmtSeq(lp.body))),
+                    try this.nest(INDENT, try this.concat(this.hardline(), try this.fmtStmtSeq(body))),
                     this.hardline(),
                     try this.text("}"),
                 }));
@@ -3809,4 +3820,17 @@ fn needsTripleQuotes(s: []const u8) bool {
         if (s[i] == '"') return true;
     }
     return false;
+}
+
+/// Decision 950 — a `for` iterable ends at the body's `{`, so one whose last
+/// call takes a trailing lambda (`xs.map { x -> f(x) }`) is printed in
+/// parentheses: `for y in (xs.map { x -> f(x) }) {`.
+fn endsInTrailingLambda(e: ast.Expr) bool {
+    return switch (e) {
+        .call => |c| switch (c.kind) {
+            .call => |cc| cc.trailing.len > 0,
+            else => false,
+        },
+        else => false,
+    };
 }

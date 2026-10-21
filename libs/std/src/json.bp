@@ -978,7 +978,7 @@ fn scaleBy2(q: f64, e: i32) -> f64 {
 fn bnMulAdd(a: array<i32>, m: i32, add: i32) -> array<i32> {
     var out: array<i32> = [];
     var carry = add;
-    for (a) { limb ->
+    for limb in a {
         val t = limb * m + carry;
         val lo = t % 32768;
         out.push(lo);
@@ -1081,7 +1081,7 @@ fn bnShl(a: array<i32>, s: i32) -> array<i32> {
             z = z + 1;
         }
         var carry = 0;
-        for (a) { limb ->
+        for limb in a {
             val t = limb * mul + carry;
             val lo = t % 32768;
             out.push(lo);

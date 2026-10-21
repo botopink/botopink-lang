@@ -1,0 +1,10 @@
+//// Decision 950 — 105's `for (xs) { x -> … }` is gone: the collection loop is `for x in xs { … }`.
+//// The parenthesised form is refused at its `(`, `for-parenthesised`, naming the new form;
+//// `botopink format` rewrites it.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val xs = [1, 2, 3];
+    for (xs) { x -> print(x); }
+}
