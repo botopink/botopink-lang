@@ -8,7 +8,7 @@
 //// no context (`constant`) registers nothing; one standing on its own
 //// (`alone`) registers itself.
 
-import {context.RenderScope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Rule(name: string, text: string) implement Renderable
 
@@ -56,6 +56,6 @@ component fn Root() -> Component<Rule> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = (await Root().run(RenderScope.root())).value;
+    val r = await run(Root());
     print("root " + r.name);
 }

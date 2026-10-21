@@ -1763,7 +1763,7 @@ pub type Result<R, E> {
 //
 //   -> Result<T, E>       throw · try            (the one fallible wrapper)
 //   -> Async<T>            await
-//   -> Component<R>       use · await            Component ⊃ Async
+//   -> Component<R>       use · await
 //   -> Iter<T>        yield · break v
 //   -> AsyncIter<T>          yield · break v · await   AsyncIter ⊃ Async
 //
@@ -1776,7 +1776,6 @@ pub type Result<R, E> {
 // carries `extends`, not the `implement` a `type` writes, and `extends` cannot
 // carry type arguments), so the full clauses are:
 //
-//   Component<R>      extends Async<R>
 //   AsyncIter<T>         extends Async<YieldStep<T>>
 //   Iter<T>       — NO clause: it neither awaits nor fails.
 //
@@ -1900,40 +1899,47 @@ pub behavior Slice<V> {
     fn slice(self: Self<V>, start: i32, end: ?i32) -> V;
 }
 
-// ── components and hooks — decisions 104, 128 and 354 ───────────────────────
+// ── components and hooks — decisions 104, 128, 354, 809, 815, 819 and 826 ─────
 //
-// The wrapper of `use` is one: `Component<R>`, returning `R` (decision 354 —
-// the base parameter of 128 is gone). A component is the `Component<R>`
-// whose `R` implements the marker `Renderable` (`type Element(…) implement
-// @Renderable`); any other `R` makes the function a hook. A component is
-// called (`Card()`), which only makes its lambda (decision 791 (1)), and
-// inside a component body `use Card()` resolves it (791 (3)); `use f()` takes
-// a hook too, so hooks compose.
-// `throw` / `try` in a `Component` body follow decision 121: legal only when
-// `R` is a `Result`.
+// A component is three names (decisions 809 (1), 815 (1), 819 (1), 826): the
+// function that runs, `Composition<T>`; the behavior a type implements,
+// `Composable<T>`; and their union, `Component<T>`, the type every program
+// writes and none declares or implements. All three are the prelude's,
+// written bare everywhere (826 (1)); `Scope` and `Place` are std's `context`
+// module's. The checker reads `Component` nominally and opens it into its two
+// members only at an `is` / `case` (810, 826 (4)); `Composition<T>` is its
+// function type.
+//
+// `use` is written in a body marked `component` (decision 553); a component
+// is called (`Card()`), which only makes it (decision 791 (1)), and inside a
+// component body `use Card()` resolves it with a child cell of the body's
+// (791 (3), 812 (1)); `use f()` takes a hook too, so hooks compose. A
+// `Component<R>` whose `R` implements the marker `Renderable` is still what
+// the checker calls a component's body for `use provide` (354) until 804 (2)
+// takes the marker out. `throw` / `try` in a `Component` body follow decision
+// 121: legal only when `R` is a `Result`.
 //
 // What a body reads from above it is a context: std's `context` module
-// declares `Context<T>` and the two hooks `provide(ctx, value)` and
-// `context(ctx) -> T` (`use` only, inside a render tree — never in a
-// decorator body, a template body or a `comptime { … }`). A `Component<R>`
-// at run time is a lambda over an opaque `RenderScope` (decision 388): a call
-// only makes it, and the render library runs it — `c.run(scope)` answers
-// `Async<Rendered<R>>` (std's `context`), the result and the scope the body's
-// `provide`s made for its children. In a body `use c` runs `c` with the
-// children's scope (decision 791 (3)), and the root runs with
-// `c.run(RenderScope.root())`; `context`
-// looks the received scope up, `context-unbound` at run time when no provider
-// is above.
+// declares `Context<T>` and the hooks `provide(ctx)` and `context(ctx) -> T`
+// (`use` only, inside a render tree — never in a decorator body, a template
+// body or a `comptime { … }`). std's `context.resolve(c, scope, key)` runs a
+// component (809 (6)), and a root runs with `await run(App())` (822, 825).
 
 pub behavior Renderable {}
 
-pub behavior Component<R> extends Async {
-    // Decision 388 (2) — run the component's lambda with `scope` (std's
-    // `context.RenderScope`): its result and the scope its body's `use
-    // provide`s made for its children (`context.Rendered<R>`). A `Async`,
-    // since whether the node is asynchronous (375) is not in the type.
-    fn run(self: Self<R>, scope: RenderScope) -> Async<Rendered<R>>;
+// The function a component is at run time: it opens its cell under `scope`
+// at `key` and answers its value, or the task of a body that awaits.
+pub type Composition<T> = fn(scope: Scope, key: Place) -> T | Async<T>;
+
+// What a type implements to be a component: `compose` answers the function
+// that runs. Only std's `resolve` calls it (804 (1), 815 (3)).
+pub behavior Composable<T> {
+    fn compose(self: Self<T>) -> Composition<T>;
 }
+
+// A component: a `Composition` or a `Composable`. A type is used as `Result`
+// and `Async` are; nothing implements it (809 (1)).
+pub type Component<T> = Composition<T> | Composable<T>;
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //

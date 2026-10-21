@@ -1,21 +1,21 @@
-//! Decision 504 — the render scope's values on wasm, typed.
+//! Decision 504 — the component scope's values on wasm, typed.
 //!
-//! The scope lowering (`comptime/context_lower.zig`, decision 388) carries
-//! values through std's `context` functions in `unknown` slots — a provided
-//! value, a body's result, the value a run answers — and writes, on each call
-//! that crosses one, the checker's type of the value as the call's one type
-//! argument (`bpScopeFind__<T>(…)`, `bpScopeValue__<R>(…)`, the
-//! `Rendered<R>` a `c.run(scope)` answers). This backend boxes and unboxes
-//! only by a static type, so before anything is registered each module's
-//! program is rewritten here (a copy: the transformed program is shared with
-//! the module's other emissions):
+//! The scope lowering (`comptime/context_lower.zig`, decisions 809 (8), 819)
+//! carries values through std's `context` functions in `unknown` slots — a
+//! provided value, a body's answer, the value a run answers — and writes, on
+//! each call that crosses one, the checker's type of the value as the call's
+//! one type argument (`bpScopeFind__<T>(…)`, the `bpRun__<R>` a run of a
+//! component value carries). This backend boxes and unboxes only by a static
+//! type, so before anything is registered each module's program is rewritten
+//! here (a copy: the transformed program is shared with the module's other
+//! emissions):
 //!
-//! - a value crosses the scope as its own word, never boxed: `push`'s and
-//!   `rendered`'s calls go through one wrapper each, `bpScopeRaw__push` /
-//!   `bpScopeRaw__rendered`, whose arguments the emitter passes as they are
-//!   (`isWrapper`);
+//! - a value crosses the scope as its own word, never boxed: `enter`'s,
+//!   `provideIn`'s and `answer`'s calls go through one wrapper each,
+//!   `bpScopeRaw__enter` / `bpScopeRaw__provide` / `bpScopeRaw__answer`,
+//!   whose arguments the emitter passes as they are (`isWrapper`);
 //! - a value read back is typed by what the call carries: each carried
-//!   `find` / `valueOf` and each run is a call of a wrapper of its own
+//!   `find` and each run is a call of a wrapper of its own
 //!   (`bpScopeRaw__find<n>` …) declared to answer that type, so every
 //!   reader of the call's answer — a field read, a string concatenation, a
 //!   printer — asks a declared return, as of any function; the wrapper's
@@ -23,16 +23,16 @@
 //! - a `use memo` slot's value (decision 771) is read the same way, through
 //!   a wrapper of its own (`bpScopeRaw__memo<n>`) declared to answer the `T`
 //!   the slot's `read` carries;
-//! - a written `@Component<R>` is the lambda a component is at run time
-//!   (388): `fn(unknown) -> unknown`, wherever it is written but a host
+//! - a written `Component<R>` is the function a component is at run time
+//!   (819): `fn(unknown, unknown) -> R`, wherever it is written but a host
 //!   declaration (a bodyless `declare fn` answers the host's own value).
 //!
 //! A value whose type is a float or an `i64` (8 bytes, no word) crosses as
-//! the address of its cell, as a function value's does: `push` and `rendered`
-//! keep the type they carry, so the emitter boxes their value argument
-//! (`valueArg`), and a reader's wrapper declared to answer that type loads
-//! the cell. A carried call with no type (the checker left it unresolved) is
-//! left as it is, and the emitter refuses it at the call.
+//! the address of its cell, as a function value's does: `provideIn` and
+//! `answer` keep the type they carry, so the emitter boxes their value
+//! argument (`valueArg`), and a reader's wrapper declared to answer that type
+//! loads the cell. A carried call with no type (the checker left it
+//! unresolved) is left as it is, and the emitter refuses it at the call.
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const context_lower = @import("../../comptime/context_lower.zig");
@@ -53,12 +53,12 @@ pub fn isWrapper(name: []const u8) bool {
     return std.mem.indexOf(u8, name, wrapper_prefix) != null;
 }
 
-/// The position of the value a `push` / `rendered` wrapper carries into the
+/// The position of the value a `provide` / `answer` wrapper carries into the
 /// scope — the argument the emitter boxes when the call's type argument is a
 /// float or an `i64` — or null for a reader.
 pub fn valueArg(name: []const u8) ?usize {
-    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "push")) return 2;
-    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "rendered")) return 0;
+    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "provide")) return 2;
+    if (std.mem.endsWith(u8, name, wrapper_prefix ++ "answer")) return 0;
     // Decision 378 (3) — `find`'s fallback, the type's declared default,
     // crosses as `push`'s value does.
     if (std.mem.indexOf(u8, name, wrapper_prefix ++ "find") != null) return 2;
@@ -71,12 +71,14 @@ const Carry = struct {
     arena: std.mem.Allocator,
     wrappers: std.ArrayListUnmanaged(ast.DeclKind) = .empty,
     count: usize = 0,
-    push_done: bool = false,
-    rendered_done: bool = false,
+    provide_done: bool = false,
+    answer_done: bool = false,
+    enter_done: bool = false,
 
     fn lambdaRef(self: *Carry) !ast.TypeRef {
-        const params = try self.arena.alloc(ast.TypeRef, 1);
+        const params = try self.arena.alloc(ast.TypeRef, 2);
         params[0] = unknown_ref;
+        params[1] = unknown_ref;
         const ret = try self.arena.create(ast.TypeRef);
         ret.* = unknown_ref;
         return .{ .function = .{ .params = params, .returnType = ret } };
@@ -130,26 +132,34 @@ const Carry = struct {
         const cc = &c.kind.call;
         if (cc.receiver != null or cc.is_builtin) return;
         if (cc.calleeExpr) |ce| {
-            // A run, `(c)(scope)`, carrying `Rendered<R>`.
+            // A run, `(c)(cell, place)`, carrying `bpRun__<R>`.
             const ta = cc.typeArgs orelse return;
-            if (ta.len != 1 or ta[0] != .generic or !std.mem.eql(u8, ta[0].generic.name, "Rendered") or cc.args.len != 1) return;
+            if (ta.len != 1 or ta[0] != .generic or !std.mem.eql(u8, ta[0].generic.name, context_lower.run_mark) or ta[0].generic.args.len != 1 or cc.args.len != 2) return;
             const name = try self.fresh("run");
-            try self.declare(name, &.{ param("c", try self.lambdaRef()), param("s", unknown_ref) }, ta[0], null, c.loc);
-            const args = try self.arena.alloc(ast.CallArg, 2);
+            try self.declare(name, &.{ param("c", try self.lambdaRef()), param("s", unknown_ref), param("k", unknown_ref) }, ta[0].generic.args[0], null, c.loc);
+            const args = try self.arena.alloc(ast.CallArg, 3);
             args[0] = .{ .label = null, .value = ce };
             args[1] = cc.args[0];
+            args[2] = cc.args[1];
             cc.* = .{ .receiver = null, .callee = name, .is_builtin = false, .args = args, .trailing = &.{} };
             return;
         }
-        if (std.mem.eql(u8, cc.callee, context_lower.push_fn)) {
-            const name = wrapper_prefix ++ "push";
-            if (!self.push_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("v", unknown_ref) }, unknown_ref, context_lower.push_fn, c.loc);
-            self.push_done = true;
+        if (std.mem.eql(u8, cc.callee, context_lower.provide_fn)) {
+            const name = wrapper_prefix ++ "provide";
+            if (!self.provide_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("v", unknown_ref) }, unknown_ref, context_lower.provide_fn, c.loc);
+            self.provide_done = true;
             cc.callee = name;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.rendered_fn)) {
-            const name = wrapper_prefix ++ "rendered";
-            if (!self.rendered_done) try self.declare(name, &.{ param("v", unknown_ref), param("s", unknown_ref) }, unknown_ref, context_lower.rendered_fn, c.loc);
-            self.rendered_done = true;
+        } else if (std.mem.eql(u8, cc.callee, context_lower.enter_fn)) {
+            // The function's own parameters, the scope and the place: passed
+            // on as the words they are.
+            const name = wrapper_prefix ++ "enter";
+            if (!self.enter_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", unknown_ref) }, unknown_ref, context_lower.enter_fn, c.loc);
+            self.enter_done = true;
+            cc.callee = name;
+        } else if (std.mem.eql(u8, cc.callee, context_lower.answer_fn)) {
+            const name = wrapper_prefix ++ "answer";
+            if (!self.answer_done) try self.declare(name, &.{param("v", unknown_ref)}, unknown_ref, context_lower.answer_fn, c.loc);
+            self.answer_done = true;
             cc.callee = name;
         } else if (std.mem.eql(u8, cc.callee, context_lower.find_fn)) {
             const ta = cc.typeArgs orelse return;
@@ -170,20 +180,21 @@ const Carry = struct {
             try self.declare(name, &.{ param("s", unknown_ref), param("m", .{ .function = .{ .params = &.{}, .returnType = ret } }) }, ta[0], context_lower.memo_read_fn, c.loc);
             cc.callee = name;
             cc.typeArgs = null;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.value_fn)) {
-            const ta = cc.typeArgs orelse return;
-            if (ta.len != 1) return;
-            const name = try self.fresh("value");
-            try self.declare(name, &.{param("r", unknown_ref)}, ta[0], context_lower.value_fn, c.loc);
-            cc.callee = name;
-            cc.typeArgs = null;
         }
     }
 
     fn walk(self: *Carry, comptime N: type, ptr: *N) anyerror!void {
         if (N == ast.TypeRef) {
             if (isComponentRef(ptr.*)) {
+                // `fn(unknown, unknown) -> R`: the function a component is,
+                // answering its `R` as the word it is (`answer`), so a generic
+                // signature (`run<T>(c: Component<T>)`) still binds `T`.
+                const r = ptr.generic.args[0];
                 ptr.* = try self.lambdaRef();
+                const ret = try self.arena.create(ast.TypeRef);
+                ret.* = r;
+                ptr.function.returnType = ret;
+                try self.walk(ast.TypeRef, ret);
                 return;
             }
         }

@@ -5,7 +5,7 @@
 //// `label`; the `Card` it only calls makes a lambda that nothing runs, so
 //// `compose ran` prints twice: once under `Page`, once at the root.
 
-import {context.createContext, context.provide, context.context, context.RenderScope, io.terminal.print} from "std";
+import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type Theme(mode: string)
 
@@ -33,8 +33,8 @@ component fn Page() -> Component<View> {
 }
 
 pub async fn main() -> Async<void> {
-    val r = await Page().run(RenderScope.root());
-    print(r.value.text);
-    val alone = await Card(title: "root").run(RenderScope.root());
-    print(alone.value.text);
+    val r = await run(Page());
+    print(r.text);
+    val alone = await run(Card(title: "root"));
+    print(alone.text);
 }

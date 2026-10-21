@@ -289,9 +289,18 @@ fn isOptional(n: anytype) bool {
 /// alternative it tried linked, and there is no way to roll that back.
 ///
 /// A member still an unbound variable accepts anything — inference has not
-/// decided it, and refusing there would red on its own gap.
+/// decided it, and refusing there would red on its own gap — but only when no
+/// member is the value's own type or has its shape: `Async<T>` goes into the
+/// `Async<T>` of `T | Async<T>` (decision 809 (6)), never into the `T`, which
+/// would hold itself.
 fn memberAccepting(members: []*T.Type, value: *T.Type) ?*T.Type {
     const v = value.deref();
+    for (members) |m| {
+        const dm = m.deref();
+        if (dm == v) return m;
+        if (dm.* == .named and v.* == .named and std.mem.eql(u8, dm.named.name, v.named.name) and
+            dm.named.args.len == v.named.args.len) return m;
+    }
     for (members) |m| {
         const dm = m.deref();
         if (dm == v) return m;
