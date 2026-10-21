@@ -1,0 +1,16 @@
+//// Decision 808 (3) — a `comptime` that answers a value runs at build and
+//// has no place for an executor: a call under it of a function that writes
+//// `compiler.init` is refused `compiler-output-outside-decorator`, at the
+//// call.
+
+import {compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> string {
+    compiler.init({ -> print("case " + name) });
+    return name;
+}
+
+pub fn run() -> void {
+    val x = comptime check("a");
+    print(x);
+}

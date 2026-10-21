@@ -8,8 +8,9 @@ names resolved where they were written (`init_at_call_other_module`). In its own
 type-checks with `compiler.init` typed `void` and leaves the program (808 (1), `init_at_call_pub_own_module`).
 A `comptime { … }` written in a function body that calls one runs at build and writes the executor's body
 where the block is, run each time the enclosing function runs (808 (4), `init_at_call_body_block`). A call
-from a decorator's body is refused `compiler-output-outside-decorator`, at the call (808 (3),
-`init_at_call_from_decorator`). The build lines are held by compiler unit tests: `cell check` records none
+from a decorator's body, from a template's body and under a `comptime` that answers a value is refused
+`compiler-output-outside-decorator`, at the call (808 (3), `init_at_call_from_decorator`,
+`init_at_call_from_template`, `init_at_call_in_value_comptime`). The build lines are held by compiler unit tests: `cell check` records none
 (decision 796).
 
 [run/src/cases/init_at_call_order/mod.bp](run/src/cases/init_at_call_order/mod.bp)
@@ -18,5 +19,7 @@ from a decorator's body is refused `compiler-output-outside-decorator`, at the c
 [run/src/cases/init_at_call_pub_own_module/mod.bp](run/src/cases/init_at_call_pub_own_module/mod.bp)
 [cells/init_at_call_other_module/src/main.bp](cells/init_at_call_other_module/src/main.bp)
 [refused/src/cases/init_at_call_from_decorator/mod.bp](refused/src/cases/init_at_call_from_decorator/mod.bp)
+[refused/src/cases/init_at_call_from_template/mod.bp](refused/src/cases/init_at_call_from_template/mod.bp)
+[refused/src/cases/init_at_call_in_value_comptime/mod.bp](refused/src/cases/init_at_call_in_value_comptime/mod.bp)
 
 Proved also by [block_calls_other_module_pub](../module_comptime_block_rules-793/cells/block_calls_other_module_pub/src/main.bp)

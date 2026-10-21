@@ -1,0 +1,18 @@
+//// Decision 808 (3) — a template's body runs at build and has no place for
+//// an executor: a call there of a function that writes `compiler.init` is
+//// refused `compiler-output-outside-decorator`, at the call.
+
+import {code, compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> void {
+    compiler.init({ -> print("case " + name) });
+}
+
+fn shout(syntax q: string) -> anyvalue {
+    check("template");
+    return code @`${compiler.text(q)}.toUpper()`;
+}
+
+pub fn run() -> void {
+    print(shout @`hello`);
+}
