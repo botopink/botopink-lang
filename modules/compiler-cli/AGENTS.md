@@ -103,7 +103,10 @@ compiler-cli/
 │   │                          built and run from its `.bpr` as directly (the
 │   │                          loader included), and `cat` (`a` and `b` over one
 │   │                          `lib` whose module reads `@TypeInfo.all`) emitted
-│   │                          into one directory, `lib.bpr` holding no reader
+│   │                          into one directory, `lib.bpr` holding no reader,
+│   │                          and `tpl` (`a` and `b` over one `mid` whose module
+│   │                          expands a template querying the catalogue), `mid.bpr`
+│   │                          holding no such module
 │   ├── runtime_file/        ← its fixture: `app` (a decorator and a template of
 │   │                          `lib`, a top-level `comptime` block, a folded value,
 │   │                          `std/math`) and `lib`

@@ -249,7 +249,8 @@ pub const ComptimeSession = struct {
     /// into the program (`compileWith`): their sources, which the outputs
     /// read, live as long as the session.
     loaded: ?*std.heap.ArenaAllocator = null,
-    /// The paths of the modules that read `@TypeInfo.all` (`orderReaders`):
+    /// The paths of the modules that read `@TypeInfo.all` (`orderReaders`) or
+    /// expand a template whose body queries it (`templateReads`):
     /// their answer is the whole program's. In `arena`.
     readers: []const []const u8 = &.{},
 
@@ -5227,10 +5228,14 @@ fn compileOnce(
     }
 
     {
-        const readers = try arena_alloc.alloc([]const u8, reflection.readers.count());
+        // A module expanding a template whose body queries the catalogue
+        // holds that program's answer as well (`templateReads`), a reader to
+        // the build's files though it is not one to the analysis order.
+        var all: std.StringArrayHashMapUnmanaged(void) = .empty;
         var it = reflection.readers.keyIterator();
-        for (readers) |*r| r.* = it.next().?.*;
-        session.readers = readers;
+        while (it.next()) |k| try all.put(arena_alloc, k.*, {});
+        for (reflection.templateReads.items) |read| try all.put(arena_alloc, read.module, {});
+        session.readers = all.keys();
     }
     return .{ .session = session, .reflection = reflection };
 }

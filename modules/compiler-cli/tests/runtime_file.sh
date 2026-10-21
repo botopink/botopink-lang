@@ -21,6 +21,10 @@
 #     `lib` whose module reads the catalogue, both emitted into one directory,
 #     each builds from its own `.bpr` as its direct build does and `lib.bpr`
 #     holds no such module and is the same bytes after both;
+#   • a module expanding a template that queries the catalogue is filed there too
+#     (805 (1)): over `tpl/`, programs `a` and `b` over one `mid` whose `card`
+#     module expands `looks`'s template, `mid.bpr` the same bytes after both and
+#     each program's run from its `.bpr` reading its own `#[theme]`;
 #   • refused: `build` / `run` over a `.bpr` without `--target`
 #     (`runtime-target-required`), a `.bpr` of another compiler
 #     (`runtime-other-compiler`), a dependency's `.bpr` as the program
@@ -157,6 +161,30 @@ for prog in a b; do
   bpin "$CAT/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-cat-$prog" "$WORK/rt-cat/$prog.bpr" || fail "cat/$prog: the run from $prog.bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
     || { fail "cat/$prog: the run from $prog.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+done
+
+# A template expansion's file: two programs over one `mid` whose `card` module
+# expands `looks`'s template, which queries the catalogue; each program's
+# `#[theme]` is what the expansion reads, so `card` is filed in the root's file.
+TPL="$WORK/tpl"
+for prog in a b; do
+  if ! bpin "$TPL/$prog" "$WORK/direct.log" build --target commonJS --out "$WORK/direct-tpl-$prog" --emit-runtime "$WORK/rt-tpl"; then
+    fail "tpl/$prog: the direct build failed"; sed 's/^/      /' "$WORK/direct.log" >&2; continue
+  fi
+  cp "$WORK/rt-tpl/mid.bpr" "$WORK/mid-$prog.bpr"
+  grep -aq 'src/card.bp' "$WORK/mid-$prog.bpr" && fail "tpl/$prog: mid.bpr holds the module expanding a catalogue template"
+  grep -aq 'src/card.bp' "$WORK/rt-tpl/$prog.bpr" || fail "tpl/$prog: $prog.bpr does not hold the module expanding a catalogue template"
+done
+cmp -s "$WORK/mid-a.bpr" "$WORK/mid-b.bpr" || fail "tpl: mid.bpr differs between the two programs"
+cmp -s "$WORK/mid-b.bpr" "$WORK/rt-tpl/mid.bpr" || fail "tpl: mid.bpr differs after both"
+for prog in a b; do
+  [[ -f "$WORK/rt-tpl/$prog.bpr" ]] || continue
+  bpin "$TPL/$prog" "$WORK/run-direct.out" run --target commonJS --out "$WORK/run-direct-tpl-$prog" || fail "tpl/$prog: the direct run failed"
+  grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
+  grep -q "main\.${prog}theme" "$WORK/want.out" || fail "tpl/$prog: the direct run does not read its own #[theme]"
+  bpin "$TPL/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-tpl-$prog" "$WORK/rt-tpl/$prog.bpr" || fail "tpl/$prog: the run from $prog.bpr failed"
+  diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
+    || { fail "tpl/$prog: the run from $prog.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
 done
 
 if (( failures > 0 )); then
