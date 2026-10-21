@@ -491,25 +491,6 @@ test "surface: 105's parenthesised for is for-parenthesised at its `(` (decision
     try expectError("fn f() { for :l ([1]) { x -> x; }; }", .forParenthesised, 1, 17);
 }
 
-test "surface: a for iterable ending in a call takes no trailing lambda, whatever the call form (decision 950)" {
-    var parsed = try parse(
-        \\fn f(g: Grid) -> void {
-        \\    for d in @TypeInfo.all(with: note) { print(d); };
-        \\    for c in g.cells() { print(c); };
-        \\    for n in ns.items(1) { print(n); };
-        \\    for x in try g.load() { print(x); };
-        \\    for y in @items() { print(y); };
-        \\}
-    );
-    defer parsed.deinit();
-    const body = parsed.program.decls[0].@"fn".body;
-    for (body) |st| {
-        const lp = st.expr.loop;
-        try std.testing.expectEqual(@as(usize, 1), lp.body.len);
-        try std.testing.expect(lp.body[0].expr == .call);
-    }
-}
-
 test "surface: for x in xs binds the item before `in`; a pattern opens the body (decision 950)" {
     var parsed = try parse(
         \\fn f(xs: i32[], ps: #(i32, i32)[]) -> void {

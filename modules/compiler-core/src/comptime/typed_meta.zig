@@ -205,7 +205,7 @@ pub fn withMetaHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         // at the read's argument, never on a line of the function's own.
         var tl = lexer.Lexer.init(spelled);
         const typeTokens = try lexer.Lexer.scanAll(&tl, arena);
-        const src = try std.fmt.allocPrint(arena, "fn {s}(slots: DeclaredTypedMeta[], key: string) -> " ++ type_slot ++ "[] {{ var out: " ++ type_slot ++ "[] = []; for s in slots {{ if (s.key == key) {{ val f = s.value; if (f is fn() -> " ++ type_slot ++ ") out.push(f()); }} }} return out; }}", .{name});
+        const src = try std.fmt.allocPrint(arena, "fn {s}(slots: DeclaredTypedMeta[], key: string) -> " ++ type_slot ++ "[] {{ var out: " ++ type_slot ++ "[] = []; for (slots) {{ s -> if (s.key == key) {{ val f = s.value; if (f is fn() -> " ++ type_slot ++ ") out.push(f()); }} }} return out; }}", .{name});
         var lx = lexer.Lexer.init(src);
         var tokens: std.ArrayListUnmanaged(lexer.Token) = .empty;
         for (try lx.scanAll(arena)) |t| {
