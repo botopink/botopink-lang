@@ -23951,7 +23951,7 @@ fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!Type
         // or an imported enum's `x?.m()` called the variant's atom as a module.
         const synthLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion };
         if (env.instanceLowerings.get(loc) == null) {
-            if (env.instanceLowerings.get(synthLoc)) |il| if (il == .type_) try env.instanceLowerings.put(loc, il);
+            if (env.instanceLowerings.get(synthLoc)) |il| if (il == .type_ or (il == .prim and il.prim == .array)) try env.instanceLowerings.put(loc, il);
         }
         return old;
     }
