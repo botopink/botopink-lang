@@ -11967,7 +11967,15 @@ const Emitter = struct {
                     // `[256]`, the string's address, at exit 0.
                     if (lb.typeAnnotation) |ta| try self.noteAnnotatedArray(lb.name, ta);
                     if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
-                    if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
+                    if (self.recordTypeOfExpr(lb.value.*)) |rty| {
+                        try self.local_types.put(lb.name, rty);
+                    } else if (lb.typeAnnotation) |ta| if (ta == .optional and ta.optional.* == .named) {
+                        // `val h: ?Form = null`: the value names no record, the
+                        // annotation does — a `?.` chain off `h` reads `Form`'s
+                        // fields by their declared types (`h?.fields?.length()`
+                        // guarded at each link).
+                        if (self.resolveRecordName(ta.optional.named)) |rty| try self.local_types.put(lb.name, rty);
+                    };
                     // Coerce to the type the local was *actually* declared with:
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.

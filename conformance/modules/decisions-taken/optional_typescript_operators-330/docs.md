@@ -30,3 +30,4 @@
 [run/src/cases/std_type_field_associated/mod.bp](run/src/cases/std_type_field_associated/mod.bp)
 [cells/optional_chain_nested_array/src/main.bp](cells/optional_chain_nested_array/src/main.bp)
 [cells/optional_chain_lambda_generic/src/main.bp](cells/optional_chain_lambda_generic/src/main.bp)
+[cells/optional_chain_absent_array_length/src/main.bp](cells/optional_chain_absent_array_length/src/main.bp)
