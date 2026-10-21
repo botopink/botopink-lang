@@ -2,13 +2,14 @@
 //// makes its context with `use memo`: `val c = use memo({ ->
 //// createContext(Theme(…)) }); use provide(c);`. `Label` reads it through
 //// the handle it imports, `themeContext`; with no provider above it reads
-//// the handle's default. The context is made on the value's first render
-//// and kept for it: `page` rendered twice makes it once.
+//// the handle's default. The context is made on the first render of the
+//// memo's cell and kept while it stands: `page` run twice over one root makes
+//// it once (decision 816).
 
 pub mod theme;
 
 import {theme.Theme, theme.themeContext};
-import {context.run, context.createContext, context.provide, context.context, hooks.memo, io.terminal.print} from "std";
+import {context.run, context.Scope, context.createContext, context.provide, context.context, hooks.memo, io.terminal.print} from "std";
 
 type Element(text: string)
 
@@ -30,10 +31,12 @@ component fn Page(mode: string) -> Component<Element> {
 pub async fn main() -> Async<void> {
     val outside = await run(Label());
     print(outside.text);
+    val root = Scope.root();
+    defer root.close();
     val page = Page("dark");
-    val first = await run(page);
+    val first = await run(page, root);
     print(first.text);
-    val again = await run(page);
+    val again = await run(page, root);
     print(again.text);
     val other = await run(Page("sepia"));
     print(other.text);

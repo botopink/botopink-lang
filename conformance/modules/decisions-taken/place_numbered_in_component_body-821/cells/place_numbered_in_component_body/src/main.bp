@@ -1,0 +1,68 @@
+//// Decision 821 — a call's number is counted within the nearest `component`
+//// body, its lambdas with it: an unkeyed `map` keeps one cell per item, the
+//// calls of two lambdas in one list never collide, `linha("l1")` and
+//// `linha("l2")` (a plain function answering a component) are two cells — the
+//// body's call stamps over the function's —, and `["k1", "k2"].map(Card)` keeps
+//// one cell per item.
+
+import {context.run, context.resolve, context.Place, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+component fn Card(title: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made card " + title);
+        title
+    });
+    return View(text: "card " + made);
+}
+
+// A plain function answering a component: the call written in the body
+// stamps over the one written here.
+fn linha(name: string) -> Component<View> {
+    return Item(name);
+}
+
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+fn runEach(cs: Component<View>[], scope: Scope) -> string {
+    return cs.map({ c -> textOf(resolve(c, scope, Place.none())) }).join(",");
+}
+
+component fn App(round: i32) -> Component<View> {
+    val ativos = ["a", "b"].map({ n -> Item(n) });
+    val inativos = ["c"].map({ n -> Item(n) });
+    val both = ativos.append(inativos);
+    val helpers = [linha("l1"), linha("l2")];
+    val cards = ["k1", "k2"].map(Card);
+    val list: Component<string> = { scope ->
+        val a = runEach(both, scope);
+        val h = runEach(helpers, scope);
+        val c = runEach(cards, scope);
+        a + " | " + h + " | " + c
+    };
+    val l = use list;
+    return View(text: round.toString() + ": " + l);
+}
+
+async fn render(root: Scope, round: i32) -> Async<string> {
+    return (await run(App(round), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, 1));
+    print(await render(root, 2));
+}

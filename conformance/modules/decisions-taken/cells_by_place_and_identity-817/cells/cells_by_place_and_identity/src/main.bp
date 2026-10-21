@@ -1,0 +1,38 @@
+//// Decision 817 (5) — a reused cell takes its parent's contexts anew and keeps
+//// only its hooks' slots: `App(dark: true)` after `App(dark: false)` over one
+//// root, `Panel` reads the dark theme and keeps its memo.
+
+import {context.run, context.Scope, context.createContext, context.provide, context.context, hooks.memo, io.terminal.print} from "std";
+
+type Theme(mode: string)
+
+type View(text: string)
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Panel() -> Component<View> {
+    val t = use context(themeContext);
+    val clicks = use memo({ ->
+        print("made panel");
+        3
+    });
+    return View(text: t.mode + " " + clicks.toString());
+}
+
+component fn App(dark: bool) -> Component<View> {
+    use provide(createContext(Theme(mode: if (dark) "dark" else "light")));
+    val p = use Panel();
+    return p;
+}
+
+async fn render(root: Scope, dark: bool) -> Async<string> {
+    return (await run(App(dark), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, false));
+    print(await render(root, true));
+    print(await render(root, false));
+}

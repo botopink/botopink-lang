@@ -87,29 +87,30 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
-// ── the place (decisions 819, 820, 884, 891) ─────────────────────────────────
+// ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 
 // Where a component stands among its siblings (819 (2)): the number of the
 // call that made it, and its item half — absent, a count the call's
 // component body or plain function made (821), a list runner's index, or a
 // key. A program passes `Place.none()` (the place the value carries), or
 // runs one by hand with `Place.key(k)` / `Place.index(i)` (819 (3), 884).
-pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
+// `stamped` marks a place a making call wrote (820 (1)): a runner's never is.
+pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown, stamped: bool) {
     // The place the component's value carries (820 (2)): what `use c` and a
     // root pass.
     pub fn none() -> Place {
-        return Place(callNo: 0, item: PlaceItem.Absent, itemNo: 0, keyValue: null);
+        return Place(callNo: 0, item: PlaceItem.Absent, itemNo: 0, keyValue: null, stamped: false);
     }
 
     // `k` in the item's stead, the call's number kept (819 (3)).
     pub fn key<K>(k: K) -> Place {
-        return Place(callNo: 0, item: PlaceItem.Key, itemNo: 0, keyValue: k);
+        return Place(callNo: 0, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: false);
     }
 
     // Position `i` in a list run — `all`'s entries and a render library's
     // children (884, 891).
     pub fn index(i: i32) -> Place {
-        return Place(callNo: 0, item: PlaceItem.Index, itemNo: i, keyValue: null);
+        return Place(callNo: 0, item: PlaceItem.Index, itemNo: i, keyValue: null, stamped: false);
     }
 
     // This place as `key` says it is run (820 (2), 884 (1), 891 (1)): a key
@@ -118,10 +119,10 @@ pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
     // keeps it whole.
     pub fn with(self: Self, key: Place) -> Place {
         if (key.item == PlaceItem.Key)
-            return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue);
+            return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue, stamped: self.stamped);
         if (key.item == PlaceItem.Index)
             if (self.item == PlaceItem.Absent || self.item == PlaceItem.Plain)
-                return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null);
+                return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null, stamped: self.stamped);
         return self;
     }
 }
@@ -129,7 +130,20 @@ pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown) {
 // A place's item half (891 (1)).
 pub type PlaceItem { Absent, Body, Plain, Index, Key }
 
-// ── the scope (decisions 809 (8), 817, 824, 825) ─────────────────────────────
+// Whether two places name one child: the call's number and the item half,
+// a key compared by value (818 (3)).
+fn samePlace(a: Place, b: Place) -> bool {
+    if (a.callNo != b.callNo || a.item != b.item || a.itemNo != b.itemNo)
+        return false;
+    if (a.item == PlaceItem.Key) return sameKey(placeKey(a), placeKey(b));
+    return true;
+}
+
+fn placeKey(p: Place) -> unknown {
+    return p.keyValue;
+}
+
+// ── the scope (decisions 809 (8), 816, 817, 824, 825) ────────────────────────
 
 // A cell of a render's tree: the contexts provided above it, a persistent map
 // keyed by each context's identity. Opaque — made only by `Scope.root()`, a
@@ -146,10 +160,14 @@ pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown, 
         return Scope(scopeStore: storeOf(null), scopeCell: 0, scopeOwner: ownerSelf(), scopeCarried: null);
     }
 
-    // The child cell of this one at `key`: it starts from this cell's contexts
-    // as they stand (817 (5)). Each component body opens its own with it.
+    // The child cell of this one at `key`, entered for a render (816, 817):
+    // the cell its place named in this cell's previous render, or in this
+    // one, reused with its hooks' state; any other place a fresh cell. It
+    // takes this cell's contexts as they stand (817 (5)). Each component body
+    // opens its own with it; two siblings with one key fail `key-duplicate`
+    // (819 (5)).
     pub fn childAt(self: Self, key: Place) -> Scope {
-        return Scope(scopeStore: self.scopeStore, scopeCell: grow(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell), scopeOwner: self.scopeOwner, scopeCarried: self.scopeCarried);
+        return Scope(scopeStore: self.scopeStore, scopeCell: openChild(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell, key), scopeOwner: self.scopeOwner, scopeCarried: self.scopeCarried);
     }
 
     // Ends the root's tree (`Closeable`, 539): every scope of it fails
@@ -186,21 +204,30 @@ pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown, 
     }
 }
 
-// A root's tree: whether it is closed, the count of its cells, and each
-// cell's contexts, the latest entry for an id first. Public as `Frame` is: a
-// program never names it.
-pub type ScopeTree(treeClosed: bool, treeCount: i32, treeCells: unknown)
+// A root's tree: whether it is closed, the count of its cells, each cell's
+// state and each `place → cell` link, the latest entry for an id or a place
+// first. Public as `Frame` is: a program never names it.
+pub type ScopeTree(treeClosed: bool, treeCount: i32, treeCells: unknown, treeLinks: unknown)
 
 // The contexts a detached root carries across processes (824 (3)).
 pub type Carried(frames: unknown)
 
-// One cell's contexts in a root's tree.
-pub type CellEntry(cellNo: i32, cellFrames: unknown, cellNext: unknown)
+// One cell of a root's tree: its contexts, the number of its renders, its
+// hook's slot (816, 818 (1)) and the count of the values each call of its
+// body made in the current render (821 (1)).
+pub type CellEntry(cellNo: i32, cellFrames: unknown, cellGen: i32, cellSlot: unknown, cellFilled: bool, cellCounts: unknown, cellNext: unknown)
+
+// A child cell at a place of its parent, and the parent's render that last
+// met it (817 (1)).
+pub type PlaceLink(linkParent: i32, linkPlace: Place, linkChild: i32, linkSeen: i32, linkNext: unknown)
+
+// The count of the values call `countCall` made in one render or one entry.
+pub type PlaceCount(countCall: i32, countValue: i32, countNext: unknown)
 
 // A new root's store, its one cell holding `frames`.
 fn storeOf(frames: unknown) -> unknown {
     val store = storeNew();
-    storeSet(store, ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: frames, cellNext: null)));
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: frames, cellGen: 0, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: null), treeLinks: null));
     return store;
 }
 
@@ -212,7 +239,7 @@ fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
     if (!storeLive(store))
         if (carried is Carried) {
             val c: Carried = carried;
-            val t = ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: carriedFrames(c), cellNext: null));
+            val t = ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: carriedFrames(c), cellGen: 0, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: null), treeLinks: null);
             storeSet(store, t);
             return t;
         }
@@ -226,18 +253,93 @@ fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
     panic("scope-closed: a scope is used after its root's `close()` (decision 825 (2))");
 }
 
-// A new cell under cell `parent`, starting from its contexts: its id.
-fn grow(store: unknown, owner: unknown, carried: unknown, parent: i32) -> i32 {
+fn treeCells(t: ScopeTree) -> unknown {
+    return t.treeCells;
+}
+
+fn treeLinks(t: ScopeTree) -> unknown {
+    return t.treeLinks;
+}
+
+// `t` with `e` as cell `e.cellNo`'s state.
+fn withCell(t: ScopeTree, e: CellEntry) -> ScopeTree {
+    return ScopeTree(treeClosed: false, treeCount: t.treeCount, treeCells: CellEntry(cellNo: e.cellNo, cellFrames: entryFrames(e), cellGen: e.cellGen, cellSlot: entrySlot(e), cellFilled: e.cellFilled, cellCounts: entryCounts(e), cellNext: treeCells(t)), treeLinks: treeLinks(t));
+}
+
+// Cell `id`'s state in `cells`.
+fn cellOf(cells: unknown, id: i32) -> CellEntry {
+    var cur = cells;
+    loop {
+        if (cur is CellEntry) {
+            val e: CellEntry = cur;
+            if (e.cellNo == id) return e;
+            cur = entryNext(e);
+        } else panic("a scope names a cell its tree does not hold (decision 817)");
+    }
+}
+
+// The child of cell `parent` at `key`, entered for a render: its id.
+fn openChild(store: unknown, owner: unknown, carried: unknown, parent: i32, key: Place) -> i32 {
     val t = treeOf(store, owner, carried);
+    val p = cellOf(treeCells(t), parent);
+    val frames = entryFrames(p);
+    val found = linkAt(treeLinks(t), parent, key);
+    if (found is PlaceLink) {
+        val l: PlaceLink = found;
+        // Two siblings with one key in one render (819 (5)); the root's
+        // children are each run's own.
+        if (parent != 0 && l.linkSeen == p.cellGen && key.item == PlaceItem.Key)
+            panic("key-duplicate: two siblings carry the key "
+                + keyText(placeKey(key))
+                + " (decision 819 (5))");
+        // Met in the parent's previous render or in this one: the same cell,
+        // its contexts taken anew and its counts reset (816 (2), 817 (5)).
+        if (parent == 0 || l.linkSeen >= p.cellGen - 1) {
+            val c = cellOf(treeCells(t), l.linkChild);
+            val kept = withCell(t, CellEntry(cellNo: c.cellNo, cellFrames: frames, cellGen: c.cellGen
+                + 1, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: null, cellNext: null));
+            storeSet(store, ScopeTree(treeClosed: false, treeCount: kept.treeCount, treeCells: treeCells(kept), treeLinks: PlaceLink(linkParent: parent, linkPlace: key, linkChild: l.linkChild, linkSeen: p.cellGen, linkNext: treeLinks(kept))));
+            return l.linkChild;
+        }
+    }
+    // A place not met in the parent's previous render: a fresh cell.
     val id = t.treeCount;
     storeSet(store, ScopeTree(treeClosed: false, treeCount: id
-        + 1, treeCells: CellEntry(cellNo: id, cellFrames: framesOf(t.treeCells, parent), cellNext: t.treeCells)));
+        + 1, treeCells: CellEntry(cellNo: id, cellFrames: frames, cellGen: 1, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: treeCells(t)), treeLinks: PlaceLink(linkParent: parent, linkPlace: key, linkChild: id, linkSeen: p.cellGen, linkNext: treeLinks(t))));
     return id;
+}
+
+// The latest link of cell `parent` at `key`, or null.
+fn linkAt(links: unknown, parent: i32, key: Place) -> unknown {
+    var cur = links;
+    loop {
+        if (cur is PlaceLink) {
+            val l: PlaceLink = cur;
+            if (l.linkParent == parent && samePlace(l.linkPlace, key))
+                return linkSelf(l);
+            cur = linkNext(l);
+        } else return null;
+    }
+}
+
+fn linkSelf(l: PlaceLink) -> unknown {
+    return l;
+}
+
+fn linkNext(l: PlaceLink) -> unknown {
+    return l.linkNext;
+}
+
+// A key as a failure names it.
+fn keyText(k: unknown) -> string {
+    if (k is string) return "\"" + k + "\"";
+    if (k is i32) return k.toString();
+    return "of another type";
 }
 
 // The contexts cell `id` holds now.
 fn framesAt(store: unknown, owner: unknown, carried: unknown, id: i32) -> unknown {
-    return framesOf(treeOf(store, owner, carried).treeCells, id);
+    return entryFrames(cellOf(treeCells(treeOf(store, owner, carried)), id));
 }
 
 fn carriedFrames(c: Carried) -> unknown {
@@ -247,30 +349,66 @@ fn carriedFrames(c: Carried) -> unknown {
 // `value` provided for `key` in cell `id`.
 fn provideAt(store: unknown, owner: unknown, carried: unknown, id: i32, key: string, value: unknown) -> void {
     val t = treeOf(store, owner, carried);
-    val frames = Frame(key: key, value: value, parent: framesOf(t.treeCells, id));
-    storeSet(store, ScopeTree(treeClosed: false, treeCount: t.treeCount, treeCells: CellEntry(cellNo: id, cellFrames: frames, cellNext: t.treeCells)));
+    val c = cellOf(treeCells(t), id);
+    val frames = Frame(key: key, value: value, parent: entryFrames(c));
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: frames, cellGen: c.cellGen, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: entryCounts(c), cellNext: null)));
+}
+
+// The count of the values call `callNo` made before this one in cell `id`'s
+// current render; the cell counts this one (821 (1)).
+fn countAt(store: unknown, owner: unknown, carried: unknown, id: i32, callNo: i32) -> i32 {
+    val t = treeOf(store, owner, carried);
+    val c = cellOf(treeCells(t), id);
+    val n = countIn(entryCounts(c), callNo);
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: entryFrames(c), cellGen: c.cellGen, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: PlaceCount(countCall: callNo, countValue: n
+        + 1, countNext: entryCounts(c)), cellNext: null)));
+    return n;
+}
+
+// The latest count of call `callNo` in `counts`, else 0.
+fn countIn(counts: unknown, callNo: i32) -> i32 {
+    var cur = counts;
+    loop {
+        if (cur is PlaceCount) {
+            val k: PlaceCount = cur;
+            if (k.countCall == callNo) return k.countValue;
+            cur = countRest(k);
+        } else return 0;
+    }
+}
+
+fn countRest(k: PlaceCount) -> unknown {
+    return k.countNext;
+}
+
+// Cell `id`'s slot: what `make` answered on the cell's first render, kept
+// while the cell stands (816 (1), 818 (1)).
+fn slotAt(store: unknown, owner: unknown, carried: unknown, id: i32, make: fn() -> unknown) -> unknown {
+    val c = cellOf(treeCells(treeOf(store, owner, carried)), id);
+    if (c.cellFilled) return entrySlot(c);
+    val value = make();
+    val t = treeOf(store, owner, carried);
+    val now = cellOf(treeCells(t), id);
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: entryFrames(now), cellGen: now.cellGen, cellSlot: value, cellFilled: true, cellCounts: entryCounts(now), cellNext: null)));
+    return value;
 }
 
 // The root's tree closed; a closed one is left as it is.
 fn closeStore(store: unknown) -> void {
     if (!storeLive(store)) return;
-    storeClose(store, ScopeTree(treeClosed: true, treeCount: 0, treeCells: null));
-}
-
-// The contexts of cell `id` in `cells`.
-fn framesOf(cells: unknown, id: i32) -> unknown {
-    var cur = cells;
-    loop {
-        if (cur is CellEntry) {
-            val e: CellEntry = cur;
-            if (e.cellNo == id) return entryFrames(e);
-            cur = entryNext(e);
-        } else return null;
-    }
+    storeClose(store, ScopeTree(treeClosed: true, treeCount: 0, treeCells: null, treeLinks: null));
 }
 
 fn entryFrames(e: CellEntry) -> unknown {
     return e.cellFrames;
+}
+
+fn entrySlot(e: CellEntry) -> unknown {
+    return e.cellSlot;
+}
+
+fn entryCounts(e: CellEntry) -> unknown {
+    return e.cellCounts;
 }
 
 fn entryNext(e: CellEntry) -> unknown {
@@ -373,6 +511,67 @@ pub fn root() -> unknown {
     return Scope.root();
 }
 
+// ── the stamp (decisions 820, 821, 818 (3)) ──────────────────────────────────
+//
+// Each written call answering a component answers its value carrying its
+// place: `stamp(c, <the body's cell>, n)` in a component body, the item the
+// count of the values call `n` made in the body's current render;
+// `stampPlain(c, <the entry's counter>, n)` in a plain function, counted in
+// that entry (`countNew` at its entry, `countEnd` deferred); `stampKeyed(c,
+// n, k)` for `#[key(k)]`. The place travels in the value: run with a
+// runner's place it is `mine.with(key)`; a place another stamp already wrote
+// passes through, so the stamp written last — the outer call's — wins
+// (821 (2)).
+
+pub fn stamp(c: Component<unknown>, cell: unknown, callNo: i32) -> Composition<unknown> {
+    if (cell is Scope)
+        return placed(c, Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+pub fn stampPlain(c: Component<unknown>, counter: unknown, callNo: i32) -> Composition<unknown> {
+    return placed(c, Place(callNo: callNo, item: PlaceItem.Plain, itemNo: countNext(counter, callNo), keyValue: null, stamped: true));
+}
+
+pub fn stampKeyed(c: Component<unknown>, callNo: i32, k: unknown) -> Composition<unknown> {
+    return placed(c, Place(callNo: callNo, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: true));
+}
+
+// `c` carrying `mine`.
+fn placed(c: Component<unknown>, mine: Place) -> Composition<unknown> {
+    return { scope, key -> resolve(c, scope, if (key.stamped) key else mine.with(key)) };
+}
+
+// `use memo(make)` written as call `callNo` of a body: the slot of its own
+// child cell (818 (1)), filled on that cell's first render.
+pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        return slotAt(child.storeRef(), child.ownerRef(), child.carriedRef(), child.cellId(), make);
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// A plain function entry's counter of the values each of its calls made
+// (821 (2)).
+pub fn countNew() -> unknown {
+    return countCellNew();
+}
+
+// The entry's counter gone: on erlang and beam its process-dictionary entry.
+pub fn countEnd(counter: unknown) -> void {
+    countCellEnd(counter, null);
+}
+
+// The count of the values call `callNo` made before this one in the entry.
+fn countNext(counter: unknown, callNo: i32) -> i32 {
+    val counts = if (countCellFilled(counter)) countCellGet(counter) else null;
+    val n = countIn(counts, callNo);
+    countCellSet(counter, PlaceCount(countCall: callNo, countValue: n
+        + 1, countNext: counts));
+    return n;
+}
+
 fn frameValue(f: Frame) -> unknown {
     return f.value;
 }
@@ -382,6 +581,46 @@ fn frameParent(f: Frame) -> unknown {
 }
 
 // ── the store's host side (decision 824) ─────────────────────────────────────
+
+// Two keys compared by value (818 (3)).
+fn sameKey(a: unknown, b: unknown) -> bool {
+    return a == b;
+}
+
+#[compiler.external(
+    .JavaScript("""({ v: undefined })"""),
+    .Erlang("""erlang:make_ref()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn countCellNew() -> unknown;
+
+#[compiler.external(
+    .JavaScript("""($0.v !== undefined)"""),
+    .Erlang("""(erlang:get({bp_count, $0}) =/= undefined)"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn countCellFilled(counter: unknown) -> bool;
+
+#[compiler.external(
+    .JavaScript("""$0.v"""),
+    .Erlang("""erlang:get({bp_count, $0})"""),
+    .Wasm(wasi: .CellGet),
+)]
+declare fn countCellGet(counter: unknown) -> unknown;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, __V) -> erlang:put({bp_count, __S}, __V), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn countCellSet(counter: unknown, value: unknown) -> void;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, _) -> erlang:erase({bp_count, __S}), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn countCellEnd(counter: unknown, gone: unknown) -> void;
 
 #[compiler.external(
     .JavaScript("""({ v: undefined })"""),
@@ -443,9 +682,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
 ----- BEAM ASSEMBLY -- std/context.S
 ```erlang
 {module, std@context}.
-{exports, [{createContext, 1}, {provide, 1}, {context, 1}, {inject, 1}, {resolve, 3}, {run, 2}, {enter, 2}, {received, 1}, {provideIn, 3}, {find, 3}, {answer, 1}, {nowhere, 0}, {root, 0}, {storeOf, 1}, {grow, 4}, {closeStore, 1}, {framesAt, 4}, {'__bp_priv__carriedFrames', 1}, {'__bp_priv__entryFrames', 1}, {'__bp_priv__entryNext', 1}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}, {'__bp_priv__framesOf', 2}, {'__bp_priv__provideAt', 6}, {'__bp_priv__treeOf', 3}]}.
+{exports, [{createContext, 1}, {provide, 1}, {context, 1}, {inject, 1}, {resolve, 3}, {run, 2}, {enter, 2}, {received, 1}, {provideIn, 3}, {find, 3}, {answer, 1}, {nowhere, 0}, {root, 0}, {stamp, 3}, {stampPlain, 3}, {stampKeyed, 3}, {memoIn, 3}, {countNew, 0}, {countEnd, 1}, {storeOf, 1}, {openChild, 5}, {closeStore, 1}, {framesAt, 4}, {'__bp_priv__carriedFrames', 1}, {'__bp_priv__cellOf', 2}, {'__bp_priv__countAt', 5}, {'__bp_priv__countIn', 2}, {'__bp_priv__countNext', 2}, {'__bp_priv__countRest', 1}, {'__bp_priv__entryCounts', 1}, {'__bp_priv__entryFrames', 1}, {'__bp_priv__entryNext', 1}, {'__bp_priv__entrySlot', 1}, {'__bp_priv__frameParent', 1}, {'__bp_priv__frameValue', 1}, {'__bp_priv__keyText', 1}, {'__bp_priv__linkAt', 3}, {'__bp_priv__linkNext', 1}, {'__bp_priv__linkSelf', 1}, {'__bp_priv__placeKey', 1}, {'__bp_priv__placed', 2}, {'__bp_priv__provideAt', 6}, {'__bp_priv__sameKey', 2}, {'__bp_priv__samePlace', 2}, {'__bp_priv__slotAt', 5}, {'__bp_priv__treeCells', 1}, {'__bp_priv__treeLinks', 1}, {'__bp_priv__treeOf', 3}, {'__bp_priv__withCell', 2}]}.
 {attributes, []}.
-{labels, 208}.
+{labels, 461}.
 %%% Contexts (decisions 354, 378, 379) — what a component's body reads from
 %%% above it, React's context in botopink's spelling.
 %%% 
@@ -567,14 +806,123 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
-% ── the place (decisions 819, 820, 884, 891) ─────────────────────────────────
+% ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
 % Where a component stands among its siblings (819 (2)): the number of the
 % call that made it, and its item half — absent, a count the call's
 % component body or plain function made (821), a list runner's index, or a
 % key. A program passes `Place.none()` (the place the value carries), or
 % runs one by hand with `Place.key(k)` / `Place.index(i)` (819 (3), 884).
+% `stamped` marks a place a making call wrote (820 (1)): a runner's never is.
 % A place's item half (891 (1)).
-% ── the scope (decisions 809 (8), 817, 824, 825) ─────────────────────────────
+% Whether two places name one child: the call's number and the item half,
+% a key compared by value (818 (3)).
+
+{function, samePlace, 2, 11}.
+  {label, 10}.
+    {line, [{location, "std@context.erl", 9}]}.
+    {func_info, {atom, std@context}, {atom, samePlace}, 2}.
+  {label, 11}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 101}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 101}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 102}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 102}.
+    {test, is_ne_exact, {f, 103}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 104}}.
+  {label, 103}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 104}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 105}, [{x, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 107}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 107}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 108}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 108}.
+    {test, is_ne_exact, {f, 109}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 110}}.
+  {label, 109}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 110}.
+    {jump, {f, 106}}.
+  {label, 105}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 106}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 111}, [{x, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 113}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 113}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 114}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 114}.
+    {test, is_ne_exact, {f, 115}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 116}}.
+  {label, 115}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 116}.
+    {jump, {f, 112}}.
+  {label, 111}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 112}.
+    {test, is_eq, {f, 100}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+  {label, 100}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 118}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 118}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
+    {test, is_eq_exact, {f, 117}, [{x, 1}, {x, 0}]}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 13}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 13}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_last, 2, {f, 99}, 4}.
+  {label, 117}.
+    {move, {atom, true}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+
+{function, placeKey, 1, 13}.
+  {label, 12}.
+    {line, [{location, "std@context.erl", 10}]}.
+    {func_info, {atom, std@context}, {atom, placeKey}, 1}.
+  {label, 13}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 119}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+  {label, 119}.
+    {deallocate, 1}.
+    return.
+% ── the scope (decisions 809 (8), 816, 817, 824, 825) ────────────────────────
 % A cell of a render's tree: the contexts provided above it, a persistent map
 % keyed by each context's identity. Opaque — made only by `Scope.root()`, a
 % cell's `childAt` and `detach`. A root's whole tree is one entry: on erlang
@@ -583,202 +931,727 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % commonJS a plain object, on wasm a heap cell (824). A scope used after its
 % root's `close()` fails `scope-closed` on every target (825 (2)); one read in
 % another process than the root's fails `scope-foreign` (824 (3)).
-% A root's tree: whether it is closed, the count of its cells, and each
-% cell's contexts, the latest entry for an id first. Public as `Frame` is: a
-% program never names it.
+% A root's tree: whether it is closed, the count of its cells, each cell's
+% state and each `place → cell` link, the latest entry for an id or a place
+% first. Public as `Frame` is: a program never names it.
 % The contexts a detached root carries across processes (824 (3)).
-% One cell's contexts in a root's tree.
+% One cell of a root's tree: its contexts, the number of its renders, its
+% hook's slot (816, 818 (1)) and the count of the values each call of its
+% body made in the current render (821 (1)).
+% A child cell at a place of its parent, and the parent's render that last
+% met it (817 (1)).
+% The count of the values call `countCall` made in one render or one entry.
 % A new root's store, its one cell holding `frames`.
 
-{function, storeOf, 1, 11}.
-  {label, 10}.
-    {line, [{location, "std@context.erl", 17}]}.
+{function, storeOf, 1, 15}.
+  {label, 14}.
+    {line, [{location, "std@context.erl", 19}]}.
     {func_info, {atom, std@context}, {atom, storeOf}, 1}.
-  {label, 11}.
-    {allocate, 7, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+  {label, 15}.
+    {allocate, 8, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
     {call_ext, 0, {extfunc, erlang, make_ref, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {test_heap, 5, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {integer, 0}, {y, 0}, {atom, undefined}]}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 2}, {integer, 1}, {x, 0}]}}.
+    {move, {atom, false}, {x, 0}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {integer, 0}, {y, 0}, {integer, 0}, {atom, undefined}, {x, 0}, {atom, undefined}, {atom, undefined}]}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 2}, {integer, 1}, {x, 0}, {atom, undefined}]}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 53}}.
+    {call, 2, {f, 121}}.
     {move, {y, 1}, {x, 0}}.
-    {deallocate, 7}.
+    {deallocate, 8}.
     return.
 % The root's tree, live and in its own process; a detached root's starts in
 % each process that reads it from the contexts it carries.
 
-{function, treeOf, 3, 13}.
-  {label, 12}.
-    {line, [{location, "std@context.erl", 18}]}.
+{function, treeOf, 3, 17}.
+  {label, 16}.
+    {line, [{location, "std@context.erl", 20}]}.
     {func_info, {atom, std@context}, {atom, treeOf}, 3}.
-  {label, 13}.
-    {allocate, 13, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+  {label, 17}.
+    {allocate, 18, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 60}}.
-    {test, is_eq, {f, 58}, [{x, 0}, {atom, true}]}.
+    {call, 1, {f, 128}}.
+    {test, is_eq, {f, 126}, [{x, 0}, {atom, true}]}.
     {move, {literal, <<"scope-foreign: a scope is read in another process than its root's \x{E2}\x{80}\x{94} pass `scope.detach()` to another process (decision 824 (3))">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-    {jump, {f, 66}}.
-  {label, 58}.
-  {label, 66}.
+    {jump, {f, 134}}.
+  {label, 126}.
+  {label, 134}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 69}}.
-    {test, is_eq, {f, 70}, [{x, 0}, {atom, true}]}.
+    {call, 1, {f, 137}}.
+    {test, is_eq, {f, 138}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 71}}.
-  {label, 70}.
+    {jump, {f, 139}}.
+  {label, 138}.
     {move, {atom, true}, {x, 0}}.
-  {label, 71}.
-    {test, is_eq, {f, 67}, [{x, 0}, {atom, true}]}.
+  {label, 139}.
+    {test, is_eq, {f, 135}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 73}, [{x, 0}, 2, {atom, std@context@@Carried}]}.
+    {test, is_tagged_tuple, {f, 141}, [{x, 0}, 2, {atom, std@context@@Carried}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 74}}.
-  {label, 73}.
+    {jump, {f, 142}}.
+  {label, 141}.
     {move, {atom, false}, {x, 0}}.
-  {label, 74}.
-    {test, is_eq, {f, 72}, [{x, 0}, {atom, true}]}.
+  {label, 142}.
+    {test, is_eq, {f, 140}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 19}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {integer, 0}, {x, 0}, {atom, undefined}]}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 4}, {integer, 1}, {x, 0}]}}.
+    {call, 1, {f, 39}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {test_heap, 9, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {integer, 0}, {x, 1}, {integer, 0}, {atom, undefined}, {x, 0}, {atom, undefined}, {atom, undefined}]}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 4}, {integer, 1}, {x, 0}, {atom, undefined}]}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
-    {call, 2, {f, 53}}.
+    {call, 2, {f, 121}}.
     {move, {y, 5}, {x, 0}}.
-    {deallocate, 13}.
+    {deallocate, 18}.
     return.
-  {label, 72}.
-    {jump, {f, 75}}.
-  {label, 67}.
-  {label, 75}.
+  {label, 140}.
+    {jump, {f, 143}}.
+  {label, 135}.
+  {label, 143}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 69}}.
-    {test, is_eq, {f, 76}, [{x, 0}, {atom, true}]}.
+    {call, 1, {f, 137}}.
+    {test, is_eq, {f, 144}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 78}}.
+    {call, 1, {f, 146}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 80}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
+    {test, is_tagged_tuple, {f, 148}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 81}}.
-  {label, 80}.
+    {jump, {f, 149}}.
+  {label, 148}.
     {move, {atom, false}, {x, 0}}.
-  {label, 81}.
-    {test, is_eq, {f, 79}, [{x, 0}, {atom, true}]}.
+  {label, 149}.
+    {test, is_eq, {f, 147}, [{x, 0}, {atom, true}]}.
     {move, {y, 6}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 83}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
+    {test, is_tagged_tuple, {f, 151}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 83}.
-    {test, is_eq, {f, 84}, [{x, 0}, {atom, true}]}.
+  {label, 151}.
+    {test, is_eq, {f, 152}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 85}}.
-  {label, 84}.
+    {jump, {f, 153}}.
+  {label, 152}.
     {move, {atom, true}, {x, 0}}.
-  {label, 85}.
-    {test, is_eq, {f, 82}, [{x, 0}, {atom, true}]}.
+  {label, 153}.
+    {test, is_eq, {f, 150}, [{x, 0}, {atom, true}]}.
     {move, {y, 7}, {x, 0}}.
-    {deallocate, 13}.
+    {deallocate, 18}.
     return.
-  {label, 82}.
-    {jump, {f, 86}}.
-  {label, 79}.
-  {label, 86}.
-    {jump, {f, 87}}.
-  {label, 76}.
-  {label, 87}.
+  {label, 150}.
+    {jump, {f, 154}}.
+  {label, 147}.
+  {label, 154}.
+    {jump, {f, 155}}.
+  {label, 144}.
+  {label, 155}.
     {move, {literal, <<"scope-closed: a scope is used after its root's `close()` (decision 825 (2))">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
+    {deallocate, 18}.
+    return.
+
+{function, treeCells, 1, 19}.
+  {label, 18}.
+    {line, [{location, "std@context.erl", 21}]}.
+    {func_info, {atom, std@context}, {atom, treeCells}, 1}.
+  {label, 19}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 156}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 156}.
+    {deallocate, 1}.
+    return.
+
+{function, treeLinks, 1, 21}.
+  {label, 20}.
+    {line, [{location, "std@context.erl", 22}]}.
+    {func_info, {atom, std@context}, {atom, treeLinks}, 1}.
+  {label, 21}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 157}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+  {label, 157}.
+    {deallocate, 1}.
+    return.
+% `t` with `e` as cell `e.cellNo`'s state.
+
+{function, withCell, 2, 23}.
+  {label, 22}.
+    {line, [{location, "std@context.erl", 23}]}.
+    {func_info, {atom, std@context}, {atom, withCell}, 2}.
+  {label, 23}.
+    {allocate, 13, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 158}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 158}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 159}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 159}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 53}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 160}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 160}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 55}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 161}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 161}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 57}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {x, 0}]}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 21}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 2}, {y, 3}, {y, 10}, {x, 0}]}}.
     {deallocate, 13}.
     return.
-% A new cell under cell `parent`, starting from its contexts: its id.
+% Cell `id`'s state in `cells`.
 
-{function, grow, 4, 15}.
-  {label, 14}.
-    {line, [{location, "std@context.erl", 19}]}.
-    {func_info, {atom, std@context}, {atom, grow}, 4}.
-  {label, 15}.
-    {allocate, 14, 4}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}]}}.
+{function, cellOf, 2, 25}.
+  {label, 24}.
+    {line, [{location, "std@context.erl", 24}]}.
+    {func_info, {atom, std@context}, {atom, cellOf}, 2}.
+  {label, 25}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {line, [{location, "std@context.erl", 25}]}.
+  {label, 162}.
+    {move, {atom, true}, {x, 0}}.
+    {test, is_eq_exact, {f, 163}, [{x, 0}, {atom, true}]}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 165}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 166}}.
+  {label, 165}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 166}.
+    {test, is_eq, {f, 164}, [{x, 0}, {atom, true}]}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 168}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 168}.
+    {test, is_eq_exact, {f, 167}, [{x, 0}, {y, 1}]}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+  {label, 167}.
+    {move, {y, 3}, {x, 0}}.
+    {call, 1, {f, 59}}.
+    {move, {x, 0}, {y, 2}}.
+    {jump, {f, 169}}.
+  {label, 164}.
+    {move, {literal, <<"a scope names a cell its tree does not hold (decision 817)">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 169}.
+    {jump, {f, 162}}.
+  {label, 163}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+% The child of cell `parent` at `key`, entered for a render: its id.
+
+{function, openChild, 5, 27}.
+  {label, 26}.
+    {line, [{location, "std@context.erl", 25}]}.
+    {func_info, {atom, std@context}, {atom, openChild}, 5}.
+  {label, 27}.
+    {allocate, 52, 5}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}, {y, 31}, {y, 32}, {y, 33}, {y, 34}, {y, 35}, {y, 36}, {y, 37}, {y, 38}, {y, 39}, {y, 40}, {y, 41}, {y, 42}, {y, 43}, {y, 44}, {y, 45}, {y, 46}, {y, 47}, {y, 48}, {y, 49}, {y, 50}, {y, 51}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {x, 3}, {y, 3}}.
+    {move, {x, 4}, {y, 4}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 3, {f, 13}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 88}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 88}.
+    {call, 3, {f, 17}}.
     {move, {x, 0}, {y, 5}}.
-    {move, {atom, false}, {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 89}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 89}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 90}}.
-  {label, 89}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:232:9">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 90}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 91}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 91}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 19}}.
     {move, {y, 3}, {x, 1}}.
     {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call, 1, {f, 53}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 21}}.
+    {move, {y, 3}, {x, 1}}.
+    {move, {y, 4}, {x, 2}}.
+    {call, 3, {f, 29}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 171}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 172}}.
+  {label, 171}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 172}.
+    {test, is_eq, {f, 170}, [{x, 0}, {atom, true}]}.
+    {move, {y, 8}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {test, is_ne_exact, {f, 174}, [{y, 3}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 175}}.
+  {label, 174}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 175}.
     {move, {x, 0}, {x, 1}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 92}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
+    {test, is_eq, {f, 176}, [{x, 1}, {atom, true}]}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 178}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+  {label, 178}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 179}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 92}.
-    {test_heap, 5, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 5}, {x, 1}, {x, 0}]}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 6}, {y, 7}, {x, 0}]}}.
+  {label, 179}.
+    {test, is_eq_exact, {f, 180}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 181}}.
+  {label, 180}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 181}.
+    {jump, {f, 177}}.
+  {label, 176}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 177}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 182}, [{x, 1}, {atom, true}]}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 184}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 184}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
+    {test, is_eq_exact, {f, 185}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 186}}.
+  {label, 185}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 186}.
+    {jump, {f, 183}}.
+  {label, 182}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 183}.
+    {test, is_eq, {f, 173}, [{x, 0}, {atom, true}]}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, <<" (decision 819 (5))">>}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 4}, {x, 0}}.
+    {call, 1, {f, 13}}.
+    {call, 1, {f, 35}}.
+    {move, {y, 10}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {literal, <<"key-duplicate: two siblings carry the key ">>}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 216}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {jump, {f, 219}}.
+  {label, 173}.
+  {label, 219}.
+    {test, is_eq_exact, {f, 221}, [{y, 3}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 222}}.
+  {label, 221}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 222}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 223}, [{x, 1}, {atom, true}]}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 225}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+  {label, 225}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 226}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 226}.
+    {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 227}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 227}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 228}}.
+  {label, 227}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/context.bp:295:52">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 228}.
+    {test, is_ge, {f, 229}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 230}}.
+  {label, 229}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 230}.
+    {jump, {f, 224}}.
+  {label, 223}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 224}.
+    {test, is_eq, {f, 220}, [{x, 0}, {atom, true}]}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 231}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 231}.
+    {move, {x, 1}, {x, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 2}, {x, 0}}.
+    {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 232}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 232}.
+    {move, {x, 0}, {y, 12}}.
+    {move, {y, 11}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 233}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 233}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 234}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 234}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 235}}.
+  {label, 234}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:298:17">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 235}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 11}, {x, 0}}.
+    {call, 1, {f, 55}}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {y, 11}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 236}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 236}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 12}, {y, 7}, {y, 13}, {y, 14}, {x, 0}, {atom, undefined}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 2, {f, 23}}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 16}}.
+    {move, {y, 15}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 237}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 237}.
+    {move, {x, 0}, {y, 17}}.
+    {move, {y, 15}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {move, {x, 0}, {y, 18}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 238}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 238}.
+    {move, {x, 0}, {y, 19}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 239}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 239}.
+    {move, {x, 0}, {y, 20}}.
+    {move, {y, 15}, {x, 0}}.
+    {call, 1, {f, 21}}.
+    {test_heap, 7, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@PlaceLink}, {y, 3}, {y, 4}, {y, 19}, {y, 20}, {x, 0}]}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 16}, {y, 17}, {y, 18}, {x, 0}]}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 53}}.
+    {call, 2, {f, 121}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 240}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 240}.
+    {deallocate, 52}.
+    return.
+  {label, 220}.
+    {jump, {f, 241}}.
+  {label, 170}.
+  {label, 241}.
     {move, {y, 5}, {x, 0}}.
-    {deallocate, 14}.
+    {test, is_tagged_tuple, {f, 242}, [{x, 0}, 5, {atom, std@context@@ScopeTree}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 242}.
+    {move, {x, 0}, {y, 21}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 22}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 21}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 243}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 243}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 244}}.
+  {label, 243}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:306:9">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 244}.
+    {move, {x, 0}, {y, 23}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 24}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 21}, {y, 7}, {integer, 1}, {atom, undefined}, {y, 24}, {atom, undefined}, {x, 0}]}}.
+    {move, {x, 0}, {y, 25}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 245}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 245}.
+    {move, {x, 0}, {y, 26}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 21}}.
+    {test_heap, 7, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@PlaceLink}, {y, 3}, {y, 4}, {y, 21}, {y, 26}, {x, 0}]}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 22}, {y, 23}, {y, 25}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 121}}.
+    {move, {y, 21}, {x, 0}}.
+    {deallocate, 52}.
+    return.
+% The latest link of cell `parent` at `key`, or null.
+
+{function, linkAt, 3, 29}.
+  {label, 28}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, linkAt}, 3}.
+  {label, 29}.
+    {allocate, 7, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {line, [{location, "std@context.erl", 27}]}.
+  {label, 246}.
+    {move, {atom, true}, {x, 0}}.
+    {test, is_eq_exact, {f, 247}, [{x, 0}, {atom, true}]}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 249}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 250}}.
+  {label, 249}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 250}.
+    {test, is_eq, {f, 248}, [{x, 0}, {atom, true}]}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 252}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 252}.
+    {test, is_eq_exact, {f, 253}, [{x, 0}, {y, 1}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 254}}.
+  {label, 253}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 254}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 255}, [{x, 1}, {atom, true}]}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 257}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 257}.
+    {move, {y, 2}, {x, 1}}.
+    {call, 2, {f, 11}}.
+    {jump, {f, 256}}.
+  {label, 255}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 256}.
+    {test, is_eq, {f, 251}, [{x, 0}, {atom, true}]}.
+    {move, {y, 4}, {x, 0}}.
+    {call_last, 1, {f, 31}, 7}.
+  {label, 251}.
+    {move, {y, 4}, {x, 0}}.
+    {call, 1, {f, 33}}.
+    {move, {x, 0}, {y, 3}}.
+    {jump, {f, 258}}.
+  {label, 248}.
+    {move, {atom, undefined}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 258}.
+    {jump, {f, 246}}.
+  {label, 247}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+
+{function, linkSelf, 1, 31}.
+  {label, 30}.
+    {line, [{location, "std@context.erl", 27}]}.
+    {func_info, {atom, std@context}, {atom, linkSelf}, 1}.
+  {label, 31}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+
+{function, linkNext, 1, 33}.
+  {label, 32}.
+    {line, [{location, "std@context.erl", 28}]}.
+    {func_info, {atom, std@context}, {atom, linkNext}, 1}.
+  {label, 33}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 259}, [{x, 0}, 6, {atom, std@context@@PlaceLink}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 259}.
+    {deallocate, 1}.
+    return.
+% A key as a failure names it.
+
+{function, keyText, 1, 35}.
+  {label, 34}.
+    {line, [{location, "std@context.erl", 29}]}.
+    {func_info, {atom, std@context}, {atom, keyText}, 1}.
+  {label, 35}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 261}, [{x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 262}}.
+  {label, 261}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 262}.
+    {test, is_eq, {f, 260}, [{x, 0}, {atom, true}]}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 216}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+  {label, 260}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_integer, {f, 267}, [{x, 0}]}.
+    {jump, {f, 266}}.
+  {label, 267}.
+    {test, is_float, {f, 264}, [{x, 0}]}.
+    {gc_bif, trunc, {f, 0}, 1, [{x, 0}], {x, 1}}.
+    {test, is_eq, {f, 264}, [{x, 0}, {x, 1}]}.
+  {label, 266}.
+    {test, is_ge, {f, 264}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 264}, [{integer, 2147483647}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 265}}.
+  {label, 264}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 265}.
+    {test, is_eq, {f, 263}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {gc_bif, trunc, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 3}.
+  {label, 263}.
+    {move, {literal, <<"of another type">>}, {x, 0}}.
+    {deallocate, 3}.
     return.
 % The contexts cell `id` holds now.
 
-{function, framesAt, 4, 17}.
-  {label, 16}.
-    {line, [{location, "std@context.erl", 20}]}.
+{function, framesAt, 4, 37}.
+  {label, 36}.
+    {line, [{location, "std@context.erl", 30}]}.
     {func_info, {atom, std@context}, {atom, framesAt}, 4}.
-  {label, 17}.
+  {label, 37}.
     {allocate, 4, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -788,36 +1661,35 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 3, {f, 13}}.
-    {test, is_tagged_tuple, {f, 93}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 93}.
+    {call, 3, {f, 17}}.
+    {call, 1, {f, 19}}.
     {move, {y, 3}, {x, 1}}.
-    {call_last, 2, {f, 25}, 4}.
+    {call, 2, {f, 25}}.
+    {call_last, 1, {f, 53}, 4}.
 
-{function, carriedFrames, 1, 19}.
-  {label, 18}.
-    {line, [{location, "std@context.erl", 21}]}.
+{function, carriedFrames, 1, 39}.
+  {label, 38}.
+    {line, [{location, "std@context.erl", 31}]}.
     {func_info, {atom, std@context}, {atom, carriedFrames}, 1}.
-  {label, 19}.
+  {label, 39}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 94}, [{x, 0}, 2, {atom, std@context@@Carried}]}.
+    {test, is_tagged_tuple, {f, 268}, [{x, 0}, 2, {atom, std@context@@Carried}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 94}.
+  {label, 268}.
     {deallocate, 1}.
     return.
 % `value` provided for `key` in cell `id`.
 
-{function, provideAt, 6, 21}.
-  {label, 20}.
-    {line, [{location, "std@context.erl", 22}]}.
+{function, provideAt, 6, 41}.
+  {label, 40}.
+    {line, [{location, "std@context.erl", 32}]}.
     {func_info, {atom, std@context}, {atom, provideAt}, 6}.
-  {label, 21}.
-    {allocate, 16, 6}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
+  {label, 41}.
+    {allocate, 23, 6}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
@@ -827,157 +1699,349 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 3, {f, 13}}.
+    {call, 3, {f, 17}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 95}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 95}.
+    {call, 1, {f, 19}}.
     {move, {y, 3}, {x, 1}}.
     {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {call, 1, {f, 53}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 4}, {y, 5}, {x, 0}]}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 269}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 269}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 7}, {x, 0}}.
+    {call, 1, {f, 55}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 270}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 270}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 7}, {x, 0}}.
+    {call, 1, {f, 57}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 3}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {x, 0}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 6}, {x, 0}}.
+    {call, 2, {f, 23}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 121}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 23}.
+    return.
+% The count of the values call `callNo` made before this one in cell `id`'s
+% current render; the cell counts this one (821 (1)).
+
+{function, countAt, 5, 43}.
+  {label, 42}.
+    {line, [{location, "std@context.erl", 33}]}.
+    {func_info, {atom, std@context}, {atom, countAt}, 5}.
+  {label, 43}.
+    {allocate, 22, 5}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {x, 3}, {y, 3}}.
+    {move, {x, 4}, {y, 4}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 2}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 3, {f, 17}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {move, {y, 3}, {x, 1}}.
+    {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call, 1, {f, 57}}.
+    {move, {y, 4}, {x, 1}}.
+    {call, 2, {f, 45}}.
     {move, {x, 0}, {y, 7}}.
-    {move, {atom, false}, {x, 0}}.
+    {move, {y, 6}, {x, 0}}.
+    {call, 1, {f, 53}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 96}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 96}.
+    {test, is_tagged_tuple, {f, 271}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 271}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 97}, [{x, 0}, 4, {atom, std@context@@ScopeTree}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 97}.
+    {call, 1, {f, 55}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 272}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 272}.
+    {move, {x, 0}, {y, 11}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 7}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 273}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 273}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 274}}.
+  {label, 273}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:362:9">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 274}.
+    {move, {x, 0}, {y, 12}}.
+    {move, {y, 6}, {x, 0}}.
+    {call, 1, {f, 57}}.
     {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 3}, {y, 7}, {x, 0}]}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {y, 8}, {y, 9}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@PlaceCount}, {y, 4}, {y, 12}, {x, 0}]}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 3}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {x, 0}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 5}, {x, 0}}.
+    {call, 2, {f, 23}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 53}}.
-    {move, {atom, ok}, {x, 0}}.
-    {deallocate, 16}.
+    {call, 2, {f, 121}}.
+    {move, {y, 7}, {x, 0}}.
+    {deallocate, 22}.
     return.
-% The root's tree closed; a closed one is left as it is.
+% The latest count of call `callNo` in `counts`, else 0.
 
-{function, closeStore, 1, 23}.
-  {label, 22}.
-    {line, [{location, "std@context.erl", 23}]}.
-    {func_info, {atom, std@context}, {atom, closeStore}, 1}.
-  {label, 23}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 69}}.
-    {test, is_eq, {f, 99}, [{x, 0}, {atom, true}]}.
-    {move, {atom, false}, {x, 0}}.
-    {jump, {f, 100}}.
-  {label, 99}.
-    {move, {atom, true}, {x, 0}}.
-  {label, 100}.
-    {test, is_eq, {f, 98}, [{x, 0}, {atom, true}]}.
-    {deallocate, 3}.
-    return.
-  {label, 98}.
-    {move, {atom, true}, {x, 0}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {x, 0}, {integer, 0}, {atom, undefined}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 102}}.
-    {move, {atom, ok}, {x, 0}}.
-    {deallocate, 3}.
-    return.
-% The contexts of cell `id` in `cells`.
-
-{function, framesOf, 2, 25}.
-  {label, 24}.
-    {line, [{location, "std@context.erl", 24}]}.
-    {func_info, {atom, std@context}, {atom, framesOf}, 2}.
-  {label, 25}.
+{function, countIn, 2, 45}.
+  {label, 44}.
+    {line, [{location, "std@context.erl", 34}]}.
+    {func_info, {atom, std@context}, {atom, countIn}, 2}.
+  {label, 45}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {line, [{location, "std@context.erl", 25}]}.
-  {label, 107}.
+    {line, [{location, "std@context.erl", 35}]}.
+  {label, 275}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 108}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 276}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 110}, [{x, 0}, 4, {atom, std@context@@CellEntry}]}.
+    {test, is_tagged_tuple, {f, 278}, [{x, 0}, 4, {atom, std@context@@PlaceCount}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 111}}.
-  {label, 110}.
+    {jump, {f, 279}}.
+  {label, 278}.
     {move, {atom, false}, {x, 0}}.
-  {label, 111}.
-    {test, is_eq, {f, 109}, [{x, 0}, {atom, true}]}.
+  {label, 279}.
+    {test, is_eq, {f, 277}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 113}, [{x, 0}, 4, {atom, std@context@@CellEntry}]}.
+    {test, is_tagged_tuple, {f, 281}, [{x, 0}, 4, {atom, std@context@@PlaceCount}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 113}.
-    {test, is_eq_exact, {f, 112}, [{x, 0}, {y, 1}]}.
+  {label, 281}.
+    {test, is_eq_exact, {f, 280}, [{x, 0}, {y, 1}]}.
     {move, {y, 3}, {x, 0}}.
-    {call_last, 1, {f, 27}, 4}.
-  {label, 112}.
-    {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 29}}.
-    {move, {x, 0}, {y, 2}}.
-    {jump, {f, 114}}.
-  {label, 109}.
-    {move, {atom, undefined}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 282}, [{x, 0}, 4, {atom, std@context@@PlaceCount}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 282}.
     {deallocate, 4}.
     return.
-  {label, 114}.
-    {jump, {f, 107}}.
-  {label, 108}.
+  {label, 280}.
+    {move, {y, 3}, {x, 0}}.
+    {call, 1, {f, 47}}.
+    {move, {x, 0}, {y, 2}}.
+    {jump, {f, 283}}.
+  {label, 277}.
+    {move, {integer, 0}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+  {label, 283}.
+    {jump, {f, 275}}.
+  {label, 276}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, entryFrames, 1, 27}.
-  {label, 26}.
-    {line, [{location, "std@context.erl", 25}]}.
-    {func_info, {atom, std@context}, {atom, entryFrames}, 1}.
-  {label, 27}.
+{function, countRest, 1, 47}.
+  {label, 46}.
+    {line, [{location, "std@context.erl", 35}]}.
+    {func_info, {atom, std@context}, {atom, countRest}, 1}.
+  {label, 47}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 115}, [{x, 0}, 4, {atom, std@context@@CellEntry}]}.
+    {test, is_tagged_tuple, {f, 284}, [{x, 0}, 4, {atom, std@context@@PlaceCount}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 284}.
+    {deallocate, 1}.
+    return.
+% Cell `id`'s slot: what `make` answered on the cell's first render, kept
+% while the cell stands (816 (1), 818 (1)).
+
+{function, slotAt, 5, 49}.
+  {label, 48}.
+    {line, [{location, "std@context.erl", 36}]}.
+    {func_info, {atom, std@context}, {atom, slotAt}, 5}.
+  {label, 49}.
+    {allocate, 20, 5}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {x, 3}, {y, 3}}.
+    {move, {x, 4}, {y, 4}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 2}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 3, {f, 17}}.
+    {call, 1, {f, 19}}.
+    {move, {y, 3}, {x, 1}}.
+    {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 286}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 286}.
+    {test, is_eq, {f, 285}, [{x, 0}, {atom, true}]}.
+    {move, {y, 5}, {x, 0}}.
+    {call_last, 1, {f, 55}, 20}.
+  {label, 285}.
+    {move, {y, 4}, {x, 0}}.
+    {call_fun, 0}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 2}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 3, {f, 17}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {call, 1, {f, 19}}.
+    {move, {y, 3}, {x, 1}}.
+    {call, 2, {f, 25}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call, 1, {f, 53}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 287}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+  {label, 287}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {atom, true}, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 8}, {x, 0}}.
+    {call, 1, {f, 57}}.
+    {test_heap, 9, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@CellEntry}, {y, 3}, {y, 9}, {y, 10}, {y, 6}, {y, 11}, {x, 0}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 7}, {x, 0}}.
+    {call, 2, {f, 23}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 121}}.
+    {move, {y, 6}, {x, 0}}.
+    {deallocate, 20}.
+    return.
+% The root's tree closed; a closed one is left as it is.
+
+{function, closeStore, 1, 51}.
+  {label, 50}.
+    {line, [{location, "std@context.erl", 37}]}.
+    {func_info, {atom, std@context}, {atom, closeStore}, 1}.
+  {label, 51}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 137}}.
+    {test, is_eq, {f, 289}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 290}}.
+  {label, 289}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 290}.
+    {test, is_eq, {f, 288}, [{x, 0}, {atom, true}]}.
+    {deallocate, 3}.
+    return.
+  {label, 288}.
+    {move, {atom, true}, {x, 0}}.
+    {test_heap, 6, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@ScopeTree}, {x, 0}, {integer, 0}, {atom, undefined}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 292}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+
+{function, entryFrames, 1, 53}.
+  {label, 52}.
+    {line, [{location, "std@context.erl", 38}]}.
+    {func_info, {atom, std@context}, {atom, entryFrames}, 1}.
+  {label, 53}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 297}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 115}.
+  {label, 297}.
     {deallocate, 1}.
     return.
 
-{function, entryNext, 1, 29}.
-  {label, 28}.
-    {line, [{location, "std@context.erl", 26}]}.
-    {func_info, {atom, std@context}, {atom, entryNext}, 1}.
-  {label, 29}.
+{function, entrySlot, 1, 55}.
+  {label, 54}.
+    {line, [{location, "std@context.erl", 39}]}.
+    {func_info, {atom, std@context}, {atom, entrySlot}, 1}.
+  {label, 55}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 116}, [{x, 0}, 4, {atom, std@context@@CellEntry}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 116}.
+    {test, is_tagged_tuple, {f, 298}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+  {label, 298}.
+    {deallocate, 1}.
+    return.
+
+{function, entryCounts, 1, 57}.
+  {label, 56}.
+    {line, [{location, "std@context.erl", 40}]}.
+    {func_info, {atom, std@context}, {atom, entryCounts}, 1}.
+  {label, 57}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 299}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 6, {x, 0}}.
+  {label, 299}.
+    {deallocate, 1}.
+    return.
+
+{function, entryNext, 1, 59}.
+  {label, 58}.
+    {line, [{location, "std@context.erl", 41}]}.
+    {func_info, {atom, std@context}, {atom, entryNext}, 1}.
+  {label, 59}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 300}, [{x, 0}, 8, {atom, std@context@@CellEntry}]}.
+    {get_tuple_element, {x, 0}, 7, {x, 0}}.
+  {label, 300}.
     {deallocate, 1}.
     return.
 % ── resolving and running (decisions 809 (6), 815 (5), 819, 822, 825) ───────
 % Runs `c` over `scope` at `key` and hands back its answer as it came — a
 % value, or the task of a component that awaits —, nothing awaited inside.
 
-{function, resolve, 3, 31}.
-  {label, 30}.
-    {line, [{location, "std@context.erl", 27}]}.
+{function, resolve, 3, 61}.
+  {label, 60}.
+    {line, [{location, "std@context.erl", 42}]}.
     {func_info, {atom, std@context}, {atom, resolve}, 3}.
-  {label, 31}.
+  {label, 61}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -985,15 +2049,15 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, 'Composable'}, {x, 1}}.
-    {call, 2, {f, 119}}.
-    {test, is_eq, {f, 117}, [{x, 0}, {atom, true}]}.
+    {call, 2, {f, 303}}.
+    {test, is_eq, {f, 301}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, compose}, {x, 0}}.
-    {call, 3, {f, 154}}.
+    {call, 3, {f, 338}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
@@ -1001,7 +2065,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_fun, 2}.
     {deallocate, 4}.
     return.
-  {label, 117}.
+  {label, 301}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
@@ -1013,55 +2077,55 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % task (822, 823): `val page = await run(App());`.
 
 %% @Async — eager lowering
-{function, run, 2, 33}.
-  {label, 32}.
-    {line, [{location, "std@context.erl", 28}]}.
+{function, run, 2, 63}.
+  {label, 62}.
+    {line, [{location, "std@context.erl", 43}]}.
     {func_info, {atom, std@context}, {atom, run}, 2}.
-  {label, 33}.
+  {label, 63}.
     {allocate, 15, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_ne_exact, {f, 161}, [{y, 1}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 345}, [{y, 1}, {atom, undefined}]}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 3, {f, 31}}.
+    {call, 3, {f, 61}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {jump, {f, 163}}.
+    {jump, {f, 347}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 164}}.
-  {label, 163}.
+    {jump, {f, 348}}.
+  {label, 347}.
     {move, {atom, false}, {x, 0}}.
-  {label, 164}.
-    {test, is_eq, {f, 162}, [{x, 0}, {atom, true}]}.
+  {label, 348}.
+    {test, is_eq, {f, 346}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 162}.
+  {label, 346}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 161}.
+  {label, 345}.
     {call_ext, 0, {extfunc, std@context@@Scope, root, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {'try', {y, 14}, {f, 165}}.
+    {'try', {y, 14}, {f, 349}}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {y, 3}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 3, {f, 31}}.
+    {call, 3, {f, 61}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 167}}.
+    {jump, {f, 351}}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 168}}.
-  {label, 167}.
+    {jump, {f, 352}}.
+  {label, 351}.
     {move, {atom, false}, {x, 0}}.
-  {label, 168}.
-    {test, is_eq, {f, 166}, [{x, 0}, {atom, true}]}.
+  {label, 352}.
+    {test, is_eq, {f, 350}, [{x, 0}, {atom, true}]}.
     {move, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {try_end, {y, 14}}.
@@ -1070,7 +2134,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 4}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 166}.
+  {label, 350}.
     {move, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {try_end, {y, 14}}.
@@ -1079,7 +2143,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 4}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 165}.
+  {label, 349}.
     {try_case, {y, 14}}.
     {move, {x, 1}, {y, 5}}.
     {move, {x, 2}, {y, 6}}.
@@ -1103,40 +2167,40 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % One provided value over the frames it was provided in.
 % The cell a body opens: `scope`'s child at `key`.
 
-{function, enter, 2, 35}.
-  {label, 34}.
-    {line, [{location, "std@context.erl", 29}]}.
+{function, enter, 2, 65}.
+  {label, 64}.
+    {line, [{location, "std@context.erl", 44}]}.
     {func_info, {atom, std@context}, {atom, enter}, 2}.
-  {label, 35}.
+  {label, 65}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 171}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 355}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 172}}.
-  {label, 171}.
+    {jump, {f, 356}}.
+  {label, 355}.
     {move, {atom, false}, {x, 0}}.
-  {label, 172}.
-    {test, is_eq, {f, 170}, [{x, 0}, {atom, true}]}.
+  {label, 356}.
+    {test, is_eq, {f, 354}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 174}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 358}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 175}}.
-  {label, 174}.
+    {jump, {f, 359}}.
+  {label, 358}.
     {move, {atom, false}, {x, 0}}.
-  {label, 175}.
-    {test, is_eq, {f, 173}, [{x, 0}, {atom, true}]}.
+  {label, 359}.
+    {test, is_eq, {f, 357}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, std@context@@Scope, childAt, 2}, 4}.
-  {label, 173}.
+  {label, 357}.
     {call_ext, 0, {extfunc, std@context@@Place, none, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 2, {extfunc, std@context@@Scope, childAt, 2}, 4}.
-  {label, 170}.
+  {label, 354}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -1146,22 +2210,22 @@ declare fn ownerForeign(owner: unknown) -> bool;
     return.
 % The contexts `cell` holds now — what a body's `use context` reads.
 
-{function, received, 1, 37}.
-  {label, 36}.
-    {line, [{location, "std@context.erl", 30}]}.
+{function, received, 1, 67}.
+  {label, 66}.
+    {line, [{location, "std@context.erl", 45}]}.
     {func_info, {atom, std@context}, {atom, received}, 1}.
-  {label, 37}.
+  {label, 67}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 177}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 361}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 178}}.
-  {label, 177}.
+    {jump, {f, 362}}.
+  {label, 361}.
     {move, {atom, false}, {x, 0}}.
-  {label, 178}.
-    {test, is_eq, {f, 176}, [{x, 0}, {atom, true}]}.
+  {label, 362}.
+    {test, is_eq, {f, 360}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -1177,8 +2241,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {x, 3}}.
     {move, {y, 3}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call_last, 4, {f, 17}, 5}.
-  {label, 176}.
+    {call_last, 4, {f, 37}, 5}.
+  {label, 360}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -1189,24 +2253,24 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % `value` provided for `key` in `cell`: what is resolved under it afterwards
 % reads it (809 (8), 812 (3)).
 
-{function, provideIn, 3, 39}.
-  {label, 38}.
-    {line, [{location, "std@context.erl", 31}]}.
+{function, provideIn, 3, 69}.
+  {label, 68}.
+    {line, [{location, "std@context.erl", 46}]}.
     {func_info, {atom, std@context}, {atom, provideIn}, 3}.
-  {label, 39}.
+  {label, 69}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 180}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {test, is_tagged_tuple, {f, 364}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 181}}.
-  {label, 180}.
+    {jump, {f, 365}}.
+  {label, 364}.
     {move, {atom, false}, {x, 0}}.
-  {label, 181}.
-    {test, is_eq, {f, 179}, [{x, 0}, {atom, true}]}.
+  {label, 365}.
+    {test, is_eq, {f, 363}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
     {move, {x, 0}, {y, 3}}.
@@ -1224,11 +2288,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {x, 3}}.
     {move, {y, 5}, {x, 2}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 6, {f, 21}}.
+    {call, 6, {f, 41}}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 9}.
     return.
-  {label, 179}.
+  {label, 363}.
     {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
@@ -1240,11 +2304,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % the type's declared default (decision 378 (3): no read is unbound).
 % The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
 
-{function, find, 3, 41}.
-  {label, 40}.
-    {line, [{location, "std@context.erl", 32}]}.
+{function, find, 3, 71}.
+  {label, 70}.
+    {line, [{location, "std@context.erl", 47}]}.
     {func_info, {atom, std@context}, {atom, find}, 3}.
-  {label, 41}.
+  {label, 71}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1252,49 +2316,49 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {line, [{location, "std@context.erl", 33}]}.
-  {label, 182}.
+    {line, [{location, "std@context.erl", 48}]}.
+  {label, 366}.
     {move, {atom, true}, {x, 0}}.
-    {test, is_eq_exact, {f, 183}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 367}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 185}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 369}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 186}}.
-  {label, 185}.
+    {jump, {f, 370}}.
+  {label, 369}.
     {move, {atom, false}, {x, 0}}.
-  {label, 186}.
-    {test, is_eq, {f, 184}, [{x, 0}, {atom, true}]}.
+  {label, 370}.
+    {test, is_eq, {f, 368}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 188}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 372}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 188}.
-    {test, is_eq_exact, {f, 187}, [{x, 0}, {y, 1}]}.
+  {label, 372}.
+    {test, is_eq_exact, {f, 371}, [{x, 0}, {y, 1}]}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 1, {f, 49}, 5}.
-  {label, 187}.
+    {call_last, 1, {f, 95}, 5}.
+  {label, 371}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 51}}.
+    {call, 1, {f, 97}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 189}}.
-  {label, 184}.
+    {jump, {f, 373}}.
+  {label, 368}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@context@@Frame}, {y, 1}, {y, 2}, {atom, undefined}]}}.
-    {call_last, 1, {f, 49}, 5}.
-  {label, 189}.
-    {jump, {f, 182}}.
-  {label, 183}.
+    {call_last, 1, {f, 95}, 5}.
+  {label, 373}.
+    {jump, {f, 366}}.
+  {label, 367}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 5}.
     return.
 % A body's answer, as it is (the word wasm moves through it, decision 504).
 
-{function, answer, 1, 43}.
-  {label, 42}.
-    {line, [{location, "std@context.erl", 33}]}.
+{function, answer, 1, 73}.
+  {label, 72}.
+    {line, [{location, "std@context.erl", 48}]}.
     {func_info, {atom, std@context}, {atom, answer}, 1}.
-  {label, 43}.
+  {label, 73}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1303,53 +2367,333 @@ declare fn ownerForeign(owner: unknown) -> bool;
     return.
 % The place a `use` passes (820 (2)).
 
-{function, nowhere, 0, 45}.
-  {label, 44}.
-    {line, [{location, "std@context.erl", 34}]}.
+{function, nowhere, 0, 75}.
+  {label, 74}.
+    {line, [{location, "std@context.erl", 49}]}.
     {func_info, {atom, std@context}, {atom, nowhere}, 0}.
-  {label, 45}.
+  {label, 75}.
     {allocate, 0, 0}.
     {call_ext_last, 0, {extfunc, std@context@@Place, none, 0}, 0}.
 % A fresh root, for a `use` written outside every component body.
 
-{function, root, 0, 47}.
-  {label, 46}.
-    {line, [{location, "std@context.erl", 35}]}.
+{function, root, 0, 77}.
+  {label, 76}.
+    {line, [{location, "std@context.erl", 50}]}.
     {func_info, {atom, std@context}, {atom, root}, 0}.
-  {label, 47}.
+  {label, 77}.
     {allocate, 0, 0}.
     {call_ext_last, 0, {extfunc, std@context@@Scope, root, 0}, 0}.
+% ── the stamp (decisions 820, 821, 818 (3)) ──────────────────────────────────
+% 
+% Each written call answering a component answers its value carrying its
+% place: `stamp(c, <the body's cell>, n)` in a component body, the item the
+% count of the values call `n` made in the body's current render;
+% `stampPlain(c, <the entry's counter>, n)` in a plain function, counted in
+% that entry (`countNew` at its entry, `countEnd` deferred); `stampKeyed(c,
+% n, k)` for `#[key(k)]`. The place travels in the value: run with a
+% runner's place it is `mine.with(key)`; a place another stamp already wrote
+% passes through, so the stamp written last — the outer call's — wins
+% (821 (2)).
 
-{function, frameValue, 1, 49}.
-  {label, 48}.
-    {line, [{location, "std@context.erl", 36}]}.
-    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
-  {label, 49}.
+{function, stamp, 3, 79}.
+  {label, 78}.
+    {line, [{location, "std@context.erl", 51}]}.
+    {func_info, {atom, std@context}, {atom, stamp}, 3}.
+  {label, 79}.
+    {allocate, 15, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 375}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 376}}.
+  {label, 375}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 376}.
+    {test, is_eq, {f, 374}, [{x, 0}, {atom, true}]}.
+    {move, {atom, std@context@@PlaceItem__v__body}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, ownerRef, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, carriedRef, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, cellId, 1}}.
+    {move, {y, 5}, {x, 1}}.
+    {move, {y, 2}, {x, 4}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {y, 6}, {x, 2}}.
+    {move, {y, 4}, {x, 0}}.
+    {call, 5, {f, 43}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {atom, true}, {x, 0}}.
+    {test_heap, 7, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {y, 2}, {y, 3}, {y, 7}, {atom, undefined}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_last, 2, {f, 85}, 15}.
+  {label, 374}.
+    {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 15}.
+    return.
+
+{function, stampPlain, 3, 81}.
+  {label, 80}.
+    {line, [{location, "std@context.erl", 52}]}.
+    {func_info, {atom, std@context}, {atom, stampPlain}, 3}.
+  {label, 81}.
+    {allocate, 10, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {atom, std@context@@PlaceItem__v__plain}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call, 2, {f, 93}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {atom, true}, {x, 0}}.
+    {test_heap, 7, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {y, 2}, {y, 3}, {y, 4}, {atom, undefined}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_last, 2, {f, 85}, 10}.
+
+{function, stampKeyed, 3, 83}.
+  {label, 82}.
+    {line, [{location, "std@context.erl", 53}]}.
+    {func_info, {atom, std@context}, {atom, stampKeyed}, 3}.
+  {label, 83}.
+    {allocate, 5, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, true}, {x, 0}}.
+    {test_heap, 7, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {y, 1}, {x, 1}, {integer, 0}, {y, 2}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_last, 2, {f, 85}, 5}.
+% `c` carrying `mine`.
+
+{function, placed, 2, 85}.
+  {label, 84}.
+    {line, [{location, "std@context.erl", 54}]}.
+    {func_info, {atom, std@context}, {atom, placed}, 2}.
+  {label, 85}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 378}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+% `use memo(make)` written as call `callNo` of a body: the slot of its own
+% child cell (818 (1)), filled on that cell's first render.
+
+{function, memoIn, 3, 87}.
+  {label, 86}.
+    {line, [{location, "std@context.erl", 55}]}.
+    {func_info, {atom, std@context}, {atom, memoIn}, 3}.
+  {label, 87}.
+    {allocate, 21, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 383}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 384}}.
+  {label, 383}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 384}.
+    {test, is_eq, {f, 382}, [{x, 0}, {atom, true}]}.
+    {move, {atom, std@context@@PlaceItem__v__body}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, ownerRef, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, carriedRef, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, cellId, 1}}.
+    {move, {y, 5}, {x, 1}}.
+    {move, {y, 1}, {x, 4}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {y, 6}, {x, 2}}.
+    {move, {y, 4}, {x, 0}}.
+    {call, 5, {f, 43}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {atom, true}, {x, 0}}.
+    {test_heap, 7, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {y, 1}, {y, 3}, {y, 7}, {atom, undefined}, {x, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 2, {extfunc, std@context@@Scope, childAt, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, storeRef, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, ownerRef, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, carriedRef, 1}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 8}, {x, 0}}.
+    {call_ext, 1, {extfunc, std@context@@Scope, cellId, 1}}.
+    {move, {y, 10}, {x, 1}}.
+    {move, {y, 2}, {x, 4}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {y, 11}, {x, 2}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_last, 5, {f, 49}, 21}.
+  {label, 382}.
+    {move, {literal, <<"a component is run with a `Scope` (decision 819)">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 21}.
+    return.
+% A plain function entry's counter of the values each of its calls made
+% (821 (2)).
+
+{function, countNew, 0, 89}.
+  {label, 88}.
+    {line, [{location, "std@context.erl", 56}]}.
+    {func_info, {atom, std@context}, {atom, countNew}, 0}.
+  {label, 89}.
+    {allocate, 0, 0}.
+    {call_ext_last, 0, {extfunc, erlang, make_ref, 0}, 0}.
+% The entry's counter gone: on erlang and beam its process-dictionary entry.
+
+{function, countEnd, 1, 91}.
+  {label, 90}.
+    {line, [{location, "std@context.erl", 57}]}.
+    {func_info, {atom, std@context}, {atom, countEnd}, 1}.
+  {label, 91}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 190}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {move, {atom, undefined}, {x, 1}}.
+    {call, 2, {f, 386}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+% The count of the values call `callNo` made before this one in the entry.
+
+{function, countNext, 2, 93}.
+  {label, 92}.
+    {line, [{location, "std@context.erl", 58}]}.
+    {func_info, {atom, std@context}, {atom, countNext}, 2}.
+  {label, 93}.
+    {allocate, 6, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 393}}.
+    {test, is_eq, {f, 391}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 396}}.
+    {jump, {f, 394}}.
+  {label, 391}.
+    {move, {atom, undefined}, {x, 0}}.
+  {label, 394}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 45}}.
+    {move, {x, 0}, {y, 3}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 403}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 403}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 404}}.
+  {label, 403}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/context.bp:569:9">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 404}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@PlaceCount}, {y, 1}, {x, 0}, {y, 2}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 398}}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+
+{function, frameValue, 1, 95}.
+  {label, 94}.
+    {line, [{location, "std@context.erl", 59}]}.
+    {func_info, {atom, std@context}, {atom, frameValue}, 1}.
+  {label, 95}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 405}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 190}.
+  {label, 405}.
     {deallocate, 1}.
     return.
 
-{function, frameParent, 1, 51}.
-  {label, 50}.
-    {line, [{location, "std@context.erl", 37}]}.
+{function, frameParent, 1, 97}.
+  {label, 96}.
+    {line, [{location, "std@context.erl", 60}]}.
     {func_info, {atom, std@context}, {atom, frameParent}, 1}.
-  {label, 51}.
+  {label, 97}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 191}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
+    {test, is_tagged_tuple, {f, 406}, [{x, 0}, 4, {atom, std@context@@Frame}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 191}.
+  {label, 406}.
     {deallocate, 1}.
     return.
 % ── the store's host side (decision 824) ─────────────────────────────────────
+% Two keys compared by value (818 (3)).
+
+{function, sameKey, 2, 99}.
+  {label, 98}.
+    {line, [{location, "std@context.erl", 61}]}.
+    {func_info, {atom, std@context}, {atom, sameKey}, 2}.
+  {label, 99}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test, is_eq, {f, 407}, [{y, 0}, {y, 1}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 408}}.
+  {label, 407}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 408}.
+    {deallocate, 2}.
+    return.
 % The closed tree written over the root's: on erlang and beam the entry goes
 % instead, so the process keeps no `{bp_scope, _}` (825 (2), (3)).
 % The process a root is made in: its pid on erlang and beam; elsewhere one
@@ -1357,66 +2701,192 @@ declare fn ownerForeign(owner: unknown) -> bool;
 % Whether `owner` is another process than this one: never off the BEAM (an
 % owner token there is an empty cell).
 
-{function, '__bp_priv__carriedFrames', 1, 193}.
-  {label, 192}.
-    {line, [{location, "std@context.erl", 38}]}.
+{function, '__bp_priv__carriedFrames', 1, 410}.
+  {label, 409}.
+    {line, [{location, "std@context.erl", 62}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__carriedFrames'}, 1}.
-  {label, 193}.
-    {call_only, 1, {f, 19}}.
+  {label, 410}.
+    {call_only, 1, {f, 39}}.
 
-{function, '__bp_priv__entryFrames', 1, 195}.
-  {label, 194}.
-    {line, [{location, "std@context.erl", 39}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__entryFrames'}, 1}.
-  {label, 195}.
-    {call_only, 1, {f, 27}}.
-
-{function, '__bp_priv__entryNext', 1, 197}.
-  {label, 196}.
-    {line, [{location, "std@context.erl", 40}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__entryNext'}, 1}.
-  {label, 197}.
-    {call_only, 1, {f, 29}}.
-
-{function, '__bp_priv__frameParent', 1, 199}.
-  {label, 198}.
-    {line, [{location, "std@context.erl", 41}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
-  {label, 199}.
-    {call_only, 1, {f, 51}}.
-
-{function, '__bp_priv__frameValue', 1, 201}.
-  {label, 200}.
-    {line, [{location, "std@context.erl", 42}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
-  {label, 201}.
-    {call_only, 1, {f, 49}}.
-
-{function, '__bp_priv__framesOf', 2, 203}.
-  {label, 202}.
-    {line, [{location, "std@context.erl", 43}]}.
-    {func_info, {atom, std@context}, {atom, '__bp_priv__framesOf'}, 2}.
-  {label, 203}.
+{function, '__bp_priv__cellOf', 2, 412}.
+  {label, 411}.
+    {line, [{location, "std@context.erl", 63}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__cellOf'}, 2}.
+  {label, 412}.
     {call_only, 2, {f, 25}}.
 
-{function, '__bp_priv__provideAt', 6, 205}.
-  {label, 204}.
-    {line, [{location, "std@context.erl", 44}]}.
+{function, '__bp_priv__countAt', 5, 414}.
+  {label, 413}.
+    {line, [{location, "std@context.erl", 64}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__countAt'}, 5}.
+  {label, 414}.
+    {call_only, 5, {f, 43}}.
+
+{function, '__bp_priv__countIn', 2, 416}.
+  {label, 415}.
+    {line, [{location, "std@context.erl", 65}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__countIn'}, 2}.
+  {label, 416}.
+    {call_only, 2, {f, 45}}.
+
+{function, '__bp_priv__countNext', 2, 418}.
+  {label, 417}.
+    {line, [{location, "std@context.erl", 66}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__countNext'}, 2}.
+  {label, 418}.
+    {call_only, 2, {f, 93}}.
+
+{function, '__bp_priv__countRest', 1, 420}.
+  {label, 419}.
+    {line, [{location, "std@context.erl", 67}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__countRest'}, 1}.
+  {label, 420}.
+    {call_only, 1, {f, 47}}.
+
+{function, '__bp_priv__entryCounts', 1, 422}.
+  {label, 421}.
+    {line, [{location, "std@context.erl", 68}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__entryCounts'}, 1}.
+  {label, 422}.
+    {call_only, 1, {f, 57}}.
+
+{function, '__bp_priv__entryFrames', 1, 424}.
+  {label, 423}.
+    {line, [{location, "std@context.erl", 69}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__entryFrames'}, 1}.
+  {label, 424}.
+    {call_only, 1, {f, 53}}.
+
+{function, '__bp_priv__entryNext', 1, 426}.
+  {label, 425}.
+    {line, [{location, "std@context.erl", 70}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__entryNext'}, 1}.
+  {label, 426}.
+    {call_only, 1, {f, 59}}.
+
+{function, '__bp_priv__entrySlot', 1, 428}.
+  {label, 427}.
+    {line, [{location, "std@context.erl", 71}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__entrySlot'}, 1}.
+  {label, 428}.
+    {call_only, 1, {f, 55}}.
+
+{function, '__bp_priv__frameParent', 1, 430}.
+  {label, 429}.
+    {line, [{location, "std@context.erl", 72}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameParent'}, 1}.
+  {label, 430}.
+    {call_only, 1, {f, 97}}.
+
+{function, '__bp_priv__frameValue', 1, 432}.
+  {label, 431}.
+    {line, [{location, "std@context.erl", 73}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__frameValue'}, 1}.
+  {label, 432}.
+    {call_only, 1, {f, 95}}.
+
+{function, '__bp_priv__keyText', 1, 434}.
+  {label, 433}.
+    {line, [{location, "std@context.erl", 74}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__keyText'}, 1}.
+  {label, 434}.
+    {call_only, 1, {f, 35}}.
+
+{function, '__bp_priv__linkAt', 3, 436}.
+  {label, 435}.
+    {line, [{location, "std@context.erl", 75}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__linkAt'}, 3}.
+  {label, 436}.
+    {call_only, 3, {f, 29}}.
+
+{function, '__bp_priv__linkNext', 1, 438}.
+  {label, 437}.
+    {line, [{location, "std@context.erl", 76}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__linkNext'}, 1}.
+  {label, 438}.
+    {call_only, 1, {f, 33}}.
+
+{function, '__bp_priv__linkSelf', 1, 440}.
+  {label, 439}.
+    {line, [{location, "std@context.erl", 77}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__linkSelf'}, 1}.
+  {label, 440}.
+    {call_only, 1, {f, 31}}.
+
+{function, '__bp_priv__placeKey', 1, 442}.
+  {label, 441}.
+    {line, [{location, "std@context.erl", 78}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__placeKey'}, 1}.
+  {label, 442}.
+    {call_only, 1, {f, 13}}.
+
+{function, '__bp_priv__placed', 2, 444}.
+  {label, 443}.
+    {line, [{location, "std@context.erl", 79}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__placed'}, 2}.
+  {label, 444}.
+    {call_only, 2, {f, 85}}.
+
+{function, '__bp_priv__provideAt', 6, 446}.
+  {label, 445}.
+    {line, [{location, "std@context.erl", 80}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__provideAt'}, 6}.
-  {label, 205}.
-    {call_only, 6, {f, 21}}.
+  {label, 446}.
+    {call_only, 6, {f, 41}}.
 
-{function, '__bp_priv__treeOf', 3, 207}.
-  {label, 206}.
-    {line, [{location, "std@context.erl", 45}]}.
+{function, '__bp_priv__sameKey', 2, 448}.
+  {label, 447}.
+    {line, [{location, "std@context.erl", 81}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__sameKey'}, 2}.
+  {label, 448}.
+    {call_only, 2, {f, 99}}.
+
+{function, '__bp_priv__samePlace', 2, 450}.
+  {label, 449}.
+    {line, [{location, "std@context.erl", 82}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__samePlace'}, 2}.
+  {label, 450}.
+    {call_only, 2, {f, 11}}.
+
+{function, '__bp_priv__slotAt', 5, 452}.
+  {label, 451}.
+    {line, [{location, "std@context.erl", 83}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__slotAt'}, 5}.
+  {label, 452}.
+    {call_only, 5, {f, 49}}.
+
+{function, '__bp_priv__treeCells', 1, 454}.
+  {label, 453}.
+    {line, [{location, "std@context.erl", 84}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__treeCells'}, 1}.
+  {label, 454}.
+    {call_only, 1, {f, 19}}.
+
+{function, '__bp_priv__treeLinks', 1, 456}.
+  {label, 455}.
+    {line, [{location, "std@context.erl", 85}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__treeLinks'}, 1}.
+  {label, 456}.
+    {call_only, 1, {f, 21}}.
+
+{function, '__bp_priv__treeOf', 3, 458}.
+  {label, 457}.
+    {line, [{location, "std@context.erl", 86}]}.
     {func_info, {atom, std@context}, {atom, '__bp_priv__treeOf'}, 3}.
-  {label, 207}.
-    {call_only, 3, {f, 13}}.
+  {label, 458}.
+    {call_only, 3, {f, 17}}.
 
-{function, '__bp_tpl_0-t/2-fun-0-', 2, 57}.
-  {label, 56}.
+{function, '__bp_priv__withCell', 2, 460}.
+  {label, 459}.
+    {line, [{location, "std@context.erl", 87}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_priv__withCell'}, 2}.
+  {label, 460}.
+    {call_only, 2, {f, 23}}.
+
+{function, '__bp_tpl_0-t/2-fun-0-', 2, 125}.
+  {label, 124}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
-  {label, 57}.
+  {label, 125}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1432,16 +2902,16 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_0', 2, 53}.
-  {label, 52}.
+{function, '__bp_tpl_0', 2, 121}.
+  {label, 120}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_0'}, 2}.
-  {label, 53}.
+  {label, 121}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 57}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 125}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -1450,10 +2920,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_1', 1, 60}.
-  {label, 59}.
+{function, '__bp_tpl_1', 1, 128}.
+  {label, 127}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_1'}, 1}.
-  {label, 60}.
+  {label, 128}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1462,7 +2932,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 63}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 131}, [{x, 0}, {atom, true}]}.
     {call_ext, 0, {extfunc, erlang, self, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
@@ -1470,25 +2940,25 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 1}}.
-    {jump, {f, 65}}.
-  {label, 63}.
+    {jump, {f, 133}}.
+  {label, 131}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 64}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 132}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 1}}.
-    {jump, {f, 65}}.
-  {label, 64}.
+    {jump, {f, 133}}.
+  {label, 132}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 2}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 65}.
+  {label, 133}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_2', 1, 69}.
-  {label, 68}.
+{function, '__bp_tpl_2', 1, 137}.
+  {label, 136}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_2'}, 1}.
-  {label, 69}.
+  {label, 137}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1506,10 +2976,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_3', 1, 78}.
-  {label, 77}.
+{function, '__bp_tpl_3', 1, 146}.
+  {label, 145}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_3'}, 1}.
-  {label, 78}.
+  {label, 146}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1519,10 +2989,273 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, get, 1}, 2}.
 
-{function, '__bp_tpl_4-t/2-fun-0-', 2, 106}.
-  {label, 105}.
+{function, '__bp_print', 1, 188}.
+  {label, 187}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_print'}, 1}.
+  {label, 188}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 192}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<" ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~ts~n">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+
+{function, '-bp_show_top-', 1, 192}.
+  {label, 191}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '-bp_show_top-'}, 1}.
+  {label, 192}.
+    {move, {atom, true}, {x, 1}}.
+    {call_only, 2, {f, 190}}.
+
+{function, '-bp_show_elem-', 1, 194}.
+  {label, 193}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '-bp_show_elem-'}, 1}.
+  {label, 194}.
+    {move, {atom, false}, {x, 1}}.
+    {call_only, 2, {f, 190}}.
+
+{function, '__bp_show', 2, 190}.
+  {label, 189}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_show'}, 2}.
+  {label, 190}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 202}, [{x, 0}]}.
+    {test, is_eq, {f, 201}, [{y, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 201}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
+  {label, 202}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_list, {f, 203}, [{x, 0}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 194}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 93}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 91}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 203}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tuple, {f, 205}, [{x, 0}]}.
+    {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
+    {test, is_lt, {f, 204}, [{integer, 0}, {x, 0}]}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_atom, {f, 204}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 204}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 204}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 204}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 209}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, <<"Ok(">>}, {y, 1}}.
+    {jump, {f, 210}}.
+  {label, 209}.
+    {test, is_eq_exact, {f, 206}, [{x, 0}, {atom, error}]}.
+    {move, {literal, <<"Error(">>}, {y, 1}}.
+  {label, 210}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {atom, false}, {x, 1}}.
+    {call, 2, {f, 190}}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {y, 1}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 204}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
+    {move, {x, 0}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 194}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 40}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 35}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 205}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_atom, {f, 207}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 207}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 207}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 208}, [{x, 0}, {atom, undefined}]}.
+  {label, 206}.
+    {move, {y, 0}, {x, 1}}.
+    {call_last, 2, {f, 196}, 2}.
+  {label, 207}.
+    {move, {y, 0}, {x, 0}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
+  {label, 208}.
+    {move, {literal, <<"null">>}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tagged', 2, 196}.
+  {label, 195}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_tagged'}, 2}.
+  {label, 196}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
+    {move, {literal, <<"__v__">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, string, split, 2}}.
+    {test, is_nonempty_list, {f, 211}, [{x, 0}]}.
+    {get_list, {x, 0}, {x, 1}, {x, 2}}.
+    {move, {x, 1}, {y, 2}}.
+    {test, is_nonempty_list, {f, 211}, [{x, 2}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
+    {move, {x, 0}, {y, 1}}.
+  {label, 211}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {move, {integer, 1}, {x, 2}}.
+    {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
+    {test, is_eq_exact, {f, 212}, [{x, 0}, {atom, true}]}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {call_ext, 3, {extfunc, erlang, apply, 3}}.
+    {call_last, 1, {f, 198}, 3}.
+  {label, 212}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
+
+{function, '__bp_render', 1, 198}.
+  {label, 197}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '__bp_render'}, 1}.
+  {label, 198}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_eq_exact, {f, 213}, [{x, 0}, {atom, text}]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 213}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 214}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 214}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 200}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {y, 1}, {x, 1}, {x, 1}}.
+    {put_list, {integer, 40}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '-bp_render_pair-', 1, 200}.
+  {label, 199}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '-bp_render_pair-'}, 1}.
+  {label, 200}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {atom, false}, {x, 1}}.
+    {call, 2, {f, 190}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {y, 1}, nil, {x, 1}}.
+    {put_list, {literal, <<": ">>}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '-bp_stringify-', 1, 216}.
+  {label, 215}.
+    {line, [{location, "std@context.erl", 26}]}.
+    {func_info, {atom, std@context}, {atom, '-bp_stringify-'}, 1}.
+  {label, 216}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 217}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 217}.
+    {test, is_integer, {f, 218}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 218}.
+    {call, 1, {f, 192}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
+
+{function, '__bp_tpl_4-t/2-fun-0-', 2, 296}.
+  {label, 295}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_4-t/2-fun-0-'}, 2}.
-  {label, 106}.
+  {label, 296}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1537,16 +3270,16 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_4', 2, 102}.
-  {label, 101}.
+{function, '__bp_tpl_4', 2, 292}.
+  {label, 291}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_4'}, 2}.
-  {label, 102}.
+  {label, 292}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 106}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 296}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -1555,10 +3288,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_5', 2, 119}.
-  {label, 118}.
+{function, '__bp_tpl_5', 2, 303}.
+  {label, 302}.
     {func_info, {atom, std@context}, {atom, '__bp_tpl_5'}, 2}.
-  {label, 119}.
+  {label, 303}.
     {allocate, 12, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -1567,7 +3300,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 1, {extfunc, erlang, is_tuple, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 122}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 306}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
     {move, {x, 0}, {y, 6}}.
@@ -1576,96 +3309,96 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, erlang, '>', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 4}}.
-    {jump, {f, 124}}.
-  {label, 122}.
+    {jump, {f, 308}}.
+  {label, 306}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 123}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 307}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 4}}.
-    {jump, {f, 124}}.
-  {label, 123}.
+    {jump, {f, 308}}.
+  {label, 307}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 124}.
+  {label, 308}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 126}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 310}, [{x, 0}, {atom, true}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 125}}.
-  {label, 126}.
+    {jump, {f, 309}}.
+  {label, 310}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 127}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 311}, [{x, 0}, {atom, false}]}.
     {move, {y, 2}, {y, 5}}.
-    {jump, {f, 125}}.
-  {label, 127}.
+    {jump, {f, 309}}.
+  {label, 311}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 125}.
+  {label, 309}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 129}}.
-  {label, 129}.
+    {jump, {f, 313}}.
+  {label, 313}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, is_atom, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 130}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 314}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, true}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 133}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 317}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, false}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 136}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 320}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, undefined}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 8}}.
-    {jump, {f, 138}}.
-  {label, 136}.
+    {jump, {f, 322}}.
+  {label, 320}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 321}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 8}}.
-    {jump, {f, 138}}.
-  {label, 137}.
+    {jump, {f, 322}}.
+  {label, 321}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 9}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 138}.
+  {label, 322}.
     {move, {y, 8}, {y, 6}}.
-    {jump, {f, 135}}.
-  {label, 133}.
+    {jump, {f, 319}}.
+  {label, 317}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 134}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 318}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 6}}.
-    {jump, {f, 135}}.
-  {label, 134}.
+    {jump, {f, 319}}.
+  {label, 318}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 7}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 135}.
+  {label, 319}.
     {move, {y, 6}, {y, 4}}.
-    {jump, {f, 132}}.
-  {label, 130}.
+    {jump, {f, 316}}.
+  {label, 314}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 131}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 315}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 4}}.
-    {jump, {f, 132}}.
-  {label, 131}.
+    {jump, {f, 316}}.
+  {label, 315}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 132}.
+  {label, 316}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 140}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 324}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {x, 0}, {y, 5}}.
@@ -1674,26 +3407,26 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, string, split, 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_nonempty_list, {f, 142}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 326}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 7}, {y, 8}}.
     {move, {y, 7}, {y, 1}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_nonempty_list, {f, 142}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 326}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 9}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 142}, [{x, 0}]}.
+    {test, is_nil, {f, 326}, [{x, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {y, 6}}.
-    {jump, {f, 141}}.
-  {label, 142}.
+    {jump, {f, 325}}.
+  {label, 326}.
     {move, {y, 0}, {y, 6}}.
-    {jump, {f, 141}}.
-  {label, 141}.
+    {jump, {f, 325}}.
+  {label, 325}.
     {move, {y, 6}, {y, 0}}.
-    {jump, {f, 145}}.
-  {label, 145}.
+    {jump, {f, 329}}.
+  {label, 329}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {x, 0}, {y, 6}}.
@@ -1705,14 +3438,14 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 146}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 330}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, '__bp_behaviors'}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 149}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 333}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, '__bp_behaviors'}, {x, 1}}.
     {move, nil, {x, 2}}.
@@ -1723,80 +3456,217 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {call_ext, 2, {extfunc, lists, member, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 7}}.
-    {jump, {f, 151}}.
-  {label, 149}.
+    {jump, {f, 335}}.
+  {label, 333}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 150}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 334}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 7}}.
-    {jump, {f, 151}}.
-  {label, 150}.
+    {jump, {f, 335}}.
+  {label, 334}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 8}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 151}.
+  {label, 335}.
     {move, {y, 7}, {y, 5}}.
-    {jump, {f, 148}}.
-  {label, 146}.
+    {jump, {f, 332}}.
+  {label, 330}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 147}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 331}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {y, 5}}.
-    {jump, {f, 148}}.
-  {label, 147}.
+    {jump, {f, 332}}.
+  {label, 331}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 6}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 148}.
+  {label, 332}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 140}.
+  {label, 324}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 152}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 336}, [{x, 0}, {atom, false}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 152}.
+  {label, 336}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '-bp_method-', 3, 154}.
-  {label, 153}.
-    {line, [{location, "std@context.erl", 28}]}.
+{function, '-bp_method-', 3, 338}.
+  {label, 337}.
+    {line, [{location, "std@context.erl", 43}]}.
     {func_info, {atom, std@context}, {atom, '-bp_method-'}, 3}.
-  {label, 154}.
-    {test, is_map, {f, 155}, [{x, 1}]}.
+  {label, 338}.
+    {test, is_map, {f, 339}, [{x, 1}]}.
     {bif, map_get, {f, 0}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {call_ext_only, 2, {extfunc, erlang, apply, 2}}.
-  {label, 155}.
+  {label, 339}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 2}, {y, 1}}.
-    {test, is_tuple, {f, 156}, [{x, 1}]}.
+    {test, is_tuple, {f, 340}, [{x, 1}]}.
     {bif, element, {f, 0}, [{integer, 1}, {x, 1}], {x, 0}}.
-    {jump, {f, 157}}.
-  {label, 156}.
+    {jump, {f, 341}}.
+  {label, 340}.
     {move, {x, 1}, {x, 0}}.
-  {label, 157}.
+  {label, 341}.
     {move, {x, 0}, {y, 2}}.
     {call_ext, 1, {extfunc, erlang, atom_to_binary, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, binary, split, 2}}.
-    {test, is_nonempty_list, {f, 158}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 342}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
-    {test, is_nil, {f, 159}, [{x, 2}]}.
-    {jump, {f, 158}}.
-  {label, 159}.
+    {test, is_nil, {f, 343}, [{x, 2}]}.
+    {jump, {f, 342}}.
+  {label, 343}.
     {move, {x, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, binary_to_atom, 1}}.
-    {jump, {f, 160}}.
-  {label, 158}.
+    {jump, {f, 344}}.
+  {label, 342}.
     {move, {y, 2}, {x, 0}}.
-  {label, 160}.
+  {label, 344}.
     {move, {y, 0}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_ext_last, 3, {extfunc, erlang, apply, 3}, 3}.
+
+{function, '-placed/2-fun-0-', 4, 378}.
+  {label, 377}.
+    {line, [{location, "std@context.erl", 55}]}.
+    {func_info, {atom, std@context}, {atom, '-placed/2-fun-0-'}, 4}.
+  {label, 378}.
+    {allocate, 7, 4}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {x, 3}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 380}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 380}.
+    {test, is_eq, {f, 379}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {jump, {f, 381}}.
+  {label, 379}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, std@context@@Place, with, 2}}.
+  {label, 381}.
+    {move, {y, 0}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {call, 3, {f, 61}}.
+    {deallocate, 7}.
+    return.
+
+{function, '__bp_tpl_6-t/2-fun-0-', 2, 390}.
+  {label, 389}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_6-t/2-fun-0-'}, 2}.
+  {label, 390}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_count}, {y, 0}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, erase, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_tpl_6', 2, 386}.
+  {label, 385}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_6'}, 2}.
+  {label, 386}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 390}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_tpl_7', 1, 393}.
+  {label, 392}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_7'}, 1}.
+  {label, 393}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_count}, {y, 0}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, get, 1}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, undefined}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tpl_8', 1, 396}.
+  {label, 395}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_8'}, 1}.
+  {label, 396}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_count}, {y, 0}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, get, 1}, 2}.
+
+{function, '__bp_tpl_9-t/2-fun-0-', 2, 402}.
+  {label, 401}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_9-t/2-fun-0-'}, 2}.
+  {label, 402}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_count}, {y, 0}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, put, 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {atom, undefined}, {x, 0}}.
+    {deallocate, 3}.
+    return.
+
+{function, '__bp_tpl_9', 2, 398}.
+  {label, 397}.
+    {func_info, {atom, std@context}, {atom, '__bp_tpl_9'}, 2}.
+  {label, 398}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 402}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {deallocate, 3}.
+    return.
 ```
 
 ----- BEAM ASSEMBLY -- std@context@@Context.S
@@ -1845,7 +3715,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 {module, std@context@@Place}.
 {exports, [{none, 0}, {key, 1}, {index, 1}, {with, 2}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 36}.
+{labels, 39}.
 
 {function, none, 0, 3}.
   {label, 2}.
@@ -1854,8 +3724,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
   {label, 3}.
     {allocate, 0, 0}.
     {move, {atom, std@context@@PlaceItem__v__absent}, {x, 0}}.
-    {test_heap, 6, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 0}, {integer, 0}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {test_heap, 7, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 1}, {integer, 0}, {atom, undefined}, {x, 0}]}}.
     {deallocate, 0}.
     return.
 
@@ -1868,8 +3740,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
-    {test_heap, 6, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 0}, {integer, 0}, {y, 0}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {test_heap, 7, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 1}, {integer, 0}, {y, 0}, {x, 0}]}}.
     {deallocate, 1}.
     return.
 
@@ -1882,8 +3756,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {atom, std@context@@PlaceItem__v__index}, {x, 0}}.
-    {test_heap, 6, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 0}, {y, 0}, {atom, undefined}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {test_heap, 7, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {integer, 0}, {x, 1}, {y, 0}, {atom, undefined}, {x, 0}]}}.
     {deallocate, 1}.
     return.
 
@@ -1897,126 +3773,147 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 11}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
     {test, is_eq_exact, {f, 10}, [{x, 1}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 12}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__key}, {x, 0}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 4, {x, 0}}.
   {label, 13}.
-    {test_heap, 6, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {x, 1}, {x, 2}, {integer, 0}, {x, 0}]}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 14}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 14}.
+    {test_heap, 7, 4}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {x, 1}, {x, 2}, {integer, 0}, {x, 3}, {x, 0}]}}.
     {deallocate, 2}.
     return.
   {label, 10}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 15}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 16}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 15}.
+  {label, 16}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__index}, {x, 0}}.
-    {test, is_eq_exact, {f, 14}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 15}, [{x, 1}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 17}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 18}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 17}.
+  {label, 18}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__absent}, {x, 0}}.
-    {test, is_eq_exact, {f, 18}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 19}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 19}}.
-  {label, 18}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 20}}.
   {label, 19}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 20}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 20}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 21}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 22}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 23}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 22}.
+  {label, 23}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__plain}, {x, 0}}.
-    {test, is_eq_exact, {f, 23}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 24}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 24}}.
-  {label, 23}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 25}}.
   {label, 24}.
-    {jump, {f, 21}}.
-  {label, 20}.
-    {move, {atom, true}, {x, 0}}.
-  {label, 21}.
-    {test, is_eq, {f, 16}, [{x, 0}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 25}, [{x, 0}, 5, {atom, std@context@@Place}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {move, {atom, false}, {x, 0}}.
   {label, 25}.
+    {jump, {f, 22}}.
+  {label, 21}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 22}.
+    {test, is_eq, {f, 17}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 26}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 26}.
     {move, {x, 0}, {x, 1}}.
     {move, {atom, std@context@@PlaceItem__v__index}, {x, 0}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 26}, [{x, 0}, 5, {atom, std@context@@Place}]}.
+    {test, is_tagged_tuple, {f, 27}, [{x, 0}, 6, {atom, std@context@@Place}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
-  {label, 26}.
-    {test_heap, 6, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {x, 1}, {x, 2}, {x, 0}, {atom, undefined}]}}.
+  {label, 27}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 28}, [{x, 0}, 6, {atom, std@context@@Place}]}.
+    {get_tuple_element, {x, 0}, 5, {x, 0}}.
+  {label, 28}.
+    {test_heap, 7, 4}.
+    {put_tuple2, {x, 0}, {list, [{atom, std@context@@Place}, {x, 1}, {x, 2}, {x, 3}, {atom, undefined}, {x, 0}]}}.
     {deallocate, 2}.
     return.
-  {label, 16}.
-    {jump, {f, 27}}.
-  {label, 14}.
-  {label, 27}.
+  {label, 17}.
+    {jump, {f, 29}}.
+  {label, 15}.
+  {label, 29}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_get', 2, 29}.
-  {label, 28}.
+{function, '__bp_get', 2, 31}.
+  {label, 30}.
     {line, [{location, "std@context@@Place.erl", 9}]}.
     {func_info, {atom, std@context@@Place}, {atom, '__bp_get'}, 2}.
-  {label, 29}.
-    {test, is_eq_exact, {f, 30}, [{x, 1}, {atom, callNo}]}.
+  {label, 31}.
+    {test, is_eq_exact, {f, 32}, [{x, 1}, {atom, callNo}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 30}.
-    {test, is_eq_exact, {f, 31}, [{x, 1}, {atom, item}]}.
+  {label, 32}.
+    {test, is_eq_exact, {f, 33}, [{x, 1}, {atom, item}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 31}.
-    {test, is_eq_exact, {f, 32}, [{x, 1}, {atom, itemNo}]}.
+  {label, 33}.
+    {test, is_eq_exact, {f, 34}, [{x, 1}, {atom, itemNo}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 4}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 32}.
-    {test, is_eq_exact, {f, 33}, [{x, 1}, {atom, keyValue}]}.
+  {label, 34}.
+    {test, is_eq_exact, {f, 35}, [{x, 1}, {atom, keyValue}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 5}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 33}.
+  {label, 35}.
+    {test, is_eq_exact, {f, 36}, [{x, 1}, {atom, stamped}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 36}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 35}.
-  {label, 34}.
+{function, '__bp_format', 1, 38}.
+  {label, 37}.
     {line, [{location, "std@context@@Place.erl", 9}]}.
     {func_info, {atom, std@context@@Place}, {atom, '__bp_format'}, 1}.
-  {label, 35}.
+  {label, 38}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {y, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"stamped">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
     {move, {integer, 5}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -2112,7 +4009,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, root, 0, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Scope.erl", 9}]}.
+    {line, [{location, "std@context@@Scope.erl", 11}]}.
     {func_info, {atom, std@context@@Scope}, {atom, root}, 0}.
   {label, 3}.
     {allocate, 4, 0}.
@@ -2128,7 +4025,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, childAt, 2, 5}.
   {label, 4}.
-    {line, [{location, "std@context@@Scope.erl", 10}]}.
+    {line, [{location, "std@context@@Scope.erl", 12}]}.
     {func_info, {atom, std@context@@Scope}, {atom, childAt}, 2}.
   {label, 5}.
     {allocate, 6, 2}.
@@ -2159,12 +4056,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {test, is_tagged_tuple, {f, 24}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 24}.
-    {move, {x, 1}, {x, 4}}.
+    {move, {y, 1}, {x, 4}}.
+    {move, {x, 1}, {x, 5}}.
     {move, {x, 2}, {x, 1}}.
     {move, {x, 3}, {x, 2}}.
     {move, {x, 0}, {x, 3}}.
-    {move, {x, 4}, {x, 0}}.
-    {call_ext, 4, {extfunc, std@context, grow, 4}}.
+    {move, {x, 5}, {x, 0}}.
+    {call_ext, 5, {extfunc, std@context, openChild, 5}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 25}, [{x, 0}, 5, {atom, std@context@@Scope}]}.
@@ -2182,7 +4080,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, close, 1, 7}.
   {label, 6}.
-    {line, [{location, "std@context@@Scope.erl", 11}]}.
+    {line, [{location, "std@context@@Scope.erl", 13}]}.
     {func_info, {atom, std@context@@Scope}, {atom, close}, 1}.
   {label, 7}.
     {allocate, 1, 1}.
@@ -2199,7 +4097,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, detach, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@context@@Scope.erl", 12}]}.
+    {line, [{location, "std@context@@Scope.erl", 14}]}.
     {func_info, {atom, std@context@@Scope}, {atom, detach}, 1}.
   {label, 9}.
     {allocate, 2, 1}.
@@ -2241,7 +4139,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, storeRef, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@context@@Scope.erl", 13}]}.
+    {line, [{location, "std@context@@Scope.erl", 15}]}.
     {func_info, {atom, std@context@@Scope}, {atom, storeRef}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
@@ -2256,7 +4154,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, cellId, 1, 13}.
   {label, 12}.
-    {line, [{location, "std@context@@Scope.erl", 14}]}.
+    {line, [{location, "std@context@@Scope.erl", 16}]}.
     {func_info, {atom, std@context@@Scope}, {atom, cellId}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
@@ -2271,7 +4169,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, ownerRef, 1, 15}.
   {label, 14}.
-    {line, [{location, "std@context@@Scope.erl", 15}]}.
+    {line, [{location, "std@context@@Scope.erl", 17}]}.
     {func_info, {atom, std@context@@Scope}, {atom, ownerRef}, 1}.
   {label, 15}.
     {allocate, 1, 1}.
@@ -2286,7 +4184,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, carriedRef, 1, 17}.
   {label, 16}.
-    {line, [{location, "std@context@@Scope.erl", 16}]}.
+    {line, [{location, "std@context@@Scope.erl", 18}]}.
     {func_info, {atom, std@context@@Scope}, {atom, carriedRef}, 1}.
   {label, 17}.
     {allocate, 1, 1}.
@@ -2301,7 +4199,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_get', 2, 37}.
   {label, 36}.
-    {line, [{location, "std@context@@Scope.erl", 17}]}.
+    {line, [{location, "std@context@@Scope.erl", 19}]}.
     {func_info, {atom, std@context@@Scope}, {atom, '__bp_get'}, 2}.
   {label, 37}.
     {test, is_eq_exact, {f, 38}, [{x, 1}, {atom, scopeStore}]}.
@@ -2329,7 +4227,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_format', 1, 43}.
   {label, 42}.
-    {line, [{location, "std@context@@Scope.erl", 17}]}.
+    {line, [{location, "std@context@@Scope.erl", 19}]}.
     {func_info, {atom, std@context@@Scope}, {atom, '__bp_format'}, 1}.
   {label, 43}.
     {allocate, 2, 1}.
@@ -2367,7 +4265,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_behaviors', 0, 45}.
   {label, 44}.
-    {line, [{location, "std@context@@Scope.erl", 17}]}.
+    {line, [{location, "std@context@@Scope.erl", 19}]}.
     {func_info, {atom, std@context@@Scope}, {atom, '__bp_behaviors'}, 0}.
   {label, 45}.
     {move, {literal, ['Closeable']}, {x, 0}}.
@@ -2386,11 +4284,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
 {module, std@context@@ScopeTree}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 10}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@ScopeTree.erl", 17}]}.
+    {line, [{location, "std@context@@ScopeTree.erl", 19}]}.
     {func_info, {atom, std@context@@ScopeTree}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, treeClosed}]}.
@@ -2408,18 +4306,29 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {integer, 4}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
   {label, 6}.
+    {test, is_eq_exact, {f, 7}, [{x, 1}, {atom, treeLinks}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 7}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 8}.
-  {label, 7}.
-    {line, [{location, "std@context@@ScopeTree.erl", 17}]}.
-    {func_info, {atom, std@context@@ScopeTree}, {atom, '__bp_format'}, 1}.
+{function, '__bp_format', 1, 9}.
   {label, 8}.
+    {line, [{location, "std@context@@ScopeTree.erl", 19}]}.
+    {func_info, {atom, std@context@@ScopeTree}, {atom, '__bp_format'}, 1}.
+  {label, 9}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {y, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"treeLinks">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
     {move, {integer, 4}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -2453,7 +4362,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Carried.erl", 17}]}.
+    {line, [{location, "std@context@@Carried.erl", 19}]}.
     {func_info, {atom, std@context@@Carried}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, frames}]}.
@@ -2466,7 +4375,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_format', 1, 6}.
   {label, 5}.
-    {line, [{location, "std@context@@Carried.erl", 17}]}.
+    {line, [{location, "std@context@@Carried.erl", 19}]}.
     {func_info, {atom, std@context@@Carried}, {atom, '__bp_format'}, 1}.
   {label, 6}.
     {allocate, 2, 1}.
@@ -2490,11 +4399,11 @@ declare fn ownerForeign(owner: unknown) -> bool;
 {module, std@context@@CellEntry}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 13}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@CellEntry.erl", 17}]}.
+    {line, [{location, "std@context@@CellEntry.erl", 19}]}.
     {func_info, {atom, std@context@@CellEntry}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, cellNo}]}.
@@ -2507,28 +4416,72 @@ declare fn ownerForeign(owner: unknown) -> bool;
     {move, {integer, 3}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
   {label, 5}.
-    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, cellNext}]}.
+    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, cellGen}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 4}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
   {label, 6}.
+    {test, is_eq_exact, {f, 7}, [{x, 1}, {atom, cellSlot}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 7}.
+    {test, is_eq_exact, {f, 8}, [{x, 1}, {atom, cellFilled}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 8}.
+    {test, is_eq_exact, {f, 9}, [{x, 1}, {atom, cellCounts}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 7}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 9}.
+    {test, is_eq_exact, {f, 10}, [{x, 1}, {atom, cellNext}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 8}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 10}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 8}.
-  {label, 7}.
-    {line, [{location, "std@context@@CellEntry.erl", 17}]}.
+{function, '__bp_format', 1, 12}.
+  {label, 11}.
+    {line, [{location, "std@context@@CellEntry.erl", 19}]}.
     {func_info, {atom, std@context@@CellEntry}, {atom, '__bp_format'}, 1}.
-  {label, 8}.
+  {label, 12}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {y, 1}}.
-    {move, {integer, 4}, {x, 0}}.
+    {move, {integer, 8}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{literal, <<"cellNext">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 7}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"cellCounts">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"cellFilled">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"cellSlot">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"cellGen">>}, {x, 0}]}}.
     {put_list, {x, 0}, {y, 1}, {y, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -2548,6 +4501,154 @@ declare fn ownerForeign(owner: unknown) -> bool;
     return.
 ```
 
+----- BEAM ASSEMBLY -- std@context@@PlaceLink.S
+```erlang
+{module, std@context@@PlaceLink}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 11}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@context@@PlaceLink.erl", 19}]}.
+    {func_info, {atom, std@context@@PlaceLink}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, linkParent}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, linkPlace}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, linkChild}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 6}.
+    {test, is_eq_exact, {f, 7}, [{x, 1}, {atom, linkSeen}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 7}.
+    {test, is_eq_exact, {f, 8}, [{x, 1}, {atom, linkNext}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 8}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 10}.
+  {label, 9}.
+    {line, [{location, "std@context@@PlaceLink.erl", 19}]}.
+    {func_info, {atom, std@context@@PlaceLink}, {atom, '__bp_format'}, 1}.
+  {label, 10}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"linkNext">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"linkSeen">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"linkChild">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"linkPlace">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"linkParent">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"PlaceLink">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- std@context@@PlaceCount.S
+```erlang
+{module, std@context@@PlaceCount}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 9}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@context@@PlaceCount.erl", 19}]}.
+    {func_info, {atom, std@context@@PlaceCount}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, countCall}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {test, is_eq_exact, {f, 5}, [{x, 1}, {atom, countValue}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 5}.
+    {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, countNext}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 6}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 8}.
+  {label, 7}.
+    {line, [{location, "std@context@@PlaceCount.erl", 19}]}.
+    {func_info, {atom, std@context@@PlaceCount}, {atom, '__bp_format'}, 1}.
+  {label, 8}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"countNext">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"countValue">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"countCall">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"PlaceCount">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
 ----- BEAM ASSEMBLY -- std@context@@Frame.S
 ```erlang
 {module, std@context@@Frame}.
@@ -2557,7 +4658,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "std@context@@Frame.erl", 29}]}.
+    {line, [{location, "std@context@@Frame.erl", 44}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, key}]}.
@@ -2580,7 +4681,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "std@context@@Frame.erl", 29}]}.
+    {line, [{location, "std@context@@Frame.erl", 44}]}.
     {func_info, {atom, std@context@@Frame}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
@@ -2760,6 +4861,9 @@ component fn Counter() -> Component<Element> {
     {move, {x, 0}, {y, 2}}.
     {move, {integer, 0}, {x, 0}}.
     {call, 1, {f, 3}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {integer, 1}, {x, 2}}.
+    {call_ext, 3, {extfunc, std@context, stamp, 3}}.
     {move, {x, 0}, {y, 3}}.
     {call_ext, 0, {extfunc, std@context, nowhere, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -2785,6 +4889,9 @@ component fn Counter() -> Component<Element> {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
+    {move, {y, 2}, {x, 1}}.
+    {move, {integer, 2}, {x, 2}}.
+    {call_ext, 3, {extfunc, std@context, stamp, 3}}.
     {move, {x, 0}, {y, 6}}.
     {call_ext, 0, {extfunc, std@context, nowhere, 0}}.
     {move, {x, 0}, {x, 1}}.

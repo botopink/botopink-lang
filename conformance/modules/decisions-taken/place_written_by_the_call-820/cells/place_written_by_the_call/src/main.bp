@@ -1,0 +1,83 @@
+//// Decision 820 — the call that makes a component writes its place into the
+//// value: `val h = Header(); … use h` keeps `Header()`'s cell, `Card(title: "c")`
+//// (a type form) keeps its state, a list reversed after it is made keeps each
+//// item's, and a hand `Place.key(k)` puts `k` in the item's stead as `#[key(k)]`
+//// does; a value made outside every component body takes the root's place.
+
+import {context.run, context.resolve, context.Place, context.Scope, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Header() -> Component<View> {
+    val n = use memo({ ->
+        print("made header");
+        1
+    });
+    return View(text: "header " + n.toString());
+}
+
+type Card(title: string) implement Component<View> {
+    fn compose(self: Self) -> Component<View> {
+        val t = use memo({ ->
+            print("made card " + self.title);
+            self.title
+        });
+        return View(text: "card " + t);
+    }
+}
+
+component fn Item(name: string) -> Component<View> {
+    val made = use memo({ ->
+        print("made " + name);
+        name
+    });
+    return View(text: made);
+}
+
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+// Runs each of `cs` under `scope` with the place it carries, by hand.
+fn runEach(cs: Component<View>[], scope: Scope) -> string {
+    return cs.map({ c -> textOf(resolve(c, scope, Place.none())) }).join(",");
+}
+
+// Runs each of `cs` under `scope` keyed by hand, `ids[i]` in its item's stead.
+fn runKeyed(cs: Component<View>[], scope: Scope, ids: string[]) -> string {
+    var out = "";
+    for (0..cs.length) { i ->
+        val t = textOf(resolve(cs[i]!, scope, Place.key(ids[i]!)));
+        out = if (i == 0) t else out + "," + t;
+    }
+    return out;
+}
+
+component fn App(reversed: bool, ids: string[]) -> Component<View> {
+    val h = Header();
+    val c = Card(title: "c");
+    val made = ["a", "b"].map({ n -> Item(n) });
+    val items = if (reversed) made.reverse() else made;
+    val list: Component<string> = { scope -> runEach(items, scope) };
+    val keyedByHand = ids.map({ n -> Item(n) });
+    val byHand: Component<string> = { scope -> runKeyed(keyedByHand, scope, ids) };
+    val hv = use h;
+    val cv = use c;
+    val l = use list;
+    val k = use byHand;
+    return View(text: hv.text + " " + cv.text + " | " + l + " | " + k);
+}
+
+async fn render(root: Scope, reversed: bool, ids: string[]) -> Async<string> {
+    return (await run(App(reversed, ids), root)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print(await render(root, false, ["x", "y"]));
+    print(await render(root, true, ["y", "x"]));
+    val alone = Header();
+    print(textOf(resolve(alone, Scope.root(), Place.none())));
+}
