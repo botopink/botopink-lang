@@ -87,6 +87,7 @@ pub fn loadWithLoaders(
             const mods = try scanner.scanSources(gpa, io, src_dir);
             for (mods) |*m| {
                 m.targets = bp.Targets.of(proj.manifest.targets);
+                m.wasm_host = proj.wasmHost();
                 m.std_member = isStd(proj);
                 m.files = bp.PackageFiles.disk(io, proj.dir);
             }
@@ -110,6 +111,7 @@ pub fn loadWithLoaders(
     // Decision 519 — `@embed` reads the package's files from disk.
     for (res.modules) |*m| {
         m.targets = bp.Targets.of(proj.manifest.targets);
+        m.wasm_host = proj.wasmHost();
         m.std_member = isStd(proj);
         m.files = bp.PackageFiles.disk(io, proj.dir);
     }

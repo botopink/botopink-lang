@@ -43,6 +43,7 @@ const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
 const printErrors = @import("../print.zig");
 const blockEval = @import("block_eval.zig");
+const targetCheck = @import("../codegen/target_check.zig");
 
 /// The function `withLoadHelper` declares: `Ok(m)` for no refusal,
 /// `Error(Refused(m, ds))` otherwise.
@@ -904,8 +905,10 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     // The caller's manifest: its targets, its reader and its dependencies.
     const caller = build_modules;
     var targets: ?moduleMod.Targets = null;
+    var wasm_host: ast.WasmHost = .wasi;
     for (caller) |m| if (m.package.len == 0) {
         targets = m.targets;
+        wasm_host = m.wasm_host;
         break;
     };
     var modules: std.ArrayListUnmanaged(Module) = .empty;
@@ -913,6 +916,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     for (own) |m| {
         var mm = m;
         mm.targets = targets;
+        mm.wasm_host = wasm_host;
         mm.files = req.files;
         try modules.append(scratch, mm);
     }
@@ -933,6 +937,37 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         if (!ownModule) continue;
         if (try diagnosticOf(arena, o)) |d| try refusals.append(arena, d);
     }
+    // Decision 833 — the target refusals, for every target the caller's
+    // manifest declares (all when it declares none), after the analysis ones.
+    const declared = targets orelse moduleMod.Targets{ .commonJS = true, .typescript = true, .erlang = true, .beam = true, .wasm = true };
+    var lookups: [3][]const u8 = undefined;
+    var n_lookups: usize = 0;
+    if (declared.commonJS or declared.typescript) {
+        lookups[n_lookups] = "node";
+        n_lookups += 1;
+    }
+    if (declared.erlang or declared.beam) {
+        lookups[n_lookups] = "erlang";
+        n_lookups += 1;
+    }
+    if (declared.wasm) {
+        lookups[n_lookups] = wasm_host.lookupName();
+        n_lookups += 1;
+    }
+    for (lookups[0..n_lookups]) |lookup| for (session.outputs.items) |o| {
+        const ownModule = for (own) |m| {
+            if (std.mem.eql(u8, if (m.path.len > 0) m.path else "main", o.name)) break true;
+        } else false;
+        if (!ownModule) continue;
+        switch (o.outcome) {
+            .ok => |ok| if (try targetCheck.refusalOf(arena, ok, lookup)) |te| {
+                var refused = o;
+                refused.outcome = .{ .typeError = te };
+                if (try diagnosticOf(arena, refused)) |d| try refusals.append(arena, d);
+            },
+            else => {},
+        }
+    };
     return .{ .diagnostics = try remember(req.path, refusals.items, own, main_of) };
 }
 

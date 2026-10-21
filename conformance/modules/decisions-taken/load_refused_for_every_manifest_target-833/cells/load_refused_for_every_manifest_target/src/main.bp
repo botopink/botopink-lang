@@ -1,0 +1,18 @@
+//// Decision 833 — a `compiler.load` file is checked for every target the caller's manifest
+//// declares (every target when it declares none, as here), never for the build's `--target`.
+//// The loaded file calls `fs.walk`, which std binds on node and on erlang and not on wasm, so
+//// the file is refused whatever target is built, with the code `botopink build` prints on wasm.
+//// `load` answers the same on every target; the refusal's text names the wasm host, so the
+//// cell prints its code.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val walks = comptime compiler.load("src/cases/walks.bp");
+    print(walks.isError());
+    try comptime compiler.load("src/cases/walks.bp") catch { r ->
+        print(r.diagnostics.length);
+        print(r.diagnostics[0]?.code);
+        r.module
+    }
+}

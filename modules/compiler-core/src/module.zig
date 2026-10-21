@@ -26,6 +26,10 @@ pub const Module = struct {
     /// none declared is every target). The CLI's loaders fill it in
     /// (`Targets.of`).
     targets: ?Targets = null,
+    /// The wasm host the package's manifest declares (`"wasm": { "host": … }`,
+    /// decision 334); read with `targets` by a `compiler.load` file's target check
+    /// (decision 833).
+    wasm_host: @import("ast.zig").WasmHost = .wasi,
     /// One of std's own modules (decision 445: a `#[@External.Wasm(std: "…")]`
     /// cell is std's alone) — never read from `path`, which a package's own
     /// `src/std/` folder spells too. The compiler sets it on the embedded std

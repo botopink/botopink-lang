@@ -1,0 +1,5 @@
+import {io.fs} from "std";
+
+pub fn main() -> void {
+    val found = fs.walk(".");
+}
