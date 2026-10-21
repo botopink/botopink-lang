@@ -63,6 +63,36 @@ pub fn packagePath(arena: std.mem.Allocator, cache_root: []const u8, target: cod
     return std.fs.path.join(arena, &.{ cache_root, DIR, target.name(), file });
 }
 
+/// The extension of a package's INPUTS file beside its entry (decision 519):
+/// the files its last analysis read through its reader, one path from the
+/// package per line, sorted — what `code_cache.closureKeyReading` hashes
+/// besides the package's own files, so a `compiler.load` file outside `src`
+/// moves the package's key (and, Merkle, its dependants').
+pub const INPUTS_EXT = ".inputs";
+
+/// The INPUTS file of the package `package` on `target`.
+pub fn inputsPath(arena: std.mem.Allocator, cache_root: []const u8, target: code_cache.EntryTarget, package: []const u8) ![]const u8 {
+    const file = try std.mem.concat(arena, u8, &.{ package, INPUTS_EXT });
+    return std.fs.path.join(arena, &.{ cache_root, DIR, target.name(), file });
+}
+
+/// The paths of `package`'s INPUTS file, none when it has none. A path that
+/// is absolute or climbs out of the package is never hashed.
+pub fn readInputs(arena: std.mem.Allocator, io: std.Io, cache_root: []const u8, target: code_cache.EntryTarget, package: []const u8) ![]const []const u8 {
+    const path = try inputsPath(arena, cache_root, target, package);
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return &.{},
+    };
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, bytes, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0 or std.fs.path.isAbsolute(line) or std.mem.indexOf(u8, line, "..") != null) continue;
+        try out.append(arena, line);
+    }
+    return out.items;
+}
+
 /// The entry of std's module `module` (its path under std — `io/fs`, or
 /// `std/io/fs` as a build names it) on `target`: `…/std/io@fs.bpa`.
 pub fn stdPath(arena: std.mem.Allocator, cache_root: []const u8, target: code_cache.EntryTarget, module: []const u8) ![]const u8 {
@@ -127,6 +157,9 @@ pub const Cache = struct {
     read_entries: std.StringHashMapUnmanaged(?entry.Entry) = .empty,
     /// Entries staged, by group, written by `commit`.
     pending: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Each dependency package's reader log (`libs.ClosureKeys.logs`), by
+    /// import name: `commit` writes a staged package's INPUTS from it.
+    logs: std.StringHashMapUnmanaged(*bp.ReadLog) = .empty,
     store: bp.level_b.Store,
 
     const vtable: bp.level_b.Store.VTable = .{
@@ -202,16 +235,43 @@ pub const Cache = struct {
         self.pending.put(a, g, copy) catch {};
     }
 
-    /// Write every staged entry, each renamed into place. A write that fails
+    /// Write every staged entry, each renamed into place, and a package's
+    /// INPUTS beside it — what its reader read, none removing the file. A
+    /// package whose log lost a path writes neither. A write that fails
     /// leaves the previous entry (or none): the next invocation analyses
     /// that dependency again.
+    ///
+    /// The entry is filed under the key computed before the analysis read
+    /// anything: a package whose INPUTS this commit changes gets another key
+    /// at the next invocation and is analysed once more, then read back.
     pub fn commit(self: *Cache) void {
         const a = self.arena_inst.allocator();
         for (self.pending.keys(), self.pending.values()) |g, bytes| {
+            const log = self.logs.get(g);
+            if (log) |l| if (l.lost) continue;
             const path = self.pathOf(g) catch continue;
             write(a, self.io, path, bytes) catch {};
+            if (log) |l| self.writeInputs(g, l) catch {};
         }
         self.pending.clearRetainingCapacity();
+    }
+
+    fn writeInputs(self: *Cache, g: []const u8, log: *const bp.ReadLog) !void {
+        const a = self.arena_inst.allocator();
+        const path = try inputsPath(a, self.cache_root, self.target, g);
+        if (log.paths.count() == 0) return discard(self.io, path);
+        const paths = try a.dupe([]const u8, log.paths.keys());
+        std.mem.sort([]const u8, paths, {}, struct {
+            fn lt(_: void, x: []const u8, y: []const u8) bool {
+                return std.mem.lessThan(u8, x, y);
+            }
+        }.lt);
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        for (paths) |p| {
+            try text.appendSlice(a, p);
+            try text.append(a, '\n');
+        }
+        try write(a, self.io, path, text.items);
     }
 };
 

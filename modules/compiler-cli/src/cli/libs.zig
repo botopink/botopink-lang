@@ -33,6 +33,7 @@ const sources = @import("./sources.zig");
 const bpp = @import("./bpp.zig");
 const bpp_unfold = @import("./bpp_unfold.zig");
 const code_cache = @import("./code_cache.zig");
+const analysis_store = @import("./analysis_store.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -289,6 +290,15 @@ pub const ClosureKeys = struct {
     /// its manifest names a `"bpp"` package: the roles `checkBppRoles` found,
     /// in `arena`. `sources.load` hands it to the resolver.
     bpp: ?bpp_unfold.Spec = null,
+    /// The cache root the build files its entries under
+    /// (`analysis_store.root`), when it keeps them: each package's key then
+    /// holds the files its last analysis read besides its own — its INPUTS
+    /// (decision 519: a `compiler.load` file outside `src`).
+    cache_root: ?[]const u8 = null,
+    /// Each package's reader log, by import name (`bp.PackageFiles.log`):
+    /// what this build's analysis of it reads, for `analysis_store.Cache`
+    /// to write as its INPUTS.
+    logs: std.StringHashMapUnmanaged(*bp.ReadLog) = .empty,
 };
 
 /// `loadDependencies`, filling `keys` (when given) with every package's
@@ -421,7 +431,15 @@ fn loadClosure(
         },
         error.OutOfMemory => return error.OutOfMemory,
     };
-    for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
+    for (closure.order.items) |pkg| {
+        const log: ?*bp.ReadLog = if (keys) |k| blk: {
+            const l = try k.arena.create(bp.ReadLog);
+            l.* = .{ .arena = k.arena };
+            try k.logs.put(k.arena, try k.arena.dupe(u8, pkg.name), l);
+            break :blk l;
+        } else null;
+        try loadOneLogged(gpa, io, pkg.dir, pkg.manifest, pkg.name, out, log);
+    }
     if (project.bpp) |name| {
         const pkg = closure.packages.get(name).?;
         const roles = try checkBppRoles(arena, io, project, pkg, out.items, bpp_files);
@@ -433,7 +451,8 @@ fn loadClosure(
     if (keys) |k| for (closure.order.items) |pkg| {
         var dep_keys: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
         for (pkg.manifest.dependencies) |d| if (k.keys.get(d.name)) |dk| try dep_keys.append(arena, .{ .name = d.name, .key = dk });
-        const key = try code_cache.closureKey(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target);
+        const inputs = if (k.cache_root) |r| try analysis_store.readInputs(arena, io, r, k.target, pkg.name) else &.{};
+        const key = try code_cache.closureKeyReading(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target, code_cache.compilerKey(k.target.target), inputs);
         try k.keys.put(k.arena, try k.arena.dupe(u8, pkg.name), key);
     };
 }
@@ -870,6 +889,19 @@ fn loadOne(
     dep: []const u8,
     out: *std.ArrayListUnmanaged(Module),
 ) !void {
+    return loadOneLogged(gpa, io, dir, m, dep, out, null);
+}
+
+/// `loadOne`, each module's reader noting its reads in `log` when given.
+fn loadOneLogged(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    m: manifest.Manifest,
+    dep: []const u8,
+    out: *std.ArrayListUnmanaged(Module),
+    log: ?*bp.ReadLog,
+) !void {
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
@@ -910,7 +942,11 @@ fn loadOne(
         // Decision 519 — `@embed` in the dependency reads its own files.
         const root = try gpa.dupe(u8, dir);
         errdefer gpa.free(root);
-        try out.append(gpa, .{ .path = mod_path, .source = source, .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets), .files = bp.PackageFiles.disk(io, root) });
+        try out.append(gpa, .{ .path = mod_path, .source = source, .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets), .files = files: {
+            var f = bp.PackageFiles.disk(io, root);
+            f.log = log;
+            break :files f;
+        } });
         try file_paths.append(arena, try std.fs.path.relative(arena, cwd, null, cwd, file_path));
     }
     try checkImportSources(arena, dep, m, file_paths.items, out.items[first..]);

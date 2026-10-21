@@ -56,6 +56,11 @@ pub const PackageFiles = struct {
     root: []const u8,
     io: std.Io,
     read: *const fn (io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const u8,
+    /// Where every path read through this reader is noted, when the caller
+    /// keeps one — the CLI's for a dependency package, whose closure key holds
+    /// the files the package's analysis read (decision 519, 144 B-158: a
+    /// `compiler.load` file outside `src`).
+    log: ?*ReadLog = null,
 
     pub const ReadError = error{ FileNotFound, Unreadable, OutOfMemory };
 
@@ -66,6 +71,7 @@ pub const PackageFiles = struct {
 
     /// The bytes of `rel` under the package's root.
     pub fn readFile(self: PackageFiles, arena: std.mem.Allocator, rel: []const u8) ReadError![]const u8 {
+        if (self.log) |l| l.note(rel);
         return self.read(self.io, arena, self.root, rel);
     }
 
@@ -76,6 +82,26 @@ pub const PackageFiles = struct {
             error.OutOfMemory => error.OutOfMemory,
             else => error.Unreadable,
         };
+    }
+};
+
+/// The paths read through one package's reader (`PackageFiles.log`), each
+/// once, relative to the package's root — a missing file's included: its
+/// appearing changes what the read answers. A note that cannot be kept (out
+/// of memory) marks the log `lost`: its owner stores nothing under it.
+pub const ReadLog = struct {
+    arena: std.mem.Allocator,
+    paths: std.StringArrayHashMapUnmanaged(void) = .empty,
+    lost: bool = false,
+
+    pub fn note(self: *ReadLog, rel: []const u8) void {
+        if (self.paths.contains(rel)) return;
+        const copy = self.arena.dupe(u8, rel) catch return self.lose();
+        self.paths.put(self.arena, copy, {}) catch return self.lose();
+    }
+
+    fn lose(self: *ReadLog) void {
+        self.lost = true;
     }
 };
 

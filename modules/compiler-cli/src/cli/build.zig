@@ -95,7 +95,7 @@ pub fn run(
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
     const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
-    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj) };
     const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         reportDependencyError(err);
         return 1;
@@ -121,6 +121,7 @@ pub fn run(
     // this build analyses are written once its generate returned.
     var level_b: analysis_store.Cache = undefined;
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
+    level_b.logs = closure_keys.logs;
     defer level_b.deinit();
     // The compiled comptime modules beside it (decision 543).
     try bp.comptime_runtime.useCompiledCache(analysis_store.root(proj), code_cache.cold);

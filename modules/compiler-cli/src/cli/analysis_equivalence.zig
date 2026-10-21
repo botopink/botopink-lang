@@ -220,6 +220,8 @@ const Fixture = struct {
     cfg: codegen.Config,
     /// The dependencies' closure keys on the target `load` was given.
     keys: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
+    /// Each dependency package's reader log, for the store's INPUTS.
+    logs: std.StringHashMapUnmanaged(*bp.ReadLog) = .empty,
 
     fn load(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io) !Fixture {
         return loadAt(gpa, arena, io, "tests/closure_invariant/crowded", null);
@@ -228,13 +230,19 @@ const Fixture = struct {
     /// The project at `project` (from the cwd), its dependencies' keys on
     /// `target` when given.
     fn loadAt(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, project: []const u8, target: ?code_cache.EntryTarget) !Fixture {
+        return loadKeyed(gpa, arena, io, project, target, null);
+    }
+
+    /// `loadAt`, each package's key holding the INPUTS its last analysis
+    /// filed under `cache_root` when given, as `build` computes it.
+    fn loadKeyed(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, project: []const u8, target: ?code_cache.EntryTarget, cache_root: ?[]const u8) !Fixture {
         const dir = try std.Io.Dir.cwd().realPathFileAlloc(io, project, arena);
         const text = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ dir, "botopink.json" }), arena, .unlimited);
         var proj = try config.parse(arena, text);
         proj.dir = dir;
         var loaded = try sources.load(gpa, io, proj, try std.fs.path.join(arena, &.{ dir, proj.srcDir() }));
         errdefer loaded.free(gpa);
-        var keys: libs.ClosureKeys = .{ .arena = arena, .target = target orelse .{ .target = .erlang } };
+        var keys: libs.ClosureKeys = .{ .arena = arena, .target = target orelse .{ .target = .erlang }, .cache_root = cache_root };
         const deps = try libs.loadDependenciesWith(gpa, io, proj, null, if (target != null) &keys else null);
         errdefer libs.freeModules(gpa, deps);
         return .{
@@ -243,6 +251,7 @@ const Fixture = struct {
             .all = try std.mem.concat(arena, Module, &.{ deps, loaded.modules }),
             .cfg = .{ .build_root = ".botopinkbuild", .packages = try libs.packagesOf(arena, proj, deps), .wasm_artifact = true },
             .keys = keys.keys,
+            .logs = keys.logs,
         };
     }
 
@@ -316,6 +325,7 @@ fn invoke(gpa: std.mem.Allocator, io: std.Io, fx: *const Fixture, v: Variant, ro
     var cache: analysis_store.Cache = undefined;
     if (root) |r| {
         try cache.init(gpa, io, r, entryTarget(v), keys);
+        cache.logs = fx.logs;
         cfg.analysis_store = &cache.store;
     }
     defer if (root != null) cache.deinit();
@@ -639,6 +649,62 @@ test "level B: a file a library's `@embed` reads under its `src` is in the libra
     try testing.expectEqual(@as(usize, 1), changed.stats.entries_staged);
     try testing.expect(emitted.has(changed.outputs.items, "second edition"));
     try testing.expect(!emitted.has(changed.outputs.items, "first edition"));
+}
+
+test "level B: a file a library's `compiler.load` reads outside its `src` is in the library's key — a changed byte of it, the library analysed again and the new answer emitted (decision 519)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const gpa = testing.allocator;
+    const cwd = std.Io.Dir.cwd();
+    test_scratch.remove(io, "level-b-load");
+    defer test_scratch.remove(io, "level-b-load");
+    const dir = test_scratch.path(io, "level-b-load");
+    const files = [_][2][]const u8{
+        .{ "probe/botopink.json", "{ \"name\": \"probe\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"root.bp\", \"files\": [\"root.bp\", \"probe.bp\"] }" },
+        .{ "probe/src/root.bp", "pub mod probe;\n" },
+        .{ "probe/src/probe.bp", "import {compiler} from \"std\";\n\npub fn loads() -> bool {\n    val r = comptime compiler.load(\"cases/checked/mod.bp\");\n    return r.isOk();\n}\n" },
+        .{ "probe/cases/checked/mod.bp", "pub fn answer() -> i32 {\n    return 1;\n}\n" },
+        .{ "app/botopink.json", "{ \"name\": \"app\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"main.bp\", \"dependencies\": { \"probe\": { \"path\": \"../probe\" } } }" },
+        .{ "app/src/main.bp", "import {probe.loads} from \"probe\";\nimport {io.terminal.print} from \"std\";\n\npub fn main() -> void {\n    print(loads());\n}\n" },
+    };
+    for (files) |f| {
+        const path = try std.fs.path.join(arena, &.{ dir, f[0] });
+        try cwd.createDirPath(io, std.fs.path.dirname(path).?);
+        try cwd.writeFile(io, .{ .sub_path = path, .data = f[1] });
+    }
+    const app_dir = try std.fs.path.join(arena, &.{ dir, "app" });
+    const root = try std.fs.path.join(arena, &.{ dir, "cache" });
+    const erl: Variant = .{ .label = "erlang", .target = .erlang };
+    const emitted = struct {
+        fn of(outputs: []const codegen.ModuleOutput) []const u8 {
+            for (outputs) |o| if (std.mem.indexOf(u8, o.name, "probe") != null and std.mem.indexOf(u8, o.result.js, "loads") != null) return o.result.js;
+            return "";
+        }
+    };
+
+    // Two builds: the first records what the library read, the second files
+    // the entry under the key that holds it and is read back by the third.
+    var builds: [3][]const u8 = undefined;
+    for (&builds) |*b| {
+        var fx = try Fixture.loadKeyed(gpa, arena, io, app_dir, entryTarget(erl), root);
+        defer fx.free(gpa);
+        var inv = try invoke(gpa, io, &fx, erl, root, fx.keys);
+        defer inv.deinit(gpa);
+        b.* = try arena.dupe(u8, emitted.of(inv.outputs.items));
+    }
+    try testing.expect(builds[0].len > 0);
+    try testing.expectEqualStrings(builds[0], builds[2]);
+
+    // The loaded file now refuses; nothing under the library's `src` changed.
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ dir, "probe", "cases", "checked", "mod.bp" }), .data = "pub fn answer() -> i32 {\n    return \"one\";\n}\n" });
+    var changed_fx = try Fixture.loadKeyed(gpa, arena, io, app_dir, entryTarget(erl), root);
+    defer changed_fx.free(gpa);
+    var changed = try invoke(gpa, io, &changed_fx, erl, root, changed_fx.keys);
+    defer changed.deinit(gpa);
+    try testing.expectEqual(@as(usize, 1), changed.stats.entries_staged);
+    try testing.expect(!std.mem.eql(u8, builds[0], emitted.of(changed.outputs.items)));
 }
 
 /// The compiler's part of the key on `target` over a checkout at `checkout`:

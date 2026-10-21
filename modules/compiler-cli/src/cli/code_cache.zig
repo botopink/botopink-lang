@@ -268,6 +268,9 @@ pub const EntryTarget = struct {
 ///   * its EFFECTIVE manifest `m` (`effectiveManifest`): what it inherits
 ///     from its workspace (decision 512 — `targets`, `otp`, the inherited
 ///     dependencies, `version`) is in no file of the package;
+///   * the files its last analysis read besides those (`closureKeyReading`,
+///     the package's INPUTS — a `compiler.load` file outside `src`, decision
+///     519), by content;
 ///   * its dependencies' closure keys (Merkle): `<name> NUL <key> NUL`, sorted
 ///     by name, so the key of a package moves when any package below it moves;
 ///   * the target and, on wasm, the host (`EntryTarget.name`);
@@ -298,6 +301,25 @@ pub fn closureKeyWith(
     target: EntryTarget,
     compiler: []const u8,
 ) ![KEY_HEX]u8 {
+    return closureKeyReading(arena, io, pkg_dir, m, deps, target, compiler, &.{});
+}
+
+/// `closureKeyWith` over the files the package's last analysis read besides
+/// its own (`inputs`, relative to the package — `analysis_store.readInputs`;
+/// decision 519): a `compiler.load` file outside `src`, its `mod` tree, an
+/// `@embed` outside `src`. Each one that is not already one of the package's
+/// files is hashed by content after them, a missing one as missing; with none
+/// the key is `closureKeyWith`'s.
+pub fn closureKeyReading(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    pkg_dir: []const u8,
+    m: manifest.Manifest,
+    deps: []const DepKey,
+    target: EntryTarget,
+    compiler: []const u8,
+    inputs: []const []const u8,
+) ![KEY_HEX]u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     h.update("botopink-closure-1\x00");
 
@@ -313,6 +335,28 @@ pub fn closureKeyWith(
         h.update(rel);
         h.update(&.{0});
         h.update(bytes);
+        h.update(&.{0});
+    }
+
+    // The files the last analysis read besides the package's own.
+    const extra = try arena.dupe([]const u8, inputs);
+    std.mem.sort([]const u8, extra, {}, lessThan);
+    var announced = false;
+    for (extra, 0..) |rel, i| {
+        if (i > 0 and std.mem.eql(u8, rel, extra[i - 1])) continue;
+        if (isOneOf(files.items, rel)) continue;
+        if (!announced) h.update("inputs\x00");
+        announced = true;
+        h.update(rel);
+        h.update(&.{0});
+        const path = try std.fs.path.join(arena, &.{ pkg_dir, rel });
+        if (std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited)) |bytes| {
+            h.update("=");
+            h.update(bytes);
+        } else |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => h.update("-"),
+        }
         h.update(&.{0});
     }
 
@@ -431,6 +475,11 @@ fn lessThan(_: void, a: []const u8, b: []const u8) bool {
 
 /// Every regular file under `<base>/<rel>`, as a path from `base`; hidden
 /// entries skipped.
+fn isOneOf(sorted: []const []const u8, rel: []const u8) bool {
+    for (sorted) |f| if (std.mem.eql(u8, f, rel)) return true;
+    return false;
+}
+
 fn collectFiles(arena: std.mem.Allocator, io: std.Io, base: []const u8, rel: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
     const full = try std.fs.path.join(arena, &.{ base, rel });
     var d = std.Io.Dir.cwd().openDir(io, full, .{ .iterate = true }) catch return;

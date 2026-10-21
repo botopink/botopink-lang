@@ -9,6 +9,7 @@ pub const print_errors = @import("./print.zig");
 pub const Module = @import("./module.zig").Module;
 pub const Targets = @import("./module.zig").Targets;
 pub const PackageFiles = @import("./module.zig").PackageFiles;
+pub const ReadLog = @import("./module.zig").ReadLog;
 pub const comptime_pipeline = @import("./comptime.zig");
 /// The comptime runtime's entry: `useCompiledCache`, the compiled-module cache
 /// a command keeps under its cache root (decision 543).
