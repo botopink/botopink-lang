@@ -107,9 +107,13 @@ pub const WrittenName = struct {
     /// `import {util} from "frame"`): `module` is the module it names (std's
     /// `io/clock`, a program's `frame/util`), `name` the local name. A
     /// function expanded at its call site writes it into its caller.
+    /// `stdLeaf` — a std function a leaf import binds (`import {math.pow}
+    /// from "std"`): `module` is its std module (`math`), `name` its declared
+    /// name; the code a template or a `syntax` function builds names it
+    /// (decisions 170, 578, `infer.HygieneResolver`).
     namespace: Namespace = .none,
 
-    pub const Namespace = enum { none, module, std };
+    pub const Namespace = enum { none, module, std, stdLeaf };
 };
 
 /// A decorator's identity: its declaring module and its own name.

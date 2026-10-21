@@ -1,0 +1,26 @@
+//// A template and a `syntax` function whose code names this module's private
+//// function `boxOf`, private value `factor` and `Box`'s private method `scaled`.
+
+import {code, compiler} from "std";
+
+val factor = 10;
+
+pub type Box(n: i32) {
+    // Without `pub`: called only in this module (decision 859).
+    fn scaled(self: Self) -> i32 {
+        return self.n * factor;
+    }
+}
+
+fn boxOf(n: i32) -> Box {
+    return Box(n: n);
+}
+
+pub fn measure(syntax q: string) -> anyvalue {
+    val n = compiler.text(q).length();
+    return code @`boxOf(${n}).scaled()`;
+}
+
+pub fn measured(syntax e: i32) -> anyvalue {
+    return code @`boxOf(${e}).scaled() + factor`;
+}

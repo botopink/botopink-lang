@@ -163,6 +163,19 @@ fn Ctx(comptime Resolver: type) type {
                 .call => |*c| switch (c.kind) {
                     .call => |*cc| if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
                         if (try self.rename(cc.callee, c.loc)) |alias| cc.callee = alias;
+                    } else if (comptime @hasDecl(Resolver, "aliasForMember")) if (cc.receiver) |recv| if (cc.calleeExpr == null and !cc.is_builtin) {
+                        // Decisions 170, 578 — `ns.f(…)` through a namespace
+                        // the author imports: the call of `f` where it is
+                        // declared, under its alias.
+                        if (recv.* == .identifier and recv.identifier.kind == .ident) {
+                            const ns = recv.identifier.kind.ident;
+                            if (!self.locals.contains(ns) and (self.all or self.libraryWrote(recv.identifier.loc))) {
+                                if (try self.resolver.aliasForMember(ns, cc.callee)) |alias| {
+                                    cc.receiver = null;
+                                    cc.callee = alias;
+                                }
+                            }
+                        }
                     },
                     else => {},
                 },

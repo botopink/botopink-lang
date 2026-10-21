@@ -11658,7 +11658,11 @@ fn applyAstHygiene(env: *Env, tfn: ast.FnDecl, root: *ast.Expr) InferError!void 
     try dslHygiene.applyAll(env.arena, root, HygieneResolver{ .env = env, .owner = owner, .exports = exports });
 }
 
-/// A name the template's owner module declares, bound under its alias.
+/// A name the template's owner module binds, bound under its alias: one it
+/// declares (a private one included, decision 112), else one it imports
+/// from another module, followed to the module that declares it (decisions
+/// 170, 578, `Reflection.scopes`). A name the owner does not bind stays the
+/// caller's.
 const HygieneResolver = struct {
     env: *Env,
     owner: []const u8,
@@ -11666,7 +11670,7 @@ const HygieneResolver = struct {
 
     pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
         const ty = self.exports.get(name) orelse
-            self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
+            self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return self.imported(name);
         const alias = try envMod.templateAlias(self.env.arena, self.owner, name);
         if (!self.env.templateImports.contains(alias)) {
             try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
@@ -11679,6 +11683,34 @@ const HygieneResolver = struct {
             try self.env.bind(alias, try renameImportedType(self.env, ty, self.owner));
         }
         return alias;
+    }
+
+    /// A value the owner imports from a module other than itself (`import
+    /// {units.unit};`, `import {math.pow} from "std"`), bound where it is
+    /// declared.
+    fn imported(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
+        const r = self.env.reflection orelse return null;
+        const w = (try r.written(self.env.arena, self.owner, name)) orelse return null;
+        if (w.isType) return null;
+        return switch (w.namespace) {
+            .none => if (std.mem.eql(u8, w.module, self.owner)) null else writtenNames.bindValue(self.env, w.module, w.name),
+            .stdLeaf => writtenNames.bindStdValue(self.env, w.module, w.name),
+            .module, .std => null,
+        };
+    }
+
+    /// `ns.f` where `ns` is a namespace the owner imports (`import {units};`,
+    /// `import {math} from "std"`): the function `f` of that module, bound
+    /// under its alias, so the call is `alias(…)`.
+    pub fn aliasForMember(self: @This(), ns: []const u8, member: []const u8) dslHygiene.Error!?[]const u8 {
+        if (self.exports.contains(ns)) return null;
+        const r = self.env.reflection orelse return null;
+        const w = (try r.written(self.env.arena, self.owner, ns)) orelse return null;
+        return switch (w.namespace) {
+            .module => writtenNames.bindValue(self.env, w.module, member),
+            .std => writtenNames.bindStdValue(self.env, w.module, member),
+            .none, .stdLeaf => null,
+        };
     }
 };
 

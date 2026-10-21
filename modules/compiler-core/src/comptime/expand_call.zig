@@ -413,6 +413,7 @@ pub fn importOf(env: *Env, decls: []const ast.DeclKind, owner: []const u8, n: []
             else
                 try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ local, alias, pkg });
         },
+        .stdLeaf => return null,
         .none => if (w.isType and !typeHeldElsewhere(env, decls, w.module, w.name))
             try std.fmt.allocPrint(env.arena, "import {{{s} as {s}}} from \"{s}\";", .{ w.name, try writtenNames.typeAliasOf(env.arena, w.module, w.name), w.module })
         else

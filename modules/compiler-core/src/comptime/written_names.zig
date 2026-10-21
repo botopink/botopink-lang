@@ -57,6 +57,34 @@ pub fn publish(env: *Env, program: ast.Program) Error!void {
     while (nit.next()) |e| try putNamespace(r, env.modulePath, e.key_ptr.*, e.value_ptr.*, .module);
     var sit = env.stdImports.iterator();
     while (sit.next()) |e| try putNamespace(r, env.modulePath, e.key_ptr.*, e.value_ptr.*, .std);
+    // Decisions 170, 578 — each std function a leaf import binds, for the
+    // code a template or a `syntax` function of this module builds.
+    var lit = env.stdLeafFns.iterator();
+    while (lit.next()) |e| {
+        const gop = try r.scopes.getOrPut(r.arena, try reflectionMod.Reflection.scopeKey(r.arena, env.modulePath, e.key_ptr.*));
+        if (gop.found_existing) continue;
+        gop.value_ptr.* = .{ .module = e.value_ptr.module, .name = e.value_ptr.name, .isType = false, .namespace = .stdLeaf };
+    }
+}
+
+/// Decisions 170, 578 — bind the std function `name` of std module `module`
+/// in `env` under its alias, module-wide like an import, and record it for
+/// the backends (`import {<module>.<name> as <alias>} from "std"`); null when
+/// the module has no such public function.
+pub fn bindStdValue(env: *Env, module: []const u8, name: []const u8) Error!?[]const u8 {
+    const exports = env.stdModules.get(module) orelse return null;
+    const ty = exports.get(name) orelse return null;
+    const owner = try std.fmt.allocPrint(env.arena, "std/{s}", .{module});
+    const alias = try envMod.templateAlias(env.arena, owner, name);
+    if (!env.templateImports.contains(alias)) {
+        try env.templateImports.put(env.arena, alias, .{ .owner = owner, .name = name });
+        try env.stdLeafFns.put(env.arena, alias, .{ .module = module, .name = name });
+        const scope = env.bodyScope;
+        env.bodyScope = null;
+        defer env.bodyScope = scope;
+        env.bind(alias, ty) catch return error.OutOfMemory;
+    }
+    return alias;
 }
 
 fn putNamespace(r: *reflectionMod.Reflection, module: []const u8, local: []const u8, path: []const u8, kind: reflectionMod.WrittenName.Namespace) Error!void {

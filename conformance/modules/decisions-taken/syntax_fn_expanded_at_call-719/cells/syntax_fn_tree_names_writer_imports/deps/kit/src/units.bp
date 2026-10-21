@@ -1,0 +1,9 @@
+//// What `kit`'s code names through its imports.
+
+pub fn unit() -> string {
+    return "cm";
+}
+
+pub fn label(n: i32) -> string {
+    return "#" + n.toString();
+}
