@@ -561,7 +561,9 @@ pub fn parseFnBody(
     // 06 N30 — where the return-type annotation starts, so an unknown type name
     // reds there instead of at the file.
     var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 };
-    var arrowOmitted = false;
+    // Decision 622 / 846 — the type of a `fn f(x: T) R` written with no `->`:
+    // the first token of `R`, kept for the checker's hint.
+    var arrowOmittedHint: ?[]const u8 = null;
     var typeGuardParam: ?[]const u8 = null;
     var typeGuardType: ?ast.TypeRef = null;
     if (this.match(.rightArrow)) {
@@ -587,13 +589,13 @@ pub fn parseFnBody(
         // (decision 33 (b) wants it at the `)` this one just closed).
         !(this.check(.@"fn") and this.peekAt(1).kind != .leftParenthesis))
     {
-        // `.d.bp`-style shortform: `fn name(params) Type` with no `->` and no
-        // body — implicit declaration. The arrow-less form is the convention
-        // in `libs/std/src/primitives.bp`'s compiler section (`fn typeOf<T>(val: T) type`,
-        // `fn min<T>(a: T, b: T) T`). Treat as a bodyless `declare fn`.
+        // Decisions 622, 846 — `fn name(params) Type` with no `->` is refused by
+        // the checker, `fn-return-missing` at the name, the hint naming `-> Type`.
+        // The type is read only to step over it; the function keeps no return type.
         returnTypeLoc = parser.Parser.locFromToken(this.peek());
-        returnType = try this.parseTypeRef(alloc);
-        arrowOmitted = true;
+        arrowOmittedHint = this.peek().lexeme;
+        var skipped = try this.parseTypeRef(alloc);
+        skipped.deinit(alloc);
     }
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
@@ -622,7 +624,7 @@ pub fn parseFnBody(
     // opened at, instead of failing several tokens later as `Unexpected token`
     // on the NEXT declaration. `declare fn f(x);` keeps its own contract and
     // is not this rule's.
-    if (!isDeclare and returnType == null and typeGuardType == null and
+    if (!isDeclare and returnType == null and typeGuardType == null and arrowOmittedHint == null and
         !this.check(.leftBrace))
     {
         this.parseError = ParseErrorInfo.fromToken(.bodylessFnNeedsReturnType, closeParenTok);
@@ -636,7 +638,7 @@ pub fn parseFnBody(
     // it (`fn name(params) Type`, the `.d.bp` shortform) — promote both to
     // `isDeclare = true` here. The arrowed form used to be a parse error,
     // which made decision 33's own remedy unwritable.
-    if ((isDeclare or (returnType != null and !this.check(.leftBrace))) and
+    if ((isDeclare or ((returnType != null or arrowOmittedHint != null) and !this.check(.leftBrace))) and
         !this.check(.leftBrace))
     {
         _ = this.match(.semicolon);
@@ -653,6 +655,7 @@ pub fn parseFnBody(
             .returnTypeLoc = returnTypeLoc,
             .typeGuardParam = typeGuardParam,
             .typeGuardType = typeGuardType,
+            .arrowOmittedHint = arrowOmittedHint,
             .body = &.{},
         };
     }
@@ -676,6 +679,7 @@ pub fn parseFnBody(
         .returnTypeLoc = returnTypeLoc,
         .typeGuardParam = typeGuardParam,
         .typeGuardType = typeGuardType,
+        .arrowOmittedHint = arrowOmittedHint,
         .body = body,
     };
 }

@@ -709,7 +709,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "bodyless-fn-needs-return-type",
             .message = "a declaration with no body must say what it answers",
             .caretCaption = "add `-> void`, or give the fn a body",
-            .note = "`fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string) -> void;` are all declarations; `fn f(x: string)` alone says nothing about the result",
+            .note = "`fn f(x: string) -> void` and `declare fn f(x: string) -> void;` are declarations; `fn f(x: string)` alone says nothing about the result",
             .hint = "Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.",
         },
         .fnParamPositionalAfterNamed => .{

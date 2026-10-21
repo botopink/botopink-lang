@@ -253,12 +253,12 @@ writes `_` is saying the payload is unwanted, not that the condition is a `bool`
 ## A bodyless `fn` declares its return type (decision 33 (b))
 
 A top-level `fn` with no `{ … }` body is a **declaration**, and it is accepted
-in three spellings, all promoted to `isDeclare = true` in `parseFnDecl`:
+in two spellings (a third, the arrowless shortform, is refused), promoted to `isDeclare = true` in `parseFnDecl`:
 
 | Spelling | Note |
 |---|---|
 | `fn f(x: string) -> void` | the arrowed form. It used to be a **parse error**, which made decision 33's own remedy ("the declarations gain `-> void`") unwritable |
-| `fn f(x: string) void` | the arrowless `.d.bp` shortform, the convention in `libs/std/src/primitives.bp` |
+| `fn f(x: string) void` | refused, decisions 622 / 846: the parser steps over the type and leaves the function no return type, `fn-return-missing` at the name, the hint naming `-> void` (`arrowOmittedHint`) |
 | `declare fn f(x: string);` | the `declare` keyword, with its own contract; unannotated it parses as a `delegate` decl, annotated (`#[@External.…]`) as a `fn` decl |
 
 The unannotated `declare fn` (a `DelegateDecl`, top-level shorthand or `val f =

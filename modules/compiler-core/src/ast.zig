@@ -4478,6 +4478,10 @@ pub const anonymous_default_name = "default";
 
 pub const FnDecl = struct {
     isPub: bool,
+    /// Decisions 622, 846 — `fn f(x: T) R` written with no `->`: the first token
+    /// of `R`. The function has no return type; the checker refuses it
+    /// (`fn-return-missing`) and its hint names `-> R`.
+    arrowOmittedHint: ?[]const u8 = null,
     /// The function's effect, or null for a plain function. Set from a
     /// `#[@<effect>]` annotation. The return wrapper carries the type params.
     effect: ?EffectKind = null,
@@ -4586,7 +4590,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "startLoc", "markerLoc", "implementations" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc", "startLoc", "markerLoc", "implementations", "arrowOmittedHint" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault", "marker" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {

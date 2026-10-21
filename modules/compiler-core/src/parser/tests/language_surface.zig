@@ -309,7 +309,7 @@ test "surface: an optional index, an optional call and the postfix bang (decisio
 test "surface R7: a bodyless fn that declares its return type, arrow or not" {
     try assertParser(std.testing.allocator, @src(),
         \\fn emit(source: string) -> void
-        \\fn field<T, F>(obj: T, name: string) F
+        \\fn field<T, F>(obj: T, name: string) -> F
         \\fn quit(code: i32) -> noreturn
         \\declare fn print(message: string) -> void;
         \\fn main() -> i32 { return 1; }
@@ -324,7 +324,7 @@ test "surface R7: a bodyless fn with no return type at all" {
         \\1 | fn emit(source: string)
         \\  |                       ^ add `-> void`, or give the fn a body
         \\  |
-        \\  = note: `fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string) -> void;` are all declarations; `fn f(x: string)` alone says nothing about the result
+        \\  = note: `fn f(x: string) -> void` and `declare fn f(x: string) -> void;` are declarations; `fn f(x: string)` alone says nothing about the result
         \\  = hint: Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.
         \\
         \\

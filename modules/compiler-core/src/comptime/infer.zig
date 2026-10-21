@@ -986,16 +986,16 @@ fn refuseFnReturnMissing(env: *Env, program: ast.Program) InferError!void {
                 "this `default fn`"
             else
                 try std.fmt.allocPrint(env.arena, "`{s}`", .{f.name});
-            return failFnReturnMissing(env, what, f.nameLoc);
+            return failFnReturnMissing(env, what, f.nameLoc, f.arrowOmittedHint);
         },
         .type_ => |td| try refuseTypeMethodsReturnMissing(env, td),
         .behavior => |bd| for (bd.methods) |m| {
             if (m.returnType == null and !isSynthesised(m.nameLoc))
-                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ bd.name, m.name }), m.nameLoc);
+                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ bd.name, m.name }), m.nameLoc, null);
         },
         inline .implement, .extend => |b| for (b.methods) |m| {
             if (m.returnType == null and !isSynthesised(m.loc))
-                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ b.target, m.name }), m.loc);
+                return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ b.target, m.name }), m.loc, null);
         },
         else => {},
     };
@@ -1004,7 +1004,7 @@ fn refuseFnReturnMissing(env: *Env, program: ast.Program) InferError!void {
 fn refuseTypeMethodsReturnMissing(env: *Env, td: ast.TypeDecl) InferError!void {
     for (td.methods) |m| {
         if (m.returnType == null and !isSynthesised(m.nameLoc))
-            return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ td.printedName(), m.name }), m.nameLoc);
+            return failFnReturnMissing(env, try std.fmt.allocPrint(env.arena, "`{s}.{s}`", .{ td.printedName(), m.name }), m.nameLoc, null);
     }
     for (td.assocTypes) |at| try refuseTypeMethodsReturnMissing(env, at);
 }
@@ -1019,12 +1019,16 @@ fn isSynthesised(loc: ast.Loc) bool {
 /// position. Refused at the `fn`.
 fn refuseFnExprReturnMissing(env: *Env, fk: anytype, loc: ast.Loc) InferError!void {
     if (fk.syntax != .fnExpr or fk.returnType != null or fk.paramTypes.len == 0) return;
-    return failFnReturnMissing(env, "this `fn` expression", loc);
+    return failFnReturnMissing(env, "this `fn` expression", loc, null);
 }
 
-fn failFnReturnMissing(env: *Env, what: []const u8, loc: ast.Loc) InferError {
+fn failFnReturnMissing(env: *Env, what: []const u8, loc: ast.Loc, omittedArrow: ?[]const u8) InferError {
     const msg = try std.fmt.allocPrint(env.arena, "{s}: {s} writes no return type — write -> void, or the type it answers", .{ diagnostics.fn_return_missing, what });
-    env.lastError = locatedAt(TypeError.custom(msg, "Every function writes its return type, `-> void` included (decision 622)."), loc);
+    const hint = if (omittedArrow) |t|
+        try std.fmt.allocPrint(env.arena, "Every function writes its return type behind `->` (decisions 622, 846): write `-> {s}…`.", .{t})
+    else
+        "Every function writes its return type, `-> void` included (decision 622).";
+    env.lastError = locatedAt(TypeError.custom(msg, hint), loc);
     return error.TypeError;
 }
 
