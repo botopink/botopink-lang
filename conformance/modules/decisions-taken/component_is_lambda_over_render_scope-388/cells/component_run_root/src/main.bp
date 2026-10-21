@@ -1,33 +1,41 @@
-//// Decision 388 (2), (4) — `c.run(scope)` answers a `Rendered`: the body's
-//// result and the scope its `use provide`s made for its children. `Shell`
-//// provides `dark`; `Mode` run with the scope `Shell`'s run answered reads
-//// it, and a component that provides nothing answers the scope it received
-//// (`Mode` run again with it reads `dark`). Outside every body the root is
-//// run with `run(c)` (791 (4): no `await c`).
+//// Decision 388 (2), (4) — a component is resolved inside the body whose
+//// cell holds its contexts (decision 908): `Shell` provides `dark`, and the
+//// `Mode` it `use`s and the one it resolves by hand over its own cell
+//// (`resolve(Mode(), scope, Place.none())` in a `{ scope -> … }` lambda) both
+//// read it. Outside every body the root is run with `run(c)` (791 (4): no
+//// `await c`).
 
-import {context.run, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+import {context.run, context.resolve, context.Place, context.createContext, context.provide, context.context, io.terminal.print} from "std";
 
 type View(text: string)
 
-pub val modeContext = comptime createContext("");
+type Shown(text: string, first: string, second: string)
 
-component fn Shell() -> Component<View> {
-    use provide(createContext("dark"));
-    return View(text: "shell");
-}
+pub val modeContext = comptime createContext("");
 
 component fn Mode() -> Component<View> {
     val m = use context(modeContext);
     return View(text: "mode " + m);
 }
 
+fn textOf(r: View | Async<View>) -> string {
+    if (r is View) return r.text;
+    return "async";
+}
+
+component fn Shell() -> Component<Shown> {
+    use provide(createContext("dark"));
+    val m = use Mode();
+    val byHand: Component<string> = { scope -> textOf(resolve(Mode(), scope, Place.none())) };
+    val again = use byHand;
+    return Shown(text: "shell", first: m.text, second: again);
+}
+
 pub async fn main() -> Async<void> {
     val r = await run(Shell());
     print(r.text);
-    val m = await Mode().run(r.scope);
-    print(m.value.text);
-    val again = await Mode().run(m.scope);
-    print(again.value.text);
+    print(r.first);
+    print(r.second);
     val v = await run(Shell());
     print(v.text);
 }
