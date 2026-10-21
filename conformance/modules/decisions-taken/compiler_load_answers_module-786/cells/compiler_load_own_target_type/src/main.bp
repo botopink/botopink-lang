@@ -1,0 +1,24 @@
+//// A module that calls `compiler.load` declares a `Target` of its own: the name is the
+//// module's, nothing the load brings in takes it (decision 805 (4): `Module` carries no
+//// target), and `Target.Erlang` is this module's variant on every target.
+
+import {compiler, io.terminal.print} from "std";
+
+type Target {
+    Browser,
+    Erlang,
+}
+
+fn label(t: Target) -> string {
+    return case t {
+        Browser -> "browser";
+        Erlang -> "erlang";
+    };
+}
+
+pub fn main() -> void {
+    val fine = comptime compiler.load("src/cases/fine/mod.bp");
+    print(fine.isOk());
+    print(label(Target.Erlang));
+    print(label(Target.Browser));
+}
