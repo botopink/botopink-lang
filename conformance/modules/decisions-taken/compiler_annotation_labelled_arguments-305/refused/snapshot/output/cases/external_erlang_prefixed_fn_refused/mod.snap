@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `.Erlang("fn:mixBody")` on `mix`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.Erlang(body: mixBody)`
-at src/cases/external_erlang_prefixed_fn_refused/mod.bp:8:57

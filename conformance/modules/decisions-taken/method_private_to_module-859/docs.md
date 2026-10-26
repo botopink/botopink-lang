@@ -7,4 +7,4 @@ declares `implement` for stands from anywhere, with or without `pub`, called on 
 the behavior (`method_through_behavior`).
 
 [cells/method_through_behavior/src/main.bp](cells/method_through_behavior/src/main.bp)
-[cells/method_private_to_module/src/main.bp](cells/method_private_to_module/src/main.bp)
+[cases/method_private_to_module/src/main.bp](cases/method_private_to_module/src/main.bp)

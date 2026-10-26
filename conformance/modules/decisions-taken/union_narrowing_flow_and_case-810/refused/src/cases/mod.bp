@@ -1,3 +1,0 @@
-pub mod is_unbound_type_argument;
-pub mod union_case_forgotten_member;
-pub mod union_narrowing_forgotten_member_use;

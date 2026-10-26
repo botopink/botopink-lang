@@ -1,4 +1,0 @@
-pub mod fn_param_default_not_trailing;
-pub mod method_param_default_not_trailing;
-pub mod record_field_default_not_trailing;
-pub mod variant_payload_default_not_trailing;

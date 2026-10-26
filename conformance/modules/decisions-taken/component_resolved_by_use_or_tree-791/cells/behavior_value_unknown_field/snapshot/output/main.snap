@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown field 'zzz' on 'Component<View>': the behavior `Component` declares `run`
-at src/main.bp:16:13

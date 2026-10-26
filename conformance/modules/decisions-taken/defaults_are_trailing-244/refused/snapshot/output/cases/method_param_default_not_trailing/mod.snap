@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.
-at src/cases/method_param_default_not_trailing/mod.bp:6:36
-label fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.

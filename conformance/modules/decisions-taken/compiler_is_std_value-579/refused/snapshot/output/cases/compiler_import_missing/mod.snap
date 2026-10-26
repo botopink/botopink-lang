@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'compiler'
-at src/cases/compiler_import_missing/mod.bp:8:5

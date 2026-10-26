@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: bigint-type-test: `is` does not test a `bigint`
-at src/cases/bigint_type_test/mod.bp:8:13

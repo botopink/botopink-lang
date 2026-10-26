@@ -10,6 +10,6 @@ executor, run before `main`, into the run-time registry of
 them. `main` prints `provider clock`, `component Mailer (singleton)`, `component Orders (request)` and
 `listener Orders.placed on order-events`, in declaration order.
 
-Cells that also bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main`.
+Cells that also bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main`.
 
 [draft/main.bp](draft/main.bp)

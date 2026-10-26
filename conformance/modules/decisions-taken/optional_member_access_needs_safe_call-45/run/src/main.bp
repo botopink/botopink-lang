@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.tuple_label_through_absent_optional.runCase();
-    cases.tuple_label_through_optional.runCase();
-}

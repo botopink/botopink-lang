@@ -1,6 +1,0 @@
-botopink-cell 1
-out Mailer role=service
-out Orders store=sql
-out Billing role=service
-out Mailer 1 []
-out Billing 2 []

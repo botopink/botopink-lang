@@ -1,0 +1,6 @@
+botopink-cell 1
+out == comptime_optional_fn_tested_against_null
+out nonZero: not zero, by itself
+out Amount: positive, by a rule
+out no rule
+out a rule

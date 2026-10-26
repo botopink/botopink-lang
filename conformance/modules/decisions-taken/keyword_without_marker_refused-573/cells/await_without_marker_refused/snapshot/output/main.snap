@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
-at src/main.bp:13:13

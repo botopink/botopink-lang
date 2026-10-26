@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: compiler-output-outside-decorator: `check` writes `compiler.init`, and a template's body runs at build with no place for its executor
-at src/cases/init_at_call_from_template/mod.bp:12:5

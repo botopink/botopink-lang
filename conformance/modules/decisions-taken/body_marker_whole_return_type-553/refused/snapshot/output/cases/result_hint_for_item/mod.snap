@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected i32, got Result — a `for` over a sequence of `Result`s hands over each item as the `Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`
-at src/cases/result_hint_for_item/mod.bp:17:21

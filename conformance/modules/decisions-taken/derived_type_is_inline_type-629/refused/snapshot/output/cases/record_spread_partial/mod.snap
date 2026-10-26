@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-partial: `PessoaPatch` is `Type.partial(…)`'s answer — a field of it may be null, so it is not spread into `Pessoa`
-at src/cases/record_spread_partial/mod.bp:12:20

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
-at src/cases/iter_await/mod.bp:12:11

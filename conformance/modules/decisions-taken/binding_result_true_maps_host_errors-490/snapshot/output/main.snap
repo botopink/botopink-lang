@@ -1,0 +1,20 @@
+botopink-cell 1
+out == external_result_not_bool
+out refused error: type mismatch: expected bool, got i32
+out at src/main.bp:7:59
+out == external_result_return
+out refused error: `jsParse` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `i32`
+out at src/main.bp:10:3
+out == external_result_task_plain_value
+out refused error: `later` writes `result: true` on `.JavaScript`, so it must return `Result<…, HostError>` or `Async<Result<…, HostError>>`, not `Async<i32>`
+out at src/main.bp:8:3
+out == external_result_host_error
+out ok 42
+out error negative host HostErrorName.Error
+out ok 5
+out error refused host HostErrorName.Throw
+out ok 2
+out error refused host HostErrorName.Error
+out ok 6
+out error late host HostErrorName.Error
+out 107

@@ -1,2 +1,0 @@
-pub mod typeinfo_all_lowercase;
-pub mod typeinfo_lowercase;

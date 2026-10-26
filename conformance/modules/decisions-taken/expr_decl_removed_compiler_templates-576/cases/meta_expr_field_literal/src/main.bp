@@ -1,0 +1,18 @@
+//// Decisions 370 (1), 576 (12) — a meta record's field is written `T`: it
+//// holds a tree when a `syntax` fills it, and a value otherwise. A literal
+//// written in the decorator's body fills a `string` field as any value does.
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Check(message: string)
+
+fn check(syntax decl: unknown) -> void {
+    compiler.addMeta(Check(message: "fixed"));
+}
+
+#[check]
+type Signup(handle: string)
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(Signup).metaAll(Check).length);
+}

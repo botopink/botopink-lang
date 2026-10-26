@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: `#[check]`'s `rule` expects `?fn(Account) -> bool`, got `fn(Order) -> bool`
-at src/cases/decorator_arg_function_mismatch/mod.bp:25:21

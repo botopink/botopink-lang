@@ -2,4 +2,4 @@
 
 A function named as a value takes and answers its declared types: bound to a local, a function over
 an `f64` receives its argument and answers its value unchanged, on every target (decision 330's
-function values, `modules/decisions-taken/optional_typescript_operators-330/run/src/cases/optional_float_function_value`).
+function values, `modules/decisions-taken/optional_typescript_operators-330/cases/optional_float_function_value`).

@@ -1,0 +1,16 @@
+//// Decision 808 (2) — a run-time call of a function whose every parameter
+//// is `comptime` is expanded at build: the `compiler.init` it reaches
+//// writes the executor's body at the call, run when that line runs, so
+//// `antes`, the case and `depois` print in the order written.
+
+import {compiler, io.terminal.print} from "std";
+
+fn check(comptime name: string) -> void {
+    compiler.init({ -> print("case " + name) });
+}
+
+pub fn main() -> void {
+    print("antes");
+    check("soma");
+    print("depois");
+}

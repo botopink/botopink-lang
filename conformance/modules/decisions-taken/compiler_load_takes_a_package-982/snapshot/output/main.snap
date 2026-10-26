@@ -1,0 +1,7 @@
+botopink-cell 1
+out == file_path_refused
+out refused error: load-not-a-package: `compiler.load("packages/fine/src/main.bp")` names a file, not a package directory
+out at src/main.bp:7:41
+out == no_main_refused
+out refused error: load-not-a-package: `compiler.load("packages/empty")` names a package with no `src/main.bp`
+out at src/main.bp:7:41

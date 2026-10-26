@@ -1,0 +1,10 @@
+botopink-cell 1
+out == hook_name_use_prefix_default_fn_refused
+out refused error: hook-name-use-prefix: a hook is read with use — name it counter
+out at src/main.bp:8:26
+out == hook_name_use_prefix_method_refused
+out refused error: hook-name-use-prefix: a hook is read with use — name it counter
+out at src/main.bp:8:18
+out == hook_name_use_prefix_refused
+out refused error: hook-name-use-prefix: a hook is read with use — name it counter
+out at src/main.bp:8:14

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[shout]` names no decorator in this scope — a tag annotation is a function whose first parameter is `comptime decl: @Decl`
-at src/cases/tag_annotation_not_decorator/mod.bp:10:27

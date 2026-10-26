@@ -9,4 +9,4 @@ sees is that no answer moves: the example exercises one helper of each family th
 other targets: `MIXED CASE, WORDS`, `["Mixed Case", "words"]`, `a+b-c`, `007`, `4`, `1.5`, `2147483648`, `1.0e21`,
 `[2, 3, 1, 3]`, `[3, 1, 2]`, `[1, 3]`, `3|1|3|2`, `true`.
 
-[cells/wat_prelude_representation_only/src/main.bp](cells/wat_prelude_representation_only/src/main.bp)
+[cases/wat_prelude_representation_only/src/main.bp](cases/wat_prelude_representation_only/src/main.bp)

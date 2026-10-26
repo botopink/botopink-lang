@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: load-path-absolute: `compiler.load("/etc/hostname")` names an absolute path
-at src/cases/load_path_absolute/mod.bp:7:32

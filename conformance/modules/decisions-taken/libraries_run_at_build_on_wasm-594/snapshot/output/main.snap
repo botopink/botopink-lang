@@ -1,0 +1,12 @@
+botopink-cell 1
+out == comptime_random_seeded
+out 0.6011037519201636 0.44829055899754167 0.6011037519201636
+out 0.43306733411736786 0.32539576734416187 0.43306733411736786
+out == comptime_std_host_function
+out f923099
+out 70c9d2a9
+out e_cf179e30
+out true
+out == decorator_host_cells
+out Point! de553cf 70c9d2a9
+out run! de553cf

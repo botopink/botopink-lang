@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: primitive-type-redeclared: `string` is the type of a literal; a module cannot declare a behavior of that name
-at src/main.bp:6:10

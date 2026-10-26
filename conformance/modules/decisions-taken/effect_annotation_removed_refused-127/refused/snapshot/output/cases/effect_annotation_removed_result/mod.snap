@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
-at src/cases/effect_annotation_removed_result/mod.bp:9:3
-label remove the annotation; write the marker before `fn` and the wrapper in the return

@@ -4,6 +4,6 @@ The example names a style class the way the style library does. The class is the
 
 The program prints the same `e_…` name twice, then `true` and `false`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/content_hash_folds_codepoints-260/cells/std_hash_on_every_target`.
+Cells in this repository that bear on it: `modules/decisions-taken/content_hash_folds_codepoints-260/cases/std_hash_on_every_target`.
 
 [draft/main.bp](draft/main.bp)

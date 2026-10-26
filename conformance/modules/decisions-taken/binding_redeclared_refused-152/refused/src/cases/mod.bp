@@ -1,2 +1,0 @@
-pub mod binding_redeclared_in_body;
-pub mod binding_shadows_parameter;
