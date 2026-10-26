@@ -3,7 +3,23 @@
 //// on `Error` the handler's statements run and the `return` ends the expansion; on `Ok` the
 //// `Module` is bound and the expansion goes on to the init that runs it.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 fn runCase(comptime name: string) -> void {
     print("== " + name + " comptime");
@@ -24,9 +40,7 @@ fn runCase(comptime name: string) -> void {
     };
     compiler.init({ ->
         print("== " + name);
-        try loaded.run() catch { f ->
-            print("abort " + f.message)
-        }
+        show(loaded.run());
     });
 }
 

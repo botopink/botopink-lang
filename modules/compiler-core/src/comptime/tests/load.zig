@@ -241,7 +241,7 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
         \\comptime {
         \\    val loaded = comptime compiler.load("packages/fine");
         \\    case loaded {
-        \\        Ok(m) -> compiler.init({ -> try m.run() catch { f -> print(f.message) }; });
+        \\        Ok(m) -> compiler.init({ -> print(try m.run() catch { f -> f.message }); });
         \\        Error(r) -> print("refused");
         \\    }
         \\}
@@ -356,7 +356,7 @@ test "decision 792 (4), (7): `run()` on a local alias of the captured `Module` i
         \\        Ok(m) -> compiler.init({ ->
         \\            val m2 = m;
         \\            val m3 = m2;
-        \\            try m3.run() catch { f -> print(f.message) };
+        \\            print(try m3.run() catch { f -> f.message });
         \\        });
         \\        Error(r) -> print("refused");
         \\    }
@@ -377,7 +377,7 @@ test "decision 792 (4): `run()` on a receiver traced to no load of the body is `
         \\    case loaded {
         \\        Ok(m) -> compiler.init({ ->
         \\            var m2 = m;
-        \\            try m2.run() catch { f -> print(f.message) };
+        \\            print(try m2.run() catch { f -> f.message });
         \\        });
         \\        Error(r) -> print("refused");
         \\    }
@@ -399,7 +399,7 @@ test "decision 789 (4): an expanded function's handled load that returns takes i
         \\        compiler.init({ -> print("refused " + r.module.path()) });
         \\        return;
         \\    };
-        \\    compiler.init({ -> try loaded.run() catch { f -> print(f.message) }; });
+        \\    compiler.init({ -> print(try loaded.run() catch { f -> f.message }); });
         \\}
         \\
         \\comptime {

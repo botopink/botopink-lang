@@ -1,18 +1,30 @@
 //// Decision 792 (6) — `run()` called twice on one `Module` runs `main` twice, in one
 //// package.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 comptime {
     val loaded = comptime compiler.load("packages/once");
     case loaded {
         Ok(m) -> compiler.init({ ->
-            try m.run() catch { f ->
-                print("abort " + f.message)
-            }
-            try m.run() catch { f ->
-                print("abort " + f.message)
-            }
+            show(m.run());
+            show(m.run());
         });
         Error(r) -> print("refused");
     }

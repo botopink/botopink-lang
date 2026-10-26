@@ -1935,7 +1935,10 @@ fn emitWatPass(
         const before = em.items.items.len;
         try em.emitDecl(decl);
         // Decisions 787, 792 (2) — the loaded root's `__bp_loaded_main` begins
-        // with its package's initialisers.
+        // with its package's initialisers: its entry, the first function the
+        // declaration emits — an `async` one (decision 989 (2)) also emits
+        // its state machine's body and step, which every resume runs, so
+        // they never run the initialisers again.
         if (em.loaded_pkg) |pkg| if (decl == .@"fn" and std.mem.endsWith(u8, decl.@"fn".name, @import("../comptime/load.zig").loaded_main_fn)) {
             for (em.items.items[before..]) |*it| if (it.* == .func) {
                 const lines = try ar0.alloc(wat.Line, it.func.body.lines.len + 1);
@@ -1943,6 +1946,7 @@ fn emitWatPass(
                 @memcpy(lines[1..], it.func.body.lines);
                 it.func.body.lines = lines;
                 try em.loaded_inits_called.put(em.alloc, pkg, {});
+                break;
             };
         };
         em.loaded_pkg = null;
@@ -10110,6 +10114,10 @@ const Emitter = struct {
                 if (std.mem.eql(u8, ad.name, "cell_filled")) break :blk self.builder().helper(.memo_cell_filled);
                 if (std.mem.eql(u8, ad.name, "cell_get")) break :blk self.builder().helper(.memo_cell_get);
                 if (std.mem.eql(u8, ad.name, "cell_set")) break :blk self.builder().helper(.memo_cell_set);
+                // Decision 989 (1) — a `run()`'s capture: the print helper's
+                // `$__write_bytes` appends to `$__cap` while it is open.
+                if (std.mem.eql(u8, ad.name, "capture_open")) break :blk self.builder().helper(.cap_begin);
+                if (std.mem.eql(u8, ad.name, "capture_close")) break :blk self.builder().helper(.cap_end);
                 if (std.mem.eql(u8, ad.name, "attempt")) {
                     self.uses_table = true;
                     break :blk self.builder().helper(.wasi_attempt);

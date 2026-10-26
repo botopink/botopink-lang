@@ -4,7 +4,23 @@
 //// `Error(Failure)` when it crashes — or, decision 792 (1), when it answers `Error(e)` —,
 //// read with `try … catch` as every `Result`.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 // Expanded where the block calls it (decision 788): its load and its `compiler.init`
 // are the block's.
@@ -13,9 +29,7 @@ fn runCase(comptime name: string) -> void {
     case loaded {
         Ok(m) -> compiler.init({ ->
             print("== " + name);
-            try m.run() catch { f ->
-                print("abort " + f.message)
-            }
+            show(m.run());
             print("end " + name);
         });
         Error(r) -> compiler.init({ -> print("refused " + r.module.path()) });

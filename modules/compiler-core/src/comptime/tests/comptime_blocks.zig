@@ -125,7 +125,7 @@ test "decision 789 (4): a handled load that returns is read as a `case` on its a
         \\        compiler.init({ -> print("refused " + name) });
         \\        return;
         \\    };
-        \\    compiler.init({ -> try loaded.run() catch { f -> print(f.message) } });
+        \\    compiler.init({ -> print(try loaded.run() catch { f -> f.message }) });
         \\}
         \\comptime {
         \\    runCase("fine");

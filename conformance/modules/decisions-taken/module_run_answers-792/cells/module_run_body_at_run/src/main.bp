@@ -2,16 +2,30 @@
 //// `run()`, just before its `main`, not at program start with the program's own: the
 //// loaded file's init prints after the caller's init has begun, and before its `main`.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 comptime {
     val loaded = comptime compiler.load("packages/counted");
     case loaded {
         Ok(m) -> compiler.init({ ->
             print("before run");
-            try m.run() catch { f ->
-                print("abort " + f.message)
-            }
+            show(m.run());
             print("after run");
         });
         Error(r) -> print("refused");

@@ -4351,11 +4351,12 @@ caller.
 
 A `Module` that compiled can be run (decisions 787, 792). `m.run()`, written in a `compiler.init`
 body, runs the loaded file's `main` when the program runs, at that point of the init body, and
-answers `Result<void, RunFailure>` (decision 806), read with `try … catch` as every `Result`: `Ok`
-when `main` returns; `Error(RunFailure)` with `kind` `.Failed` when `main` returns `Error(e)`,
-`message` the text `print` writes for `e`, or `.Abort` when the package crashes — a `panic`, a host
-failure or a run-time crash, in its body, its executors or its `main` —, `message` the crash's.
-`RunFailure` is std's `compiler.RunFailure`; `attempt`'s `Failure` is another type. The loaded
+answers `Result<string, RunFailure>` (decisions 806, 989 (1)), read with `try … catch` as every `Result`:
+`Ok` when `main` returns, holding the text the package wrote to standard output while it ran;
+`Error(RunFailure)` with `kind` `.Failed` when `main` returns `Error(e)`, `message` the text `print`
+writes for `e`, or `.Abort` when the package crashes — a `panic`, a host failure or a run-time crash,
+in its body, its executors or its `main` —, `message` the crash's, and `output` the text written
+before. `RunFailure` is std's `compiler.RunFailure`; `attempt`'s `Failure` is another type. The loaded
 package — the file, its `mod` tree and its own dependencies, named from its path
 (`bp_load__<path>`, one package per file) — then joins the program; a loaded file no `run` reaches
 stays out of it. Its module body and its `compiler.init`s run at `run()`, just before its `main`,
@@ -4366,10 +4367,19 @@ package.
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_body_at_run -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_twice -->
 
-`run()` answers `Result<void, RunFailure>`: `.Abort` when the loaded package crashes — in its body, its executors or
+`run()` answers `Result<string, RunFailure>`: `.Abort` when the loaded package crashes — in its body, its executors or
 its `main` —, `.Failed` when its `main` returns `Error(e)`; nothing it runs propagates, so the next `run()` runs.
 
 <!-- example: modules/decisions-taken/module_run_failure_contained-806/cells/module_run_contains_body_failure -->
+
+What the loaded package prints is its answer, not the program's output (decision 989 (1)): `Ok` holds the text its
+body and its `main` wrote to standard output, byte for byte, its last line break included, and `RunFailure.output`
+the text written before a crash or before `main` returned `Error`; nothing of it reaches the program's own output.
+The capture is the run's own — no program opens one. A loaded `main` that is `async` makes `run()` answer
+`Async<Result<string, RunFailure>>`, its `main` awaited inside the capture (989 (2)); a sync `main` keeps the sync
+form.
+
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/module_run_answers_output -->
 
 Each `run()` starts clean: the loaded package's `val`s, `var`s, body and `compiler.init` executors run again before
 its `main`, so no run-time state passes from one run to the next. What the build folded (`val total = comptime
@@ -5732,6 +5742,8 @@ record's field.
 | `.CellGet` | `(unknown) -> unknown` | the value the cell holds |
 | `.CellSet` | `(unknown, unknown) -> void` | the cell holds the value |
 | `.Attempt` | `(fn() -> T) -> Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
+| `.CaptureOpen` | `() -> string` | a capture opened (std's `compiler.Module`, a `run()`'s, decision 989 (1)): what the program writes to standard output is kept, not written, until `.CaptureClose`; answers the capture it replaced |
+| `.CaptureClose` | `(string) -> string` | the capture closed: the text kept since `.CaptureOpen`, the capture it replaced restored |
 
 `std/io/random`'s seeded stream is std-wasm's (decision 451), bound by the
 `std:` cells on `seed` and `seededFloat`: Mulberry32 as the commonJS sidecar

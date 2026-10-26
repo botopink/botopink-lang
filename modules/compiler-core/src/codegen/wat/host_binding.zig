@@ -36,7 +36,7 @@ const ast = @import("../../ast.zig");
 /// `i32` a comparison answers, which a signature writes as `bool` — or
 /// `unknown`: a handle the adapter alone reads (a gate, decision 334), which
 /// no opcode takes.
-pub const Slot = enum { i32, i64, f32, f64, bool, unknown };
+pub const Slot = enum { i32, i64, f32, f64, bool, unknown, string };
 
 /// One opcode: its full text (`f64.floor`), operand types and result.
 pub const Op = struct {
@@ -126,6 +126,8 @@ pub const adapters = [_]Adapter{
     .{ .name = "cell_get", .params = &.{.unknown}, .result = .unknown, .what = "the value the cell holds" },
     .{ .name = "cell_set", .params = &.{ .unknown, .unknown }, .what = "the cell holds the value" },
     .{ .name = "attempt", .task = .{ .params = &.{.thunk_t}, .result = .result_t }, .what = "the thunk called inside a `try_table` catching the program's aborts (wasm exception handling, decision 518 — the binding declares `needs: [.Exceptions]`): `Ok` of its value, or `Error` of the abort's message" },
+    .{ .name = "capture_open", .result = .string, .what = "a capture opened: what the program writes to standard output is kept in a string until `capture_close`, not written; answers the capture it replaced (decision 989 (1))" },
+    .{ .name = "capture_close", .params = &.{.string}, .result = .string, .what = "the capture closed: answers the text kept since `capture_open` and restores the capture it replaced" },
 };
 
 pub const Binding = union(enum) {
@@ -222,7 +224,7 @@ fn isVoid(t: ast.TypeRef) bool {
 /// The numeric slot a written type spells; null for any other type.
 fn slotOf(t: ast.TypeRef) ?Slot {
     return switch (eager(t)) {
-        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool", "unknown" }) |k| {
+        .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool", "unknown", "string" }) |k| {
             if (std.mem.eql(u8, n, k)) break @field(Slot, k);
         } else null,
         else => null,

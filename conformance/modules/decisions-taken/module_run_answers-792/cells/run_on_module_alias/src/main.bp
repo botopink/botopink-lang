@@ -2,16 +2,30 @@
 //// in the `compiler.init` body, runs the loaded file's `main`: `run-outside-init` names a
 //// place, never a receiver.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 comptime {
     val loaded = comptime compiler.load("packages/fine");
     case loaded {
         Ok(m) -> compiler.init({ ->
             val m2 = m;
-            try m2.run() catch { f ->
-                print("abort " + f.message)
-            }
+            show(m2.run());
         });
         Error(r) -> print("refused");
     }

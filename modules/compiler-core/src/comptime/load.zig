@@ -125,10 +125,12 @@ pub const Entry = struct {
     /// The file and its `mod` tree (`gatherTree`), children first, each
     /// named by its logical path in the package.
     modules: []const Module,
-    /// Whether the file declares a `main`, and whether that `main` answers a
-    /// `Result`.
+    /// Whether the file declares a `main`, whether that `main` answers a
+    /// `Result` (inside its `Async` when it is `async`), and whether it is
+    /// `async` (decision 989 (2)).
     has_main: bool,
     main_result: bool,
+    main_async: bool = false,
 };
 
 /// The state of one top-level compile (`comptime.compileWith` enters and
@@ -284,7 +286,7 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
     for (program.decls) |d| try runs_found.walk(ast.DeclKind, d);
     const src: []const u8 = if (runs_found.calls.items.len > 0)
-        base ++ "import {compiler.RunFailure as " ++ run_failure_alias ++ "} from \"std\";\n" ++ run_fn_src
+        base ++ "import {compiler.RunFailure as " ++ run_failure_alias ++ ", failure as " ++ failure_alias ++ "} from \"std\";\n" ++ run_fn_src
     else
         base;
     const helper = try parseShifted(arena, src, helper_first_line, null);
@@ -570,22 +572,56 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
 pub const attempt_alias = "__bp_run_attempt";
 /// The local name of std's `compiler.RunFailure` in a module that loads.
 pub const run_failure_alias = "Bp__RunFailure";
-/// The function a `run()` is rewritten to call (decision 806): std's
-/// `attempt` over the loaded package's `loaded_main_fn`, its answer read as
-/// a `RunFailure` — `.Failed` with the text of the `Error` the loaded `main`
-/// returned, `.Abort` with the crash's text for anything the package's body,
-/// executors or `main` raised. Nothing propagates out of it.
+/// The function a `run()` is rewritten to call (decisions 806, 989): std's
+/// `attempt` over the loaded package's `loaded_main_fn`, inside the capture
+/// std's `Module` opens and closes (`capture_open`, `capture_close`), its
+/// answer read as `Ok` of the text the package wrote, or a `RunFailure` —
+/// `.Failed` with the text of the `Error` the loaded `main` returned, `.Abort`
+/// with the crash's text for anything the package's body, executors or `main`
+/// raised —, its `output` the text written before. Nothing propagates out of
+/// it.
 pub const run_fn = "__bp_run";
+/// `run_fn` for a loaded `async` `main` (decision 989 (2)): std's
+/// `failure.attemptTask` over it, awaited, answering `Async` of `run_fn`'s answer.
+pub const run_async_fn = "__bp_run_async";
+/// The local name of std's `failure` module in a module that runs a loaded
+/// file, `run_async_fn` calling its `attemptTask` through it: a call of the
+/// function imported under an alias of its own loses its `await` on wasm.
+pub const failure_alias = "__bp_run_failure";
+/// Decision 989 (1) — the methods of std's `compiler.Module` without `pub`
+/// that open and close a run's capture: the lowering's calls, no program's.
+pub const capture_open = "captureOpen";
+pub const capture_close = "captureClose";
+/// What `runRewrite` runs while the loaded package is not yet in the program.
+const run_none_fn = "__bp_run_none";
+const run_async_none_fn = "__bp_run_async_none";
 const run_fn_src =
-    "fn " ++ run_fn ++ "(f: fn() -> Result<void, string>) -> Result<void, " ++ run_failure_alias ++ "> {\n" ++
-    "    case " ++ attempt_alias ++ "(f) {\n" ++
-    "        Ok(answer) -> case answer {\n" ++
-    "            Ok(_) -> return;\n" ++
-    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m);\n" ++
+    "fn " ++ run_fn ++ "(f: fn() -> Result<void, string>) -> Result<string, " ++ run_failure_alias ++ "> {\n" ++
+    "    val open = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
+    "    val answer = " ++ attempt_alias ++ "(f);\n" ++
+    "    val output = " ++ module_alias ++ "." ++ capture_close ++ "(open);\n" ++
+    "    case answer {\n" ++
+    "        Ok(ran) -> case ran {\n" ++
+    "            Ok(_) -> return output;\n" ++
+    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m, output: output);\n" ++
     "        }\n" ++
-    "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message);\n" ++
+    "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message, output: output);\n" ++
     "    }\n" ++
-    "}\n";
+    "}\n" ++
+    "async fn " ++ run_async_fn ++ "(f: fn() -> Async<Result<void, string>>) -> Async<Result<string, " ++ run_failure_alias ++ ">> {\n" ++
+    "    val open = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
+    "    val answer = await " ++ failure_alias ++ ".attemptTask(f);\n" ++
+    "    val output = " ++ module_alias ++ "." ++ capture_close ++ "(open);\n" ++
+    "    case answer {\n" ++
+    "        Ok(ran) -> case ran {\n" ++
+    "            Ok(_) -> return output;\n" ++
+    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m, output: output);\n" ++
+    "        }\n" ++
+    "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message, output: output);\n" ++
+    "    }\n" ++
+    "}\n" ++
+    "fn " ++ run_none_fn ++ "() -> Result<void, string> {\n    return;\n}\n" ++
+    "async fn " ++ run_async_none_fn ++ "() -> Async<Result<void, string>> {\n    return;\n}\n";
 /// The prefix of the local name a loaded package's `loaded_main_fn` is
 /// imported under: `__bp_run__<package>`.
 pub const run_alias_prefix = "__bp_run__";
@@ -619,14 +655,15 @@ pub fn receiverPath(arena: std.mem.Allocator, written: *const ast.Expr) !?[]cons
 }
 
 /// `run()` rewritten: `__bp_run(__bp_run__<package>)` — `run_fn` over the
-/// loaded package's `loaded_main_fn` —, or, while the package is not yet in
-/// the program (the compile that finds the `run`, compiled again with it,
+/// loaded package's `loaded_main_fn`, `run_async_fn` for an `async` `main`
+/// (decision 989 (2)) —, or, while the package is not yet in the program (the
+/// compile that finds the `run`, compiled again with it,
 /// `comptime.compileWith`), over a function that does nothing.
-pub fn runRewrite(arena: std.mem.Allocator, loc: ast.Loc, alias: ?[]const u8) error{OutOfMemory}!*ast.Expr {
-    const text = if (alias) |a|
-        try std.fmt.allocPrint(arena, "fn __bp_run_rewrite() {{ " ++ run_fn ++ "({s}); }}", .{a})
-    else
-        "fn __bp_run_rewrite() { " ++ run_fn ++ "(fn() -> Result<void, string> { return; }); }";
+pub fn runRewrite(arena: std.mem.Allocator, loc: ast.Loc, alias: ?[]const u8, async_: bool) error{OutOfMemory}!*ast.Expr {
+    const text = try std.fmt.allocPrint(arena, "fn __bp_run_rewrite() {{ {s}({s}); }}", .{
+        if (async_) run_async_fn else run_fn,
+        alias orelse if (async_) run_async_none_fn else run_none_fn,
+    });
     const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
     const program = parseShifted(arena, text, line, null) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -790,13 +827,17 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     if (f.paths.items.len == 0) return program;
     var src: std.ArrayListUnmanaged(u8) = .empty;
     var has_attempt = false;
+    var has_attempt_task = false;
     var has_failure = false;
+    var has_module = false;
     var has_run_fn = false;
     for (program.decls) |d| switch (d) {
         .use => |u| for (u.imports) |imp| {
             if (imp.alias) |a| {
                 if (std.mem.eql(u8, a, attempt_alias)) has_attempt = true;
+                if (std.mem.eql(u8, a, failure_alias)) has_attempt_task = true;
                 if (std.mem.eql(u8, a, run_failure_alias)) has_failure = true;
+                if (std.mem.eql(u8, a, module_alias)) has_module = true;
             }
         },
         .@"fn" => |fd| if (std.mem.eql(u8, fd.name, run_fn)) {
@@ -805,7 +846,9 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         else => {},
     };
     if (!has_attempt) try src.appendSlice(arena, "import {failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n");
+    if (!has_attempt_task) try src.appendSlice(arena, "import {failure as " ++ failure_alias ++ "} from \"std\";\n");
     if (!has_failure) try src.appendSlice(arena, "import {compiler.RunFailure as " ++ run_failure_alias ++ "} from \"std\";\n");
+    if (!has_module) try src.appendSlice(arena, "import {compiler.Module as " ++ module_alias ++ "} from \"std\";\n");
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     for (f.paths.items) |p| {
         const pkg = try packageName(arena, p);
@@ -820,6 +863,8 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     if (!has_run_fn) try src.appendSlice(arena, run_fn_src);
     if (src.items.len == 0) return program;
     const imports = try parseShifted(arena, src.items, helper_first_line + 100, null);
+    // The capture's calls name methods of `Module` without `pub` (989 (1)).
+    markLowering(ast.Program, @constCast(&imports));
     const decls = try arena.alloc(ast.DeclKind, program.decls.len + imports.decls.len);
     @memcpy(decls[0..imports.decls.len], imports.decls);
     @memcpy(decls[imports.decls.len..], program.decls);
@@ -857,7 +902,13 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
         var source = try arena.dupe(u8, m.source);
         if (m.root) source = try std.mem.concat(arena, u8, &.{
             source,
-            if (entry.main_result)
+            if (entry.main_async)
+                // Decision 989 (2) — an `async` `main`, awaited.
+                (if (entry.main_result)
+                    "\n\npub async fn " ++ loaded_main_fn ++ "() -> Async<Result<void, string>> {\n    case await main() {\n        Ok(_) -> return;\n        Error(e) -> throw \"${e}\";\n    }\n}\n"
+                else
+                    "\n\npub async fn " ++ loaded_main_fn ++ "() -> Async<Result<void, string>> {\n    await main();\n    return;\n}\n")
+            else if (entry.main_result)
                 "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    case main() {\n        Ok(_) -> return;\n        Error(e) -> throw \"${e}\";\n    }\n}\n"
             else
                 "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    main();\n    return;\n}\n",
@@ -1154,7 +1205,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     return .{ .diagnostics = try remember(req.path, manifest.name, printed.items, refusals.items, own, main_of) };
 }
 
-const MainOf = struct { has: bool = false, result: bool = false };
+const MainOf = struct { has: bool = false, result: bool = false, async_: bool = false };
 
 /// `path`'s entry in this compile's state, copied into the state's arena;
 /// its diagnostics.
@@ -1183,7 +1234,7 @@ fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []
         .files = m.files,
     };
     const key = try a.dupe(u8, path);
-    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
+    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result, .main_async = main_of.async_ });
     return dcopy;
 }
 
@@ -1214,7 +1265,13 @@ fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request
         if (item.root) for (program.decls) |d| switch (d) {
             .@"fn" => |fd| if (std.mem.eql(u8, fd.name, "main")) {
                 main_of.has = true;
-                if (fd.returnType) |rt| main_of.result = rt == .generic and std.mem.eql(u8, rt.generic.name, "Result");
+                // Decision 989 (2) — an `async fn main` (`-> Async<…>`):
+                // `run()` awaits it; its `Result` is the one inside.
+                main_of.async_ = fd.marker == .task;
+                if (fd.returnType) |rt| {
+                    const inner = if (main_of.async_ and rt == .generic and std.mem.eql(u8, rt.generic.name, "Async") and rt.generic.args.len == 1) rt.generic.args[0] else rt;
+                    main_of.result = inner == .generic and std.mem.eql(u8, inner.generic.name, "Result");
+                }
             },
             else => {},
         };

@@ -25,9 +25,11 @@ comptime {
     val loaded = comptime compiler.load("packages/fine");
     case loaded {
         Ok(m) -> compiler.init({ ->
-            try m.run() catch { r ->
-                print("abort " + r.message)
-            }
+            val printed = try m.run() catch { r ->
+                print("abort " + r.message);
+                return;
+            };
+            print(printed.trimEnd());
         });
         Error(r) -> compiler.init({ ->
             val n = try checar(-2) catch { r ->

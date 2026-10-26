@@ -2,18 +2,30 @@
 //// `compiler.init` executors and its `var`s run again before its `main`, so `vezes` starts at 0
 //// on every run and prints 1 both times.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 comptime {
     val loaded = comptime compiler.load("packages/counted");
     case loaded {
         Ok(m) -> compiler.init({ ->
-            try m.run() catch { r ->
-                print("abort " + r.message)
-            }
-            try m.run() catch { r ->
-                print("abort " + r.message)
-            }
+            show(m.run());
+            show(m.run());
         });
         Error(refused) -> print("refused");
     }

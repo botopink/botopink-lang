@@ -1,0 +1,16 @@
+botopink-cell 1
+out == fine
+out ok [fine body
+out fine main 2
+out ]
+out == crash
+out abort boom [crash before
+out ]
+out == err
+out failed bad answer [err before
+out ]
+out == later
+out ok [later before
+out later after 42
+out ]
+out main

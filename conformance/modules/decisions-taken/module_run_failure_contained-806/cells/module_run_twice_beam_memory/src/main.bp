@@ -2,18 +2,30 @@
 //// `Dict` var and a `PersistentTerm` var of the loaded package start at their declaration on each run, so `hits` prints 1
 //// and `counts.at("a")` 0 both times and the `PersistentTerm` var's initialiser runs at each run.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+// Decision 989 (1) — `run()` answers what the loaded package printed: each line of it is
+// printed here, then, on a failure, the failure.
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> shown(text);
+        Error(f) {
+            shown(f.output);
+            print("abort " + f.message);
+        }
+    }
+}
+
+fn shown(text: string) -> void {
+    if (text != "") print(text.trimEnd());
+}
 
 comptime {
     val loaded = comptime compiler.load("packages/memory");
     case loaded {
         Ok(m) -> compiler.init({ ->
-            try m.run() catch { r ->
-                print("abort " + r.message)
-            }
-            try m.run() catch { r ->
-                print("abort " + r.message)
-            }
+            show(m.run());
+            show(m.run());
         });
         Error(refused) -> print("refused");
     }

@@ -1,0 +1,8 @@
+import {io.terminal.print} from "std";
+
+// The module body prints before `main` runs.
+val ready = print("fine body");
+
+pub fn main() -> void {
+    print("fine main", 2);
+}

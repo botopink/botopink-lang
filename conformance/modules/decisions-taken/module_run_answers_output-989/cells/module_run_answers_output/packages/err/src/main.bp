@@ -1,0 +1,6 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> Result<void, string> {
+    print("err before");
+    throw "bad answer";
+}

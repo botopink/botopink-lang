@@ -13670,7 +13670,8 @@ fn refuseRun(env: *Env, why: enum { refused, no_main }, path: []const u8, loc: a
 /// `main`, `load-no-main` — each at the call. The loaded package joins the
 /// program (`load.noteRun`, `comptime.compileWith`), and the call is
 /// rewritten to `load.run_fn` over its `main` (`load.runRewrite`), so it
-/// answers `Result<void, RunFailure>` (decision 806).
+/// answers `Result<string, RunFailure>` (decisions 806, 989), `Async` of it
+/// over an `async` `main` (`load.run_async_fn`).
 fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr {
     if (call.args.len != 0 or call.trailing.len != 0) {
         env.lastError = TypeError.custom(
@@ -13690,7 +13691,18 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         // The body that runs at build, checked before its executor is: the
         // `Module` is a local of the body there, its file known once the
         // executor holds it (`load.recordSource`).
-        if (env.initArgDepth > 0) return try declaredModuleRun(env, try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null)).*), loc);
+        // Decision 989 (2) — typed by its use: whether the loaded `main` is
+        // `async` (the answer an `Async`) is known once the executor holds
+        // the `Module`, whose check types the call; this body's rewrite never
+        // runs.
+        if (env.initArgDepth > 0) {
+            var typed = try inferExprTyped(env, (try loadMod.runRewrite(env.arena, loc, null, false)).*);
+            const open = try env.freshVar();
+            switch (typed) {
+                inline else => |*e| e.type_ = open,
+            }
+            return typed;
+        }
         env.lastError = TypeError.custom(
             diagnostics.run_module_untraced ++ ": `run()` is called on a `Module` that no `compiler.load` of the body answered",
             "Call `run()` on the `Module` the body's `compiler.load` answered, captured by the init body or a `val` bound to it (decisions 787, 792 (4)).",
@@ -13709,17 +13721,21 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
     try loadMod.noteRun(path);
     const alias = try loadMod.runAlias(env.arena, try loadMod.packageName(env.arena, path));
     const present = env.lookup(alias) != null;
-    const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null);
+    const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null, entry.main_async);
     try env.srcRewrites.put(loc, rewrite);
-    return try declaredModuleRun(env, try inferExprTyped(env, rewrite.*), loc);
+    return try declaredModuleRun(env, try inferExprTyped(env, rewrite.*), loc, entry.main_async);
 }
 
 /// The lowered `m.run()` answers what `compiler.bp` declares `Module.run` to
-/// answer, `Result<void, RunFailure>` (decision 806).
-fn declaredModuleRun(env: *Env, typed: TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+/// answer, `Result<string, RunFailure>` (decisions 806, 989 (1)) — `Async` of
+/// it when the loaded `main` is `async` (989 (2)).
+fn declaredModuleRun(env: *Env, typed: TypedExpr, loc: ast.Loc, async_: bool) InferError!TypedExpr {
     const sig = env.getInherentMethodType("Module", "run") orelse return typed;
     const f = sig.deref();
-    if (f.* == .func) try unifyAt(env, f.func.ret, typed.getType(), loc);
+    if (f.* == .func) {
+        const want = if (async_) try env.namedTypeArgs("Async", &.{f.func.ret}) else f.func.ret;
+        try unifyAt(env, want, typed.getType(), loc);
+    }
     return typed;
 }
 

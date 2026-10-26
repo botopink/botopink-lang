@@ -303,14 +303,17 @@ pub type Diagnostic(
 // through `of`, which no program names — `Module(…)` written outside is
 // `opaque-construction`, `m.name` `opaque-field`.
 //
-// `m.run() -> Result<void, RunFailure>` (decisions 787, 792, 806) runs the
-// loaded package's `main`. It is written directly in a `compiler.init` body
+// `m.run() -> Result<string, RunFailure>` (decisions 787, 792, 806, 989) runs
+// the loaded package's `main`; `Async<Result<string, RunFailure>>`, its `main`
+// awaited, when that `main` is `async` (989 (2)). It is written directly in a `compiler.init` body
 // (`run-outside-init`): the package — its `mod` tree and its own
 // dependencies, named from its path (`bp_load__<path>`) — joins the program,
 // and at every `run()` its `val`s, `var`s, module body and `compiler.init`s
 // run anew, just before `main`; what the build folded is not recomputed.
-// `Ok` when `main` returns, `Error(RunFailure)` otherwise — nothing the
-// package runs propagates out of `run()`. The `Module` of a `Refused` is
+// `Ok` when `main` returns, holding what the package wrote to standard output
+// while it ran — its body's prints and its `main`'s, byte for byte, none of it
+// reaching the program's own output (989 (1)) —, `Error(RunFailure)`
+// otherwise — nothing the package runs propagates out of `run()`. The `Module` of a `Refused` is
 // `run-module-refused`, a file with no `main` `load-no-main`. The method is
 // declared here and typed by this signature in every module that reads a
 // `Module`; each call is lowered by the checker (`comptime/infer.zig`
@@ -338,19 +341,56 @@ pub opaque type Module(
         return self.buildOutput;
     }
 
-    pub fn run(self: Self) -> Result<void, RunFailure> {
-        throw RunFailure(kind: .Abort, message: "Module.run: every call is lowered to the loaded main");
+    pub fn run(self: Self) -> Result<string, RunFailure> {
+        throw RunFailure(kind: .Abort, message: "Module.run: every call is lowered to the loaded main", output: "");
+    }
+
+    // Decision 989 (1) — the capture a lowered `run()` opens around the
+    // loaded package's run: from `captureOpen` to `captureClose` what the
+    // program writes to standard output is kept, not written, and
+    // `captureClose` answers it. `captureOpen` answers the capture it
+    // replaces, which `captureClose` restores, so a run inside a run keeps
+    // its own. The lowering's calls alone (no `pub`): no program captures.
+    fn captureOpen() -> string {
+        return openCapture();
+    }
+
+    fn captureClose(open: string) -> string {
+        return closeCapture(open);
     }
 }
+
+// The capture per target (989 (1)): commonJS swaps `process.stdout.write`
+// for one that keeps the text; erlang and beam make a process the caller's
+// group leader, answering the io protocol's output requests by keeping their
+// text; wasm points the print helper's `$__write_bytes` at a string. The
+// handle each answers is the capture it replaced, typed `string` only to
+// cross the call: nothing reads it but `closeCapture`.
+#[compiler.external(
+    .JavaScript("""(() => { const __s = globalThis.process.stdout; const __o = __s.write; const __b = []; __s.write = function (__c, __e, __k) { __b.push(typeof __c === "string" ? __c : Buffer.from(__c).toString(typeof __e === "string" ? __e : "utf8")); const __d = typeof __e === "function" ? __e : __k; if (typeof __d === "function") { __d(); } return true; }; return { write: __o, kept: __b }; })()"""),
+    .Erlang("""(fun() -> BpCapOld = erlang:group_leader(), BpCapPid = erlang:spawn(fun() -> (fun BpCapLoop(BpCapAcc) -> receive {io_request, BpCapFrom, BpCapAs, BpCapReq} -> {BpCapReply, BpCapAcc2} = (fun BpCapDo(BpCapR, BpCapA) -> case BpCapR of {put_chars, _, BpCapM, BpCapF, BpCapArgs} -> {ok, [BpCapA, erlang:apply(BpCapM, BpCapF, BpCapArgs)]}; {put_chars, BpCapM, BpCapF, BpCapArgs} -> {ok, [BpCapA, erlang:apply(BpCapM, BpCapF, BpCapArgs)]}; {put_chars, _, BpCapChars} -> {ok, [BpCapA, BpCapChars]}; {put_chars, BpCapChars} -> {ok, [BpCapA, BpCapChars]}; {requests, BpCapRs} -> lists:foldl(fun(BpCapOne, {_, BpCapIn}) -> BpCapDo(BpCapOne, BpCapIn) end, {ok, BpCapA}, BpCapRs); _ -> {{error, enotsup}, BpCapA} end end)(BpCapReq, BpCapAcc), BpCapFrom ! {io_reply, BpCapAs, BpCapReply}, BpCapLoop(BpCapAcc2); {bp_capture_take, BpCapTo, BpCapRef} -> BpCapTo ! {BpCapRef, unicode:characters_to_binary(BpCapAcc)} end end)([]) end), erlang:group_leader(BpCapPid, erlang:self()), {bp_capture, BpCapOld, BpCapPid} end)()"""),
+    .Wasm(wasi: .CaptureOpen),
+)]
+declare fn openCapture() -> string;
+
+#[compiler.external(
+    .JavaScript("""((__t) => { globalThis.process.stdout.write = __t.write; return __t.kept.join(""); })($0)"""),
+    .Erlang("""(fun({bp_capture, BpCapOld2, BpCapPid2}) -> erlang:group_leader(BpCapOld2, erlang:self()), BpCapRef2 = erlang:make_ref(), BpCapPid2 ! {bp_capture_take, erlang:self(), BpCapRef2}, receive {BpCapRef2, BpCapText} -> BpCapText end end)($0)"""),
+    .Wasm(wasi: .CaptureClose),
+)]
+declare fn closeCapture(open: string) -> string;
 
 // What `m.run()` answers on its `Error` side (decision 806): `.Failed` when
 // the loaded `main` returns `Error(e)`, `message` the text `print` writes for
 // `e`; `.Abort` when the package crashes — a `panic`, a host failure or a
 // run-time crash, in its body, its executors or its `main` —, `message` the
-// crash's. `failure.Failure`, what `attempt` answers, is another type.
+// crash's. `output` is what the package wrote to standard output before it
+// failed (decision 989 (1)). `failure.Failure`, what `attempt` answers, is
+// another type.
 pub type RunFailure(
     kind: RunFailureKind,
     message: string,
+    output: string,
 )
 
 // The kinds of a `RunFailure`.

@@ -65,6 +65,8 @@ pub type WasiAdapter {
     CellGet,
     CellSet,
     Attempt,
+    CaptureOpen,
+    CaptureClose,
 }
 
 // One target's code for a `declare fn`: the variant names the language the
