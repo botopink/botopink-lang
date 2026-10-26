@@ -1,0 +1,3 @@
+botopink-cell 1
+out env entry `NOEQUALS` is not NAME=value
+out env entry `=value` is not NAME=value

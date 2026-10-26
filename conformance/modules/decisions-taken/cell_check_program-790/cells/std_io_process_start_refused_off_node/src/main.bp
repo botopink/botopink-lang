@@ -1,7 +1,7 @@
 //// Decision 790 (1), 798 (6) — `io.process.start` works on commonJS alone (an erlang port folds stderr into
-//// stdout, and `Captured` keeps the two apart): on erlang and beam it answers `Error(Unsupported)`, on wasm
-//// the call is refused at the call (`std-unsupported-on-target`, decision 518 (4)); importing `io.process`
-//// stays fine everywhere.
+//// stdout, and `Captured` keeps the two apart): on erlang, beam and wasm the call is refused at the call
+//// (`std-unsupported-on-target`, decisions 518 (4), 906);
+//// importing `io.process` stays fine everywhere.
 
 import {io.process, io.terminal.print} from "std";
 

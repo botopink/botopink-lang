@@ -551,9 +551,11 @@ Several `Captured` children run at once and their `wait()`s are awaited together
 
 <!-- example: modules/decisions-taken/cell_check_program-790/cells/std_io_process_start_parallel -->
 
-`io.process.start` works on commonJS alone: on erlang and beam it answers `Error(Unsupported)`, on wasm the call is refused at the call (`std-unsupported-on-target`); importing `io.process` is fine everywhere.
+`io.process.start` works on commonJS alone: on erlang, beam and wasm a call to it is refused at the call (`std-unsupported-on-target`, decision 906); importing `io.process` is fine everywhere, and `run` / `spawn` are unchanged. An `env` entry with no `=` or an empty name answers `Error(Other(message))` naming it.
 
 <!-- example: modules/decisions-taken/cell_check_program-790/cells/std_io_process_start_refused_off_node -->
+
+<!-- example: modules/decisions-taken/process_start_commonjs_only-906/cells/process_start_commonjs_only -->
 
 ### The file system, `io.fs`
 

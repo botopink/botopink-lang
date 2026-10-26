@@ -8855,7 +8855,21 @@ const Emitter = struct {
         // helper takes its arguments evaluated, so a raise there is the
         // caller's.
         const result = ast.implementationResult(f.implementations, "erlang");
-        const ref = hostRefOf(f.implementations, f.params.len) orelse return error.MissingExternalTarget;
+        const ref = hostRefOf(f.implementations, f.params.len) orelse {
+            // Decision 906 — inside a std module the declaration is unreachable:
+            // `target_check.zig` refused every call a program makes of a std
+            // function reaching it, so the body that names it must not refuse
+            // its whole module.
+            if (std.mem.startsWith(u8, self.module_path, "std/") and f.externalFor("erlang") == null) {
+                try beamEmitter.writeMoveOp(self.out, Op.atom("unreachable"), Dst.xr(0));
+                switch (mode) {
+                    .non_tail => try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0),
+                    .tail => try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, self.num_y),
+                }
+                return;
+            }
+            return error.MissingExternalTarget;
+        };
         // A cell whose template is the backend's own print helper called on
         // the argument list (`'__bp_print'([$args])`): the helper is bytecode
         // this module emits once, not a function a template module could call.

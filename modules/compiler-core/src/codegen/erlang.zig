@@ -9200,6 +9200,13 @@ const Emitter = struct {
             }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) {
+                // Decision 906 — inside a std module the declaration is
+                // unreachable: `target_check.zig` refused every call a program
+                // makes of a std function reaching it, so the body that names it
+                // (a method over the cell) must not refuse its whole module.
+                if (std.mem.startsWith(u8, this.module_name, "std/")) {
+                    return b.remote("erlang", "error", &.{Ast.Expr.a("unreachable")});
+                }
                 this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };
                 return error.MissingExternalTarget;
             }

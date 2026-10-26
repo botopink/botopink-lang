@@ -1,0 +1,18 @@
+//// Decision 906 — `io.process.start` exists on commonJS alone: a call is refused at the call on erlang,
+//// beam and wasm (`std-unsupported-on-target`, 518 (4)), the module importable; on commonJS an `env` entry
+//// with no `=` or an empty name answers `Error(Other(message))` naming it, before anything starts.
+
+import {io.process, io.terminal.print} from "std";
+
+fn describe(r: Result<process.Captured, process.ProcessError>) -> string {
+    return case r {
+        Ok(_) -> "started";
+        Error(process.ProcessError.Other(message)) -> message;
+        Error(_) -> "other kind";
+    };
+}
+
+pub fn main() -> void {
+    print(describe(process.start("node", ["-v"], null, ["NOEQUALS"])));
+    print(describe(process.start("node", ["-v"], null, ["=value"])));
+}
