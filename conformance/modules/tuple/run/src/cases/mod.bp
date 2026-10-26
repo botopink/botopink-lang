@@ -1,4 +1,0 @@
-pub mod tuple_label_from_variable;
-pub mod tuple_optional_element;
-pub mod tuple_print;
-pub mod tuple_to_string;

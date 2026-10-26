@@ -1,3 +1,0 @@
-pub mod reserved_word_as_binding_name;
-pub mod reserved_word_field_name;
-pub mod reserved_word_param_name;

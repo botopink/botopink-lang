@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.explicit_type_arguments.runCase();
-    cases.explicit_type_arguments_on_a_method.runCase();
-}

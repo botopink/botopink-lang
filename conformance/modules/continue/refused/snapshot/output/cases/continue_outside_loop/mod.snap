@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: continue-outside-loop: `continue` outside a loop
-at src/cases/continue_outside_loop/mod.bp:8:19

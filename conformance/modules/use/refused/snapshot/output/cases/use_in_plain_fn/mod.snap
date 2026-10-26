@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'label' carries no `component` marker (it returns 'string'): write `component fn`
-at src/cases/use_in_plain_fn/mod.bp:10:13

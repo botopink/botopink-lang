@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[reserved-word-as-name]: a reserved word cannot be a name
-at src/cases/reserved_word_field_name/mod.bp:8:15
-label reserved word `from`

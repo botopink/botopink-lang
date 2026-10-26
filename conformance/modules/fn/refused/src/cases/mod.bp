@@ -1,2 +1,0 @@
-pub mod fn_falls_off_end;
-pub mod fn_named_like_import;

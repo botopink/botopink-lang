@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[enum-variant-duplicate]: this variant is already declared at this level of the enum
-at src/cases/enum_variant_duplicate/mod.bp:7:26
-label this variant is already declared at this level of the enum
