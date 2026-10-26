@@ -1,3 +1,0 @@
-pub mod tuple_label_on_unlabeled;
-pub mod tuple_literal_label;
-pub mod tuple_unknown_label;

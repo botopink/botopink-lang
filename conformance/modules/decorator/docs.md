@@ -1,13 +1,13 @@
 # decorator
 
 [cells/decorator_argument_default/src/main.bp](cells/decorator_argument_default/src/main.bp)
-[cells/decorator_arguments_meta/src/main.bp](cells/decorator_arguments_meta/src/main.bp)
+[cases/decorator_arguments_meta/src/main.bp](cases/decorator_arguments_meta/src/main.bp)
 [refused/src/cases/decorator_body_unknown_field/mod.bp](refused/src/cases/decorator_body_unknown_field/mod.bp)
 [run/src/cases/decorator_calls_imported_function/mod.bp](run/src/cases/decorator_calls_imported_function/mod.bp)
 [run/src/cases/decorator_calls_module_function/mod.bp](run/src/cases/decorator_calls_module_function/mod.bp)
 [refused/src/cases/decorator_default_not_closed/mod.bp](refused/src/cases/decorator_default_not_closed/mod.bp)
 [run/src/cases/decorator_emitted_proxies_dispatch/mod.bp](run/src/cases/decorator_emitted_proxies_dispatch/mod.bp)
-[cells/decorator_entity_table/src/main.bp](cells/decorator_entity_table/src/main.bp)
+[cases/decorator_entity_table/src/main.bp](cases/decorator_entity_table/src/main.bp)
 [refused/src/cases/decorator_helper_unknown_field/mod.bp](refused/src/cases/decorator_helper_unknown_field/mod.bp)
 [run/src/cases/decorator_imported_builds_private_record/mod.bp](run/src/cases/decorator_imported_builds_private_record/mod.bp)
 [run/src/cases/decorator_imported_calls_module_function/mod.bp](run/src/cases/decorator_imported_calls_module_function/mod.bp)

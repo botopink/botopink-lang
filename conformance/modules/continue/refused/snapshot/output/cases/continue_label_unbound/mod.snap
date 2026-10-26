@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: break-label-unbound: `continue :<label>` targets an unknown label
-at src/cases/continue_label_unbound/mod.bp:5:21

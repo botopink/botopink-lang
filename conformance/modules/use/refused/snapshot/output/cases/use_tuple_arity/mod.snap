@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-tuple-arity: `val #(…)` binds 1 name(s) but the hook yields a tuple of 2
-at src/cases/use_tuple_arity/mod.bp:16:5

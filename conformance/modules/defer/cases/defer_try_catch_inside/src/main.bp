@@ -1,0 +1,18 @@
+import {io.terminal.print} from "std";
+
+fn fails() -> Result<i32, string> {
+    throw "boom";
+}
+
+pub fn main() -> void {
+    {
+        defer {
+            try fails() catch { e ->
+                print("handled " + e);
+                0
+            }
+        }
+        print("body");
+    }
+    print("after");
+}

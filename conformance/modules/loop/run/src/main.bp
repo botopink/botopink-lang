@@ -1,9 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.loop_forms.runCase();
-    cases.loop_generator_dobros.runCase();
-    cases.loop_item_method.runCase();
-    cases.loop_keeps_self.runCase();
-    cases.loop_range_inclusive.runCase();
-}

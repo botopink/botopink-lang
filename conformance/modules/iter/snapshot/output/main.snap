@@ -1,0 +1,17 @@
+botopink-cell 1
+out == iter_await_refused
+out refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
+out at src/main.bp:2:11
+out == iter_loop_and_for
+out 2
+out 4
+out 6
+out 8
+out 10
+out 12
+out 14
+out 16
+out 18
+out 20
+out 2
+out 4

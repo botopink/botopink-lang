@@ -1,7 +1,0 @@
-pub mod val_annotated;
-pub mod val_assert_ok;
-pub mod val_assert_record_pattern;
-pub mod val_assert_variant_pattern;
-pub mod val_binding;
-pub mod val_nested_ctor_pattern;
-pub mod val_spread_only_list_pattern;

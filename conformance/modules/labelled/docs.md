@@ -1,5 +1,5 @@
 # labelled
 
-[run/src/cases/labelled_arguments/mod.bp](run/src/cases/labelled_arguments/mod.bp)
-[run/src/cases/labelled_arguments_reorder/mod.bp](run/src/cases/labelled_arguments_reorder/mod.bp)
+[cases/labelled_arguments/src/main.bp](cases/labelled_arguments/src/main.bp)
+[cases/labelled_arguments_reorder/src/main.bp](cases/labelled_arguments_reorder/src/main.bp)
 [cells/labelled_call_by_label/src/main.bp](cells/labelled_call_by_label/src/main.bp)

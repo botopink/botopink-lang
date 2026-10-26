@@ -1,0 +1,14 @@
+botopink-cell 1
+out == integer_division_truncates
+out 3
+out -3
+out 3
+out 2
+out [3, 3]
+out 45000
+out 3.5
+out true
+out == integer_literal_labelled_field
+out 0
+out 4
+out 3000

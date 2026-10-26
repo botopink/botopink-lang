@@ -99,7 +99,7 @@ commonJS, erlang and beam, refused on wasm by STD-001 (`snapshot/targets/wasm/`)
 Front 24's type aliases (decision 118 rule 1) add `modules/decisions-taken/body_marker_whole_return_type-553/cells/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import/run/src/cases/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
-Decision 137 (`try` / `await` begin an expression) added `modules/try/run/src/cases/try_start_positions` — a `val`
+Decision 137 (`try` / `await` begin an expression) added `modules/try/cases/try_start_positions` — a `val`
 initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
 `for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three refusal cells, one per operand
 shape; decision 537 withdrew the refusal (`try` and `await` are prefix operators binding as the unary `-` does, `catch`
@@ -111,10 +111,10 @@ and `modules/decisions-taken/await_try_prefix_catch_infix-537/cells/catch_lowest
 `residual-checker-3` reads decision 137 onto `if`: an `if` expression is never an operand, and
 three refusal cells refuse it as `if-operand` at the `if` — `if_operand_of_operator`
 (`1 + if (c) { 2 } else { 3 }`), `if_in_parentheses` (`(if (c) a else b).v`) and
-`if_operand_of_unary` (`-if (c) 1 else 2`). The same front adds `modules/narrow/run/src/cases/narrow_in_logical_operands`
+`if_operand_of_unary` (`-if (c) 1 else 2`). The same front adds `modules/narrow/cases/narrow_in_logical_operands`
 (the right operand of `&&` / `||` and a `while` body read the names the left operand's null test
 narrows; a narrowed `var` is assigned its declared type, on all four targets) with
-`modules/narrow/refused/src/cases/narrow_or_keeps_optional` and `modules/narrow/refused/src/cases/narrow_ends_at_assignment`, and two cells whose
+`modules/narrow/cases/narrow_or_keeps_optional` and `modules/narrow/cases/narrow_ends_at_assignment`, and two cells whose
 checker half was right first and whose backend halves `residual-backend-3` closed: `modules/imported/run/src/cases/imported_fn_as_value` (an imported `pub fn` bound by a `val` and
 passed as an argument) and `modules/enum/run/src/cases/enum_implements_behavior` (an enum's behavior method called
 through a behavior-typed parameter). C-04's last call path adds `modules/associated/run/src/cases/associated_fn_default` (a
@@ -238,7 +238,7 @@ src/main.bp:11:12` on the four targets — the panic text decision 430 prints al
 with `s: string`), `nullish_never_null` (`s ?? "fallback"`), `bang_never_null` (`n!`) — each
 `optional-operator-never-null` at the operator —, `nullish_beside_logical` (`flag ?? false && true`,
 at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result_namespace_removed`
-(`result.isOk(…)` is an unbound `result`). `modules/option/cells/option_expect_removed` now answers
+(`result.isOk(…)` is an unbound `result`). `modules/option/cases/option_expect_removed` now answers
 `optional-has-no-methods`. Every one was refused or accepted otherwise by the parent binary. The
 suite's `.unwrapOr` on a `?T` became `??` (`scripts/codemod-optional-operators.py`), and a second
 index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`modules/decisions-taken/record_field_assignment_refused-37/run/src/cases/index_expression`,
@@ -317,7 +317,7 @@ Decisions 378 and 379 (a context is named by its value's type and declares its d
 `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/inject_behavior` and `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/context_behavior_not_implemented`. B-17's Conformance step adds
 `modules/decisions-taken/context_named_by_value_type-379/cells/context_declared_twice_across_modules` (the second declaration in another module, refused in it naming
 the first), `modules/decisions-taken/context_named_by_value_type-379/cells/context_enum_default` (`comptime createContext(Mode.Light)` — the comptime lift wrote no
-enum value in a record's field, `comptime-value-not-liftable`), `modules/comptime/run/src/cases/comptime_enum_in_record` (the same lift
+enum value in a record's field, `comptime-value-not-liftable`), `modules/comptime/cases/comptime_enum_in_record` (the same lift
 in a record and a generic record), `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_default_imported` (an `inject` field's default declared in its
 type's own module) and `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/inject_not_record_enum` (`inject-not-record` for an enum); the first two and the
 last two red on the parent, where std's `context` had no `createContext` or `inject`, `comptime_enum_in_record`
@@ -350,14 +350,14 @@ two pins beside them, `modules/decisions-taken/component_is_lambda_over_render_s
 their number and with `null`) and `modules/decisions-taken/components_compose_by_data-504/cells/component_try_catch_then_awaits_host_task` (a `try … catch` then a host
 `await` in a component). A
 component called as a statement outside a body runs nothing now, so `modules/decisions-taken/body_marker_whole_return_type-553/cells/effect_chain`,
-`modules/decisions-taken/body_marker_whole_return_type-553/cells/effect_context_await`, `modules/use/cells/use_one_base`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_result_try_await` and
+`modules/decisions-taken/body_marker_whole_return_type-553/cells/effect_context_await`, `modules/use/cases/use_one_base`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_result_try_await` and
 `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_hook_and_component` `await` it in `main`, and `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` reads
 375's mark through `run`. Decision 389 (a component named as a value is a reached node; a value the checker
 cannot follow an edge with `callee: null`) adds `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_component_value` (`map(Card)`, a `val`, a
 record field, a lambda answering one) and `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call` (in the module `pages` that `main` imports, its meta a typed `Graph` record; a parameter, a method and a
 generic answer as `null` edges, the node asynchronous), each red on the parent binary; the `decl.hooks`
 readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it is now.
-144 B-141 adds `modules/meta/cells/meta_list_method_on_optional` and `modules/meta/cells/meta_list_coalesced_method` (a method on an
+144 B-141 adds `modules/meta/cases/meta_list_method_on_optional` and `modules/meta/cases/meta_list_coalesced_method` (a method on an
 optional's list, a coalesced list) and `modules/array/cases/array_map_component_imported` (a component of an imported module),
 each red on wasm on the parent binary and green on the four targets.
 Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
@@ -465,9 +465,9 @@ f(item) }` is a lambda value; a `test/` cell because beam answered `{badfun, ok}
 arm produces — `03-beam`'s row). Each was refused by the parent binary. `03-beam` step 9 moved the
 last to `modules/case/cases/case_arm_lambda_value` (four targets print `a?` / `b`) and deleted row 28.
 Step 3 (decision 151, row 22) adds `modules/decisions-taken/enum_section_body_method_refused-151/cells/section_body_method` (a `fn` in a section body is
-`section-body-method` at the `fn`), `modules/section/run/src/cases/section_numeric_leaf_standalone` (`val n: Tok.Percent =
+`section-body-method` at the `fn`), `modules/section/cases/section_numeric_leaf_standalone` (`val n: Tok.Percent =
 .50;`, a leaf argument, and a section-typed field of a payload variant built with `.100`, four
-targets) and `modules/section/refused/src/cases/section_numeric_leaf_without_expectation` (`.50` with nothing expected names its
+targets) and `modules/section/cases/section_numeric_leaf_without_expectation` (`.50` with nothing expected names its
 section). A section leaf prints as its mangled name (`__Tok__Percent.__50`) on every target, so the
 cell reads it through `==`. Each was refused by the parent binary.
 Step 4 (row 32) adds `modules/call/cases/call_of_record_value` (`val g = G(a: "x"); g()` is
@@ -484,7 +484,7 @@ accepted by the parent binary. `04-js` step 4 adds the half decision 205 keeps,
 `case` arms' binders each binding one name, and a block's `n` followed by the function's own `n`
 once the block has closed — four targets, green on the parent binary (it pins that no backend
 leaks a block's binding or invents a scope for it).
-`modules/unwrap/run/src/cases/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
+`modules/unwrap/cases/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
 takes the payload's width over `?i64` and `@Result<i64, string>` (refused as `expected i32, got i64`
 by the parent binary).
 `modules/std/run/src/cases/std_type_ctor_through_namespace` (another front's finding) — `url.Url(…)` after `import {url}
@@ -497,7 +497,7 @@ namespace reads `kit/store`'s fields; the cell builds the value through a functi
 because commonJS emits `Dict(5)` without `new` for an imported record constructor beside a std
 namespace declaring the same name — `04-js`'s row),
 `modules/decisions-taken/aliased_imports_from_two_sources-170/refused/src/cases/std_namespace_signature_names_shadowed_type` (a namespace call whose signature names the
-shadowed std type) and `modules/own/cells/own_type_beside_std_type_import` (a type of this module beside an
+shadowed std type) and `modules/own/cases/own_type_beside_std_type_import` (a type of this module beside an
 aliased import of a same-named std type — refused then, two types since decision 603's std half). Each
 was accepted wrongly or refused with the wrong type by the parent binary.
 Decision 310 (144 B-23) turns `modules/decisions-taken/aliased_same_named_types-310/run/src/cases/import_two_types_one_name` and
@@ -519,11 +519,11 @@ answers its own method and is told apart by `is` from the alias).
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
 `test/` cell because beam answers `{unresolved_method, …}` for any adopted default (`03-beam`'s row).
-Step 12 (T9) adds `modules/reserved/refused/src/cases/reserved_word_as_binding_name` — `val unknown: i32 = 1;` is
+Step 12 (T9) adds `modules/reserved/cases/reserved_word_as_binding_name` — `val unknown: i32 = 1;` is
 `reserved-word-as-name` at the name; it passes on the parent binary too (the row closed before this
 front) and pins the rule.
-Step 11 (T11) adds `modules/nullish/cells/nullish_tuple_operand` (a tuple literal on the right of `??`) and
-`modules/postfix/cells/postfix_on_grouped_nullish` (`(xs.at(0) ?? d)._1`), four targets, integer elements because wasm
+Step 11 (T11) adds `modules/nullish/cases/nullish_tuple_operand` (a tuple literal on the right of `??`) and
+`modules/postfix/cases/postfix_on_grouped_nullish` (`(xs.at(0) ?? d)._1`), four targets, integer elements because wasm
 reads a `string` element of a tuple through `??` as its address (`05-wasm`'s row); both refused by
 the parent binary at the `#`.
 Step 8 (decision 45) adds `modules/decisions-taken/optional_member_access_needs_safe_call-45/refused/src/cases/tuple_label_on_optional` (`rs.at(0).b` names `?.`) and
@@ -591,7 +591,7 @@ Decision 208 (`Ok` / `Error` are never constructors) adds `modules/decisions-tak
 pin the rule.
 Decision 209 adds `modules/integer_literal_fits_f64` (an integer literal under an expected `f64` — a
 `val`, an `f64[]` element, an argument, a return, an arithmetic operand — prints as the float, four
-targets; refused by the parent binary) and `modules/i32/cells/i32_value_never_widens` (an `i32` value passed to an
+targets; refused by the parent binary) and `modules/i32/cases/i32_value_never_widens` (an `i32` value passed to an
 `f64` parameter is the mismatch; it passes on the parent binary and pins the half that stays).
 Decision 215 adds `modules/decisions-taken/f64_vs_integer_literal_refused-215/refused/src/cases/f64_equals_integer_literal` (`x == 2` with `x: f64`) and
 `modules/decisions-taken/f64_vs_integer_literal_refused-215/refused/src/cases/f64_not_equals_integer_literal` (`3 != x`), refused at the literal naming the float to write;
@@ -691,27 +691,27 @@ run-time hole and a `comptime` are written at build, a parameter and a call comp
 four targets; the parent binary fails the body at `badkey known`), `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/comptime_reaches_package_template`
 (a `comptime` over a package template's expansion, whose built code calls the package's function
 under its alias, and a record of the package's type written back where the module does not import
-it — the parent binary aborted the compiler), `modules/comptime/run/src/cases/comptime_interpolation_in_called_fn` (`"${…}"` in
-a function a `comptime` calls), `modules/comptime/refused/src/cases/comptime_template_call_declared_after` and
+it — the parent binary aborted the compiler), `modules/comptime/cases/comptime_interpolation_in_called_fn` (`"${…}"` in
+a function a `comptime` calls), `modules/comptime/cases/comptime_template_call_declared_after` and
 `modules/hole_known_at_build_raises`.
-`01-checker` step 41 (decision 429) adds `modules/template/run/src/cases/template_two_alike_expansions` (two expansions of one
+`01-checker` step 41 (decision 429) adds `modules/template/cases/template_two_alike_expansions` (two expansions of one
 template whose built code sits at the same offsets — `r.length` over an array and `r.w` over a
 record; the parent binary lowered the first with the second's field access on erlang),
-`modules/template/run/src/cases/template_default_arg_two_expansions` (a call that leaves out a default argument and a call of a
+`modules/template/cases/template_default_arg_two_expansions` (a call that leaves out a default argument and a call of a
 one-parameter function at the same offset of two expansions; the parent binary filled the default
 into the second, `footer/2 undefined` on erlang) — four targets, no padding — and
 `modules/decisions-taken/template_code_located_by_expansion-429/cells/template_built_code_diagnostic_located` (a diagnostic in built code at the place in the
 caller's text the code copies, after the two-byte `` @` ``; the parent binary located it at `1:20`).
-`test/program_primitive_behavior_extends_std` and `modules/program/cells/program_primitive_behavior_redeclares_std`
+`test/program_primitive_behavior_extends_std` and `modules/program/cases/program_primitive_behavior_redeclares_std`
 — a program's own contract implemented for `string` (`StringShout implement Shout for string {}`,
 decision 799) adds its members to `string` (its default fns call `slice`, `startsWith`, `length` on
 `self`, the contract declaring the ones it calls and `string`'s own members meeting them, and std's
 members answer beside them), and a contract member `string` already has is
-`behavior-member-redeclared` at the implementation. `modules/program/run/src/cases/program_primitive_behavior_extends_std`
+`behavior-member-redeclared` at the implementation. `modules/program/cases/program_primitive_behavior_extends_std`
 is its running twin on all four targets, a
 `behavior Number` default beside it; wasm called no program-declared default fn of a primitive
 (it trapped) until `05-wasm`'s `lowerPrimDefault`.
-`modules/program/run/src/cases/program_array_behavior_default` does the same for a contract implemented for `array<T>`
+`modules/program/cases/program_array_behavior_default` does the same for a contract implemented for `array<T>`
 (`ArrPick<T> implement Pick<T> for array<T> {}`) — defaults
 calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`, taking a `T` and a
 `Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
@@ -818,9 +818,9 @@ function and a std namespace the caller does not import, on all four targets) an
 `Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
 one that is expanded, `Any`. Decision 564 (a decorator's `syntax decl: B` names the behavior its declarations
 implement) adds `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/refused/src/cases/decorator_decl_behavior_not_implemented` (`#[module]` on a type that does not
-`implement Module`, refused at the annotation naming both), `modules/typeinfo/cells/typeinfo_all_behavior_typed` (the answer bound
+`implement Module`, refused at the annotation naming both), `modules/typeinfo/cases/typeinfo_all_behavior_typed` (the answer bound
 and handed on as `Declared<Module>[]`, no `member:`), `modules/decisions-taken/typeinfo_all_with_list-235/cells/typeinfo_all_behavior_shared` (two decorators naming
-one behavior answer `Declared<Component>[]`), `modules/typeinfo/cells/typeinfo_all_behavior_none_shared` (two naming different
+one behavior answer `Declared<Component>[]`), `modules/typeinfo/cases/typeinfo_all_behavior_none_shared` (two naming different
 ones answer `Declared<unknown>[]`, the ordinary mismatch at the binding) and
 `modules/decisions-taken/comptime_parameter_call_expanded-562/refused/src/cases/typeinfo_all_behavior_call_outside_expansion` (`d.value.make()` in `main`, refused at the call); the
 `meta_catalogue_private_type`, `meta_typed_catalogue` and `meta_expr_read_elsewhere` cells catalogue their types
@@ -873,7 +873,7 @@ a string and a number — on all four targets; `modules/decisions-taken/typeinfo
 resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
 name and the expected type (the message is on stderr on every target, wasm's included, which writes it before the trap); and
 `modules/decisions-taken/typeinfo_all_declared_type-254/refused/src/cases/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
-`modules/fn/cells/fn_local_rebound_call` calls a fn-typed local at its current binding — a `val v` narrowed
+`modules/fn/cases/fn_local_rebound_call` calls a fn-typed local at its current binding — a `val v` narrowed
 by `is fn() -> i32` in two sibling `for` bodies, a reassigned `var f`, a second `val f` lambda —
 on all four targets (erlang applied the first binding's `V` where the second was `V@1`).
 Decision 252 (every builtin declared, a call held to its declaration) adds
@@ -896,7 +896,7 @@ accessors, the host round-trip) runs on three and is refused on wasm by name (`s
 (`fromCodepoint`, `codepoints`, `firstCodepoint`, the four normalization forms — std's botopink
 normalizer, decision 333 (A)) has one `snapshot/output/` answer for the four targets. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
 on the parent binary: `modules/std/run/src/cases/std_namespace_calls_same_name` (`querystring.parse` and `url.parse`
-through their namespaces — the mangled one's receiver was dropped) and `modules/tuple/run/src/cases/tuple_optional_element`
+through their namespaces — the mangled one's receiver was dropped) and `modules/tuple/cases/tuple_optional_element`
 (a `?T` in a tuple — printed, read through `._N`, a generic method's `#(Q<T>, ?T)`, and
 `o.unwrapOr(d)` keeping a tuple's shape).
 The backend rows of `status.md` (`front/backend-rows-2`) add, each failing on the parent binary
@@ -907,20 +907,20 @@ subject itself), `modules/array/cases/array_last_index_of` (all four; `Array` de
 `modules/module/run/src/cases/module_var_self_registration` and its `_test` twin (a module-level `var` grown by `push` at
 module load — erlang and beam dropped the write), `modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_answer_typed_optional` and
 `modules/decisions-taken/negative_index_counts_from_end-139/refused/src/cases/index_answer_is_optional` (`xs[k]` is `?T`; wasm's `?Color` compare and `??` binder),
-`modules/integer/run/src/cases/integer_literal_labelled_field` (a literal in a labelled `i64` field, every target),
+`modules/integer/cases/integer_literal_labelled_field` (a literal in a labelled `i64` field, every target),
 `modules/std/cells/std_unsupported_names_the_call` (STD-001 names the function called, at the call),
 `modules/behavior/run/src/cases/behavior_method_dispatch_by_value` (wasm dispatches a behavior-typed call),
-`modules/string/run/src/cases/string_char_code_non_ascii` (wasm answered bytes), `modules/val/run/src/cases/val_assert_variant_pattern` (commonJS
-`ReferenceError`, beam `{unassigned, …}`) and `modules/is/run/src/cases/is_enum_variant` and
+`modules/string/cases/string_char_code_non_ascii` (wasm answered bytes), `modules/val/cases/val_assert_variant_pattern` (commonJS
+`ReferenceError`, beam `{unassigned, …}`) and `modules/is/cases/is_enum_variant` and
 `modules/renderer/cells/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
-`snapshot/output/` answer shared by four targets: `modules/string/run/src/cases/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
+`snapshot/output/` answer shared by four targets: `modules/string/cases/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
 one empty line — and `words` over blanks), `modules/array/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
 over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array/cases/array_windows`
 (`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array/cases/array_fill` (a value of
 each primitive, an empty receiver). `pop` is `modules/array/cases/array_pop_removes`; `unique`'s cell is
 `02-erlang`'s `modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique` (C-35).
-`modules/generic/cells/generic_field_fn_value` — a top-level fn stored in a generic record's field (`Box<T>(value: T)`)
+`modules/generic/cases/generic_field_fn_value` — a top-level fn stored in a generic record's field (`Box<T>(value: T)`)
 and called through the field, through an untyped local and through a generic wrapper, and a lambda
 stored there typed by those calls, by a `val`'s annotation, by a parameter and by a return type —
 answers the fn's own result on commonJS, beam and wasm (wasm printed a string's address, a bool as
@@ -931,15 +931,15 @@ constructor and a generic call answering one, a parameter written `Pair<T>`, a v
 an array of such records under `map`, and a generic fn handed to a `fn(a: string, b: string) ->
 bool` parameter or bound to a `val` of that type — on four targets; wasm compared words for the
 record, generic-result, `Pair<T>`, array and fn-value rows.
-`00 · 03-beam`'s split row adds `modules/string/run/src/cases/string_split_empty_separator` — `split("")` cuts into UTF-8
+`00 · 03-beam`'s split row adds `modules/string/cases/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
-144 B-22 step 13 adds `modules/val/run/src/cases/val_spread_only_list_pattern` — `val [..rest] = xs;` binds the whole list,
+144 B-22 step 13 adds `modules/val/cases/val_spread_only_list_pattern` — `val [..rest] = xs;` binds the whole list,
 over a literal, a parameter and the empty list (the checker admitted it and bound nothing: `unbound
-variable 'rest'`) — and `modules/val/run/src/cases/val_nested_ctor_pattern` — `val Pair(Circle(r), n) = p;`, three levels
+variable 'rest'`) — and `modules/val/cases/val_nested_ctor_pattern` — `val Pair(Circle(r), n) = p;`, three levels
 deep, beside a `_` and inside a record's own constructor (refused `refutable-val-pattern`, and on wasm
 "no lowering for this constructor pattern in a binding"), both on all four targets.
-`01 · 03-beam` step 1 adds `modules/ctor/cells/ctor_pattern_in_val_binding` — `val Label(t, w) = Tag.Label(…)`, a
+`01 · 03-beam` step 1 adds `modules/ctor/cases/ctor_pattern_in_val_binding` — `val Label(t, w) = Tag.Label(…)`, a
 one-variant type's constructor in binding position, prints `7` on all four targets (beam bound
 nothing: `{unresolved_identifier, t}`), and `modules/import/run/src/cases/import_capitalised_fn` — an imported `pub fn Make`
 called with labelled and positional arguments, on all four targets (beam built `Make(n: 4)` as the
@@ -948,23 +948,23 @@ record `#{n => 4}`).
 assertions on commonJS, erlang and beam — and `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
 on the same three. On wasm the first runs too — the module's functions that reach `canonical`, which has no
 wasm binding, are not lowered and stop nothing while the program does not call them (decision 531) — and the
-second is refused at the call of `deepEquals` (STD-001, decision 518 (4); `snapshot/targets/wasm/`). The same front's `modules/result/refused/src/cases/result_field_read` and
-`modules/result/refused/src/cases/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
+second is refused at the call of `deepEquals` (STD-001, decision 518 (4); `snapshot/targets/wasm/`). The same front's `modules/result/cases/result_field_read` and
+`modules/result/cases/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
 (`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
 cell each: `modules/pub_val_in_a_test` (F1 — a sibling's `pub val` read by a TEST: the erlang runner
 did not load the sibling; the first project cell of the test kind), `modules/import/cells/import_type_closure_across_modules`
 (F2 — `import {Canvas}` from a local dependency whose fields name types of the package's other
-modules), `modules/unwrap/run/src/cases/unwrap_or_positions` (F4/F9 — `xs.at(i).unwrapOr(d)` in a method, as the branch of
+modules), `modules/unwrap/cases/unwrap_or_positions` (F4/F9 — `xs.at(i).unwrapOr(d)` in a method, as the branch of
 a parenthesised `if` read with `.v`, nested in another `unwrapOr`, over an unannotated `map`),
 `modules/src_at_package_root` (F5 — `"src": "."`, a test importing `lib.db`),
-`modules/string/run/src/cases/string_slice_in_if_branch` (F6 — a one-argument `slice`, an array `slice` and a string
-template as the value of an `if` branch), `modules/integer/run/src/cases/integer_division_truncates` (F7 — integer `/`
+`modules/string/cases/string_slice_in_if_branch` (F6 — a one-argument `slice`, an array `slice` and a string
+template as the value of an `if` branch), `modules/integer/cases/integer_division_truncates` (F7 — integer `/`
 truncates toward zero on every target, float `/` stays float) and `modules/lexer/cells/lexer_error_in_imported_module`
 (F8 — every target refuses the project with `bad string escape` located in the imported module, via
-its snapshot). The erlang float-literal item adds `modules/float/run/src/cases/float_literal_spellings` (`1e3`,
+its snapshot). The erlang float-literal item adds `modules/float/cases/float_literal_spellings` (`1e3`,
 `2.5E3`, `3e+2`, `5e-1`, `1_000.5` are `f64` on all four targets) and
-`modules/number/run/src/cases/number_literal_erlang_spellings` (`5e-324`, the largest `f64`, an `f64` record field and
+`modules/number/cases/number_literal_erlang_spellings` (`5e-324`, the largest `f64`, an `f64` record field and
 `0xFF + 0b101 + 0o17`, on all four targets — wasm since its float literal is an `f64.const` and its
 radix literal a decimal `i32.const`).
 144's cascading-diagnostic row adds `modules/import/cells/import_of_failed_module` (`shapes.bp` holds a type error,
@@ -993,16 +993,16 @@ carries a package named like the folder; the shipper took that package for the m
 `modules/sidecar/cells/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/sidecar_named_like_emitted_atom@text.erl`, named
 like the atom `src/text.bp` compiles to, is a located build error on erlang and beam naming both,
 `snapshot/targets/erlang/` and `snapshot/targets/beam/`), `modules/decisions-taken/prelude_is_primitives-606/refused/src/cases/bare_print_call` (`print(x)` without its import is unbound
-and the refusal names `import {io.terminal.print} from "std"`, decision 606 (2)), `modules/float/run/src/cases/float_record_field` (an `f64` record field read, compared,
+and the refusal names `import {io.terminal.print} from "std"`, decision 606 (2)), `modules/float/cases/float_record_field` (an `f64` record field read, compared,
 destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
 narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
 `modules/linked/run/src/cases/linked_fn_name_collision` (two modules each declaring `parse`, reached by their own calls, a
-plain import and an aliased one — wasm's one flat namespace). `modules/val/run/src/cases/val_assert_record_pattern` (a
+plain import and an aliased one — wasm's one flat namespace). `modules/val/cases/val_assert_record_pattern` (a
 `val assert` over a record's constructor pattern — commonJS destructured the binders' own names,
 erlang tested a tag no constructor builds) came out of the same work; wasm and beam followed.
 C-04 across a module boundary adds `modules/default/cells/default_argument_across_modules` — a call omitting
 trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
-claiming its parameter, on all four targets — and `modules/default/cells/default_argument_open_across_modules`: a
+claiming its parameter, on all four targets — and `modules/default/cases/default_argument_open_across_modules`: a
 default that names a private function of its module does not travel, so omitting it from another
 module is the arity error, on every target (its snapshot).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
@@ -1013,22 +1013,22 @@ host-built one's `"targets"` is `commonJS erlang beam`, wasm having no host voca
 same for an imported behavior; `snapshot/targets/wasm/`), `modules/behavior/run/src/cases/behavior_value_from_implementer` (an implementer
 converts to its behavior at an annotated `val` and a `var`), `modules/behavior/run/src/cases/behavior_across_modules` (an
 imported behavior is the same type in its importer; an imported fn-type alias resolves its names in
-its own module), `modules/return/run/src/cases/return_nested_in_if_block` and `modules/return/run/src/cases/return_in_case_arm_statement` (a `return`
-at any depth of a statement ends the function), `modules/result/run/src/cases/result_method_throw` (a METHOD returning
+its own module), `modules/return/cases/return_nested_in_if_block` and `modules/return/cases/return_in_case_arm_statement` (a `return`
+at any depth of a statement ends the function), `modules/result/cases/result_method_throw` (a METHOD returning
 `@Result` wraps its `throw` / `return`), `modules/test_in_subdirectory` (a test file in `test/unit/`
-reaches the project on erlang), `modules/record/run/src/cases/record_method_named_length` (a type's `length` method never
+reaches the project on erlang), `modules/record/cases/record_method_named_length` (a type's `length` method never
 answers an array's `length`), `modules/imported/run/src/cases/imported_fn_field_call` (a function-typed field of an imported
 record is applied), `modules/method/run/src/cases/method_on_unimported_type` (a method on a value whose type the module
 never imported: std's `Dict`, and another imported type declaring the same method),
-`modules/method/refused/src/cases/method_missing_argument`, `modules/method/refused/src/cases/method_extra_argument` and `modules/method/run/src/cases/method_default_argument` (a
-method call's arity), `modules/result/run/src/cases/result_pattern_beside_enum_variant` (`Error(e)` over a `@Result` beside an
+`modules/method/cases/method_missing_argument`, `modules/method/cases/method_extra_argument` and `modules/method/run/src/cases/method_default_argument` (a
+method call's arity), `modules/result/cases/result_pattern_beside_enum_variant` (`Error(e)` over a `@Result` beside an
 enum declaring `Error`), `modules/decorator/run/src/cases/decorator_calls_module_function` and
 `modules/decorator/run/src/cases/decorator_imported_calls_module_function` (a decorator body calls its module's
 functions), `modules/decorator/run/src/cases/decorator_emitted_proxies_dispatch` (two proxies a decorator emits call their own
 types) and `modules/decisions-taken/shorthand_import_refused-337/cells/namespace_import_module` (decision 107's namespace form over a dependency's
 module and the project's own).
 The second language-gaps sweep (`front/gaps-sweep-2`) adds a cell per row it fixed, every one
-failing on the parent binary: `modules/result/refused/src/cases/result_void_falls_off_end` (decision 2 over an effect return —
+failing on the parent binary: `modules/result/cases/result_void_falls_off_end` (decision 2 over an effect return —
 a `@Result` in any layer, `@Result<void, E>` included, and a `@Async` / `@Component` whose value is a
 value, end with `return`), `modules/narrowed/cells/narrowed_optional_std_field_across_packages` (a method chain on a
 field of a narrowed optional, and of an optional binder, whose type another package declares and
@@ -1038,17 +1038,17 @@ this module never names — its field a std type only that package imports;
 argument the annotation leaves out takes its closed default; one naming a binding is refused at the
 annotation), `modules/decisions-taken/record_field_assignment_refused-37/run/src/cases/record_update` and `modules/decisions-taken/component_props_plain_or_rest-529/run/src/cases/record_update_base_not_a_name` (decision 37's
 `Name(..base, f: v)` builds the record it means on every target; the base is a name or a path of
-names), `modules/explicit/run/src/cases/explicit_type_arguments_on_a_method` and
-`modules/explicit/refused/src/cases/explicit_type_argument_on_a_method_disagrees` (decision 8 §1.3 at a method call,
+names), `modules/explicit/cases/explicit_type_arguments_on_a_method` and
+`modules/explicit/cases/explicit_type_argument_on_a_method_disagrees` (decision 8 §1.3 at a method call,
 `ctx.resolve<T>()`), `modules/decisions-taken/package_imports_itself_by_path-309/cells/std_module_imports_std_module` (`querystring` imports `encoding`'s
 percent codec; on four targets since `01-compiler/05-wasm` step 5) and `modules/bodyless/cells/bodyless_method_without_binding` (a
 bodyless method with no host binding is refused at the call on every target, its snapshot).
 The checker rows of `front/checker-rows` add a cell each, every one failing on the parent binary
-(or, where noted, pinning a rule the parent already held): `modules/self/refused/src/cases/self_param_free_fn` (`self`
+(or, where noted, pinning a rule the parent already held): `modules/self/cases/self_param_free_fn` (`self`
 outside a type or behavior body is `self-param-outside-type`, at the name — jhonstart's
 `repro/self-param-free-fn`), `modules/decl/run/src/cases/decl_type_name_spelled` (the declaration handle's type names spell the type:
 `Array<string>`, `string[]`, `fn(i32) -> i32`, `#(string, string)`, `?i32`, a method's parameters
-and return), `modules/reserved/refused/src/cases/reserved_word_field_name` and `modules/reserved/refused/src/cases/reserved_word_param_name`
+and return), `modules/reserved/cases/reserved_word_field_name` and `modules/reserved/cases/reserved_word_param_name`
 (`reserved-word-as-name`, naming `from`), `modules/external/cells/external_wrapper_keeps_refusal` (a wrapper around a
 single-target host call inherits no restriction — refused on commonJS and wasm by
 its snapshot even though nothing calls it; the parent held this rule, and decision 146
@@ -1068,18 +1068,18 @@ The checker rows of `front/checker-rows-2` add a cell each, every one failing on
 `modules/builtin/cases/builtin_noreturn_any_position` (`@todo()` / `@panic(…)` are `noreturn`, the bottom type — a
 `return` of a `-> i32` function, an annotated `val`, an `if` branch and a call argument; on all four
 targets), `modules/decisions-taken/no_declaration_files_compiler_value-575/refused/src/cases/builtin_module_not_lowered` (`@module()` is `builtin-not-lowered` at the `@`),
-`modules/enum/refused/src/cases/enum_variant_duplicate` (a variant written twice at one level, at the second),
+`modules/enum/cases/enum_variant_duplicate` (a variant written twice at one level, at the second),
 `modules/enum/run/src/cases/enum_section_leaf_beside_variant` (a section leaf `Layout.Break.After` beside a top-level
 `After(inner: Token[])`, each reached by its path or its position's type from another module —
 the checker half already held; wasm, whose `case` read the leaf's tag, followed),
 `modules/variant/run/src/cases/variant_leading_dot_two_enums_case` (two enums declaring `Red`, `.Red` by the position's type
 and a `case` over each — the checker half already held; wasm followed),
-`modules/section/refused/src/cases/section_path_es4_expected_enum` / `modules/section/refused/src/cases/section_path_es4_every_head` (ES4 names the
+`modules/section/cases/section_path_es4_expected_enum` / `modules/section/cases/section_path_es4_every_head` (ES4 names the
 expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
 `modules/labelled/cells/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
 namespace and `"std"` call paths, and a namespace call filled from its default; the `"std"` path is
 `testing.asserts`, which does not build on wasm — `snapshot/targets/wasm/`, the refusal at the import),
-`modules/label/cells/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
+`modules/label/cases/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
 `modules/behavior/cells/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
 meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
 the host templates by `snapshot/targets/wasm/`), `modules/decisions-taken/shorthand_import_refused-337/cells/shorthand_import_several_candidates` (a bare `import {parse};` over two
@@ -1090,14 +1090,14 @@ its sibling `import_ambiguous_unused` — the import unread compiled — is gone
 gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `snapshot/targets/wasm/`),
 `modules/std/cells/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`), `modules/annotation_not_decorator_{unbound,namespace,value}` (a bare `#[name]` naming no decorator is `annotation-not-a-decorator`),
 `modules/std/cells/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
-`modules/pipeline/cells/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
+`modules/pipeline/cases/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
 defaults and labels, at expression and statement position) and `modules/case/cases/case_bool_literal_arms` (`true` /
 `false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
 `test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
 The residual backend rows (`front/residual-backend-3`) add a cell each, every one failing on the
 parent binary on the targets named: `modules/generic/run/src/cases/generic_call_result_shape` (a generic `-> T` call answers
 its argument's shape, `unwrapOr` its default's — wasm printed a string's address),
-`modules/unit/cells/unit_enum_print_by_name` (an all-unit enum's value by name, a field, an array, a `?Color` whose
+`modules/unit/cases/unit_enum_print_by_name` (an all-unit enum's value by name, a field, an array, a `?Color` whose
 present first variant is not absent — wasm printed the ordinal or trapped),
 `modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_patterns` (a multi-subject `case` over literals, strings, type arms, variant
 payloads and guards over the subjects (a bare name is refused, `modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_bare_name`, decision 602) — wasm answered the first arm, beam matched a string or a type arm on anything,
@@ -1110,11 +1110,11 @@ behavior, called through a value of the behavior — commonJS, erlang and beam),
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
 wasm trapped), `modules/external/cells/external_template_escaped_quote` (a `\"` in an `.JavaScript` template is a
 quote of the JavaScript; `"targets"` without wasm), `modules/std/run/src/cases/std_path_relative` (a std module calling an
-`Array` `default fn` — commonJS had no prototype method), `modules/if/run/src/cases/if_value_float` (an `f64` value `if`
+`Array` `default fn` — commonJS had no prototype method), `modules/if/cases/if_value_float` (an `f64` value `if`
 outside an `f64` function — wasm refused the module, commonJS printed `0`) and
 `modules/linked/run/src/cases/linked_val_name_collision` (a module-level `val` and `var` two linked modules declare, read,
 written, imported under an alias and shadowed by a parameter — wasm read the first one).
-`modules/val/run/src/cases/val_assert_record_pattern` gained the labelled form (erlang bound it by position).
+`modules/val/cases/val_assert_record_pattern` gained the labelled form (erlang bound it by position).
 `modules/hof/cells/hof_named_function` (a local, an imported and a bound function named as an array method's
 argument — wasm trapped), `modules/generic/run/src/cases/generic_body_specialized` (a method on a type-parameter value, a float
 through one, a behavior's generic associated fn and `Dict<string, string>.at` over a key built at
@@ -1246,10 +1246,10 @@ answering its tail) and `modules/decisions-taken/lambda_answers_last_expression-
 expression written without `;`, one with `;` answers nothing and stands where `fn(i32) -> void` is expected; an
 untyped `fn(x) { … }` keeps the value of its last statement — beam lowered the untyped `fn` expression to
 `undefined` on the base), with its refusal `modules/decisions-taken/lambda_answers_last_expression-541/cells/lambda_semicolon_not_a_value` (`fn(i32) -> i32` expected, at the lambda).
-B-22 adds `modules/fn/cells/fn_value_in_tuple` (a function value read out of a tuple by position and called, its
+B-22 adds `modules/fn/cases/fn_value_in_tuple` (a function value read out of a tuple by position and called, its
 arguments staged first — beam's frame did not count the stack slot the arguments park in while
 `erlang:element/2` reads the function, `invalid_store` on the base).
-`modules/fn/cells/fn_value_tuple_string_answer` (each element of `#(g, h)` keeps its function type — wasm printed
+`modules/fn/cases/fn_value_tuple_string_answer` (each element of `#(g, h)` keeps its function type — wasm printed
 the string's address on the base) and `modules/fn/run/src/cases/fn_field_call_in_for` (`op.run(5).toString()` on a
 `for` loop's element — wasm could not resolve `toString/0` on the base).
 
@@ -1342,26 +1342,26 @@ with `try` on it; wasm printed each string as its heap address before, on all fo
 `default fn` — `String.slice`, `Array.slice` — reached INSIDE a `libs/std` module that
 `from "std"` compiled as an ordinary dependency; one `modules/` cell and one `test/` suite,
 § `std_default_fn_in_a_std_module` below), and the
-singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `modules/decisions-taken/defaults_are_trailing-244/cells/fn_defaults_values`, the VALUE on all four targets, and `modules/missing/cells/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `modules/decisions-taken/defaults_are_trailing-244/cells/fn_defaults_values`, the VALUE on all four targets, and `modules/missing/cases/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
 answers that expression's value) and `lambda_element_method` (a primitive method on a lambda's
 parameter is the same method it is anywhere else), both measured by emilia's theme front and both
 asserting the VALUE, because each defect was a wrong answer rather than a crash — and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`, and the two 1.0.10-beta `00 · 04-js` cells
-`modules/labelled/run/src/cases/labelled_arguments` — a record constructor and an enum variant written out
+`modules/labelled/cases/labelled_arguments` — a record constructor and an enum variant written out
 of declared order, the rule being `conformance/docs.md` § Parameters with defaults, "a
 parameter the call names by label keeps the argument it was given, whichever
 position it is in"; the values are asymmetric so a positional zip is a wrong
 ANSWER at exit 0 rather than a crash, which is how it hid — and
-`modules/effect/cells/effect_method` — an effect annotation on a method, at its three
+`modules/effect/cases/effect_method` — an effect annotation on a method, at its three
 declaration sites: a record's own body, a record's `implement` block and an
 enum's body; the fourth, a `behavior`'s `default fn`, cannot be written at all,
 because the checker refuses `effect-on-behavior-method-forbidden`), and
 `effect_chain` (1.0.10-beta front 20,
 decisions 95 and 98: one `test/` suite, two running cells and five refusal cells; front 20
-also adds `modules/use/cells/use_one_base` to the `use_*` area for
-decision 96 (its `use_two_bases` refusal cell left with decision 354), `modules/option/cells/option_unwrap_or` + `modules/option/cells/option_expect_removed` to
+also adds `modules/use/cases/use_one_base` to the `use_*` area for
+decision 96 (its `use_two_bases` refusal cell left with decision 354), `modules/option/cases/option_unwrap_or` + `modules/option/cases/option_expect_removed` to
 `optional*` for F11, and `modules/decisions-taken/external_erlang_binds_beam-437/refused/src/cases/external_inline_unread` to `external_*` for F9 — `inline` on
 a variant whose emitter never reads it is refused at the annotation; 1.0.12-beta's front 140 step 2,
 decision 334, adds `modules/decisions-taken/wasm_host_profiles_wasi_browser-334/refused/src/cases/external_wasm_host_unknown`, `modules/decisions-taken/wasm_host_profiles_wasi_browser-334/refused/src/cases/external_host_on_node`,
@@ -1392,7 +1392,7 @@ wasm hosts — `delay`, `race`, `raceOf`, `spawnAll` on the adapters, the gates 
 order only, 335 (2)), widening `modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_all_of` to wasm; and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `modules/enum/run/src/cases/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
-`modules/enum/refused/src/cases/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
+`modules/enum/cases/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
 candidates, and `modules/enum/run/src/cases/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
 needs no expectation at all), `modules/case/cases/case_value_string_arms` (1.0.10-beta's `00 · 05-wasm`: a `case` used as a VALUE with string
 arms, in BOTH arm spellings — the two took different paths through `wat.zig` and only the ARROW one
@@ -1406,7 +1406,7 @@ both values on all four targets. commonJS tested only `instanceof`, so the secti
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` — a module-level `var` written twice through a `fn` prints `2` on all four targets (on erlang it was unbound `Hits` and did not compile, on beam the write was dropped and it printed `0` at exit 0 — C-10 lowered both); `test/beam_memory_noop` — the annotation was a no-op off the BEAM (decision 43; deleted when decision 167 made it a refusal there, `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_off_beam`); and seven refusal cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `"targets"` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `modules/beam/cells/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `modules/beam/cases/beam_memory_pt_write`, `modules/beam/cases/beam_memory_ets_recompose`, `modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets_bump_non_integer` (decision 40) and `modules/beam/cells/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). 1.0.11 front 17 step 1 (decision 168) adds the keyed cells: `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed` (`"targets"` `erlang beam` — two processes writing their own key 20 000 times each print `20000 20000`; the seed's repeated key reads its last value, a key with no row `null`), `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_seed` (a seed that is neither `Dict.empty()` nor `Dict.ofEntries([…])` of literals), `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_recompose` (a row computed from the var's own rows, decision 40's §5(b) diagnostic) and `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_whole_read` (a keyed var named anywhere but as its row read's receiver); none can pass on the parent binary: its seed rule refused `Dict.empty()` with the literal-or-`comptime` message, it refused `keyed: true` on the BEAM, and a `Dict` recompose was exempt. `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` passes on erlang, and the three `run/beam_memory_*` cells and `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` on beam (step 5). `01-checker` step 12 replaces `modules/variant/cells/variant_name_ambiguous` (an erlang-only emit refusal) with `modules/variant/cells/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `modules/variant/run/src/cases/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `modules/section/run/src/cases/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `modules/section/refused/src/cases/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template/run/src/cases/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `modules/try/cells/try_catch_null_and_noreturn_narrowing`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_call_renders`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `modules/try/cells/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `modules/labelled/run/src/cases/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `modules/labelled/run/src/cases/labelled_arguments` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `modules/fn/refused/src/cases/fn_falls_off_end` and `modules/if/refused/src/cases/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `modules/decisions-taken/optional_member_access_needs_safe_call-45/refused/src/cases/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `modules/annotation/cases/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever: 42)]` on a `var`) and `modules/annotation/cases/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `beamMemory`). Pending 0203-a, answered (b), adds `modules/primitive/refused/src/cases/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `modules/primitive/refused/src/cases/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `modules/local/cells/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `modules/local/cells/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` — a module-level `var` written twice through a `fn` prints `2` on all four targets (on erlang it was unbound `Hits` and did not compile, on beam the write was dropped and it printed `0` at exit 0 — C-10 lowered both); `test/beam_memory_noop` — the annotation was a no-op off the BEAM (decision 43; deleted when decision 167 made it a refusal there, `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_off_beam`); and seven refusal cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `"targets"` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `modules/beam/cells/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `modules/beam/cases/beam_memory_pt_write`, `modules/beam/cases/beam_memory_ets_recompose`, `modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets_bump_non_integer` (decision 40) and `modules/beam/cells/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). 1.0.11 front 17 step 1 (decision 168) adds the keyed cells: `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed` (`"targets"` `erlang beam` — two processes writing their own key 20 000 times each print `20000 20000`; the seed's repeated key reads its last value, a key with no row `null`), `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_seed` (a seed that is neither `Dict.empty()` nor `Dict.ofEntries([…])` of literals), `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_recompose` (a row computed from the var's own rows, decision 40's §5(b) diagnostic) and `modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed_whole_read` (a keyed var named anywhere but as its row read's receiver); none can pass on the parent binary: its seed rule refused `Dict.empty()` with the literal-or-`comptime` message, it refused `keyed: true` on the BEAM, and a `Dict` recompose was exempt. `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` passes on erlang, and the three `run/beam_memory_*` cells and `modules/decisions-taken/reported_surface_forms_all_parse-28/cells/module_var` on beam (step 5). `01-checker` step 12 replaces `modules/variant/cases/variant_name_ambiguous` (an erlang-only emit refusal) with `modules/variant/cases/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `modules/variant/run/src/cases/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `modules/section/cases/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `modules/section/cases/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template/cases/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `modules/try/cases/try_catch_null_and_noreturn_narrowing`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_call_renders`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `modules/try/cases/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `modules/labelled/cases/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `modules/labelled/cases/labelled_arguments` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `modules/fn/cases/fn_falls_off_end` and `modules/if/cases/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `modules/decisions-taken/optional_member_access_needs_safe_call-45/refused/src/cases/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `modules/annotation/cases/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever: 42)]` on a `var`) and `modules/annotation/cases/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `beamMemory`). Pending 0203-a, answered (b), adds `modules/primitive/cases/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `modules/primitive/cases/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `modules/local/cases/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `modules/local/cases/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -1427,7 +1427,7 @@ Each was run with the parent binary and fails there as its row describes.
   module-level `val`; `main` imports a value from one, its sibling `label` a type only from the
   other, and both bodies run first, on all four targets. Erlang's `'_botopink_init'/0` called a
   `'__bp_print'/1` the module never defined — `erlc` refused both dependency modules.
-- `modules/string/run/src/cases/string_literal_unicode_escape` (C-36, STD-11 and the locale row): a `\u{…}` escape above
+- `modules/string/cases/string_literal_unicode_escape` (C-36, STD-11 and the locale row): a `\u{…}` escape above
   U+00FF and a raw `ç` print as themselves, alone and inside an array, on all four targets. C-36's
   emitter half (`writeStringFromLexeme` writes a code point's UTF-8 bytes) was already landed, so
   the cell fails on the parent binary only under `LANG=C`, where erlang wrote `é` as `0xE9` and
@@ -1436,7 +1436,7 @@ Each was run with the parent binary and fails there as its row describes.
 - `test/is_truth_table` (C-07's erlang tail, decision 8 §4.1 × §4.2): each form that may follow
   `is` — `i32`, `i8`, `u8`, `f64`, `string`, `bool`, a record, an enum type, `Box<unknown>`,
   `#(i32, string)` — asked of the same ten `unknown` values, and §4.1's conversion inside
-  `if (a is i32)`. `modules/is/run/src/cases/is_truth_table` is the same table on four targets, with tuple rows by
+  `if (a is i32)`. `modules/is/cases/is_truth_table` is the same table on four targets, with tuple rows by
   arity and by element value (`#(2.0, "a") is #(i32, string)` holds); wasm refused it on the parent
   (`cannot box this value as unknown` for an `unknown[]` element, then no run-time test for a tuple
   type). §11's "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no
@@ -1461,11 +1461,11 @@ Each was run with the parent binary and fails there as its row describes.
 - `test/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
   declares `#[@external(.Erlang("lt_greeter", "hello"))]` itself and calls it. It imports nothing, so
   its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
-- `modules/list/cells/list_pattern_spread_alone` (a row `03-beam` measured): `[..all]` as a `case` arm over three
+- `modules/list/cases/list_pattern_spread_alone` (a row `03-beam` measured): `[..all]` as a `case` arm over three
   elements and over `[]`, and `val assert [..every]`, on all four targets. Erlang wrote the pattern
   `[All]`, a one-element list — `case_clause` and "assert pattern did not match" on the parent
   binary. The plain `val [..rest] = xs;` (which erlang also left unbound) is `01-checker` step 13's
-  `modules/val/run/src/cases/val_spread_only_list_pattern`, refused by the checker until the backends lower it.
+  `modules/val/cases/val_spread_only_list_pattern`, refused by the checker until the backends lower it.
 - `modules/decisions-taken/lambda_captured_var_write_refused-148/run/src/cases/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's
@@ -1485,10 +1485,10 @@ right answer on another.
 
 | Cell | Pins |
 |---|---|
-| `modules/narrowing/run/src/cases/narrowing_null_check` | `if (x != null)` over a `?Record` field, a `?string`, a `?T[]` and a `?i32`; `null != x`; `&&` narrowing BOTH names; the else side of `== null`; and that the narrowing ENDS with the branch |
-| `modules/narrowing/run/src/cases/narrowing_null_guard_clause` | `if (x == null) { return …; }` and then the rest of the block — in a top-level `fn` and in a record METHOD, plus the `\|\|` form. Each function is called twice, present and absent |
+| `modules/narrowing/cases/narrowing_null_check` | `if (x != null)` over a `?Record` field, a `?string`, a `?T[]` and a `?i32`; `null != x`; `&&` narrowing BOTH names; the else side of `== null`; and that the narrowing ENDS with the branch |
+| `modules/narrowing/cases/narrowing_null_guard_clause` | `if (x == null) { return …; }` and then the rest of the block — in a top-level `fn` and in a record METHOD, plus the `\|\|` form. Each function is called twice, present and absent |
 | `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
-| `modules/if/refused/src/cases/if_optional_needs_a_binder` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got ?string" — the message spells the type as a source writes it). There is no truthiness on an optional |
+| `modules/if/cases/if_optional_needs_a_binder` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got ?string" — the message spells the type as a source writes it). There is no truthiness on an optional |
 
 **Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
@@ -1496,10 +1496,10 @@ red the assignment — narrowing it would break programs that work today. `if (o
 does not narrow either: only a plain NAME is rebindable. `case x { null { … } _ { … x! … } }` and `if (x)
 { v -> … }` narrow already, each through a channel of its own.
 
-`modules/narrowing/run/src/cases/narrowing_null_check` passes on all four targets since `00 · 05-wasm` landed the missing
+`modules/narrowing/cases/narrowing_null_check` passes on all four targets since `00 · 05-wasm` landed the missing
 unbox (`fix/wasm-optional`): a name a `!= null` test narrows is its PAYLOAD for the branch on wasm
 too, which is what the box needed and what the optional-binding form `if (x) { v -> … }` had always
-done. `modules/narrowing/run/src/cases/narrowing_null_guard_clause` passes on all four targets; beam was red longest, and not
+done. `modules/narrowing/cases/narrowing_null_guard_clause` passes on all four targets; beam was red longest, and not
 for the checker's reason either — it did not compile a module holding an optional reader in a record
 method AND one in a top-level `fn` (`UnknownFunction`, no location — the same program written with
 `??` failed identically).
@@ -1557,10 +1557,10 @@ loop that is a value — a generator whose body is a closed generator scope.
 | `test/loop_generator_expr.bp` | an annotated loop typed `@Generator<i32>`: `yield v` emits, `break v` emits and ends, a bare `break` ends, a captured `var` is the generator's state, and a `for` inside the loop feeds it |
 | `test/loop_future_generator_expr.bp` | a `#[@futureGenerator] loop` awaiting in a plain `fn` body, consumed by a `#[@future]` body's `for await` |
 | `test/loop_yield_nearest_scope.bp` | `yield :out` from inside a `for` names the generator fn; an unannotated `loop` inside a generator fn is an ordinary loop |
-| `modules/loop/run/src/cases/loop_generator_dobros` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
+| `modules/loop/cases/loop_generator_dobros` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
 | `modules/generator/run/src/cases/generator_body_lazy` | 144 B-128: a generator's body runs one step per item asked for — on an `iter fn`, an `iter loop` and a marked lambda `{ iter -> … }`, a print before and after the first `yield` comes out between the items, and an endless generator is consumed by `take(3)`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
 | `modules/generator/run/src/cases/generator_handle_stateful` | 144 B-134: a generator handle is stateful whatever its body — a second `for` over an exhausted handle reads nothing, on an `iter fn` of only literal `yield`s, an `iter fn` that runs code and an `iter loop`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
-| `modules/loop/run/src/cases/loop_range_inclusive` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
+| `modules/loop/cases/loop_range_inclusive` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
 
 The refusal cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
 `for_over_condition`, `for_future_generator_without_await` (`for-over-stream` since front 24),
@@ -1650,7 +1650,7 @@ module exports, so its classes are re-emitted per module and the consumer's valu
 exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
 (`Lg` is declared twice, which is why it always worked), and one of each section head.
 
-`modules/unknown/run/src/cases/unknown_by_value` (1.0.10-beta `00 · 05-wasm` step 2) runs decision 8 §2, §4.1 and §5.2
+`modules/unknown/cases/unknown_by_value` (1.0.10-beta `00 · 05-wasm` step 2) runs decision 8 §2, §4.1 and §5.2
 through `unknown` on every target — `test/case_unknown.bp` states the same rules, and `botopink test`
 does not reach wasm; it prints no unknown float, because commonJS stores nothing extra (§11) and
 prints `2.0` in an `unknown` slot as `2`. `modules/optional/run/src/cases/optional_chain_method` (05 step 9) is a method on
@@ -1701,7 +1701,7 @@ and dies with `{error, badarg}` — which is how it was measured here, on the fi
 type, where inference records no note — it used to answer `0` whatever the names were. The library measurement behind the cell is erika's
 `examples/erika-linq`, 1 passed / 8 failed → 9 / 0 on erlang.
 
-`modules/export/cells/export_name_collision` and `modules/type/run/src/cases/type_name_collision` are the fifth and sixth cells that
+`modules/export/cases/export_name_collision` and `modules/type/run/src/cases/type_name_collision` are the fifth and sixth cells that
 need two modules, and they pin the root the two above sit on: **an exported name resolves by walk
 order**. Every index that answers "which module emits this name" was keyed by the bare symbol NAME
 — `CrossModule.exports`, the erlang / commonJS / beam / wasm import walks that read it, the
@@ -1726,14 +1726,14 @@ crashes: erlang printed the NEIGHBOURING field (`net-note` for `.tag`, and `404`
 method call) at exit 0, where commonJS and wasm printed the right one. The cell walks all three
 axes — the field read, the method call and the construction — and every line asserts the VALUE.
 
-`modules/variant/run/src/cases/variant_name_collision` and `modules/variant/cells/variant_name_ambiguous` are the third axis. Decision
+`modules/variant/run/src/cases/variant_name_collision` and `modules/variant/cases/variant_name_ambiguous` are the third axis. Decision
 21 puts the ENUM and the enum's module inside a variant's atom, and `variant_enum` answered "which
 enum declares `Circle`" by declaration order — first writer wins, mitigated for a `case` SUBJECT
 only. The first cell is the spelling that always had an answer (the enum is written) and asserts
 six values on every target. The second was an erlang-only cell the emitter refused; since
 `01-checker` step 12 the checker answers both halves for every target: a leading dot whose position
 expects an enum is that enum's (`modules/variant/run/src/cases/variant_leading_dot_expected`), and one whose position
-expects nothing is refused naming both enums (`modules/variant/cells/variant_name_ambiguous`).
+expects nothing is refused naming both enums (`modules/variant/cases/variant_name_ambiguous`).
 
 `modules/variant/run/src/cases/variant_positional_payload_same_name` — two modules each declare a payload variant `Item`
 with a different field and a third matches both positionally (commonJS printed `null`; beam bound
@@ -1745,14 +1745,14 @@ the whole value, `03-beam`'s row).
 `modules/variant/run/src/cases/variant_payload_wildcard_and_nested` — `Rect(w, _)`, `Rect(_, h)`, `Circle(_)` and a variant
 nested in another's payload (`Two(Rect(w, _), _)`, `Two(Circle(r), Rect(_, h))`) in one module, on
 all four targets (wasm bound `w` to 0 and answered the nested arms wrong at exit 0, `05-wasm`'s rows).
-`modules/unsigned/cells/unsigned_compare_and_divide` — `u32` above 2^31 and `u64` above 2^63 compared and divided, on
+`modules/unsigned/cases/unsigned_compare_and_divide` — `u32` above 2^31 and `u64` above 2^63 compared and divided, on
 all four targets (wasm read a `u64` signed, decision 319); `u64`'s `%` past 2^53 is
 `codegen/tests/wat.zig`'s, since commonJS aborts it (`04-js`'s step 9).
 `05-wasm`'s printing rows, each on all four targets: `modules/bool/cases/bool_field_print` (a `bool` record field
 or tuple element read alone printed `1` / `0` on wasm), `modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/u64_record_field_print` (a `u64` field
-through the record printer printed signed), `modules/u64/cells/u64_tuple_slot` (a `u64` / `i64` / `u32` tuple
+through the record printer printed signed), `modules/u64/cases/u64_tuple_slot` (a `u64` / `i64` / `u32` tuple
 element — built, read, destructured, bound, compared, nested — was refused on wasm) and
-`modules/optional/cells/optional_u64_to_string` (a `?u64` printed, narrowed, unwrapped and turned into text signed).
+`modules/optional/cases/optional_u64_to_string` (a `?u64` printed, narrowed, unwrapped and turned into text signed).
 
 ### `std_default_fn_in_a_std_module`
 
@@ -1831,23 +1831,23 @@ beam's abort on a float division by zero is their arithmetic by decision 444, wo
 gives it std-wasm's float text, `trim` and case mapping (144 B-78), a string method reached through `?.`
 included (`modules/decisions-taken/commonjs_text_matches_std_wasm-521/run/src/cases/optional_chain_string_text`).
 
-**The language half of `test-cli`** (144 B-29 step H): `modules/tail/run/src/cases/tail_recursive_sum` (the numeric
-program of `backend_exec.sh`, `0 1 55`, beam included), `modules/record/run/src/cases/record_enum_case_lambda` (its
-records / enum / `case` / lambda program, wasm included), `modules/mutual/cells/mutual_recursion_forward_reference`
+**The language half of `test-cli`** (144 B-29 step H): `modules/tail/cases/tail_recursive_sum` (the numeric
+program of `backend_exec.sh`, `0 1 55`, beam included), `modules/record/cases/record_enum_case_lambda` (its
+records / enum / `case` / lambda program, wasm included), `modules/mutual/cases/mutual_recursion_forward_reference`
 (`mutual_recursion.sh`'s forward reference and `isEven` ↔ `isOdd`), `modules/assert/cells/assert_message_aborts`
 (a failing `assert cond, "msg"` aborts naming its message on every target) and
 `test/assert_and_try.bp` (`assert` with a message and `try` in a `test` block). How the runner
 reports a failed test stays `modules/compiler-cli/tests/test_tooling.sh`'s.
 
-**botopink-lang's `examples/`** (144 B-29 step H, decisions 457, 461): `modules/hello/cells/hello`,
+**botopink-lang's `examples/`** (144 B-29 step H, decisions 457, 461): `modules/hello/cases/hello`,
 `modules/modules/cells/modules` (the `mod` / `pub mod` tree; its `docs.md` is the example's README),
-`modules/yamlconf/cells/yamlconf` (a config template lifting the labelled tuple `#(server, debug)`: `8038`,
-`true`) and `modules/yamlconf/cells/yamlconf_unknown_label` (the example's commented-out `cfg.server.prot`,
+`modules/yamlconf/cases/yamlconf` (a config template lifting the labelled tuple `#(server, debug)`: `8038`,
+`true`) and `modules/yamlconf/cases/yamlconf_unknown_label` (the example's commented-out `cfg.server.prot`,
 refused at the label, `this tuple has no element labeled \`prot\``), and the suite
 `test/stdlib-tour/` (its `test {}` blocks). No gate ran them before: `yamlconf`'s
 `import {conf} from "yamlconf"` is `import {yamlconf.conf}` since decision 337, and
 `stdlib-tour`'s two record tests asserted the identity `==` decision 210 replaced, so they now
-assert structural keys and dedup. The move found two defects, both fixed since: `modules/yamlconf/cells/yamlconf`
+assert structural keys and dedup. The move found two defects, both fixed since: `modules/yamlconf/cases/yamlconf`
 on wasm printed `1` for the lifted tuple's `bool` (`@print(cfg.debug)`), and `test/stdlib-tour`'s
 `Set.fromList` of structurally-equal records kept three members on commonJS where erlang and beam
 keep two; both answer their snapshots on every target. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) moved to erika's
@@ -1856,11 +1856,11 @@ every target since 144 B-45, B-50 and `modules/generic/cells/generic_method_arra
 
 `front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/decisions-taken/wasm_prints_std_wasm_text-441/cells/float_shortest_text` (a
-float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float/run/src/cases/float_slot_keeps_f64`
-(a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64/cells/i64_full_width`
+float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float/cases/float_slot_keeps_f64`
+(a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64/cases/i64_full_width`
 (`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and four cells refused on
 wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional/cells/optional_index_arithmetic`
-(`xs[i] + 1`), `modules/i64/cells/i64_in_array_slot`, `modules/fn/cells/fn_value_float_argument`,
+(`xs[i] + 1`), `modules/i64/cells/i64_in_array_slot`, `modules/fn/cases/fn_value_float_argument`,
 `modules/untyped/cells/untyped_array_float_push` (`modules/generic/cells/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
 float goes into a generic slot in its box in a GC module).
 
@@ -1992,15 +1992,15 @@ function's, with one parameter and with none (`b.run { -> 10 }`, `twice { -> 4 }
 targets — the parent refused the parameters as unbound and the plain function's lambda as an arity error, and wasm and beam
 lowered a method's trailing lambda wrong.
 
-Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `modules/defer/run/src/cases/defer_block_end_reverse_order`
-(the end of the block, reverse order), `modules/defer/run/src/cases/defer_scope_is_block` (a bare block runs its own), `modules/defer/run/src/cases/defer_reads_latest_value`
-(the expression is evaluated when it runs), `modules/value/cells/value_if_reassigns_var` (a `var` a value `if` reassigns in a branch, `else if` included, holds it after the `if`), `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s or `if`'s included, reaches the defer when the arm panics), `modules/defer/run/src/cases/defer_return_value_before_defers` (`return n` is computed before a defer
-that changes `n`), `modules/defer/run/src/cases/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
-`modules/defer/run/src/cases/defer_try_catch_inside` (a `try … catch` region written in the body is handled there, decision 866),
-`modules/defer/run/src/cases/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),
-`modules/defer/cells/defer_async_after_awaits` (a `@Async` body: after its awaits) and `modules/defer/cells/defer_stream_consumer_stops` (a `@AsyncIter`: the
+Decision 539 (`defer`) adds nine cells on all four targets and five refusals. `modules/defer/cases/defer_block_end_reverse_order`
+(the end of the block, reverse order), `modules/defer/cases/defer_scope_is_block` (a bare block runs its own), `modules/defer/cases/defer_reads_latest_value`
+(the expression is evaluated when it runs), `modules/value/cases/value_if_reassigns_var` (a `var` a value `if` reassigns in a branch, `else if` included, holds it after the `if`), `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/defer_reads_var_set_in_arm` (a reassignment inside a nested arm, a value `case`'s or `if`'s included, reaches the defer when the arm panics), `modules/defer/cases/defer_return_value_before_defers` (`return n` is computed before a defer
+that changes `n`), `modules/defer/cases/defer_in_loop_break_continue` (the end of the round, `continue`, `break`),
+`modules/defer/cases/defer_try_catch_inside` (a `try … catch` region written in the body is handled there, decision 866),
+`modules/defer/cases/defer_panic_attempt_catches` (a panic `attempt` catches; wasm runs with exceptions on, decision 518),
+`modules/defer/cases/defer_async_after_awaits` (a `@Async` body: after its awaits) and `modules/defer/cells/defer_stream_consumer_stops` (a `@AsyncIter`: the
 consumer's `break` and the end of the stream both end in the same two lines, so a lazy producer and an eager one answer alike);
-the refusals, each located at the jump, are `modules/defer/refused/src/cases/defer_refuses_return` (`defer-return`), `defer_refuses_break`
+the refusals, each located at the jump, are `modules/defer/cases/defer_refuses_return` (`defer-return`), `defer_refuses_break`
 (`defer-break`), `defer_refuses_continue` (`defer-continue`), `defer_refuses_yield` (`defer-yield`) and `defer_refuses_await`
 (`defer-await`), `defer_refuses_throw` (`defer-throw`) and `defer_refuses_try` (`defer-try`, a `try` whose region is not written in the body; decision 866).
 Decision 539 (6) (`Closeable` ambient, 144 B-96) adds `modules/decisions-taken/defer_runs_at_block_end-539/run/src/cases/ambient_behavior_parameter` (`Closeable` and `Display`
@@ -2025,13 +2025,13 @@ all four targets (commonJS read a property named after the binding and died on `
 `self.startsWith`; erlang emitted `startsWith(Self, …)` into the type's module, undefined. A `test/`
 cell: wasm has no `String.parseInt` (`stringSlice0/2`, `05-wasm`).
 `fix-121-gaps` (the gaps front 121's `onze-content` met) adds three cells on all four targets:
-`modules/var/cells/var_written_in_branch_read_after` — a `var` written in the arms of a statement `case` inside a
+`modules/var/cases/var_written_in_branch_read_after` — a `var` written in the arms of a statement `case` inside a
 `for`, in an `if` block ending in `return` (and in one holding a nested `return`), two `var k` in
 sibling `else if` branches of a `while` body, and `val kids = case c { Box(kids) -> kids; … }` (erlang
 refused the module, `Out@1` unbound; beam lost the arms' writes at the end of each round; commonJS ran
 a `_` arm after an arm whose block answered nothing); `modules/case/cases/case_arm_ending_in_for` — a statement
 `case` arm whose block ends in a `for` (commonJS fell into the next arm, erlang refused the module,
-beam dropped a `push` that was an arm's last statement); `modules/record/run/src/cases/record_update_on_lambda_parameter` —
+beam dropped a `push` that was an arm's last statement); `modules/record/cases/record_update_on_lambda_parameter` —
 `xs.map({ b -> Brk(..b, active: false) })` and a block lambda ending in the update (commonJS, erlang
 and beam built `Brk(b, false)`, wasm trapped).
 
@@ -2040,7 +2040,7 @@ and beam built `Brk(b, false)`, wasm trapped).
 
 `docs.md` is botopink-lang's language reference, moved here from the repository root by 144 B-29
 step I with the manifest schema (`docs/botopink-json.md` until then, now § The manifest schema) and
-the language example of `README.md` (`modules/greet/cells/greet`). It holds no example of its own: an example is
+the language example of `README.md` (`modules/greet/cases/greet`). It holds no example of its own: an example is
 a line `<!-- example: modules/<cell> -->` or `<!-- example: test/<suite> -->`, alone on its line, its
 path relative to this directory, rendered from the cell's `src/` and `snapshot/`. Beside each cell
 the reference names, the cell's `docs.md` quotes the reference text it shows.
@@ -2078,7 +2078,7 @@ job starts (`run.sh: the beam target needs erlc`); it never runs fewer targets a
 (decision 67). The tool set is the gate's own — `node`, `erl`, `erlc`, `wasmtime` — and nothing
 else: the four-target run is green with `PATH=/usr/bin:/bin:~/.wasmtime/bin` and no other variable
 but `HOME` and `LANG=C.UTF-8` (front `01-compiler/12-language-tests`). Under a locale that is not
-UTF-8 (`LANG=C`, or none) `modules/string/run/src/cases/string_split_empty_separator` is red on erlang and beam: `erl` writes
+UTF-8 (`LANG=C`, or none) `modules/string/cases/string_split_empty_separator` is red on erlang and beam: `erl` writes
 `é` as the latin-1 byte `0xE9` where commonJS writes UTF-8 — a program's stdout that depends on the
 host locale is a backend defect, not a reason to pin a locale in the runner.
 
@@ -2197,7 +2197,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decisions-taken/external_async_result_rejection_is_error-126/cells/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `modules/decisions-taken/any_type_absent-31/cells/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
-| `modules/decisions-taken/wasm_clock_fs_refused-241/cells/std_template_host_fns_across_modules`, `modules/import/cells/import_std_groups`, `modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
+| `modules/decisions-taken/wasm_clock_fs_refused-241/cells/std_template_host_fns_across_modules`, `modules/import/cases/import_std_groups`, `modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
 | `modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` |
 | `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_rfc3339_domain`, `modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_civil_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_format_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_offset_past_rfc3339_aborts`, `modules/std/cells/std_generic_primitives`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
@@ -2398,7 +2398,7 @@ row is pinned by a cell that passes on every target its kind has:
 
 **The range pattern — decision 53.** `...` is inclusive in a pattern; `..` is exclusive in a slice
 and in `for (a..b)`, Zig's split. `1..9` in an arm is `error[pattern-range-exclusive]` located at
-the `..`, with `1...9` as the hint (`modules/pattern/cells/pattern_range_exclusive`). `1...9` matches both endpoints
+the `..`, with `1...9` as the hint (`modules/pattern/cases/pattern_range_exclusive`). `1...9` matches both endpoints
 and nothing outside them on all four targets — in a `case` used as a value (`modules/case/cases/case_range_value`,
 five probes) and as a typed function's return (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`
 prints `0 1 1 0` for 0, 1, 9 and 10). **An endpoint probe is the minimum a range cell may print**: a
@@ -2468,14 +2468,14 @@ pin the binding of `T`, field and positional destructuring, a custom hook compos
 void `use`, an unannotated `fn … -> Element` as an ordinary function, the rules of hooks (decision 357,
 `use-not-top-level`; rows 4b and 4c were parse errors of the static prefix before it),
 `use-without-component` (a `-> Element` body, a plain `-> string` body, a `#[@future]` body —
-`modules/use/refused/src/cases/use_future_without_owner`, decisions 89/90 revoked) and `use-of-non-context-fn` (a
+`modules/use/cases/use_future_without_owner`, decisions 89/90 revoked) and `use-of-non-context-fn` (a
 module-level `val`, decision 87). A component's caller awaits it:
 `modules/decisions-taken/body_marker_whole_return_type-553/cells/context_use` drives the components from a `#[@future] fn run`, and the `test/` cells await
 them (a `test` body is a future context). `test/use_future_context.bp` is the server component that
 `use`s and `await`s under a `@Component` return. A function has one return, so it has one
 effect (front 24, decision 118): the annotation rules a duplicate-effect or wrapper-without-annotation cell would pin
 are gone.
-`modules/use/refused/src/cases/use_tuple_arity` and `modules/use/refused/src/cases/use_tuple_of_non_tuple` are front 19 step 3's
+`modules/use/cases/use_tuple_arity` and `modules/use/cases/use_tuple_of_non_tuple` are front 19 step 3's
 `use-tuple-arity` refusals, located at the binding.
 
 **Decisions 63–66, one cell or one sentence each (C-16).**
@@ -2515,7 +2515,7 @@ are gone.
   change (`modules/decorator/refused/src/cases/decorator_imported_function_name_conflict` pins `src/main.bp:21:3`, the
   `#[tag]` under an `@emit(…)` argument the formatter opens over four lines).
 
-1.0.11 front 14 step 1 adds `modules/comptime/refused/src/cases/comptime_method_nothing_answers` — a decorator body (untyped)
+1.0.11 front 14 step 1 adds `modules/comptime/cases/comptime_method_nothing_answers` — a decorator body (untyped)
 calling `.frobnicate(1, 2)` on a string, which no primitive type and no host function answers: the
 compiler refuses it before any comptime runtime runs, the message names the call by its `line:col`
 in the body and the caret is the annotation that ran it.
@@ -2539,7 +2539,7 @@ B-13 changed no code); `modules/decisions-taken/dict_bump_counts-340/cells/dict_
 `external_wasm_wasi_cell_not_enum`, `external_wasm_std_cell_not_string` (a value of another kind, at
 the argument), `external_wasm_unknown_label`, `external_wasm_two_cells` (at the argument),
 `external_wasm_op_unknown` and `external_wasm_wasi_unknown` (at the annotation),
-`external_wasm_fn_cell_signature` (at the argument, decision 610); and `modules/if/run/src/cases/if_binding_before_loop_closure` (an explicit `if (x) { v -> … }`
+`external_wasm_fn_cell_signature` (at the argument, decision 610); and `modules/if/cases/if_binding_before_loop_closure` (an explicit `if (x) { v -> … }`
 before a `for` body binding `v` again — the OTP compiler refused beam's `make_fun3` on B-34's base).
 
 144 B-10 (decision 430, the gaps a library works around) adds `modules/two/run/src/cases/two_modules_one_type_name` —

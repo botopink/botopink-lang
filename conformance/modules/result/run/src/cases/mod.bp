@@ -1,7 +1,0 @@
-pub mod result_four_ways;
-pub mod result_i64_map_flat_map;
-pub mod result_method_throw;
-pub mod result_pattern_beside_enum_variant;
-pub mod result_string_payloads;
-pub mod result_throw_try;
-pub mod result_try_each_operand;

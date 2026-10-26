@@ -1,3 +1,3 @@
 # hello
 
-[cells/hello/src/main.bp](cells/hello/src/main.bp)
+[cases/hello/src/main.bp](cases/hello/src/main.bp)

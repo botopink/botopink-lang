@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: defer-continue: `continue` inside a `defer` leaves the path the deferred code runs on
-at src/cases/defer_refuses_continue/mod.bp:6:13
