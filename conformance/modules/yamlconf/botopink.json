@@ -1,1 +1,1 @@
-{ "name": "yamlconf" }
+{"name": "yamlconf", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

@@ -1,0 +1,18 @@
+botopink-cell 2
+== call_unknown_without_narrowing
+refused error: an `unknown` value cannot be used as another type without testing it
+at src/main.bp:13:18
+== typeinfo_all_value_unknown
+refused error: an `unknown` value cannot be used as another type without testing it
+at src/main.bp:16:38
+== is_fn_narrows_unknown
+out UTC
+out BRT
+out not a factory
+out not a factory
+out not a factory
+out 42
+out 2
+out -1
+out true
+out false

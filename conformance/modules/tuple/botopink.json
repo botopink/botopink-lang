@@ -1,1 +1,1 @@
-{ "name": "tuple" }
+{"name": "tuple", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

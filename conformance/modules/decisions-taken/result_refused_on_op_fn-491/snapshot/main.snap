@@ -1,0 +1,7 @@
+botopink-cell 2
+== external_result_on_fn_cell
+refused error: `magnitude`'s `.JavaScript(body: …)` takes no `result:` — a `body:` cell is not a host call that can fail (decision 491)
+at src/main.bp:11:3
+== external_result_on_wasm_op_cell
+refused error: `floor`'s `.Wasm(op: …)` takes no `result:` — an `op:` cell is not a host call that can fail (decision 491)
+at src/main.bp:6:3

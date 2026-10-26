@@ -1,0 +1,7 @@
+botopink-cell 2
+== yamlconf
+out 8038
+out true
+== yamlconf_unknown_label
+refused error: this tuple has no element labeled `prot`
+at src/main.bp:15:22

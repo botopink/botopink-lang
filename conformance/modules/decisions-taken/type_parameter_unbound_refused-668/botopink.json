@@ -1,1 +1,1 @@
-{ "name": "type_parameter_unbound_refused-668" }
+{"name": "type_parameter_unbound_refused-668", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

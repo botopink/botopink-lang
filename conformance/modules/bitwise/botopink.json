@@ -1,1 +1,1 @@
-{ "name": "bitwise" }
+{"name": "bitwise", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

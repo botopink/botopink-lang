@@ -1,1 +1,1 @@
-{ "name": "inline_parameter_record_type-207" }
+{"name": "inline_parameter_record_type-207", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

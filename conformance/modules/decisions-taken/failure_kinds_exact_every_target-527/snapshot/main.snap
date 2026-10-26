@@ -1,0 +1,15 @@
+botopink-cell 2
+== assert_failure_is_panic
+out Ok 3
+out Error panic: assertion failed: x > 0 at src/main.bp:10:5
+out Error panic: assertion failed: x > 0 && s != "a\"b": x must be positive at src/main.bp:15:5
+out after
+== int_division_by_zero_is_panic
+out Ok 3
+out Error panic: integer division by zero: / on i32 at src/main.bp:10:14
+out Error panic: integer division by zero: % on i32 at src/main.bp:14:14
+out after
+== std_failure_attempt
+out Error panic: the body exploded
+out Ok 42
+out after

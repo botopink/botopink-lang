@@ -1,1 +1,1 @@
-{ "name": "primitive_widths_are_types-617" }
+{"name": "primitive_widths_are_types-617", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

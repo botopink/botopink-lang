@@ -1,1 +1,1 @@
-{ "name": "case_optional_bare_name_refused-980" }
+{"name": "case_optional_bare_name_refused-980", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

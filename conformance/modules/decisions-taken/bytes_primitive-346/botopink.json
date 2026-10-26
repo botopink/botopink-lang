@@ -1,1 +1,1 @@
-{ "name": "bytes_primitive-346" }
+{"name": "bytes_primitive-346", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "anonymous_default_function-289" }
+{"name": "anonymous_default_function-289", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

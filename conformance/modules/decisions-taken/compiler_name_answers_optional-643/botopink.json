@@ -1,1 +1,1 @@
-{ "name": "compiler_name_answers_optional-643" }
+{"name": "compiler_name_answers_optional-643", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

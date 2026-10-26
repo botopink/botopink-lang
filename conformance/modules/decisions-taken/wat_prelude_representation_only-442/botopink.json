@@ -1,1 +1,1 @@
-{ "name": "wat_prelude_representation_only-442" }
+{"name": "wat_prelude_representation_only-442", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

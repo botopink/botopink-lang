@@ -1,1 +1,1 @@
-{ "name": "math_same_bits_every_target-263" }
+{"name": "math_same_bits_every_target-263", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

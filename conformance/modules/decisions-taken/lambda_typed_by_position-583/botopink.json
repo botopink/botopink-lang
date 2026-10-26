@@ -1,1 +1,1 @@
-{ "name": "lambda_typed_by_position-583" }
+{"name": "lambda_typed_by_position-583", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

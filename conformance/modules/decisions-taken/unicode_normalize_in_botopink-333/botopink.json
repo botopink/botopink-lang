@@ -1,1 +1,1 @@
-{ "name": "unicode_normalize_in_botopink-333" }
+{"name": "unicode_normalize_in_botopink-333", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

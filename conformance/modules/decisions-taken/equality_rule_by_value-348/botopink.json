@@ -1,1 +1,1 @@
-{ "name": "equality_rule_by_value-348" }
+{"name": "equality_rule_by_value-348", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

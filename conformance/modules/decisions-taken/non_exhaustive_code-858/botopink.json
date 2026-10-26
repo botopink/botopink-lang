@@ -1,1 +1,1 @@
-{ "name": "non_exhaustive_code-858" }
+{"name": "non_exhaustive_code-858", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

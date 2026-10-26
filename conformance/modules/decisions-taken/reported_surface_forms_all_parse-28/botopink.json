@@ -1,1 +1,1 @@
-{ "name": "reported_surface_forms_all_parse-28" }
+{"name": "reported_surface_forms_all_parse-28", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

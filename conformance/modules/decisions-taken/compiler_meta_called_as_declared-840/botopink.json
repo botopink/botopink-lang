@@ -1,1 +1,1 @@
-{ "name": "compiler_meta_called_as_declared-840" }
+{"name": "compiler_meta_called_as_declared-840", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

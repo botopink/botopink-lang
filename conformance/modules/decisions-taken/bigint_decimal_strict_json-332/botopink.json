@@ -1,1 +1,1 @@
-{ "name": "bigint_decimal_strict_json-332" }
+{"name": "bigint_decimal_strict_json-332", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

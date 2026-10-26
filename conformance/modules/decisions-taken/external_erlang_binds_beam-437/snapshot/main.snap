@@ -1,0 +1,7 @@
+botopink-cell 2
+== external_beam_removed
+refused error: `.Beam(…)` names a variant by its leading dot, and nothing here says which type declares it
+at src/main.bp:8:47
+== external_inline_unread
+refused error: `Implementation.JavaScript` has no parameter named `inline`
+at src/main.bp:12:32

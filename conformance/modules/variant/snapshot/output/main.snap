@@ -1,4 +1,0 @@
-botopink-cell 1
-out == variant_name_ambiguous
-out refused error: `Circle` is a variant of `Shape` and of `Hole`, and nothing here says which — write `Shape.Circle` or `Hole.Circle`
-out at src/main.bp:25:13

@@ -1,1 +1,1 @@
-{ "name": "import_dotted_and_braced_paths_one_tree-107" }
+{"name": "import_dotted_and_braced_paths_one_tree-107", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

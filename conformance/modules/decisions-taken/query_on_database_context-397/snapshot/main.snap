@@ -1,0 +1,12 @@
+botopink-cell 2
+== template_method_behavior_method
+out behavior hello, Ana
+out default hello, Caio
+out default hi, Duda
+out template hello, Bia
+== template_method_own_method
+out method hello, Ana
+out template hello, Bia
+== template_method_receiver_mismatch
+refused error: type mismatch: expected Named, got Robot
+at src/main.bp:20:11

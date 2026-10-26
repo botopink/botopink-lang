@@ -1,0 +1,6 @@
+botopink-cell 2
+== mutual_recursion_forward_reference
+out true
+out false
+out false
+out true

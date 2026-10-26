@@ -1,1 +1,1 @@
-{ "name": "type_application_versus_comparison-255" }
+{"name": "type_application_versus_comparison-255", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

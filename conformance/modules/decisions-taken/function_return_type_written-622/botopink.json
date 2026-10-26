@@ -1,1 +1,1 @@
-{ "name": "function_return_type_written-622" }
+{"name": "function_return_type_written-622", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

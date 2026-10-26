@@ -1,0 +1,8 @@
+botopink-cell 2
+== decorator_any_params_outside_decl
+refused error[any-params-outside-decl]: `fn(..)` names a function of any parameters only as a decorator's `@Decl<fn(..) -> R>` pattern (decision 316)
+at src/main.bp:7:16
+label write the parameters' types
+== wrap_with_refused
+refused error: compiler-member-unknown: `Compiler` has no member `wrapWith`
+at src/main.bp:8:14

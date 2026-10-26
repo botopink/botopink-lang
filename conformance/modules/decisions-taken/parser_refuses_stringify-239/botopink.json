@@ -1,1 +1,1 @@
-{ "name": "parser_refuses_stringify-239" }
+{"name": "parser_refuses_stringify-239", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

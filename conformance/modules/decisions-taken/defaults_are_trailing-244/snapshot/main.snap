@@ -1,0 +1,24 @@
+botopink-cell 2
+== fn_param_default_not_trailing
+refused error: fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.
+at src/main.bp:7:21
+label fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.
+== method_param_default_not_trailing
+refused error: fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.
+at src/main.bp:6:36
+label fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.
+== record_field_default_not_trailing
+refused error[field-default-trailing-only]: a field with a default must be followed only by fields with defaults
+at src/main.bp:7:29
+label a required field after a defaulted one `host`
+== variant_payload_default_not_trailing
+refused error[field-default-trailing-only]: a field with a default must be followed only by fields with defaults
+at src/main.bp:6:26
+label a required field after a defaulted one `height`
+== fn_defaults_values
+out h:80
+out h:90
+out 0
+out 2
+out 7
+out 3

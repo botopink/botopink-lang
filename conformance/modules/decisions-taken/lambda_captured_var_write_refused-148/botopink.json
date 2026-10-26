@@ -1,1 +1,1 @@
-{ "name": "lambda_captured_var_write_refused-148" }
+{"name": "lambda_captured_var_write_refused-148", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

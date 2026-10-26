@@ -1,0 +1,4 @@
+botopink-cell 2
+== for_over_condition
+refused error: for-over-condition: `for` iterates a collection, a range or an iterator — a condition is a `while`
+at src/main.bp:8:5

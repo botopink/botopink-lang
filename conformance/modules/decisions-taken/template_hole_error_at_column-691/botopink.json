@@ -1,1 +1,1 @@
-{ "name": "template_hole_error_at_column-691" }
+{"name": "template_hole_error_at_column-691", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

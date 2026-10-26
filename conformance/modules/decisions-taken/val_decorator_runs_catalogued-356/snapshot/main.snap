@@ -1,0 +1,24 @@
+botopink-cell 2
+== typeinfo_all_val_and_fn
+refused error: typeinfo-all-mixed: `#[tag]` is carried by the function `twice` and by the val `limit`, and one query answers one kind of value
+at src/main.bp:20:11
+== val_decorator_add_member
+refused error: decorator-member-without-type: `#[helper]` on the val `limit` calls `decl.addMember`, and a member belongs to a type
+at src/main.bp:12:3
+== val_decorator_add_type
+refused error: decorator-type-without-owner: `#[helper]` on the val `limit` calls `decl.addType`, and an associated type belongs to a type
+at src/main.bp:10:3
+== val_decorator_on_var
+refused error: `#[mark]` annotates the module `var` `count`, and a decorator runs on a `val`, never on a `var`
+at src/main.bp:11:3
+== val_decorator_runs
+refused error: #[mark] ran on the val one
+at src/main.bp:11:3
+== val_decorator_catalogue
+out port
+out i32
+out []
+out 2
+out port i32
+out host 
+out 8081

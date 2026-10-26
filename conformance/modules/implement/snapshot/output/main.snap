@@ -1,5 +1,0 @@
-botopink-cell 1
-out == implement_clause_for
-out refused error[implement-clause-for]: `for` in a type's `implement` clause
-out at src/main.bp:11:17
-out label the type is the receiver already

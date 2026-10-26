@@ -1,7 +1,0 @@
-botopink-cell 1
-out == local_binding_escapes
-out refused error: unbound variable 'v' — `v` is a local of `holder`, and a local ends with its body
-out at src/main.bp:15:12
-out == local_shadow_ends_with_body
-out 3
-out p:x

@@ -1,1 +1,1 @@
-{ "name": "hooks_decorator_runs_last-372" }
+{"name": "hooks_decorator_runs_last-372", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

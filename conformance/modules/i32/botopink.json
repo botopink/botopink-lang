@@ -1,1 +1,1 @@
-{ "name": "i32" }
+{"name": "i32", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

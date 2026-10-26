@@ -1,1 +1,1 @@
-{ "name": "contract_required_member_met_by_type-872" }
+{"name": "contract_required_member_met_by_type-872", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

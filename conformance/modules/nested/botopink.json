@@ -1,1 +1,1 @@
-{ "name": "nested" }
+{"name": "nested", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

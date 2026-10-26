@@ -1,0 +1,69 @@
+botopink-cell 2
+== compiler_decorator_three_kinds
+out NEGATIVE BALANCE Account positive
+out 0
+out negative balance
+out negative balance (positive)
+== decorator_member_captures
+out 0
+out Signup: invalid
+== external_library_source_annotation
+out [3, 2, 1]
+== external_library_source_beside_emit
+out hi
+out [3, 2, 1]
+== external_library_source_beside_emit_split
+out hi
+out [3, 2, 1]
+== external_library_source_beside_member
+out tagged
+out [3, 2, 1]
+== builtin_module_not_lowered
+refused error: builtin-not-lowered: `@module()` is declared but no target lowers it
+at src/main.bp:8:13
+== compiler_output_outside_decorator
+refused error: compiler-output-outside-decorator: `compiler.setMeta` writes to the annotated declaration, and only a decorator has one
+at src/main.bp:11:14
+== declare_in_behavior
+refused error: declare-in-behavior: `Greeter.greet` is a `declare fn` inside a behavior — a behavior declares a member's signature, or a `default fn` with a body
+at src/main.bp:7:16
+== declare_without_implementation
+refused error: declare-without-implementation: `now` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:6:12
+== declare_without_implementation_method
+refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:7:20
+== declare_without_implementation_static
+refused error: declare-without-implementation: `Clock.ticks` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:7:20
+== implementation_twice
+refused error: implementation-twice: `magnitude` is implemented twice for `.JavaScript` — one implementation per target
+at src/main.bp:7:3
+== removed_type_bare_param
+refused error[removed-type-bare-param]: the type of a type is written `type<T>`
+at src/main.bp:6:29
+label write `type<T>`
+== type_param_binds_mismatch
+refused error: type mismatch: `#[provides]`'s `t` binds `T`, which is `i32` here, to `string`
+at src/main.bp:13:12
+== typeinfo_of_value
+refused error: typeinfo-unknown-declaration: `@typeInfo` reflects a declaration this module declares or imports, and this names none
+at src/main.bp:10:38
+== init_executor_before_main
+out page home
+out again home
+out layout Shell
+out again Shell
+out view Shell
+out again Shell
+out hello
+out greet
+out main
+out home
+out t
+out banner
+== type_param_generic_form
+out greeting
+out hello
+out 3
+out 9
