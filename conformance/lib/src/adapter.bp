@@ -2,12 +2,12 @@
 //// one spot a landing of its piece changes, and until then it refuses by name (never a silent stub).
 //// See `../docs.md` for which function waits on what.
 
-import {failure.panic, compiler.Diagnostic, compiler.Module, compiler.RunFailure} from "std";
+import {io.os, compiler.Diagnostic, compiler.Module, compiler.RunFailure} from "std";
 
-/// The target the program runs on: `commonJS`, `erlang`, `beam` or `wasm`. Waits on 989 (7), piece 3:
-/// `io.os.target()`. It becomes `return os.target();`.
+/// The target the program runs on: `commonJS`, `erlang`, `beam` or `wasm` (989 (7), piece 3:
+/// `io.os.target()`, never readable at comptime).
 pub fn target() -> string {
-    panic("needs 989 (7): io.os.target()");
+    return os.target();
 }
 
 /// The `called from` frames of a refusal, innermost first (989 (4), piece 4: `Diagnostic.from`).
