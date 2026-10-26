@@ -11019,7 +11019,7 @@ const Emitter = struct {
     /// spread's value when the literal has one. The spread arrives in one of
     /// two fields: `spreadExpr` for an expression, `spread` for a bare name
     /// (`[1, 2, ..rest]`) — which used to be dropped, so the literal was its
-    /// own elements and `list[3]` read past the end (`modules/array/run/src/cases/array_spread_literal`).
+    /// own elements and `list[3]` read past the end (`modules/array/cases/array_spread_literal`).
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
         if (al.spreadExpr) |se| return self.lowerListOf(al.elems, se.*);
         if (al.spread) |name| if (name.len > 0) {

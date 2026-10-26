@@ -400,7 +400,7 @@ codegen/
   `fs.globSync` — and CI installs 22) since `fix/js-instanceof-boundary`, and the rename is
   type-naive, so it reaches every `.reverse()` call site and not only the ones
   inference typed. Pinned by
-  `conformance/modules/array/run/src/cases/array_reverse_answers_a_new_array`, which reads the
+  `conformance/modules/array/cases/array_reverse_answers_a_new_array`, which reads the
   receiver AFTER the call — no commonJS snapshot exercises `reverse` at all.
 - **The only external spelling is `#[@external(.<Target>(…))]`.** `FnDecl.isExternal`
   (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
@@ -854,8 +854,8 @@ codegen/
 - **A statement `v.push(x)` on a `var` Array** (a module-level `var` — `module_vars` — or a mutable local —
   `local_vars`; not a parameter, a `val` or a field access) lowers to the rebinding `v = v.concat([x])`
   (`pushRebind`), as erlang's `receiverMutation` does (decisions 447 (2), 448 (2), 547); JavaScript's in-place
-  `push` grew the array every binding held (`modules/array/run/src/cases/array_push_rebinds_var`). A `v.pop()` on such a `var` (`popRebind`) answers `[v.at(-1), v = v.slice(0, -1)][0]` in an expression and
-  `v = v.slice(0, -1)` as a statement, as erlang's `popStep` does (`modules/array/run/src/cases/array_pop_rebinds_var`).
+  `push` grew the array every binding held (`modules/array/cases/array_push_rebinds_var`). A `v.pop()` on such a `var` (`popRebind`) answers `[v.at(-1), v = v.slice(0, -1)][0]` in an expression and
+  `v = v.slice(0, -1)` as a statement, as erlang's `popStep` does (`modules/array/cases/array_pop_rebinds_var`).
 
 
 ### erlang
@@ -1470,7 +1470,7 @@ codegen/
   `var` the rest is written back through its memory. The template alone
   (`lists:last/1`) read the element and left the list, so a
   `while (xs.length() > 0)` over it never ended
-  (`conformance/modules/array/run/src/cases/array_pop_removes`).
+  (`conformance/modules/array/cases/array_pop_removes`).
   A local closure whose body reassigns variables of the enclosing function
   (`val emit = { t -> toks = toks.append([t]); }`) cannot rebind what it
   captured, so it is lowered with those variables as an extra last parameter and
@@ -2177,7 +2177,7 @@ codegen/
   literal's spread arrives in `spreadExpr` for an expression and in `spread`
   for a name (`[1, 2, ..rest]`). Only the first was read, so the literal was
   its own elements and `list[3]` read past the end — at exit 0
-  (`modules/array/run/src/cases/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
+  (`modules/array/cases/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
 
 - **A literal table keeps one element's stack slots, not all of them**
   (`lowerListOf`, `countLocalsInExpr`'s `.arrayLit` arm): elements are lowered

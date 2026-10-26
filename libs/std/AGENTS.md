@@ -295,7 +295,7 @@ refuses a draw before any seed there (decision 451) —, the rest `fn:` bodies a
 the end of `io/random.bp`; `modules/decisions-taken/seeded_random_std_wasm-451/cells/std_random_on_every_target`,
 `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/comptime_random_seeded`, `modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/comptime_random_unseeded`).
 `array.range` / `array.repeat` build by doubling, a range of one being its
-element, and wasm lowers them from their bodies (`modules/array/run/src/cases/array_range_and_repeat`); no
+element, and wasm lowers them from their bodies (`modules/array/cases/array_range_and_repeat`); no
 std module holds a module-level `var` (on erlang it lowers to `std@beam`,
 which a std module does not import). `encoding`, `querystring` and `unicode`
 build and run on wasm (their `fn:` bodies, decision 238; `unicode.normalize`

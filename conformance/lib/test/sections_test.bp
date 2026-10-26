@@ -1,0 +1,165 @@
+//// The sectioned `snapshot/main.snap` of decision 989 (5): parse and render, the section a target
+//// answers, and the candidate a changed case yields.
+
+import {sections.parseFile, sections.renderFile, sections.find, sections.same, sections.renderCandidate, sections.Section, sections.SnapFile};
+import {observe.Observed, observe.assemble, observe.reds, observe.refusalOf, observe.refusedAnswer, observe.ranAnswer};
+import {records.Snap, records.Refusal, records.Malformed};
+
+val FILE: string = "botopink-cell 2\n== alpha\nout 1\nout 2\n== alpha on erlang\nout 1\nout 3\n== beta\nout x\nno-final-newline\n== gamma\nrefused error: type mismatch\nat src/main.bp:2:18\nlabel here\n== empty\n";
+
+fn parsed() -> string {
+    return renderFile(try parseFile(FILE) catch { m ->
+        return "malformed " + m.reason;
+    });
+}
+
+fn bodyOn(name: string, target: string) -> string {
+    val file = try parseFile(FILE) catch { m ->
+        return "malformed";
+    };
+    val s = find(file, name, target);
+    if (s) {
+        x ->
+        return x.body;
+    }
+    return "none";
+}
+
+test "parse then render is the file byte for byte" {
+    assert parsed() == FILE;
+}
+
+test "a file with only the header has no section" {
+    assert renderFile(try parseFile("botopink-cell 2\n") catch { m ->
+        return;
+    })
+        == "botopink-cell 2\n";
+}
+
+test "a departure section is the answer on its target, the plain section on every other" {
+    assert bodyOn("alpha", "erlang") == "out 1\nout 3\n";
+    assert bodyOn("alpha", "commonJS") == "out 1\nout 2\n";
+    assert bodyOn("alpha", "wasm") == "out 1\nout 2\n";
+    assert bodyOn("alpha", "beam") == "out 1\nout 2\n";
+    assert bodyOn("nothing", "beam") == "none";
+}
+
+fn refused(r: Result<SnapFile, Malformed>) -> bool {
+    return case r {
+        Ok(_) -> false;
+        Error(_) -> true;
+    };
+}
+
+test "a malformed file is refused with its reason" {
+    val noHeader = parseFile("== a\n");
+    val badTarget = parseFile("botopink-cell 2\n== a on jvm\n");
+    val twice = parseFile("botopink-cell 2\n== a\n== a\n");
+    val strayRecords = parseFile("botopink-cell 2\nout 1\n");
+    val badBody = parseFile("botopink-cell 2\n== a\nout\nno-final-newline\n");
+    val noNewline = parseFile("botopink-cell 2\n== a\nout 1");
+    assert refused(noHeader);
+    assert refused(badTarget);
+    assert refused(twice);
+    assert refused(strayRecords);
+    assert refused(badBody);
+    assert refused(noNewline);
+}
+
+fn observed(name: string, out: string) -> Observed {
+    return ranAnswer(name, "", out, false, "");
+}
+
+test "an equal answer is equal, a different one is not" {
+    val file = try parseFile(FILE) catch { m ->
+        return;
+    };
+    assert same(file, "alpha", "commonJS", Snap(stdout: "1\n2\n"), "");
+    assert !same(file, "alpha", "commonJS", Snap(stdout: "1\n3\n"), "");
+    assert same(file, "alpha", "erlang", Snap(stdout: "1\n3\n"), "");
+    assert same(file, "beta", "beam", Snap(stdout: "x"), "");
+    assert !same(file, "beta", "beam", Snap(stdout: "x\n"), "");
+    assert !same(file, "missing", "beam", Snap(), "");
+    assert same(file, "empty", "wasm", Snap(), "");
+}
+
+test "a refusal is compared by message, location, label and frames" {
+    val file = try parseFile(FILE) catch { m ->
+        return;
+    };
+    val refusal = refusalOf("", "type mismatch", "src/main.bp", 2, 18, "here", []);
+    assert refusal.message == "error: type mismatch";
+    assert same(file, "gamma", "commonJS", Snap(refusals: [refusal]), "");
+    val other = refusalOf("", "type mismatch", "src/main.bp", 2, 19, "here", []);
+    assert !same(file, "gamma", "commonJS", Snap(refusals: [other]), "");
+    val coded = refusalOf("e1", "x", "", 0, 0, null, []);
+    assert coded.message == "error[e1]: x";
+}
+
+test "a changed case yields a candidate with every other section unchanged" {
+    val file = try parseFile(FILE) catch { m ->
+        return;
+    };
+    val all = [
+        observed("alpha", "1\n2\n"),
+        observed("beta", "y\n"),
+        refusedAnswer("gamma", "", [refusalOf("", "type mismatch", "src/main.bp", 2, 18, "here", [])]),
+        observed("empty", ""),
+    ];
+    assert reds(file, all, "commonJS").join(",") == "beta";
+    assert assemble(file, all, "commonJS")
+        == "botopink-cell 2\n== alpha\nout 1\nout 2\n== alpha on erlang\nout 1\nout 3\n== beta\nout y\n== gamma\nrefused error: type mismatch\nat src/main.bp:2:18\nlabel here\n== empty\n";
+}
+
+test "a changed case on a target that departs changes its departure, not the plain section" {
+    val file = try parseFile(FILE) catch { m ->
+        return;
+    };
+    val all = [
+        observed("alpha", "1\n4\n"),
+        ranAnswer("beta", "", "x", false, ""),
+        refusedAnswer("gamma", "", [refusalOf("", "type mismatch", "src/main.bp", 2, 18, "here", [])]),
+        observed("empty", ""),
+    ];
+    assert assemble(file, all, "erlang")
+        == "botopink-cell 2\n== alpha\nout 1\nout 2\n== alpha on erlang\nout 1\nout 4\n== beta\nout x\nno-final-newline\n== gamma\nrefused error: type mismatch\nat src/main.bp:2:18\nlabel here\n== empty\n";
+    assert assemble(file, all, "wasm")
+        == "botopink-cell 2\n== alpha\nout 1\nout 4\n== alpha on erlang\nout 1\nout 3\n== beta\nout x\nno-final-newline\n== gamma\nrefused error: type mismatch\nat src/main.bp:2:18\nlabel here\n== empty\n";
+}
+
+test "an unchanged run assembles the file itself; a new case is appended, a vanished one dropped" {
+    val file = try parseFile(FILE) catch { m ->
+        return;
+    };
+    val same4 = [
+        observed("alpha", "1\n2\n"),
+        ranAnswer("beta", "", "x", false, ""),
+        refusedAnswer("gamma", "", [refusalOf("", "type mismatch", "src/main.bp", 2, 18, "here", [])]),
+        observed("empty", ""),
+    ];
+    assert assemble(file, same4, "commonJS") == FILE;
+    val fewer = [observed("beta", "q\n"), observed("fresh", "n\n")];
+    assert assemble(file, fewer, "beam")
+        == "botopink-cell 2\n== beta\nout q\n== fresh\nout n\n";
+}
+
+test "an abort keeps the stderr claims that still hold, and invents none" {
+    val file = try parseFile("botopink-cell 2\n== boom\nout 1\nabort\nstderr overflow\nstderr gone\n") catch { m ->
+        return;
+    };
+    val ran = ranAnswer("boom", "", "1\n", true, "integer overflow at x");
+    assert same(file, "boom", "beam", ran.snap, ran.stderr) == false;
+    val heldAndNew = ranAnswer("boom", "", "1\n", true, "overflow here");
+    assert renderCandidate(file, "boom", "beam", heldAndNew.snap, heldAndNew.stderr)
+        == "== boom\nout 1\nabort\nstderr overflow\n";
+}
+
+test "build lines come before a refusal, and a run's build lines before its output" {
+    val a = refusedAnswer("r", "built\n", [refusalOf("", "bad", "src/main.bp", 1, 1, null, ["src/main.bp:3:3"])]);
+    val b = ranAnswer("p", "one\n\ntwo\n", "hi\n", false, "");
+    val file = try parseFile("botopink-cell 2\n") catch { m ->
+        return;
+    };
+    assert assemble(file, [a, b], "commonJS")
+        == "botopink-cell 2\n== r\nbuild built\nrefused error: bad\nat src/main.bp:1:1\nfrom src/main.bp:3:3\n== p\nbuild one\nbuild\nbuild two\nout hi\n";
+}
