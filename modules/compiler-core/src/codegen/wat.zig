@@ -386,6 +386,9 @@ pub fn codegenEmit(
     // another is linked statically: the owner's declarations are emitted into
     // the consumer (`collectLinks`). The index resolves an imported name to
     // the module that defines it.
+    const outer_outputs = build_outputs;
+    build_outputs = outputs;
+    defer build_outputs = outer_outputs;
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
     // Each module is linked and lowered against its own package's closure,
@@ -679,6 +682,27 @@ fn collectLinks(
     var scratch = std.heap.ArenaAllocator.init(alloc);
     defer scratch.deinit();
     const sa = scratch.allocator();
+    // Decision 961 (2) — the scope lowering's calls name std's `context`
+    // helpers by a mark, with no import: a module holding one links
+    // `std/context` as an import of it would.
+    if (!visited.contains("std/context") and callsStdHelper(ast.Program, &program)) for (if (build_outputs.len > 0) build_outputs else outputs) |*o| {
+        if (!std.mem.eql(u8, o.name, "std/context")) continue;
+        const ok = switch (o.outcome) {
+            .ok => |*ok| ok,
+            else => break,
+        };
+        try visited.put(o.name, {});
+        const reached = via orelse ast.Loc{ .line = 0, .col = 0 };
+        try collectLinks(alloc, outputs, cross, ok.transformed, visited, out, reached);
+        try out.append(alloc, .{
+            .name = o.name,
+            .program = ok.transformed,
+            .rewrites = ok.dispatch_rewrites,
+            .instance_lowerings = ok.instance_lowerings,
+            .via = reached,
+        });
+        break;
+    };
     for (program.decls) |decl| {
         const u = switch (decl) {
             .use => |u| u,
@@ -719,6 +743,45 @@ fn collectLinks(
             }
         }
     }
+}
+
+/// Whether anything in `v` is a call the scope lowering marked as std's
+/// helper (`CallExpr.stdModule`, decision 961 (2)).
+fn callsStdHelper(comptime T: type, v: *const T) bool {
+    if (comptime @typeInfo(T) == .@"struct" and @hasField(T, "stdModule") and @hasField(T, "callee")) {
+        if (v.stdModule != null) return true;
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| inline for (st.fields) |f| {
+            if (f.is_comptime) continue;
+            if (comptime !helperMayHold(f.type)) continue;
+            if (callsStdHelper(f.type, &@field(v.*, f.name))) return true;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (v.*) {
+                inline else => |*payload| if (comptime helperMayHold(@TypeOf(payload.*))) {
+                    if (callsStdHelper(@TypeOf(payload.*), payload)) return true;
+                },
+            }
+        },
+        .optional => |o| if (v.*) |*inner| return callsStdHelper(o.child, inner),
+        .pointer => |pi| switch (pi.size) {
+            .one => if (comptime (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque")) return callsStdHelper(pi.child, v.*),
+            .slice => for (v.*) |*e| if (callsStdHelper(pi.child, e)) return true,
+            else => {},
+        },
+        else => {},
+    }
+    return false;
+}
+
+fn helperMayHold(comptime N: type) bool {
+    return switch (@typeInfo(N)) {
+        .@"struct", .@"union" => N != ast.Loc and N != ast.TypeRef,
+        .optional => |o| helperMayHold(o.child),
+        .pointer => |pi| pi.child != u8 and helperMayHold(pi.child),
+        else => false,
+    };
 }
 
 /// The name a value of a linked type prints under: a mangled `<module>/<Name>`
@@ -1554,6 +1617,10 @@ threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) 
 /// The build's packages (`codegenEmit`): which modules are a dependency's
 /// (decision 531, `dropUnlowerableDependencyFns`).
 threadlocal var build_packages: ?crossModule.Packages = null;
+/// Every module of the build `codegenEmit` lowers: where `collectLinks`
+/// finds `std/context` for a module that calls its helpers without an
+/// import (decision 961 (2)) and so has it outside its closure.
+threadlocal var build_outputs: []ComptimeOutput = &.{};
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
 /// Decision 518 (2) — a second pass over the same program when the first one
@@ -3232,7 +3299,10 @@ const Emitter = struct {
         else
             std.fmt.allocPrint(self.alloc, f, args) catch |err| return err;
         if (self.refusal) |old| self.alloc.free(old.message);
-        if (gc_debug) { std.debug.print("GCREFUSE {s} mode={s} at {d}\n", .{ message, @tagName(self.mode), if (self.stmt_loc) |l| l.line else 0 }); if (std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{}); }
+        if (gc_debug) {
+            std.debug.print("GCREFUSE {s} mode={s} at {d}\n", .{ message, @tagName(self.mode), if (self.stmt_loc) |l| l.line else 0 });
+            if (std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{});
+        }
         self.refusal = .{ .message = message, .loc = self.foreign_origin orelse loc };
         return error.WasmLoweringRefused;
     }
@@ -5918,7 +5988,6 @@ const Emitter = struct {
         if (optOperatorParts(e)) |op| if (op.bang and op.cond.* == .call and op.cond.call.kind == .call) {
             const r = self.wasmTypeOf(op.cond.*);
             if (r == .ref and r.ref != .unknown) return r;
-            if (gc_debug) std.debug.print("DBG bang r={any} t={any} oi={any}\n", .{ r, self.typeRefOf(op.cond.*), self.optInfoOf(op.cond.*) });
             if (r == .ref and r.ref == .unknown and self.typeRefOf(op.cond.*) == null) {
                 const oi = self.optInfoOf(op.cond.*);
                 if (oi == null or (!oi.?.str and !oi.?.bool_ and oi.?.cell == .none and (oi.?.inner == null or self.reprOf(oi.?.inner.?).isRef()))) return r;
@@ -7191,11 +7260,6 @@ const Emitter = struct {
                 return self.refuseUnlessTemplate(value.getLoc(), "unknown: no static type to box this value by (a type parameter's slot?)", .{});
             if (value == .call and value.call.kind == .call and self.external_missing.contains(value.call.kind.call.callee))
                 return self.gcFail("a missing host binding as an unknown");
-            if (gc_debug) {
-                const vc = value.call.kind.call;
-                std.debug.print("DBG box callee={s} recv={any} ce={any}\n", .{ vc.callee, vc.receiver != null, vc.calleeExpr != null });
-                if (vc.calleeExpr) |ce| { std.debug.print("DBG  ce={any} ceT={any} bm={any}\n", .{ce.*, self.typeRefOf(ce.*), self.behavior_methods.get("Composable.compose") != null}); if (ce.* == .call and ce.call.kind == .call) { const ic = ce.call.kind.call; std.debug.print("DBG  inner callee={s} recv={any} args={d} recvT={any} rec={any}\n", .{ ic.callee, ic.receiver != null, ic.args.len, if (ic.receiver) |r| self.typeRefOf(r.*) else null, if (ic.receiver) |r| self.recordTypeOfExpr(r.*) else null }); } }
-            }
             return self.refuse(value.getLoc(), "the wasm backend cannot box this value as `unknown`: nothing gives it a static type here", .{});
         };
         switch (kind) {
@@ -19850,7 +19914,6 @@ const Emitter = struct {
                 if (r == .ref and r.ref == .task) return self.gcFail("an awaited task of a type parameter");
                 return .{ .repr = r };
             };
-            if (gc_debug) { if (e == .call and e.call.kind == .call and e.call.kind.call.args.len > 0) { const a0 = e.call.kind.call.args[0].value.*; std.debug.print("DBG callee={s} a0tag={s} a0type={any}\n", .{ e.call.kind.call.callee, @tagName(a0), self.typeRefOf(a0) }); if (a0 == .call and a0.call.kind == .call) std.debug.print("DBG a0callee={s}\n", .{a0.call.kind.call.callee}); } }
             return self.gcFail("an awaited task of a type parameter");
         }
         if (inner == .named and std.mem.eql(u8, inner.named, "void")) return .{ .repr = .i32, .void_ = true };
@@ -21231,7 +21294,6 @@ const Emitter = struct {
                         reads = true;
                     };
                 }
-                if (gc_debug and reads) std.debug.print("DBG lambda {s} param {s} loc={any} nparams={d}\n", .{ l.name, p, l.loc, l.params.len });
                 if (reads) return self.gcFail("a lambda parameter nothing types");
                 r = .i32;
             }
@@ -22643,9 +22705,7 @@ const Emitter = struct {
         };
         if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
         const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
-        if (gc_debug) std.debug.print("DBG bind callee={s} has={any}\n", .{ callee, self.generic_fns.get(callee) != null });
         const f = if (self.generic_fns.get(callee)) |g| g.decl else return null;
-        if (gc_debug) for (f.params) |p| std.debug.print("DBG  param {s} {any}\n", .{ p.name, p.typeRef });
         const ar = self.reg_arena.allocator();
         var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
         var pi: usize = 0;
@@ -24867,7 +24927,6 @@ const Emitter = struct {
         // Front 164 s2 P2 — a field of a record in a GC module is a read of
         // the struct's field, typed by the declaration.
         if (self.mode == .gc) {
-            if (gc_debug and self.recordTypeOfExpr(ia.receiver.*) == null) std.debug.print("DBG field recv={any} t={any} inner={any}\n", .{ ia.receiver.*, self.typeRefOf(ia.receiver.*), if (ia.receiver.* == .collection and ia.receiver.collection.kind == .grouped) ia.receiver.collection.kind.grouped.* else ia.receiver.* });
             const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return self.gcFail("a field of a receiver of no known record");
             const off = self.fieldOffsetIn(rty, ia.member) orelse return self.gcFail("a field the record does not declare");
             if (ia.optional) return self.gcOptionalField(ia, rty);
@@ -28458,7 +28517,6 @@ const Emitter = struct {
         // for the value, it refuses.
         if (lossyConversion(from, want))
             return self.refuse(e.getLoc(), "the wasm backend would narrow this `{s}` value to an `{s}` slot it does not fit", .{ from.name(), want.name() });
-        if (gc_debug and from == .i32 and want == .ref) std.debug.print("DBG coerce e={s} {s} line={d}\n", .{ @tagName(e), if (e == .call and e.call.kind == .call) e.call.kind.call.callee else if (e == .identifier and e.identifier.kind == .ident) e.identifier.kind.ident else "-", e.getLoc().line });
         try self.lowerValue(e);
         try self.emitConvert(from, want);
     }
