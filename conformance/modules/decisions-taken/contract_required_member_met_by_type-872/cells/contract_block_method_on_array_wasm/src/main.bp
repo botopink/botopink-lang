@@ -1,0 +1,26 @@
+//// Decision 799, 872 — inside an extension block's method over `array<T>`, `self.join`, `self.length` and `self.toString()` resolve on every target.
+
+import {io.terminal.print} from "std";
+
+pub behavior Describe {
+    fn describe(self: Self) -> string;
+}
+
+pub ArrayDescribe implement Describe for array<string> {
+    fn describe(self: Self) -> string {
+        return self.join(",") + "/" + self.length.toString();
+    }
+};
+
+pub NumDescribe implement Describe for i32 {
+    fn describe(self: Self) -> string {
+        return self.toString() + "?";
+    }
+};
+
+pub fn main() -> void {
+    val xs: array<string> = ["a", "b", "c"];
+    print(xs.describe());
+    val n: i32 = 5;
+    print(n.describe());
+}

@@ -203,6 +203,11 @@ pub const CrossModule = struct {
     /// The type atoms a `duplicate_decl`/`too_long` fault quotes — rendered for
     /// the check and owned here, since no module table holds them.
     fault_atoms: std.ArrayListUnmanaged([]u8) = .empty,
+    /// `"<Block>.<method>"` (owned keys) of every method of an `implement` /
+    /// `extend` block whose name another block of the same module also writes:
+    /// erlang's blocks are flat module functions, so those are emitted under
+    /// `<Block>_<method>` (`extDups`, `extFnName`).
+    ext_dups: std.StringHashMapUnmanaged(void) = .empty,
     /// Owns the `fields` arrays allocated for record/struct exports.
     field_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty,
     /// Owns the `methods` arrays allocated for record/enum exports.
@@ -253,6 +258,9 @@ pub const CrossModule = struct {
         for (self.fault_atoms.items) |a| self.alloc.free(a);
         self.fault_atoms.deinit(self.alloc);
         self.atom_faults.deinit();
+        var dit = self.ext_dups.keyIterator();
+        while (dit.next()) |k| self.alloc.free(k.*);
+        self.ext_dups.deinit(self.alloc);
         self.exports.deinit();
         self.imported.deinit();
     }
@@ -989,6 +997,37 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
     return buildIn(alloc, outputs, .{});
 }
 
+/// The methods two blocks of `decls` both write, as `"<Block>.<method>"` keys
+/// added to `out` (owned by `alloc`).
+pub fn extDups(alloc: std.mem.Allocator, decls: []const ast.DeclKind, out: *std.StringHashMapUnmanaged(void)) !void {
+    for (decls, 0..) |d, i| {
+        const names: []const ast.ImplementMethod, const block = switch (d) {
+            .implement => |im| .{ im.methods, im.name },
+            .extend => |ex| .{ ex.methods, ex.name },
+            else => continue,
+        };
+        for (names) |m| {
+            const shared = blk: for (decls, 0..) |o, j| {
+                if (i == j) continue;
+                const ms: []const ast.ImplementMethod = switch (o) {
+                    .implement => |im| im.methods,
+                    .extend => |ex| ex.methods,
+                    else => continue,
+                };
+                for (ms) |om| if (std.mem.eql(u8, om.name, m.name)) break :blk true;
+                continue;
+            } else false;
+            if (!shared) continue;
+            const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ block, m.name });
+            if (out.contains(key)) {
+                alloc.free(key);
+                continue;
+            }
+            try out.put(alloc, key, {});
+        }
+    }
+}
+
 /// `build` for a compilation whose modules belong to `packages` — the erlang
 /// and BEAM drivers, whose atoms start with the package (decision 109).
 pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Packages) !CrossModule {
@@ -1132,11 +1171,18 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
         owner_arrays.deinit(alloc);
     }
 
+    var ext_dups: std.StringHashMapUnmanaged(void) = .empty;
+    errdefer {
+        var dit = ext_dups.keyIterator();
+        while (dit.next()) |k| alloc.free(k.*);
+        ext_dups.deinit(alloc);
+    }
     for (outputs) |*ct| {
         const ok = switch (ct.outcome) {
             .ok => |*o| o,
             else => continue,
         };
+        try extDups(alloc, ok.transformed.decls, &ext_dups);
         for (ok.transformed.decls) |decl| switch (decl) {
             .type_ => |r| if (r.isPub) {
                 const methods = try alloc.alloc(MethodSig, r.methods.len);
@@ -1314,7 +1360,7 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
             else => {},
         };
     }
-    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .host_methods = host_methods, .variant_fields = variant_fields, .packages = packages, .alloc = alloc };
+    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .host_methods = host_methods, .variant_fields = variant_fields, .packages = packages, .alloc = alloc, .ext_dups = ext_dups };
 }
 
 /// Two field-name lists that are the same names in the same order.

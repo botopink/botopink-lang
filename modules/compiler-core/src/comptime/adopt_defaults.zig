@@ -147,7 +147,8 @@ fn adoptForBlocks(
 /// added to the block as methods of its own (`fn shout(self: Self)`), the way
 /// a block's written method reaches the record, here and in every importer
 /// that activates the block. A block for a type of this module is
-/// `adoptForBlocks`'s; one for a primitive, `adoptForPrimitives`'s.
+/// `adoptForBlocks`'s; one for a primitive, `adoptForPrimitives`'s; one for a
+/// numeric width, this one's too (the width has no holder to copy into).
 fn adoptForImportedTargets(
     arena: std.mem.Allocator,
     program: ast.Program,
@@ -160,7 +161,8 @@ fn adoptForImportedTargets(
     for (program.decls, 0..) |d, di| {
         if (d != .implement) continue;
         const im = d.implement;
-        if (primitiveHolder(im.target) != null or !importsName(program, im.target)) continue;
+        if (primitiveHolder(im.target) != null) continue;
+        if (!importsName(program, im.target) and !isNumericWidth(im.target)) continue;
         var added: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         for (im.methods) |m| try seen.put(arena, m.name, {});
@@ -196,6 +198,14 @@ fn adoptForImportedTargets(
     var p = program;
     p.decls = new_decls;
     return p;
+}
+
+/// A numeric width (`i32`, `f64`, …): its members live in the std contracts it
+/// shares (`Signed`, `Float`), not in a holder of its own, so a block for it gets
+/// the contract's `default fn`s as methods of its own (decisions 799, 872).
+fn isNumericWidth(target: []const u8) bool {
+    for ([_][]const u8{ "i32", "i64", "u32", "u64", "f32", "f64" }) |t| if (std.mem.eql(u8, target, t)) return true;
+    return false;
 }
 
 /// True when `program` imports a symbol bound as `name`.

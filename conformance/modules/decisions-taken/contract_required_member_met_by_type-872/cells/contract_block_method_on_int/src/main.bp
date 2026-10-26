@@ -1,0 +1,32 @@
+//// Decision 799, 872 — an extension block's own method on an `i32` receiver answers on every target.
+
+import {io.terminal.print} from "std";
+
+pub behavior Shout {
+    fn label(self: Self) -> string;
+
+    default fn shout(self: Self) -> string {
+        return self.label() + "!";
+    }
+}
+
+pub IntShout implement Shout for i32 {
+    fn label(self: Self) -> string {
+        return "n:" + self.toString();
+    }
+};
+
+pub TextShout implement Shout for string {
+    fn label(self: Self) -> string {
+        return "t:" + self;
+    }
+};
+
+pub fn main() -> void {
+    val n: i32 = 7;
+    print(n.label());
+    print(n.shout());
+    print(n.shout().length.toString());
+    print("x".label());
+    print("x".shout());
+}

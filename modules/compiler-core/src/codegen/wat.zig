@@ -3393,8 +3393,8 @@ const Emitter = struct {
             .comment => |c| try self.itemComment(c.text),
             // Extension methods lower to linear-memory functions named
             // `$<target>_<method>` so activated/qualified dispatch can `call` them.
-            .implement => |im| try self.emitExtensionMethods(im.target, im.methods),
-            .extend => |ex| try self.emitExtensionMethods(ex.target, ex.methods),
+            .implement => |im| try self.emitExtensionMethods(im.target, im.targetArgs, im.methods),
+            .extend => |ex| try self.emitExtensionMethods(ex.target, &.{}, ex.methods),
             // Record / struct methods piggy-back on the same emission machinery as
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
@@ -10253,7 +10253,7 @@ const Emitter = struct {
     /// `recv.m(args)` dispatch can pass it. Codegen is untyped and method
     /// bodies carry no return type, so params/result default to `i32`; a method
     /// whose body yields no value is emitted without a result.
-    fn emitExtensionMethods(self: *Emitter, target: []const u8, methods: []const ast.ImplementMethod) !void {
+    fn emitExtensionMethods(self: *Emitter, target: []const u8, target_args: []const ast.TypeRef, methods: []const ast.ImplementMethod) !void {
         for (methods) |m| {
             const has_result = methodHasResult(m.body);
             self.resetFnState(if (has_result) .i32 else null);
@@ -10270,7 +10270,18 @@ const Emitter = struct {
                     // A block for a primitive (`StringShout implement Shout for
                     // string`): `self` is that primitive, so `"s:" + self` is a
                     // concatenation and not an addition of two words.
-                    if (primKindOfName(target) != null) try self.noteParamShape(sym, .{ .named = target });
+                    //
+                    // The same typed `self` answers `self.toString()`, `self.join(…)`
+                    // and `self.length` in the body (`primKindAt` reads it).
+                    const is_arr = std.mem.eql(u8, target, "array");
+                    if (primKindOfName(target) != null or is_arr) {
+                        const self_ref: ast.TypeRef = if (is_arr)
+                            .{ .generic = .{ .name = "array", .args = @constCast(target_args), .is_builtin = false } }
+                        else
+                            .{ .named = target };
+                        try self.noteParamShape(sym, self_ref);
+                        try self.local_typerefs.put(sym, self_ref);
+                    }
                 } else {
                     const tn = typeRefName(p.typeRef);
                     if (self.resolveRecordName(tn)) |rty|
@@ -16225,6 +16236,14 @@ const Emitter = struct {
                     else => return null,
                 };
                 return if (primCallRes(k, cc) != null) k else null;
+            }
+            // `self.length.toString()` inside an extension block's method over
+            // an array or a string: `self` is typed by the block (not by
+            // inference), and `length` counts as an `i32` as it does anywhere.
+            if (recv == .identifier and recv.identifier.kind == .identAccess) {
+                const ia = recv.identifier.kind.identAccess;
+                if (std.mem.eql(u8, ia.member, "length") and (self.isArrayExpr(ia.receiver.*) or self.isStringExpr(ia.receiver.*)))
+                    return if (primCallRes(.int, cc) != null) .int else null;
             }
             const n = plainIdentName(recv) orelse return null;
             // A lambda parameter inference left a type variable (`acc` of

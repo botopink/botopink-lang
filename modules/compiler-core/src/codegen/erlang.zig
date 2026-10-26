@@ -2316,7 +2316,7 @@ fn emitErlangModule(
                 else => continue,
             };
             if (!ext.is_pub or !xc.exportsName(ext.name)) continue;
-            for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+            for (ext.methods) |m| try exports.append(b.arena, .{ .name = try ownExtFnName(b.arena, program, ext.name, m.name), .arity = m.params.len });
         }
         // A `pub behavior` another module imports exports its associated
         // `default fn`s, the mangled locals `interfaceForms` emits: an
@@ -3059,6 +3059,15 @@ fn interfaceAssocAtom(buf: []u8, iface: []const u8, method: []const u8) ![]const
     return std.fmt.bufPrint(buf, "{c}{s}_{s}", .{ std.ascii.toLower(iface[0]), iface[1..], method });
 }
 
+/// `extFnName` for the exports of a module whose `program` is at hand.
+fn ownExtFnName(arena: std.mem.Allocator, program: ast.Program, block: []const u8, name: []const u8) ![]const u8 {
+    var dups: std.StringHashMapUnmanaged(void) = .empty;
+    try crossModule.extDups(arena, program.decls, &dups);
+    const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ block, name });
+    if (!dups.contains(key)) return name;
+    return std.fmt.allocPrint(arena, "{s}_{s}", .{ block, name });
+}
+
 /// True when a parameter can hold `undefined` at runtime: it is declared `?T`,
 /// or it defaults to `null` (`end: i32 = null`, the optional-argument form the
 /// arity-dispatch default fns use). `if (p)` on such a parameter is a null test,
@@ -3330,6 +3339,9 @@ const Emitter = struct {
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Set of `implement`/`extend` block names (for qualified-call dispatch).
     ext_names: std.StringHashMap(void),
+    /// `"<Block>.<method>"` of every method two blocks of this module both write: those are
+    /// emitted as `<Block>_<method>` (`extFnName`), a module's functions being flat.
+    ext_dups: std.StringHashMapUnmanaged(void) = .empty,
     /// Implemented fns with no `.Erlang` implementation — calling one is an error.
     externals_missing: std.StringHashMap(void),
     /// A host-backed `declare fn` whose declared return type NAMES a record:
@@ -4302,6 +4314,17 @@ const Emitter = struct {
     /// file module then exports (`file_exports_needed`) from inside a type
     /// module — the file's functions are one module and the type's methods
     /// another under policy 3.
+    /// The function an extension block's method is emitted as: its own name,
+    /// or `<Block>_<method>` when another block of the same module writes the
+    /// name too (`implement Shout for i32` and `… for string` both write `label`).
+    fn extFnName(this: *Emitter, sym: []const u8, name: []const u8) ![]const u8 {
+        var buf: [512]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ sym, name }) catch return name;
+        const dup = this.ext_dups.contains(key) or (if (this.cross) |xc| xc.ext_dups.contains(key) else false);
+        if (!dup) return name;
+        return std.fmt.allocPrint(this.atom_arena.allocator(), "{s}_{s}", .{ sym, name });
+    }
+
     fn fileCall(this: *Emitter, b: Ast.Builder, name: []const u8, args: []const Ast.Expr) !Ast.Expr {
         if (this.test_unit) return b.remote(this.atomOf(this.module_name), try this.prodName(b, name, args.len), args);
         if (this.cur_type == null) return b.call(name, args);
@@ -5732,6 +5755,7 @@ const Emitter = struct {
     }
 
     fn collectExtensionNames(this: *Emitter, program: ast.Program) !void {
+        try crossModule.extDups(this.atom_arena.allocator(), program.decls, &this.ext_dups);
         for (program.decls) |decl| switch (decl) {
             .implement => |im| try this.ext_names.put(im.name, {}),
             .extend => |ex| try this.ext_names.put(ex.name, {}),
@@ -9352,15 +9376,15 @@ const Emitter = struct {
             // a bare exported function: reach it remotely.
             if (!this.ext_names.contains(sym)) {
                 if (this.cross) |xc| if (xc.ownerModuleAtom(sym)) |owner| {
-                    return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+                    return b.remote(owner, try this.extFnName(sym, cc.callee), try this.callArgs(b, try this.exprNode(b, recv.*), cc));
                 };
             }
-            return this.fileCall(b, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+            return this.fileCall(b, try this.extFnName(sym, cc.callee), try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         if (mod_name) |name| {
             // Qualified extension call `Sym.m(obj)`: the receiver names the
             // extension block, not a module — the local `m(obj)`.
-            if (this.ext_names.contains(name)) return this.fileCall(b, cc.callee, try this.callArgs(b, null, cc));
+            if (this.ext_names.contains(name)) return this.fileCall(b, try this.extFnName(name, cc.callee), try this.callArgs(b, null, cc));
             // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
             // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
             //
@@ -12177,8 +12201,8 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| try names.put(b.arena, f.name, {}),
             .val => |v| try names.put(b.arena, v.name, {}),
-            .implement => |im| for (im.methods) |m| try names.put(b.arena, m.name, {}),
-            .extend => |ex| for (ex.methods) |m| try names.put(b.arena, m.name, {}),
+            .implement => |im| for (im.methods) |m| try names.put(b.arena, try this.extFnName(im.name, m.name), {}),
+            .extend => |ex| for (ex.methods) |m| try names.put(b.arena, try this.extFnName(ex.name, m.name), {}),
             // A behavior's associated `default fn`, the file's mangled local.
             .behavior => |bh| for (bh.methods) |m| {
                 var raw: [256]u8 = undefined;
@@ -12191,7 +12215,7 @@ const Emitter = struct {
             .val => |v| if (v.memory()) |mem| if (mem.mode == .ets) try names.put(b.arena, try std.fmt.allocPrint(b.arena, MEM_ETS_TAB ++ "{s}", .{v.name}), {}),
             else => {},
         };
-        _ = this;
+
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         for (forms) |form| {
             const f = switch (form) {
@@ -12342,18 +12366,18 @@ const Emitter = struct {
         }
         try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, " for {s}", .{im.target}));
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
-        try this.extensionForms(b, out, im.methods);
+        try this.extensionForms(b, out, im.name, im.methods);
     }
 
     fn extendForms(this: *Emitter, b: Ast.Builder, out: *Forms, ex: ast.ExtendDecl) !void {
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "extend {s}", .{ex.target})) });
-        try this.extensionForms(b, out, ex.methods);
+        try this.extensionForms(b, out, ex.name, ex.methods);
     }
 
     /// Extension methods (from `implement`/`extend`) are bare top-level
     /// functions taking the receiver first, so an activated `recv.m(args)`
     /// dispatch calls `m(Recv, args)` directly.
-    fn extensionForms(this: *Emitter, b: Ast.Builder, out: *Forms, methods: []const ast.ImplementMethod) !void {
+    fn extensionForms(this: *Emitter, b: Ast.Builder, out: *Forms, block: []const u8, methods: []const ast.ImplementMethod) !void {
         const saved_keep_self = this.keep_self;
         this.keep_self = true;
         defer this.keep_self = saved_keep_self;
@@ -12361,7 +12385,7 @@ const Emitter = struct {
             try out.append(b.arena, .blank);
             try this.fnForms(b, out, .{
                 .isPub = false,
-                .name = m.name,
+                .name = try this.extFnName(block, m.name),
                 .annotations = &.{},
                 .genericParams = &.{},
                 .params = m.params,

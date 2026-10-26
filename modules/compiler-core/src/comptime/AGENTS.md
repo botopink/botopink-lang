@@ -2630,6 +2630,11 @@ method-call inference), so every backend calls the block's `'<target>_label'`; b
 an adopted copy too (`self_prim_from_prelude` false), and wasm registers the block methods' declared
 `string` / `bool` / array results (`registerMethodSigs`) and types `self` as the primitive
 (`modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_block_method_on_primitive`).
+A block for a numeric width (`IntShout implement Shout for i32`) has no holder to adopt into: `adoptForImportedTargets`
+gives the block the contract's `default fn`s as methods of its own, so `n.shout()` dispatches through it; two blocks of
+one module writing one method name are emitted as `<Block>_<method>` on erlang (`extDups`, `extFnName`). Wasm types
+`self` of a block method over a primitive or `array<T>` (`emitExtensionMethods`), so `self.toString()`, `self.join(…)`
+and `self.length.toString()` resolve (cells `contract_block_method_on_int`, `contract_block_method_on_array_wasm`).
 A lowercase `behavior string { … }` is refused at the name,
 `primitive-type-redeclared` (`refuseTypesNamedLikeLiterals`). Cells:
 `test/program_primitive_behavior_extends_std`, `modules/program/run` (its two cases),
