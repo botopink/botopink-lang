@@ -453,13 +453,13 @@ test "decisions 532, 989 (4): a raise at build in a helper file lists the calls 
             try std.testing.expectEqual(@as(usize, 1), e.diagnostics.len);
             const d = e.diagnostics[0];
             try std.testing.expectEqualStrings("src/helper.bp", d.file);
-            try std.testing.expectEqual(@as(usize, 1), d.calledFrom.len);
-            try std.testing.expectEqualStrings("src/main.bp:7:11", d.calledFrom[0]);
+            try std.testing.expectEqual(@as(usize, 1), d.from.len);
+            try std.testing.expectEqualStrings("src/main.bp:7:11", d.from[0]);
         }
     }.check);
     try withLoaded("packages/broken", struct {
         fn check(e: @import("../load.zig").Entry) anyerror!void {
-            try std.testing.expectEqual(@as(usize, 0), e.diagnostics[0].calledFrom.len);
+            try std.testing.expectEqual(@as(usize, 0), e.diagnostics[0].from.len);
         }
     }.check);
 }

@@ -279,7 +279,7 @@ pub type UnionType(members: Node[])
 // its code there), `code` the refusal's code (`""` when it has none), `file`
 // relative to the loaded package's root with `line` and `column` where the refusal
 // points (`""` and `0` when it points nowhere), `label` the text beside the
-// caret when there is one, `calledFrom` the calls (decision 532) a refusal raised at
+// caret when there is one, `` `from` `` the calls (decision 532) a refusal raised at
 // build in another file crossed after the innermost one, each
 // `<file>:<line>:<col>`, innermost first (`[]` when there are none).
 pub type Diagnostic(
@@ -289,7 +289,7 @@ pub type Diagnostic(
     line: i32,
     column: i32,
     label: ?string,
-    calledFrom: string[],
+    `from`: string[],
 )
 
 // ── What `compiler.load` answers (decisions 786, 787, 792, 811) ──────────

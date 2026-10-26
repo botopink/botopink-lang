@@ -4338,7 +4338,7 @@ It is an opaque type (decision 811 (4)): its fields are read through `name()`, `
 Decision 989 (4) — `buildOutput()`, on the `Ok` side and on a `Refused`'s `module`, is what the loaded
 package's build printed (a top-level `comptime { … }` block's `print`), in order, each line ending in
 `\n`, `""` when there is none; a refused package's lines come before its refusals (decision 904). A
-`Diagnostic`'s `calledFrom` (the decision calls it `from`, a reserved word) holds, as `file:line:column`
+`Diagnostic`'s `` `from` `` (a keyword, written between backticks, decisions 561 and 991) holds, as `file:line:column`
 strings, the calls (decision 532) a refusal raised at build in another file crossed after the innermost
 one — the `called from` lines `botopink build` prints —, innermost first, `[]` when there are none. A
 loaded package whose `botopink.json` the compiler refuses — invalid JSON, a target it does not know in

@@ -1,7 +1,7 @@
 //// Decision 989 (4) — what a loaded package's `Module` and `Diagnostic` carry beyond
 //// the place: `Module.buildOutput()` is what the package's build printed (a top-level
 //// `comptime` block's `print`, in order, each line ending in `\n`, before its refusals,
-//// decision 904), on the `Ok` and on the `Refused` side; `Diagnostic.calledFrom` is the calls
+//// decision 904), on the `Ok` and on the `Refused` side; `` Diagnostic.`from` `` is the calls
 //// (decision 532) a refusal raised at build in another file crossed, innermost first;
 //// and a `botopink.json` the compiler refuses is a `Diagnostic` of the file
 //// `botopink.json`, never a refusal of the caller.
@@ -11,8 +11,8 @@ import {compiler, io.terminal.print} from "std";
 fn show(d: compiler.Diagnostic) -> void {
     print("message=" + d.message);
     print("at=" + d.file + ":" + d.line.toString() + ":" + d.column.toString());
-    print("calledFrom=" + d.calledFrom.length.toString());
-    for (d.calledFrom) { f ->
+    print("from=" + d.`from`.length.toString());
+    for (d.`from`) { f ->
         print("  " + f);
     }
 }
@@ -36,7 +36,7 @@ pub fn main() -> void {
         r.module
     }
     // A raise at build in a helper file of the loaded package: located in the
-    // helper, with the call that reached it as `calledFrom`.
+    // helper, with the call that reached it as `` `from` `` (decision 991).
     try comptime compiler.load("packages/raise_in_helper") catch { r ->
         for (r.diagnostics) { d ->
             show(d);

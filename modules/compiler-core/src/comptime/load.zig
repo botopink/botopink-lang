@@ -72,7 +72,7 @@ pub const refused_alias = "Bp__LoadRefused";
 pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
     .{ .name = "Module", .fields = &.{ "name", "path", "buildOutput" } },
     .{ .name = "Refused", .fields = &.{ "module", "diagnostics" } },
-    .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label", "calledFrom" } },
+    .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label", "from" } },
 };
 
 /// Where the helper's lines are parsed: past every line of the module and of
@@ -200,7 +200,8 @@ pub const Diagnostic = struct {
     /// Decision 989 (4) — the decision names it `from`, a reserved word: the calls (decision 532) a refusal raised at build
     /// crossed after the innermost one, each `<file>:<line>:<col>`, innermost
     /// first; empty when there are none.
-    calledFrom: []const []const u8 = &.{},
+    /// Decision 991 — `` `from` `` in std (a keyword, between backticks, 561).
+    from: []const []const u8 = &.{},
 };
 
 // ── finding the reads ────────────────────────────────────────────────────────
@@ -541,7 +542,7 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
                     .line = jsonInt(o, "line") orelse return false,
                     .column = jsonInt(o, "column") orelse return false,
                     .label = jsonString(o, "label"),
-                    .calledFrom = try jsonStrings(arena, o, "calledFrom"),
+                    .from = try jsonStrings(arena, o, "from"),
                 };
                 var one: std.ArrayListUnmanaged(u8) = .empty;
                 try writeDiagnostics(arena, &one, &.{d});
@@ -900,8 +901,8 @@ fn writeDiagnosticList(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u
             d.line,
             d.column,
         });
-        if (d.label) |l| try text.print(arena, "\"{s}\", calledFrom: [", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null, calledFrom: [");
-        for (d.calledFrom, 0..) |f, k| {
+        if (d.label) |l| try text.print(arena, "\"{s}\", `from`: [", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null, `from`: [");
+        for (d.from, 0..) |f, k| {
             if (k > 0) try text.appendSlice(arena, ", ");
             try text.print(arena, "\"{s}\"", .{try blockEval.stringLexeme(arena, f)});
         }
@@ -1167,9 +1168,9 @@ fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []
         .line = d.line,
         .column = d.column,
         .label = if (d.label) |l| try a.dupe(u8, l) else null,
-        .calledFrom = blk: {
-            const from = try a.alloc([]const u8, d.calledFrom.len);
-            for (d.calledFrom, 0..) |f, k| from[k] = try a.dupe(u8, f);
+        .from = blk: {
+            const from = try a.alloc([]const u8, d.from.len);
+            for (d.from, 0..) |f, k| from[k] = try a.dupe(u8, f);
             break :blk from;
         },
     };
@@ -1281,7 +1282,7 @@ fn diagnosticOf(arena: std.mem.Allocator, o: anytype) !?Diagnostic {
             if (te.frames.len > 0) {
                 const from = try arena.alloc([]const u8, te.frames.len);
                 for (te.frames, 0..) |f, i| from[i] = try std.fmt.allocPrint(arena, "{s}:{d}:{d}", .{ f.file, f.loc.line, f.loc.col });
-                d.calledFrom = from;
+                d.from = from;
             }
             return d;
         },
