@@ -5,7 +5,10 @@
 //! `snapshot/output/main.snap` holding a `refused` record — the former
 //! `tests/language/reject/` cells), and every single-file case of a module's
 //! `refused/` package (decision 779: `src/cases/<case>/mod.bp` alone, its
-//! `snapshot/output/cases/<case>/mod.snap` refused), through the same `comptime.compile` the CLI
+//! `snapshot/output/cases/<case>/mod.snap` refused), and every single-file case a module loads
+//! (decision 982 (5): `cases/<case>/src/main.bp` alone, its section of the module's one
+//! `snapshot/output/main.snap` — the lines after `out == <case>` — holding an `out refused` line),
+//! through the same `comptime.compile` the CLI
 //! runs, and requires each type error to carry a `loc`. An unlocated error renders as a message with no ` --> file:L:C`
 //! line and no source excerpt: the reader is told what is wrong and not
 //! where. The checker's own unit tests hold the same line from the other side
@@ -70,6 +73,72 @@ fn refusedCases(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []c
     }
 }
 
+/// Whether the section of `snap` that follows its `out == <case>` line (up to the next
+/// `out == ` line) holds an `out refused ` line — a case a 982 (5) module loads and the
+/// compiler refuses (789 (4): its refusals printed as `refused error: …`, `at …`).
+fn loadedCaseRefused(snap: []const u8, case: []const u8) bool {
+    var in_case = false;
+    var lines = std.mem.splitScalar(u8, snap, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "out == ")) {
+            if (in_case) return false;
+            in_case = std.mem.eql(u8, line["out == ".len..], case);
+        } else if (in_case and std.mem.startsWith(u8, line, "out refused ")) return true;
+    }
+    return false;
+}
+
+/// The single-file refused cases a module loads (decision 982 (5)): the module holds
+/// `botopink.json`, `src/main.bp`, `cases/<case>/` packages and one
+/// `snapshot/output/main.snap`; a case whose section of it is refused
+/// (`loadedCaseRefused`) and whose `src/` holds `main.bp` alone is appended to `out` as
+/// `<module>/cases/<case>` and its one source.
+fn refusedLoadedCases(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []const u8, out: *std.ArrayList([2][]u8)) !void {
+    var module = cells.openDir(io, name, .{}) catch return;
+    defer module.close(io);
+    var cases = module.openDir(io, "cases", .{ .iterate = true }) catch return;
+    defer cases.close(io);
+    const snap = module.readFileAlloc(io, "snapshot/output/main.snap", gpa, .limited(16 * 1024 * 1024)) catch return;
+    defer gpa.free(snap);
+    var names: std.ArrayList([]u8) = .empty;
+    defer {
+        for (names.items) |n| gpa.free(n);
+        names.deinit(gpa);
+    }
+    var it = cases.iterate();
+    while (try it.next(io)) |e| {
+        if (e.kind == .directory) try names.append(gpa, try gpa.dupe(u8, e.name));
+    }
+    std.mem.sort([]u8, names.items, {}, struct {
+        fn lt(_: void, a: []u8, b: []u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    for (names.items) |case_name| {
+        if (!loadedCaseRefused(snap, case_name)) continue;
+        const src_path = try std.fmt.allocPrint(gpa, "{s}/src", .{case_name});
+        defer gpa.free(src_path);
+        var src = cases.openDir(io, src_path, .{ .iterate = true }) catch continue;
+        defer src.close(io);
+        var files = src.iterate();
+        var count: usize = 0;
+        var only_main = true;
+        while (try files.next(io)) |f| {
+            count += 1;
+            if (f.kind != .file or !std.mem.eql(u8, f.name, "main.bp")) only_main = false;
+        }
+        if (count != 1 or !only_main) continue;
+        const text = src.readFileAlloc(io, "main.bp", gpa, .unlimited) catch continue;
+        try out.append(gpa, .{ try std.fmt.allocPrint(gpa, "{s}/cases/{s}", .{ name, case_name }), text });
+    }
+}
+
+fn isDirIn(io: std.Io, dir: std.Io.Dir, name: []const u8) bool {
+    var d = dir.openDir(io, name, .{}) catch return false;
+    d.close(io);
+    return true;
+}
+
 /// Every cell under `dir` as a path relative to it: a directory holding a
 /// `botopink.json` (a module keeps its cells under `<module>/cells/`, its packages
 /// at `<module>/run/` and `<module>/refused/`; a decision's `draft/` is no cell).
@@ -82,6 +151,15 @@ fn collectCells(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, prefix: []c
         defer sub.close(io);
         if (sub.access(io, "botopink.json", .{})) {
             try out.append(gpa, rel);
+            // A module that loads its cases (decision 982 (5)) may keep full
+            // cells beside them, `cells/<case>/`: cells as in any module.
+            if (isDirIn(io, sub, "cases") and isDirIn(io, sub, "cells")) {
+                var kept = try sub.openDir(io, "cells", .{ .iterate = true });
+                defer kept.close(io);
+                const kept_rel = try std.fmt.allocPrint(gpa, "{s}/cells", .{rel});
+                defer gpa.free(kept_rel);
+                try collectCells(gpa, io, kept, kept_rel, out);
+            }
         } else |_| {
             defer gpa.free(rel);
             try collectCells(gpa, io, sub, rel, out);
@@ -125,7 +203,10 @@ test "C-21: every type error a reject cell raises carries a location" {
     for (names.items) |name| {
         if (try refusedSingleFile(gpa, io, dir, name)) |src| {
             try sources.append(gpa, .{ try gpa.dupe(u8, name), src });
-        } else try refusedCases(gpa, io, dir, name, &sources);
+        } else {
+            try refusedCases(gpa, io, dir, name, &sources);
+            try refusedLoadedCases(gpa, io, dir, name, &sources);
+        }
     }
     for (sources.items) |s| {
         const name = s[0];
@@ -152,6 +233,87 @@ test "C-21: every type error a reject cell raises carries a location" {
         return error.UnlocatedTypeError;
     }
     try std.testing.expect(type_errors > 50);
+}
+
+// Decision 982 (5): a module that loads its cases keeps a refused case at
+// `cases/<case>/src/main.bp` and its refusal in the module's one `main.snap`,
+// after `out == <case>`. C-21 walks it as it walks a `refused/` package's case:
+// the refused case is collected, the printing one and a refused one beside a
+// sibling module are not, a full cell kept beside under `cells/` is walked as
+// any cell, and the collected source raises a located type error.
+test "C-21 walks the refused cases a module loads (decision 982 (5))" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    test_scratch.remove(io, "comptime/located_errors_loaded");
+    defer test_scratch.remove(io, "comptime/located_errors_loaded");
+    const root = test_scratch.path(io, "comptime/located_errors_loaded");
+    const cwd = std.Io.Dir.cwd();
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const files = [_][2][]const u8{
+        .{ "m/botopink.json", "{ \"name\": \"m\" }\n" },
+        .{ "m/src/main.bp", "pub fn main() -> void {}\n" },
+        .{ "m/cases/prints/botopink.json", "{ \"name\": \"prints\" }\n" },
+        .{ "m/cases/prints/src/main.bp", "pub fn main() -> void {}\n" },
+        .{ "m/cases/mismatch/botopink.json", "{ \"name\": \"mismatch\" }\n" },
+        .{ "m/cases/mismatch/src/main.bp", "pub fn main() -> void {\n    val n: i32 = \"text\";\n}\n" },
+        .{ "m/cases/two_files/botopink.json", "{ \"name\": \"two_files\" }\n" },
+        .{ "m/cases/two_files/src/main.bp", "pub fn main() -> void {\n    val n: i32 = \"text\";\n}\n" },
+        .{ "m/cases/two_files/src/helper.bp", "pub fn one() -> i32 {\n    return 1;\n}\n" },
+        .{ "m/cells/kept/botopink.json", "{ \"name\": \"kept\" }\n" },
+        .{ "m/cells/kept/src/main.bp", "pub fn main() -> void {\n    val n: i32 = \"text\";\n}\n" },
+        .{ "m/cells/kept/snapshot/output/main.snap", "botopink-cell 1\nrefused error: type mismatch: expected i32, got string\nat src/main.bp:2:18\n" },
+        .{ "m/snapshot/output/main.snap", "botopink-cell 1\nout == mismatch\nout refused error: type mismatch: expected i32, got string\nout at src/main.bp:2:18\nout == prints\nout prints main\nout == two_files\nout refused error: type mismatch: expected i32, got string\nout at src/main.bp:2:18\n" },
+    };
+    for (files) |f| {
+        const path = try std.fs.path.join(a, &.{ root, f[0] });
+        try cwd.createDirPath(io, std.fs.path.dirname(path).?);
+        try cwd.writeFile(io, .{ .sub_path = path, .data = f[1] });
+    }
+    try std.testing.expect(loadedCaseRefused("out == a\nout refused error: x\nout == b\nout ok\n", "a"));
+    try std.testing.expect(!loadedCaseRefused("out == a\nout refused error: x\nout == b\nout ok\n", "b"));
+    try std.testing.expect(!loadedCaseRefused("out == ab\nout refused error: x\n", "a"));
+
+    var dir = try cwd.openDir(io, root, .{ .iterate = true });
+    defer dir.close(io);
+    var names: std.ArrayList([]u8) = .empty;
+    defer {
+        for (names.items) |n| gpa.free(n);
+        names.deinit(gpa);
+    }
+    try collectCells(gpa, io, dir, "", &names);
+    // The module is one cell, its `cells/kept` another; no case is a cell.
+    try std.testing.expectEqual(@as(usize, 2), names.items.len);
+    try std.testing.expectEqualStrings("m", names.items[0]);
+    try std.testing.expectEqualStrings("m/cells/kept", names.items[1]);
+    try std.testing.expect(try refusedSingleFile(gpa, io, dir, "m") == null);
+    if (try refusedSingleFile(gpa, io, dir, "m/cells/kept")) |kept| gpa.free(kept) else return error.KeptCellNotWalked;
+    var sources: std.ArrayList([2][]u8) = .empty;
+    defer {
+        for (sources.items) |s| {
+            gpa.free(s[0]);
+            gpa.free(s[1]);
+        }
+        sources.deinit(gpa);
+    }
+    try refusedCases(gpa, io, dir, "m", &sources);
+    try std.testing.expectEqual(@as(usize, 0), sources.items.len);
+    try refusedLoadedCases(gpa, io, dir, "m", &sources);
+    try std.testing.expectEqual(@as(usize, 1), sources.items.len);
+    try std.testing.expectEqualStrings("m/cases/mismatch", sources.items[0][0]);
+
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = sources.items[0][1] }}, io, try std.fs.path.join(a, &.{ root, "build" }));
+    defer session.deinit(gpa);
+    var located: usize = 0;
+    for (session.outputs.items) |output| switch (output.outcome) {
+        .typeError => |te| {
+            try std.testing.expect(te.loc != null);
+            located += 1;
+        },
+        else => {},
+    };
+    try std.testing.expect(located > 0);
 }
 
 // An embedded std module is parsed before any program module is read, from
