@@ -1,4 +1,4 @@
-//// Decision 790 (1), 798 (6) — several started children run at once and their `wait`s are awaited
+//// Decision 906, 798 (6) — several started children run at once and their `wait`s are awaited
 //// together: the slower child is started first and the answers still come back in the order of the
 //// tasks (`async.runAll`), each with its own stdout, stderr and status.
 
