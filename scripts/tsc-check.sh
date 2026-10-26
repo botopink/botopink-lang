@@ -22,7 +22,7 @@
 # node; this check reaches the modules nothing runs — the libraries' and the
 # query cell's — and reads them all the way through.
 #
-# What the walk leaves out is structural, the same reading `botopink cell check`
+# What the walk leaves out is structural, the same reading the conformance suite
 # makes of a cell: a cell whose commonJS answer refuses a module (a `refused`
 # record in `snapshot/targets/commonJS/`, or in `snapshot/output/` where
 # commonJS has no departure of its own), and a project (a library included)

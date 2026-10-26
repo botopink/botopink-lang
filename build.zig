@@ -642,13 +642,13 @@ pub fn build(b: *std.Build) void {
     test_vscode_step.dependOn(&test_vscode_run.step);
 
     // `zig build test-conformance` — the language's conformance suite
-    // (decisions 457, 464, 466): every cell of `conformance/modules/` checked by
-    // `botopink cell check` on every target its manifest declares, and every
-    // `conformance/test/` suite run by `botopink test --json`, through
-    // `conformance/run.sh` against the installed `botopink`; a red cell fails
-    // the step. Forwards `--` args, e.g.
-    //   zig build test-conformance -- --only modules/case/cells/case_range_value
-    // NOT wired into `zig build test` (spawns node/erl/wasmtime per cell).
+    // (decisions 457, 466, 989, 990 (6)): the root package `conformance/modules/`
+    // — every self-checking module — built once into one `.bpr` and run on each
+    // target, and every `conformance/test/` suite run by `botopink test --json`,
+    // through `conformance/run.sh` against the installed `botopink`; a red module
+    // fails the step. Forwards `--` args, e.g.
+    //   zig build test-conformance -- --only modules --target erlang
+    // NOT wired into `zig build test` (spawns node/erl/wasmtime per target).
     const test_conformance_run = b.addSystemCommand(&.{ "bash", "conformance/run.sh" });
     if (!prebuilt) test_conformance_run.step.dependOn(b.getInstallStep());
     test_conformance_run.setCwd(b.path("."));

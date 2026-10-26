@@ -1922,7 +1922,7 @@ fn analyzeSource(
     // to name (`loadMod.withRunImports`).
     // Decision 993 (3) — a module of a package a `` `test`() `` reached
     // has its `test` blocks lowered to functions it lists (`loadMod.withTestFns`).
-    const parsed_as_written = try loadMod.withRunImports(arena, try loadMod.withLoadHelper(arena, try loadMod.withTestFns(arena, inserted, mod)));
+    const parsed_as_written = try loadMod.withRunImports(arena, try loadMod.withLoadHelper(arena, try loadMod.withTestFns(arena, inserted, mod)), mod.files);
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
@@ -2141,7 +2141,7 @@ fn analyzeSource(
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items, env.executorAnchors.items, prepended)) |merged_written| {
             // Decisions 787, 792 — an executor that runs a loaded file names
             // what its `run()` is rewritten to (`loadMod.withRunImports`).
-            const merged_program = try loadMod.withRunImports(arena, merged_written);
+            const merged_program = try loadMod.withRunImports(arena, merged_written, mod.files);
             // Decision 575 (6): a library's `compiler.implement` of this pass
             // joins the declarations the re-analysis reads.
             try infer.applyImplementContributions(&env, merged_program);
@@ -4908,8 +4908,12 @@ pub fn compileWith(
         }
         session.deinit(allocator);
         // The packages join after every dependency, before the root package's
-        // modules: a loaded package depends on std and on the caller's
-        // dependencies alone.
+        // modules and before every package a `run()` reached earlier: a loaded
+        // package depends on std and on the caller's dependencies alone, and
+        // one reached only now is run by a package already in (a loaded
+        // package that loads and runs its own — the conformance suite's root
+        // runs its modules, each running its cases), whose `run()` finds the
+        // package it runs compiled before it.
         var targets: ?@import("./module.zig").Targets = null;
         for (current) |m| if (m.package.len == 0) {
             targets = m.targets;
@@ -4918,7 +4922,7 @@ pub fn compileWith(
         var next: std.ArrayListUnmanaged(Module) = .empty;
         var placed = false;
         for (current) |m| {
-            if (!placed and m.package.len == 0) {
+            if (!placed and (m.package.len == 0 or loadMod.isLoadedPackage(m.package))) {
                 try placeLoaded(allocator, extra.allocator(), &next, current, lacking, targets);
                 placed = true;
             }

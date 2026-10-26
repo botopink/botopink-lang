@@ -44,7 +44,7 @@ botopink-lang/
 │   ├── lib-test-runner/   cross-backend lib test runner
 │   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
-├── conformance/           the language reference (docs.md) and its conformance suite — one cell per behaviour, checked by `botopink cell check`
+├── conformance/           the language reference (docs.md) and its conformance suite — one case per behaviour, its root package built once and run on every target (`conformance/run.sh`)
 ├── scripts/               installers, release packing, test wrappers
 ├── build.zig              workspace build graph
 └── AGENTS.md              contributor guide

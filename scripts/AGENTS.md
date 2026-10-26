@@ -335,8 +335,8 @@ not its last commit. Each file is mapped by
 in the full gate too), so a reach of `wasm`/`beam` alone skips stage 8 and a reach of
 `commonJS` runs `--target commonJS`. The two `--list` plans that hold stages 8 and 9 to
 their counts (§ Stage times, the plan, the budget) are read with the same `--target`, so
-a narrowed stage is held to its narrowed plan; the conformance cells (target `*`: `botopink
-cell check` runs each on every target it declares) and the restriction audits stay in every plan. Every stage that is not a cell set — formatting,
+a narrowed stage is held to its narrowed plan (the root package's runs on the reached targets,
+its one build before them); the restriction audits stay in every plan. Every stage that is not a cell set — formatting,
 the OTP release, the build, the backend partition audit, `zig build test`, `test-bpmp`,
 the beam export audit, `test-cli`, `test-docs`, `tsc-check`, `test-web` — runs in both
 modes. Only the full gate writes the green-tree record (§ Green-tree record): a step
@@ -429,7 +429,7 @@ and on every CPU, never by running less:
 | `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
 | every stage that runs `botopink` | the binaries are ReleaseSafe (§ Build mode): ~12× less CPU per compile than Debug, the same output | § Build mode |
 | `test-libs` (tests that build fixtures) | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
-| `test-conformance` | jobs (a cell: one `botopink cell check`; a test suite: one target) run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
+| `test-conformance` | the root package built once into one `.bpr` (decision 990 (6)), then jobs (one target's run of the `.bpr`; a test suite on one target) run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
 | `test-docs` | since 144 B-29 step I it compiles nothing: every example of the reference is a conformance cell, and the stage only checks that each reference names one (it was a `botopink check` per fence on `lib/pool.sh`, 8.5 s → 1.5 s) | § check-docs.sh below |
 
 ### One job budget (gate.sh § job budget)

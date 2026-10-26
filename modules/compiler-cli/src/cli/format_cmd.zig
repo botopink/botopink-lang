@@ -122,7 +122,7 @@ fn entersDirectory(name: []const u8) bool {
 /// A conformance cell's refused module (decision 67's structural exemption,
 /// read off the cell's own snapshots): the innermost directory above the file
 /// that holds `snapshot/output/` is the cell, and the module is the file's
-/// path from the cell — `src/` dropped, `.bp` dropped, as `botopink cell check`
+/// path from the cell — `src/` dropped, `.bp` dropped, as the cell format
 /// names a module's snapshot (`src/shapes/circle.bp` → `shapes/circle`,
 /// `deps/lib/src/x.bp` → `deps/lib/src/x`). The file is exempt when
 /// `snapshot/output/<module>.snap` holds a `refused` record: every target

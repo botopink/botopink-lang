@@ -124,9 +124,10 @@ test "js: external ---- net-new: no target for the active backend errors" {
 
 // A module the erlang backend refuses after a `type`'s own module was rendered
 // (the type's unit sits in the emitter, the refusal arrives from a later call)
-// returns every byte it took: `botopink cell check` checks a share of cells in
-// one process, and a cell that only declares a node template reaches the
-// erlang backend and is refused there, once per cell. `testing.allocator`
+// returns every byte it took: one process may build many packages (the
+// conformance suite's root package loads every module), and one that only
+// declares a node template reaches the erlang backend and is refused there,
+// once per package. `testing.allocator`
 // fails the test on a byte the refusal left behind.
 test "erlang: external ---- a refused module frees the type units it rendered" {
     const io = std.testing.io;

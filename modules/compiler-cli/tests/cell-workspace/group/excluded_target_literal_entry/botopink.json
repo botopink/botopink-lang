@@ -1,8 +1,0 @@
-{
-  "name": "excluded_target_literal_entry",
-  "targets": ["commonJS", "erlang", "beam"],
-  "dependencies": {
-    "shared": { "path": "deps/shared" },
-    "base": { "path": "../../deps/ext/base" }
-  }
-}

@@ -4,7 +4,7 @@
 //! from the `needs:` of the bindings the program reaches and links. The
 //! runners read it back — `needsOf` from the binary (`codegen/runtime.zig`'s
 //! RUN LOG), `needsOfText` from a `wasi` build's component text
-//! (`botopink run` / `test` / `cell check`) — and hand the host only the
+//! (`botopink run` / `test`) — and hand the host only the
 //! matching flags (`wasmtimeArgs`). A program needing none carries no
 //! section and runs with no flag; node runs exceptions by default.
 

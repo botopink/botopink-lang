@@ -97,8 +97,7 @@ fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts
 /// `target`, entry `module` — after the step erlang and BEAM need first
 /// (every emitted `.erl` / `.S` compiled into `out_dir`). Null when that step
 /// failed; its refusal is printed. `botopink run` appends the program's own
-/// arguments and spawns it with inherited stdio; `botopink cell check`
-/// (`cell.zig`) spawns it with its stdout and stderr captured.
+/// arguments and spawns it with inherited stdio.
 pub fn programArgv(
     arena: std.mem.Allocator,
     io: std.Io,

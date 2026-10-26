@@ -69,8 +69,9 @@ Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.
 `externals.zig` also holds **`a refused module frees the type units it rendered`**:
 the erlang backend refuses a module (a node-only template) after a `type`'s own
 module was rendered, and `testing.allocator` fails the test on a byte the refusal
-left behind (`botopink cell check` takes one cell after another in one process, and
-a `commonJS`-only cell reaches the erlang backend and is refused there each time).
+left behind (one process may build many packages — the conformance suite's root
+package loads every module — and a `commonJS`-only one reaches the erlang backend and
+is refused there each time).
 
 `externals.zig` closes with the one test here that has no fixture of its own:
 **`no prelude template calls the method it patches`** lexes and parses the
