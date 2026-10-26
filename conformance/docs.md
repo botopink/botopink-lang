@@ -56,8 +56,14 @@ One compilation and one runtime start serve a package, not each case. The module
 links every case. `botopink cell new <module>/cases/<case>` writes a full cell, which
 `scripts/pack-cells.py apply <module>` packs when its package's check equals its answers, `botopink cell
 check <module>` checks every package and cell, and a `<!-- example: modules/<module>/run/src/cases/<case> -->`
-line (`refused/…`, `cells/<case>`) names one; a module holding both `cases/` and `src/`, or a `cases/<x>`
-that is no cell, is refused:
+line (`refused/…`, `cells/<case>`) names one. A module may instead be one package that loads its cases
+(decision 982 (5)): `modules/<module>/botopink.json` and `src/main.bp` beside `cases/<case>/`, each case a
+package of its own (`botopink.json`, `src/main.bp`) the module's `main.bp` loads with
+`compiler.load("cases/<case>")`, the answer the module's one `snapshot/output/main.snap`; `botopink cell
+check` takes such a module as one cell and never a case as a cell of its own; a full cell it keeps beside the
+cases, `cells/<case>/`, stays a cell. A module holding `cases/` and
+`src/` without that `botopink.json` and `src/main.bp`, or a `cases/<x>` of a module of cells that is no
+cell, is refused:
 
 <!-- example: modules/decisions-taken/cell_cases_directory-765/cells/prints -->
 

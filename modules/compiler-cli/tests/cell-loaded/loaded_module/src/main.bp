@@ -1,0 +1,37 @@
+//// A module in decision 982 (5)'s layout: one cell whose `main.bp` loads each `cases/<case>`
+//// package through `compiler.load` (789 (4)'s `runCase`) and prints its answer after `== <case>`.
+//// It prints nothing at build: the CLI's `cell check` records no `build` line yet (B-161), so the
+//// CLI and the program of `conformance/check/` answer it alike.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                print("refused error: " + d.message);
+                print("at "
+                    + d.file
+                    + ":"
+                    + d.line.toString()
+                    + ":"
+                    + d.column.toString());
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f ->
+            print("abort " + f.message)
+        }
+    });
+}
+
+comptime {
+    runCase("loaded_prints");
+    runCase("loaded_refused");
+}
+
+pub fn main() -> void {}

@@ -18,6 +18,15 @@
 /// over its parent) finds every case, and refuses a module holding both `cases/`
 /// and `src/`, or a `cases/<x>` that is no cell.
 ///
+/// A module may instead be one cell that loads its cases (decision 982 (5)):
+/// `<module>/botopink.json` and `<module>/src/main.bp` beside `cases/`, each
+/// `cases/<case>/` a package (`botopink.json`, `src/main.bp`) its `main.bp`
+/// loads through `compiler.load("cases/<case>")`, the answer the module's own
+/// `snapshot/`. `check` takes the module as one cell, its scratch copy carrying
+/// `cases/`, and never a case as a cell of its own (its `cells/<case>/`, full
+/// cells kept beside, are cells as in any module); a loaded case's targets are
+/// read by `compiler.load` (982 (3)), not here.
+///
 /// `check` builds each cell **in this process** — `build.zig`'s pipeline with
 /// `reporter.sink` pointed at a buffer, so a refusal is read off exactly the
 /// text `botopink build` prints — and runs the built program with `node`,
@@ -539,9 +548,14 @@ fn checkParallel(ctx: *Ctx, cells: []const []const u8, jobs: usize) !usize {
 /// it, sorted — never inside a cell, a hidden directory, `node_modules` or a
 /// `deps` directory (a cell's own dependency packages live there, and a
 /// `deps/<pkg>` holding `src/` is a package, never a cell). A directory
-/// holding `cases/` is a module of cases (decision 765): each `cases/<case>`
-/// is a cell. `refused` collects what the layout forbids — a directory
-/// holding both `cases/` and `src/`, and a `cases/<x>` that is no cell.
+/// holding `cases/` and no `src/` is a module of cells (decision 765): each
+/// `cases/<case>` is a cell. A directory holding `botopink.json` and
+/// `src/main.bp` beside `cases/` is one cell (decision 982 (5)): its
+/// `src/main.bp` loads each `cases/<case>` package through `compiler.load`,
+/// and no case is a cell of its own; its `cells/<case>/`, full cells kept
+/// beside the cases it loads, are cells as in any module. `refused` collects what the layout
+/// forbids — `cases/` beside `src/` without `botopink.json` and
+/// `src/main.bp`, and a `cases/<x>` of a module of cells that is no cell.
 fn discover(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -552,8 +566,13 @@ fn discover(
     const cases = try std.fs.path.join(arena, &.{ root, "cases" });
     const has_cases = isDir(io, cases);
     if (isDir(io, try std.fs.path.join(arena, &.{ root, "src" }))) {
-        if (has_cases) try refused.append(arena, try std.fmt.allocPrint(arena, "{s} holds both cases/ and src/ — a module holds cases or is a cell, not both (decision 765)", .{root}));
+        const loading = has_cases and isLoadingModule(arena, io, root);
+        if (has_cases and !loading)
+            try refused.append(arena, try std.fmt.allocPrint(arena, "{s} holds both cases/ and src/ but no botopink.json and src/main.bp — a module of cells holds cases/ and no src/ (decision 765), a module whose cases it loads holds botopink.json and src/main.bp beside them (decision 982 (5))", .{root}));
         try out.append(arena, root);
+        // A module that loads its cases may keep full cells beside them,
+        // `cells/<case>/`: each is a cell of its own, as in any module.
+        if (loading) try discover(arena, io, try std.fs.path.join(arena, &.{ root, "cells" }), out, refused);
         return;
     }
     if (has_cases) {
@@ -573,6 +592,15 @@ fn discover(
         if (name[0] == '.' or std.mem.eql(u8, name, "node_modules") or std.mem.eql(u8, name, "deps")) continue;
         try discover(arena, io, try std.fs.path.join(arena, &.{ root, name }), out, refused);
     }
+}
+
+/// Whether `dir` is a module whose `src/main.bp` loads its cases (decision
+/// 982 (5)): it holds `botopink.json`, `src/main.bp` and `cases/`.
+fn isLoadingModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8) bool {
+    const manifest_path = std.fs.path.join(arena, &.{ dir, "botopink.json" }) catch return false;
+    const main_path = std.fs.path.join(arena, &.{ dir, "src", "main.bp" }) catch return false;
+    const cases_path = std.fs.path.join(arena, &.{ dir, "cases" }) catch return false;
+    return exists(io, manifest_path) and exists(io, main_path) and isDir(io, cases_path);
 }
 
 fn isDir(io: std.Io, path: []const u8) bool {
@@ -1457,6 +1485,40 @@ test "discover finds the cases of a module, and refuses src/ beside cases/ and a
     try std.testing.expectEqual(@as(usize, 2), refused.items.len);
     try std.testing.expect(std.mem.indexOf(u8, refused.items[0], "m holds both cases/ and src/") != null);
     try std.testing.expect(std.mem.indexOf(u8, refused.items[1], "other/cases/stray is no cell") != null);
+}
+
+test "discover takes a module holding botopink.json and src/main.bp beside cases/ as one cell (decision 982 (5))" {
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const test_scratch = @import("test_scratch");
+    test_scratch.remove(io, "cell-discover-loaded");
+    defer test_scratch.remove(io, "cell-discover-loaded");
+    const root = test_scratch.path(io, "cell-discover-loaded/modules");
+    const cwd = std.Io.Dir.cwd();
+    for ([_][]const u8{ "a", "b" }) |case| {
+        try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "cases", case, "src" }));
+        try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "m", "cases", case, "botopink.json" }), .data = "{}" });
+        try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "m", "cases", case, "src", "main.bp" }), .data = "" });
+    }
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "m", "cells", "kept", "src" }));
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "m", "botopink.json" }), .data = "{}" });
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "m", "src", "main.bp" }), .data = "" });
+    // `src/` beside `cases/` with no manifest: neither layout.
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "n", "cases", "c", "src" }));
+    try cwd.createDirPath(io, try std.fs.path.join(a, &.{ root, "n", "src" }));
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "n", "src", "main.bp" }), .data = "" });
+    var cells: std.ArrayListUnmanaged([]const u8) = .empty;
+    var refused: std.ArrayListUnmanaged([]const u8) = .empty;
+    try discover(a, io, root, &cells, &refused);
+    try std.testing.expectEqual(@as(usize, 3), cells.items.len);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "m" }), cells.items[0]);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "m", "cells", "kept" }), cells.items[1]);
+    try std.testing.expectEqualStrings(try std.fs.path.join(a, &.{ root, "n" }), cells.items[2]);
+    try std.testing.expectEqual(@as(usize, 1), refused.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, refused.items[0], "n holds both cases/ and src/") != null);
 }
 
 test "moduleOfCase reads the module off a case path, and the docs link is appended (decision 765)" {

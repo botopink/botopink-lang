@@ -334,13 +334,19 @@ else
 fi
 # A module (decisions 765, 779) is not a cell: its packages `run/` and `refused/`, its
 # `cells/<c>` and a 765 `cases/<c>` are, one job each. A path naming a module stands for them.
+# A module holding `botopink.json` and `src/main.bp` beside `cases/` (982 (5)) is one cell: its
+# `main.bp` loads each `cases/<c>` through `compiler.load`, and no case is a job of its own; its
+# `cells/<c>`, full cells kept beside, are jobs as in any module.
 expanded=()
 for f in "${files[@]}"; do
     f="${f%/}"
     case "$f" in
         modules/*/cases/*|modules/*/cells/*|modules/*/run|modules/*/refused) expanded+=("$f") ;;
         modules/*)
-            if [ -d "$here/$f/cases" ] || [ -d "$here/$f/cells" ] || [ -d "$here/$f/run" ] || [ -d "$here/$f/refused" ]; then
+            if [ -f "$here/$f/botopink.json" ] && [ -f "$here/$f/src/main.bp" ] && [ -d "$here/$f/cases" ]; then
+                expanded+=("$f")
+                while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/cells/*/ 2>/dev/null | sed 's:/$::' | sort)
+            elif [ -d "$here/$f/cases" ] || [ -d "$here/$f/cells" ] || [ -d "$here/$f/run" ] || [ -d "$here/$f/refused" ]; then
                 while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/run/ "$f"/refused/ "$f"/cells/*/ "$f"/cases/*/ 2>/dev/null | sed 's:/$::' | sort)
             else
                 expanded+=("$f")

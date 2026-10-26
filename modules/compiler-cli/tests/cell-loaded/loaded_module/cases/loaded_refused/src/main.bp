@@ -1,0 +1,3 @@
+pub fn main() -> void {
+    val n: i32 = "text";
+}

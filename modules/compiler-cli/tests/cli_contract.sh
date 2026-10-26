@@ -1678,6 +1678,26 @@ if have node && have erl && have erlc && have wasmtime; then
   run "$CASES" cell new other/cases/first
   expect_code 1 "a case named as another member"
   expect_out "is already the name of a member" "names the clash (decision 512)"
+
+  # Decision 982 (5): a module holding botopink.json and src/main.bp beside cases/ is one cell —
+  # its main.bp loads each `cases/<case>` package through `compiler.load`, its answer the module's
+  # own main.snap — and no case is a cell of its own; a full cell it keeps under `cells/` is a cell.
+  # `src/` beside `cases/` without the manifest is still refused.
+  LOADED="$WORK/cell-loaded"
+  rm -rf "$LOADED"; cp -R "$SCRIPT_DIR/cell-loaded" "$LOADED"; rm -rf "$LOADED/.botopinkbuild"
+  run "$LOADED" cell check loaded_module
+  expect_code 0 "cell check over a module that loads its cases"
+  expect_out "ok   loaded_module" "the module is the cell"
+  expect_out "ok   loaded_module/cells/kept_cell" "a full cell kept beside the cases is a cell of its own"
+  expect_out "cells: 2 checked — 2 passed, 0 failed" "its cases are no cells of their own"
+  run "$LOADED" cell check .
+  expect_out "cells: 2 checked — 2 passed, 0 failed" "the parent of the module finds the same two cells"
+  no_candidate "$LOADED" "a module that loads its cases writes no candidate"
+  mv "$LOADED/loaded_module/botopink.json" "$LOADED/loaded_module/botopink.json.off"
+  run "$LOADED" cell check loaded_module
+  expect_code 1 "src/ beside cases/ with no botopink.json"
+  expect_out "holds both cases/ and src/ but no botopink.json and src/main.bp" "names both layouts"
+  mv "$LOADED/loaded_module/botopink.json.off" "$LOADED/loaded_module/botopink.json"
 else
   skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
 fi

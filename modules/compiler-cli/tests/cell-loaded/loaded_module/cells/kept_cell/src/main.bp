@@ -1,0 +1,7 @@
+//// A full cell a module that loads its cases keeps beside them: a cell of its own.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("kept");
+}
