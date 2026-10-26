@@ -1,0 +1,64 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("case_alternatives_and_arrays");
+    runCase("case_arm_block_comment");
+    runCase("case_arm_ending_in_for");
+    runCase("case_arm_lambda_value");
+    runCase("case_arm_name_is_also_a_type");
+    runCase("case_bool_literal_arms");
+    runCase("case_catch_all_binder_record");
+    runCase("case_dot_variant_patterns");
+    runCase("case_exhaustive_nested_variants");
+    runCase("case_function_typed_arms");
+    runCase("case_generic_variant_tuple_payload");
+    runCase("case_or_pattern_alternatives");
+    runCase("case_arity_without_rest");
+    runCase("case_bare_name_arrow_arm");
+    runCase("case_constant_pattern");
+    runCase("case_function_arms_arity");
+    runCase("case_literals_only");
+    runCase("case_missing_variant");
+    runCase("case_only_guarded_arms");
+    runCase("case_shorthand_on_unknown");
+    runCase("case_tuple_label");
+    runCase("case_unknown_without_wildcard");
+    runCase("case_binder_arm_string_value");
+    runCase("case_payload_null_then_binder");
+    runCase("case_range_and_guard");
+    runCase("case_range_value");
+    runCase("case_record_labelled_fields");
+    runCase("case_record_union_binder");
+    runCase("case_section_subtype");
+    runCase("case_type_guard_arms");
+    runCase("case_value_string_arms");
+    runCase("case_value_union_binding");
+    runCase("case_values");
+    runCase("case_variant_fields");
+    runCase("case_wide_integer_scrutinee");
+}
+
+pub fn main() -> void {}

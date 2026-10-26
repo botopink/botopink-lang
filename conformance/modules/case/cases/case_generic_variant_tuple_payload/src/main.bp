@@ -1,0 +1,22 @@
+import {io.terminal.print} from "std";
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn sumPair(m: Maybe<#(i32, i32)>) -> i32 {
+    return case m {
+        .Some(#(a, b)) {
+            a + b
+        }
+        .None {
+            -1
+        }
+    };
+}
+
+pub fn main() -> void {
+    print(sumPair(Maybe.Some(value: #(2, 3))));
+    print(sumPair(Maybe.None));
+}
