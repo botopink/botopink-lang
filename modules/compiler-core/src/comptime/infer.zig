@@ -9759,6 +9759,7 @@ fn inferTypeMethods(
             const v = try env.freshVar();
             selfArgs[i] = v;
             try genericMap.put(gp.name, v);
+            try env.typeParamVars.append(env.arena, .{ .ty = v, .name = gp.name });
         }
         const selfTy = if (typeGenerics.len == 0)
             try env.namedType(typeName)
@@ -13977,6 +13978,7 @@ fn textShapeOf(out: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, ty: *
 /// field, a generic method's answer). A loc inferred more than once records
 /// only when every reading agrees — one JS body serves them all.
 pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.AutoHashMap(ast.Loc, envMod.InstanceLowering)) !void {
+    const names = try paramVarNames(env, arena);
     var it = env.textValues.iterator();
     while (it.next()) |e| {
         const tys = e.value_ptr.items;
@@ -13987,6 +13989,19 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         // 144 B-115 — a generic fn named as a value: keyed already, recorded
         // as an argument is.
         const is_fn_value = e.key_ptr.col >= ast.text_fn_value_col;
+        // Decision 900 — the value of a generic type a call answers: recorded
+        // whatever its type arguments are, when every reading names one type.
+        if (!is_fn_value and e.key_ptr.col >= ast.text_ret_col) {
+            const ref = (try typeRefOfTypeIn(arena, env, tys[0], &names)) orelse continue;
+            const same = for (tys[1..]) |t| {
+                const other = (try typeRefOfTypeIn(arena, env, t, &names)) orelse break false;
+                if (!typeRefSame(ref, other)) break false;
+            } else true;
+            if (!same) continue;
+            const slot = try out.getOrPut(e.key_ptr.*);
+            if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
+            continue;
+        }
         const is_arg = !is_fn_value and e.key_ptr.col >= ast.text_arg_col;
         const is_hole = !is_arg and !is_fn_value and e.key_ptr.col >= ast.text_hole_col;
         var first: std.ArrayListUnmanaged(u8) = .empty;
@@ -13995,6 +14010,20 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
         const holds_tuple = std.mem.indexOfScalar(u8, first.items, '#') != null;
         // 144 B-115 — a tuple too: JavaScript holds it as an array, and
         // `@print` writes `#(1, 2)` only where its shape says so.
+        // Decision 900 — a generic call's argument of a type parameter of the
+        // generic type whose method holds the call (`shown(p._0)` in
+        // `Dict.display`): commonJS hands the shape the value carries.
+        if (is_arg and !holds_float and !holds_tuple and mentionsTypeParamVar(&names, tys[0])) {
+            const ref = (try typeRefOfTypeIn(arena, env, tys[0], &names)) orelse continue;
+            const same = for (tys[1..]) |t| {
+                const other = (try typeRefOfTypeIn(arena, env, t, &names)) orelse break false;
+                if (!typeRefSame(ref, other)) break false;
+            } else true;
+            if (!same) continue;
+            const slot = try out.getOrPut(e.key_ptr.*);
+            if (!slot.found_existing) slot.value_ptr.* = .{ .text_value = ref };
+            continue;
+        }
         if (!is_hole and !holds_float and !holds_tuple) continue;
         const agree = for (tys[1..]) |t| {
             var other: std.ArrayListUnmanaged(u8) = .empty;
@@ -14010,11 +14039,85 @@ pub fn textValueLowerings(env: *const Env, arena: std.mem.Allocator, out: *std.A
     }
 }
 
+fn typeVarId(c: *T.TypeCell) ?T.TypeId {
+    return switch (c.state) {
+        .unbound => |u| u.id,
+        .generic => |g| g,
+        .link => null,
+    };
+}
+
+/// Whether `ty` holds a type variable a method of a generic type binds one of
+/// the type's parameters to (`Env.typeParamVarNames`).
+fn mentionsTypeParamVar(names: *const ParamVarNames, ty: *T.Type) bool {
+    const d = ty.deref();
+    return switch (d.*) {
+        .typeVar => |c| if (typeVarId(c)) |id| names.contains(id) else false,
+        .named => |n| for (n.args) |a| {
+            if (mentionsTypeParamVar(names, a)) break true;
+        } else false,
+        else => false,
+    };
+}
+
+/// Whether two written forms of checker types (`typeRefOfType`) name one type.
+fn typeRefSame(a: ast.TypeRef, b: ast.TypeRef) bool {
+    return switch (a) {
+        .named => |n| b == .named and std.mem.eql(u8, n, b.named),
+        .array => |x| b == .array and typeRefSame(x.*, b.array.*),
+        .optional => |x| b == .optional and typeRefSame(x.*, b.optional.*),
+        .tuple_ => |xs| b == .tuple_ and xs.len == b.tuple_.len and for (xs, b.tuple_) |l, r| {
+            if (!typeRefSame(l, r)) break false;
+        } else true,
+        .generic => |g| b == .generic and std.mem.eql(u8, g.name, b.generic.name) and g.args.len == b.generic.args.len and for (g.args, b.generic.args) |l, r| {
+            if (!typeRefSame(l, r)) break false;
+        } else true,
+        else => false,
+    };
+}
+
+/// Decision 900 — a call answering a value of a generic type the program
+/// declares (`Dict.empty()`, `Dict(pairs: …)`): its type, keyed at the call's
+/// loc plus `ast.text_ret_col`, from which commonJS reads the print shape of
+/// each type argument the value carries.
+fn noteGenericValueCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) !void {
+    const d = typed.getType().deref();
+    if (d.* != .named or d.named.args.len == 0) return;
+    if (env.lookupTypeDef(d.named.name) == null) return;
+    var key = c.loc;
+    key.col += ast.text_ret_col;
+    try noteTextValue(env, key, typed.getType());
+}
+
 /// The written form of a checker type; null for a type variable, a union or
 /// a structural record — what nothing names. Shared by the scope lowering's
 /// carried types (`context_lower.zig`, decision 504) and `unionValueLowerings`.
 pub fn typeRefOfType(arena: std.mem.Allocator, env: *const Env, ty: *T.Type) anyerror!?ast.TypeRef {
+    return typeRefOfTypeIn(arena, env, ty, null);
+}
+
+/// Decision 900 — the variables the type parameters of generic types' methods
+/// settled to (`Env.typeParamVars`), by id, each with its parameter's name;
+/// one that settled to a type is left out.
+const ParamVarNames = std.AutoHashMapUnmanaged(T.TypeId, []const u8);
+fn paramVarNames(env: *const Env, arena: std.mem.Allocator) !ParamVarNames {
+    var out: ParamVarNames = .empty;
+    for (env.typeParamVars.items) |pv| {
+        const d = pv.ty.deref();
+        if (d.* != .typeVar) continue;
+        const id = typeVarId(d.typeVar) orelse continue;
+        try out.put(arena, id, pv.name);
+    }
+    return out;
+}
+
+/// `typeRefOfType`, and with `params` a type variable a method of a generic
+/// type binds one of the type's parameters to is written as that parameter's
+/// name (decision 900, `Env.typeParamVarNames`).
+fn typeRefOfTypeIn(arena: std.mem.Allocator, env: *const Env, ty: *T.Type, params: ?*const ParamVarNames) anyerror!?ast.TypeRef {
     const d = ty.deref();
+    if (params) |names| if (d.* == .typeVar) if (typeVarId(d.typeVar)) |id|
+        if (names.get(id)) |n| return .{ .named = n };
     switch (d.*) {
         .named => |n| {
             if (n.args.len == 0) {
@@ -14022,7 +14125,7 @@ pub fn typeRefOfType(arena: std.mem.Allocator, env: *const Env, ty: *T.Type) any
                 return .{ .named = n.name };
             }
             const args = try arena.alloc(ast.TypeRef, n.args.len);
-            for (n.args, 0..) |a, i| args[i] = (try typeRefOfType(arena, env, a)) orelse return null;
+            for (n.args, 0..) |a, i| args[i] = (try typeRefOfTypeIn(arena, env, a, params)) orelse return null;
             if (std.mem.eql(u8, n.name, "array") and args.len == 1) {
                 const inner = try arena.create(ast.TypeRef);
                 inner.* = args[0];
@@ -14041,11 +14144,11 @@ pub fn typeRefOfType(arena: std.mem.Allocator, env: *const Env, ty: *T.Type) any
             return .{ .generic = .{ .name = n.name, .args = args, .is_builtin = builtin } };
         },
         .func => |f| {
-            const params = try arena.alloc(ast.TypeRef, f.params.len);
-            for (f.params, 0..) |p, i| params[i] = (try typeRefOfType(arena, env, p)) orelse return null;
+            const ps = try arena.alloc(ast.TypeRef, f.params.len);
+            for (f.params, 0..) |p, i| ps[i] = (try typeRefOfTypeIn(arena, env, p, params)) orelse return null;
             const ret = try arena.create(ast.TypeRef);
-            ret.* = (try typeRefOfType(arena, env, f.ret)) orelse return null;
-            return .{ .function = .{ .params = params, .returnType = ret } };
+            ret.* = (try typeRefOfTypeIn(arena, env, f.ret, params)) orelse return null;
+            return .{ .function = .{ .params = ps, .returnType = ret } };
         },
         else => return null,
     }
@@ -17694,7 +17797,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try noteStageCall(env, c, typedCall);
             // Decision 791 (1) — a call of a component makes its lambda wherever it
             // is written, a component body included: it answers `Component<R>`.
-            break :blk applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall));
+            const result = try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall));
+            try noteGenericValueCall(env, c, result);
+            break :blk result;
         },
 
         // ── function definition expressions ────────────────────────────────────

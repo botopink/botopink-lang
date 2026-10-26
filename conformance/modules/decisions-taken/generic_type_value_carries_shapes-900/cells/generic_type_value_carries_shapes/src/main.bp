@@ -1,0 +1,14 @@
+//// Decision 900 — On commonJS a value of a generic type carries its type arguments' print shapes: the generic constructor that builds it writes the shapes its call handed it (673) into the value (`__bp_s`), a method that answers a new value of the type copies them, and a generic method reads them where it writes a `K` / `V` as text — so the value prints right wherever it goes, `d.display()` in another module and `print(d)`'s `Display` dispatch included; settles B-115 box 3.
+
+mod lib;
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val d = lib.prices();
+    print(d);
+    print(d.display());
+    val e = d.insert("b", 3.0).delete("a");
+    print(e);
+    print(lib.listed());
+}

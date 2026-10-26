@@ -693,6 +693,14 @@ pub const text_arg_col: usize = 8_000_000;
 /// synthetic columns, so the answer is keyed by a loc no written node has.
 pub const catalogue_default_col: usize = 9_000_000;
 
+/// The column added to a call's loc to key the `text_value` lowering of the
+/// value of a generic type it answers (`Dict.empty()` answering
+/// `Dict<string, f64>`, a record constructor `Dict(pairs: …)`; 144 B-115,
+/// decision 900; `infer.textValueLowerings`): commonJS reads from it the print
+/// shape of each type argument, which the value carries (`__bp_s`). Between
+/// `catalogue_default_col`'s and `text_fn_value_col`'s.
+pub const text_ret_col: usize = 50_000_000;
+
 /// The column added to the loc of a generic fn named as a value (`xs.map(show)`)
 /// to key the `text_value` lowering of the function type that use instantiates
 /// when a parameter of it holds a float or a tuple (144 B-115, decision 673;

@@ -1921,6 +1921,14 @@ const Emitter = struct {
     /// The type parameters whose print shape is a parameter of the fn being
     /// emitted (`shape_fns`): `typeShape` answers `__bp_ty_<T>` for each.
     ty_shapes: []const ast.GenericParam = &.{},
+    /// Decision 900 — true while an instance method of a generic record is
+    /// emitted: the shape of each of the type's parameters (`ty_shapes`) is
+    /// the one the value carries, `this.__bp_s?.$T`, not a parameter.
+    ty_shapes_on_self: bool = false,
+    /// Decision 900 — the shape each type parameter of a generic record
+    /// stands for while a constructor call of it writes its fields' shapes
+    /// (`typeShape`); null elsewhere.
+    shape_subst: ?ShapeSubst = null,
     /// The record or enum whose methods are being built — what `Self` and
     /// `self` are for `staticTypeOf`.
     eq_self_type: ?[]const u8 = null,
@@ -2693,34 +2701,119 @@ const Emitter = struct {
 
     /// 144 B-115 (decision 673) — the print shapes of a generic record built at
     /// `cc`: `Box(value: 2.0)` is `new Box(2.0)` and JavaScript holds `2.0` as
-    /// `2`, so the value carries its own `__bp_s` — the fixed float fields'
-    /// shapes and, for a field typed by a type parameter, the shape of the
-    /// argument written there. Null when the record is not generic or no field
-    /// holds a float.
-    fn genericInstanceShapes(self: *Emitter, cc: anytype) !?js.Expr {
+    /// `2`, so the value carries its own `__bp_s` — the shape of every field
+    /// that holds a float or a tuple, a type parameter's read off the type the
+    /// checker says the call answers (`ast.text_ret_col`) else off the argument
+    /// written there. Decision 900 — a record with instance methods also
+    /// carries the shape of each type parameter, `$T`, which those methods read
+    /// where they write a `T` as text (`tyShapeParam`): inside one of them,
+    /// `Dict(pairs: …)` copies the shapes of the value it is a method of.
+    /// Null when the record is not generic or the value would carry only what
+    /// its class's prototype says (`protoShapes`).
+    fn genericInstanceShapes(self: *Emitter, loc: ast.Loc, cc: anytype) !?js.Expr {
         const decl = self.eq_decls.get(cc.callee) orelse return null;
         if (decl.genericParams.len == 0 or !decl.isRecord()) return null;
+        const gps = decl.genericParams;
         const fields = decl.recordFields();
-        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
-        for (fields, 0..) |f, fi| {
-            var sh: ?js.Expr = null;
-            if (mentionsTypeParam(f.typeRef, decl.genericParams)) {
-                for (cc.args, 0..) |arg, i| {
-                    const at = if (arg.label) |l| slotIndexOf(self.record_fields.get(cc.callee) orelse &.{}, l) orelse continue else i;
-                    if (at == fi) sh = try self.argShape(arg.value.*);
+        const slots_of = self.record_fields.get(cc.callee) orelse &.{};
+        const answered = self.loweredTypeArgs(loc, cc.callee, gps.len);
+        const tys = try self.arena().alloc(?js.Expr, gps.len);
+        for (gps, 0..) |gp, gi| {
+            tys[gi] = null;
+            if (answered) |ans| {
+                tys[gi] = try self.typeShape(ans[gi]);
+                if (tys[gi] != null) continue;
+            }
+            for (cc.args, 0..) |arg, i| {
+                const at = if (arg.label) |l| slotIndexOf(slots_of, l) orelse continue else i;
+                if (at >= fields.len) continue;
+                const sh = (try self.argShape(arg.value.*)) orelse continue;
+                if (shapeAtParam(fields[at].typeRef, sh, gp.name)) |p| {
+                    tys[gi] = p;
+                    break;
                 }
-            } else sh = try self.typeShape(f.typeRef);
-            const got = sh orelse continue;
-            // 144 B-115 — a tuple in a type parameter's slot prints as one.
-            if (!shapeHoldsFloat(got) and !shapeHoldsTuple(got)) continue;
-            // What the class's prototype already says of the field
-            // (`protoShapes`, `Dict`'s `pairs: array<#(K, V)>`) the value
-            // need not carry.
-            if (try self.typeShape(f.typeRef)) |proto| if (shapeEql(proto, got)) continue;
-            try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = got } });
+            }
         }
-        if (props.items.len == 0) return null;
+        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
+        var differs = false;
+        for (fields) |f| {
+            const prev_subst = self.shape_subst;
+            self.shape_subst = .{ .gps = gps, .shapes = tys };
+            const got = try self.typeShape(f.typeRef);
+            self.shape_subst = prev_subst;
+            const prev_ty = self.ty_shapes;
+            self.ty_shapes = &.{};
+            const proto = try self.typeShape(f.typeRef);
+            self.ty_shapes = prev_ty;
+            const keep = if (got) |g| shapeHoldsFloat(g) or shapeHoldsTuple(g) or shapeIsRuntime(g) else false;
+            const proto_keep = if (proto) |p| shapeHoldsFloat(p) or shapeHoldsTuple(p) else false;
+            if (keep != proto_keep or (keep and !shapeEql(got.?, proto.?))) differs = true;
+            // 144 B-115 — a tuple in a type parameter's slot prints as one.
+            if (keep) try props.append(self.arena(), .{ .kv = .{ .key = f.name, .value = got.? } });
+        }
+        var carried = false;
+        if (recordHasInstanceMethods(decl)) for (gps, tys) |gp, t| {
+            const sh = t orelse continue;
+            if (sh == .null_) continue;
+            try props.append(self.arena(), .{ .kv = .{ .key = try std.fmt.allocPrint(self.arena(), "${s}", .{gp.name}), .value = sh } });
+            carried = true;
+        };
+        if (!differs and !carried) return null;
         return try self.b.object(props.items);
+    }
+
+    /// Decision 900 — whether a record declares a bodied instance method,
+    /// which reads the shapes of the type's parameters off the value.
+    fn recordHasInstanceMethods(decl: ast.TypeDecl) bool {
+        for (decl.methods) |m| {
+            if (m.body != null and m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) return true;
+        }
+        return false;
+    }
+
+    /// Decision 900 — the type arguments of the value of the generic type
+    /// `type_name` the call at `loc` answers, as the checker recorded them
+    /// (`ast.text_ret_col`); null when it recorded none, or another type.
+    fn loweredTypeArgs(self: *Emitter, loc: ast.Loc, type_name: []const u8, n: usize) ?[]const ast.TypeRef {
+        const lw = self.lowerings orelse return null;
+        var key = loc;
+        key.col += ast.text_ret_col;
+        const il = lw.get(key) orelse return null;
+        if (il != .text_value or il.text_value != .generic) return null;
+        const g = il.text_value.generic;
+        if (!std.mem.eql(u8, g.name, type_name) or g.args.len != n) return null;
+        return g.args;
+    }
+
+    /// Decision 900 — `T.m(args)` where `T` names a generic record and `m` is
+    /// a static of it that builds a value of the type (`shapeCtorSig`): the
+    /// type's name and the static's signature, read from this module's
+    /// declaration or the export info. Null for any other call.
+    const StaticShapeCtor = struct { type_name: []const u8, sig: crossModule.ShapeSig };
+    fn staticShapeCtor(self: *Emitter, cc: anytype) ?StaticShapeCtor {
+        const recv = cc.receiver orelse return null;
+        if (recv.* != .identifier or recv.identifier.kind != .ident) return null;
+        const rn = recv.identifier.kind.ident;
+        if (self.local_vars.contains(rn) or self.print_shapes.contains(rn) or self.eq_types.contains(rn)) return null;
+        if (self.eq_decls.get(rn)) |decl| {
+            if (!decl.isRecord()) return null;
+            for (decl.methods) |m| if (std.mem.eql(u8, m.name, cc.callee)) {
+                const sig = crossModule.shapeCtorSig(decl.name, decl.genericParams, m) orelse return null;
+                return .{ .type_name = rn, .sig = sig };
+            };
+            return null;
+        }
+        const xc = self.cross orelse return null;
+        const list = xc.owners.get(rn) orelse return null;
+        var hit: ?crossModule.ShapeSig = null;
+        for (list) |e| {
+            if (e.kind != .record) continue;
+            for (e.methods) |m| if (std.mem.eql(u8, m.name, cc.callee)) if (m.shape_sig) |sig| {
+                if (hit != null) return null;
+                hit = sig;
+            };
+        }
+        return if (hit) |h| .{ .type_name = rn, .sig = h } else null;
     }
 
     /// The two JS modifiers a botopink effect asks of the function that
@@ -3216,7 +3309,26 @@ const Emitter = struct {
             // (`Response.ok(...)`) — emit it as a `static` method so the call
             // resolves on the class itself, not an instance prototype.
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
-            const params = try self.buildParams(m.params);
+            // Decision 900 — in a generic record, an instance method reads the
+            // shape of each of the type's parameters off the value, and a
+            // static that builds a value of the type takes them after its
+            // own parameters, as a generic fn does (`shapeCtorSig`).
+            const prev_ty_shapes = self.ty_shapes;
+            const prev_on_self = self.ty_shapes_on_self;
+            defer {
+                self.ty_shapes = prev_ty_shapes;
+                self.ty_shapes_on_self = prev_on_self;
+            }
+            const shape_ctor = crossModule.shapeCtorSig(r.name, r.genericParams, m) != null;
+            self.ty_shapes = if (has_self or shape_ctor) r.genericParams else &.{};
+            self.ty_shapes_on_self = has_self;
+            var params = try self.buildParams(m.params);
+            if (shape_ctor) {
+                const all = try self.arena().alloc(js.Param, params.len + r.genericParams.len);
+                @memcpy(all[0..params.len], params);
+                for (r.genericParams, 0..) |gp, i| all[params.len + i] = js.Param.id(self.tyShapeParam(gp.name).?);
+                params = all;
+            }
             const eff = methodEffect(m);
             var shape = try self.methodShape(r.name, m, eff);
             const failing = isFailingTask(eff, m.returnType);
@@ -6955,6 +7067,8 @@ const Emitter = struct {
             .optional => |inner| self.typeShape(inner.*),
             .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32"))
                 float_shape
+            else if (self.substShape(n)) |sub|
+                sub
             else if (self.tyShapeParam(n)) |name|
                 .{ .name = name }
             else
@@ -6965,10 +7079,29 @@ const Emitter = struct {
 
     /// 144 B-114 — `__bp_ty_<T>`, the parameter holding the print shape of
     /// the type parameter `n` of the fn being emitted; null when `n` is none.
+    /// Decision 900 — in an instance method of a generic record, the shape
+    /// the value carries, `this.__bp_s?.$T` (`instanceShapes`).
     fn tyShapeParam(self: *Emitter, n: []const u8) ?[]const u8 {
         for (self.ty_shapes) |gp| if (std.mem.eql(u8, gp.name, n)) {
+            if (self.ty_shapes_on_self) return std.fmt.allocPrint(self.arena(), "this.__bp_s?.${s}", .{n}) catch null;
             return std.fmt.allocPrint(self.arena(), "__bp_ty_{s}", .{n}) catch null;
         };
+        return null;
+    }
+
+    /// Decision 900 — what each type parameter of a generic record stands
+    /// for while a constructor call of it is written (`shape_subst`).
+    const ShapeSubst = struct {
+        gps: []const ast.GenericParam,
+        shapes: []const ?js.Expr,
+    };
+
+    /// Decision 900 — the shape `shape_subst` gives the type parameter `n`:
+    /// null when `n` is none of its parameters, `.null_` when the call left
+    /// that one's shape unknown.
+    fn substShape(self: *Emitter, n: []const u8) ?js.Expr {
+        const sub = self.shape_subst orelse return null;
+        for (sub.gps, sub.shapes) |gp, sh| if (std.mem.eql(u8, gp.name, n)) return sh orelse js.Expr.null_;
         return null;
     }
 
@@ -7028,6 +7161,13 @@ const Emitter = struct {
     /// declared type places it; none when no type parameter has one, and the
     /// trailing ones without a shape left out.
     fn typeArgShapes(self: *Emitter, generics: []const ast.GenericParam, params: []const ast.Param, cc: anytype) anyerror![]const js.Expr {
+        return self.typeArgShapesOr(generics, params, cc, null);
+    }
+
+    /// `typeArgShapes`, and a type parameter no argument places takes the
+    /// shape of the type argument `answered` gives it (decision 900: the type
+    /// the checker says a generic record's static answers, `Dict.empty()`).
+    fn typeArgShapesOr(self: *Emitter, generics: []const ast.GenericParam, params: []const ast.Param, cc: anytype, answered: ?[]const ast.TypeRef) anyerror![]const js.Expr {
         const given = cc.args.len + cc.trailing.len;
         if (given > params.len) return &.{};
         // Decision 899 — a call omitting trailing defaults fills each with
@@ -7044,7 +7184,10 @@ const Emitter = struct {
                     last = gi + 1;
                     break;
                 }
-            }
+            } else if (answered) |ans| if (try self.typeShape(ans[gi])) |sh| {
+                out[gi] = sh;
+                last = gi + 1;
+            };
         }
         if (last == 0) return &.{};
         const fill = params.len - given;
@@ -7540,9 +7683,17 @@ const Emitter = struct {
             try args.appendSlice(self.arena(), try self.typeArgShapes(sig.generics, sig.params, cc));
         };
 
+        // Decision 900 — `Dict.empty()`: a static that builds a value of a
+        // generic record takes the shape of each type argument, read off its
+        // arguments or the type the checker says the call answers.
+        if (!is_new and slots == null and opt_recv == null and cc.calleeExpr == null and
+            args.items.len == cc.args.len + cc.trailing.len)
+            if (self.staticShapeCtor(cc)) |hit|
+                try args.appendSlice(self.arena(), try self.typeArgShapesOr(hit.sig.generics, hit.sig.params, cc, self.loweredTypeArgs(loc, hit.type_name, hit.sig.generics.len)));
+
         const arg_slice = try args.toOwnedSlice(self.arena());
         if (opt_recv) |r| return self.optEnumCall(r, try self.b.call(callee, arg_slice));
-        if (is_new) if (try self.genericInstanceShapes(cc)) |shapes| {
+        if (is_new) if (try self.genericInstanceShapes(loc, cc)) |shapes| {
             return self.b.call(try self.b.member(.{ .name = "Object" }, "defineProperty"), &.{
                 try self.b.new_(callee, arg_slice),
                 .{ .quoted = "__bp_s" },

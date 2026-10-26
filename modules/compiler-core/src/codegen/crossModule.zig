@@ -38,7 +38,31 @@ pub const ExportKind = enum { record, @"enum", @"fn", val, behavior };
 pub const MethodSig = struct {
     name: []const u8,
     arity: usize,
+    /// Decision 900 — a generic record's static that builds a value of the
+    /// type (`shapeCtorSig`): the type's parameters and the static's own,
+    /// which a commonJS caller reads to hand it the print shape of each type
+    /// argument. null for every other method.
+    shape_sig: ?ShapeSig = null,
 };
+
+/// Decision 900 — a static of the generic record `type_name` (type
+/// parameters `gps`) that builds a value of the type: bodied, no host
+/// binding, no `self`, no variadic or destructuring parameter, declared to
+/// answer `type_name<…>` (or `Self<…>`) over the type's parameters in their
+/// order. It takes one trailing print shape per type parameter on commonJS
+/// and writes them into the value it builds. Judged by the signature alone.
+pub fn shapeCtorSig(type_name: []const u8, gps: []const ast.GenericParam, m: ast.BehaviorMethod) ?ShapeSig {
+    if (gps.len == 0 or m.body == null or m.is_declare or m.isExternal()) return null;
+    if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) return null;
+    if (hasVariadicOrDestruct(m.params)) return null;
+    const rt = m.returnType orelse return null;
+    if (rt != .generic) return null;
+    const g = rt.generic;
+    if (!std.mem.eql(u8, g.name, type_name) and !std.mem.eql(u8, g.name, "Self")) return null;
+    if (g.args.len != gps.len) return null;
+    for (g.args, gps) |a, gp| if (a != .named or !std.mem.eql(u8, a.named, gp.name)) return null;
+    return .{ .generics = gps, .params = m.params };
+}
 
 /// Where a `pub` symbol is emitted, for resolving cross-module imports.
 /// `module` is the emitting module's path (e.g. `"web/http"`). `is_class`
@@ -1186,7 +1210,7 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
         for (ok.transformed.decls) |decl| switch (decl) {
             .type_ => |r| if (r.isPub) {
                 const methods = try alloc.alloc(MethodSig, r.methods.len);
-                for (r.methods, 0..) |m, i| methods[i] = .{ .name = m.name, .arity = m.params.len };
+                for (r.methods, 0..) |m, i| methods[i] = .{ .name = m.name, .arity = m.params.len, .shape_sig = if (r.shape == .record) shapeCtorSig(r.name, r.genericParams, m) else null };
                 try method_arrays.append(alloc, methods);
                 switch (r.shape) {
                     .record => |record_fields| {

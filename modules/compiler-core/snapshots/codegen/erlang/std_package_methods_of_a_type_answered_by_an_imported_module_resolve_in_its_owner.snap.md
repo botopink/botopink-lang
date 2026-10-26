@@ -35,9 +35,9 @@ pub type Dict<K, V>(
     // generic, so which is a string is asked of the value (`is`, decision 8 §4).
     pub fn display(self: Self<K, V>) -> string {
         var parts: string[] = [];
-        self.pairs.forEach(
-            { p -> parts.push(shown(p._0) + ": " + shown(p._1)) },
-        );
+        for self.pairs { p ->
+            parts.push(shown(p._0) + ": " + shown(p._1));
+        }
         return "Dict(" + parts.join(", ") + ")";
     }
 
@@ -854,10 +854,12 @@ reverse(O) ->
 -export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, bump/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1, '__bp_behaviors'/0]).
 
 display(Self) ->
-    Parts = lists:foldl(fun(P, Parts) ->
-        (Parts ++ [<<(std@collections:shown(erlang:element(1, P)))/binary, ": ", (std@collections:shown(erlang:element(2, P)))/binary>>])
-    end, [], erlang:element(2, Self)),
-    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
+    Parts = [],
+    Parts@3 = lists:foldl(fun(P, Parts@1) ->
+        Parts@2 = (Parts@1 ++ [<<(std@collections:shown(erlang:element(1, P)))/binary, ": ", (std@collections:shown(erlang:element(2, P)))/binary>>]),
+        Parts@2
+    end, Parts, erlang:element(2, Self)),
+    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts@3)))))/binary, ")">>.
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than

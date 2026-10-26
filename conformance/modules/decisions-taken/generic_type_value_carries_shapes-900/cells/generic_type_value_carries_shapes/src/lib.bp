@@ -1,0 +1,12 @@
+//// Decision 900 — a `Dict<string, f64>` built through std's generic constructor and methods, handed to another module.
+
+import {collections.Dict} from "std";
+
+pub fn prices() -> Dict<string, f64> {
+    val d: Dict<string, f64> = Dict.empty();
+    return d.insert("a", 2.0);
+}
+
+pub fn listed() -> Dict<string, f64> {
+    return Dict.ofEntries([#("a", 2.0), #("b", 1.5)]);
+}

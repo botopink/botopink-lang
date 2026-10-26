@@ -35,9 +35,9 @@ pub type Dict<K, V>(
     // generic, so which is a string is asked of the value (`is`, decision 8 §4).
     pub fn display(self: Self<K, V>) -> string {
         var parts: string[] = [];
-        self.pairs.forEach(
-            { p -> parts.push(shown(p._0) + ": " + shown(p._1)) },
-        );
+        for self.pairs { p ->
+            parts.push(shown(p._0) + ": " + shown(p._1));
+        }
         return "Dict(" + parts.join(", ") + ")";
     }
 

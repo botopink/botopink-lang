@@ -35,9 +35,9 @@ pub type Dict<K, V>(
     // generic, so which is a string is asked of the value (`is`, decision 8 §4).
     pub fn display(self: Self<K, V>) -> string {
         var parts: string[] = [];
-        self.pairs.forEach(
-            { p -> parts.push(shown(p._0) + ": " + shown(p._1)) },
-        );
+        for self.pairs { p ->
+            parts.push(shown(p._0) + ": " + shown(p._1));
+        }
         return "Dict(" + parts.join(", ") + ")";
     }
 
@@ -862,9 +862,9 @@ class Dict {
 
     display() {
         let parts = [];
-        this.pairs.forEach((p) => {
-    return parts.push(((shown(p[0]) + ": ") + shown(p[1])));
-});
+        for (const p of this.pairs) {
+    parts = parts.concat([((shown(p[0], this.__bp_s?.$K) + ": ") + shown(p[1], this.__bp_s?.$V))]);
+}
         return (("Dict(" + parts.join(", ")) + ")");
     }
 
@@ -910,7 +910,7 @@ class Dict {
         const filtered = this.pairs.filter((p) => {
     return (!__bp_eq(p[0], key, 0));
 });
-        return new Dict(filtered.concat([[key, value]]));
+        return Object.defineProperty(new Dict(filtered.concat([[key, value]])), "__bp_s", { value: { pairs: ["[", ["#", this.__bp_s?.$K, this.__bp_s?.$V]], $K: this.__bp_s?.$K, $V: this.__bp_s?.$V } });
     }
 
     bump(key, by) {
@@ -918,9 +918,9 @@ class Dict {
     }
 
     delete(key) {
-        return new Dict(this.pairs.filter((p) => {
+        return Object.defineProperty(new Dict(this.pairs.filter((p) => {
     return (!__bp_eq(p[0], key, 0));
-}));
+})), "__bp_s", { value: { pairs: ["[", ["#", this.__bp_s?.$K, this.__bp_s?.$V]], $K: this.__bp_s?.$K, $V: this.__bp_s?.$V } });
     }
 
     merge(other) {
@@ -944,15 +944,15 @@ class Dict {
         this.pairs.forEach((p) => {
     return out.push([p[0], f(p[1])]);
 });
-        return new Dict(out);
+        return Object.defineProperty(new Dict(out), "__bp_s", { value: { pairs: ["[", ["#", this.__bp_s?.$K, null]], $K: this.__bp_s?.$K } });
     }
 
-    static empty() {
-        return new Dict([]);
+    static empty(__bp_ty_K, __bp_ty_V) {
+        return Object.defineProperty(new Dict([]), "__bp_s", { value: { pairs: ["[", ["#", __bp_ty_K, __bp_ty_V]], $K: __bp_ty_K, $V: __bp_ty_V } });
     }
 
-    static ofEntries(entries) {
-        let out = new Dict([]);
+    static ofEntries(entries, __bp_ty_K, __bp_ty_V) {
+        let out = Object.defineProperty(new Dict([]), "__bp_s", { value: { pairs: ["[", ["#", __bp_ty_K, __bp_ty_V]], $K: __bp_ty_K, $V: __bp_ty_V } });
         entries.forEach((e) => {
     out = out.insert(e[0], e[1]);
 });
@@ -1022,37 +1022,37 @@ class Set {
     insert(x) {
         return (() => { if (this.items.any((y) => {
     return __bp_eq(y, x, 0);
-})) { return this; } else { return new Set(this.items.concat([x])); } })();
+})) { return this; } else { return Object.defineProperty(new Set(this.items.concat([x])), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } }); } })();
     }
 
     delete(x) {
-        return new Set(this.items.filter((item) => {
+        return Object.defineProperty(new Set(this.items.filter((item) => {
     return (!__bp_eq(item, x, 0));
-}));
+})), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } });
     }
 
     union(other) {
-        return new Set(this.items.concat(other.difference(this).items));
+        return Object.defineProperty(new Set(this.items.concat(other.difference(this).items)), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } });
     }
 
     intersection(other) {
-        return new Set(this.items.filter((x) => {
+        return Object.defineProperty(new Set(this.items.filter((x) => {
     return other.contains(x);
-}));
+})), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } });
     }
 
     difference(other) {
-        return new Set(this.items.filter((x) => {
+        return Object.defineProperty(new Set(this.items.filter((x) => {
     return (!other.contains(x));
-}));
+})), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } });
     }
 
-    static empty() {
-        return new Set([]);
+    static empty(__bp_ty_T) {
+        return Object.defineProperty(new Set([]), "__bp_s", { value: { items: ["[", __bp_ty_T], $T: __bp_ty_T } });
     }
 
-    static fromList(xs) {
-        let out = new Set([]);
+    static fromList(xs, __bp_ty_T) {
+        let out = Object.defineProperty(new Set([]), "__bp_s", { value: { items: ["[", __bp_ty_T], $T: __bp_ty_T } });
         xs.forEach((x) => {
     out = out.insert(x);
 });
@@ -1098,13 +1098,13 @@ class Queue {
     }
 
     enqueue(item) {
-        return new Queue(this.items.concat([item]));
+        return Object.defineProperty(new Queue(this.items.concat([item])), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } });
     }
 
     dequeue() {
         const head = __bp_array_at(this.items, 0);
         const rest = this.items.slice(1, this.items.length);
-        return [new Queue(rest), head];
+        return [Object.defineProperty(new Queue(rest), "__bp_s", { value: { items: ["[", this.__bp_s?.$T], $T: this.__bp_s?.$T } }), head];
     }
 
     peek() {
@@ -1115,12 +1115,12 @@ class Queue {
         return this.items;
     }
 
-    static empty() {
-        return new Queue([]);
+    static empty(__bp_ty_T) {
+        return Object.defineProperty(new Queue([]), "__bp_s", { value: { items: ["[", __bp_ty_T], $T: __bp_ty_T } });
     }
 
-    static fromList(xs) {
-        return new Queue(xs);
+    static fromList(xs, __bp_ty_T) {
+        return Object.defineProperty(new Queue(xs), "__bp_s", { value: { items: ["[", __bp_ty_T], $T: __bp_ty_T } });
     }
 }
 Queue.prototype.__bp = "Queue";

@@ -160,7 +160,16 @@ codegen/
   bodied, non-host generic fn of another module hands the shapes too
   (decision 899): the caller reads the callee's declared signature from the
   export info (`ExportInfo.shape_sig`, `crossShapeSig`) and never its body,
-  filling an omitted trailing default with `undefined` first. A call that
+  filling an omitted trailing default with `undefined` first. A value of a
+  generic record with instance methods carries its type arguments' shapes
+  (decision 900): `genericInstanceShapes` writes `$K` / `$V` beside the
+  fields' shapes into its `__bp_s`, a static that builds a value of the type
+  (`crossModule.shapeCtorSig`, `MethodSig.shape_sig` across modules:
+  `Dict.empty()`, `Set.fromList`) takes one trailing `__bp_ty_<T>` per type
+  parameter, filled from its arguments or the type the checker recorded at the
+  call's loc plus `ast.text_ret_col`, and an instance method reads
+  `this.__bp_s?.$T` where it writes a `T` as text and copies it into every
+  value of the type it builds (`ty_shapes_on_self`). A call that
   omits the shapes — a host or TypeScript caller — answers the old text; the `.d.ts` and the `T`
   values are unchanged.
   A botopink value is told from a host object by the `__bp` marker its

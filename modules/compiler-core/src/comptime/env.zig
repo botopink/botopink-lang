@@ -984,6 +984,10 @@ pub const PatternNote = struct {
     resolved: ?ast.Pattern = null,
 };
 
+/// Decision 900 — a type variable a method body of a generic type binds one of
+/// the type's parameters to, with the parameter's name (`Env.typeParamVars`).
+pub const TypeParamVar = struct { ty: *T.Type, name: []const u8 };
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -1769,6 +1773,12 @@ pub const Env = struct {
     /// inference is done and turned into `InstanceLowering.text_value`
     /// entries (`infer.textValueLowerings`) where every reading names a float.
     textValues: std.AutoHashMap(ast.Loc, std.ArrayListUnmanaged(*T.Type)),
+    /// Decision 900 — the type variable each method body of a generic type
+    /// binds a type parameter of the type to (`inferTypeMethods`), with the
+    /// parameter's name: `textValueLowerings` writes the variable it settles
+    /// to back as that name, which
+    /// commonJS reads as the shape the value carries.
+    typeParamVars: std.ArrayListUnmanaged(TypeParamVar) = .empty,
     /// Stdlib modules implicitly required via array method dispatch; used by
     /// the compile session to prepend synthetic imports for the codegen.
     implicitStdModules: std.StringHashMap(void),

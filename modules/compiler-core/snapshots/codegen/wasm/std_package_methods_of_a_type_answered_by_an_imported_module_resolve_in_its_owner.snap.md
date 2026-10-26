@@ -35,9 +35,9 @@ pub type Dict<K, V>(
     // generic, so which is a string is asked of the value (`is`, decision 8 §4).
     pub fn display(self: Self<K, V>) -> string {
         var parts: string[] = [];
-        self.pairs.forEach(
-            { p -> parts.push(shown(p._0) + ": " + shown(p._1)) },
-        );
+        for self.pairs { p ->
+            parts.push(shown(p._0) + ": " + shown(p._1));
+        }
         return "Dict(" + parts.join(", ") + ")";
     }
 
@@ -626,11 +626,11 @@ test "order case over Order" {
   (func $Dict_display (param $self (ref null $rec_Dict)) (result (ref null $str))
     (local $__mem0 i32)
     (local $parts (ref null $arr_any))
+    (local $p i32)
     (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $p (ref null $arr_any))
+    (local $p__sh0 (ref null $arr_any))
     array.new_fixed $arr_any 0
     local.set $parts
     local.get $self
@@ -641,8 +641,6 @@ test "order case over Order" {
     local.set $__len0
     i32.const 0
     local.set $__idx0
-    i32.const 0
-    local.set $__acc0
     (block $__break
       (loop $__continue
         local.get $__idx0
@@ -653,15 +651,15 @@ test "order case over Order" {
         local.get $__idx0
         array.get $arr_any
     ref.cast (ref null $arr_any)
-        local.set $p
+        local.set $p__sh0
     local.get $parts
-    local.get $p
+    local.get $p__sh0
     i32.const 0
     array.get $arr_any
     call $shown
     global.get $__s0
     call $__str_concat
-    local.get $p
+    local.get $p__sh0
     i32.const 1
     array.get $arr_any
     call $shown
@@ -675,6 +673,8 @@ test "order case over Order" {
         br $__continue
       )
     )
+    i32.const 0
+    drop
     global.get $__s1
     local.get $parts
     global.get $__s2
@@ -3257,11 +3257,11 @@ import {io.terminal.print} from "std";
   (func $Dict_display (param $self (ref null $rec_Dict)) (result (ref null $str))
     (local $__mem0 i32)
     (local $parts (ref null $arr_any))
+    (local $p i32)
     (local $__iter0 (ref null $arr_any))
     (local $__idx0 i32)
     (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $p (ref null $arr_any))
+    (local $p__sh0 (ref null $arr_any))
     array.new_fixed $arr_any 0
     local.set $parts
     local.get $self
@@ -3272,8 +3272,6 @@ import {io.terminal.print} from "std";
     local.set $__len0
     i32.const 0
     local.set $__idx0
-    i32.const 0
-    local.set $__acc0
     (block $__break
       (loop $__continue
         local.get $__idx0
@@ -3284,15 +3282,15 @@ import {io.terminal.print} from "std";
         local.get $__idx0
         array.get $arr_any
     ref.cast (ref null $arr_any)
-        local.set $p
+        local.set $p__sh0
     local.get $parts
-    local.get $p
+    local.get $p__sh0
     i32.const 0
     array.get $arr_any
     call $shown
     global.get $__s0
     call $__str_concat
-    local.get $p
+    local.get $p__sh0
     i32.const 1
     array.get $arr_any
     call $shown
@@ -3306,6 +3304,8 @@ import {io.terminal.print} from "std";
         br $__continue
       )
     )
+    i32.const 0
+    drop
     global.get $__s1
     local.get $parts
     global.get $__s2
