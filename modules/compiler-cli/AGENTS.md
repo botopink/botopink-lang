@@ -11,7 +11,7 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
-├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all eight
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all twelve
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus a type
 │   │                          error's `= hint:` under its excerpt from `check`
 │   │                          and `build`, plus the
@@ -117,6 +117,11 @@ compiler-cli/
 │   │                          located refusal (`refused` at `botopink.json`), `held`
 │   │                          (a dependency's targets, 770), `--emit-runtime`
 │   │                          (`runtime`), the cache filed under the directory given
+│   ├── packages_list.sh     ← `packages --list` (decision 993 (2)): a throwaway
+│   │                          checkout — a library, a workspace with a member
+│   │                          inheriting its targets and one declaring its own, a
+│   │                          directory with no manifest, a refused manifest, std —
+│   │                          the exact tab-separated output, the help, the usage errors
 │   ├── resolved_file.sh     ← `--emit-resolved`'s files (decision 834, B-163): `app`
 │   │                          (modules `main`, `util`) over `lib` writes
 │   │                          `app/main.bp`, `app/util.bp`, `lib/root.bp`,
@@ -182,7 +187,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all eight scripts, in order, against the installed CLI
+zig build test-cli      # all twelve scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in test-cli)
@@ -199,6 +204,7 @@ bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, ra
 bash modules/compiler-cli/tests/runtime_file.sh      # every target built from a package's .bpr as built directly (805)
 bash modules/compiler-cli/tests/resolved_file.sh     # --emit-resolved writes one file per module (834)
 bash modules/compiler-cli/tests/build_json.sh        # build --json events and --cache-root (798 (6))
+bash modules/compiler-cli/tests/packages_list.sh     # packages --list over a throwaway checkout (993 (2))
 bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and from the intermediate, the same answer (798 (5))
 ```
 

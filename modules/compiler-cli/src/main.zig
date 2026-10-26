@@ -10,6 +10,7 @@
 ///   format   Format source files
 ///   new      Create a new botopink project
 ///   clean    Remove build artifacts (out/, .botopinkbuild/)
+///   packages List the packages of the checkout
 ///   help     Show this help message
 ///   version  Show the compiler version
 const std = @import("std");
@@ -21,6 +22,7 @@ const run_cmd = @import("./cli/run.zig");
 const format_cmd = @import("./cli/format_cmd.zig");
 const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
+const packages_cmd = @import("./cli/packages.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
 const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
@@ -56,6 +58,7 @@ const HELP =
     \\  format   Format source files
     \\  new      Create a new botopink project
     \\  clean    Remove build artifacts
+    \\  packages List the packages of the checkout
     \\  cell     Scaffold a language cell, or check cells against their snapshots
     \\  help     Show this message
     \\  version  Show the compiler version and the Erlang/OTP release it emits for
@@ -128,6 +131,14 @@ const HELP =
     \\cache of the dependencies' compiled modules). In a
     \\workspace member, the workspace root's .botopinkbuild/cache/ and
     \\.botopinkbuild/analysis/ (the dependencies' analysis) go too.
+    \\
+    \\Options for `packages`:
+    \\  --list                       One line per package of the checkout, tab-separated: <name>, <dir> (relative to the
+    \\                               checkout root), <targets> (the manifest's "targets" joined by `,`, a workspace member's
+    \\                               inheriting its workspace's; `all` when none), and `package` or `not-a-package`
+    \\                               (a refused manifest, a workspace that does not expand, a name declared twice, a library
+    \\                               member with no `files`). The set is the library test runner's: every library under
+    \\                               repository/, every workspace member, and std. Sorted by name, then dir.
     \\
     \\`botopink <command> --help` (or -h) prints this message.
     \\
@@ -254,6 +265,11 @@ fn dispatch(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, cmd, "clean")) {
         parseNoOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
         return clean_cmd.run(gpa, io);
+    }
+
+    if (std.mem.eql(u8, cmd, "packages")) {
+        parsePackagesOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
+        return packages_cmd.run(gpa, io, env_map);
     }
 
     if (std.mem.eql(u8, cmd, "cell")) {
@@ -575,6 +591,18 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
     if (args.len > 0) return reject(args[0], diag);
 }
 
+/// `packages --list`: the one form; no `--list` is a usage error.
+fn parsePackagesOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
+    var listed = false;
+    for (args) |a| {
+        if (std.mem.eql(u8, a, "--list")) listed = true else return reject(a, diag);
+    }
+    if (!listed) {
+        diag.token = "--list";
+        return error.MissingArgument;
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 //
 // One block per contract row the parsers close (`specs/1.0.2-beta/02-cli-gate/
@@ -596,6 +624,7 @@ test {
     _ = @import("./cli/check.zig");
     _ = @import("./cli/code_cache.zig");
     _ = @import("./cli/clean.zig");
+    _ = @import("./cli/packages.zig");
     _ = @import("./cli/config.zig");
     _ = @import("./cli/diagnostics.zig");
     _ = @import("./cli/format_cmd.zig");
@@ -782,4 +811,12 @@ test "clean takes no arguments" {
     var d: ArgDiag = .{};
     try parseNoOpts(argv(&.{}), &d);
     try std.testing.expectError(error.UnexpectedArgument, parseNoOpts(argv(&.{"out"}), &d));
+}
+
+test "packages takes --list and nothing else" {
+    var d: ArgDiag = .{};
+    try parsePackagesOpts(argv(&.{"--list"}), &d);
+    try std.testing.expectError(error.MissingArgument, parsePackagesOpts(argv(&.{}), &d));
+    try std.testing.expectError(error.UnknownFlag, parsePackagesOpts(argv(&.{ "--list", "--x" }), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parsePackagesOpts(argv(&.{ "--list", "x" }), &d));
 }
