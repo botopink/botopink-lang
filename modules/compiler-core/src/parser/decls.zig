@@ -1502,7 +1502,7 @@ fn checkVariadicParam(this: *This, alloc: std.mem.Allocator, typeRef: ast.TypeRe
 //   type Name { associated fns }                       → namespace type (decision 329):
 //     no value, no `self` (`namespace-type-self`)
 //   behavior Name<G> extends B { val x: T; fn f(self: Self); default fn … { } }
-// Shape resolution and separators: specs/1.0.4-beta/12-surface-cutover/
+// Shape resolution and separators: specs/12-surface-cutover/
 // type-grammar.md and separators.md.
 
 fn failAt(this: *This, kind: parser.ParseErrorType, tok: Token) ParseError {

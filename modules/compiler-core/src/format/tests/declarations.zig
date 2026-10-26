@@ -526,7 +526,7 @@ test "format: declare fn ---- external declaration keeps `declare` and stays bod
     );
 }
 
-// ── 1.0.3 surface: the separator rule (specs/1.0.4-beta/12-surface-cutover/separators.md) ──
+// ── 1.0.3 surface: the separator rule (specs/12-surface-cutover/separators.md) ──
 
 test "format: type ---- a compact field list stays on one line past the line width" {
     try h.assertFormat(std.testing.allocator,

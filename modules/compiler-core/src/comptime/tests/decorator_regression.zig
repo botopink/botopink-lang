@@ -4,7 +4,7 @@
 //! the fixes in step-1 (decorator eval) and step-2 (allocation leaks).
 //!
 //! Each test proves the lowering it names, not only that the body evaluated
-//! (specs/1.0.4-beta/05-cli-residuals/mutation-matrix.md): a rejecting fixture
+//! (specs/05-cli-residuals/mutation-matrix.md): a rejecting fixture
 //! proves the failure path and is compared on the **whole** message; an
 //! accepting fixture over the same decorator body proves the lowering computed
 //! a real value, and asserts the shape the body lowered to

@@ -1,6 +1,6 @@
 //! parser: the 1.0.3 surface — `type`, `behavior`, the shared field list and
 //! the member separators (front 12 step 2, dual grammar). The acceptance cases
-//! of specs/1.0.4-beta/12-surface-cutover/type-grammar.md, behavior.md and
+//! of specs/12-surface-cutover/type-grammar.md, behavior.md and
 //! separators.md, and the targeted diagnostics of the removed 1.0.2 keywords
 //! (front 12 step 4).
 

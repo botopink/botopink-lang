@@ -5,13 +5,13 @@
 
 The language's conformance cells: what any implementation of botopink must answer, written in
 botopink, checked on every target by running the emitted program. Front 15 pinned decision 8
-(`specs/1.0.4-beta/08-review-backlog/decision-8-language.md` in the meta workspace): `case` and
+(`specs/08-review-backlog/decision-8-language.md` in the meta workspace): `case` and
 patterns (§5), tuples and labels (§6), `loop` (§10), and the parts of `is` (§4), unions (§3),
 `unknown` (§2) and printing (§7) those scenarios use. Front 17
-(`specs/1.0.4-beta/17-language-test-expansion/README.md`) added the rest of the language surface —
+(`specs/17-language-test-expansion/README.md`) added the rest of the language surface —
 effects (§9), comptime parameters and templates, decorators and `@emit`, host externals (§8),
 generics and `behavior` dispatch, optionals, closures, primitive methods, and modules. 1.0.10-beta's
-C-16 (`specs/1.0.10-beta/00-compiler-carry-over/README.md`) added front 12's steps 4.2–4.4 — a local
+C-16 (`specs/00-compiler-carry-over/README.md`) added front 12's steps 4.2–4.4 — a local
 dependency, `@panic`/`@todo`, "no external target for the active backend" — and a cell per decision
 63–66, plus the runner's tally (decision 59 (b)). Decision 466 put the suite here, in one cell shape (decisions 457, 475).
 

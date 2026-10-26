@@ -675,7 +675,7 @@ carets under whatever happened to sit at that column.
 `unexpectedToken` is the catch-all, and a form the language decided against
 must never reach it: a reader cannot tell a deliberate absence from a gap when
 both say "this token cannot appear here" (`surface-gaps.md` of
-`specs/1.0.10-beta/00-compiler-carry-over/15-language-surface/`). Each such
+`specs/00-compiler-carry-over/15-language-surface/`). Each such
 form has its own `ParseErrorType`, an `errorMessages` arm in `print.zig` that
 names the replacement — or says there is none — and an
 `expectErrorAt(src, kind, line, col)` case in `tests/language_surface.zig`

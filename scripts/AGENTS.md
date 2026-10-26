@@ -467,7 +467,7 @@ split.
 test-libs`, `test-conformance` and `test-docs` re-enter the build graph, find it
 up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.
 Measured numbers, before and after, are in the meta workspace's
-`specs/1.0.10-beta/00-compiler-carry-over/11-tooling/README.md` § The gate's speed
+`specs/00-compiler-carry-over/11-tooling/README.md` § The gate's speed
 and, per stage and per step, `specs/1.0.10-beta/00-compiler-carry-over/25-gate-perf/README.md`
 § Measurements.
 

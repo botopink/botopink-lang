@@ -1,6 +1,6 @@
 //! Template markers of an `Implementation`'s template (`#[external(.Erlang("…"))]`,
 //! `parser/implementations.zig`) — decision 5
-//! (specs/1.0.4-beta/08-review-backlog/semantics-decisions.md): a template
+//! (specs/08-review-backlog/semantics-decisions.md): a template
 //! names the declaration's parameters **by position**, `$0`, `$1`, … over the
 //! declared parameters, `self` included; `$self` is not a marker of the
 //! language.

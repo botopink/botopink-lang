@@ -3,7 +3,7 @@
 //! One section per row, in the order the rows landed:
 //!   N19 `unknown` (§2), N20 union types (§3), N21 `is` (§4), N22 `case` arms (§5).
 //!
-//! Spec: `specs/1.0.4-beta/08-review-backlog/decision-8-language.md` in the meta
+//! Spec: `specs/08-review-backlog/decision-8-language.md` in the meta
 //! workspace. A form here parses; what it *means* is the checker half's, so a
 //! fixture that parses may still red in inference — that is expected until
 //! N19–N22's checker rows land.
