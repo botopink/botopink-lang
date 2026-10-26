@@ -1,1 +1,1 @@
-{ "name": "comptime" }
+{"name": "comptime", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

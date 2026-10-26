@@ -1,0 +1,11 @@
+botopink-cell 2
+== meta_expr_rule
+out the passwords differ
+== meta_list_coalesced_method
+out a,b
+== meta_list_method_on_optional
+out a,b
+== meta_typed_records
+out cities
+out 2
+out 1

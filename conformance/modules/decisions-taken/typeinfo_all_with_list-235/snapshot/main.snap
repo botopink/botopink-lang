@@ -1,0 +1,13 @@
+botopink-cell 2
+== typeinfo_all_behavior_shared
+out Mailer service
+out Orders repository
+== typeinfo_all_list
+out Mailer role=service
+out Orders store=sql
+out Billing role=service
+out Mailer 1 []
+out Billing 2 []
+== typeinfo_all_list_twice
+refused error: typeinfo-all-arguments: `with:` lists `service` twice
+at src/main.bp:16:11

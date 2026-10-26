@@ -1,7 +1,0 @@
-botopink-cell 1
-out == dict_float_value
-out 1.5 0.25 null
-out 1.5 0.5
-out 2.75 1.5 2
-out 5000000000 null
-out 18446744073709551615

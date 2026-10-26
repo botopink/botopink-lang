@@ -1,1 +1,1 @@
-{ "name": "nullish" }
+{"name": "nullish", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

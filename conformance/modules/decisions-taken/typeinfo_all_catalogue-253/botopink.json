@@ -1,1 +1,1 @@
-{ "name": "typeinfo_all_catalogue-253" }
+{"name": "typeinfo_all_catalogue-253", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

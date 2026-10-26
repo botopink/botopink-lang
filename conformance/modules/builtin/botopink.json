@@ -1,1 +1,1 @@
-{ "name": "builtin" }
+{"name": "builtin", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

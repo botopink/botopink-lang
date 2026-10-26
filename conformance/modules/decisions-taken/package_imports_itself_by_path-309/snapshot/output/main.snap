@@ -1,6 +1,0 @@
-botopink-cell 1
-out == std_module_imports_std_module
-out 2
-out a b
-out a%20b=c%2Bd
-out true

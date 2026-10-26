@@ -1,1 +1,1 @@
-{ "name": "bodyless" }
+{"name": "bodyless", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

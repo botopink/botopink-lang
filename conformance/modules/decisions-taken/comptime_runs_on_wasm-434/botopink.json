@@ -1,1 +1,1 @@
-{ "name": "comptime_runs_on_wasm-434" }
+{"name": "comptime_runs_on_wasm-434", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

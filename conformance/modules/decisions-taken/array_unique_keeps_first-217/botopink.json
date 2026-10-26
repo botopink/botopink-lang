@@ -1,1 +1,1 @@
-{ "name": "array_unique_keeps_first-217" }
+{"name": "array_unique_keeps_first-217", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

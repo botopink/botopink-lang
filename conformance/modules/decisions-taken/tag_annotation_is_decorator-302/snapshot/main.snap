@@ -1,0 +1,22 @@
+botopink-cell 2
+== tag_annotation_add_member
+refused error: tag-annotation-output: `#[withMember]` on the tag `div` calls `decl.addMember`, and an annotation on a tag records typed meta only
+at src/main.bp:10:27
+== tag_annotation_add_type
+refused error: tag-annotation-output: `#[withType]` on the tag `div` calls `decl.addType`, and an annotation on a tag records typed meta only
+at src/main.bp:10:27
+== tag_annotation_emit
+refused error: tag-annotation-output: `#[withEmit]` on the tag `div` calls `@emit`, and an annotation on a tag records typed meta only
+at src/main.bp:10:27
+== tag_annotation_meta_twice
+refused error: decorator-meta-twice: `#[hydrate]` records a second `Hydrate` on the tag `div`, which holds one
+at src/main.bp:10:41
+== tag_annotation_not_decorator
+refused error: `#[shout]` names no decorator in this scope — a tag annotation is a function whose first parameter is `comptime decl: @Decl`
+at src/main.bp:10:27
+== tag_annotation_reads_meta
+refused error: typeinfo-meta-type: `decl.meta(T)` reads a tag's meta, and `decl` is the declaration this decorator annotates
+at src/main.bp:18:18
+== tag_annotation_unknown_name
+refused error: `#[nowhere]` names no decorator in this scope — a tag annotation is a function whose first parameter is `comptime decl: @Decl`
+at src/main.bp:10:27

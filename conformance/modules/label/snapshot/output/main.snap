@@ -1,4 +1,0 @@
-botopink-cell 1
-out == label_on_function_value
-out refused error: label-on-function-value: `f` is a function value, whose parameters have no names — `n:` names nothing
-out at src/main.bp:13:17

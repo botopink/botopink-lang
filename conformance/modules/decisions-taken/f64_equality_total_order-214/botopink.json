@@ -1,1 +1,1 @@
-{ "name": "f64_equality_total_order-214" }
+{"name": "f64_equality_total_order-214", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

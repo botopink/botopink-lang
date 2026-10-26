@@ -1,0 +1,24 @@
+botopink-cell 2
+== case_multi_subject_bare_name
+refused error[case-bare-name-arm]: a name alone is not a pattern
+at src/main.bp:16:29
+label use _ { n -> … } to bind the matched value
+== case_multi_subject_patterns
+out zero-x
+out zero
+out x
+out other
+out int0
+out str0
+out any
+out 200
+out 0
+out 12
+out -1
+out gt 5
+out eq 3
+out lt 7
+out both
+out first
+out second
+out none

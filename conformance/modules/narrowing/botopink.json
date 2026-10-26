@@ -1,1 +1,1 @@
-{ "name": "narrowing" }
+{"name": "narrowing", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

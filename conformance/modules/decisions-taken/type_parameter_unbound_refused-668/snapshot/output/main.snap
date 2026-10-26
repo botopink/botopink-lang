@@ -1,7 +1,0 @@
-botopink-cell 1
-out == type_parameter_bound_in_lambda_type
-out 42
-out [1, 2]
-out == type_parameter_unbound
-out refused error: type-parameter-unbound: `first`'s type parameter `T` occurs in no parameter's type — nothing at a call binds it, and the return type never does
-out at src/main.bp:10:4

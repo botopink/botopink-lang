@@ -1,5 +1,0 @@
-botopink-cell 1
-out == char_literal_absent
-out refused error[char-literal-absent]: there is no character literal
-out at src/main.bp:8:13
-out label write a one-character string, `"a"`

@@ -1,0 +1,7 @@
+botopink-cell 2
+== external_flag_bare_bool_refused
+refused error: external-field-unlabelled: a cell's field is written by its label — write `result: true`
+at src/main.bp:8:53
+== external_flag_bare_fn_refused
+refused error: external-field-unlabelled: a cell's field is written by its label — write `body: reverseBody`
+at src/main.bp:11:50

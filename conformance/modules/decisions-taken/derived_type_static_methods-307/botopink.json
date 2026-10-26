@@ -1,1 +1,1 @@
-{ "name": "derived_type_static_methods-307" }
+{"name": "derived_type_static_methods-307", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

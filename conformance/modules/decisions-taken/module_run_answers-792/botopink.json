@@ -1,1 +1,1 @@
-{ "name": "module_run_answers-792" }
+{"name": "module_run_answers-792", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

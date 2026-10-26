@@ -1,0 +1,14 @@
+botopink-cell 2
+== comptime_erlang_cell_ignored_fn_serves
+out Point
+== comptime_erlang_cell_never_runs_at_build
+out Point:fn
+== comptime_expression_erlang_cell_never_runs
+refused error: comptime-host-cell-unavailable: `tag` is reached at comptime and has no `.Wasm(std: "…")` cell (std-wasm) and no `.Wasm(body: …)` cell — the two cells the comptime runtime answers by; an `.Erlang` cell never runs at build (decisions 434, 452)
+at src/main.bp:16:11
+== comptime_host_cell_unavailable
+refused error: comptime-host-cell-unavailable: `bang` is reached at comptime and has no `.Wasm(std: "…")` cell (std-wasm) and no `.Wasm(body: …)` cell — the two cells the comptime runtime answers by; an `.Erlang` cell never runs at build (decisions 434, 452)
+at src/main.bp:15:11
+== comptime_host_cell_unavailable_erlang_only
+refused error: comptime-host-cell-unavailable: `tidy` is reached at comptime and has no `.Wasm(std: "…")` cell (std-wasm) and no `.Wasm(body: …)` cell — the two cells the comptime runtime answers by; an `.Erlang` cell never runs at build (decisions 434, 452)
+at src/main.bp:17:11

@@ -1,1 +1,1 @@
-{ "name": "wasm_attempt_by_exception_handling-518" }
+{"name": "wasm_attempt_by_exception_handling-518", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

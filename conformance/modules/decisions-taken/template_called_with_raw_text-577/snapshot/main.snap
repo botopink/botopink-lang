@@ -1,0 +1,12 @@
+botopink-cell 2
+== compiler_template_forms
+out select * from users
+out 42
+== template_call_in_built_code
+out inner module
+out inner body
+out inner chain!
+== template_annotation
+out find(self, id): select * from users where id = $1 limit 1 <- id | byName(self, name, minAge): select * from users where name = $1 and age > $2 <- name, minAge (audit 2)
+out delete from sessions where user = $1 <- user
+out ana out

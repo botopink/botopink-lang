@@ -1,1 +1,1 @@
-{ "name": "bodyless_declarations_two_only-604" }
+{"name": "bodyless_declarations_two_only-604", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

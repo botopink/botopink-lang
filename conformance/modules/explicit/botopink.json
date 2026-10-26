@@ -1,1 +1,1 @@
-{ "name": "explicit" }
+{"name": "explicit", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

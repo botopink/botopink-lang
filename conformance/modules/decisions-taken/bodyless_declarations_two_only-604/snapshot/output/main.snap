@@ -1,7 +1,0 @@
-botopink-cell 1
-out == declare_without_implementation_decorator
-out refused error: declare-without-implementation: `registered` is a bodyless `declare fn`, and no annotation implements it
-out at src/main.bp:7:12
-out == decorator_marker_empty_body
-out first,second
-out 3

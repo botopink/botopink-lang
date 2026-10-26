@@ -1,0 +1,6 @@
+botopink-cell 2
+== union_is_narrowing
+out an integer
+out a string
+out text
+out not a string

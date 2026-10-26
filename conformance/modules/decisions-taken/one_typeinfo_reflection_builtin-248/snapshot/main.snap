@@ -1,0 +1,7 @@
+botopink-cell 2
+== typeinfo_all_lowercase
+refused error: typeinfo-lowercase: `@typeinfo.all` is spelled `@TypeInfo.all`
+at src/main.bp:12:15
+== typeinfo_lowercase
+refused error: typeinfo-lowercase: `@typeinfo` is spelled `@typeInfo`
+at src/main.bp:9:11

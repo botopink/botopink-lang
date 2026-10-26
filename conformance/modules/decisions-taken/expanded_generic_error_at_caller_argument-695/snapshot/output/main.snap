@@ -1,4 +1,0 @@
-botopink-cell 1
-out == expanded_generic_error_at_caller_argument
-out refused error: unknown-primitive-method: `i32` has no method `toUpper`
-out at src/main.bp:11:26

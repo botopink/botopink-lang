@@ -1,0 +1,87 @@
+-module(std@io@stdin).
+-export([readLine/0, readChunk/0, isTTY/0]).
+
+%%% std/io/stdin — the process's standard input, cross-backend (decision 506 (1)).
+
+%%% 
+
+%%% Reference:
+
+%%%   Node.js  — https://nodejs.org/api/process.html#processstdin
+
+%%%   Erlang   — https://www.erlang.org/doc/apps/stdlib/io.html#get_line/2
+
+%%% 
+
+%%% `readLine()` is the next line of input without its terminator (`\n` or `\r\n`), a last
+
+%%% line with no terminator included, and `null` at the end of input — the same on commonJS,
+
+%%% erlang and beam. It is a `Async` so that a program waiting on a terminal is not blocked
+
+%%% as a whole on Node: the line arrives through the stream's own events, so a signal handler
+
+%%% (`io.process.onSignal`) still runs while a prompt waits. Erlang is eager and blocks the
+
+%%% calling process in `io:get_line/2`.
+
+%%% 
+
+%%% `readChunk()` is the byte-level companion (what `io.terminal.keys` reads): the input
+
+%%% that has arrived, however long, `null` at the end of input. A program mixes the two
+
+%%% freely; what `readLine` has not taken is what `readChunk` answers.
+
+%%% 
+
+%%% There is no wasm binding: a call is refused at the call (`std-unsupported-on-target`,
+
+%%% decision 518 (4)).
+
+% Does standard input read from a terminal? `false` for a pipe, a file or `/dev/null`.
+
+% Node: `tty.isatty(0)`. Erlang: `prim_tty:isatty(stdin)`.
+
+%% external fn isTTY -> erlang template
+isTTY() ->
+    (prim_tty:isatty(stdin) =:= true).
+
+% Node's shared reader: the buffer, the queue of readers and the pump that answers them in
+
+% order, created on first use and kept on `globalThis` (the stream is the process's, so is the
+
+% buffer). The stream is paused whenever nobody waits, so a process whose reads are done can
+
+% exit. Erlang keeps no state: `io:get_line/2` and `io:get_chars/3` are the buffer.
+
+%% external fn reader -> erlang template
+
+%% external fn readLineHost -> erlang template
+
+% The next line of input without its line terminator, `null` at the end of input.
+
+%% @Async — eager lowering
+readLine() ->
+    (fun(__R) -> _ = io:setopts(standard_io, [binary, {encoding, unicode}]), case io:get_line(standard_io, '') of eof -> undefined; {error, _} -> undefined; __L -> __N = byte_size(__L), case (__N >= 1 andalso binary:last(__L) =:= 10) of true -> __M = __N - 1, case (__M >= 1 andalso binary:at(__L, __M - 1) =:= 13) of true -> binary:part(__L, 0, __M - 1); false -> binary:part(__L, 0, __M) end; false -> __L end end end)(undefined).
+
+%% external fn readChunkHost -> erlang template
+
+% What has arrived on standard input — one piece, never empty — or `null` at the end of input.
+
+% On a terminal in raw mode (`io.terminal.setRaw`) that is the key just pressed, an escape
+
+% sequence whole. Erlang reads a character at a time: after an Escape it waits 50 ms for the rest
+
+% of the sequence, so a lone Escape key is told from the start of an arrow key there as well.
+
+%% @Async — eager lowering
+readChunk() ->
+    (fun(__R) -> _ = io:setopts(standard_io, [binary, {encoding, unicode}]), __Self = self(), __Start = fun() -> case get(bp_stdin_pend) of undefined -> __Ref = make_ref(), _ = spawn(fun() -> __Self ! {__Ref, io:get_chars(standard_io, '', 1)} end), put(bp_stdin_pend, __Ref); _ -> ok end end, __Next = fun(__T) -> __Start(), __Ref2 = get(bp_stdin_pend), receive {__Ref2, __D} -> erase(bp_stdin_pend), __D after __T -> timeout end end, __Done = fun(__A) -> __S = byte_size(__A), __B1 = binary:at(__A, 1), case {__S, __B1} of {2, 79} -> false; {2, 91} -> false; {_, 79} -> true; {_, 91} -> __L = binary:last(__A), (__L >= 64) andalso (__L =< 126); _ -> true end end, __More = fun __M(__Acc) -> case __Next(50) of __B when is_binary(__B) -> __A2 = <<__Acc/binary, __B/binary>>, case __Done(__A2) of true -> __A2; false -> __M(__A2) end; _ -> __Acc end end, case __Next(infinity) of __C when is_binary(__C) -> case __C =:= <<27>> of true -> __More(__C); false -> __C end; _ -> undefined end end)(undefined).
+
+% ── tests ────────────────────────────────────────────────────────────────────
+
+% A test cannot give itself an input: `readLine` / `readChunk` answer the end of input in the
+
+% conformance cell `std_io_stdin_eof`.
+

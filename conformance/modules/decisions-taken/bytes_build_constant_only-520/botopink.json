@@ -1,1 +1,1 @@
-{ "name": "bytes_build_constant_only-520" }
+{"name": "bytes_build_constant_only-520", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

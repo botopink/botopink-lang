@@ -1,0 +1,21 @@
+botopink-cell 2
+== annotation_label_equals_decorator
+refused error[annotation-label-equals]: an annotation's labelled argument is written `label: value`
+at src/main.bp:15:23
+label write `at:`
+== external_erlang_prefixed_fn_refused
+refused error: `.Erlang("fn:mixBody")` on `mix`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.Erlang(body: mixBody)`
+at src/main.bp:8:57
+== external_fn_unbound
+refused error: unbound variable 'tanBdy'
+at src/main.bp:7:39
+== external_prefixed_fn_refused
+refused error: `.JavaScript("fn:mixBody")` on `mix`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.JavaScript(body: mixBody)`
+at src/main.bp:8:33
+== external_std_prefix_refused_everywhere
+refused error: `.JavaScript("std:hash.contentHash")` on `contentHash`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.Wasm(std: "hash.contentHash")`
+at src/main.bp:7:33
+== annotation_label_equals
+refused error[annotation-label-equals]: an annotation's labelled argument is written `label: value`
+at src/main.bp:7:47
+label write `inline:`

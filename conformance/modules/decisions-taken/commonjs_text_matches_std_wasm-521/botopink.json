@@ -1,1 +1,1 @@
-{ "name": "commonjs_text_matches_std_wasm-521" }
+{"name": "commonjs_text_matches_std_wasm-521", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

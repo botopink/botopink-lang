@@ -1,0 +1,5 @@
+botopink-cell 2
+== bitwise_operator_absent
+refused error[bitwise-operator-absent]: the language has no bitwise operators
+at src/main.bp:8:15
+label not an operator `<<`

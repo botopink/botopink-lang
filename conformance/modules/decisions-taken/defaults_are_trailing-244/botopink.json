@@ -1,1 +1,1 @@
-{ "name": "defaults_are_trailing-244" }
+{"name": "defaults_are_trailing-244", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

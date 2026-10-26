@@ -1,1 +1,1 @@
-{ "name": "syntax_fn_expanded_at_call-719" }
+{"name": "syntax_fn_expanded_at_call-719", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "store_answers_result_store_error-304" }
+{"name": "store_answers_result_store_error-304", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,0 +1,4 @@
+botopink-cell 2
+== external_wasm_std_outside_std
+refused error: `.Wasm(std: "hash.contentHash")` on `digest`: a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead
+at src/main.bp:8:3

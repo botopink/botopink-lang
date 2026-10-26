@@ -1,1 +1,1 @@
-{ "name": "host_error_by_module_identity-488" }
+{"name": "host_error_by_module_identity-488", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

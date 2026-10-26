@@ -1,1 +1,1 @@
-{ "name": "decorator_meta_keyed_by_type-298" }
+{"name": "decorator_meta_keyed_by_type-298", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,0 +1,10 @@
+botopink-cell 2
+== enum_code
+refused error: non-exhaustive: `case` on 'Shape' is not exhaustive: missing variant(s) Rect
+at src/main.bp:9:12
+== open_domain_code
+refused error: non-exhaustive: `case` on 'i32' is not exhaustive: nothing covers the remaining values — use `_ { … }`
+at src/main.bp:4:12
+== union_code
+refused error: non-exhaustive: `case` on 'Box | Pair' is not exhaustive: missing member(s) Pair
+at src/main.bp:8:12

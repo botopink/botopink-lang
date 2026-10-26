@@ -1,0 +1,19 @@
+botopink-cell 2
+== nested_fn_decl
+refused error[nested-fn-decl]: a `fn` is declared at module level, not inside a body
+at src/main.bp:8:5
+label bind a lambda instead
+== nested_pattern_nullary_variant
+out timeout
+out not allowed
+out status 404
+out ok body
+out run fast
+out run slow
+out stop
+out timeout
+out other not allowed
+out ok body
+out fast
+out not fast slow
+out stop

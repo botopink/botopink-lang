@@ -1,0 +1,17 @@
+botopink-cell 2
+== labelled_arguments
+out 1
+out 2
+out 1
+out 1
+out 502
+out 502
+out 502
+out 80
+out a
+== labelled_arguments_reorder
+out 1
+out 9
+out 10
+out bc
+out bee

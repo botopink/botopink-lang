@@ -1,4 +1,0 @@
-botopink-cell 1
-out == init_output_outside_decorator
-out refused error: compiler-output-outside-decorator: `compiler.init` writes to the annotated declaration, and only a decorator has one
-out at src/main.bp:9:14

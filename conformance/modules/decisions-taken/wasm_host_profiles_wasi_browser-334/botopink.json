@@ -1,1 +1,1 @@
-{ "name": "wasm_host_profiles_wasi_browser-334" }
+{"name": "wasm_host_profiles_wasi_browser-334", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

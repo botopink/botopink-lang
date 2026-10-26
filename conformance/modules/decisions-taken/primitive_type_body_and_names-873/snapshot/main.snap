@@ -1,0 +1,16 @@
+botopink-cell 2
+== primitive_property_outside_prelude_refused
+refused error: this token cannot appear here
+at src/main.bp:8:5
+label unexpected `val`
+== primitive_static_on_local_is_method
+refused error: unknown-primitive-method: `bytes` has no method `fromUtf8`
+at src/main.bp:9:17
+== primitive_static_shadowed_by_local
+out 3
+out 4
+out 2
+out 3
+== primitive_type_name_taken_array
+refused error: primitive-type-name-taken: `array` names a primitive type; a function of this module cannot take its name
+at src/main.bp:6:8

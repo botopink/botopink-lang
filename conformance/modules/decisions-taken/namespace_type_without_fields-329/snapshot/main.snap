@@ -1,0 +1,12 @@
+botopink-cell 2
+== namespace_type_construction
+refused error: namespace-type-construction: `MathOps` is a namespace type — it has no field list and no value, so `MathOps()` constructs nothing
+at src/main.bp:13:15
+== namespace_type_self
+refused error[namespace-type-self]: a namespace type has no value, so no function in it takes `self`
+at src/main.bp:9:15
+label no value to be `self` here
+== namespace_type
+out 42
+out 7
+out 20
