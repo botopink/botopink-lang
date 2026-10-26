@@ -840,7 +840,7 @@ already means, and `PersistentTerm`; any other value is refused at the annotatio
 (decision 547). Every part is checked at `botopink check`, in a project whose target
 is erlang or beam:
 
-<!-- example: modules/beam/cells/beam_memory_annotations -->
+<!-- example: modules/beam/cases/beam_memory_annotations -->
 
 **`Ets`** — one value for the whole program, in a one-row ETS table: the program's
 runtime creates every module `var`'s table at boot, in a process that lives as long
@@ -901,7 +901,7 @@ from its position.
 
 A declaration with no body says what it answers: `fn f(x: string);` with no `-> R` is `bodyless-fn-needs-return-type`, whose label suggests `-> void` or a body.
 
-<!-- example: modules/bodyless/cells/bodyless_fn_no_return_type -->
+<!-- example: modules/bodyless/cases/bodyless_fn_no_return_type -->
 
 A value leaves a function through `return` or its tail (below), so a `fn` whose return type has a
 value must end every path with one of them (or `panic`) —
@@ -1079,7 +1079,7 @@ carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS,
 wasm data segment (an `Asset`'s `File` read under `comptime`, `try f.bytes()`, § `Asset`).
 
 <!-- example: modules/decisions-taken/bytes_primitive-346/cells/bytes_round_trip -->
-<!-- example: modules/bytes/cells/bytes_length_property -->
+<!-- example: modules/bytes/cases/bytes_length_property -->
 <!-- example: modules/decisions-taken/bytes_build_constant_only-520/cells/bytes_comptime -->
 
 std's `encoding` bridges `bytes` and text losslessly: `base64EncodeBytes(b)` and
@@ -2323,7 +2323,7 @@ A `//` comment after a block's last expression, written without `;`, is a commen
 the expression stays the block's value, in a function body, a lambda, an `if` / `else` block and a
 `case` arm's block alike, and `botopink format` keeps the comment after it:
 
-<!-- example: modules/block/cells/block_tail_comment -->
+<!-- example: modules/block/cases/block_tail_comment -->
 
 A `return` in a block leaves the enclosing function — from its own statements, from a `case` arm or
 a nested block in it, from a `for` inside it — and the block's tail is its value on every other
@@ -2778,7 +2778,7 @@ as an asynchronous function's, each `yield` a suspension point.
 the condition holds; when it fails the program aborts, and the abort names the
 message on stderr, on every target.
 
-<!-- example: modules/assert/cells/assert_statement -->
+<!-- example: modules/assert/cases/assert_statement -->
 
 <!-- example: modules/assert/cells/assert_message_aborts -->
 
@@ -3750,13 +3750,13 @@ returns an `Async` too or hands the task on.
 creates a `Async` without declaring a separate function, in **any** function:
 it waits for nothing, it creates the task.
 
-<!-- example: modules/async/cells/async_block_both -->
+<!-- example: modules/async/cases/async_block_both -->
 
 <!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cells/async_block_tail_value -->
 
 <!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cells/async_block_tail_case -->
 
-<!-- example: modules/await/cells/await_result_print -->
+<!-- example: modules/await/cases/await_result_print -->
 
 An awaited `Result` is the value it is: `print` of `await f(x)` answers
 `Ok(21)` or `Error("negative")` on every target, for a generic `f`, a plain one
@@ -4638,7 +4638,7 @@ annotates declarations and runs nothing:
 An associated type is named `City.Columns` in every diagnostic, as it is
 written:
 
-<!-- example: modules/assoc/cells/assoc_type_named_by_owner_in_diagnostic -->
+<!-- example: modules/assoc/cases/assoc_type_named_by_owner_in_diagnostic -->
 
 A type error inside a member or an associated type a decorator wrote is located
 at the annotation on the declaration that added it (decision 567), the
@@ -4664,7 +4664,7 @@ A record-shaped type's members are closed: a call through the type names an
 associated fn it declares, by hand or through `compiler.addMember`, and any other
 name is `unknown-associated-fn` where the call is written.
 
-<!-- example: modules/associated/refused/src/cases/associated_fn_unknown -->
+<!-- example: modules/associated/cases/associated_fn_unknown -->
 
 <!-- example: modules/decorator/cells/decorator_entity_table -->
 
@@ -6003,7 +6003,7 @@ with `@` (`@Result<…>`).
 
 ## Builtins
 
-<!-- example: modules/builtin/run/src/cases/builtin_print_todo -->
+<!-- example: modules/builtin/cases/builtin_print_todo -->
 
 Every builtin the compiler still reads is declared in `libs/std/src/primitives.bp`
 (`print` and `panic` are std's `io/terminal.bp` and `failure.bp`, § `print` and `panic`), and the compiler is
@@ -6852,9 +6852,9 @@ These forms are **deliberately absent**, so that none reads as unfinished work:
 
 <!-- example: modules/nested/cells/nested_fn_decl -->
 
-<!-- example: modules/char/cells/char_literal_absent -->
+<!-- example: modules/char/cases/char_literal_absent -->
 
-<!-- example: modules/bitwise/cells/bitwise_operator_absent -->
+<!-- example: modules/bitwise/cases/bitwise_operator_absent -->
 
 <!-- example: modules/ternary/cells/ternary_absent -->
 
