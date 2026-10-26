@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: annotation-not-a-decorator: `#[nope]` names nothing, not a decorator
-at src/cases/annotation_not_decorator_unbound/mod.bp:7:3

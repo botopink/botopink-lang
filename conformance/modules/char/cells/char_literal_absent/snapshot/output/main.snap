@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[char-literal-absent]: there is no character literal
-at src/main.bp:8:13
-label write a one-character string, `"a"`
