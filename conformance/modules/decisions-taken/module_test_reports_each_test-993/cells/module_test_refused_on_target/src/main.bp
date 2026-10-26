@@ -1,0 +1,36 @@
+//// Decision 993 (3) — a loaded package the built target refuses at `emit` is the answer of its
+//// ``test`()``, never a refusal of the build (989 (3)): `hosted` declares every target and its
+//// test reaches a host binding with no wasm cell, so on wasm its ``test`()`` answers `.Refused`
+//// with the refusal's text and none of its tests runs; on commonJS, erlang and beam its test
+//// runs and passes.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(report) {
+            for report.cases { c ->
+                val verdict = if (c.ok) "ok" else "FAIL";
+                print(verdict + " " + c.name + " [" + c.output + "]");
+            }
+        }
+        Error(r) -> case r.kind {
+            .Failed -> print("failed " + r.message);
+            .Abort -> print("abort " + r.message);
+            .Refused -> print("refused " + r.message);
+            .Excluded -> print("excluded " + r.message);
+        };
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/hosted");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

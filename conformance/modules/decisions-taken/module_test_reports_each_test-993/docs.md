@@ -4,3 +4,13 @@
 [cells/load_resolves_own_dependencies/src/main.bp](cells/load_resolves_own_dependencies/src/main.bp)
 [cells/load_by_package_name/src/main.bp](cells/load_by_package_name/src/main.bp)
 [cells/load_by_package_name_unknown/src/main.bp](cells/load_by_package_name_unknown/src/main.bp)
+
+``m.`test`()`` runs the loaded package's tests in-process: one `TestCase` per test with what it printed, a failing or
+aborting test a case with `ok: false` and the next one run, a crash outside every test `.Abort`, an `Async` when a
+test awaits (`module_test_reports_each_test`); a package the target refuses answers `.Refused`
+(`module_test_refused_on_target`), one whose manifest leaves the target out `.Excluded`
+(`module_test_excluded_target`), none of its tests run; four targets.
+
+[cells/module_test_reports_each_test/src/main.bp](cells/module_test_reports_each_test/src/main.bp)
+[cells/module_test_refused_on_target/src/main.bp](cells/module_test_refused_on_target/src/main.bp)
+[cells/module_test_excluded_target/src/main.bp](cells/module_test_excluded_target/src/main.bp)

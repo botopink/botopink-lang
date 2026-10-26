@@ -10,7 +10,8 @@
 //!   (`` `f` has no implementation for the <backend> backend ``, wasm's
 //!   `dropUnlowerableDependencyFns` over the package's functions).
 //! - **Refused**: the package's root is put in place by one whose only
-//!   function, `__bp_loaded_main`, throws `load.off_marker`, the kind's
+//!   function, `__bp_loaded_main` (and, for a package a `` `test`() ``
+//!   reached, its `__bp_loaded_tests`, decision 993 (3)), throws `load.off_marker`, the kind's
 //!   letter and the refusal's text: `R` — `.Refused` — when the manifest
 //!   holds the target, `X` — `.Excluded` — when it leaves it out; the
 //!   package's other modules are not emitted. `run()`'s `__bp_run` reads it,
@@ -148,11 +149,13 @@ fn runs(arena: std.mem.Allocator, o: ComptimeOutput, pkg: []const u8) !bool {
         else => return false,
     };
     const alias = try loadMod.runAlias(arena, pkg);
+    // Decision 993 (3) — or the alias a `` `test`() `` is rewritten to call.
+    const tests_alias = try loadMod.testsAlias(arena, pkg);
     for (ok.transformed.decls) |d| switch (d) {
         .@"fn" => |f| {
             var list: std.ArrayListUnmanaged([]const u8) = .empty;
             try ast.collectNames(arena, f.body, &list);
-            for (list.items) |n| if (std.mem.eql(u8, n, alias)) return true;
+            for (list.items) |n| if (std.mem.eql(u8, n, alias) or std.mem.eql(u8, n, tests_alias)) return true;
         },
         else => {},
     };
@@ -214,7 +217,8 @@ fn refusalOf(arena: std.mem.Allocator, outputs: []const ComptimeOutput, pkg: []c
             };
         }
     }
-    const host = missing.get(loadMod.loaded_main_fn) orelse return null;
+    // What its `main` reaches, or its tests (decision 993 (3)).
+    const host = missing.get(loadMod.loaded_main_fn) orelse missing.get(loadMod.loaded_tests_fn) orelse return null;
     return try std.fmt.allocPrint(arena, "`{s}` has no implementation for the {s} backend", .{ host, backendName(config.targetSource) });
 }
 
@@ -242,8 +246,16 @@ pub fn apply(arena: std.mem.Allocator, outputs: []const ComptimeOutput, config: 
             const lexeme = try std.mem.concat(arena, u8, &.{ loadMod.off_marker, if (included) "R" else "X", try @import("../comptime/block_eval.zig").stringLexeme(arena, why) });
             var main_fn = (try throwing(arena, off_fn, lexeme)) orelse continue;
             main_fn.name = loadMod.loaded_main_fn;
-            const decls = try arena.alloc(ast.DeclKind, 1);
-            decls[0] = .{ .@"fn" = main_fn };
+            var root_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+            try root_decls.append(arena, .{ .@"fn" = main_fn });
+            // Decision 993 (3) — a tested package's `loaded_tests_fn` throws
+            // the same text, read by `test_run_fn` as `run_fn` reads it.
+            if (findFn(ok.transformed, loadMod.loaded_tests_off_fn)) |tests_off| {
+                var tests_fn = (try throwing(arena, tests_off, lexeme)) orelse continue;
+                tests_fn.name = loadMod.loaded_tests_fn;
+                try root_decls.append(arena, .{ .@"fn" = tests_fn });
+            }
+            const decls = root_decls.items;
             var root = o;
             var rok = ok;
             rok.transformed.decls = decls;

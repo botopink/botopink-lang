@@ -1920,7 +1920,9 @@ fn analyzeSource(
     // its reads are rewritten to call (`comptime/load.zig`).
     // Decisions 787, 792 — and the imports its `run()` calls are rewritten
     // to name (`loadMod.withRunImports`).
-    const parsed_as_written = try loadMod.withRunImports(arena, try loadMod.withLoadHelper(arena, inserted));
+    // Decision 993 (3) — a module of a package a `` `test`() `` reached
+    // has its `test` blocks lowered to functions it lists (`loadMod.withTestFns`).
+    const parsed_as_written = try loadMod.withRunImports(arena, try loadMod.withLoadHelper(arena, try loadMod.withTestFns(arena, inserted, mod)));
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).

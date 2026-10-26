@@ -2547,7 +2547,7 @@ fn emitErlangModule(
     // bodies, and its own, when a `run()` calls it: `__bp_loaded_main`
     // (`comptime/load.zig` `packageModules`) begins with them.
     if (crossModule.isLoadedModule(module_name)) for (forms.items) |*form| switch (form.*) {
-        .function => |*f| if (std.mem.eql(u8, f.name, loadMod.loaded_main_fn) and f.clauses.len == 1) {
+        .function => |*f| if (loadMod.isLoadedEntry(f.name) and f.clauses.len == 1) {
             var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
             for (import_inits) |dep| try stmts.append(b.arena, .{ .expr = try b.remote(dep, "_botopink_init", &.{}) });
             if (emit_init) try stmts.append(b.arena, .{ .expr = try b.call("_botopink_init", &.{}) });

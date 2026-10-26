@@ -1077,7 +1077,8 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         // Decisions 787, 792 — `m.run()` on a `compiler.Module` → std's
         // `attempt` over the loaded package's `main` (`infer.zig`
         // `inferModuleRun`).
-        if (std.mem.eql(u8, callee, "run")) {
+        // Decision 993 (3) — `` m.`test`() `` the same (`inferModuleTest`).
+        if (std.mem.eql(u8, callee, "run") or std.mem.eql(u8, callee, @import("load.zig").test_method)) {
             if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| if (rewrite.* == .call) {
                 expr_ptr.* = rewrite.*;
             };

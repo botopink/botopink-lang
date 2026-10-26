@@ -1,0 +1,26 @@
+botopink-cell 1
+out == suite
+out cases 7
+out ok doubles src/main.bp:14 []  
+out ok prints src/main.bp:18 [printed 6
+out where packages/suite/src/main.bp prints
+out ]  
+out FAIL fails an assert src/main.bp:24 [before the assert
+out ] assertion failed: double(2) == 5 at src/main.bp:26:5 src/main.bp:24
+out FAIL fails a try src/main.bp:29 [] empty text src/main.bp:29
+out FAIL aborts src/main.bp:34 [before the panic
+out ] boom src/main.bp:34
+out ok test_5 src/main.bp:39 []  
+out ok inner triples src/inner.bp:7 [inner 6
+out ]  
+out == empty
+out cases 0
+out == broken
+out abort broken body crashed [broken body
+out ]
+out == later
+out cases 2
+out ok awaits src/main.bp:7 [later 42
+out ]  
+out FAIL awaits and fails src/main.bp:13 [] assertion failed: n == 3 at src/main.bp:15:5 src/main.bp:13
+out main

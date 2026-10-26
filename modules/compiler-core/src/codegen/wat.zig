@@ -1957,7 +1957,7 @@ fn emitWatPass(
         // declaration emits — an `async` one (decision 989 (2)) also emits
         // its state machine's body and step, which every resume runs, so
         // they never run the initialisers again.
-        if (em.loaded_pkg) |pkg| if (decl == .@"fn" and std.mem.endsWith(u8, decl.@"fn".name, @import("../comptime/load.zig").loaded_main_fn)) {
+        if (em.loaded_pkg) |pkg| if (decl == .@"fn" and @import("../comptime/load.zig").endsWithLoadedEntry(decl.@"fn".name)) {
             for (em.items.items[before..]) |*it| if (it.* == .func) {
                 const lines = try ar0.alloc(wat.Line, it.func.body.lines.len + 1);
                 lines[0] = .{ .instr = .{ .call = try std.fmt.allocPrint(ar0, "{s}{s}", .{ loaded_init_prefix, pkg }) }, .folded = true };

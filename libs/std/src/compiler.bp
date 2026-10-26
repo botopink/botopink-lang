@@ -39,8 +39,9 @@
 ////   `moduleOf`, `meta`, `metaAll`, `attr`, `component`, `hooks`, `fields`,
 ////   `methods`, `params`, `returnType`, `owner`, `annotations`, `variants`.
 //// - The program: `find`, `typeInfo`, `load` (decisions 780, 782, 786), and
-////   what `load` answers: `Module` — run by `m.run()` (decisions 787, 792) —,
-////   `Refused`, `Diagnostic`.
+////   what `load` answers: `Module` — run by `m.run()` (decisions 787, 792),
+////   its tests by `` m.`test`() `` (decision 993) —, `Refused`, `Diagnostic`,
+////   and what `` `test`() `` answers, `TestReport` and `TestCase`.
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -345,6 +346,22 @@ pub opaque type Module(
         throw RunFailure(kind: .Abort, message: "Module.run: every call is lowered to the loaded main", output: "");
     }
 
+    // Decision 993 (3) — `` m.`test`() `` (`test` is a keyword, written
+    // between backticks, decision 561) runs the loaded package's tests: its
+    // `test` blocks, compiled in test mode (513) beside its modules, each run
+    // in turn with what it printed kept as its own; its dependencies' tests
+    // never run. `Ok` a `TestReport` of one `TestCase` per test (none for a
+    // package with no test) — a test that fails, by an `assert`, a `try`, a
+    // `throw` or a crash, is a case with `ok: false`, and the next runs —;
+    // `Error(RunFailure)` only for a package the built target refuses
+    // (`.Refused`, `.Excluded`, 989 (3)) or a crash outside every test
+    // (`.Abort`). `Async` of the answer when a test awaits (989 (2)). Written
+    // where `run()` is, lowered as it is (`comptime/infer.zig`
+    // `inferModuleTest`), so the body below never runs.
+    pub fn `test`(self: Self) -> Result<TestReport, RunFailure> {
+        throw RunFailure(kind: .Abort, message: "Module.test: every call is lowered to the loaded tests", output: "");
+    }
+
     // Decision 989 (1) — the capture a lowered `run()` opens around the
     // loaded package's run: from `captureOpen` to `captureClose` what the
     // program writes to standard output is kept, not written, and
@@ -400,6 +417,29 @@ pub type RunFailure(
 
 // The kinds of a `RunFailure`.
 pub type RunFailureKind { Failed, Abort, Refused, Excluded }
+
+// What `` m.`test`() `` answers on its `Ok` side (decision 993 (3)): one
+// `TestCase` per test of the loaded package: its root's tests in the order
+// they are written, then each `mod` it declares, in order, the same way down.
+pub type TestReport(cases: TestCase[])
+
+// One test (the fields of `botopink test --json`): `name` the test's (`test_<k>`
+// for the `k`-th anonymous one of its module), `file` and `line` where it is
+// written — `file` relative to the loaded package —, `ok` whether it passed,
+// `output` what it wrote to standard output, `message` why it failed (`""`
+// when it passed), `at` the test's `<file>:<line>` when it failed (`""` when it
+// passed), `durationMs` the time it ran — `0` until every target reads a
+// monotonic clock (wasm reads none).
+pub type TestCase(
+    name: string,
+    file: string,
+    line: i32,
+    ok: bool,
+    output: string,
+    message: string,
+    at: string,
+    durationMs: i32,
+)
 
 // A load that refused: the loaded file's `Module` and its refusals, never
 // empty.

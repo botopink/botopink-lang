@@ -1,0 +1,10 @@
+import {failure.panic, io.terminal.print} from "std";
+
+// The package's body crashes before any test runs.
+val ready = print("broken body");
+
+val boom = panic("broken body crashed");
+
+test "never runs" {
+    assert true;
+}

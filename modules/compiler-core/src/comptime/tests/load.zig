@@ -27,6 +27,18 @@ const files = [_][2][]const u8{
         \\}
         \\
     },
+    .{ "packages/tested/botopink.json", "{ \"name\": \"tested\" }" },
+    .{
+        "packages/tested/src/main.bp",
+        \\fn double(n: i32) -> i32 {
+        \\    return n * 2;
+        \\}
+        \\
+        \\test "doubles" {
+        \\    assert double(2) == 4;
+        \\}
+        \\
+    },
     .{ "packages/self/botopink.json", "{ \"name\": \"self\" }" },
     .{ "packages/printed/botopink.json", "{ \"name\": \"printed\" }" },
     .{
@@ -708,4 +720,71 @@ test "decision 993 (2): `package:` and a path together, or a wrong label, is `lo
     , memory(std.testing.io))) orelse return error.TestExpectedRefusal;
     defer gpa.free(got);
     try std.testing.expect(std.mem.startsWith(u8, got, "load-arguments: "));
+}
+
+test "decision 993 (3): a `test()` brings the package in with its tests lowered to functions it lists, no `main` needed" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("packages/tested");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ ->
+        \\            val answer = m.`test`();
+        \\            case answer {
+        \\                Ok(report) -> print(report.cases.length);
+        \\                Error(r) -> print(r.message);
+        \\            }
+        \\        });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    ;
+    const io = std.testing.io;
+    const loadMod = @import("../load.zig");
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
+    defer session.deinit(gpa);
+    var main_ok = false;
+    var root_found = false;
+    for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
+        if (!std.mem.eql(u8, o.name, "bp_load__packages__tested/main")) continue;
+        root_found = true;
+        const ok = switch (o.outcome) {
+            .ok => |ok| ok,
+            else => return error.LoadedRootRefused,
+        };
+        var case_fn = false;
+        var loaded_tests = false;
+        var loaded_main = false;
+        for (ok.transformed.decls) |d| switch (d) {
+            .@"fn" => |f| {
+                if (std.mem.eql(u8, f.name, loadMod.test_case_prefix ++ "0")) case_fn = true;
+                if (std.mem.eql(u8, f.name, loadMod.loaded_tests_fn)) loaded_tests = true;
+                if (std.mem.eql(u8, f.name, loadMod.loaded_main_fn)) loaded_main = true;
+            },
+            .@"test" => return error.TestBlockKept,
+            else => {},
+        };
+        try std.testing.expect(case_fn);
+        try std.testing.expect(loaded_tests);
+        try std.testing.expect(!loaded_main);
+    }
+    try std.testing.expect(main_ok);
+    try std.testing.expect(root_found);
+}
+
+test "decision 993 (3): `run` and `` `test` `` are the lowered calls of a `Module`; each package entry begins with its initialisers" {
+    const loadMod = @import("../load.zig");
+    try std.testing.expectEqual(loadMod.CallKind.run, loadMod.moduleCallKind("run").?);
+    try std.testing.expectEqual(loadMod.CallKind.test_, loadMod.moduleCallKind("`test`").?);
+    try std.testing.expect(loadMod.moduleCallKind("test") == null);
+    try std.testing.expect(loadMod.isLoadedEntry(loadMod.loaded_main_fn));
+    try std.testing.expect(loadMod.isLoadedEntry(loadMod.loaded_tests_fn));
+    try std.testing.expect(!loadMod.isLoadedEntry(loadMod.loaded_tests_off_fn));
+    try std.testing.expect(loadMod.endsWithLoadedEntry("bp_x__" ++ loadMod.loaded_tests_fn));
 }

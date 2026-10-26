@@ -1,0 +1,46 @@
+import {compiler, failure.panic, io.terminal.print} from "std";
+
+mod inner;
+
+fn double(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn parse(s: string) -> Result<i32, string> {
+    if (s == "") throw "empty text";
+    return s.length;
+}
+
+test "doubles" {
+    assert double(2) == 4;
+}
+
+test "prints" {
+    print("printed", double(3));
+    val at = comptime compiler.src();
+    print("where " + at.file + " " + at.fnName);
+}
+
+test "fails an assert" {
+    print("before the assert");
+    assert double(2) == 5;
+}
+
+test "fails a try" {
+    val n = try parse("");
+    print("not reached", n);
+}
+
+test "aborts" {
+    print("before the panic");
+    panic("boom");
+}
+
+test {
+    val n = try parse("abc");
+    assert n == 3;
+}
+
+pub fn main() -> void {
+    print("suite main");
+}

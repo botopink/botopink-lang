@@ -126,9 +126,17 @@ test "decision 786: the records `compiler.load` answers are std's `compiler.Modu
                     std.mem.eql(u8, m.name, loadMod.capture_close);
                 try std.testing.expectEqual(!lowering, m.isPub);
             }
-            try std.testing.expectEqual(@as(usize, 7), record.methods.len);
+            // `` pub fn `test` `` (decision 993 (3)) beside `run`.
+            try std.testing.expectEqual(@as(usize, 8), record.methods.len);
         }
     }
+    // Decision 993 (3) — what `` `test`() `` answers: the case record the
+    // lowering builds (`load.test_case_fields`), field for field.
+    const test_case = for (program.decls) |d| {
+        if (d == .type_ and std.mem.eql(u8, d.type_.name, "TestCase")) break d.type_;
+    } else return error.RecordMissing;
+    try std.testing.expectEqual(loadMod.test_case_fields.len, test_case.recordFields().len);
+    for (loadMod.test_case_fields, test_case.recordFields()) |want, f| try std.testing.expectEqualStrings(want, f.name);
     // `load` answers them: `Result<Module, Refused>`.
     const behavior = for (program.decls) |d| {
         if (d == .behavior and std.mem.eql(u8, d.behavior.name, "Compiler")) break d.behavior;

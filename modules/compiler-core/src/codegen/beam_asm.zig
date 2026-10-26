@@ -4102,7 +4102,7 @@ const Emitter = struct {
         try self.emitParamSpill(nparams);
         // Decisions 787, 792 (2) — a loaded package's root runs its
         // package's bodies, and its own, when a `run()` calls it.
-        if (std.mem.eql(u8, f.name, @import("../comptime/load.zig").loaded_main_fn) and crossModule.isLoadedModule(self.module_path)) {
+        if (@import("../comptime/load.zig").isLoadedEntry(f.name) and crossModule.isLoadedModule(self.module_path)) {
             for (self.import_inits.items) |dep| {
                 try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
             }

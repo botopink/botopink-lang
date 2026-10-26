@@ -106,6 +106,18 @@ pub const loaded_main_fn = "__bp_loaded_main";
 /// `targets` (`<path>|<t>,<t>`, `*` when it declares none).
 pub const loaded_main_off_fn = "__bp_loaded_main_off";
 pub const loaded_info_fn = "__bp_loaded_info";
+/// Whether `name` is a loaded package's entry — `loaded_main_fn`, or the
+/// `loaded_tests_fn` a `` `test`() `` calls (decision 993 (3)): each begins
+/// with the package's initialisers, run anew at every call (806 (3)).
+pub fn isLoadedEntry(name: []const u8) bool {
+    return std.mem.eql(u8, name, loaded_main_fn) or std.mem.eql(u8, name, loaded_tests_fn);
+}
+
+/// `isLoadedEntry` over a name a backend mangled with a prefix.
+pub fn endsWithLoadedEntry(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, loaded_main_fn) or std.mem.endsWith(u8, name, loaded_tests_fn);
+}
+
 /// What the `Error` of a refused package's `loaded_main_fn` begins with, as
 /// a string literal's lexeme (a NUL no `main`'s error text starts with).
 pub const off_marker = "\\0bp-off:";
@@ -163,6 +175,15 @@ pub const State = struct {
     entries: std.StringHashMapUnmanaged(Entry) = .empty,
     /// The paths a `run` reached, in the order first reached.
     runs: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Decisions 993 (3), 994 (L3) — the paths a `test()` reached: kept for
+    /// the whole top-level compile (a compile again lowers their tests,
+    /// `withTestFns`), never cleared with the runs.
+    tests: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Whether a loaded package's tests are `async` (`testsAsync`), by path.
+    tests_async: std.StringHashMapUnmanaged(bool) = .empty,
+    /// The name of the test each lowered test function is (`withTestFns`),
+    /// by `<module path>\x00<function>`: `@src().fnName` inside it.
+    test_names: std.StringHashMapUnmanaged([]const u8) = .empty,
 };
 
 threadlocal var state: State = .{};
@@ -247,6 +268,47 @@ pub fn runs() []const []const u8 {
 /// Forget the runs (a compile again records its own).
 pub fn clearRuns() void {
     state.runs.clearRetainingCapacity();
+}
+
+/// Decision 993 (3) — record that a `test()` reaches `path`: the package
+/// joins the program (`noteRun`) with its tests lowered (`withTestFns`).
+pub fn noteTest(path: []const u8) !void {
+    try noteRun(path);
+    for (state.tests.items) |p| if (std.mem.eql(u8, p, path)) return;
+    try state.tests.append(stateArena(), try stateArena().dupe(u8, path));
+}
+
+/// The entry of the loaded package `package` (`packageName`) a `test()`
+/// reached in this compile, or null.
+pub fn testedEntry(arena: std.mem.Allocator, package: []const u8) !?Entry {
+    for (state.tests.items) |p| if (std.mem.eql(u8, try packageName(arena, p), package)) return entryOf(p);
+    return null;
+}
+
+/// Decision 993 (3) — `@src().file` inside a loaded package is prefixed by
+/// the directory it was loaded from: the path of the load whose package is
+/// `package`, or null for a package no load of this compile names.
+pub fn loadDirOf(arena: std.mem.Allocator, package: []const u8) !?[]const u8 {
+    if (!isLoadedPackage(package)) return null;
+    var it = state.entries.keyIterator();
+    while (it.next()) |p| if (std.mem.eql(u8, try packageName(arena, p.*), package)) return p.*;
+    return null;
+}
+
+/// `src_path` of a module of the loaded package `package` prefixed by its
+/// load directory (`loadDirOf`), the text kept for the process as the
+/// package's source is (`lasting`): an emitted literal slices it. Null for a
+/// package no load names.
+pub fn loadedSrcPath(arena: std.mem.Allocator, package: []const u8, src_path: []const u8) !?[]const u8 {
+    const dir = (try loadDirOf(arena, package)) orelse return null;
+    return try lasting(try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, src_path }));
+}
+
+/// The name of the test `function` of module `module_path` was lowered from
+/// (`withTestFns`), or null for any other function.
+pub fn testNameOf(arena: std.mem.Allocator, module_path: []const u8, function: []const u8) !?[]const u8 {
+    if (!std.mem.startsWith(u8, function, test_case_prefix)) return null;
+    return state.test_names.get(try std.mem.concat(arena, u8, &.{ module_path, "\x00", function }));
 }
 
 /// The files being loaded on this thread, outermost first — a file loading
@@ -352,10 +414,18 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     // (`runRewrite`): std's `compiler.RunFailure` and `run_fn` (decision 806).
     var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
     for (program.decls) |d| try runs_found.walk(ast.DeclKind, d);
-    const src: []const u8 = if (runs_found.calls.items.len > 0)
-        base ++ "import {compiler.RunFailure as " ++ run_failure_alias ++ ", failure as " ++ failure_alias ++ "} from \"std\";\n" ++ run_fn_src
+    // A `` `test`() `` call (decision 993 (3)) also gets `test_run_fn` and
+    // std's `compiler.TestReport` / `compiler.TestCase`.
+    const tests_called = for (runs_found.calls.items) |c| {
+        if (c.kind == .test_) break true;
+    } else false;
+    const run_base = base ++ "import {compiler.RunFailure as " ++ run_failure_alias ++ ", failure as " ++ failure_alias ++ "} from \"std\";\n" ++ run_fn_src;
+    const src: []const u8 = if (runs_found.calls.items.len == 0)
+        base
+    else if (tests_called)
+        run_base ++ test_imports_src ++ test_run_src
     else
-        base;
+        run_base;
     const helper = try parseShifted(arena, src, helper_first_line, null);
     markLowering(ast.Program, @constCast(&helper));
     // Both first: an alias of an imported type names it in a signature only
@@ -762,8 +832,20 @@ pub fn runAlias(arena: std.mem.Allocator, package: []const u8) ![]const u8 {
     return std.mem.concat(arena, u8, &.{ run_alias_prefix, package });
 }
 
-/// A `run()` call as written: where, and on what.
-pub const RunCall = struct { loc: ast.Loc, receiver: *const ast.Expr };
+/// A `run()` call as written: where, and on what — or a `` `test`() `` call
+/// (decision 993 (3)), `kind` `.test_`.
+pub const RunCall = struct { loc: ast.Loc, receiver: *const ast.Expr, kind: CallKind = .run };
+
+/// Which of `Module`'s lowered methods a call names: `run()` or
+/// `` `test`() `` (decision 993 (3)).
+pub const CallKind = enum { run, test_ };
+
+/// The lowered method `callee` names on a `Module`, or null.
+pub fn moduleCallKind(callee: []const u8) ?CallKind {
+    if (std.mem.eql(u8, callee, "run")) return .run;
+    if (std.mem.eql(u8, callee, test_method)) return .test_;
+    return null;
+}
 
 /// Every `x.run()` of `func`'s body — the calls an executor writes, before
 /// the locals it captures are spliced (`infer.zig` `refuseExecutorRuns`).
@@ -831,7 +913,7 @@ const AliasTracer = struct {
         if (T == ast.Expr) {
             if (v == .call and v.call.kind == .call) {
                 const cc = v.call.kind.call;
-                if (std.mem.eql(u8, cc.callee, "run") and cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
+                if (moduleCallKind(cc.callee) != null and cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
                     if (r.* == .identifier and r.identifier.kind == .ident) if (self.lookup(r.identifier.kind.ident)) |m| {
                         r.* = m.*;
                     };
@@ -867,15 +949,17 @@ const AliasTracer = struct {
 const RunFinder = struct {
     arena: std.mem.Allocator,
     paths: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The paths of the `` `test`() `` calls (decision 993 (3)).
+    test_paths: std.ArrayListUnmanaged([]const u8) = .empty,
     collect_all: bool = false,
     calls: std.ArrayListUnmanaged(RunCall) = .empty,
 
     fn walk(self: *RunFinder, comptime T: type, v: T) std.mem.Allocator.Error!void {
         if (T == ast.Expr) if (v == .call and v.call.kind == .call) {
             const cc = v.call.kind.call;
-            if (std.mem.eql(u8, cc.callee, "run") and cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
-                if (self.collect_all) try self.calls.append(self.arena, .{ .loc = v.call.loc, .receiver = r });
-                if (try receiverPath(self.arena, r)) |p| try self.paths.append(self.arena, p);
+            if (moduleCallKind(cc.callee)) |kind| if (cc.args.len == 0 and !cc.is_builtin) if (cc.receiver) |r| {
+                if (self.collect_all) try self.calls.append(self.arena, .{ .loc = v.call.loc, .receiver = r, .kind = kind });
+                if (try receiverPath(self.arena, r)) |p| try (if (kind == .run) &self.paths else &self.test_paths).append(self.arena, p);
             };
         };
         if (comptime !mayHoldExpr(T)) return;
@@ -906,13 +990,15 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     for (program.decls) |d| try t.walk(ast.DeclKind, d);
     var f: RunFinder = .{ .arena = arena };
     for (program.decls) |d| try f.walk(ast.DeclKind, d);
-    if (f.paths.items.len == 0) return program;
+    if (f.paths.items.len == 0 and f.test_paths.items.len == 0) return program;
     var src: std.ArrayListUnmanaged(u8) = .empty;
     var has_attempt = false;
     var has_attempt_task = false;
     var has_failure = false;
     var has_module = false;
     var has_run_fn = false;
+    var has_report = false;
+    var has_test_run_fn = false;
     for (program.decls) |d| switch (d) {
         .use => |u| for (u.imports) |imp| {
             if (imp.alias) |a| {
@@ -920,10 +1006,12 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
                 if (std.mem.eql(u8, a, failure_alias)) has_attempt_task = true;
                 if (std.mem.eql(u8, a, run_failure_alias)) has_failure = true;
                 if (std.mem.eql(u8, a, module_alias)) has_module = true;
+                if (std.mem.eql(u8, a, test_report_alias)) has_report = true;
             }
         },
-        .@"fn" => |fd| if (std.mem.eql(u8, fd.name, run_fn)) {
-            has_run_fn = true;
+        .@"fn" => |fd| {
+            if (std.mem.eql(u8, fd.name, run_fn)) has_run_fn = true;
+            if (std.mem.eql(u8, fd.name, test_run_fn)) has_test_run_fn = true;
         },
         else => {},
     };
@@ -942,7 +1030,24 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
         if (!present) continue;
         try src.print(arena, "import {{" ++ loaded_main_fn ++ " as {s}}} from \"{s}\";\n", .{ try runAlias(arena, pkg), pkg });
     }
+    // Decision 993 (3) — a `` `test`() `` names the package's
+    // `loaded_tests_fn` under `testsAlias`.
+    var seen_tests: std.StringHashMapUnmanaged(void) = .empty;
+    for (f.test_paths.items) |p| {
+        const pkg = try packageName(arena, p);
+        if (seen_tests.contains(pkg)) continue;
+        try seen_tests.put(arena, pkg, {});
+        const present = for (build_modules) |m| {
+            if (std.mem.eql(u8, m.package, pkg)) break true;
+        } else false;
+        if (!present) continue;
+        try src.print(arena, "import {{" ++ loaded_tests_fn ++ " as {s}}} from \"{s}\";\n", .{ try testsAlias(arena, pkg), pkg });
+    }
     if (!has_run_fn) try src.appendSlice(arena, run_fn_src);
+    if (f.test_paths.items.len > 0) {
+        if (!has_report) try src.appendSlice(arena, test_imports_src);
+        if (!has_test_run_fn) try src.appendSlice(arena, test_run_src);
+    }
     if (src.items.len == 0) return program;
     const imports = try parseShifted(arena, src.items, helper_first_line + 100, null);
     // The capture's calls name methods of `Module` without `pub` (989 (1)).
@@ -950,6 +1055,320 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     const decls = try arena.alloc(ast.DeclKind, program.decls.len + imports.decls.len);
     @memcpy(decls[0..imports.decls.len], imports.decls);
     @memcpy(decls[imports.decls.len..], program.decls);
+    var out = program;
+    out.decls = decls;
+    return out;
+}
+
+// ── `Module.test()` (decisions 993 (3), 994 (L3)) ───────────────────────────
+
+/// The method's name as `compiler.bp` declares it: `test` is a keyword, so
+/// the name is written between backticks (decision 561) — `` m.`test`() ``.
+pub const test_method = "`test`";
+/// The function a tested package's root gains (`withTestFns`): its tests,
+/// one `test_entry_type` each, every module's — its body and the package's
+/// run first, anew at every `` `test`() `` as at every `run()` (806 (3)).
+pub const loaded_tests_fn = "__bp_loaded_tests";
+/// `loaded_tests_fn` of the root the emit puts in place of a package the
+/// target refuses (`codegen/loaded_targets.zig`, decision 989 (3)): it throws
+/// `off_marker` as `loaded_main_off_fn` does.
+pub const loaded_tests_off_fn = "__bp_loaded_tests_off";
+/// The function every module of a tested package gains: its own tests and
+/// those of each module it declares (`mod m;`), in source order.
+pub const tests_fn = "__bp_tests";
+/// The prefix of the function each `test` block is lowered to:
+/// `__bp_case_<k>`, `k` its index in its module.
+pub const test_case_prefix = "__bp_case_";
+/// The function a `` `test`() `` is rewritten to call: each test of the
+/// package run inside its own capture and `attempt`, its answer a
+/// `TestCase` — nothing a test raises ends the run (806 (2)) —, the whole a
+/// `TestReport`; `Error(RunFailure)` only for a package the target refuses
+/// (`.Refused`, `.Excluded`) or a crash outside every test (`.Abort`).
+pub const test_run_fn = "__bp_test_run";
+/// `test_run_fn` for a package whose tests are `async` (`testsAsync`):
+/// each awaited in turn, answering `Async` of `test_run_fn`'s answer.
+pub const test_run_async_fn = "__bp_test_run_async";
+/// The prefix of the local name a tested package's `loaded_tests_fn` is
+/// imported under: `__bp_tests__<package>`.
+pub const tests_alias_prefix = "__bp_tests__";
+/// The local names of std's `compiler.TestReport` and `compiler.TestCase`.
+pub const test_report_alias = "Bp__TestReport";
+pub const test_case_alias = "Bp__TestCase";
+/// std's `compiler.TestCase`, field for field (`tests/compiler_members.zig`):
+/// `botopink test --json`'s fields (decision 993 (3)).
+pub const test_case_fields = [_][]const u8{ "name", "file", "line", "ok", "output", "message", "at", "durationMs" };
+/// One test as the registry lists it: its name, its file (relative to the
+/// package), its line, and the function it was lowered to.
+const test_entry_sync = "#(string, string, i32, fn() -> Result<void, string>)";
+const test_entry_async = "#(string, string, i32, fn() -> Async<Result<void, string>>)";
+const test_none_fn = "__bp_tests_none";
+const test_async_none_fn = "__bp_tests_async_none";
+const test_case_fn = "__bp_test_case";
+const test_answer_fn = "__bp_test_answer";
+const test_failure_alias = "Bp__TestFailure";
+const test_cases_fn = "__bp_test_cases";
+const test_cases_async_fn = "__bp_test_cases_async";
+
+const test_imports_src = "import {compiler.TestReport as " ++ test_report_alias ++ ", compiler.TestCase as " ++ test_case_alias ++ ", failure.Failure as " ++ test_failure_alias ++ "} from \"std\";\n";
+
+/// One test's answer (`ran`, std's `attempt` over the lowered test) as its
+/// `TestCase`, pushed onto `cases` once — outside the `case`, which a push in
+/// each arm of inside the loop would need.
+const test_answer_src =
+    "        cases.push(" ++ test_answer_fn ++ "(e._0, e._1, e._2, ran, caseOutput));\n";
+
+/// What the registry answered: its tests, each run by `__bp_test_cases`
+/// (each inside its own capture and `attempt`), or, for a package the
+/// target refuses, the `off_marker` text (`run_failed_src`); a crash while
+/// the package's bodies run is `.Abort` with what they wrote.
+fn testRunSrc(comptime async_: bool) []const u8 {
+    const entry = if (async_) test_entry_async else test_entry_sync;
+    const cases_fn = if (async_) test_cases_async_fn else test_cases_fn;
+    const head = if (async_)
+        "async fn " ++ test_run_async_fn ++ "(reg: fn() -> Result<" ++ entry ++ "[], string>) -> Async<Result<" ++ test_report_alias ++ ", " ++ run_failure_alias ++ ">> {\n"
+    else
+        "fn " ++ test_run_fn ++ "(reg: fn() -> Result<" ++ entry ++ "[], string>) -> Result<" ++ test_report_alias ++ ", " ++ run_failure_alias ++ "> {\n";
+    const ran_ok = if (async_)
+        "            Ok(entries) -> return await " ++ cases_fn ++ "(entries);\n"
+    else
+        "            Ok(entries) -> return " ++ cases_fn ++ "(entries);\n";
+    const cases_head = if (async_)
+        "async fn " ++ cases_fn ++ "(entries: " ++ entry ++ "[]) -> Async<" ++ test_report_alias ++ "> {\n"
+    else
+        "fn " ++ cases_fn ++ "(entries: " ++ entry ++ "[]) -> " ++ test_report_alias ++ " {\n";
+    const run_one = if (async_)
+        "        val ran = await " ++ failure_alias ++ ".attemptTask(e._3);\n"
+    else
+        "        val ran = " ++ attempt_alias ++ "(e._3);\n";
+    return head ++
+        "    val open = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
+        "    val listed = " ++ attempt_alias ++ "(reg);\n" ++
+        "    val output = " ++ module_alias ++ "." ++ capture_close ++ "(open);\n" ++
+        "    case listed {\n" ++
+        "        Ok(found) -> case found {\n" ++
+        ran_ok ++
+        "            Error(m) -> " ++ run_failed_src ++
+        "        }\n" ++
+        "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message, output: output);\n" ++
+        "    }\n" ++
+        "}\n" ++
+        cases_head ++
+        "    var cases: " ++ test_case_alias ++ "[] = [];\n" ++
+        "    for entries { e ->\n" ++
+        "        val caseOpen = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
+        run_one ++
+        "        val caseOutput = " ++ module_alias ++ "." ++ capture_close ++ "(caseOpen);\n" ++
+        test_answer_src ++
+        "    }\n" ++
+        "    return " ++ test_report_alias ++ "(cases: cases);\n" ++
+        "}\n";
+}
+
+const test_run_src =
+    testRunSrc(false) ++ testRunSrc(true) ++
+    "fn " ++ test_case_fn ++ "(name: string, file: string, line: i32, ok: bool, message: string, output: string) -> " ++ test_case_alias ++ " {\n" ++
+    "    val at = if (ok) \"\" else file + \":\" + line.toString();\n" ++
+    "    return " ++ test_case_alias ++ "(name: name, file: file, line: line, ok: ok, output: output, message: message, at: at, durationMs: 0);\n" ++
+    "}\n" ++
+    "fn " ++ test_answer_fn ++ "(name: string, file: string, line: i32, ran: Result<Result<void, string>, " ++ test_failure_alias ++ ">, output: string) -> " ++ test_case_alias ++ " {\n" ++
+    "    case ran {\n" ++
+    "        Ok(answer) -> case answer {\n" ++
+    "            Ok(_) -> return " ++ test_case_fn ++ "(name, file, line, true, \"\", output);\n" ++
+    "            Error(m) -> return " ++ test_case_fn ++ "(name, file, line, false, m, output);\n" ++
+    "        }\n" ++
+    "        Error(crash) -> return " ++ test_case_fn ++ "(name, file, line, false, crash.message, output);\n" ++
+    "    }\n" ++
+    "}\n" ++
+    "fn " ++ test_none_fn ++ "() -> Result<" ++ test_entry_sync ++ "[], string> {\n    return [];\n}\n" ++
+    "fn " ++ test_async_none_fn ++ "() -> Result<" ++ test_entry_async ++ "[], string> {\n    return [];\n}\n";
+
+/// The local name `withRunImports` gives the tested package `package`'s
+/// `loaded_tests_fn`.
+pub fn testsAlias(arena: std.mem.Allocator, package: []const u8) ![]const u8 {
+    return std.mem.concat(arena, u8, &.{ tests_alias_prefix, package });
+}
+
+/// `` `test`() `` rewritten: `__bp_test_run(__bp_tests__<package>)` —
+/// `test_run_async_fn` when the package's tests are `async` —, or, while the
+/// package is not yet in the program, over a registry of no test.
+pub fn testRewrite(arena: std.mem.Allocator, loc: ast.Loc, alias: ?[]const u8, async_: bool) error{OutOfMemory}!*ast.Expr {
+    const text = try std.fmt.allocPrint(arena, "fn __bp_test_rewrite() {{ {s}({s}); }}", .{
+        if (async_) test_run_async_fn else test_run_fn,
+        alias orelse if (async_) test_async_none_fn else test_none_fn,
+    });
+    const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
+    const program = parseShifted(arena, text, line, null) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => @panic("Module.test: the rewrite does not parse"),
+    };
+    const out = try arena.create(ast.Expr);
+    out.* = program.decls[0].@"fn".body[0].expr;
+    return out;
+}
+
+/// Whether an `await` stands in `v` outside every closure and `async { }`
+/// block (each a scope of its own): a test body that awaits.
+const AwaitFinder = struct {
+    found: bool = false,
+
+    fn walk(self: *AwaitFinder, comptime T: type, v: T) void {
+        if (self.found) return;
+        if (T == ast.Expr) {
+            if (v == .function) return;
+            if (v == .jump and v.jump.kind == .await_) {
+                self.found = true;
+                return;
+            }
+        }
+        if (comptime !mayHoldExpr(T)) return;
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") self.walk(ptr.child, v.*),
+                .slice => for (v) |item| self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| self.walk(o.child, x),
+            .@"struct" => |st| {
+                // `for await (gen) { … }` awaits each item.
+                if (@hasField(T, "awaitLoop")) if (v.awaitLoop) {
+                    self.found = true;
+                    return;
+                };
+                inline for (st.fields) |fl| {
+                    if (!fl.is_comptime) self.walk(fl.type, @field(v, fl.name));
+                }
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// Decision 993 (3) — whether the loaded package's tests are `async`: one of
+/// its `test` blocks awaits. Then every test is lowered `async`, and its
+/// `` `test`() `` answers an `Async` (989 (2)).
+pub fn testsAsync(entry: Entry) !bool {
+    if (state.tests_async.get(entry.path)) |b| return b;
+    var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    const scratch = scratch_state.allocator();
+    var found = false;
+    outer: for (entry.modules) |m| {
+        var lx = Lexer.init(m.source);
+        const tokens = lx.scanAll(scratch) catch continue;
+        var p = Parser.init(tokens);
+        const program = p.parse(scratch) catch continue;
+        for (program.decls) |d| switch (d) {
+            .@"test" => |t| {
+                var f: AwaitFinder = .{};
+                f.walk([]ast.Stmt, t.body);
+                if (f.found) {
+                    found = true;
+                    break :outer;
+                }
+            },
+            else => {},
+        };
+    }
+    try state.tests_async.put(stateArena(), try stateArena().dupe(u8, entry.path), found);
+    return found;
+}
+
+/// Decisions 993 (3), 513 — a module of a package a `` `test`() `` reached,
+/// compiled in test mode in-process: each `test` block becomes the function
+/// `__bp_case_<k>` (its body, then `return;`), answering `Result<void,
+/// string>` — `Async` of it when the package's tests are `async` —, so a
+/// `try` or `throw` in it is its failure; the module gains `tests_fn`, its
+/// tests and its `mod`s' (each `test_entry_*`: the name — `test_<k>` for an
+/// anonymous one —, the module's file, the line); the package's root gains
+/// `loaded_tests_fn` over it and `loaded_tests_off_fn`. Any other module is
+/// `program` itself.
+pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) !ast.Program {
+    if (!isLoadedPackage(mod.package)) return program;
+    const entry = (try testedEntry(arena, mod.package)) orelse return program;
+    var is_root = false;
+    var has_loaded_main = false;
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |fd| {
+            if (std.mem.eql(u8, fd.name, tests_fn)) return program;
+            if (std.mem.eql(u8, fd.name, loaded_info_fn)) is_root = true;
+            if (std.mem.eql(u8, fd.name, loaded_main_fn)) has_loaded_main = true;
+        },
+        else => {},
+    };
+    const async_ = try testsAsync(entry);
+    const entry_type = if (async_) test_entry_async else test_entry_sync;
+    const file = if (mod.srcPath.len > 0) mod.srcPath else try std.fmt.allocPrint(arena, "{s}.bp", .{mod.path});
+
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    var list: std.ArrayListUnmanaged(u8) = .empty;
+    var n_tests: usize = 0;
+    for (program.decls) |d| switch (d) {
+        .@"test" => |t| {
+            if (async_)
+                try text.print(arena, "pub async fn {s}{d}() -> Async<Result<void, string>> {{\n    return;\n}}\n", .{ test_case_prefix, n_tests })
+            else
+                try text.print(arena, "pub fn {s}{d}() -> Result<void, string> {{\n    return;\n}}\n", .{ test_case_prefix, n_tests });
+            const name = t.name orelse try std.fmt.allocPrint(arena, "test_{d}", .{n_tests});
+            if (list.items.len > 0) try list.appendSlice(arena, ", ");
+            // The function behind a lambda: a name alone in a tuple labels
+            // its element.
+            try list.print(arena, "#(\"{s}\", \"{s}\", {d}, {{ -> {s}{d}() }})", .{
+                try blockEval.stringLexeme(arena, name),
+                try blockEval.stringLexeme(arena, file),
+                t.loc.line,
+                test_case_prefix,
+                n_tests,
+            });
+            const key = try std.fmt.allocPrint(stateArena(), "{s}\x00{s}{d}", .{ mod.path, test_case_prefix, n_tests });
+            try state.test_names.put(stateArena(), key, try lasting(name));
+            n_tests += 1;
+        },
+        else => {},
+    };
+    try text.print(arena, "pub fn " ++ tests_fn ++ "() -> {s}[] {{\n    val own: {s}[] = [{s}];\n    return own", .{ entry_type, entry_type, list.items });
+    for (program.decls) |d| switch (d) {
+        .mod => |m| try text.print(arena, ".append({s}." ++ tests_fn ++ "())", .{m.name}),
+        else => {},
+    };
+    try text.appendSlice(arena, ";\n}\n");
+    if (is_root) try text.print(arena, "pub fn " ++ loaded_tests_fn ++ "() -> Result<{s}[], string> {{\n    return " ++ tests_fn ++ "();\n}}\n" ++
+        "pub fn " ++ loaded_tests_off_fn ++ "() -> Result<{s}[], string> {{\n    throw \"\";\n}}\n", .{ entry_type, entry_type });
+    // The text outlives the compile as a loaded package's source does
+    // (`lasting`): an emitted literal slices it.
+    const generated = parseShifted(arena, try lasting(text.items), helper_first_line + 300, null) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => @panic("Module.test: the lowered tests do not parse"),
+    };
+
+    // A package with no `main` is tested too (993 (3)): its root keeps no
+    // `loaded_main_fn`, whose body calls the `main` it lacks (`packageModules`).
+    const drop_main = is_root and has_loaded_main and !entry.has_main;
+    const decls = try arena.alloc(ast.DeclKind, program.decls.len + generated.decls.len - n_tests - @intFromBool(drop_main));
+    var k: usize = 0;
+    var i: usize = 0;
+    for (program.decls) |d| {
+        if (drop_main and d == .@"fn" and std.mem.eql(u8, d.@"fn".name, loaded_main_fn)) continue;
+        defer i += 1;
+        decls[i] = switch (d) {
+            .@"test" => |t| blk: {
+                var fd = generated.decls[k].@"fn";
+                k += 1;
+                fd.name = try lasting(try std.fmt.allocPrint(arena, "{s}{d}", .{ test_case_prefix, k - 1 }));
+                fd.nameLoc = t.loc;
+                fd.startLoc = t.loc;
+                fd.docComment = t.docComment;
+                fd.comment = t.comment;
+                fd.moduleComment = t.moduleComment;
+                fd.body = try std.mem.concat(arena, ast.Stmt, &.{ t.body, fd.body });
+                break :blk .{ .@"fn" = fd };
+            },
+            else => d,
+        };
+    }
+    @memcpy(decls[i..], generated.decls[n_tests..]);
     var out = program;
     out.decls = decls;
     return out;

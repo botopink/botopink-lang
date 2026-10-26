@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+
+pub fn triple(n: i32) -> i32 {
+    return n * 3;
+}
+
+test "inner triples" {
+    print("inner", triple(2));
+    assert triple(2) == 6;
+}

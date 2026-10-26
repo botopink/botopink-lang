@@ -4431,6 +4431,23 @@ on a loaded file that declares no `main` `load-no-main`, each at the call. A `Mo
 <!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/load_no_main -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_construction -->
 
+A `Module`'s tests run as its `main` does (decision 993 (3)): ``m.`test`()`` — `test` is a keyword, written between
+backticks (decision 561) —, written where `run()` is and refused where it is, runs the loaded package's `test`
+blocks, compiled in test mode beside its modules, in the program's own process, and answers
+`Result<TestReport, RunFailure>`. `TestReport(cases: TestCase[])` holds one `TestCase(name, file, line, ok, output,
+message, at, durationMs)` per test — the root's tests in the order they are written, then each `mod`'s, the same way
+down; `file` relative to the package, `output` what the test wrote to standard output —; a test that fails (an
+`assert`, a `try`, a `throw`) or crashes is a case with `ok: false`, `message` the failure's text and `at` the test's
+`<file>:<line>`, and the next test runs. A package with no test answers no case, one with no `main` is tested too, and
+a dependency's tests never run. `Error(RunFailure)` is only `.Refused` or `.Excluded` — the target refuses the package
+at `emit`, none of its tests run — or `.Abort` for a crash outside every test (its body runs anew at each
+``test`()``), `output` what was written before. A package whose tests await makes ``test`()`` answer an `Async`,
+awaited. Inside a loaded package, `compiler.src().file` is prefixed by the directory the package was loaded from.
+
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_reports_each_test -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_refused_on_target -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_excluded_target -->
+
 `run-outside-init` names a place, never a receiver (decision 792 (4), (7)): a local alias of the captured
 `Module` (`val m2 = m; m2.run()`) in the init body runs the loaded file's `main` as `m.run()` does. A
 receiver the build traces to no `compiler.load` of the body — a parameter, a `var`, a computed value — is

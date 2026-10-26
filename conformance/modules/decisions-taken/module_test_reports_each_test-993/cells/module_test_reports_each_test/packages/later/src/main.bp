@@ -1,0 +1,16 @@
+import {io.terminal.print} from "std";
+
+async fn twice(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+test "awaits" {
+    val n = await twice(21);
+    print("later", n);
+    assert n == 42;
+}
+
+test "awaits and fails" {
+    val n = await twice(1);
+    assert n == 3;
+}

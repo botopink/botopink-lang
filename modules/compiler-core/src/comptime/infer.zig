@@ -13218,10 +13218,15 @@ fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr 
         }
     };
     const args = try env.arena.alloc(ast.CallArg, 4);
-    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, env.srcPath) };
+    // Decision 993 (3) — inside a loaded package the file is prefixed by the
+    // directory it was loaded from, and a test lowered to a function
+    // (`load.withTestFns`) is named by its test.
+    const file = (try loadMod.loadedSrcPath(env.arena, env.package, env.srcPath)) orelse env.srcPath;
+    const fn_name = (try loadMod.testNameOf(env.arena, env.modulePath, env.currentFnName)) orelse env.currentFnName;
+    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, file) };
     args[1] = .{ .label = "line", .value = try strLit.number(env, loc, loc.line) };
     args[2] = .{ .label = "column", .value = try strLit.number(env, loc, loc.col) };
-    args[3] = .{ .label = "fnName", .value = try strLit.make(env, loc, env.currentFnName) };
+    args[3] = .{ .label = "fnName", .value = try strLit.make(env, loc, fn_name) };
     const rewrite = try env.arena.create(ast.Expr);
     rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
         .receiver = null,
@@ -13716,7 +13721,8 @@ fn refuseExecutorRuns(env: *Env, func: ast.FunctionExpr, captured: []const []con
         const path = loadMod.valuePath(handed[k], member) orelse continue;
         const entry = loadMod.entryOf(path) orelse continue;
         if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, rc.loc);
-        if (!entry.has_main) return refuseRun(env, .no_main, path, rc.loc);
+        // `` `test`() `` runs the package's tests, not its `main` (993 (3)).
+        if (rc.kind == .run and !entry.has_main) return refuseRun(env, .no_main, path, rc.loc);
     }
 }
 
@@ -13794,6 +13800,70 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
     const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null, entry.main_async);
     try env.srcRewrites.put(loc, rewrite);
     return try declaredModuleRun(env, try inferExprTyped(env, rewrite.*), loc, entry.main_async);
+}
+
+/// Decisions 993 (3), 994 (L3) — `` m.`test`() ``: written where `run()` is
+/// (`run-outside-init` elsewhere), refused as it is on the `Module` of a load
+/// that refused (`run-module-refused`); a package with no `main` is tested
+/// too. The package joins the program with its tests lowered
+/// (`load.noteTest`, `load.withTestFns`), and the call is rewritten to
+/// `load.test_run_fn` over its `load.loaded_tests_fn` (`load.testRewrite`),
+/// so it answers `Result<TestReport, RunFailure>` — `Async` of it when a test
+/// of the package awaits (`load.testsAsync`).
+fn inferModuleTest(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            "`test()` takes no argument",
+            "Write ``m.`test`()`` — it runs the loaded package's tests (decision 993 (3)).",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.run_outside_init ++ ": `test()` is called outside a `compiler.init` body",
+            "A loaded package's tests run when the program runs, at the point of an init body that calls ``m.`test`()`` (decisions 787, 993 (3)): write it in a `compiler.init` body of the body that runs at build.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const path = (try loadMod.receiverPath(env.arena, call.receiver.?)) orelse {
+        // The body that runs at build, checked before its executor is: typed
+        // by its use, as `run()` is (`inferModuleRun`).
+        if (env.initArgDepth > 0) {
+            var typed = try inferExprTyped(env, (try loadMod.testRewrite(env.arena, loc, null, false)).*);
+            const open = try env.freshVar();
+            switch (typed) {
+                inline else => |*e| e.type_ = open,
+            }
+            return typed;
+        }
+        env.lastError = TypeError.custom(
+            diagnostics.run_module_untraced ++ ": `test()` is called on a `Module` that no `compiler.load` of the body answered",
+            "Call ``m.`test`()`` on the `Module` the body's `compiler.load` answered (decisions 787, 993 (3)).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const entry = loadMod.entryOf(path) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "{s}: `test()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_module_untraced, path }),
+            "Call ``m.`test`()`` on the `Module` the body's `compiler.load` answered (decision 993 (3)).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, loc);
+    try loadMod.noteTest(path);
+    const async_ = try loadMod.testsAsync(entry);
+    const alias = try loadMod.testsAlias(env.arena, try loadMod.packageName(env.arena, path));
+    const present = env.lookup(alias) != null;
+    const rewrite = try loadMod.testRewrite(env.arena, loc, if (present) alias else null, async_);
+    try env.srcRewrites.put(loc, rewrite);
+    const typed = try inferExprTyped(env, rewrite.*);
+    const sig = env.getInherentMethodType("Module", loadMod.test_method) orelse return typed;
+    const f = sig.deref();
+    if (f.* == .func) {
+        const want = if (async_) try env.namedTypeArgs("Async", &.{f.func.ret}) else f.func.ret;
+        try unifyAt(env, want, typed.getType(), loc);
+    }
+    return typed;
 }
 
 /// The lowered `m.run()` answers what `compiler.bp` declares `Module.run` to
@@ -25284,6 +25354,10 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decisions 787, 792 — `m.run()` on a `compiler.Module`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "run") and isLoadModuleType(env, rp.getType())) {
                 if (try inferModuleRun(env, call, loc)) |typed| return typed;
+            };
+            // Decision 993 (3) — `` m.`test`() `` on a `compiler.Module`.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, loadMod.test_method) and isLoadModuleType(env, rp.getType())) {
+                if (try inferModuleTest(env, call, loc)) |typed| return typed;
             };
             // Decision 538 — `a.open()` on an `Asset`: the `File` std's `io.fs`
             // opens over its bytes (`fs.openAsset(a)`).
