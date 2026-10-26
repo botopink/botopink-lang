@@ -1,0 +1,1 @@
+{ "name": "conformance-lib", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "records.bp", "sections.bp", "observe.bp", "candidate.bp", "adapter.bp"] }

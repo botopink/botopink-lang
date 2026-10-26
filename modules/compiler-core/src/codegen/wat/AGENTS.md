@@ -1038,7 +1038,7 @@ binding `hash` and `io/random`, and each still open:
 | `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, tuple element, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
 | a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
 | `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in the prelude's float text | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
-| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `.JavaScript` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array/run/src/cases/array_range_and_repeat` | fixed |
+| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | the bodies double an array (a range of one is its element); an associated `default fn` whose cells name other targets only (their `.JavaScript` template) is lowered from its body, as erlang and beam lower it — skipped, `Array.range(0, 3)` was an unresolved call; a local bound to an array in such a body has the array's methods (`primKindAt`). `conformance/modules/array/cases/array_range_and_repeat` | fixed |
 
 ## Numbers: a float's text, the 8-byte cells, integers that do not wrap
 
@@ -1613,7 +1613,7 @@ A lifted lambda keeps the `rewrites`, `instance_lowerings` and `global_renames` 
 it is written in (`Lifted.rewrites` / `lowerings` / `renames`, swapped in by `emitPendingFns`): it is
 lowered after its module's declarations, when the emitter holds another module's, and a linked
 component's `5.toString()` or `[1, 2].map(Card)` lost their primitive methods
-(`modules/array/run/src/cases/array_map_component_imported`, `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call`).
+(`modules/array/cases/array_map_component_imported`, `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call`).
 `?.` itself (`s?.length()`, `find(k)?.contains("x")`, `xs.at(i)?.slice(1, 3)`)
 is lowered the same way (`chainedCallKind`: the plan inference recorded, else
 the family of the receiver's `?T` payload — its type, or a string element's
