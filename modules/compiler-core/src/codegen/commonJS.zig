@@ -1925,6 +1925,10 @@ const Emitter = struct {
     /// emitted: the shape of each of the type's parameters (`ty_shapes`) is
     /// the one the value carries, `this.__bp_s?.$T`, not a parameter.
     ty_shapes_on_self: bool = false,
+    /// Decision 985 — the type parameters of its own an instance method of a
+    /// generic record takes the print shape of as trailing parameters
+    /// (`__bp_ty_<W>`), after the ones the value carries (`ty_shapes`).
+    ty_method_shapes: []const ast.GenericParam = &.{},
     /// Decision 900 — the shape each type parameter of a generic record
     /// stands for while a constructor call of it writes its fields' shapes
     /// (`typeShape`); null elsewhere.
@@ -2742,9 +2746,12 @@ const Emitter = struct {
             const got = try self.typeShape(f.typeRef);
             self.shape_subst = prev_subst;
             const prev_ty = self.ty_shapes;
+            const prev_method = self.ty_method_shapes;
             self.ty_shapes = &.{};
+            self.ty_method_shapes = &.{};
             const proto = try self.typeShape(f.typeRef);
             self.ty_shapes = prev_ty;
+            self.ty_method_shapes = prev_method;
             const keep = if (got) |g| shapeHoldsFloat(g) or shapeHoldsTuple(g) or shapeIsRuntime(g) else false;
             const proto_keep = if (proto) |p| shapeHoldsFloat(p) or shapeHoldsTuple(p) else false;
             if (keep != proto_keep or (keep and !shapeEql(got.?, proto.?))) differs = true;
@@ -3315,14 +3322,26 @@ const Emitter = struct {
             // own parameters, as a generic fn does (`shapeCtorSig`).
             const prev_ty_shapes = self.ty_shapes;
             const prev_on_self = self.ty_shapes_on_self;
+            const prev_method_shapes = self.ty_method_shapes;
             defer {
                 self.ty_shapes = prev_ty_shapes;
                 self.ty_shapes_on_self = prev_on_self;
+                self.ty_method_shapes = prev_method_shapes;
             }
             const shape_ctor = crossModule.shapeCtorSig(r.name, r.genericParams, m) != null;
+            // Decision 985 — and an instance method with type parameters of
+            // its own takes their shapes after its parameters.
+            const own_sig = crossModule.shapeMethodSig(m);
             self.ty_shapes = if (has_self or shape_ctor) r.genericParams else &.{};
             self.ty_shapes_on_self = has_self;
+            self.ty_method_shapes = if (own_sig != null) m.genericParams else &.{};
             var params = try self.buildParams(m.params);
+            if (own_sig != null) {
+                const all = try self.arena().alloc(js.Param, params.len + m.genericParams.len);
+                @memcpy(all[0..params.len], params);
+                for (m.genericParams, 0..) |gp, i| all[params.len + i] = js.Param.id(self.tyShapeParam(gp.name).?);
+                params = all;
+            }
             if (shape_ctor) {
                 const all = try self.arena().alloc(js.Param, params.len + r.genericParams.len);
                 @memcpy(all[0..params.len], params);
@@ -7082,6 +7101,8 @@ const Emitter = struct {
     /// Decision 900 — in an instance method of a generic record, the shape
     /// the value carries, `this.__bp_s?.$T` (`instanceShapes`).
     fn tyShapeParam(self: *Emitter, n: []const u8) ?[]const u8 {
+        for (self.ty_method_shapes) |gp| if (std.mem.eql(u8, gp.name, n))
+            return std.fmt.allocPrint(self.arena(), "__bp_ty_{s}", .{n}) catch null;
         for (self.ty_shapes) |gp| if (std.mem.eql(u8, gp.name, n)) {
             if (self.ty_shapes_on_self) return std.fmt.allocPrint(self.arena(), "this.__bp_s?.${s}", .{n}) catch null;
             return std.fmt.allocPrint(self.arena(), "__bp_ty_{s}", .{n}) catch null;
@@ -7195,6 +7216,63 @@ const Emitter = struct {
         for (res[0..fill]) |*r| r.* = .{ .name = "undefined" };
         @memcpy(res[fill..], out[0..last]);
         return res;
+    }
+
+    /// Decision 985 — the trailing arguments of a call of an instance method
+    /// that has type parameters of its own (`shapeMethodSig`): the print
+    /// shape of each type argument the checker bound at the call
+    /// (`ast.text_method_col`), none when no type argument has one. The
+    /// method is judged by its signature alone, here or in the export info.
+    fn methodOwnShapes(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror![]const js.Expr {
+        const lw = self.lowerings orelse return &.{};
+        var key = loc;
+        key.col += ast.text_method_col;
+        const il = lw.get(key) orelse return &.{};
+        if (il != .text_value or il.text_value != .generic) return &.{};
+        const g = il.text_value.generic;
+        const dot = std.mem.indexOfScalar(u8, g.name, '.') orelse return &.{};
+        const owner = g.name[0..dot];
+        const method = g.name[dot + 1 ..];
+        if (!std.mem.eql(u8, method, cc.callee)) return &.{};
+        const sig = self.methodOwnSig(owner, method) orelse return &.{};
+        if (sig.generics.len != g.args.len) return &.{};
+        const given = cc.args.len + cc.trailing.len;
+        if (given > sig.params.len) return &.{};
+        for (sig.params[given..]) |p| if (p.default == null) return &.{};
+        const out = try self.arena().alloc(js.Expr, g.args.len);
+        var last: usize = 0;
+        for (g.args, 0..) |a, i| {
+            out[i] = (try self.typeShape(a)) orelse .null_;
+            if (out[i] != .null_) last = i + 1;
+        }
+        if (last == 0) return &.{};
+        const fill = sig.params.len - given;
+        const res = try self.arena().alloc(js.Expr, fill + last);
+        for (res[0..fill]) |*r| r.* = .{ .name = "undefined" };
+        @memcpy(res[fill..], out[0..last]);
+        return res;
+    }
+
+    /// Decision 985 — the signature of the instance method `method` of the
+    /// record `owner` that takes shapes for its own type parameters: from this
+    /// module's declaration or the export info.
+    fn methodOwnSig(self: *Emitter, owner: []const u8, method: []const u8) ?crossModule.ShapeSig {
+        if (self.eq_decls.get(owner)) |decl| {
+            if (!decl.isRecord()) return null;
+            for (decl.methods) |m| if (std.mem.eql(u8, m.name, method)) return crossModule.shapeMethodSig(m);
+            return null;
+        }
+        const xc = self.cross orelse return null;
+        const list = xc.owners.get(owner) orelse return null;
+        var hit: ?crossModule.ShapeSig = null;
+        for (list) |e| {
+            if (e.kind != .record) continue;
+            for (e.methods) |m| if (std.mem.eql(u8, m.name, method)) if (m.own_sig) |sig| {
+                if (hit != null) return null;
+                hit = sig;
+            };
+        }
+        return hit;
     }
 
     /// Decision 899 — the signature of the bodied, non-host generic fn of
@@ -7690,6 +7768,13 @@ const Emitter = struct {
             args.items.len == cc.args.len + cc.trailing.len)
             if (self.staticShapeCtor(cc)) |hit|
                 try args.appendSlice(self.arena(), try self.typeArgShapesOr(hit.sig.generics, hit.sig.params, cc, self.loweredTypeArgs(loc, hit.type_name, hit.sig.generics.len)));
+
+        // Decision 985 — `d.mapValues(f)`: a method with type parameters of
+        // its own takes the shape of each type argument of the call after the
+        // arguments, as a generic fn does.
+        if (!is_new and slots == null and opt_recv == null and cc.receiver != null and cc.calleeExpr == null and
+            args.items.len == cc.args.len + cc.trailing.len)
+            try args.appendSlice(self.arena(), try self.methodOwnShapes(loc, cc));
 
         const arg_slice = try args.toOwnedSlice(self.arena());
         if (opt_recv) |r| return self.optEnumCall(r, try self.b.call(callee, arg_slice));

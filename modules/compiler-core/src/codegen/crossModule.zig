@@ -43,7 +43,24 @@ pub const MethodSig = struct {
     /// which a commonJS caller reads to hand it the print shape of each type
     /// argument. null for every other method.
     shape_sig: ?ShapeSig = null,
+    /// Decision 985 — an instance method with type parameters of its own
+    /// (`shapeMethodSig`): its own parameters and its parameters after `self`,
+    /// which a commonJS caller reads to hand it the print shape of each type
+    /// argument of the call. null for every other method.
+    own_sig: ?ShapeSig = null,
 };
+
+/// Decision 985 — an instance method of a record that has type parameters of
+/// its own: bodied, no host binding, a `self` receiver first, no variadic or
+/// destructuring parameter. It takes one trailing print shape per type
+/// parameter of its own on commonJS (after its declared parameters), which
+/// the call hands it. Judged by the signature alone.
+pub fn shapeMethodSig(m: ast.BehaviorMethod) ?ShapeSig {
+    if (m.genericParams.len == 0 or m.body == null or m.is_declare or m.isExternal()) return null;
+    if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) return null;
+    if (hasVariadicOrDestruct(m.params)) return null;
+    return .{ .generics = m.genericParams, .params = m.params[1..] };
+}
 
 /// Decision 900 — a static of the generic record `type_name` (type
 /// parameters `gps`) that builds a value of the type: bodied, no host
@@ -1210,7 +1227,7 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
         for (ok.transformed.decls) |decl| switch (decl) {
             .type_ => |r| if (r.isPub) {
                 const methods = try alloc.alloc(MethodSig, r.methods.len);
-                for (r.methods, 0..) |m, i| methods[i] = .{ .name = m.name, .arity = m.params.len, .shape_sig = if (r.shape == .record) shapeCtorSig(r.name, r.genericParams, m) else null };
+                for (r.methods, 0..) |m, i| methods[i] = .{ .name = m.name, .arity = m.params.len, .shape_sig = if (r.shape == .record) shapeCtorSig(r.name, r.genericParams, m) else null, .own_sig = if (r.shape == .record) shapeMethodSig(m) else null };
                 try method_arrays.append(alloc, methods);
                 switch (r.shape) {
                     .record => |record_fields| {

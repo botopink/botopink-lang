@@ -169,7 +169,13 @@ codegen/
   parameter, filled from its arguments or the type the checker recorded at the
   call's loc plus `ast.text_ret_col`, and an instance method reads
   `this.__bp_s?.$T` where it writes a `T` as text and copies it into every
-  value of the type it builds (`ty_shapes_on_self`). A call that
+  value of the type it builds (`ty_shapes_on_self`). An instance method with
+  type parameters of its own (`crossModule.shapeMethodSig`,
+  `MethodSig.own_sig` across modules: `Dict.mapValues<W>`) takes one trailing
+  `__bp_ty_<W>` per parameter after its parameters (`ty_method_shapes`) and the
+  value it builds carries `$W`; a call hands them, read off the type arguments
+  the checker bound at the call (`infer.noteMethodTypeArgs`, keyed at the
+  call's loc plus `ast.text_method_col`, `methodOwnShapes`; decision 985). A call that
   omits the shapes — a host or TypeScript caller — answers the old text; the `.d.ts` and the `T`
   values are unchanged.
   A botopink value is told from a host object by the `__bp` marker its

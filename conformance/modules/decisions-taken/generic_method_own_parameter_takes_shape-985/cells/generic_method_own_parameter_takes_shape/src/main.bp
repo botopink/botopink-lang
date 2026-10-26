@@ -1,0 +1,15 @@
+//// A method with type parameters of its own takes B-114's trailing print shapes for them at the call, as a generic function does (899), and writes them into the value it answers; amends 900 (1).
+
+import {collections.Dict} from "std";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val counts: Dict<string, i32> = Dict.empty();
+    val d = counts.insert("a", 2).insert("b", 1);
+    val prices = d.mapValues({ v -> 2.0 });
+    print(prices);
+    val total = d.fold(0.0, { acc, k, v -> acc + 2.0 });
+    print(total);
+    val empty = counts.mapValues({ v -> 1.5 });
+    print(empty.insert("z", 2.0));
+}

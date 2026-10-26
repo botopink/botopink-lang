@@ -9768,7 +9768,13 @@ fn inferTypeMethods(
         try genericMap.put("Self", selfTy);
 
         // Method-level generics (`mapValues<C>`).
-        for (m.genericParams) |gp| try genericMap.put(gp.name, try env.freshVar());
+        // Decision 985 — and the variable of each is named, as the type's are:
+        // commonJS reads the shape of `W` where the method writes one.
+        for (m.genericParams) |gp| {
+            const v = try env.freshVar();
+            try genericMap.put(gp.name, v);
+            try env.typeParamVars.append(env.arena, .{ .ty = v, .name = gp.name });
+        }
         const savedMethodGenericMap = env.methodGenericMap;
         env.methodGenericMap = &genericMap;
         defer env.methodGenericMap = savedMethodGenericMap;
@@ -14089,6 +14095,57 @@ fn noteGenericValueCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr
     try noteTextValue(env, key, typed.getType());
 }
 
+/// Decision 985 — a call of an inherent method that has type parameters of its
+/// own (`d.mapValues(f)`): the type each is bound to at this call, recorded at
+/// the call's loc plus `ast.text_method_col` as a type named `<Owner>.<method>`
+/// whose arguments are those types in the method's order. The method's
+/// declared signature is read again over the receiver's type arguments, as
+/// `applyExplicitTypeArgs` reads it, and unified with the call's arguments and
+/// answer — the checker's own unification, repeated, so it binds nothing new.
+fn noteMethodTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    if (c.kind != .call or typed != .call or typed.call.kind != .call) return;
+    const call = typed.call.kind.call;
+    const recv = call.receiver orelse return;
+    const recvTy = recv.getType().deref();
+    if (recvTy.* != .named) return;
+    const tn = recvTy.named.name;
+    const m = env.getInherentMethodDecl(tn, call.callee) orelse return;
+    if (m.genericParams.len == 0 or m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) return;
+    var gm = std.StringHashMap(*T.Type).init(env.arena);
+    defer gm.deinit();
+    if (env.lookupTypeDef(tn)) |td| {
+        const tps = td.genericParams();
+        for (tps, 0..) |tp, i| if (i < recvTy.named.args.len) try gm.put(tp, recvTy.named.args[i]);
+    }
+    try gm.put("Self", recv.getType());
+    const own = try env.arena.alloc(*T.Type, m.genericParams.len);
+    for (m.genericParams, own) |gp, *slot| {
+        slot.* = try env.freshVar();
+        try gm.put(gp.name, slot.*);
+    }
+    const saved = env.lastError;
+    for (m.params[1..], 0..) |p, i| {
+        if (i >= call.args.len) break;
+        if (call.args[i].label != null) break;
+        const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+        unifyAt(env, pt, call.args[i].value.getType(), call.args[i].value.getLoc()) catch {
+            env.lastError = saved;
+            return;
+        };
+    }
+    if (m.returnType) |rtRef| {
+        const want = try resolveTypeRefInContext(env, rtRef, gm);
+        unifyAt(env, want, typed.getType(), c.loc) catch {
+            env.lastError = saved;
+            return;
+        };
+    }
+    const name = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ tn, call.callee });
+    var key = c.loc;
+    key.col += ast.text_method_col;
+    try noteTextValue(env, key, try env.namedTypeArgs(name, own));
+}
+
 /// The written form of a checker type; null for a type variable, a union or
 /// a structural record — what nothing names. Shared by the scope lowering's
 /// carried types (`context_lower.zig`, decision 504) and `unionValueLowerings`.
@@ -17799,6 +17856,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             // is written, a component body included: it answers `Component<R>`.
             const result = try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall));
             try noteGenericValueCall(env, c, result);
+            try noteMethodTypeArgs(env, c, result);
             break :blk result;
         },
 

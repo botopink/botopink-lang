@@ -701,6 +701,15 @@ pub const catalogue_default_col: usize = 9_000_000;
 /// `catalogue_default_col`'s and `text_fn_value_col`'s.
 pub const text_ret_col: usize = 50_000_000;
 
+/// The column added to the loc of a method call whose method has type
+/// parameters of its own (`d.mapValues<W>(…)`) to key the type arguments the
+/// call binds them to (144 B-115, decision 985; `infer.noteMethodTypeArgs`),
+/// recorded as `text_value` of a type named `<Owner>.<method>` whose
+/// arguments are those, in the method's order: commonJS reads from it the
+/// print shape of each, handed after the call's arguments. Between
+/// `text_ret_col`'s and `text_fn_value_col`'s.
+pub const text_method_col: usize = 60_000_000;
+
 /// The column added to the loc of a generic fn named as a value (`xs.map(show)`)
 /// to key the `text_value` lowering of the function type that use instantiates
 /// when a parameter of it holds a float or a tuple (144 B-115, decision 673;

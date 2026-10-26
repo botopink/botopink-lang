@@ -931,7 +931,7 @@ class Dict {
         return out;
     }
 
-    fold(initial, f) {
+    fold(initial, f, __bp_ty_A) {
         let acc = initial;
         this.pairs.forEach((p) => {
     acc = f(acc, p[0], p[1]);
@@ -939,12 +939,12 @@ class Dict {
         return acc;
     }
 
-    mapValues(f) {
+    mapValues(f, __bp_ty_W) {
         let out = [];
         this.pairs.forEach((p) => {
     return out.push([p[0], f(p[1])]);
 });
-        return Object.defineProperty(new Dict(out), "__bp_s", { value: { pairs: ["[", ["#", this.__bp_s?.$K, null]], $K: this.__bp_s?.$K } });
+        return Object.defineProperty(new Dict(out), "__bp_s", { value: { pairs: ["[", ["#", this.__bp_s?.$K, __bp_ty_W]], $K: this.__bp_s?.$K, $V: __bp_ty_W } });
     }
 
     static empty(__bp_ty_K, __bp_ty_V) {
