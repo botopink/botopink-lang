@@ -1,0 +1,7 @@
+import {io.terminal.print} from "std";
+
+mod part;
+
+pub fn main() -> void {
+    print("root " + part.word());
+}

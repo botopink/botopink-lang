@@ -1,0 +1,6 @@
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val inner = comptime compiler.load("missing_entry");
+    print(inner.isOk());
+}

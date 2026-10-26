@@ -4297,12 +4297,17 @@ a decorator registers its own executor.
 
 ### `compiler.load`
 
-`comptime compiler.load(path)` compiles a package at build (decisions 780, 982): `path` names a
-directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and
-`src/main.bp`; it is compiled from its `src/main.bp` under its own manifest — its name, its targets,
-its dependencies, never the caller's — and checked for every target that manifest declares (every
-target when it declares none). A path naming a file (`compiler.load("example/mod.bp")`), a directory
-with no `botopink.json` or one with no `src/main.bp` is `load-not-a-package`, at the argument. It answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
+`comptime compiler.load(path)` compiles a package at build (decisions 780, 982, 993 (1)): `path`
+names a directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and the
+entry its `src` and `entry` name (`src/main.bp` when it writes neither); it is compiled from that
+entry under its own manifest — its name, its targets, its dependencies, never the caller's — and
+checked for every target that manifest declares (every target when it declares none; a workspace
+member writing none holds its workspace's, decision 75). Its dependencies are its own, resolved from
+its directory as `botopink build` there would resolve them — a `path` from its directory,
+`{ "workspace": true }` from its workspace's root, `git` through decision 483's tiers —, once per
+directory in a build; a refusal of them is a `Diagnostic` of its `botopink.json`. A path naming a file
+(`compiler.load("example/mod.bp")`), a directory with no `botopink.json` or one with no such entry is
+`load-not-a-package`, at the argument, naming the entry it lacks. It answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
 `Ok(m)` when it compiles, `Error(r)` when it is refused, `r.module` the same `Module` and
 `r.diagnostics` its refusals in the order `botopink build` prints them, never empty. A
 `Diagnostic` is the refusal as printed: `message` the text after `error: `, `file` (relative to
@@ -4321,6 +4326,8 @@ function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. T
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/file_path_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/no_main_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/loaded_targets_checked -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_library_entry_root -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_resolves_own_dependencies -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
 <!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->

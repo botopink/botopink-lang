@@ -27,6 +27,7 @@ const test_cmd = @import("./cli/test_cmd.zig");
 const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
+const libs = @import("./cli/libs.zig");
 const builtin = @import("builtin");
 const bp = @import("botopink");
 const build_stamp = @import("build_stamp");
@@ -201,6 +202,9 @@ fn dispatch(init: std.process.Init) !u8 {
     // The command's `erl` session (`cli/otp.zig`) ends with the command.
     defer otp.close(io);
     const env_map: ?*const std.process.Environ.Map = init.environ_map;
+    // Decision 993 (1): a `compiler.load`ed package resolves its own
+    // dependencies from its own directory, through the CLI.
+    libs.installLoadResolver(env_map);
     // Parsed options live as long as the process: allocate them in the process
     // arena so no command has to free its argument lists.
     const arena = init.arena.allocator();

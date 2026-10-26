@@ -1,0 +1,36 @@
+//// Decision 993 (1) — `compiler.load` compiles a package from the entry its manifest's `src` and
+//// `entry` name, not a fixed `src/main.bp`: `lib_root` writes `"src": "lib/"`, `"entry": "root.bp"`,
+//// so it compiles from `lib/root.bp` with its `mod` tree, and its `src/main.bp` (refused if it were
+//// compiled) is never read. A manifest naming an entry that is not there is `load-not-a-package`,
+//// naming that entry — here the refusal of `probe`, which loads such a package, read as `probe`'s
+//// `Diagnostic`.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn show(name: string, answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> print(name + " ran [" + text + "]");
+        Error(r) -> print(name + " failed " + r.message);
+    }
+}
+
+comptime {
+    val lib = comptime compiler.load("packages/lib_root");
+    case lib {
+        Ok(m) -> compiler.init({ -> show("lib_root", m.run()) });
+        Error(refused) -> compiler.init({ -> print("lib_root refused") });
+    }
+}
+
+pub fn main() -> void {
+    val probe = comptime compiler.load("packages/probe");
+    case probe {
+        Ok(m) -> print("never");
+        Error(r) {
+            for (r.diagnostics) { d ->
+                print(d.code + " at " + d.file + ":" + d.line.toString());
+                print(d.message);
+            }
+        }
+    }
+}

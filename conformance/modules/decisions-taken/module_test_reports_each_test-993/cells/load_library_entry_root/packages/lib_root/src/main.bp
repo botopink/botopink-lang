@@ -1,0 +1,4 @@
+// Never compiled: the manifest's `src` and `entry` name `lib/root.bp`.
+pub fn main() -> void {
+    val never: i32 = "src/main.bp";
+}

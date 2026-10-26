@@ -1,0 +1,1 @@
+{ "name": "ws", "targets": ["commonJS"], "workspaces": ["members/*"] }

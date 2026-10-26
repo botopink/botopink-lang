@@ -1,0 +1,5 @@
+botopink-cell 1
+out lib_root ran [root part
+out ]
+out load-not-a-package at src/main.bp:4
+out load-not-a-package: `compiler.load("missing_entry")` names a package with no `lib/root.bp`

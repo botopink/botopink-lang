@@ -1,0 +1,6 @@
+import {io.terminal.print} from "std";
+import {hello} from "greet";
+
+pub fn main() -> void {
+    print(hello("app"));
+}

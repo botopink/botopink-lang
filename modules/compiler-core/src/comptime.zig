@@ -4912,15 +4912,39 @@ pub fn compileWith(
         var placed = false;
         for (current) |m| {
             if (!placed and m.package.len == 0) {
-                for (lacking) |e| try next.appendSlice(allocator, try loadMod.packageModules(extra.allocator(), e, targets));
+                try placeLoaded(allocator, extra.allocator(), &next, current, lacking, targets);
                 placed = true;
             }
             try next.append(allocator, m);
         }
-        if (!placed) for (lacking) |e| try next.appendSlice(allocator, try loadMod.packageModules(extra.allocator(), e, targets));
+        if (!placed) try placeLoaded(allocator, extra.allocator(), &next, current, lacking, targets);
         grown.deinit(allocator);
         grown = next;
         current = grown.items;
+    }
+}
+
+/// The loaded packages a `run()` reaches, each after its own dependencies
+/// (decision 993 (1), `loadMod.Entry.dependencies`); a dependency module the
+/// program already holds (the same package and path) joins once.
+fn placeLoaded(
+    allocator: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    next: *std.ArrayListUnmanaged(Module),
+    current: []const Module,
+    lacking: []const loadMod.Entry,
+    targets: ?@import("./module.zig").Targets,
+) !void {
+    for (lacking) |e| {
+        for (e.dependencies) |d| {
+            const held = for (current) |m| {
+                if (std.mem.eql(u8, m.package, d.package) and std.mem.eql(u8, m.path, d.path)) break true;
+            } else for (next.items) |m| {
+                if (std.mem.eql(u8, m.package, d.package) and std.mem.eql(u8, m.path, d.path)) break true;
+            } else false;
+            if (!held) try next.append(allocator, d);
+        }
+        try next.appendSlice(allocator, try loadMod.packageModules(arena, e, targets));
     }
 }
 

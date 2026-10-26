@@ -1,0 +1,44 @@
+//// Decision 993 (1) — a loaded package resolves its own `dependencies` from its own directory, as
+//// `botopink build` there would: `app` names `greet` by a `path` from its directory, which this
+//// caller does not depend on, and its import of `greet` resolves; its `run()` prints through it,
+//// `greet` joining the program beside `app`. A loaded workspace member writing no `"targets"`
+//// inherits its workspace's (decision 75): `node_member` uses `io.process.start`, commonJS's
+//// alone (906), and compiles because `ws` declares `commonJS` only.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn show(name: string, answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> print(name + " ran [" + text + "]");
+        Error(r) -> print(name + " failed " + r.message);
+    }
+}
+
+comptime {
+    val app = comptime compiler.load("packages/app");
+    case app {
+        Ok(m) -> compiler.init({ -> show("app", m.run()) });
+        Error(refused) -> compiler.init({ ->
+            for (refused.diagnostics) { d ->
+                print("app refused " + d.message);
+            }
+        });
+    }
+}
+
+pub fn main() -> void {
+    val member = comptime compiler.load("packages/ws/members/node_member");
+    case member {
+        Ok(m) -> print("node_member ok");
+        Error(r) {
+            for (r.diagnostics) { d ->
+                print("node_member refused "
+                    + d.code
+                    + " at "
+                    + d.file
+                    + ":"
+                    + d.line.toString());
+            }
+        }
+    }
+}

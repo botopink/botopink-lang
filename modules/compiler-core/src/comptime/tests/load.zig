@@ -84,6 +84,24 @@ const files = [_][2][]const u8{
     .{ "packages/bad_json/botopink.json", "{ \"name\": " },
     .{ "packages/bad_json/src/main.bp", "pub fn main() -> void {}\n" },
 
+    // Decision 993 (1) — a manifest naming its `src` and `entry`.
+    .{ "packages/lib_root/botopink.json", "{ \"name\": \"lib_root\", \"src\": \"lib/\", \"entry\": \"root.bp\" }" },
+    .{ "packages/lib_root/lib/root.bp", "pub fn main() -> void {}\n" },
+    .{ "packages/lib_root/src/main.bp", "pub fn main() -> i32 {\n    return \"never compiled\";\n}\n" },
+    .{ "packages/missing_entry/botopink.json", "{ \"name\": \"missing_entry\", \"src\": \"lib/\", \"entry\": \"root.bp\" }" },
+    .{ "packages/missing_entry/src/main.bp", "pub fn main() -> void {}\n" },
+    // Decision 993 (1) — a package with a dependency of its own.
+    .{ "packages/uses_greet/botopink.json", "{ \"name\": \"uses_greet\", \"dependencies\": { \"greet\": { \"path\": \"../greet\" } } }" },
+    .{
+        "packages/uses_greet/src/main.bp",
+        \\import {hello} from "greet";
+        \\
+        \\pub fn main() -> void {
+        \\    val s: string = hello();
+        \\}
+        \\
+    },
+
     .{
         "packages/self/src/main.bp",
         \\import {compiler, io.terminal.print} from "std";
@@ -482,4 +500,114 @@ test "decision 989 (4): a manifest the compiler refuses is one `Diagnostic` of `
             try std.testing.expectEqual(@as(usize, 0), e.diagnostics[0].line);
         }
     }.check);
+}
+
+/// A `run()` of the package at `path` in an init body, compiled with `extra`
+/// modules before the caller's own: whether the caller and the loaded
+/// package's module `loaded` compiled.
+fn runLoaded(gpa: std.mem.Allocator, path: []const u8, loaded: []const u8, extra: []const moduleMod.Module) !struct { main_ok: bool, loaded_ok: bool } {
+    const io = std.testing.io;
+    const src = try std.fmt.allocPrint(gpa,
+        \\import {{compiler, io.terminal.print}} from "std";
+        \\
+        \\comptime {{
+        \\    val loaded = comptime compiler.load("{s}");
+        \\    case loaded {{
+        \\        Ok(m) -> compiler.init({{ -> print(try m.run() catch {{ f -> f.message }}); }});
+        \\        Error(r) -> print("refused");
+        \\    }}
+        \\}}
+        \\
+        \\pub fn main() -> void {{}}
+        \\
+    , .{path});
+    defer gpa.free(src);
+    var modules: std.ArrayListUnmanaged(moduleMod.Module) = .empty;
+    defer modules.deinit(gpa);
+    try modules.appendSlice(gpa, extra);
+    try modules.append(gpa, .{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) });
+    var session = try comptimeMod.compile(gpa, modules.items, io, null);
+    defer session.deinit(gpa);
+    var main_ok = false;
+    var loaded_ok = false;
+    for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
+        if (std.mem.eql(u8, o.name, loaded)) loaded_ok = o.outcome == .ok;
+    }
+    return .{ .main_ok = main_ok, .loaded_ok = loaded_ok };
+}
+
+test "decision 993 (1): a loaded package compiles from the entry its manifest's `src` and `entry` name" {
+    const got = try runLoaded(std.testing.allocator, "packages/lib_root", "bp_load__packages__lib_root/root", &.{});
+    try std.testing.expect(got.main_ok);
+    try std.testing.expect(got.loaded_ok);
+}
+
+test "decision 993 (1): a manifest naming an entry that is not there is `load-not-a-package`, naming it" {
+    const gpa = std.testing.allocator;
+    const got = (try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load("packages/missing_entry") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io))) orelse return error.TestExpectedRefusal;
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-not-a-package: "));
+    try std.testing.expect(std.mem.indexOf(u8, got, "names a package with no `lib/root.bp`") != null);
+}
+
+/// The caller's own `greet`, the fallback with no resolver.
+const greet_module: moduleMod.Module = .{ .path = "greet/root", .source = "pub fn hello() -> string {\n    return \"hi\";\n}\n", .srcPath = "src/root.bp", .package = "greet" };
+
+test "decision 993 (1): with no resolver, a loaded package's dependency is the caller's module of that name" {
+    const loadMod = @import("../load.zig");
+    try std.testing.expect(loadMod.resolver == null);
+    const got = try runLoaded(std.testing.allocator, "packages/uses_greet", "bp_load__packages__uses_greet/main", &.{greet_module});
+    try std.testing.expect(got.main_ok);
+    try std.testing.expect(got.loaded_ok);
+}
+
+const FakeResolver = struct {
+    var calls: usize = 0;
+    var refuse = false;
+    fn resolve(_: ?*anyopaque, _: std.Io, dir: []const u8) anyerror!@import("../load.zig").Resolution {
+        calls += 1;
+        std.debug.assert(std.mem.endsWith(u8, dir, "packages/uses_greet"));
+        if (refuse) return .{ .refused = .{ .message = "dependency \"greet\" not found", .line = 1, .column = 40 } };
+        return .{ .ok = .{ .modules = &.{greet_module} } };
+    }
+};
+
+test "decision 993 (1): with a resolver, a loaded package's own dependencies join the program its `run()` compiles" {
+    const loadMod = @import("../load.zig");
+    loadMod.resolver = .{ .resolve = FakeResolver.resolve };
+    defer loadMod.resolver = null;
+    FakeResolver.calls = 0;
+    FakeResolver.refuse = false;
+    // The caller holds no `greet`: the package's own comes from the resolver.
+    const got = try runLoaded(std.testing.allocator, "packages/uses_greet", "bp_load__packages__uses_greet/main", &.{});
+    try std.testing.expect(got.main_ok);
+    try std.testing.expect(got.loaded_ok);
+    try std.testing.expect(FakeResolver.calls > 0);
+}
+
+test "decision 993 (1): a resolver's refusal is the loaded package's `Diagnostic` at `botopink.json`, never the caller's" {
+    const gpa = std.testing.allocator;
+    const loadMod = @import("../load.zig");
+    loadMod.resolver = .{ .resolve = FakeResolver.resolve };
+    defer loadMod.resolver = null;
+    FakeResolver.refuse = true;
+    defer FakeResolver.refuse = false;
+    const got = try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load("packages/uses_greet") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io));
+    defer if (got) |m| gpa.free(m);
+    try std.testing.expect(got == null);
 }

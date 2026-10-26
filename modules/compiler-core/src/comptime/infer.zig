@@ -13316,7 +13316,8 @@ fn inferEmbedBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
 /// Decisions 780, 782, 982 — `comptime compiler.load(path)`: the package
 /// directory `path` names, read by `@embed`'s rules (a path known at build,
 /// relative to the caller's `botopink.json`, no absolute path, no `..`),
-/// compiled now from its `src/main.bp` under its own manifest (`load.compileFile`)
+/// compiled now from the entry its manifest names (`src/main.bp` by default,
+/// decision 993) under its own manifest (`load.compileFile`)
 /// and rewritten into the call that answers its `Result` (`load.rewrite`):
 /// `Ok` when it compiles, `Error` its refusals. A path refused, a file
 /// missing and a compiler with no reader are refusals of the caller, at the
@@ -13388,8 +13389,8 @@ fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const l
         .diagnostics => |ds| ds,
         .not_a_package => |why| {
             env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` {s}", .{ diagnostics.load_not_a_package, path, why.text() }),
-                "`compiler.load` loads a package: a directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and `src/main.bp` (decision 982).",
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` {s}", .{ diagnostics.load_not_a_package, path, try why.text(env.arena) }),
+                "`compiler.load` loads a package: a directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and the entry its `src` and `entry` name — `src/main.bp` by default (decisions 982, 993).",
             ).withLoc(argLoc);
             return error.TypeError;
         },

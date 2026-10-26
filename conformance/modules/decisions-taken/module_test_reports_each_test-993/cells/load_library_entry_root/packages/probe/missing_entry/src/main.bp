@@ -1,0 +1,2 @@
+// Present, yet no entry: the manifest names `lib/root.bp`.
+pub fn main() -> void {}

@@ -1,0 +1,3 @@
+pub fn hello(who: string) -> string {
+    return "hello " + who + " from greet";
+}
