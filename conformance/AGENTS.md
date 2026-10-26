@@ -48,7 +48,7 @@ conformance/
 
 | Path | Kind | Passes when |
 |---|---|---|
-| `modules/<module>/` (self-checking, decision 989) | a module that checks itself in process, `modules/array` first: `botopink.json` (a path dependency on `lib/`), `src/main.bp` — `pub async fn main() -> Async<Result<void, string>>` whose `runCase(comptime name)` loads `cases/<name>` at build, runs it and turns its answer into records —, `cases/<case>/` a package each (`botopink.json`, `src/main.bp` with `pub fn main`, `docs.md`), and one `snapshot/main.snap`: `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <t>`; a difference writes `snapshot/main.snap.new` through `io.fs` on every target (decision 992) and `main` answers `Error`; checked by `botopink run --target <t>` in the module's directory; `Module.run()`'s text and `io.os.target()` are still awaited (lib/README.md) | `main` answers `Ok` on every target |
+| `modules/<module>/` (self-checking, decision 989) | a module that checks itself in process (none yet: the modules convert with 990 piece 6): `botopink.json` (a path dependency on `lib/`), `src/main.bp` — `pub async fn main() -> Async<Result<void, string>>` whose `runCase(comptime name)` loads `cases/<name>` at build, runs it and turns its answer into records —, `cases/<case>/` a package each (`botopink.json`, `src/main.bp` with `pub fn main`, `docs.md`), and one `snapshot/main.snap`: `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <t>`; a difference writes `snapshot/main.snap.new` through `io.fs` on every target (decision 992) and `main` answers `Error`; checked by `botopink run --target <t>` in the module's directory; `Module.run()`'s text and `io.os.target()` are still awaited (lib/README.md) | `main` answers `Ok` on every target |
 | `modules/<module>/run/`, `modules/<module>/refused/` | a module's two packages of cases (decision 779): `src/cases/<case>/mod.bp` per case (its entry `pub fn runCase()` in `run/`), `src/main.bp` calling the cases of `run/` in `src/cases/mod.bp`'s order and reaching none in `refused/`; `run/`'s answer is one `snapshot/output/main.snap`, the cases' `out` lines in call order, `refused/`'s each case's own `snapshot/output/cases/<case>/mod.snap`; the module holds a `docs.md` linking every case and no `src/`; `scripts/pack-cells.py apply <module>` packs a module's 765 `cases/` (a case packs only when its package's check equals its old answers); `run.sh --only modules/<module>` stands for its packages and cells | as a cell below |
 | `modules/<module>/cells/<case>/` | a full cell (the shape below) for a case that cannot share a package — an abort, a narrowed `"targets"`, a dependency, a departure, an asset, a lone case (decision 779) | as a cell below |
 | `modules/<cell>/` | a cell: `botopink cell check <cell>` builds and runs it in process on every target its manifest declares (`modules/compiler-cli/AGENTS.md` § Cells) | every module's answer on every target is its accepted snapshot — `snapshot/targets/<t>/<m>.snap` where it exists, else `snapshot/output/<m>.snap`, else empty — and every target its `"targets"` leaves out refuses it on a host binding (§ Narrowing a cell) |
@@ -244,7 +244,7 @@ at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result
 `optional-has-no-methods`. Every one was refused or accepted otherwise by the parent binary. The
 suite's `.unwrapOr` on a `?T` became `??` (`scripts/codemod-optional-operators.py`), and a second
 index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`modules/decisions-taken/record_field_assignment_refused-37/run/src/cases/index_expression`,
-`modules/array/cases/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
+`modules/array/run/src/cases/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
 `modules/optional/run/src/cases/optional_chain_method`): the chain runs under the `?.`'s guard.
 `modules/decisions-taken/optional_typescript_operators-330/run/src/cases/optional_method_absent_receiver` — `recv?.m(args)` with the optional itself as the receiver (a
 local, a call, an array element; `length`, `toUpper`, `contains`, `slice`), absent and present, four
@@ -360,7 +360,7 @@ record field, a lambda answering one) and `modules/decisions-taken/component_val
 generic answer as `null` edges, the node asynchronous), each red on the parent binary; the `decl.hooks`
 readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it is now.
 144 B-141 adds `modules/meta/cells/meta_list_method_on_optional` and `modules/meta/cells/meta_list_coalesced_method` (a method on an
-optional's list, a coalesced list) and `modules/array/cases/array_map_component_imported` (a component of an imported module),
+optional's list, a coalesced list) and `modules/array/run/src/cases/array_map_component_imported` (a component of an imported module),
 each red on wasm on the parent binary and green on the four targets.
 Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
@@ -904,8 +904,8 @@ through their namespaces — the mangled one's receiver was dropped) and `module
 The backend rows of `status.md` (`front/backend-rows-2`) add, each failing on the parent binary
 on the targets named: `modules/case/cells/case_arm_record_named_like_a_variant` (a `case` over `Block | Vec` naming
 a record an enum section also declares as a variant — erlang `case_clause`, wasm a trap, beam the
-subject itself), `modules/array/cases/array_last_index_of` (all four; `Array` declared no `lastIndexOf`),
-`modules/array/cases/array_pop_removes` (erlang and beam read without removing, wasm trapped),
+subject itself), `modules/array/run/src/cases/array_last_index_of` (all four; `Array` declared no `lastIndexOf`),
+`modules/array/run/src/cases/array_pop_removes` (erlang and beam read without removing, wasm trapped),
 `modules/module/run/src/cases/module_var_self_registration` and its `_test` twin (a module-level `var` grown by `push` at
 module load — erlang and beam dropped the write), `modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_answer_typed_optional` and
 `modules/decisions-taken/negative_index_counts_from_end-139/refused/src/cases/index_answer_is_optional` (`xs[k]` is `?T`; wasm's `?Color` compare and `??` binder),
@@ -917,10 +917,10 @@ module load — erlang and beam dropped the write), `modules/decisions-taken/neg
 `modules/renderer/cells/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
 `snapshot/output/` answer shared by four targets: `modules/string/run/src/cases/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
-one empty line — and `words` over blanks), `modules/array/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
-over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array/cases/array_windows`
-(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array/cases/array_fill` (a value of
-each primitive, an empty receiver). `pop` is `modules/array/cases/array_pop_removes`; `unique`'s cell is
+one empty line — and `words` over blanks), `modules/array/run/src/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
+over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array/run/src/cases/array_windows`
+(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array/run/src/cases/array_fill` (a value of
+each primitive, an empty receiver). `pop` is `modules/array/run/src/cases/array_pop_removes`; `unique`'s cell is
 `02-erlang`'s `modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique` (C-35).
 `modules/generic/cells/generic_field_fn_value` — a top-level fn stored in a generic record's field (`Box<T>(value: T)`)
 and called through the field, through an untyped local and through a generic wrapper, and a lambda

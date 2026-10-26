@@ -28,24 +28,24 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/annotation_unknown_family | modules/annotation/refused/src/cases/annotation_unknown_family |  |  | c |
 | modules/any_type_removed | modules/decisions-taken/any_type_absent-31/cells/any_type_removed | 31 |  | b |
 | modules/anyvalue_outside_template | modules/decisions-taken/template_marked_by_syntax_text-578/cells/anyvalue_outside_template | 578 |  | b |
-| modules/array_fill | modules/array/cases/array_fill |  |  | c |
-| modules/array_fill_large | modules/array/cases/array_fill_large |  |  | c |
-| modules/array_flat_forms | modules/array/cases/array_flat_forms |  |  | c |
-| modules/array_last_index_of | modules/array/cases/array_last_index_of |  |  | c |
+| modules/array_fill | modules/array/run/src/cases/array_fill |  |  | c |
+| modules/array_fill_large | modules/array/run/src/cases/array_fill_large |  |  | c |
+| modules/array_flat_forms | modules/array/run/src/cases/array_flat_forms |  |  | c |
+| modules/array_last_index_of | modules/array/run/src/cases/array_last_index_of |  |  | c |
 | modules/array_literal_numeric_join | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_numeric_join | 150 | 247 | t |
 | modules/array_literal_union | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union | 150 |  | b |
 | modules/array_literal_union_elements | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union_elements | 150 |  | b |
 | modules/array_literal_union_misuse | modules/decisions-taken/mixed_literals_infer_union-150/cells/array_literal_union_misuse | 150 |  | b |
-| modules/array_map_component_imported | modules/array/cases/array_map_component_imported |  |  | c |
-| modules/array_pop_rebinds_var | modules/array/cases/array_pop_rebinds_var |  |  | c |
-| modules/array_pop_removes | modules/array/cases/array_pop_removes |  |  | c |
-| modules/array_push_rebinds_var | modules/array/cases/array_push_rebinds_var |  |  | c |
-| modules/array_range_and_repeat | modules/array/cases/array_range_and_repeat |  |  | c |
-| modules/array_reverse_answers_a_new_array | modules/array/cases/array_reverse_answers_a_new_array |  |  | c |
-| modules/array_slice_reverse | modules/array/cases/array_slice_reverse |  |  | c |
-| modules/array_spread_literal | modules/array/cases/array_spread_literal |  |  | c |
+| modules/array_map_component_imported | modules/array/run/src/cases/array_map_component_imported |  |  | c |
+| modules/array_pop_rebinds_var | modules/array/run/src/cases/array_pop_rebinds_var |  |  | c |
+| modules/array_pop_removes | modules/array/run/src/cases/array_pop_removes |  |  | c |
+| modules/array_push_rebinds_var | modules/array/run/src/cases/array_push_rebinds_var |  |  | c |
+| modules/array_range_and_repeat | modules/array/run/src/cases/array_range_and_repeat |  |  | c |
+| modules/array_reverse_answers_a_new_array | modules/array/run/src/cases/array_reverse_answers_a_new_array |  |  | c |
+| modules/array_slice_reverse | modules/array/run/src/cases/array_slice_reverse |  |  | c |
+| modules/array_spread_literal | modules/array/run/src/cases/array_spread_literal |  |  | c |
 | modules/array_unique | modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique | 217 |  | b |
-| modules/array_windows | modules/array/cases/array_windows |  |  | c |
+| modules/array_windows | modules/array/run/src/cases/array_windows |  |  | c |
 | modules/assert_failure_is_panic | modules/decisions-taken/failure_kinds_exact_every_target-527/cells/assert_failure_is_panic | 527 |  | b |
 | modules/assert_is_pattern | modules/decisions-taken/pattern_as_binding_refused-11/cells/assert_is_pattern | 11 |  | b |
 | modules/assert_message_aborts | modules/assert/cells/assert_message_aborts |  |  | c |
