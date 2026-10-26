@@ -1,0 +1,7 @@
+botopink-cell 1
+out == continue_label_unbound
+out refused error: break-label-unbound: `continue :<label>` targets an unknown label
+out at src/main.bp:5:21
+out == continue_outside_loop
+out refused error: continue-outside-loop: `continue` outside a loop
+out at src/main.bp:8:19

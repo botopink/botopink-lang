@@ -1,0 +1,23 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val xs = [1, 2, 3];
+
+    for (xs) { item ->
+        print(item);
+    }
+
+    for (1...3) { i ->
+        print(i);
+    }
+
+    var n = 0;
+    while (n < 3) {
+        n = n + 1;
+    }
+
+    loop {
+        n = n - 1;
+        if (n == 0) break;
+    }
+}

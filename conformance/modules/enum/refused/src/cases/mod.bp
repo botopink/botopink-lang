@@ -1,2 +1,0 @@
-pub mod enum_section_ambiguous_path;
-pub mod enum_variant_duplicate;

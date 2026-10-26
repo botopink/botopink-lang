@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown-primitive-method: `string` has no method `fooBar`
-at src/cases/primitive_method_unknown/mod.bp:8:15

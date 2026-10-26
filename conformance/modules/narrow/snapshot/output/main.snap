@@ -1,0 +1,17 @@
+botopink-cell 1
+out == narrow_after_null_return
+out 3
+out == narrow_in_logical_operands
+out true
+out false
+out true
+out false
+out 1
+out 0
+out 3
+out == narrow_ends_at_assignment
+out refused error: `v` is read off an optional `?Node` — write `?.v`
+out at src/main.bp:13:17
+out == narrow_or_keeps_optional
+out refused error: `v` is read off an optional `?Node` — write `?.v`
+out at src/main.bp:10:27

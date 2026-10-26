@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[ternary-absent]: there is no `c ? a : b`
-at src/main.bp:9:15
-label write `if (c) { a } else { b }`

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: primitive-type-name-taken: `string` names a primitive type; a function of this module cannot take its name
-at src/cases/primitive_type_name_taken/mod.bp:10:8

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: Self needs 1 type argument: `Box` declares 1
-at src/cases/self_without_argument/mod.bp:7:22

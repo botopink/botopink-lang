@@ -1,0 +1,58 @@
+botopink-cell 1
+out == record_construct_read
+out Point(x: 1, y: 2)
+out 1
+out == record_empty
+out 8
+out == record_enum_case_lambda
+out 0
+out 4
+out 3
+out 6
+out == record_field_named_tag
+out Box(value: 1, tag: "t")
+out Box(value: "s", tag: "u")
+out Label(tag: "big", size: 3)
+out [Label(tag: "a", size: 1)]
+out Shape.Circle(radius: 2)
+out Shape.Dot
+out == record_field_reserved_word
+out btn
+out btn#1
+out btn@1
+out Tag(class: "btn", id: 1)
+out card
+out link
+out Node.Leaf(class: "leaf")
+out x
+out none
+out == record_method
+out 3
+out == record_method_named_length
+out 3
+out 2
+out 2
+out 4
+out == record_optional_float_field
+out null
+out F(x: null, y: 1.5)
+out 9.5
+out 2.25
+out F(x: 2.25, y: 0.5)
+out 2.25
+out 1.5
+out F(x: null, y: 0.25)
+out 7.5
+out 2.25
+out 0.5
+out == record_update_on_lambda_parameter
+out 1:a:off:txt
+out 2:b:off:img
+out 1:z:on:txt
+out 2:b:on:img
+out 10:a:off:txt
+out 20:b:off:img
+out 101:a:on:txt
+out 102:b:on:img
+out == record_update_spread
+out Point(x: 1, y: 5)
