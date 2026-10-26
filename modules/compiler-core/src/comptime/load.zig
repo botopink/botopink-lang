@@ -274,6 +274,11 @@ fn isLoadCall(e: ast.Expr) bool {
     return e == .call and e.call.kind == .call and e.call.kind.call.is_builtin and std.mem.eql(u8, e.call.kind.call.callee, surface.load_builtin);
 }
 
+/// Whether `a` is `package: …` (decision 993 (2)).
+pub fn isPackageArg(a: ast.CallArg) bool {
+    return a.label != null and std.mem.eql(u8, a.label.?, package_label);
+}
+
 fn mayHoldExpr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union" => T != ast.Loc and T != ast.TypeRef,
@@ -295,7 +300,7 @@ const Finder = struct {
             const args = v.call.kind.call.args;
             // A literal, or a `+` of literals — what a `comptime` parameter
             // expanded at a top-level block's call leaves (decision 788).
-            if (args.len == 1) if (try foldedPath(self.arena, args[0].value)) |p| try self.paths.append(self.arena, p);
+            if (args.len == 1 and !isPackageArg(args[0])) if (try foldedPath(self.arena, args[0].value)) |p| try self.paths.append(self.arena, p);
         };
         if (comptime !mayHoldExpr(T)) return;
         switch (@typeInfo(T)) {
@@ -1071,6 +1076,11 @@ pub const Request = struct {
     files: PackageFiles,
     io: std.Io,
     build_root: ?[]const u8,
+    /// Decision 993 (2) — the package's directory when a resolver answered it
+    /// (a `compiler.load(package: …)` outside the caller's tree): read from
+    /// there instead of from `path` under `files`; `path` is then only the
+    /// name the load is kept under.
+    at: ?[]const u8 = null,
 };
 
 pub const Answer = union(enum) {
@@ -1133,7 +1143,53 @@ pub const Resolver = struct {
     /// directory as the caller's reader roots it, joined with the loaded
     /// path). What it answers lives as long as the process.
     resolve: *const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8) anyerror!Resolution,
+    /// Decision 993 (2) — the directory of the package named `name`, looked up
+    /// as a `git` dependency of the package whose directory is `from` is
+    /// (decision 483's tiers). Null: this resolver resolves no name.
+    by_name: ?*const fn (ctx: ?*anyopaque, io: std.Io, name: []const u8, from: []const u8) anyerror!NameResolution = null,
 };
+
+/// A `Resolver.by_name` answer.
+pub const NameResolution = union(enum) {
+    /// The package's directory as the resolver found it (`dir`), and the same
+    /// directory relative to `from` when it is under it (`rel`).
+    found: struct { dir: []const u8, rel: ?[]const u8 = null },
+    /// No library declares the name.
+    unknown,
+    /// The name resolves to no package: two libraries declare it, it names a
+    /// workspace, or a manifest it reaches is refused — the text the
+    /// dependency resolution gives.
+    refused: []const u8,
+};
+
+/// Decision 993 (2) — `compiler.load(package: name)` resolved.
+pub const Named = union(enum) {
+    /// Load the package at `path`: relative to the caller's package when it
+    /// is under it (`at` null), else the directory the resolver answered
+    /// (`at`, and `path` the same text).
+    found: struct { path: []const u8, at: ?[]const u8 },
+    no_resolver,
+    unknown,
+    refused: []const u8,
+};
+
+/// Ask the resolver for the package `name`, from the package `files` reads.
+pub fn resolveName(arena: std.mem.Allocator, files: PackageFiles, io: std.Io, name: []const u8) !Named {
+    const r = resolver orelse return .no_resolver;
+    const by_name = r.by_name orelse return .no_resolver;
+    const from = try packageDir(arena, files);
+    return switch (try by_name(r.ctx, io, name, from)) {
+        .found => |f| if (f.rel) |rel|
+            .{ .found = .{ .path = rel, .at = null } }
+        else
+            .{ .found = .{ .path = f.dir, .at = f.dir } },
+        .unknown => .unknown,
+        .refused => |m| .{ .refused = m },
+    };
+}
+
+/// The label of `compiler.load`'s other argument form (decision 993 (2)).
+pub const package_label = "package";
 
 /// A `Resolver`'s answer for one loaded package.
 pub const Resolution = union(enum) {
@@ -1269,8 +1325,14 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
 
     // Decision 982 (2) — a package directory: its own `botopink.json` and
     // `src/main.bp`; a file, or a directory short of either, is none.
-    if (exists(scratch, req.files, req.path)) return .{ .not_a_package = .{ .why = .file } };
-    const pkg_files = try req.files.under(arena, req.path);
+    if (req.at == null and exists(scratch, req.files, req.path)) return .{ .not_a_package = .{ .why = .file } };
+    const pkg_files = if (req.at) |dir| blk: {
+        var f = req.files;
+        f.root = try arena.dupe(u8, dir);
+        f.dir = "";
+        f.log = null;
+        break :blk f;
+    } else try req.files.under(arena, req.path);
     const manifest_text = pkg_files.readFile(scratch, "botopink.json") catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{ .not_a_package = .{ .why = .no_manifest } },

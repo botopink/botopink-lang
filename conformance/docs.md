@@ -4307,7 +4307,7 @@ its directory as `botopink build` there would resolve them — a `path` from its
 `{ "workspace": true }` from its workspace's root, `git` through decision 483's tiers —, once per
 directory in a build; a refusal of them is a `Diagnostic` of its `botopink.json`. A path naming a file
 (`compiler.load("example/mod.bp")`), a directory with no `botopink.json` or one with no such entry is
-`load-not-a-package`, at the argument, naming the entry it lacks. It answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
+`load-not-a-package`, at the argument, naming the entry it lacks. `comptime compiler.load(package: "<name>")` (decision 993 (2)) loads the package named `<name>` instead: the name resolves exactly as a `git` dependency's does (decision 483's tiers, the set `botopink packages --list` lists), the `Module`'s `name` is the manifest's and its `path` the directory found, relative to the caller's package when under it, else as the lookup gave it, and the package is then loaded as a directory above is. `path` stays positional and `package:` is the only other form (both, or neither, is `load-arguments`); a name no library declares is `load-package-unknown` (naming `botopink packages --list`), one the dependency resolution refuses (two libraries declare it, it names a workspace) `load-package-refused` with that resolution's text, and a compiler that resolves no names (the language server, the browser) `load-no-resolver`, each at the argument. It answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
 `Ok(m)` when it compiles, `Error(r)` when it is refused, `r.module` the same `Module` and
 `r.diagnostics` its refusals in the order `botopink build` prints them, never empty. A
 `Diagnostic` is the refusal as printed: `message` the text after `error: `, `file` (relative to
@@ -4328,6 +4328,8 @@ function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. T
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/loaded_targets_checked -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_library_entry_root -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_resolves_own_dependencies -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name_unknown -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
 <!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->

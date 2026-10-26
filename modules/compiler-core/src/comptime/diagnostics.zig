@@ -337,6 +337,17 @@ pub const load_not_a_package: []const u8 = "load-not-a-package";
 pub const load_no_reader: []const u8 = "load-no-reader";
 /// Decision 780 — `compiler.load` takes one argument, the path.
 pub const load_arguments: []const u8 = "load-arguments";
+/// Decision 993 (2) — `compiler.load(package: "<name>")` names a package no
+/// library declares (`botopink packages --list` lists them).
+pub const load_package_unknown: []const u8 = "load-package-unknown";
+/// Decision 993 (2) — `compiler.load(package: "<name>")` names a package the
+/// dependency resolution refuses: two libraries declare the name, it names a
+/// workspace, or a manifest it reaches is invalid.
+pub const load_package_refused: []const u8 = "load-package-refused";
+/// Decision 993 (2) — `compiler.load(package: …)` in a compiler handed no
+/// resolver (the language server, the browser, a unit test): only the
+/// `botopink` CLI resolves a package by name.
+pub const load_no_resolver: []const u8 = "load-no-resolver";
 /// Decision 780 (5) — a file loads itself through a chain of loads, or a
 /// load is read while std's own declarations are first registered: the
 /// nested compile would never end.
@@ -1064,6 +1075,9 @@ pub const all_codes = [_][]const u8{
     load_not_a_package,
     load_no_reader,
     load_arguments,
+    load_package_unknown,
+    load_package_refused,
+    load_no_resolver,
     load_cycle,
     run_outside_init,
     run_module_untraced,

@@ -2,3 +2,5 @@
 
 [cells/load_library_entry_root/src/main.bp](cells/load_library_entry_root/src/main.bp)
 [cells/load_resolves_own_dependencies/src/main.bp](cells/load_resolves_own_dependencies/src/main.bp)
+[cells/load_by_package_name/src/main.bp](cells/load_by_package_name/src/main.bp)
+[cells/load_by_package_name_unknown/src/main.bp](cells/load_by_package_name_unknown/src/main.bp)

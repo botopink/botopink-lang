@@ -115,8 +115,14 @@ const files = [_][2][]const u8{
 
 fn readMemory(io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) moduleMod.PackageFiles.ReadError![]const u8 {
     _ = io;
-    _ = root;
-    for (files) |f| if (std.mem.eql(u8, f[0], rel)) return arena.dupe(u8, f[1]) catch error.OutOfMemory;
+    // A package a resolver answered outside the caller (`/elsewhere/<dir>`,
+    // decision 993 (2)) is the memory's `<dir>`.
+    const outside = "/elsewhere/";
+    const key = if (std.mem.startsWith(u8, root, outside))
+        std.fs.path.join(arena, &.{ root[outside.len..], rel }) catch return error.OutOfMemory
+    else
+        rel;
+    for (files) |f| if (std.mem.eql(u8, f[0], key)) return arena.dupe(u8, f[1]) catch error.OutOfMemory;
     return error.FileNotFound;
 }
 
@@ -610,4 +616,96 @@ test "decision 993 (1): a resolver's refusal is the loaded package's `Diagnostic
     , memory(std.testing.io));
     defer if (got) |m| gpa.free(m);
     try std.testing.expect(got == null);
+}
+
+// ── compiler.load(package: …) (decision 993 (2)) ─────────────────────────────
+
+const NameResolver = struct {
+    const Mode = enum { under, outside, unknown, ambiguous };
+    var mode: Mode = .under;
+    var asked_buf: [64]u8 = undefined;
+    var asked: []const u8 = "";
+    fn byName(_: ?*anyopaque, _: std.Io, name: []const u8, _: []const u8) anyerror!@import("../load.zig").NameResolution {
+        asked = std.fmt.bufPrint(&asked_buf, "{s}", .{name}) catch "";
+        return switch (mode) {
+            .under => .{ .found = .{ .dir = "/work/packages/uses_greet", .rel = "packages/uses_greet" } },
+            .outside => .{ .found = .{ .dir = "/elsewhere/packages/uses_greet" } },
+            .unknown => .unknown,
+            .ambiguous => .{ .refused = "\"uses_greet\" is declared by two libraries: /a/uses_greet and /b/uses_greet — a name resolves to one library; rename one of them" },
+        };
+    }
+};
+
+fn loadByName(gpa: std.mem.Allocator, mode: NameResolver.Mode) !?[]u8 {
+    const loadMod = @import("../load.zig");
+    loadMod.resolver = .{ .resolve = FakeResolver.resolve, .by_name = NameResolver.byName };
+    defer loadMod.resolver = null;
+    NameResolver.mode = mode;
+    FakeResolver.refuse = false;
+    return compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load(package: "uses_greet") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io));
+}
+
+test "decision 993 (2): a name the resolver finds under the caller loads that directory as a package" {
+    const got = try loadByName(std.testing.allocator, .under);
+    defer if (got) |m| std.testing.allocator.free(m);
+    try std.testing.expect(got == null);
+    try std.testing.expectEqualStrings("uses_greet", NameResolver.asked);
+}
+
+test "decision 993 (2): a name the resolver finds outside the caller loads the directory it answered" {
+    const got = try loadByName(std.testing.allocator, .outside);
+    defer if (got) |m| std.testing.allocator.free(m);
+    try std.testing.expect(got == null);
+}
+
+test "decision 993 (2): a name no library declares is `load-package-unknown`, naming it and `botopink packages --list`" {
+    const got = (try loadByName(std.testing.allocator, .unknown)) orelse return error.TestExpectedRefusal;
+    defer std.testing.allocator.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-package-unknown: "));
+    try std.testing.expect(std.mem.indexOf(u8, got, "package: \"uses_greet\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got, "botopink packages --list") != null);
+}
+
+test "decision 993 (2): a name two libraries declare is `load-package-refused`, with the dependency resolution's text" {
+    const got = (try loadByName(std.testing.allocator, .ambiguous)) orelse return error.TestExpectedRefusal;
+    defer std.testing.allocator.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-package-refused: "));
+    try std.testing.expect(std.mem.indexOf(u8, got, "is declared by two libraries") != null);
+}
+
+test "decision 993 (2): with no resolver, a name is `load-no-resolver`" {
+    const gpa = std.testing.allocator;
+    const loadMod = @import("../load.zig");
+    try std.testing.expect(loadMod.resolver == null);
+    const got = (try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load(package: "uses_greet") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io))) orelse return error.TestExpectedRefusal;
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-no-resolver: "));
+}
+
+test "decision 993 (2): `package:` and a path together, or a wrong label, is `load-arguments`" {
+    const gpa = std.testing.allocator;
+    const got = (try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load("packages/fine", package: "fine") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io))) orelse return error.TestExpectedRefusal;
+    defer gpa.free(got);
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-arguments: "));
 }

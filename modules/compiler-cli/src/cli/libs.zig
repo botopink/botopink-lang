@@ -381,7 +381,42 @@ var load_env: EnvMap = null;
 /// once, before its first compile.
 pub fn installLoadResolver(env_map: EnvMap) void {
     load_env = env_map;
-    bp.load.resolver = .{ .resolve = resolveLoaded };
+    bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName };
+}
+
+/// Decision 993 (2) — the directory of the package `name`, looked up as a
+/// `git` dependency of the package at `from` is (`manifest.resolveDependency`'s
+/// last branch): decision 483's tiers — `BOTOPINK_LIB_ROOTS`, the links under
+/// `from`'s `.botopinkbuild/deps/`, the walk-up roots — the first tier carrying
+/// the name; a name two libraries declare, a workspace's name and a manifest
+/// that does not parse are refused with the text `botopink build` prints for a
+/// dependency of that name. What it answers lives as long as the process.
+fn resolveByName(_: ?*anyopaque, io: std.Io, name: []const u8, from: []const u8) anyerror!bp.load.NameResolution {
+    while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer loaded_mutex.unlock();
+    return resolveByNameIn(loaded_arena.allocator(), io, load_env, name, from);
+}
+
+fn resolveByNameIn(a: std.mem.Allocator, io: std.Io, env_map: EnvMap, name: []const u8, from: []const u8) anyerror!bp.load.NameResolution {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = buf[0..try std.process.currentPath(io, &buf)];
+    const abs_from = try std.fs.path.resolve(a, &.{ cwd, from });
+    const roots = try resolveLibRoots(a, io, env_map);
+    const tiers = try dependencyTiers(a, a, io, env_map, abs_from, roots);
+    const found = for (tiers) |tier| {
+        if (manifest.find(tier, name)) |e| break e;
+    } else return .unknown;
+    if (found.problem) |pr| return .{ .refused = try a.dupe(u8, pr.message) };
+    if (found.is_workspace) {
+        const list = if (found.workspace) |ws| try ws.memberList(a) else "none";
+        return .{ .refused = try std.fmt.allocPrint(a, "\"{s}\" is a workspace, not a package — load one of its members: {s}", .{ name, list }) };
+    }
+    const dir = try std.fs.path.resolve(a, &.{ cwd, found.dir });
+    const under = try std.fmt.allocPrint(a, "{s}{c}", .{ abs_from, std.fs.path.sep });
+    return .{ .found = .{
+        .dir = dir,
+        .rel = if (std.mem.startsWith(u8, dir, under)) dir[under.len..] else null,
+    } };
 }
 
 /// One resolution per package directory per process (decision 993 (1)): a

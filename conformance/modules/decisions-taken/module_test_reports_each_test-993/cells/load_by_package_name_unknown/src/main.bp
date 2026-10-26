@@ -1,0 +1,9 @@
+//// Decision 993 (2) — `compiler.load(package: …)` naming a library nobody declares is
+//// `load-package-unknown` at the argument, naming the name and `botopink packages --list`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val loaded = comptime compiler.load(package: "no_such_library");
+    print(loaded.isOk());
+}

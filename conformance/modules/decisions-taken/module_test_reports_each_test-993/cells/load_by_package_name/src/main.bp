@@ -1,0 +1,26 @@
+//// Decision 993 (2) — `compiler.load(package: "greeter")` loads the package named `greeter`, found as a
+//// `git` dependency of that name would be (decision 483's tiers: here the walk-up root `repository/` of
+//// this cell). The `Module`'s `name` is the manifest's and its `path` the directory the lookup found,
+//// relative to this package; its `run()` prints through the package's own `main`.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> print("ran [" + text + "]");
+        Error(r) -> print("failed " + r.message);
+    }
+}
+
+comptime {
+    val greeter = comptime compiler.load(package: "greeter");
+    case greeter {
+        Ok(m) -> compiler.init({ ->
+            print("name=" + m.name() + " path=" + m.path());
+            show(m.run());
+        });
+        Error(r) -> compiler.init({ -> print("refused"); });
+    }
+}
+
+pub fn main() -> void {}

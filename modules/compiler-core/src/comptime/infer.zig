@@ -13313,60 +13313,126 @@ fn inferEmbedBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     return typed;
 }
 
-/// Decisions 780, 782, 982 — `comptime compiler.load(path)`: the package
-/// directory `path` names, read by `@embed`'s rules (a path known at build,
-/// relative to the caller's `botopink.json`, no absolute path, no `..`),
+/// Decisions 780, 782, 982, 993 — `comptime compiler.load(path)` and
+/// `comptime compiler.load(package: name)`: the package directory `path`
+/// names, read by `@embed`'s rules (a path known at build, relative to the
+/// caller's `botopink.json`, no absolute path, no `..`), or the package the
+/// resolver finds under `name` (as a `git` dependency's name resolves),
 /// compiled now from the entry its manifest names (`src/main.bp` by default,
 /// decision 993) under its own manifest (`load.compileFile`)
 /// and rewritten into the call that answers its `Result` (`load.rewrite`):
 /// `Ok` when it compiles, `Error` its refusals. A path refused, a file
-/// missing and a compiler with no reader are refusals of the caller, at the
-/// argument; the loaded file's own refusals never are.
+/// missing, a name unknown and a compiler with no reader or no resolver are
+/// refusals of the caller, at the argument; the loaded file's own refusals
+/// never are.
 fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
-    if (call.args.len != 1 or call.trailing.len != 0 or (call.args[0].label != null and !std.mem.eql(u8, call.args[0].label.?, "path"))) {
+    if (call.args.len != 1 or call.trailing.len != 0 or (call.args[0].label != null and !std.mem.eql(u8, call.args[0].label.?, "path") and !loadMod.isPackageArg(call.args[0]))) {
         env.lastError = TypeError.custom(
-            diagnostics.load_arguments ++ ": `compiler.load` takes one argument, the path",
-            "Write `comptime compiler.load(\"cases/broken\")` — a package directory, relative to the caller's `botopink.json` (decision 982).",
+            diagnostics.load_arguments ++ ": `compiler.load` takes one argument, the path or `package:` the name",
+            "Write `comptime compiler.load(\"cases/broken\")` — a package directory, relative to the caller's `botopink.json` (decision 982) — or `comptime compiler.load(package: \"greet\")` — the package a `git` dependency of that name would be (decision 993).",
         ).withLoc(loc);
         return error.TypeError;
     }
     const arg = call.args[0].value;
     const argLoc = arg.getLoc();
-    const path = try embedPathValue(env, arg) orelse {
+    const by_name = loadMod.isPackageArg(call.args[0]);
+    const text = try embedPathValue(env, arg) orelse {
         env.lastError = TypeError.custom(
-            diagnostics.comptime_arg_not_known ++ ": the path of `compiler.load` is not known at build",
+            try std.fmt.allocPrint(env.arena, "{s}: the {s} of `compiler.load` is not known at build", .{ diagnostics.comptime_arg_not_known, if (by_name) "package name" else "path" }),
             "`compiler.load` compiles its file while the program compiles (decision 780): pass a literal, a constant `val` or a `comptime` value.",
         ).withLoc(argLoc);
         return error.TypeError;
     };
-    const ds = try answerLoad(env, path, argLoc);
-    try loadMod.noteLoadSite(env.modulePath, path, loc);
-    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = path }, ds);
+    const answered = try answerLoad(env, if (by_name) .{ .package = text } else .{ .path = text }, argLoc);
+    try loadMod.noteLoadSite(env.modulePath, answered.path, loc);
+    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = answered.path }, answered.ds);
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
 }
 
-/// The refusals of the file `path` names, compiled at build
+/// What `compiler.load` was written with (decision 993 (2)).
+const LoadRef = union(enum) { path: []const u8, package: []const u8 };
+
+/// A load's refusals and the path its `Module` carries.
+const LoadAnswered = struct { path: []const u8, ds: []const loadMod.Diagnostic };
+
+/// The refusals of the package `ref` names, compiled at build
 /// (`load.compileFile`), empty when it compiles; a path refused, a file
-/// missing, a compiler with no reader and a cycle are refusals of the
-/// caller, at `argLoc`.
-fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const loadMod.Diagnostic {
-    if (embedMod.checkPath(path)) |refusal| {
-        env.lastError = switch (refusal) {
-            .absolute => TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` names an absolute path", .{ diagnostics.load_path_absolute, path }),
-                "A path of `compiler.load` is relative to the `botopink.json` of the package that writes it (decision 780).",
-            ),
-            .outside_package => TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` leaves the package", .{ diagnostics.load_path_outside_package, path }),
-                "A path of `compiler.load` names a file of the package that writes it: no `..` segment (decision 780).",
-            ),
-        }.withLoc(argLoc);
-        return error.TypeError;
+/// missing, a name unknown, a compiler with no reader (or, for a name, no
+/// resolver) and a cycle are refusals of the caller, at `argLoc`.
+fn answerLoad(env: *Env, ref: LoadRef, argLoc: ast.Loc) InferError!LoadAnswered {
+    var path: []const u8 = undefined;
+    var at: ?[]const u8 = null;
+    var shown: []const u8 = undefined;
+    switch (ref) {
+        .path => |p| {
+            path = p;
+            shown = try std.fmt.allocPrint(env.arena, "\"{s}\"", .{p});
+            if (embedMod.checkPath(path)) |refusal| {
+                env.lastError = switch (refusal) {
+                    .absolute => TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` names an absolute path", .{ diagnostics.load_path_absolute, shown }),
+                        "A path of `compiler.load` is relative to the `botopink.json` of the package that writes it (decision 780).",
+                    ),
+                    .outside_package => TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` leaves the package", .{ diagnostics.load_path_outside_package, shown }),
+                        "A path of `compiler.load` names a file of the package that writes it: no `..` segment (decision 780).",
+                    ),
+                }.withLoc(argLoc);
+                return error.TypeError;
+            }
+        },
+        .package => |name| {
+            shown = try std.fmt.allocPrint(env.arena, "package: \"{s}\"", .{name});
+            const named_files = env.packageFiles orelse {
+                env.lastError = TypeError.custom(
+                    try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` cannot be read — this compiler reads no file", .{ diagnostics.load_no_reader, shown }),
+                    "The compiler that runs in a browser is handed no reader (decision 780): build the program with the `botopink` CLI.",
+                ).withLoc(argLoc);
+                return error.TypeError;
+            };
+            const named = loadMod.resolveName(env.arena, named_files, if (env.templateEval) |ctx| ctx.io else named_files.io, name) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` could not look the package up ({s})", .{ diagnostics.load_package_refused, shown, @errorName(err) }),
+                        "A package is looked up by name as a `git` dependency's is (decision 483).",
+                    ).withLoc(argLoc);
+                    return error.TypeError;
+                },
+            };
+            switch (named) {
+                .found => |f| {
+                    path = f.path;
+                    at = f.at;
+                },
+                .no_resolver => {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` cannot look the package up — this compiler resolves no package by name", .{ diagnostics.load_no_resolver, shown }),
+                        "Only the `botopink` CLI resolves a package by name (decision 993 (2)); the language server and the browser compiler do not. Load it by path, or build with the CLI.",
+                    ).withLoc(argLoc);
+                    return error.TypeError;
+                },
+                .unknown => {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` names no library — none is declared under `{s}` (`botopink packages --list` lists them)", .{ diagnostics.load_package_unknown, shown, name }),
+                        "`botopink packages --list` lists every package a name can load; the name resolves as a `git` dependency's does (decisions 483, 993 (2)).",
+                    ).withLoc(argLoc);
+                    return error.TypeError;
+                },
+                .refused => |m| {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})`: {s}", .{ diagnostics.load_package_refused, shown, m }),
+                        "A package is looked up by name as a `git` dependency's is (decisions 483, 993 (2)): a name two libraries declare resolves to neither.",
+                    ).withLoc(argLoc);
+                    return error.TypeError;
+                },
+            }
+        },
     }
     const files = env.packageFiles orelse {
         env.lastError = TypeError.custom(
-            try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` cannot be read — this compiler reads no file", .{ diagnostics.load_no_reader, path }),
+            try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` cannot be read — this compiler reads no file", .{ diagnostics.load_no_reader, shown }),
             "The compiler that runs in a browser is handed no reader (decision 780): build the program with the `botopink` CLI.",
         ).withLoc(argLoc);
         return error.TypeError;
@@ -13376,11 +13442,12 @@ fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const l
         .files = files,
         .io = if (env.templateEval) |ctx| ctx.io else files.io,
         .build_root = if (env.templateEval) |ctx| ctx.build_root else null,
+        .at = at,
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
             env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` could not read the package ({s})", .{ diagnostics.load_file_missing, path, @errorName(err) }),
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` could not read the package ({s})", .{ diagnostics.load_file_missing, shown, @errorName(err) }),
                 "The file is compiled as the entry of a package of its own (decision 780).",
             ).withLoc(argLoc);
             return error.TypeError;
@@ -13390,27 +13457,27 @@ fn answerLoad(env: *Env, path: []const u8, argLoc: ast.Loc) InferError![]const l
         .diagnostics => |ds| ds,
         .not_a_package => |why| {
             env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` {s}", .{ diagnostics.load_not_a_package, path, try why.text(env.arena) }),
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` {s}", .{ diagnostics.load_not_a_package, shown, try why.text(env.arena) }),
                 "`compiler.load` loads a package: a directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and the entry its `src` and `entry` name — `src/main.bp` by default (decisions 982, 993).",
             ).withLoc(argLoc);
             return error.TypeError;
         },
         .cycle => {
             env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` loads a file that is being loaded", .{ diagnostics.load_cycle, path }),
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` loads a file that is being loaded", .{ diagnostics.load_cycle, shown }),
                 "A loaded file is compiled at build as a package of its own; one that loads itself, through any chain of loads, would never end (decision 780 (5)).",
             ).withLoc(argLoc);
             return error.TypeError;
         },
         .std_initialising => {
             env.lastError = TypeError.custom(
-                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load(\"{s}\")` is read while std's own declarations are first registered", .{ diagnostics.load_cycle, path }),
+                try std.fmt.allocPrint(env.arena, "{s}: `compiler.load({s})` is read while std's own declarations are first registered", .{ diagnostics.load_cycle, shown }),
                 "A nested compile needs std ready; it never re-enters std's one-time initialisation (decision 780 (5)).",
             ).withLoc(argLoc);
             return error.TypeError;
         },
     };
-    return ds;
+    return .{ .path = path, .ds = ds };
 }
 
 /// Decisions 787, 792 — `fd`, a body that runs at build (a top-level
@@ -13427,10 +13494,10 @@ fn withBuildLoads(env: *Env, fd: ast.FnDecl) InferError!ast.FnDecl {
             const call = e.call.kind.call;
             if (call.args.len != 1) return null;
             const arg = call.args[0].value;
-            const path = (try loadMod.foldedPath(self.env.arena, arg)) orelse return null;
-            const ds = try answerLoad(self.env, path, arg.getLoc());
-            try loadMod.noteLoadSite(self.env.modulePath, path, e.call.loc);
-            return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = path }, ds);
+            const text = (try loadMod.foldedPath(self.env.arena, arg)) orelse return null;
+            const answered = try answerLoad(self.env, if (loadMod.isPackageArg(call.args[0])) .{ .package = text } else .{ .path = text }, arg.getLoc());
+            try loadMod.noteLoadSite(self.env.modulePath, answered.path, e.call.loc);
+            return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = answered.path }, answered.ds);
         }
     };
     return loadMod.replaceReads(env.arena, ast.FnDecl, fd, Ctx{ .env = env }) catch |err| switch (err) {

@@ -1,0 +1,4 @@
+botopink-cell 1
+out name=greeter path=repository/greeter
+out ran [hello from greeter
+out ]
