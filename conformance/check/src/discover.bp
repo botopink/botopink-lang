@@ -1,13 +1,16 @@
 //// Every cell under a path, as `cell.zig`'s `discover` finds them (decisions 457, 765, 779): the
 //// path itself when it is a cell (it holds `src/`), else every cell under it, sorted — never inside a
 //// cell, a hidden directory, `node_modules` or a `deps` directory (a cell's own dependency packages
-//// live there). A directory holding `cases/` is a module of cases: each `cases/<case>` is a cell.
+//// live there). A directory holding `cases/` and no `src/` is a module of cells (765): each
+//// `cases/<case>` is a cell. A directory holding `botopink.json` and `src/main.bp` beside `cases/` is
+//// one cell (982 (5)): its `src/main.bp` loads each `cases/<case>` package through `compiler.load`,
+//// and no case is a cell of its own; its `cells/<case>/`, full cells kept beside, are cells.
 //// A module's `run/`, `refused/` and `cells/<case>/` are cells as any directory holding `src/` is.
 ////
 //// One directory is never a cell: this program's own package, `conformance/check/` — it holds
 //// `src/`, and it is no cell (no `snapshot/`, nothing checks it).
 
-import {host.childNames, host.isDir};
+import {host.childNames, host.exists, host.isDir};
 
 /// The cells found, in order, and what the layout forbids.
 pub type Found(cells: string[] = [], refused: string[] = [])
@@ -15,6 +18,14 @@ pub type Found(cells: string[] = [], refused: string[] = [])
 /// Whether `dir` is this program's own package.
 pub fn isTheProgram(dir: string) -> bool {
     return dir.endsWith("/conformance/check");
+}
+
+/// Whether `dir` is a module whose `src/main.bp` loads its cases (982 (5)): it holds
+/// `botopink.json`, `src/main.bp` and `cases/`.
+pub fn isLoadingModule(dir: string) -> bool {
+    return exists(dir + "/botopink.json")
+        && exists(dir + "/src/main.bp")
+        && isDir(dir + "/cases");
 }
 
 /// The cells under the absolute directory `root`.
@@ -28,10 +39,15 @@ fn walk(root: string, found: Found) -> Found {
     val hasCases = isDir(cases);
     if (isDir(root + "/src")) {
         var refused = found.refused;
-        if (hasCases)
+        val loading = hasCases && isLoadingModule(root);
+        if (hasCases && !loading)
             refused = refused.append([root
-                + " holds both cases/ and src/ — a module holds cases or is a cell, not both (decision 765)"]);
-        return Found(cells: found.cells.append([root]), refused: refused);
+                + " holds both cases/ and src/ but no botopink.json and src/main.bp — a module of cells holds cases/ and no src/ (decision 765), a module whose cases it loads holds botopink.json and src/main.bp beside them (decision 982 (5))"]);
+        val withModule = Found(cells: found.cells.append([root]), refused: refused);
+        // A module that loads its cases may keep full cells beside them, `cells/<case>/`:
+        // each is a cell of its own, as in any module.
+        if (loading) return walk(root + "/cells", withModule);
+        return withModule;
     }
     if (hasCases) {
         var cells = found.cells;

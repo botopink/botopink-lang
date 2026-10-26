@@ -43,6 +43,29 @@ test "discover finds the cases of a module, and refuses src/ beside cases/ and a
     assert (again.refused.at(1) ?? "").contains("other/cases/stray is no cell");
 }
 
+test "discover takes a module holding botopink.json and src/main.bp beside cases/ as one cell (decision 982 (5))" {
+    val root = scratchRoot("discover-loaded") + "/modules";
+    for (["a", "b"]) { name ->
+        makeDirs(root + "/m/cases/" + name + "/src");
+        writeText(root + "/m/cases/" + name + "/botopink.json", "{}");
+        writeText(root + "/m/cases/" + name + "/src/main.bp", "");
+    }
+    makeDirs(root + "/m/src");
+    makeDirs(root + "/m/cells/kept/src");
+    writeText(root + "/m/botopink.json", "{}");
+    writeText(root + "/m/src/main.bp", "");
+    makeDirs(root + "/n/cases/c/src");
+    makeDirs(root + "/n/src");
+    writeText(root + "/n/src/main.bp", "");
+    val found = discover(root);
+    assert found.cells.length == 3;
+    assert (found.cells.at(0) ?? "") == root + "/m";
+    assert (found.cells.at(1) ?? "") == root + "/m/cells/kept";
+    assert (found.cells.at(2) ?? "") == root + "/n";
+    assert found.refused.length == 1;
+    assert (found.refused.at(0) ?? "").contains("n holds both cases/ and src/");
+}
+
 test "the program's own package is no cell" {
     val root = scratchRoot("discover-program");
     makeDirs(root + "/conformance/check/src");

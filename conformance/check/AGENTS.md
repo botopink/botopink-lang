@@ -31,8 +31,12 @@ conformance/check/
 │   │                     order, exit 1 when a cell fails; the compiler is `$BOTOPINK_BIN`, else
 │   │                     `botopink` on `PATH`
 │   ├── discover.bp    ← `cell.zig`'s `discover`: a directory holding `src/` is a cell, one holding
-│   │                     `cases/` a module of cases (765), never inside a cell, a hidden directory,
-│   │                     `node_modules` or `deps`; never this package (`isTheProgram`)
+│   │                     `cases/` and no `src/` a module of cases (765), one holding `botopink.json`
+│   │                     and `src/main.bp` beside `cases/` one cell that loads its cases (982 (5),
+│   │                     `isLoadingModule`; its cases no cells, its `cells/<case>/` cells, its scratch
+│   │                     copy carrying `cases/`),
+│   │                     never inside a cell, a hidden directory, `node_modules` or `deps`; never
+│   │                     this package (`isTheProgram`)
 │   ├── manifest.bp    ← a cell's `"targets"` (its own, else its workspace's; malformed narrowings
 │   │                     refused with `cell.zig`'s reasons), whether it writes them, its workspace
 │   │                     (`workspaceOf`: the nearest ancestor workspace whose entry lists the cell)
@@ -60,8 +64,8 @@ conformance/check/
     ├── records_test.bp  ← `cell_snap.zig`'s unit tests ported one for one, then the `build` record's own
     ├── refusals_test.bp ← `refusals.zig`'s unit tests ported one for one
     ├── scratch_test.bp  ← `cell.zig`'s tests of `absolutizePathDeps`, `soleMember`, `memberPath`
-    └── discover_test.bp ← `cell.zig`'s tests of `discover` over a tree in the run's scratch directory,
-                           and the program's own package is no cell
+    └── discover_test.bp ← `cell.zig`'s tests of `discover` over a tree in the run's scratch directory
+                           (982 (5)'s module included), and the program's own package is no cell
 ```
 
 ## Observing a package
