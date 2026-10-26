@@ -1,0 +1,5 @@
+botopink-cell 1
+out == bodyless_fn_no_return_type
+out refused error[bodyless-fn-needs-return-type]: a declaration with no body must say what it answers
+out at src/main.bp:7:23
+out label add `-> void`, or give the fn a body

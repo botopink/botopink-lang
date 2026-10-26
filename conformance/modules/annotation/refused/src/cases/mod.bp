@@ -1,5 +1,0 @@
-pub mod annotation_family_misspelled;
-pub mod annotation_not_decorator_namespace;
-pub mod annotation_not_decorator_unbound;
-pub mod annotation_not_decorator_value;
-pub mod annotation_unknown_family;

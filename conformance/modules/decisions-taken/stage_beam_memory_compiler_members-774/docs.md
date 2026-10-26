@@ -10,8 +10,8 @@ ordinary module `var` elsewhere, and it prints `2`. The component `Badge` import
 `use memo({ -> … })`; its rendered text prints `badge a`.
 
 Cells that also bear on it:
-`modules/annotation/refused/src/cases/annotation_family_misspelled` (a misspelled
-`compiler.` member refused), `modules/beam/cells/beam_memory_annotations`,
+`modules/annotation/cases/annotation_family_misspelled` (a misspelled
+`compiler.` member refused), `modules/beam/cases/beam_memory_annotations`,
 `modules/memo_computed_once_per_instance`.
 
 [draft/main.bp](draft/main.bp)
