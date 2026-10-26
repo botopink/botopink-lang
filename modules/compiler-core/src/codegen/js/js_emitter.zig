@@ -631,14 +631,20 @@ fn writeInlineStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
 fn writeInlineComment(w: *Writer, c: Ast.Comment) Error!void {
     if (c.style == .doc) return writeComment(w, c);
     try w.writeAll("/* ");
-    var rest = c.text;
+    try writeBlockCommentText(w, c.text);
+    try w.writeAll(" */");
+}
+
+/// A block comment's text with every `*/` broken up as `*\/`, so the text
+/// can never close the comment it sits in.
+fn writeBlockCommentText(w: *Writer, text: []const u8) Error!void {
+    var rest = text;
     while (std.mem.indexOf(u8, rest, "*/")) |i| {
         try w.writeAll(rest[0..i]);
         try w.writeAll("*\\/");
         rest = rest[i + 2 ..];
     }
     try w.writeAll(rest);
-    try w.writeAll(" */");
 }
 
 fn writeFunctionDecl(w: *Writer, f: Ast.FunctionDecl, indent: usize) Error!void {
@@ -698,7 +704,7 @@ pub fn writeComment(w: *Writer, c: Ast.Comment) Error!void {
         },
         .doc => {
             try w.writeAll("/** ");
-            try w.writeAll(c.text);
+            try writeBlockCommentText(w, c.text);
             try w.writeAll(" */");
         },
         .module => {
@@ -832,6 +838,7 @@ test "js_emitter: statements" {
     try expectStmt("yield* xs; return;", .{ .yield_delegate = Ast.Expr.id("xs") });
     try expectStmt("// note", .{ .comment = Ast.Comment.line("note") });
     try expectStmt("/** note */", .{ .comment = .{ .style = .doc, .text = "note" } });
+    try expectStmt("/** a *\\/ b */", .{ .comment = .{ .style = .doc, .text = "a */ b" } });
     try expectStmt("if (x) return 1;", .{ .if_ = .{ .cond = Ast.Expr.id("x"), .then = &Ast.Stmt{ .return_ = Ast.Expr.num("1") } } });
     try expectStmt(
         \\for (const x of xs) {

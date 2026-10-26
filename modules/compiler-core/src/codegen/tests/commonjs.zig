@@ -470,3 +470,18 @@ test "commonJS: a labelled continue starts the outer loop's next round from a ca
         \\import {io.terminal.print} from "std";
     , "113\n");
 }
+
+// A `///` comment is emitted as a JavaScript block comment, so a `*/` in its
+// text closed that comment early and the rest of the line became code: the
+// program did not parse. The text is written with `*\/`, and the program
+// answers as it does on every target.
+test "js: doc comment holding a block-comment close ---- the emitted program still runs" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\/// closes early: */ print("never");
+        \\pub fn main() -> void {
+        \\    print("ok");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    , "ok\n");
+}
