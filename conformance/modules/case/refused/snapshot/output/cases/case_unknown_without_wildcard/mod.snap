@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: non-exhaustive: `case` on 'unknown' is not exhaustive: nothing covers the remaining values — use `_ { … }`
-at src/cases/case_unknown_without_wildcard/mod.bp:7:13

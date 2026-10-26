@@ -1892,12 +1892,12 @@ Each of those refusals has its own name, located at the suffix or the exponent: 
 A `case` over a 64-bit integer (`i64`, `u64`) or a float compares it as its own type: a number pattern, a
 range, an `|` of patterns and a guard see the value whole, on every target.
 
-<!-- example: modules/case/cells/case_wide_integer_scrutinee -->
+<!-- example: modules/case/cases/case_wide_integer_scrutinee -->
 
 A `case` is exhaustive when its arms cover every variant, a variant covered
 through its nested payloads included.
 
-<!-- example: modules/case/run/src/cases/case_exhaustive_nested_variants -->
+<!-- example: modules/case/cases/case_exhaustive_nested_variants -->
 
 Every exhaustiveness refusal of a `case` — an enum's, a union's and an open domain's — opens with the code `non-exhaustive`, then the wording: `non-exhaustive: `case` on 'A | B' is not exhaustive: missing member(s) C`; an open domain's reads `nothing covers the remaining values — use `_`` after the same prefix (decision 858).
 
@@ -1909,7 +1909,7 @@ Every exhaustiveness refusal of a `case` — an enum's, a union's and an open do
 
 ### Arrays
 
-<!-- example: modules/array/run/src/cases/array_slice_reverse -->
+<!-- example: modules/array/cases/array_slice_reverse -->
 
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
@@ -1918,21 +1918,21 @@ A statement `v.push(x)` on a `var` — a module `var` or a local — rebinds the
 `var` to the grown array, so a `val` that read the array before keeps the array
 of its moment:
 
-<!-- example: modules/array/run/src/cases/array_push_rebinds_var -->
+<!-- example: modules/array/cases/array_push_rebinds_var -->
 
 A `v.pop()` on a `var` answers the last item and rebinds the `var` to the shrunk
 array in the same way:
 
-<!-- example: modules/array/run/src/cases/array_pop_rebinds_var -->
+<!-- example: modules/array/cases/array_pop_rebinds_var -->
 
 `Array.range(start, stop)` is the integers of `[start, stop)`, empty when
 `stop <= start`; `Array.repeat(value, times)` is `times` copies of `value`, empty
 when `times <= 0`. A result costs its own length in memory, a long one too, and so
 does `xs.fill(v)`, which is `Array.repeat(v, xs.length)`:
 
-<!-- example: modules/array/run/src/cases/array_range_and_repeat -->
+<!-- example: modules/array/cases/array_range_and_repeat -->
 
-<!-- example: modules/array/run/src/cases/array_fill_large -->
+<!-- example: modules/array/cases/array_fill_large -->
 
 ### Indexing and slicing
 
@@ -2535,16 +2535,16 @@ Write the binder `_` when the branch only asks whether the value is there:
 
 ### Case (pattern matching)
 
-<!-- example: modules/case/cells/case_variant_fields -->
+<!-- example: modules/case/cases/case_variant_fields -->
 
 List and or-patterns:
 
-<!-- example: modules/case/run/src/cases/case_alternatives_and_arrays -->
+<!-- example: modules/case/cases/case_alternatives_and_arrays -->
 
 A section of an enum is itself a type, written by its path, so a function can
 take one section instead of the whole enum:
 
-<!-- example: modules/case/cells/case_section_subtype -->
+<!-- example: modules/case/cases/case_section_subtype -->
 
 An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
 optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
@@ -2552,11 +2552,11 @@ The arm is a block (§ Blocks): used as a value it answers its last expression
 written without `;`. A `//` comment between the statements of an arm's block is
 a comment there as it is in a function body, and `botopink format` keeps it:
 
-<!-- example: modules/case/run/src/cases/case_arm_block_comment -->
+<!-- example: modules/case/cases/case_arm_block_comment -->
 
 A guard and a type pattern:
 
-<!-- example: modules/case/cells/case_type_guard_arms -->
+<!-- example: modules/case/cases/case_type_guard_arms -->
 
 A type pattern may be a generic type, `Box<T> { b -> … }`, under `is`'s rule for its arguments
 (decision 810 (3), (1)): accepted when `Box<T>` is a member of the subject's type, the binder that
@@ -2568,7 +2568,7 @@ union is exhaustive: a member with no arm and no `_` is refused at the `case`, n
 
 A variant pattern names **every** field of its variant, or ends with `..`:
 
-<!-- example: modules/case/run/src/cases/case_dot_variant_patterns -->
+<!-- example: modules/case/cases/case_dot_variant_patterns -->
 
 A constructor pattern of a record type takes the same `..`, and a field it names
 may hold a literal (`Point(x: 0, ..)` matches a point whose `x` is `0`):
@@ -2583,11 +2583,11 @@ A range in a pattern is `...`, inclusive at both ends — Zig's split: `...` in 
 pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
 `error[pattern-range-exclusive]`, naming `...`; an open end is a guard.
 
-<!-- example: modules/case/cells/case_range_and_guard -->
+<!-- example: modules/case/cases/case_range_and_guard -->
 
 A tuple pattern is positional, as a tuple literal is: a label in one (`#(name: n, ..)`) is `pattern-tuple-label`, refused at the label — match by position.
 
-<!-- example: modules/case/refused/src/cases/case_tuple_label -->
+<!-- example: modules/case/cases/case_tuple_label -->
 <!-- example: modules/pattern/cells/pattern_range_exclusive -->
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
@@ -2600,12 +2600,12 @@ label under it naming the binder to write:
 A constant is not a pattern either: `MAX { … }` is `case-constant-pattern`, the
 label under it naming the guard to write (`_ when (x == MAX) { … }`):
 
-<!-- example: modules/case/refused/src/cases/case_constant_pattern -->
+<!-- example: modules/case/cases/case_constant_pattern -->
 
 The `pattern -> value` arm is no exception: `k -> k + 1` is refused at the arm
 as `k { … }` is.
 
-<!-- example: modules/case/refused/src/cases/case_bare_name_arrow_arm -->
+<!-- example: modules/case/cases/case_bare_name_arrow_arm -->
 
 A multi-subject arm is judged the same way, in the arrow and the braced form
 (decision 602): `Shape.Square(side), m -> …` is `case-bare-name-arm` at `m`, a
@@ -2618,12 +2618,12 @@ already in scope is not named a second time — write `_`
 The binder of a catch-all arm over a record is that record: its fields read as
 declared, a generic record's too, wherever the `case` stands:
 
-<!-- example: modules/case/run/src/cases/case_catch_all_binder_record -->
+<!-- example: modules/case/cases/case_catch_all_binder_record -->
 
 A `case` is a value of its arms' type, a catch-all arm that binds the subject
 included — a string here, as a `val`'s value and as an argument:
 
-<!-- example: modules/case/cells/case_binder_arm_string_value -->
+<!-- example: modules/case/cases/case_binder_arm_string_value -->
 
 #### An optional is matched by `null` and `_`
 
@@ -5174,7 +5174,7 @@ checker cannot follow (a parameter, a method, generic code) is an edge with `cal
 
 <!-- example: modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call -->
 
-<!-- example: modules/array/run/src/cases/array_map_component_imported -->
+<!-- example: modules/array/cases/array_map_component_imported -->
 
 ### Template annotations (decision 311)
 
