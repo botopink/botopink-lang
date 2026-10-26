@@ -28,6 +28,62 @@ const files = [_][2][]const u8{
         \\
     },
     .{ "packages/self/botopink.json", "{ \"name\": \"self\" }" },
+    .{ "packages/printed/botopink.json", "{ \"name\": \"printed\" }" },
+    .{
+        "packages/printed/src/main.bp",
+        \\import {io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    print("first");
+        \\    print("second");
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    },
+    .{ "packages/refused_after_print/botopink.json", "{ \"name\": \"refused_after_print\" }" },
+    .{
+        "packages/refused_after_print/src/main.bp",
+        \\import {io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    print("before");
+        \\}
+        \\
+        \\pub fn main() -> i32 {
+        \\    return "not a number";
+        \\}
+        \\
+    },
+    .{ "packages/raise_in_helper/botopink.json", "{ \"name\": \"raise_in_helper\" }" },
+    .{
+        "packages/raise_in_helper/src/helper.bp",
+        \\import {compiler, failure.panic} from "std";
+        \\
+        \\pub fn shout(syntax t: string) -> string {
+        \\    val s = compiler.text(t);
+        \\    panic("boom " + s);
+        \\    return compiler.build("\"" + s + "\"");
+        \\}
+        \\
+    },
+    .{
+        "packages/raise_in_helper/src/main.bp",
+        \\mod helper;
+        \\
+        \\import {helper.shout};
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    print(shout @`hi`);
+        \\}
+        \\
+    },
+    .{ "packages/bad_target/botopink.json", "{ \"name\": \"bad_target\",\n  \"targets\": [\"jvm\"] }" },
+    .{ "packages/bad_target/src/main.bp", "pub fn main() -> void {}\n" },
+    .{ "packages/bad_json/botopink.json", "{ \"name\": " },
+    .{ "packages/bad_json/src/main.bp", "pub fn main() -> void {}\n" },
+
     .{
         "packages/self/src/main.bp",
         \\import {compiler, io.terminal.print} from "std";
@@ -266,7 +322,7 @@ test "decision 787: a `Module` a body handed an executor is written back as its 
     const arena = arena_state.allocator();
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"packages/fine\"}", .{});
     try std.testing.expectEqualStrings(
-        loadMod.module_fn ++ "(name: \"fine\", path: \"packages/fine\")",
+        loadMod.module_fn ++ "(name: \"fine\", path: \"packages/fine\", buildOutput: \"\")",
         (try loadMod.recordSource(arena, parsed)).?,
     );
     try std.testing.expectEqualStrings("packages/fine", loadMod.valuePath(parsed, null).?);
@@ -354,4 +410,76 @@ test "decision 789 (4): an expanded function's handled load that returns takes i
         \\pub fn main() -> void {}
         \\
     ));
+}
+
+/// Load `path` directly (`load.compileFile`) inside a compile's state, after
+/// a first compile has readied std's template, and hand `check` the entry.
+fn withLoaded(path: []const u8, check: *const fn (entry: @import("../load.zig").Entry) anyerror!void) !void {
+    const loadMod = @import("../load.zig");
+    const gpa = std.testing.allocator;
+    const got = try compileMain(gpa, "pub fn main() -> void {}\n", null);
+    defer if (got) |m| gpa.free(m);
+    const saved = try loadMod.enter();
+    defer loadMod.leave(saved);
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const io = std.testing.io;
+    const answer = try loadMod.compileFile(arena_state.allocator(), .{ .path = path, .files = memory(io), .io = io, .build_root = null });
+    try std.testing.expect(answer == .diagnostics);
+    try check(loadMod.entryOf(path).?);
+}
+
+test "decision 989 (4): a loaded package's build prints are its `buildOutput`, in order, a line each" {
+    try withLoaded("packages/printed", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 0), e.diagnostics.len);
+            try std.testing.expectEqualStrings("first\nsecond\n", e.build_output);
+        }
+    }.check);
+}
+
+test "decisions 904, 989 (4): a refused package keeps what its build printed before the refusal" {
+    try withLoaded("packages/refused_after_print", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 1), e.diagnostics.len);
+            try std.testing.expectEqualStrings("before\n", e.build_output);
+        }
+    }.check);
+}
+
+test "decisions 532, 989 (4): a raise at build in a helper file lists the calls it crossed, `<file>:<line>:<col>`, innermost first" {
+    try withLoaded("packages/raise_in_helper", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 1), e.diagnostics.len);
+            const d = e.diagnostics[0];
+            try std.testing.expectEqualStrings("src/helper.bp", d.file);
+            try std.testing.expectEqual(@as(usize, 1), d.calledFrom.len);
+            try std.testing.expectEqualStrings("src/main.bp:7:11", d.calledFrom[0]);
+        }
+    }.check);
+    try withLoaded("packages/broken", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 0), e.diagnostics[0].calledFrom.len);
+        }
+    }.check);
+}
+
+test "decision 989 (4): a manifest the compiler refuses is one `Diagnostic` of `botopink.json`, never the caller's" {
+    try withLoaded("packages/bad_target", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 1), e.diagnostics.len);
+            const d = e.diagnostics[0];
+            try std.testing.expectEqualStrings("botopink.json", d.file);
+            try std.testing.expectEqualStrings("unknown target `jvm` (commonJS, erlang, beam, wasm)", d.message);
+            try std.testing.expectEqual(@as(usize, 2), d.line);
+            try std.testing.expectEqual(@as(usize, 15), d.column);
+        }
+    }.check);
+    try withLoaded("packages/bad_json", struct {
+        fn check(e: @import("../load.zig").Entry) anyerror!void {
+            try std.testing.expectEqual(@as(usize, 1), e.diagnostics.len);
+            try std.testing.expectEqualStrings("botopink.json", e.diagnostics[0].file);
+            try std.testing.expectEqual(@as(usize, 0), e.diagnostics[0].line);
+        }
+    }.check);
 }

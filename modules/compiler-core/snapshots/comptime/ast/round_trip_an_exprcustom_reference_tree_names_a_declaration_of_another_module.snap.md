@@ -281,7 +281,9 @@ pub type UnionType(members: Node[])
 // its code there), `code` the refusal's code (`""` when it has none), `file`
 // relative to the loaded package's root with `line` and `column` where the refusal
 // points (`""` and `0` when it points nowhere), `label` the text beside the
-// caret when there is one.
+// caret when there is one, `calledFrom` the calls (decision 532) a refusal raised at
+// build in another file crossed after the innermost one, each
+// `<file>:<line>:<col>`, innermost first (`[]` when there are none).
 pub type Diagnostic(
     code: string,
     message: string,
@@ -289,11 +291,15 @@ pub type Diagnostic(
     line: i32,
     column: i32,
     label: ?string,
+    calledFrom: string[],
 )
 
 // ── What `compiler.load` answers (decisions 786, 787, 792, 811) ──────────
 // The loaded package (decisions 786 (1), 805 (4), 982 (4)): `name()` its
-// manifest's name, `path()` the directory as written (`cases/<case>`). No target — comptime
+// manifest's name, `path()` the directory as written (`cases/<case>`),
+// `buildOutput()` what its build printed (a top-level `comptime` block's
+// `print`, in order, each line ending in `\n`, before its refusals — decisions
+// 904, 989 (4); `""` when none). No target — comptime
 // reads none — and no dependency list: the loaded package still resolves its
 // own to compile. Opaque (decision 811 (4)): only `compiler.load` answers one,
 // through `of`, which no program names — `Module(…)` written outside is
@@ -315,10 +321,11 @@ pub type Diagnostic(
 pub opaque type Module(
     name: string,
     path: string,
+    buildOutput: string,
 ) {
     // What `compiler.load`'s answer is built by (`comptime/load.zig`).
-    fn of(name: string, path: string) -> Module {
-        return Module(name: name, path: path);
+    fn of(name: string, path: string, buildOutput: string) -> Module {
+        return Module(name: name, path: path, buildOutput: buildOutput);
     }
 
     pub fn name(self: Self) -> string {
@@ -327,6 +334,10 @@ pub opaque type Module(
 
     pub fn path(self: Self) -> string {
         return self.path;
+    }
+
+    pub fn buildOutput(self: Self) -> string {
+        return self.buildOutput;
     }
 
     pub fn run(self: Self) -> Result<void, RunFailure> {
@@ -1293,7 +1304,8 @@ pub type HookNode = __HookNode;
         "file": "string",
         "line": "i32",
         "column": "i32",
-        "label": "?string"
+        "label": "?string",
+        "calledFrom": "string[]"
       }
     },
     {
@@ -1301,7 +1313,8 @@ pub type HookNode = __HookNode;
       "name": "Module",
       "fields": {
         "name": "string",
-        "path": "string"
+        "path": "string",
+        "buildOutput": "string"
       },
       "methods": [
         {
@@ -1313,6 +1326,10 @@ pub type HookNode = __HookNode;
             },
             {
               "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "buildOutput",
               "type": "string"
             }
           ],
@@ -1331,6 +1348,17 @@ pub type HookNode = __HookNode;
         },
         {
           "name": "path",
+          "is_pub": true,
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "string"
+        },
+        {
+          "name": "buildOutput",
           "is_pub": true,
           "params": [
             {

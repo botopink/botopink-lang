@@ -4332,7 +4332,20 @@ A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `comp
 The `Module` (decisions 786, 982 (4)) is the loaded package's, on both sides: `name()` its manifest's
 name, `path()` the directory as written (`cases/<case>`). It carries no target (decision 805 (4))
 and no dependency list: the loaded package still resolves its own to compile.
-It is an opaque type (decision 811 (4)): its fields are read through `name()` and `path()`.
+It is an opaque type (decision 811 (4)): its fields are read through `name()`, `path()` and
+`buildOutput()`.
+
+Decision 989 (4) — `buildOutput()`, on the `Ok` side and on a `Refused`'s `module`, is what the loaded
+package's build printed (a top-level `comptime { … }` block's `print`), in order, each line ending in
+`\n`, `""` when there is none; a refused package's lines come before its refusals (decision 904). A
+`Diagnostic`'s `calledFrom` (the decision calls it `from`, a reserved word) holds, as `file:line:column`
+strings, the calls (decision 532) a refusal raised at build in another file crossed after the innermost
+one — the `called from` lines `botopink build` prints —, innermost first, `[]` when there are none. A
+loaded package whose `botopink.json` the compiler refuses — invalid JSON, a target it does not know in
+`"targets"` — answers `Error` with one `Diagnostic` whose `file` is `botopink.json`, never a refusal of the
+caller.
+
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/module_build_output_and_from -->
 
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
 

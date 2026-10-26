@@ -60,7 +60,7 @@ pub const module_alias = "Bp__LoadModule";
 /// without `pub` that makes one: the lowering's call, no program's.
 pub const module_maker = "of";
 /// The function `withLoadHelper` declares over `module_maker`:
-/// `__bp_load_module(name:, path:)` answers `Bp__LoadModule.of(…)`. A read's
+/// `__bp_load_module(name:, path:, buildOutput:)` answers `Bp__LoadModule.of(…)`. A read's
 /// answer and an executor's captured `Module` are written as its call.
 pub const module_fn = "__bp_load_module";
 /// The local name of std's `compiler.Refused` in a module that loads.
@@ -70,9 +70,9 @@ pub const refused_alias = "Bp__LoadRefused";
 /// writes them — std's `compiler.Module`, `compiler.Refused` and
 /// `compiler.Diagnostic`, record for record (`tests/compiler_members.zig`).
 pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
-    .{ .name = "Module", .fields = &.{ "name", "path" } },
+    .{ .name = "Module", .fields = &.{ "name", "path", "buildOutput" } },
     .{ .name = "Refused", .fields = &.{ "module", "diagnostics" } },
-    .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label" } },
+    .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label", "calledFrom" } },
 };
 
 /// Where the helper's lines are parsed: past every line of the module and of
@@ -116,6 +116,10 @@ pub const Entry = struct {
     path: []const u8,
     /// Decision 982 (4) — the loaded package's manifest name.
     name: []const u8 = "",
+    /// Decision 989 (4) — what the package's build bodies printed (a top-level
+    /// `comptime` block's `print`), in order, each line ending in `\n`, before
+    /// its refusals (decision 904); `""` when none.
+    build_output: []const u8 = "",
     /// The refusals, empty when the file compiled.
     diagnostics: []const Diagnostic,
     /// The file and its `mod` tree (`gatherTree`), children first, each
@@ -193,6 +197,10 @@ pub const Diagnostic = struct {
     line: usize,
     column: usize,
     label: ?[]const u8 = null,
+    /// Decision 989 (4) — the decision names it `from`, a reserved word: the calls (decision 532) a refusal raised at build
+    /// crossed after the innermost one, each `<file>:<line>:<col>`, innermost
+    /// first; empty when there are none.
+    calledFrom: []const []const u8 = &.{},
 };
 
 // ── finding the reads ────────────────────────────────────────────────────────
@@ -269,7 +277,7 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     };
     const base = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
         "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n" ++
-        "fn " ++ module_fn ++ "(name: string, path: string) -> " ++ module_alias ++ " { return " ++ module_alias ++ "." ++ module_maker ++ "(name: name, path: path); }\n";
+        "fn " ++ module_fn ++ "(name: string, path: string, buildOutput: string) -> " ++ module_alias ++ " { return " ++ module_alias ++ "." ++ module_maker ++ "(name: name, path: path, buildOutput: buildOutput); }\n";
     // A module that writes a `run()` also gets what the call is rewritten to
     // (`runRewrite`): std's `compiler.RunFailure` and `run_fn` (decision 806).
     var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
@@ -341,6 +349,13 @@ pub const Loaded = struct {
         const e = entryOf(self.path) orelse return "";
         return e.name;
     }
+
+    /// `buildOutput`: what the loaded package's build printed; `""` before
+    /// the load answered.
+    pub fn buildOutput(self: Loaded) []const u8 {
+        const e = entryOf(self.path) orelse return "";
+        return e.build_output;
+    }
 };
 
 /// The call a read at `loc` is rewritten to: `__bp_loaded(__bp_load_module(…),
@@ -349,19 +364,9 @@ pub fn rewrite(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds: []con
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.appendSlice(arena, "fn __bp_load_rewrite() { " ++ helper_fn ++ "(");
     try writeModule(arena, &text, loaded);
-    try text.appendSlice(arena, ", [");
-    for (ds, 0..) |d, i| {
-        if (i > 0) try text.appendSlice(arena, ", ");
-        try text.print(arena, diagnostic_alias ++ "(code: \"{s}\", message: \"{s}\", file: \"{s}\", line: {d}, column: {d}, label: ", .{
-            try blockEval.stringLexeme(arena, d.code),
-            try blockEval.stringLexeme(arena, d.message),
-            try blockEval.stringLexeme(arena, d.file),
-            d.line,
-            d.column,
-        });
-        if (d.label) |l| try text.print(arena, "\"{s}\")", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null)");
-    }
-    try text.appendSlice(arena, "]); }");
+    try text.appendSlice(arena, ", ");
+    try writeDiagnosticList(arena, &text, ds);
+    try text.appendSlice(arena, "); }");
     // A line per call: its line and column folded into one line number.
     const line = rewrite_first_line + loc.line * 4096 + @min(loc.col, 4095);
     // The text is the compiler's own, every string escaped: it parses.
@@ -457,9 +462,10 @@ pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds:
     // The comptime runtime's host record (`decorator_eval`), built by its
     // constructor: no program reads it, and an executor writes it back as
     // `__bp_load_module(…)` (`recordSource`).
-    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\")", .{
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
+        try blockEval.stringLexeme(arena, loaded.buildOutput()),
     });
     if (ds.len > 0) {
         try text.appendSlice(arena, ", diagnostics: ");
@@ -488,6 +494,14 @@ pub fn recordSource(arena: std.mem.Allocator, v: std.json.Value) !?[]const u8 {
 fn jsonString(o: std.json.ObjectMap, key: []const u8) ?[]const u8 {
     const v = o.get(key) orelse return null;
     return if (v == .string) v.string else null;
+}
+
+fn jsonStrings(arena: std.mem.Allocator, o: std.json.ObjectMap, key: []const u8) ![]const []const u8 {
+    const v = o.get(key) orelse return &.{};
+    if (v != .array) return &.{};
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (v.array.items) |x| if (x == .string) try out.append(arena, x.string);
+    return out.items;
 }
 
 fn jsonInt(o: std.json.ObjectMap, key: []const u8) ?usize {
@@ -527,6 +541,7 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
                     .line = jsonInt(o, "line") orelse return false,
                     .column = jsonInt(o, "column") orelse return false,
                     .label = jsonString(o, "label"),
+                    .calledFrom = try jsonStrings(arena, o, "calledFrom"),
                 };
                 var one: std.ArrayListUnmanaged(u8) = .empty;
                 try writeDiagnostics(arena, &one, &.{d});
@@ -536,9 +551,10 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
             }
             const path = jsonString(o, "path") orelse return false;
             const name = jsonString(o, "name") orelse return false;
-            try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\")", .{
+            try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
                 try blockEval.stringLexeme(arena, name),
                 try blockEval.stringLexeme(arena, path),
+                try blockEval.stringLexeme(arena, jsonString(o, "buildOutput") orelse ""),
             });
             return true;
         },
@@ -857,17 +873,23 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
     return out;
 }
 
-/// `__bp_load_module(name: …, path: …)` — decision 811 (4): std's opaque
+/// `__bp_load_module(name: …, path: …, buildOutput: …)` — decision 811 (4): std's opaque
 /// `Module` made by its method without `pub` (`module_fn`'s body, the only
 /// call of it).
 fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded) !void {
-    try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\")", .{
+    try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
+        try blockEval.stringLexeme(arena, loaded.buildOutput()),
     });
 }
 
 fn writeDiagnostics(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), ds: []const Diagnostic) !void {
+    try writeDiagnosticList(arena, text, ds);
+}
+
+/// `[Bp__LoadDiagnostic(…), …]`.
+fn writeDiagnosticList(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), ds: []const Diagnostic) !void {
     try text.append(arena, '[');
     for (ds, 0..) |d, i| {
         if (i > 0) try text.appendSlice(arena, ", ");
@@ -878,7 +900,12 @@ fn writeDiagnostics(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8),
             d.line,
             d.column,
         });
-        if (d.label) |l| try text.print(arena, "\"{s}\")", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null)");
+        if (d.label) |l| try text.print(arena, "\"{s}\", calledFrom: [", .{try blockEval.stringLexeme(arena, l)}) else try text.appendSlice(arena, "null, calledFrom: [");
+        for (d.calledFrom, 0..) |f, k| {
+            if (k > 0) try text.appendSlice(arena, ", ");
+            try text.print(arena, "\"{s}\"", .{try blockEval.stringLexeme(arena, f)});
+        }
+        try text.appendSlice(arena, "])");
     }
     try text.append(arena, ']');
 }
@@ -934,21 +961,60 @@ const Manifest = struct {
     dependencies: []const []const u8 = &.{},
 };
 
-/// `text`, a loaded package's `botopink.json`, or the message of why it is
-/// no manifest.
-fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Manifest, bad: []const u8 } {
+/// Why a loaded package's `botopink.json` is refused, and where it points
+/// (`line` and `column` 0 when nowhere).
+const ManifestRefusal = struct { message: []const u8, line: usize = 0, column: usize = 0 };
+
+/// The targets a manifest may name (`Targets.of`).
+const known_targets = [_][]const u8{ "commonJS", "typescript", "erlang", "beam", "wasm" };
+
+/// Where `"entry"` stands after `"key"` in `text`: the entry's quotes, else
+/// the key's, else nowhere.
+fn entryPlace(text: []const u8, key: []const u8, entry: []const u8) struct { line: usize, col: usize } {
+    var kbuf: [256]u8 = undefined;
+    var ebuf: [512]u8 = undefined;
+    const qkey = std.fmt.bufPrint(&kbuf, "\"{s}\"", .{key}) catch return .{ .line = 0, .col = 0 };
+    const qentry = std.fmt.bufPrint(&ebuf, "\"{s}\"", .{entry}) catch return .{ .line = 0, .col = 0 };
+    const k = std.mem.indexOf(u8, text, qkey) orelse return .{ .line = 0, .col = 0 };
+    const at = std.mem.indexOfPos(u8, text, k, qentry) orelse k;
+    const lc = lineColOf(text, at);
+    return .{ .line = lc.line, .col = lc.col };
+}
+
+/// `text`, a loaded package's `botopink.json`, or why it is no manifest.
+fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Manifest, bad: ManifestRefusal } {
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch
-        return .{ .bad = "botopink.json is not valid JSON" };
-    if (parsed != .object) return .{ .bad = "botopink.json is not a JSON object" };
+        return .{ .bad = .{ .message = "botopink.json is not valid JSON" } };
+    if (parsed != .object) return .{ .bad = .{ .message = "botopink.json is not a JSON object" } };
     var m: Manifest = .{};
     if (parsed.object.get("name")) |v| if (v == .string) {
         m.name = v.string;
     };
-    if (parsed.object.get("targets")) |v| if (v == .array) {
+    if (parsed.object.get("targets")) |v| {
+        if (v != .array) {
+            const at = entryPlace(text, "targets", "targets");
+            return .{ .bad = .{ .message = "\"targets\" is not an array of target names", .line = at.line, .column = at.col } };
+        }
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        for (v.array.items) |t| if (t == .string) names.append(arena, t.string) catch return .{ .bad = "out of memory" };
+        for (v.array.items) |t| {
+            if (t != .string) {
+                const at = entryPlace(text, "targets", "targets");
+                return .{ .bad = .{ .message = "\"targets\" is not an array of target names", .line = at.line, .column = at.col } };
+            }
+            const known = for (known_targets) |k| {
+                if (std.mem.eql(u8, k, t.string)) break true;
+            } else false;
+            if (!known) {
+                const at = entryPlace(text, "targets", t.string);
+                // The CLI's wording for a target it does not know
+                // (`cell.zig` `readTargets`).
+                const message = std.fmt.allocPrint(arena, "unknown target `{s}` (commonJS, erlang, beam, wasm)", .{t.string}) catch return .{ .bad = .{ .message = "out of memory" } };
+                return .{ .bad = .{ .message = message, .line = at.line, .column = at.col } };
+            }
+            names.append(arena, t.string) catch return .{ .bad = .{ .message = "out of memory" } };
+        }
         m.targets = moduleMod.Targets.of(names.items);
-    };
+    }
     if (parsed.object.get("dependencies")) |v| if (v == .object) {
         m.dependencies = v.object.keys();
     };
@@ -985,8 +1051,8 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const manifest = switch (readManifest(scratch, manifest_text)) {
         .ok => |m| m,
         .bad => |why| {
-            try refusals.append(arena, .{ .code = "", .message = try arena.dupe(u8, why), .file = "botopink.json", .line = 0, .column = 0 });
-            return .{ .diagnostics = try remember(req.path, "", refusals.items, &.{}, main_of) };
+            try refusals.append(arena, .{ .code = "", .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
+            return .{ .diagnostics = try remember(req.path, "", "", refusals.items, &.{}, main_of) };
         },
     };
     var pkg_req = req;
@@ -995,7 +1061,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         error.FileNotFound => return .{ .not_a_package = .no_main },
         else => |e| return e,
     };
-    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, refusals.items, own, main_of) };
+    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, main_of) };
 
     // Decision 982 (1), (3) — the loaded package's own manifest: its targets
     // and its dependencies (each the one the build resolved under that name;
@@ -1071,14 +1137,27 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             else => {},
         }
     };
-    return .{ .diagnostics = try remember(req.path, manifest.name, refusals.items, own, main_of) };
+    // Decisions 904, 989 (4) — what the package's own modules printed at
+    // build, a refused module's before its refusal.
+    var printed: std.ArrayListUnmanaged(u8) = .empty;
+    for (session.outputs.items) |o| {
+        const ownModule = for (own) |m| {
+            if (std.mem.eql(u8, if (m.path.len > 0) m.path else "main", o.name)) break true;
+        } else false;
+        if (!ownModule) continue;
+        switch (o.outcome) {
+            .ok => |ok| try printed.appendSlice(scratch, ok.build_output),
+            else => if (o.target_trace) |t| try printed.appendSlice(scratch, t.build_output),
+        }
+    }
+    return .{ .diagnostics = try remember(req.path, manifest.name, printed.items, refusals.items, own, main_of) };
 }
 
 const MainOf = struct { has: bool = false, result: bool = false };
 
 /// `path`'s entry in this compile's state, copied into the state's arena;
 /// its diagnostics.
-fn remember(path: []const u8, name: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
+fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
     const a = stateArena();
     const dcopy = try a.alloc(Diagnostic, ds.len);
     for (ds, 0..) |d, i| dcopy[i] = .{
@@ -1088,6 +1167,11 @@ fn remember(path: []const u8, name: []const u8, ds: []const Diagnostic, own: []c
         .line = d.line,
         .column = d.column,
         .label = if (d.label) |l| try a.dupe(u8, l) else null,
+        .calledFrom = blk: {
+            const from = try a.alloc([]const u8, d.calledFrom.len);
+            for (d.calledFrom, 0..) |f, k| from[k] = try a.dupe(u8, f);
+            break :blk from;
+        },
     };
     const mcopy = try a.alloc(Module, own.len);
     for (own, 0..) |m, i| mcopy[i] = .{
@@ -1098,7 +1182,7 @@ fn remember(path: []const u8, name: []const u8, ds: []const Diagnostic, own: []c
         .files = m.files,
     };
     const key = try a.dupe(u8, path);
-    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
+    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
     return dcopy;
 }
 
@@ -1191,6 +1275,13 @@ fn diagnosticOf(arena: std.mem.Allocator, o: anytype) !?Diagnostic {
             } else if (te.loc) |l| {
                 d.line = l.line;
                 d.column = l.col;
+            }
+            // Decision 989 (4) — the calls the raise crossed (532), the CLI's
+            // `called from` lines, innermost first.
+            if (te.frames.len > 0) {
+                const from = try arena.alloc([]const u8, te.frames.len);
+                for (te.frames, 0..) |f, i| from[i] = try std.fmt.allocPrint(arena, "{s}:{d}:{d}", .{ f.file, f.loc.line, f.loc.col });
+                d.calledFrom = from;
             }
             return d;
         },

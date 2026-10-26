@@ -1,0 +1,53 @@
+//// Decision 989 (4) — what a loaded package's `Module` and `Diagnostic` carry beyond
+//// the place: `Module.buildOutput()` is what the package's build printed (a top-level
+//// `comptime` block's `print`, in order, each line ending in `\n`, before its refusals,
+//// decision 904), on the `Ok` and on the `Refused` side; `Diagnostic.calledFrom` is the calls
+//// (decision 532) a refusal raised at build in another file crossed, innermost first;
+//// and a `botopink.json` the compiler refuses is a `Diagnostic` of the file
+//// `botopink.json`, never a refusal of the caller.
+
+import {compiler, io.terminal.print} from "std";
+
+fn show(d: compiler.Diagnostic) -> void {
+    print("message=" + d.message);
+    print("at=" + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+    print("calledFrom=" + d.calledFrom.length.toString());
+    for (d.calledFrom) { f ->
+        print("  " + f);
+    }
+}
+
+pub fn main() -> void {
+    // A package that prints two lines at build, then compiles.
+    val m = try comptime compiler.load("packages/printed") catch { r ->
+        r.module
+    };
+    print("printed " + m.path());
+    print(m.buildOutput().length);
+    print(m.buildOutput());
+    // A package that prints a line and is then refused: the line is on the
+    // `Refused`'s module, its refusal in `diagnostics`.
+    try comptime compiler.load("packages/refused_after_print") catch { r ->
+        print("refused " + r.module.path());
+        print(r.module.buildOutput());
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+    // A raise at build in a helper file of the loaded package: located in the
+    // helper, with the call that reached it as `calledFrom`.
+    try comptime compiler.load("packages/raise_in_helper") catch { r ->
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+    // A manifest the compiler refuses is a `Diagnostic` of `botopink.json`.
+    try comptime compiler.load("packages/bad_target") catch { r ->
+        for (r.diagnostics) { d ->
+            show(d);
+        }
+        r.module
+    }
+}

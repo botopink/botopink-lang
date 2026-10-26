@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+
+comptime {
+    print("first");
+    print("second");
+}
+
+pub fn main() -> void {
+    print("run");
+}

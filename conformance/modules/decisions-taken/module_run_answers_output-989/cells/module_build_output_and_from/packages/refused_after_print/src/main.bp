@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+
+comptime {
+    print("before the refusal");
+}
+
+pub fn main() -> i32 {
+    return "not a number";
+}

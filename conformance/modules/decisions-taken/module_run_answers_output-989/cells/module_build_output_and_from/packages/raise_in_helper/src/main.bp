@@ -1,0 +1,8 @@
+mod helper;
+
+import {helper.shout};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(shout @`hi`);
+}
