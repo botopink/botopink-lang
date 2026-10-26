@@ -1,0 +1,42 @@
+//// Decision 989 (3) — a loaded package the built target refuses at `emit` is the answer of its
+//// `run()`, never a refusal of the build: `hosted` declares every target and calls a host binding
+//// with no wasm cell, so on wasm its `run()` answers `.Refused` with the refusal's text; `named`
+//// leaves wasm out of its manifest and calls a host binding with no wasm cell either, so on wasm
+//// its `run()` answers `.Excluded` with the refusal's text. Nothing of either
+//// package runs there; on commonJS, erlang and beam both run.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn show(answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> print("ok [" + text + "]");
+        Error(r) -> case r.kind {
+            .Failed -> print("failed " + r.message);
+            .Abort -> print("abort " + r.message);
+            .Refused -> print("refused " + r.message);
+            .Excluded -> print("excluded " + r.message);
+        };
+    }
+}
+
+// Expanded where the block calls it (decision 788): its load and its `compiler.init`
+// are the block's.
+fn runCase(comptime name: string) -> void {
+    val loaded = comptime compiler.load("packages/" + name);
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            print("== " + name);
+            show(m.run());
+        });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+comptime {
+    runCase("hosted");
+    runCase("named");
+}
+
+pub fn main() -> void {
+    print("main");
+}

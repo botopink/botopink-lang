@@ -15,6 +15,8 @@ fn show(answer: Result<string, RunFailure>) -> void {
             case r.kind {
                 .Failed -> print("failed " + r.message);
                 .Abort -> print("abort " + r.message);
+                .Refused -> print("refused " + r.message);
+                .Excluded -> print("excluded " + r.message);
             }
         }
     }

@@ -557,6 +557,12 @@ Several `Captured` children run at once and their `wait()`s are awaited together
 
 <!-- example: modules/decisions-taken/process_start_commonjs_only-906/cells/process_start_commonjs_only -->
 
+`io.os.target()` is the target the program runs on — `commonJS`, `erlang`, `beam` or `wasm`, each target's own
+constant (decision 989 (7)). It is read when the program runs, never at build: comptime reads no target (decision
+798 (4)), so a body that runs at build and reaches it is `run-in-build`, at the call.
+
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/os_target_names_the_target -->
+
 ### The file system, `io.fs`
 
 Every `io.fs` function that can fail answers `Result<…, FsError>` (decision 540) — never a `string`
@@ -4381,6 +4387,16 @@ form.
 
 <!-- example: modules/decisions-taken/module_run_answers_output-989/cells/module_run_answers_output -->
 
+The target built may refuse the loaded package — a host binding it reaches has no implementation there (decision
+989 (3)). That is the answer of its `run()`, never a refusal of the build, and nothing of the package runs: `kind`
+is `.Refused` when the package's manifest declares the target, `.Excluded` when its `targets` leave the target out,
+`message` the refusal's text as `botopink build` prints it on that target. A manifest that leaves a target out is
+audited when that target is built: a package the target does not refuse there is `load-excluded-target-compiles`,
+and the build with it — a target is left out only where a host binding refuses it (decision 67).
+
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/load_refused_on_one_target_answers_refused -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/load_excluded_target_compiles_refused -->
+
 Each `run()` starts clean: the loaded package's `val`s, `var`s, body and `compiler.init` executors run again before
 its `main`, so no run-time state passes from one run to the next. What the build folded (`val total = comptime
 contar();`) is computed once and never again by a `run()`.
@@ -5741,6 +5757,7 @@ record's field.
 | `.CellFilled` | `(unknown) -> bool` | whether the cell holds a value |
 | `.CellGet` | `(unknown) -> unknown` | the value the cell holds |
 | `.CellSet` | `(unknown, unknown) -> void` | the cell holds the value |
+| `.Target` | `() -> string` | the text `wasm`: the target the program runs on — std's `io.os.target()` on wasm; no comptime cell serves it, so a build never reads it |
 | `.Attempt` | `(fn() -> T) -> Result<T, string>` | the thunk called inside a `try_table` catching the program's aborts (wasm exception handling): `Ok` of its value, or `Error` of the abort's message — std's `failure.attempt` and `attemptTask` on wasm; the binding declares `needs: [.Exceptions]` |
 | `.CaptureOpen` | `() -> string` | a capture opened (std's `compiler.Module`, a `run()`'s, decision 989 (1)): what the program writes to standard output is kept, not written, until `.CaptureClose`; answers the capture it replaced |
 | `.CaptureClose` | `(string) -> string` | the capture closed: the text kept since `.CaptureOpen`, the capture it replaced restored |

@@ -10081,6 +10081,17 @@ const Emitter = struct {
         // A GC module marshals a `std:` call (`emitStdCall`): the wrapper
         // writes it, with the locals it needs.
         const gc_std = self.mode == .gc and hb.binding == .std_;
+        // Decision 989 (7) — `wasi: .Target` answers the text `wasm`: the
+        // wrapper is the literal, written as any string literal is.
+        const literal = hb.binding == .wasi and std.mem.eql(u8, hb.binding.wasi.name, "target");
+        if (literal) {
+            self.resetFnState(null);
+            var cap: Capture = .{};
+            self.open(&cap);
+            try self.emitStrLit("wasm");
+            const seq = self.seal(&cap, .none);
+            try lines.appendSlice(ar, seq.lines);
+        }
         if (gc_std) {
             self.resetFnState(null);
             var cap: Capture = .{};
@@ -10094,6 +10105,7 @@ const Emitter = struct {
             .fn_ => .{ .call = hb.target },
             .std_ => |e| if (gc_std) .{ .comment = if (e.leaf != null) "a .wat leaf's call" else "marshalled std-wasm call" } else try self.stdCall(e.name),
             .wasi => |ad| blk: {
+                if (std.mem.eql(u8, ad.name, "target")) break :blk .{ .comment = "the target's own text" };
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
                 if (std.mem.eql(u8, ad.name, "delay")) break :blk self.builder().helper(.task_delay);
                 if (std.mem.eql(u8, ad.name, "race")) break :blk self.builder().helper(.task_race);
@@ -10125,7 +10137,7 @@ const Emitter = struct {
                 unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
             },
         };
-        if (!gc_std) try lines.append(ar, .{ .indent = 4, .instr = call });
+        if (!gc_std and !literal) try lines.append(ar, .{ .indent = 4, .instr = call });
         const result: ?ValType = if (sig.result) |r| self.vtOf(r) else null;
         // A written `-> void` registers an `i32` result like every function
         // declaring one (`fnHasResult`); a function answering nothing (std's
@@ -10146,7 +10158,7 @@ const Emitter = struct {
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
             .params = params.items,
             .result = result,
-            .locals = if (gc_std) try self.localLines() else &.{},
+            .locals = if (gc_std or literal) try self.localLines() else &.{},
             .body = .{ .stack = if (result) |r| .{ .value = r } else .none, .lines = lines.items },
         }) });
     }

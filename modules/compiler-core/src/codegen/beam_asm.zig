@@ -225,9 +225,17 @@ const HostRef = struct { module: []const u8 = "", symbol: []const u8 };
 
 fn hostRefOf(implementations: []const ast.Implementation, param_count: usize) ?HostRef {
     const impl = ast.implementationFor(implementations, "erlang") orelse return null;
+    // Decision 989 (7) — std's `io.os.target()`: the beam target reads the
+    // erlang cell and answers its own constant.
+    if (param_count == 0 and std.mem.eql(u8, impl.text, os_target_template)) return .{ .symbol = os_target_beam };
     if (impl.cell == null) if (ast.remoteCallOf(impl.text, param_count)) |r| if (r.inOrder) return .{ .module = r.module, .symbol = r.function };
     return .{ .symbol = impl.text };
 }
+
+/// The erlang cell of std's `io.os.target()` (`libs/std/src/io/os.bp`), and
+/// what the beam target answers in its place (decision 989 (7)).
+pub const os_target_template = "<<\"erlang\">>";
+const os_target_beam = "<<\"beam\">>";
 
 /// A bodyless `declare fn` with an implementation.
 fn isHostDeclare(f: ast.FnDecl) bool {

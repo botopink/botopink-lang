@@ -17,7 +17,8 @@
 ////
 //// `cpuCount()` returns the count of logical cores; `tmpdir()` is the
 //// host's temp directory; `userInfo()` returns the calling user's uid
-//// + username; `eol()` is the platform line-terminator.
+//// + username; `eol()` is the platform line-terminator; `target()` is the
+//// build's target, read when the program runs.
 
 import {compiler};
 
@@ -89,6 +90,19 @@ pub declare fn userInfo() -> UserInfo;
 )]
 pub declare fn eol() -> string;
 
+// The target the program runs on (decision 989 (7)): `commonJS`, `erlang`,
+// `beam` or `wasm` — each target's own constant. The beam target reads the
+// erlang cell and answers its own text instead: the assembler writes `beam`
+// (`codegen/beam_asm.zig`, `os_target_template`). A run-time answer only: no
+// comptime cell serves it, so a build body that reaches it is refused
+// (decision 798 (4)) — comptime runs on wasm whatever the target.
+#[compiler.external(
+    .JavaScript("'commonJS'"),
+    .Erlang("""<<"erlang">>"""),
+    .Wasm(wasi: .Target),
+)]
+pub declare fn target() -> string;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "os.hostname is non-empty" {
@@ -125,4 +139,9 @@ test "os.eol length is 1 or 2" {
     val e = eol();
     assert e.length >= 1;
     assert e.length <= 2;
+}
+
+test "os.target names one of the four targets" {
+    val t = target();
+    assert t == "commonJS" || t == "erlang" || t == "beam" || t == "wasm";
 }

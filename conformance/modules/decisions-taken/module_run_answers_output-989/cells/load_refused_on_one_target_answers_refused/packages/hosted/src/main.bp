@@ -1,0 +1,12 @@
+import {compiler, io.terminal.print} from "std";
+
+// A host binding for commonJS, erlang and beam; none for wasm.
+#[compiler.external(
+    .JavaScript("'host'"),
+    .Erlang("""<<"host">>"""),
+)]
+declare fn host() -> string;
+
+pub fn main() -> void {
+    print("hosted " + host());
+}

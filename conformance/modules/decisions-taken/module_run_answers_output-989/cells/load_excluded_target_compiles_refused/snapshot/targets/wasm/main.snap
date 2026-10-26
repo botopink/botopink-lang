@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-excluded-target-compiles: the package `packages/narrowed` leaves the target 'wasm' out of its manifest's `targets`, and the target compiles it — a target is left out only where a host binding refuses it (decisions 67, 989)
+at src/main.bp

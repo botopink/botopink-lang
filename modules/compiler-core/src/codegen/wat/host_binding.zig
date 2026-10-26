@@ -125,6 +125,7 @@ pub const adapters = [_]Adapter{
     .{ .name = "cell_filled", .params = &.{.unknown}, .result = .bool, .what = "whether the cell holds a value" },
     .{ .name = "cell_get", .params = &.{.unknown}, .result = .unknown, .what = "the value the cell holds" },
     .{ .name = "cell_set", .params = &.{ .unknown, .unknown }, .what = "the cell holds the value" },
+    .{ .name = "target", .result = .string, .what = "the text `wasm`: the target the program runs on (std's `io.os.target()`, decision 989 (7)); no comptime cell serves it, so a build never reads it" },
     .{ .name = "attempt", .task = .{ .params = &.{.thunk_t}, .result = .result_t }, .what = "the thunk called inside a `try_table` catching the program's aborts (wasm exception handling, decision 518 — the binding declares `needs: [.Exceptions]`): `Ok` of its value, or `Error` of the abort's message" },
     .{ .name = "capture_open", .result = .string, .what = "a capture opened: what the program writes to standard output is kept in a string until `capture_close`, not written; answers the capture it replaced (decision 989 (1))" },
     .{ .name = "capture_close", .params = &.{.string}, .result = .string, .what = "the capture closed: answers the text kept since `capture_open` and restores the capture it replaced" },

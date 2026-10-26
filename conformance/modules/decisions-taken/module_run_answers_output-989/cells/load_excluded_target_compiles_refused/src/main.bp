@@ -1,0 +1,24 @@
+//// Decision 989 (3) — the narrowing's audit, in the compiler: a loaded package whose manifest
+//// leaves a target out must be refused there by a host binding. `narrowed` leaves wasm out and
+//// calls nothing wasm lacks, so the wasm build is refused, `load-excluded-target-compiles`; on
+//// commonJS, erlang and beam it runs.
+
+import {compiler, io.terminal.print} from "std";
+
+comptime {
+    val loaded = comptime compiler.load("packages/narrowed");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            val answer = m.run();
+            case answer {
+                Ok(text) -> print("ok [" + text + "]");
+                Error(r) -> print("failed " + r.message);
+            }
+        });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

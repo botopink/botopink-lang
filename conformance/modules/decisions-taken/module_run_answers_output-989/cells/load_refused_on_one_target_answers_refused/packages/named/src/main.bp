@@ -1,0 +1,13 @@
+import {compiler, io.terminal.print} from "std";
+
+// A host binding for commonJS, erlang and beam; none for wasm, which the
+// manifest leaves out.
+#[compiler.external(
+    .JavaScript("'named'"),
+    .Erlang("""<<"named">>"""),
+)]
+declare fn named() -> string;
+
+pub fn main() -> void {
+    print(named());
+}

@@ -96,6 +96,20 @@ pub const package_prefix = "bp_load__";
 /// answering a `Result` returned, so `run` answers `.Failed` (806 (1)).
 pub const loaded_main_fn = "__bp_loaded_main";
 
+/// Decision 989 (3) — the functions a loaded package's root gains beside
+/// `loaded_main_fn`, read and rewritten at `emit` for the target built
+/// (`codegen/loaded_targets.zig`): `loaded_main_off_fn` is the
+/// `loaded_main_fn` of the root the emit puts in place of a package the
+/// target refuses — it throws `off_marker`, the kind's letter (`R` refused,
+/// `X` excluded) and the refusal's text, which `run_fn` reads —; and
+/// `loaded_info_fn` answers the package's path and its manifest's
+/// `targets` (`<path>|<t>,<t>`, `*` when it declares none).
+pub const loaded_main_off_fn = "__bp_loaded_main_off";
+pub const loaded_info_fn = "__bp_loaded_info";
+/// What the `Error` of a refused package's `loaded_main_fn` begins with, as
+/// a string literal's lexeme (a NUL no `main`'s error text starts with).
+pub const off_marker = "\\0bp-off:";
+
 /// The package a loaded file is compiled into when a `run` reaches it.
 pub fn packageName(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     const stem = if (std.mem.endsWith(u8, path, ".bp")) path[0 .. path.len - 3] else path;
@@ -131,6 +145,9 @@ pub const Entry = struct {
     has_main: bool,
     main_result: bool,
     main_async: bool = false,
+    /// Decision 989 (3) — the targets its manifest declares, null when it
+    /// declares none.
+    targets: ?moduleMod.Targets = null,
 };
 
 /// The state of one top-level compile (`comptime.compileWith` enters and
@@ -580,6 +597,9 @@ pub const run_failure_alias = "Bp__RunFailure";
 /// with the crash's text for anything the package's body, executors or `main`
 /// raised —, its `output` the text written before. Nothing propagates out of
 /// it.
+/// Decision 989 (3): an `Error` that begins with `off_marker` is the root
+/// the emit put in place of a package the target refuses — `.Refused` (`R`)
+/// or `.Excluded` (`X`) with the refusal's text, nothing of the package run.
 pub const run_fn = "__bp_run";
 /// `run_fn` for a loaded `async` `main` (decision 989 (2)): std's
 /// `failure.attemptTask` over it, awaited, answering `Async` of `run_fn`'s answer.
@@ -595,6 +615,18 @@ pub const capture_close = "captureClose";
 /// What `runRewrite` runs while the loaded package is not yet in the program.
 const run_none_fn = "__bp_run_none";
 const run_async_none_fn = "__bp_run_async_none";
+/// A loaded `main`'s `Error(m)` read as a `RunFailure` (decision 989 (3):
+/// `off_marker` first).
+const run_failed_src =
+    "{\n" ++
+    "                if (m.startsWith(\"" ++ off_marker ++ "X\")) {\n" ++
+    "                    throw " ++ run_failure_alias ++ "(kind: .Excluded, message: m.slice(9), output: output);\n" ++
+    "                }\n" ++
+    "                if (m.startsWith(\"" ++ off_marker ++ "R\")) {\n" ++
+    "                    throw " ++ run_failure_alias ++ "(kind: .Refused, message: m.slice(9), output: output);\n" ++
+    "                }\n" ++
+    "                throw " ++ run_failure_alias ++ "(kind: .Failed, message: m, output: output);\n" ++
+    "            }\n";
 const run_fn_src =
     "fn " ++ run_fn ++ "(f: fn() -> Result<void, string>) -> Result<string, " ++ run_failure_alias ++ "> {\n" ++
     "    val open = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
@@ -603,7 +635,7 @@ const run_fn_src =
     "    case answer {\n" ++
     "        Ok(ran) -> case ran {\n" ++
     "            Ok(_) -> return output;\n" ++
-    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m, output: output);\n" ++
+    "            Error(m) -> " ++ run_failed_src ++
     "        }\n" ++
     "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message, output: output);\n" ++
     "    }\n" ++
@@ -615,7 +647,7 @@ const run_fn_src =
     "    case answer {\n" ++
     "        Ok(ran) -> case ran {\n" ++
     "            Ok(_) -> return output;\n" ++
-    "            Error(m) -> throw " ++ run_failure_alias ++ "(kind: .Failed, message: m, output: output);\n" ++
+    "            Error(m) -> " ++ run_failed_src ++
     "        }\n" ++
     "        Error(crash) -> throw " ++ run_failure_alias ++ "(kind: .Abort, message: crash.message, output: output);\n" ++
     "    }\n" ++
@@ -912,6 +944,16 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
                 "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    case main() {\n        Ok(_) -> return;\n        Error(e) -> throw \"${e}\";\n    }\n}\n"
             else
                 "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    main();\n    return;\n}\n",
+            // Decision 989 (3) — read and rewritten at `emit`.
+            if (entry.main_async)
+                "\npub async fn " ++ loaded_main_off_fn ++ "() -> Async<Result<void, string>> {\n    throw \"\";\n}\n"
+            else
+                "\npub fn " ++ loaded_main_off_fn ++ "() -> Result<void, string> {\n    throw \"\";\n}\n",
+            "\npub fn " ++ loaded_info_fn ++ "() -> string {\n    return \"",
+            try blockEval.stringLexeme(arena, entry.path),
+            "|",
+            try targetsText(arena, entry.targets),
+            "\";\n}\n",
         });
         out[i] = .{
             .path = try lasting(try std.mem.concat(arena, u8, &.{ pkg, "/", m.path })),
@@ -923,6 +965,18 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
         };
     }
     return out;
+}
+
+/// A manifest's `targets` as `loaded_info_fn` writes them: the names
+/// joined by `,`, `*` for a manifest that declares none.
+fn targetsText(arena: std.mem.Allocator, targets: ?moduleMod.Targets) ![]const u8 {
+    const t = targets orelse return "*";
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    inline for (.{ "commonJS", "typescript", "erlang", "beam", "wasm" }) |n| if (@field(t, n)) {
+        if (out.items.len > 0) try out.append(arena, ',');
+        try out.appendSlice(arena, n);
+    };
+    return out.items;
 }
 
 /// `__bp_load_module(name: …, path: …, buildOutput: …)` — decision 811 (4): std's opaque
@@ -1104,7 +1158,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         .ok => |m| m,
         .bad => |why| {
             try refusals.append(arena, .{ .code = "", .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
-            return .{ .diagnostics = try remember(req.path, "", "", refusals.items, &.{}, main_of) };
+            return .{ .diagnostics = try remember(req.path, "", "", refusals.items, &.{}, main_of, null) };
         },
     };
     var pkg_req = req;
@@ -1113,7 +1167,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         error.FileNotFound => return .{ .not_a_package = .no_main },
         else => |e| return e,
     };
-    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, main_of) };
+    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, main_of, manifest.targets) };
 
     // Decision 982 (1), (3) — the loaded package's own manifest: its targets
     // and its dependencies (each the one the build resolved under that name;
@@ -1202,14 +1256,14 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             else => if (o.target_trace) |t| try printed.appendSlice(scratch, t.build_output),
         }
     }
-    return .{ .diagnostics = try remember(req.path, manifest.name, printed.items, refusals.items, own, main_of) };
+    return .{ .diagnostics = try remember(req.path, manifest.name, printed.items, refusals.items, own, main_of, manifest.targets) };
 }
 
 const MainOf = struct { has: bool = false, result: bool = false, async_: bool = false };
 
 /// `path`'s entry in this compile's state, copied into the state's arena;
 /// its diagnostics.
-fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
+fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf, targets: ?moduleMod.Targets) ![]const Diagnostic {
     const a = stateArena();
     const dcopy = try a.alloc(Diagnostic, ds.len);
     for (ds, 0..) |d, i| dcopy[i] = .{
@@ -1234,7 +1288,7 @@ fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []
         .files = m.files,
     };
     const key = try a.dupe(u8, path);
-    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result, .main_async = main_of.async_ });
+    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result, .main_async = main_of.async_, .targets = targets });
     return dcopy;
 }
 

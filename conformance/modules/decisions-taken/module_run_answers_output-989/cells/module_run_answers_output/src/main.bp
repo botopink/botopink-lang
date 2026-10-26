@@ -11,6 +11,8 @@ fn show(answer: Result<string, RunFailure>) -> void {
         Ok(text) -> print("ok [" + text + "]");
         Error(r) -> case r.kind {
             .Abort -> print("abort " + r.message + " [" + r.output + "]");
+            .Refused -> print("refused " + r.message);
+            .Excluded -> print("excluded " + r.message);
             .Failed -> print("failed " + r.message + " [" + r.output + "]");
         };
     }

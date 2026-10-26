@@ -387,7 +387,12 @@ declare fn closeCapture(open: string) -> string;
 // `e`; `.Abort` when the package crashes — a `panic`, a host failure or a
 // run-time crash, in its body, its executors or its `main` —, `message` the
 // crash's. `output` is what the package wrote to standard output before it
-// failed (decision 989 (1)). `failure.Failure`, what `attempt` answers, is
+// failed (decision 989 (1)). Decision 989 (3): `.Refused` when the built
+// target refuses the loaded package at `emit` (a host binding it lacks
+// there), `.Excluded` when its manifest's `targets` leave the built target
+// out — refused there too, as the audit at `emit` requires
+// (`load-excluded-target-compiles`) —, each `message` the refusal's text;
+// nothing of the package runs. `failure.Failure`, what `attempt` answers, is
 // another type.
 pub type RunFailure(
     kind: RunFailureKind,
@@ -396,7 +401,7 @@ pub type RunFailure(
 )
 
 // The kinds of a `RunFailure`.
-pub type RunFailureKind { Failed, Abort }
+pub type RunFailureKind { Failed, Abort, Refused, Excluded }
 
 // A load that refused: the loaded file's `Module` and its refusals, never
 // empty.
@@ -1475,6 +1480,12 @@ pub type HookNode = __HookNode;
         },
         {
           "name": "Abort"
+        },
+        {
+          "name": "Refused"
+        },
+        {
+          "name": "Excluded"
         }
       ]
     },

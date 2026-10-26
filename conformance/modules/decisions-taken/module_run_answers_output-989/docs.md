@@ -9,4 +9,14 @@ for byte, nothing of it reaching the program's own output; `Async` of that answe
 
 What a loaded package's answer carries for a suite that reads it (989 (4)): the build's prints on its `Module`, the calls a build raise crossed on its `Diagnostic`, and a refused manifest as a `Diagnostic` of `botopink.json`.
 
+A loaded package the built target refuses at `emit` answers its `run()` instead of failing the build, and nothing of
+it runs: `.Refused` when its manifest declares the target, `.Excluded` when its `targets` leave the target out, the
+message the refusal's text (`load_refused_on_one_target_answers_refused`, four targets). A manifest that leaves a
+target out is audited there: a package the target does not refuse is `load-excluded-target-compiles`, and the build
+with it (`load_excluded_target_compiles_refused`). `io.os.target()` answers the target the program runs on, each
+target's own constant (`os_target_names_the_target`).
+
 [cells/module_build_output_and_from/src/main.bp](cells/module_build_output_and_from/src/main.bp)
+[cells/load_refused_on_one_target_answers_refused/src/main.bp](cells/load_refused_on_one_target_answers_refused/src/main.bp)
+[cells/load_excluded_target_compiles_refused/src/main.bp](cells/load_excluded_target_compiles_refused/src/main.bp)
+[cells/os_target_names_the_target/src/main.bp](cells/os_target_names_the_target/src/main.bp)

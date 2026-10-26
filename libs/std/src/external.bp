@@ -64,6 +64,7 @@ pub type WasiAdapter {
     CellFilled,
     CellGet,
     CellSet,
+    Target,
     Attempt,
     CaptureOpen,
     CaptureClose,

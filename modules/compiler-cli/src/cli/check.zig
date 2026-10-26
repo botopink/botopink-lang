@@ -112,11 +112,19 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     };
     defer session.deinit(gpa);
     level_b.commit();
-    _ = try bp.codegen.targetCheck.apply(session.arena.allocator(), session.outputs.items, diagnostics.comptimeTargetName(target, proj.wasmHost()));
+    // Decision 989 (3) — a loaded package the target refuses is its `run()`'s
+    // answer, not a refusal of the build; one whose manifest leaves the target
+    // out and that compiles there is (`codegen.loadedTargets`).
+    const loaded_targets = try bp.codegen.loadedTargets.apply(session.arena.allocator(), session.outputs.items, .{
+        .targetSource = build_cmd.targetSource(target),
+        .wasm_host = proj.wasmHost(),
+    });
+    const checked = loaded_targets.outputs orelse session.outputs.items;
+    _ = try bp.codegen.targetCheck.apply(session.arena.allocator(), checked, diagnostics.comptimeTargetName(target, proj.wasmHost()));
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 
-    for (session.outputs.items) |o| {
+    for (checked) |o| {
         if (diagnostics.renderOutcome(gpa, io, arena, o)) try failed.append(arena, o.name);
     }
 

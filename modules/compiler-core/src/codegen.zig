@@ -13,6 +13,7 @@ const runtime = @import("./codegen/runtime.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
 /// Decision 798 (4) — the target's checks over the analysed tree, at emit.
 pub const targetCheck = @import("./codegen/target_check.zig");
+pub const loadedTargets = @import("./codegen/loaded_targets.zig");
 
 pub const Module = moduleMod.Module;
 pub const ModuleOutput = moduleOutput.ModuleOutput;
@@ -173,8 +174,14 @@ fn emitChecked(
     defer scratch.deinit();
     const lookup = targetCheck.lookupName(config);
     const kept = try targetCheck.withoutBeamStorage(scratch.allocator(), outputs, lookup);
-    const emitted = kept orelse outputs;
+    const analysed = kept orelse outputs;
     defer if (kept) |k| targetCheck.writeBack(outputs, k);
+    // Decision 989 (3) — a loaded package the target refuses answers its
+    // `run()` instead of failing the build; one whose manifest leaves the
+    // target out and that compiles there is refused.
+    const loaded = try loadedTargets.apply(scratch.allocator(), analysed, config);
+    const emitted = loaded.outputs orelse analysed;
+    defer loadedTargets.writeBack(analysed, loaded);
     const refused = try targetCheck.apply(scratch.allocator(), emitted, lookup);
     defer targetCheck.restore(emitted, refused);
     // Decisions 853, 890 — two modules folding to one module atom (and two

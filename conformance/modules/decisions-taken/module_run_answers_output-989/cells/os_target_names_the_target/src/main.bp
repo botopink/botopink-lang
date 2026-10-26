@@ -1,0 +1,8 @@
+//// Decision 989 (7) — `io.os.target()` answers the target the program runs on: `commonJS`,
+//// `erlang`, `beam` or `wasm`, each target's own constant, read when the program runs.
+
+import {io.os, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(os.target());
+}
