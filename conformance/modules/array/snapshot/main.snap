@@ -1,5 +1,10 @@
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 botopink-cell 2
 == array_fill
+========
+botopink-cell 1
+out == array_fill
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out [0, 0]
 out ["z", "z", "z"]
 out [true]
@@ -7,11 +12,19 @@ out [2.5, 2.5]
 out 1
 out 3
 out []
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_fill_large
 out 1024
 out 9216
 out q
 == array_flat_forms
+========
+out == array_fill_large
+out 1024
+out 9216
+out q
+out == array_flat_forms
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out [1, 2, 3]
 out ["a", "b", "c"]
 out 3
@@ -21,13 +34,18 @@ out [[1], [2]]
 out [1, 10, 2, 20]
 out ["a", "b", "c"]
 out []
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_last_index_of
+========
+out == array_last_index_of
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out 3
 out 4
 out -1
 out 1
 out 2
 out -1
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_map_component_imported
 out built
 == array_pop_rebinds_var
@@ -35,6 +53,15 @@ out [1, 2]
 out 2
 out [1]
 == array_pop_removes
+========
+out == array_map_component_imported
+out built
+out == array_pop_rebinds_var
+out [1, 2]
+out 2
+out [1]
+out == array_pop_removes
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out 3
 out [1, 2]
 out 2
@@ -43,12 +70,20 @@ out []
 out null
 out 654
 out ["a", "c"]
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_push_rebinds_var
+========
+out == array_push_rebinds_var
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out ["a"]
 out ["a", "b"]
 out [1]
 out [1, 2]
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_range_and_repeat
+========
+out == array_range_and_repeat
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out [0, 1, 2]
 out [2]
 out []
@@ -61,23 +96,39 @@ out []
 out [true, true]
 out [2.5, 2.5]
 out 1000
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_reverse_answers_a_new_array
+========
+out == array_reverse_answers_a_new_array
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out 3,2,1
 out 1,2,3
 out 3,2,1
 out 1,2,3
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_slice_reverse
 out [2, 3]
 out [3, 2, 1]
 out [1, 2, 3]
 == array_spread_literal
+========
+out == array_slice_reverse
+out [2, 3]
+out [3, 2, 1]
+out [1, 2, 3]
+out == array_spread_literal
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out 4
 out 1
 out 4
 out 3
 out 40
 out 0
+<<<<<<<< HEAD:conformance/modules/array/snapshot/main.snap
 == array_windows
+========
+out == array_windows
+>>>>>>>> origin/front/piece5:conformance/modules/array/snapshot/output/main.snap
 out [[1, 2], [3, 4], [5]]
 out [[1, 2, 3]]
 out []

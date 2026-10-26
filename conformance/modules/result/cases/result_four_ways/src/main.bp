@@ -1,0 +1,41 @@
+import {io.terminal.print} from "std";
+
+type PortError { Zero, TooBig(value: i32) }
+
+fn port(n: i32) -> Result<i32, PortError> {
+    if (n == 0) throw PortError.Zero;
+    return n;
+}
+
+// 1) try … catch — handles it on the spot; works in ANY function
+fn portOrDefault(n: i32) -> i32 {
+    return try port(n) catch 8080;
+}
+
+// 2) try alone — propagates; needs a Result in the return
+fn doubled(n: i32) -> Result<i32, PortError> {
+    val p = try port(n);
+    return p * 2;
+}
+
+// 3) case — looks at both outcomes
+fn describe(n: i32) -> string {
+    return case port(n) {
+        Ok(p) -> "port " + p.toString();
+        Error(_) -> "no port";
+    };
+}
+
+// 4) val assert — fatal if it does not match
+fn mustPort() -> void {
+    val assert Ok(p) = port(443);
+    print(p);
+}
+
+pub fn main() -> void {
+    print(portOrDefault(0)); // 8080
+    print(doubled(21).unwrapOr(0)); // 42
+    print(describe(0)); // no port
+    print(describe(80)); // port 80
+    mustPort(); // 443
+}

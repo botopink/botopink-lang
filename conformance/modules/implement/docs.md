@@ -1,3 +1,3 @@
 # implement
 
-[cells/implement_clause_for/src/main.bp](cells/implement_clause_for/src/main.bp)
+[cases/implement_clause_for/src/main.bp](cases/implement_clause_for/src/main.bp)

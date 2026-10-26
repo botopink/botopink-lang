@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: no enum has the path ".Color.Green.100" — "Border" and "Token" each have a section "Color" (ES4 — enum-sections path resolution)
-at src/cases/section_path_es4_every_head/mod.bp:11:20

@@ -1,0 +1,6 @@
+botopink-cell 1
+out == interpolation_single_float_hole
+out 5.0!
+out ["4.0", "a"]
+out 2
+out 1.02.0

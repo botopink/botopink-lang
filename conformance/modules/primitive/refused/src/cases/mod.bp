@@ -1,4 +1,0 @@
-pub mod primitive_method_undeclared;
-pub mod primitive_method_unknown;
-pub mod primitive_type_name_taken;
-pub mod primitive_type_name_taken_val;

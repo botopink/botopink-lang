@@ -1,6 +1,0 @@
-pub mod lambda_element_method;
-pub mod lambda_expression_body;
-pub mod lambda_method_chain;
-pub mod lambda_param_shared_field;
-pub mod lambda_rebinds_case_binders;
-pub mod lambda_tail_iter_loop;

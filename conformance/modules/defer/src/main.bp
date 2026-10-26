@@ -1,0 +1,44 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("defer_block_end_reverse_order");
+    runCase("defer_in_loop_break_continue");
+    runCase("defer_panic_attempt_catches");
+    runCase("defer_reads_latest_value");
+    runCase("defer_return_value_before_defers");
+    runCase("defer_scope_is_block");
+    runCase("defer_try_catch_inside");
+    runCase("defer_refuses_await");
+    runCase("defer_refuses_break");
+    runCase("defer_refuses_continue");
+    runCase("defer_refuses_return");
+    runCase("defer_refuses_throw");
+    runCase("defer_refuses_try");
+    runCase("defer_refuses_yield");
+    runCase("defer_async_after_awaits");
+}
+
+pub fn main() -> void {}

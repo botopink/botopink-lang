@@ -1,0 +1,13 @@
+import {io.terminal.print} from "std";
+
+fn f() -> i32 {
+    var n = 1;
+    defer {
+        n = 100;
+    }
+    return n;
+}
+
+pub fn main() -> void {
+    print(f());
+}

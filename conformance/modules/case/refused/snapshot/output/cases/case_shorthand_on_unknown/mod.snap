@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `.Some` on an `unknown` value names no enum — write the variant's full name
-at src/cases/case_shorthand_on_unknown/mod.bp:13:9

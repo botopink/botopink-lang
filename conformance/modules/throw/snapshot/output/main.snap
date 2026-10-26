@@ -1,0 +1,30 @@
+botopink-cell 1
+out == throw_in_case_arm_result
+out false
+out true
+out ok 8
+out error x
+out false
+out true
+out ok 9
+out error ya
+out ok 9
+out true
+out error x
+out ok 9
+out true
+out error ya
+out ok 8
+out error x
+out ok 8
+out true
+out error y
+out num 4
+out ok 0
+out error y
+out num 4
+out ok 0
+out error x
+out == throw_outside_result
+out refused error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — this fn's return has no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
+out at src/main.bp:5:30

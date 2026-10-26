@@ -1,8 +1,0 @@
-pub mod string_char_code_after_slice;
-pub mod string_char_code_non_ascii;
-pub mod string_code_points_every_width;
-pub mod string_lines_words;
-pub mod string_literal_unicode_escape;
-pub mod string_parse_float_every_target;
-pub mod string_slice_in_if_branch;
-pub mod string_split_empty_separator;
