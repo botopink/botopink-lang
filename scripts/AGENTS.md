@@ -146,7 +146,7 @@ stage under it before a change to a script lands.
 
 ## gate.sh
 
-`scripts/gate.sh [--cold] [--staged] [--stage <name>]… [--prebuilt]` — one ordered run (the STEP gate on a `front/*`
+`scripts/gate.sh [--cold] [--staged] [--stage <name>]… [--prebuilt] [--portable]` — one ordered run (the STEP gate on a `front/*`
 branch, the FULL gate everywhere else — § Step gate and full gate), stopping at the first
 failing stage (stages 4b–12 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
@@ -182,7 +182,9 @@ installed binaries); `--stage <name>` (repeatable) runs only those, in the gate'
 never reads or writes the green-tree record; no `--stage` runs every stage as before. `--prebuilt`
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
-`test-cli`, `test-libs`, `test-conformance` and `test-docs`), so nothing recompiles the compiler. The
+`test-cli`, `test-libs`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
+`--portable` builds for the baseline CPU (`-Dcpu=baseline` on every `zig build` of the gate): CI builds the
+binaries on one runner and runs them on others, where a native build dies of SIGILL (exit 132). The
 conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
 (`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name>`, one job per stage, and keeps no list.
 

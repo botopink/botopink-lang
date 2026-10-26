@@ -60,7 +60,7 @@
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
-#                   [--stage <name>]… [--prebuilt]
+#                   [--stage <name>]… [--prebuilt] [--portable]
 #   scripts/gate.sh --list-stages [--uses-binaries]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
@@ -122,6 +122,11 @@
 #             `zig build`, so no stage compiles or installs the compiler again
 #             (build.zig). The gate fails when zig-out/bin/botopink is missing.
 #
+#   --portable
+#             every `zig build` of the gate targets the baseline CPU
+#             (`-Dcpu=baseline`): CI builds the binaries on one runner and runs
+#             them on others, where a native build dies of SIGILL (exit 132).
+#
 # The gate keeps no lock and no pool (decisions 468, 469, 508): runs started
 # together share the machine through the meta repository's scheduler, and the
 # commit hook's `--no-conformance` run goes free.
@@ -147,6 +152,7 @@ selected=()
 list_stages=0
 only_bin=0
 prebuilt=0
+portable=0
 cold=0
 staged=0
 no_conformance=0
@@ -165,6 +171,7 @@ while [ "$#" -gt 0 ]; do
             selected+=("$1"); shift ;;
         --stage=*) selected+=("${a#--stage=}") ;;
         --prebuilt) prebuilt=1 ;;
+        --portable) portable=1 ;;
         --cold) cold=1 ;;
         --staged) staged=1 ;;
         --no-conformance) no_conformance=1 ;;
@@ -429,6 +436,10 @@ fi
 # Debug binary over the one the others run. Stage 4 builds its own unit-test
 # binaries in Debug, as before: `zig build test` installs nothing.
 opt=-Doptimize=ReleaseSafe
+# --portable: every `zig build` below targets the baseline CPU, so binaries one CI runner builds
+# run on another (a native build there dies of SIGILL, exit 132, on a runner with another CPU).
+cpu=()
+[ "$portable" -eq 1 ] && cpu=(-Dcpu=baseline)
 # --prebuilt: the stages that run the installed binaries install nothing (build.zig `-Dprebuilt`).
 pre=()
 if [ "$prebuilt" -eq 1 ]; then
@@ -440,7 +451,7 @@ fi
 conformance_cmd() {
     local j="$1"
     shift
-    zig build test-conformance "$opt" ${pre[@]+"${pre[@]}"} -- --jobs "$j" "$@"
+    zig build test-conformance "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"} -- --jobs "$j" "$@"
 }
 
 # ── § ahead of the build: stages 4, 4b, 5 and 6 ──────────────────────────────
@@ -486,12 +497,12 @@ if [ "$cold" -eq 1 ]; then
 fi
 test_pid=""
 if want test; then launch 0 zig build test; test_pid=$!; fi
-if want test-bpmp; then launch 2 zig build test-bpmp "$opt"; fi
+if want test-bpmp; then launch 2 zig build test-bpmp "$opt" ${cpu[@]+"${cpu[@]}"}; fi
 if want beam-export-audit; then launch 3 bash scripts/beam_export_audit.sh; fi
 
 if want build; then
 stage "zig build ($opt)"
-timed "$tdir/build.time" zig build "$opt" || fail "zig build $opt"
+timed "$tdir/build.time" zig build "$opt" ${cpu[@]+"${cpu[@]}"} || fail "zig build $opt"
 pass "zig build — $(stage_time "$tdir/build.time")"
 fi
 
@@ -605,16 +616,16 @@ share() { # <percent> — that part of the total, at least 1 (pool.sh)
     if [ "$share_alone" -gt 0 ]; then pool_share "$budget_total" "$share_alone"; else pool_share "$budget_total" "$1"; fi
 }
 echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), tsc-check $(share 10)"
-want test-cli && launch 4 zig build test-cli "$opt" ${pre[@]+"${pre[@]}"}
+want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
 if [ "$run_libs" -eq 1 ]; then
-    launch 5 zig build test-libs "$opt" ${pre[@]+"${pre[@]}"} -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
+    launch 5 zig build test-libs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"} -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
 fi
 if [ "$run_lang" -eq 1 ]; then
     launch 6 conformance_cmd "$(share 30)" ${lang_args[@]+"${lang_args[@]}"}
 fi
-want test-docs && launch 7 zig build test-docs "$opt" ${pre[@]+"${pre[@]}"}
+want test-docs && launch 7 zig build test-docs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 want tsc-check && launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
 want test-web && launch 9 zig build test-web -j"$(share 10)"
 wait

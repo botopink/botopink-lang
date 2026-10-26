@@ -85,9 +85,9 @@ jobs:
       - uses: ./.github/actions/ci-setup
         with:
           zig-cache: 'true'
-      - name: scripts/gate.sh --cold --stage build
+      - name: scripts/gate.sh --cold --portable --stage build
         shell: bash
-        run: bash scripts/gate.sh --cold --stage build
+        run: bash scripts/gate.sh --cold --portable --stage build
       # tar keeps the executable bits an artifact upload drops.
       - name: Pack the binaries
         shell: bash
@@ -141,9 +141,9 @@ jobs:
       - name: Unpack the binaries
         shell: bash
         run: tar -xzf zig-out.tgz
-      - name: scripts/gate.sh --cold --prebuilt --stage ${{ matrix.stage }}
+      - name: scripts/gate.sh --cold --portable --prebuilt --stage ${{ matrix.stage }}
         shell: bash
-        run: bash scripts/gate.sh --cold --prebuilt --stage "${{ matrix.stage }}"
+        run: bash scripts/gate.sh --cold --portable --prebuilt --stage "${{ matrix.stage }}"
 
   # The run's one verdict, for a front's Conformance step (decision 477).
   gate:
