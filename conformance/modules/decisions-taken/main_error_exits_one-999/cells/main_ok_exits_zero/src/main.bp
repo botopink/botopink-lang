@@ -1,0 +1,8 @@
+//// Decision 999 — an entry `main` answering `Ok` exits 0 and writes nothing of its own.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> Result<void, string> {
+    print("done");
+    return;
+}

@@ -51,6 +51,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_arr_f64 => &.{ .{ .func = print_arr_f64_raw }, .{ .func = print_arr_f64 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .panic_fail => &.{.{ .func = panic_fail }},
+        .main_fail => &.{.{ .func = main_fail }},
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f64 => &.{ .{ .func = print_opt_f64_raw }, .{ .func = print_opt_f64 } },
         .print_i64 => &.{ .{ .func = print_i64_raw }, .{ .func = print_i64 } },
@@ -1724,6 +1725,16 @@ const panic_fail = func("__panic_fail", &.{"msg"}, null, &.{}, &.{
     c32(188),   c32(10),                                                      store8(0),                     c32(188),   c32(1),  call("__write_err"),
 });
 
+/// Decision 999 — `$__main_fail(msg)`: `failed: ` and the text of the entry
+/// `main`'s `Error`, unchanged, and a newline on stderr. `msg` is a
+/// length-prefixed string.
+const main_fail = func("__main_fail", &.{"msg"}, null, &.{}, &.{
+    // "failed: " — 8 bytes as one i64 word
+    c32(188),   .{ .@"const" = .{ .ty = .i64, .text = "2322278944636232038" } }, .{ .store = .{ .ty = .i64 } }, c32(188),   c32(8),  call("__write_err"),
+    get("msg"), c32(4),                                                          op("add"),                     get("msg"), load(0), call("__write_err"),
+    c32(188),   c32(10),                                                         store8(0),                     c32(188),   c32(1),  call("__write_err"),
+});
+
 // ── decision 518: aborts as wasm exceptions, and `attempt` ──────────────────
 //
 // A program reaching a binding that `needs: [.Exceptions]` (std's
@@ -2385,6 +2396,22 @@ const gc_panic_fail = typedFunc("__panic_fail", &.{pref("msg")}, null, i32s(&.{ 
     c32(188),        c32(1),                                                       call("__write_err"),           get("top"),              .{ .global_set = heap },
 });
 
+/// Decision 999 — `$__main_fail(msg)` over a GC string.
+const gc_main_fail = typedFunc("__main_fail", &.{pref("msg")}, null, i32s(&.{ "n", "p", "i", "top" }), &.{
+    // "failed: " — 8 bytes as one i64 word
+    c32(188),        .{ .@"const" = .{ .ty = .i64, .text = "2322278944636232038" } }, .{ .store = .{ .ty = .i64 } }, c32(188),                c32(8),                  call("__write_err"),
+    get("msg"),      str_len,                                                         set("n"),                      .{ .global_get = heap }, set("top"),              get("n"),
+    call("__alloc"), set("p"),
+    loop(&.{
+        get("i"), get("n"),  op("ge_u"), brk,
+        get("p"), get("i"),  op("add"),  get("msg"),
+        get("i"), str_get,   store8(0),  get("i"),
+        c32(1),   op("add"), set("i"),   again,
+    }),
+    get("p"),        get("n"),                                                        call("__write_err"),           c32(188),                c32(10),                 store8(0),
+    c32(188),        c32(1),                                                          call("__write_err"),           get("top"),              .{ .global_set = heap },
+});
+
 // ── decision 392's scheduler in a GC module (front 164 s2 P4) ────────────────
 //
 // The same scheduler as the linear one above, over GC structs. Its types are
@@ -2883,6 +2910,7 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         // (`wat.zig`'s `gcPrinter`); the quoted string is the one shared piece.
         .print_shaped => &.{.{ .func = gc_print_quoted_raw }},
         .panic_fail => &.{.{ .func = gc_panic_fail }},
+        .main_fail => &.{.{ .func = gc_main_fail }},
         .assert_fail => items(g),
         // `$__print_tagged_raw` is generated, and asks no module's `display`
         // hook: a record's own `display` is called by its printer.
@@ -2928,7 +2956,7 @@ pub fn gcSlotted(g: ast.HelperGroup) bool {
 /// arena.
 pub fn gcDeps(g: ast.HelperGroup) []const ast.HelperGroup {
     return switch (g) {
-        .print_str, .print_f64, .text_capture, .panic_fail => &.{.alloc},
+        .print_str, .print_f64, .text_capture, .panic_fail, .main_fail => &.{.alloc},
         .print_i64, .print_u64 => &.{ .print_str, .alloc },
         else => &.{},
     };

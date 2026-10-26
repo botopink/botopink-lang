@@ -1474,6 +1474,17 @@ const print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .cla
     } } } }}),
 }} } };
 
+/// Decision 999 — the entry `main`'s call when it answers a `Result`.
+const main_error_exit =
+    \\case main() of
+    \\        {error, MainErr} ->
+    \\            io:setopts(standard_error, [{encoding, unicode}]),
+    \\            io:format(standard_error, "failed: ~ts~n", [['__bp_show'(MainErr, true)]]),
+    \\            halt(1);
+    \\        MainAnswer -> MainAnswer
+    \\    end
+;
+
 /// `V` bound to the first element of a tuple, for the tagged-tuple guard.
 const show_first: Ast.Expr = .{ .call = .{ .module = "erlang", .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } };
 
@@ -2146,13 +2157,18 @@ fn emitErlangModule(
     var top_runtime_vals: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
     defer top_runtime_vals.deinit(alloc);
     var has_main_0 = false;
+    // Decision 999 — the entry `main` answers a `Result`: its `Error` is reported.
+    var main_answers_result = false;
     for (program.decls) |decl| {
         switch (decl) {
             .val => |v| {
                 if (!v.value.isComptimeExpr() and !isSyntheticMainEntrypointCall(v)) try top_runtime_vals.append(alloc, v);
             },
             .@"fn" => |f| {
-                if (std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0) has_main_0 = true;
+                if (std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0) {
+                    has_main_0 = true;
+                    main_answers_result = ast.answersResult(f.returnType);
+                }
             },
             else => {},
         }
@@ -2455,6 +2471,7 @@ fn emitErlangModule(
     // Runtime helpers a lowering reached. A comptime module always carries
     // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
     const listing_only = if (comptime_module) |cm| cm.listing else false;
+    if (comptime_module == null and emit_entrypoint_wrapper and main_answers_result) em.needs_show_helper = true;
     if (comptime_module == null) {
         // Runtime-dispatch shims a typed call site reached (no recorded
         // lowering); their fallback clause for `toString` formats through
@@ -2478,7 +2495,7 @@ fn emitErlangModule(
         const typed_text = em.needs_text_helper and comptime_module == null;
         if (typed_text) try forms.appendSlice(b.arena, &.{ .blank, typed_text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, if (comptime_module != null) comptime_print_helper_form else print_helper_form });
-        if (em.needs_print_helper or typed_text) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, if (comptime_module != null) comptime_tagged_helper_form else tagged_helper_form, .blank, render_helper_form });
+        if (em.needs_print_helper or typed_text or (em.needs_show_helper and comptime_module == null)) try forms.appendSlice(b.arena, &.{ .blank, show_helper_form, .blank, if (comptime_module != null) comptime_tagged_helper_form else tagged_helper_form, .blank, render_helper_form });
         try appendGenHelperForms(b, &forms, em.gen_helpers);
     }
 
@@ -2508,7 +2525,11 @@ fn emitErlangModule(
         if (load_siblings) try stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
         for (import_inits) |dep| try stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
         if (emit_init) try stmts.append(b.arena, try b.call("_botopink_init", &.{}));
-        try stmts.append(b.arena, try b.call("main", &.{}));
+        if (main_answers_result and comptime_module == null) {
+            // Decision 999 — an `Error` answer is the process's failure: `failed:
+            // <text>` on stderr, `print`'s text of the value, and status 1.
+            try stmts.append(b.arena, Ast.Expr.r(main_error_exit));
+        } else try stmts.append(b.arena, try b.call("main", &.{}));
         try forms.appendSlice(b.arena, &.{
             .blank,
             try blockFunction(b, "_botopink_main", &.{}, try b.body(stmts.items)),

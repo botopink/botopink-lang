@@ -541,6 +541,8 @@ fn emitProgramOptsX(
 
     // Detect `fn main/0` so we can emit the `_botopink_main` entry wrapper.
     var has_main_0 = false;
+    // Decision 999 — what the entry `main` answers: a `Result`, or a task of one.
+    var main_answer: MainAnswer = .none;
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| {
@@ -549,7 +551,10 @@ fn emitProgramOptsX(
                     for (f.params) |p| {
                         if (!std.mem.eql(u8, p.name, "self")) arity += 1;
                     }
-                    if (arity == 0) has_main_0 = true;
+                    if (arity == 0) {
+                        has_main_0 = true;
+                        main_answer = if (isTaskOfResult(f.returnType)) .task else if (resultOkType(f.returnType) != null) .result else .none;
+                    }
                 }
             },
             else => {},
@@ -607,13 +612,17 @@ fn emitProgramOptsX(
     // is the program's entry, so a test unit (decision 513) or another
     // module that `require`s it does not run it.
     if (has_main_0) {
+        // Decision 999 — an entry `main` answering a `Result` reports its `Error`:
+        // the text is `print`'s, through the `__bp_show` prelude helper.
+        if (main_answer != .none) _ = em.helper(.show);
+        const call_main = try em.b.call(.{ .name = "main" }, &.{});
         try items.append(arena_alloc, .{ .stmt = try em.b.group(&.{
             .{ .function = .{ .name = "_botopink_main", .body = .{
-                .stmts = try em.b.stmts(&.{.{ .expr = try em.b.call(.{ .name = "main" }, &.{}) }}),
+                .stmts = try em.b.stmts(&.{if (main_answer == .none) .{ .expr = call_main } else .{ .return_ = call_main }}),
             } } },
             .{ .if_ = .{
                 .cond = .{ .name = "require.main === module" },
-                .then = try ptrTo(arena_alloc, js.Stmt{ .block = .{ .stmts = try entryStmts(arena_alloc, try em.b.call(.{ .name = "_botopink_main" }, &.{})) } }),
+                .then = try ptrTo(arena_alloc, js.Stmt{ .block = .{ .stmts = try entryStmts(arena_alloc, try em.b.call(.{ .name = "_botopink_main" }, &.{}), main_answer) } }),
             } },
         }) });
     }
@@ -9002,16 +9011,42 @@ fn isResultPath(name: []const u8) bool {
     return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
 }
 
+/// What the entry `main` answers (decision 999).
+const MainAnswer = enum { none, result, task };
+
 /// The entry branch's statements (decision 870): the abort handler of
-/// `otp.cjs_abort_handler`, then the call of `main`.
-fn entryStmts(alloc: std.mem.Allocator, call_main: js.Expr) ![]const js.Stmt {
-    const handler = @import("../otp.zig").cjs_abort_handler;
-    const out = try alloc.alloc(js.Stmt, handler.len + 1);
+/// `otp.cjs_abort_handler`, then the call of `main`; for a `main` answering a
+/// `Result` (decision 999), its answer read: an `Error` — the settled one of a
+/// task — writes `failed: <text>` and exits 1.
+fn entryStmts(alloc: std.mem.Allocator, call_main: js.Expr, answer: MainAnswer) ![]const js.Stmt {
+    const otp = @import("../otp.zig");
+    const handler = otp.cjs_abort_handler;
+    const extra = otp.cjs_main_answer;
+    const n_extra: usize = switch (answer) {
+        .none => 0,
+        .result => 2,
+        .task => 2,
+    };
+    const out = try alloc.alloc(js.Stmt, handler.len + 1 + n_extra);
     for (handler, 0..) |text, i| {
         const parts = try alloc.alloc(js.HostPart, 1);
         parts[0] = .{ .text = text };
         out[i] = .{ .expr = .{ .host = parts } };
     }
-    out[handler.len] = .{ .expr = call_main };
+    out[handler.len] = if (answer == .none) .{ .expr = call_main } else .{ .decl = .{
+        .pattern = .{ .name = "__bp_ran" },
+        .value = call_main,
+    } };
+    if (answer != .none) {
+        const texts: [2][]const u8 = switch (answer) {
+            .result => .{ extra[0], extra[1] },
+            else => .{ extra[0], extra[2] },
+        };
+        for (texts, 0..) |text, i| {
+            const parts = try alloc.alloc(js.HostPart, 1);
+            parts[0] = .{ .text = text };
+            out[handler.len + 1 + i] = .{ .expr = .{ .host = parts } };
+        }
+    }
     return out;
 }

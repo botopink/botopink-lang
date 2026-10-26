@@ -944,6 +944,9 @@ pub const HelperGroup = enum {
     /// `$__memo_cell_new`, `$__memo_cell_filled`, `$__memo_cell_get` and
     /// `$__memo_cell_set` over an 8-byte cell `[filled, value]`.
     memo_cell,
+    /// Decision 999 — `$__main_fail(msg)`: an entry `main`'s `Error` text on
+    /// stderr as `failed: <text>` (needs `assert_fail`'s `$__write_err`).
+    main_fail,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -964,6 +967,7 @@ pub const HelperGroup = enum {
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
             .panic_fail => &.{.assert_fail},
+            .main_fail => &.{.assert_fail},
             .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .print_u64, .display_of },
             .arr_new => &.{.alloc},
             .arr_push => &.{.arr_new},
@@ -1125,6 +1129,7 @@ pub const Helper = enum {
     memo_cell_filled,
     memo_cell_get,
     memo_cell_set,
+    main_fail,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

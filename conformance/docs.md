@@ -6005,6 +6005,15 @@ text of an abort is not one:
 <!-- example: modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_panic -->
 <!-- example: modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_overflow -->
 
+An entry `main` that answers `Error(e)` writes `failed: <text>` to stderr — `<text>` what `print` writes for `e` — and
+the process exits 1 on every target, `async` or not (decision 999); `Ok` and `void` exit 0, and a crash keeps the text
+and the status above. Only the entry: a loaded package's `main` answers `run()`'s `.Failed`, and prints nothing:
+
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_error_exits_one -->
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_async_error_exits_one -->
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_ok_exits_zero -->
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_async_ok_exits_zero -->
+
 A raise nothing marked is `crash` on commonJS too: a binding declared outside std without `result: true` has its
 raise marked `host` (546), so the raise of the program's own code — a method called on a value the binding
 mistyped — is not:

@@ -155,6 +155,22 @@ fn programEntry(program: ast.Program, test_mode: bool) ?ast.Loc {
     return null;
 }
 
+/// Decision 999 — what the entry `main` answers that the process reports: a
+/// `Result` (or a task of one), and whether its `Error` carries a `string`.
+const MainAnswer = struct { result: bool = false, task: bool = false, err_string: bool = false };
+
+fn mainAnswerOf(f: ast.FnDecl) MainAnswer {
+    if (!ast.answersResult(f.returnType)) return .{};
+    var t = f.returnType.?;
+    var task = false;
+    if (isTaskTypeRef(t)) {
+        task = true;
+        t = t.generic.args[0];
+    }
+    const err_string = t.generic.args.len == 2 and t.generic.args[1] == .named and std.mem.eql(u8, t.generic.args[1].named, "string");
+    return .{ .result = true, .task = task, .err_string = err_string };
+}
+
 fn isMain0(f: ast.FnDecl) bool {
     return std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0;
 }
@@ -1860,10 +1876,12 @@ fn emitWatPass(
 
     var has_main_0 = false;
     var main_returns_value = false;
+    var main_answer: MainAnswer = .{};
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| if (isMain0(f)) {
             has_main_0 = true;
             main_returns_value = Emitter.fnHasResult(f);
+            main_answer = mainAnswerOf(f);
         },
         else => {},
     };
@@ -1969,7 +1987,7 @@ fn emitWatPass(
     try em.emitPendingFns();
     try em.refuseUnboundTemplateCalls();
 
-    if (has_main_0) try em.emitEntrypointWrapper(main_returns_value);
+    if (has_main_0) try em.emitEntrypointWrapper(main_returns_value, main_answer);
     if (em.gc_gap != null) return error.GcFallback;
 
     // ── assemble the module ──────────────────────────────────────────────
@@ -2126,7 +2144,7 @@ fn emitWatPass(
             // The groups whose GC form names `$str` need the type group, though
             // no local of the module is a string.
             switch (group) {
-                .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .print_shaped, .print_i64, .print_u64 => em.gc_str_used = true,
+                .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .main_fail, .print_shaped, .print_i64, .print_u64 => em.gc_str_used = true,
                 else => {},
             }
             continue;
@@ -11564,24 +11582,61 @@ const Emitter = struct {
         return self.sameVal(a.result.?, b.result.?);
     }
 
-    fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
+    fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool, answer: MainAnswer) !void {
         var c: Capture = .{};
         self.open(&c);
-        // The one folded instruction the backend emits, kept for byte-identity
-        // with the historical wrapper.
-        try self.cur.?.append(self.arena(), .{ .instr = .{ .call = "main" }, .folded = true });
-        // The wrapper itself returns nothing, so a value-returning `main` would
-        // leave its result on the stack — invalid wasm. Discard it.
-        if (main_returns_value) try self.emit(.drop);
+        const gc = self.mode == .gc;
+        // Decision 999 — an entry `main` answering a `Result` is read once its
+        // tasks settled: the answer (a task's settled value) lands in `__ans`.
+        const reads = answer.result;
+        if (!reads) {
+            // The one folded instruction the backend emits, kept for byte-identity
+            // with the historical wrapper.
+            try self.cur.?.append(self.arena(), .{ .instr = .{ .call = "main" }, .folded = true });
+            // The wrapper itself returns nothing, so a value-returning `main` would
+            // leave its result on the stack — invalid wasm. Discard it.
+            if (main_returns_value) try self.emit(.drop);
+        } else {
+            try self.emit(.{ .call = "main" });
+            try self.emit(.{ .local_set = if (answer.task) "__task" else "__ans" });
+        }
         // Decision 392 — the tasks `main` started run on: the ready ones,
         // and on `wasi` the host's answers as they come (the `browser`
         // host's loader drives the rest from the event loop).
         if (self.b.helpers.has(.task)) try self.emitC(self.builder().helper(.task_finish), "the tasks main started");
+        if (reads) {
+            if (answer.task) {
+                try self.emit(.{ .local_get = "__task" });
+                if (gc) {
+                    try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.task), .field = 2 } });
+                    try self.emit(.{ .ref_cast = ValType.def(self.gcTyIndex(.result)) });
+                } else try self.emit(.{ .load = .{ .offset = 8 } });
+                try self.emitC(.{ .local_set = "__ans" }, "the settled answer");
+            }
+            // An `Error` answer: `failed: <text>` on stderr, then the trap an
+            // abort is (the status is the host's).
+            var fail_c: Capture = .{};
+            self.open(&fail_c);
+            if (answer.err_string) {
+                try self.emit(.{ .local_get = "__ans" });
+                if (gc) {
+                    try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.result), .field = 1 } });
+                    try self.emit(.{ .ref_cast = ValType.def(0) });
+                } else try self.emit(.{ .load = .{ .offset = 4 } });
+                try self.emit(self.builder().helper(.main_fail));
+            }
+            try self.emit(.@"unreachable");
+            const fail_seq = self.seal(&fail_c, .terminated);
+            try self.emit(.{ .local_get = "__ans" });
+            if (gc) try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.result), .field = 0 } }) else try self.emit(.{ .load = .{} });
+            try self.emitC(.{ .@"if" = .{ .then = .{ .seq = fail_seq } } }, "decision 999: an `Error` answer fails the process");
+        }
         const run = self.seal(&c, .none);
         if (!self.exceptions) {
             try self.item(.{ .func = try self.builder().func(.{
                 .name = "_botopink_main",
                 .exports = &.{ "_botopink_main", "_start" },
+                .locals = try self.builder().localLines(try self.answerLocals(answer, &.{})),
                 .body = run,
             }) });
             return;
@@ -11598,7 +11653,6 @@ const Emitter = struct {
         const caught = try self.builder().seq(&.{ try_line, .{ .instr = .@"return" } }, .terminated);
         const fail = self.builder().helper(.panic_fail);
         // Front 164 s2 P4 — in a GC module the payload is an `$exn`.
-        const gc = self.mode == .gc;
         const exn: u16 = if (gc) self.gcTyIndex(.exn) else 0;
         const c_vt: ValType = if (gc) .anyref else .i32;
         const msg_read: []const wat.Line = if (gc) &.{
@@ -11630,9 +11684,21 @@ const Emitter = struct {
         try self.item(.{ .func = try self.builder().func(.{
             .name = "_botopink_main",
             .exports = &.{ "_botopink_main", "_start" },
-            .locals = try self.builder().localLines(&.{.{ .name = "__c", .ty = c_vt }}),
+            .locals = try self.builder().localLines(try self.answerLocals(answer, &.{.{ .name = "__c", .ty = c_vt }})),
             .body = body,
         }) });
+    }
+
+    /// The locals `emitEntrypointWrapper` reads a `Result` answer through
+    /// (decision 999), after `first`.
+    fn answerLocals(self: *Emitter, answer: MainAnswer, first: []const wat.Local) ![]const wat.Local {
+        if (!answer.result) return first;
+        const gc = self.mode == .gc;
+        var out: std.ArrayListUnmanaged(wat.Local) = .empty;
+        try out.appendSlice(self.arena(), first);
+        if (answer.task) try out.append(self.arena(), .{ .name = "__task", .ty = if (gc) ValType.def(self.gcTyIndex(.task)) else .i32 });
+        try out.append(self.arena(), .{ .name = "__ans", .ty = if (gc) ValType.def(self.gcTyIndex(.result)) else .i32 });
+        return out.items;
     }
 
     // ── body ─────────────────────────────────────────────────────────────────

@@ -2049,6 +2049,15 @@ pub fn answersNothing(rt: ?TypeRef) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
+/// Decision 999 — whether a return written is `Result<T, E>` or
+/// `Async<Result<T, E>>`: what an entry `main` answers that the process reports
+/// (`Error` writes `failed: <text>` and exits 1).
+pub fn answersResult(rt: ?TypeRef) bool {
+    var t = rt orelse return false;
+    if (t == .generic and t.generic.is_builtin and std.mem.eql(u8, t.generic.name, "Async") and t.generic.args.len == 1) t = t.generic.args[0];
+    return t == .generic and t.generic.is_builtin and std.mem.eql(u8, t.generic.name, "Result");
+}
+
 /// Decision 907 — how a function with a `syntax` parameter is read where it
 /// is used: `#[f]` applies it as a decorator (its first `syntax` parameter the
 /// annotated declaration, 663, 716), `f(e)` expands it at the call (719,

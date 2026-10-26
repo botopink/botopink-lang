@@ -81,6 +81,18 @@ pub const cjs_abort_handler = [_][]const u8{
     "globalThis.process.on(\"unhandledRejection\", __bp_abort)",
 };
 
+/// Decision 999 — what the entry branch adds for a `main` answering a `Result`
+/// (`__bp_ran` its answer): `[0]` the report, `failed: <text>` on stderr — the
+/// text `print` writes for the `Error`'s value (the `__bp_show` helper, joined
+/// as `console.log` joins it) — then exit 1; `[1]` reads a plain answer, `[2]` a
+/// task's settled one (a rejection marked `__bp_failure` is the `Error`; any
+/// other is a crash, as the handler above writes it).
+pub const cjs_main_answer = [_][]const u8{
+    "const __bp_failed = (e) => { const a = []; const f = __bp_show(e, null, true, a); globalThis.process.stderr.write(\"failed: \" + require(\"node:util\").format(f, ...a) + \"\\n\", () => globalThis.process.exit(1)); }",
+    "if (__bp_ran != null && typeof __bp_ran === \"object\" && \"error\" in __bp_ran) __bp_failed(__bp_ran.error)",
+    "__bp_ran.then(() => {}, (e) => { if (__bp_ran.__bp_failure === true) __bp_failed(e); else __bp_abort(e); })",
+};
+
 /// `node_abort_source` as the `data:` URL `node --import` takes: every byte
 /// outside `[A-Za-z0-9]` percent-encoded.
 pub const node_abort_import: []const u8 = blk: {

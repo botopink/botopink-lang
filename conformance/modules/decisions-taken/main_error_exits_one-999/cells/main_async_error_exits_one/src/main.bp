@@ -1,0 +1,9 @@
+//// Decision 999 (2) — an `async` entry `main` answering `Error(e)`: its settled answer decides,
+//// the process writes `failed: <text>` to stderr and exits non-zero, as a sync `main` does.
+
+import {io.terminal.print} from "std";
+
+pub async fn main() -> Async<Result<void, string>> {
+    print("before");
+    throw "bad answer";
+}

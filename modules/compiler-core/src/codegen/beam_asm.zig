@@ -367,6 +367,20 @@ const test_runner_body =
 ;
 const LOAD_SIBLING = "'-bp_load_sibling-'";
 
+/// Decision 999 — the entry `main`'s answer: `__BpA0` is `'__bp_show'/2` as a
+/// fun, `__BpA1` the answer. An `Error` writes `failed: <text>` to stderr, the
+/// text `print` writes for its value, and halts with 1; anything else is
+/// answered as it is.
+const main_error_exit_body =
+    \\case __BpA1 of
+    \\        {error, MainErr} ->
+    \\            io:setopts(standard_error, [{encoding, unicode}]),
+    \\            io:format(standard_error, "failed: ~ts~n", [[__BpA0(MainErr, true)]]),
+    \\            halt(1);
+    \\        MainAnswer -> MainAnswer
+    \\    end.
+;
+
 /// A character list as a literal operand — `"*.erl"` where the OTP file
 /// functions want a string and `Op.str` would hand them a binary.
 fn charlist(comptime text: []const u8) Op {
@@ -2047,12 +2061,15 @@ fn emitBeamAsm(
     // function: the wrapper that runs it is not emitted (erlang's
     // `emit_entrypoint_wrapper`).
     var has_main_0 = false;
+    // Decision 999 — the entry `main` answers a `Result`: its `Error` is reported.
+    var main_answers_result = false;
     var tests: std.ArrayListUnmanaged(ast.TestDecl) = .empty;
     defer tests.deinit(alloc);
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (isMain0(f)) {
                 has_main_0 = true;
+                main_answers_result = ast.answersResult(f.returnType);
             },
             .@"test" => |t| if (test_mode) try tests.append(alloc, t),
             else => {},
@@ -2265,6 +2282,7 @@ fn emitBeamAsm(
     }
 
     if (has_main_0) {
+        em.main_answers_result = main_answers_result;
         try em.emitEntrypointWrappers();
     }
     if (em.load_siblings) try em.emitLoadSiblings();
@@ -2669,6 +2687,9 @@ const Emitter = struct {
     /// The entry module of a build that binds a BEAM host: `'_botopink_main'/0`
     /// calls `'__bp_load_siblings'/0` first (`emitLoadSiblings`).
     load_siblings: bool = false,
+    /// Decision 999 — the entry `main` answers a `Result`: `'_botopink_main'/0`
+    /// reports an `Error` answer (`main_error_exit_body`) and halts with 1.
+    main_answers_result: bool = false,
     add_helper_name: ?[]const u8 = null,
     /// BR5: `<arity>:<template text>` → the labels of the helper function
     /// `compiledTemplate` emitted for it in THIS module (a unit gets its own).
@@ -6073,7 +6094,20 @@ const Emitter = struct {
                     try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = reader.entry }, 0);
                 }
             }
-            try beamEmitter.writeCall(self.out, .last, 0, .{ .local = main0.entry }, self.num_y);
+            if (self.main_answers_result) {
+                // Decision 999 — `main/0`'s answer and `'__bp_show'/2` go to a
+                // fixed template, which writes `failed: <text>` and halts on an
+                // `Error` and answers anything else as it is.
+                _ = try self.ensurePrintHelper();
+                const show = try self.fnLabelsFor("'__bp_show'", 2);
+                const check = (try self.lowerTemplateFn(self.atom_arena.allocator(), main_error_exit_body, false, 2)) orelse
+                    return error.TestRunnerDoesNotLower;
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = main0.entry }, 0);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                try beamEmitter.writeTestHeapAlloc(self.out, 0, 1, 2);
+                try beamEmitter.writeMakeFun3(self.out, show.entry, &.{});
+                try beamEmitter.writeCall(self.out, .last, 2, .{ .local = check.entry }, self.num_y);
+            } else try beamEmitter.writeCall(self.out, .last, 0, .{ .local = main0.entry }, self.num_y);
         }
         self.cur_line += 1;
 

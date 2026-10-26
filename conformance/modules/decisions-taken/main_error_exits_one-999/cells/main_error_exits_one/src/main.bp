@@ -1,0 +1,10 @@
+//// Decision 999 (1) — an entry `main` answering `Error(e)` writes `failed: <text>` to stderr,
+//// `<text>` what `print` writes for `e`, and the process exits non-zero. What was printed
+//// before stays printed.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> Result<void, string> {
+    print("before");
+    throw "bad answer";
+}
