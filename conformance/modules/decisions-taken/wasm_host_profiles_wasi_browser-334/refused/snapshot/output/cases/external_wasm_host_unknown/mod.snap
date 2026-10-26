@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'Deno'
-at src/cases/external_wasm_host_unknown/mod.bp:8:81

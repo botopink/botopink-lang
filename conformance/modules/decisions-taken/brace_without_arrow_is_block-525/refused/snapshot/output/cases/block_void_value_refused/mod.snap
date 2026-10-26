@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: block-void-value: a block whose value is `void` is handed where a value is expected
-at src/cases/block_void_value_refused/mod.bp:7:11

@@ -8,7 +8,7 @@ Reading back the index of `ã` with `at` gives `ã` itself, never half of its by
 missing substring is `-1`. Every target counts codepoints, so the eight lines are the same on erlang, beam, commonJS
 and wasm.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/string_index_counts_codepoints-320/run/src/cases/string_index_of_codepoints`,
-`modules/decisions-taken/string_index_counts_codepoints-320/run/src/cases/string_codepoint_slice_and_code`.
+Cells in this repository that also bear on it: `modules/decisions-taken/string_index_counts_codepoints-320/cases/string_index_of_codepoints`,
+`modules/decisions-taken/string_index_counts_codepoints-320/cases/string_codepoint_slice_and_code`.
 
 [draft/main.bp](draft/main.bp)

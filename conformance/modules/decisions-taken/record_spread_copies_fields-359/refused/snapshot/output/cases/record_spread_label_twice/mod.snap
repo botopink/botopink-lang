@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-arguments: field `nome` of `Pessoa` is labelled twice
-at src/cases/record_spread_label_twice/mod.bp:11:40

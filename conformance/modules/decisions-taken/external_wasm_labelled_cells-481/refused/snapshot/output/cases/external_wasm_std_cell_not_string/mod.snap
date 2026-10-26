@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'hash'
-at src/cases/external_wasm_std_cell_not_string/mod.bp:7:76

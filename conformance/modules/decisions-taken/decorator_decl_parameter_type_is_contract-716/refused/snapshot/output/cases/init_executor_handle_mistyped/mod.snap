@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[module]` expects a declaration of type `fn() -> string`, and `count` is `fn() -> i32`
-at src/cases/init_executor_handle_mistyped/mod.bp:17:3

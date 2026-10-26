@@ -7,4 +7,4 @@ Cells in this repository that bear on it: `modules/decisions-taken/wasm_attempt_
 [cells/dependency_unbound_host_method_refused/src/main.bp](cells/dependency_unbound_host_method_refused/src/main.bp)
 [cells/dependency_unbound_host_reached_refused/src/main.bp](cells/dependency_unbound_host_reached_refused/src/main.bp)
 [cells/dependency_unbound_host_unreached/src/main.bp](cells/dependency_unbound_host_unreached/src/main.bp)
-[cells/std_unbound_host_module_imports/src/main.bp](cells/std_unbound_host_module_imports/src/main.bp)
+[cases/std_unbound_host_module_imports/src/main.bp](cases/std_unbound_host_module_imports/src/main.bp)

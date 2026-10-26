@@ -1,6 +1,6 @@
 # Decision 388 — A `@Component<R>` at run time is a lambda over an opaque `RenderScope`; calling a component only makes the lambda, and the render library decides who runs it, when, and with which scope.
 
-[cells/component_is_lambda/src/main.bp](cells/component_is_lambda/src/main.bp)
+[cases/component_is_lambda/src/main.bp](cases/component_is_lambda/src/main.bp)
 [cells/component_run_root/src/main.bp](cells/component_run_root/src/main.bp)
 [cells/component_try_in_body/src/main.bp](cells/component_try_in_body/src/main.bp)
 [cells/context_optional_wide_number_through_scope/src/main.bp](cells/context_optional_wide_number_through_scope/src/main.bp)

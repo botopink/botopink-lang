@@ -1,3 +1,0 @@
-pub mod external_all_bodies;
-pub mod external_body_not_a_fn;
-pub mod external_source_empty;

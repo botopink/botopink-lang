@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `x` is a `val` and cannot be assigned
-at src/cases/val_assign_local/mod.bp:10:5

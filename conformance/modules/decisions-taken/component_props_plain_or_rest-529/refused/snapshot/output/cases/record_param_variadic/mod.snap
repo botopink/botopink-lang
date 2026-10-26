@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-param-variadic: `Card` takes both `..props: R` and the variadic `..rest` — a record parameter and a variadic do not share a function
-at src/cases/record_param_variadic/mod.bp:9:29

@@ -15,5 +15,5 @@ The cell `run_outside_init` calls `run()` in the body that runs at build, outsid
 refused `run-outside-init`; the cell `load_no_main` runs a file that declares no `main`, refused `load-no-main`.
 
 [cells/compiler_load_module_run/src/main.bp](cells/compiler_load_module_run/src/main.bp)
-[cells/run_outside_init/src/main.bp](cells/run_outside_init/src/main.bp)
-[cells/load_no_main/src/main.bp](cells/load_no_main/src/main.bp)
+[cases/run_outside_init/src/main.bp](cases/run_outside_init/src/main.bp)
+[cases/load_no_main/src/main.bp](cases/load_no_main/src/main.bp)

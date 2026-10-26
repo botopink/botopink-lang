@@ -1,2 +1,0 @@
-pub mod enum_variant_bare_call_refused;
-pub mod enum_variant_bare_unit_refused;

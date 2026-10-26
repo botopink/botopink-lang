@@ -1,0 +1,11 @@
+//// Decision 302 — the annotation a template runs over a tag resolves, in the
+//// caller's scope, to a decorator: a function whose first parameter is not
+//// `comptime decl: @Decl` is refused at the annotation, in the caller's text.
+
+pub mod tags;
+import {tags.markup, tags.shout};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(markup @`<div #[shout]>hi</div>`);
+}

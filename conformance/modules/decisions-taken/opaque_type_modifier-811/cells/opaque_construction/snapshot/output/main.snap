@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: opaque-construction: `Token` is an opaque type — `Token(…)` is written only inside its own methods (decisions 811, 814)
-at src/main.bp:31:13

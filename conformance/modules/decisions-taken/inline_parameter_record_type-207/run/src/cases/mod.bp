@@ -1,2 +1,0 @@
-pub mod inline_param_type;
-pub mod template_builds_inline_props;

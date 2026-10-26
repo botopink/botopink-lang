@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unclosed backtick identifier
-at src/cases/backtick_name_line_break/mod.bp:8:9

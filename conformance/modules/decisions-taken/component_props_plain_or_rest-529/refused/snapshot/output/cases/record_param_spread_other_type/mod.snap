@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-type: a spread into `CardProps` copies a `CardProps` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `NoteProps` is neither
-at src/cases/record_param_spread_other_type/mod.bp:17:16

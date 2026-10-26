@@ -1,2 +1,0 @@
-pub mod generic_ctor_fallible_lambda_fresh;
-pub mod lambda_result_return_try;

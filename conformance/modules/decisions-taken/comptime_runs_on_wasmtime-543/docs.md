@@ -9,6 +9,6 @@ engine runs it now. So `builtOk` is `Ok 20`, and `builtCaught` holds the `panic`
 value made at build and prints `true`. The build and a wasm program run the same std code on one engine, so the
 answer is the same on every target.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/comptime_attempt_at_build`.
+Cells in this repository that also bear on it: `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cases/comptime_attempt_at_build`.
 
 [draft/main.bp](draft/main.bp)

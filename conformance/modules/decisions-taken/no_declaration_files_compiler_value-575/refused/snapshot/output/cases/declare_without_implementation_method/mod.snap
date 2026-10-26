@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
-at src/cases/declare_without_implementation_method/mod.bp:7:20

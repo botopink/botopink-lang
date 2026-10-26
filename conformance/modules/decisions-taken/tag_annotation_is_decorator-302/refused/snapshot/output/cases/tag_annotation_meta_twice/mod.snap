@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-meta-twice: `#[hydrate]` records a second `Hydrate` on the tag `div`, which holds one
-at src/cases/tag_annotation_meta_twice/mod.bp:10:41

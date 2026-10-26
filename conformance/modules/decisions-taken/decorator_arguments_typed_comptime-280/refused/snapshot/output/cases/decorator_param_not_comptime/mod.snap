@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`
-at src/cases/decorator_param_not_comptime/mod.bp:8:32

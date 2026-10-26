@@ -5,6 +5,6 @@
 [run/src/cases/import_two_enums_one_name/mod.bp](run/src/cases/import_two_enums_one_name/mod.bp)
 [run/src/cases/import_two_types_one_name/mod.bp](run/src/cases/import_two_types_one_name/mod.bp)
 [run/src/cases/import_two_types_one_name_reached_indirectly/mod.bp](run/src/cases/import_two_types_one_name_reached_indirectly/mod.bp)
-[cells/import_two_types_one_name_unaliased/src/main.bp](cells/import_two_types_one_name_unaliased/src/main.bp)
+[cases/import_two_types_one_name_unaliased/src/main.bp](cases/import_two_types_one_name_unaliased/src/main.bp)
 
 Proved also by [annotation_argument_enum_identity](../local_type_beside_aliased_import-603/cells/annotation_argument_enum_identity/src/main.bp)

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown member `ProcessDict` in `BeamMemory` — expected `Ets` or `PersistentTerm`
-at src/cases/process_dict_member/mod.bp:5:3

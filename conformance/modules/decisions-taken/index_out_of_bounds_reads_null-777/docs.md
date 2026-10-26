@@ -9,7 +9,7 @@ is folded there. `fourth([1, 2, 3])` reads index 3 of a three-item array: the fo
 so the program prints `true` and then `-1` for the `?? -1` fallback. `fourth([1, 2, 3, 4])` folds to `4`. Nothing is
 refused at build and nothing raises at run time.
 
-Cells that also bear on it: `modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_dict` (an
+Cells that also bear on it: `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_dict` (an
 index is a method call answering `?V`); the draft of `modules/decisions-taken/fold_raise_is_build_error-721` shows the
 raise a fold still turns into a build error.
 

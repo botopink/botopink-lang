@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: builtin-not-lowered: `@module()` is declared but no target lowers it
-at src/cases/builtin_module_not_lowered/mod.bp:8:13

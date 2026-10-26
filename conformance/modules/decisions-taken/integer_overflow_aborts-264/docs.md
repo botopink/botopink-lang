@@ -1,6 +1,6 @@
 # Decision 264 — Integer overflow is a program error on every target: `+`, `-`, `*`, unary `-` and the compound assignments of every inte
 
-[cells/int_arith_at_bounds/src/main.bp](cells/int_arith_at_bounds/src/main.bp)
+[cases/int_arith_at_bounds/src/main.bp](cases/int_arith_at_bounds/src/main.bp)
 [cells/int_division_min_by_minus_one/src/main.bp](cells/int_division_min_by_minus_one/src/main.bp)
 [cells/int_overflow_add_i32/src/main.bp](cells/int_overflow_add_i32/src/main.bp)
 [cells/int_overflow_add_i8/src/main.bp](cells/int_overflow_add_i8/src/main.bp)

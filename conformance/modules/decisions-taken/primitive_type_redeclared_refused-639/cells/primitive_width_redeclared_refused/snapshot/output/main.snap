@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: primitive-type-redeclared: `i32` is the type of a literal; a module cannot declare a type of that name
-at src/main.bp:10:6

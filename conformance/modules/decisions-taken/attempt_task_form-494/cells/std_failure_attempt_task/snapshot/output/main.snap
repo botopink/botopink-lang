@@ -1,5 +1,0 @@
-botopink-cell 1
-out Ok 42
-out Error panic: a negative input
-out Ok Error not found
-out after

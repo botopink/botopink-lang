@@ -1,3 +1,0 @@
-botopink-cell 1
-out main: select * from users where id = ? 7
-out replica: delete from users where id = ? 71

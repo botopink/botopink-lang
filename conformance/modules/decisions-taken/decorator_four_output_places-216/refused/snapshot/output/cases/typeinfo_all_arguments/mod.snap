@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: typeinfo-all-arguments: `@TypeInfo.all` takes labelled arguments, and this one has none
-at src/cases/typeinfo_all_arguments/mod.bp:11:11

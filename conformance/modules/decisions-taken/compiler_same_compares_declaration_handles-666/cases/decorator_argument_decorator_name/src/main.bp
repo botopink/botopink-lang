@@ -1,0 +1,20 @@
+//// Decision 268 — a decorator parameter typed `Decorator` takes a
+//// decorator's name, and `Decorator[]` an array of names: the body reads
+//// each as the declaration's identity (`same`, decision 371), in a module
+//// of the package as in the root (144 B-10, decision 430). The name was
+//// checked as the function it is (`expects Decorator, got fn(Decl) -> void`).
+
+pub mod markers;
+import {markers.each, markers.all, markers.email, markers.lowercased};
+import {io.terminal.print} from "std";
+
+type Invite(
+    #[each(email)] guests: array<string>,
+    #[each(lowercased)] #[all([email, lowercased])] hosts: array<string>,
+)
+
+pub fn main() -> void {
+    print(Invite.guestsEach());
+    print(Invite.hostsEach());
+    print(Invite.hostsAll());
+}

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: non-exhaustive: `case` on 'Shape' is not exhaustive: missing variant(s) Rect
-at src/cases/enum_code/mod.bp:9:12

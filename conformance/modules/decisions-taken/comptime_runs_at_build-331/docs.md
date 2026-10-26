@@ -5,9 +5,9 @@
 [run/src/cases/comptime_function_reference/mod.bp](run/src/cases/comptime_function_reference/mod.bp)
 [run/src/cases/comptime_imported_section_path/mod.bp](run/src/cases/comptime_imported_section_path/mod.bp)
 [run/src/cases/comptime_record_pattern/mod.bp](run/src/cases/comptime_record_pattern/mod.bp)
-[refused/src/cases/comptime_section_path_declared_after/mod.bp](refused/src/cases/comptime_section_path_declared_after/mod.bp)
+[cases/comptime_section_path_declared_after/src/main.bp](cases/comptime_section_path_declared_after/src/main.bp)
 [run/src/cases/comptime_val_after_import/mod.bp](run/src/cases/comptime_val_after_import/mod.bp)
-[refused/src/cases/comptime_value_not_liftable/mod.bp](refused/src/cases/comptime_value_not_liftable/mod.bp)
+[cases/comptime_value_not_liftable/src/main.bp](cases/comptime_value_not_liftable/src/main.bp)
 [run/src/cases/comptime_wide_literal/mod.bp](run/src/cases/comptime_wide_literal/mod.bp)
 
 Proved also by [comptime_decorator_section_value](../comptime_parameter_is_expression-364/cells/comptime_decorator_section_value/src/main.bp)

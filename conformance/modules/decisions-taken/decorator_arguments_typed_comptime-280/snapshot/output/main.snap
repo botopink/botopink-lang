@@ -1,0 +1,53 @@
+botopink-cell 1
+out == comptime_arg_not_known
+out refused error: comptime-arg-not-known: `k` is a run-time value, and the parameter `n` is `comptime` — its argument is known while the program compiles
+out at src/main.bp:16:17
+out == comptime_default_outside_decorator
+out refused error: comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator
+out at src/main.bp:8:36
+out == decorator_arg_function_mismatch
+out refused error: type mismatch: `#[check]`'s `rule` expects `?fn(Account) -> bool`, got `fn(Order) -> bool`
+out at src/main.bp:25:21
+out == decorator_arg_label_unknown
+out refused error: `#[check]` has no parameter `where`
+out at src/main.bp:18:25
+out == decorator_arg_unbound_function
+out refused error: unbound variable 'passwordMatch'
+out at src/main.bp:25:29
+out == decorator_argument_kind
+out refused error: type mismatch: `#[value]`'s `key` expects `string`, got `i32`
+out at src/main.bp:9:9
+out == decorator_check_without_rule_not_bool
+out refused error: #[check] without `rule` annotates an `fn(x) -> bool`
+out at src/main.bp:24:3
+out == decorator_decl_pattern_mismatch
+out refused error: `#[on]` expects a declaration of type `fn(E) -> unknown`, and `wrong` is `fn() -> void`
+out at src/main.bp:11:3
+out == decorator_decl_pattern_return
+out refused error: `#[page]` expects a declaration of type `fn(Route<P>) -> View`, and `blog` is `fn(Route<string>) -> string`
+out at src/main.bp:18:3
+out == decorator_field_key_case
+out refused error: unknown field 'Code' on type 'City'
+out at src/main.bp:14:10
+out == decorator_field_key_too_many
+out refused error: `#[unique]` on `City` expects 1 argument(s), got 2
+out at src/main.bp:14:17
+out == decorator_function_argument_mismatch
+out refused error: type mismatch: `#[page]`'s `paths` expects `?fn() -> BlogParams[]`, got `fn() -> User[]`
+out at src/main.bp:27:30
+out == decorator_param_not_comptime
+out refused error: decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`
+out at src/main.bp:8:32
+out == decorator_record_argument_mismatch
+out refused error: type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `Cache<User[]>`
+out at src/main.bp:22:13
+out == decorator_type_argument_unknown
+out refused error: unknown type 'MailSendr'
+out at src/main.bp:15:28
+out == decorator_variant_case
+out refused error: `.custom` names no variant of `Code`
+out at src/main.bp:19:24
+out == decorator_decl_pattern
+out sendReceipt,refund
+out receipt o1
+out refund o2

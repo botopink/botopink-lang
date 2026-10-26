@@ -6,6 +6,6 @@ which no template recognises. The parser refuses it at the template with `templa
 marker, and the label asks for the host's own conversion. So the program never builds, and neither earlier line
 prints. No backend renders the marker, std's templates included: std's `Array.join` Erlang template does without it.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/parser_refuses_stringify-239/cells/template_stringify_marker`.
+Cells in this repository that also bear on it: `modules/decisions-taken/parser_refuses_stringify-239/cases/template_stringify_marker`.
 
 [draft/main.bp](draft/main.bp)

@@ -1,0 +1,32 @@
+//// Decision 525 — a `return` from a `for` inside a block leaves the
+//// enclosing function, on every target; the block's value is its tail on
+//// every other path.
+
+import {io.terminal.print} from "std";
+
+fn firstAbove(xs: array<i32>, limit: i32) -> i32 {
+    val found = {
+        for (xs) { x ->
+            if (x > limit) return x * 100;
+        }
+        -1
+    };
+    return found * 10;
+}
+
+fn labelOf(xs: array<string>) -> string {
+    val hit = {
+        for (xs) { s ->
+            if (s != "a") return "[" + s + "]";
+        }
+        "none"
+    };
+    return "<" + hit + ">";
+}
+
+pub fn main() -> void {
+    print(firstAbove([1, 7, 9], 5));
+    print(firstAbove([1, 2], 5));
+    print(labelOf(["a", "abc", "abcd"]));
+    print(labelOf(["a"]));
+}

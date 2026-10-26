@@ -1,6 +1,0 @@
-pub mod ambient_behavior_parameter;
-pub mod defer_in_value_branch;
-pub mod defer_inner_panic_runs_once;
-pub mod defer_panic_in_arm;
-pub mod defer_reads_binding_at_defer;
-pub mod defer_reads_var_set_in_arm;

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[mark]` annotates the module `var` `count`, and a decorator runs on a `val`, never on a `var`
-at src/cases/val_decorator_on_var/mod.bp:11:3

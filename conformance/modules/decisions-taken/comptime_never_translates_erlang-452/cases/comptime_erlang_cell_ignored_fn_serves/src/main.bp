@@ -1,0 +1,31 @@
+//// Decision 452 — an `compiler.external(.Erlang)` cell beside a `fn:` cell is ignored
+//// at build: `tidy`'s `compiler.external(.Wasm)(fn: tidyBody)` cell serves the comptime
+//// call, so the decorator emits `tidyBody`'s answer on the four targets (the
+//// Erlang cell binds the erlang and beam targets alone, and is never run by
+//// the compiler).
+
+import {compiler, io.terminal.print} from "std";
+
+#[compiler.external(
+    .JavaScript("""$0.replace(/a/g, "b")"""),
+    .Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))"""),
+    .Wasm(body: tidyBody),
+)]
+declare fn tidy(value: string) -> string;
+
+fn tidyBody(value: string) -> string {
+    return value;
+}
+
+fn sized(syntax decl: unknown) -> void {
+    @emit("pub fn summary() -> string { return \""
+        + tidy(compiler.name(decl)!)
+        + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() -> void {
+    print(summary());
+}

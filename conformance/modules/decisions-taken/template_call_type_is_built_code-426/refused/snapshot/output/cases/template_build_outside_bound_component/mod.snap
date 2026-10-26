@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: template-build-outside-bound: `view` built code of type `Component<Other>`, outside its answer `Component<Styled>`
-at src/cases/template_build_outside_bound_component/mod.bp:16:21

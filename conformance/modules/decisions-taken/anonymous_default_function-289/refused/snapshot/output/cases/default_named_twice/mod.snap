@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[default-twice]: a module has one default function
-at src/cases/default_named_twice/mod.bp:11:13
-label already the default `render`

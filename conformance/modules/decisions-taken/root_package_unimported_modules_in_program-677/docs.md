@@ -2,7 +2,7 @@
 
 `src/jobs.bp` declares two types marked `#[job]`, and no module of the program imports it. It is in the program all the same: every module under the package's `src/` is checked, compiled and linked, so `jobs`' two `compiler.init` executors run before `main`, in their order, and the program prints `Cleaner,Mailer` from the registry they filled. `main.bp` is where execution starts — the manifest's `"entry"`, `main.bp` when absent — and that is all the entry says: it never narrows what the package holds. A forgotten module with a type error fails the build instead of vanishing. A library has no entry at all.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/compiler_init_executor-615/cells/init_order_modules`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main`.
+Cells in this repository that also bear on it: `modules/decisions-taken/compiler_init_executor-615/cells/init_order_modules`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main`.
 
 [cells/root_module_unimported_in_program/src/main.bp](cells/root_module_unimported_in_program/src/main.bp) · [cells/root_module_unimported_in_program/src/jobs.bp](cells/root_module_unimported_in_program/src/jobs.bp) · [cells/root_module_unimported_in_program/src/marks.bp](cells/root_module_unimported_in_program/src/marks.bp) · [cells/root_module_unimported_in_program/src/registry.bp](cells/root_module_unimported_in_program/src/registry.bp)
 [cells/root_module_unimported_type_error/src/main.bp](cells/root_module_unimported_type_error/src/main.bp)
