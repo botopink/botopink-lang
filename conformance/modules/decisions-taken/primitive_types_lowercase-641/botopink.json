@@ -1,1 +1,1 @@
-{ "name": "primitive_types_lowercase-641" }
+{"name": "primitive_types_lowercase-641", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

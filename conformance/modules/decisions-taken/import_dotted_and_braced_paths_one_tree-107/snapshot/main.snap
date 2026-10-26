@@ -1,0 +1,13 @@
+botopink-cell 2
+== import_group_modifier
+refused error[import-group-modifier]: `*` and `as` belong to an import leaf, not to a group
+at src/main.bp:4:20
+label this node opens braces
+== import_name_collision
+refused error: import-name-collision: `parse` is already bound by the import of `url.parse`; `json.parse` would bind it again
+at src/main.bp:5:27
+== import_tree
+out circle
+out 7
+out 1
+out -1

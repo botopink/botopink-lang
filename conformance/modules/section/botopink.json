@@ -1,1 +1,1 @@
-{ "name": "section" }
+{"name": "section", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

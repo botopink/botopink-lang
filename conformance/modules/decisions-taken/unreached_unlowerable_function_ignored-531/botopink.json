@@ -1,1 +1,1 @@
-{ "name": "unreached_unlowerable_function_ignored-531" }
+{"name": "unreached_unlowerable_function_ignored-531", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

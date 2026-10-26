@@ -1,1 +1,1 @@
-{ "name": "i64_is_64_bit_everywhere-319" }
+{"name": "i64_is_64_bit_everywhere-319", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

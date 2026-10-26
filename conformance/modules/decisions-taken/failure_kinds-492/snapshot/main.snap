@@ -1,0 +1,15 @@
+botopink-cell 2
+== std_failure_attempt_abort_kinds
+out Error panic
+out Ok 1
+out Error panic
+out Error panic
+out Ok 2
+out after
+== std_failure_types
+out ENOENT
+out host
+out true
+out panic:x
+out host:x
+out crash:x

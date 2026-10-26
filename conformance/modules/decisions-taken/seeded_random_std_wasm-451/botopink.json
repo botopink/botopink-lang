@@ -1,1 +1,1 @@
-{ "name": "seeded_random_std_wasm-451" }
+{"name": "seeded_random_std_wasm-451", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

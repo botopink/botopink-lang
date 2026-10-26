@@ -1,0 +1,80 @@
+botopink-cell 2
+== bigint_arithmetic
+out 2535301200456458802993406410752
+out 12193263113702179522618503273386678859448712086533622923332237463801111263526900
+out 90000000009000000000900000000090
+out 11111111101111111110111111111011111111100
+out -3
+out -3
+out -1
+out 1
+out -8
+out -90000000009000000000900000000090
+out true
+out 7
+out 2535301182709350524027
+out 952742563
+out true
+out false
+out true
+out true
+out true
+out 2535301200456458802993406410752
+out 2^101 = 2535301200456458802993406410752
+out 11111111101111111110111111111011111111100
+out -11111111101111111110111111111011111111100
+out 0
+out 9223372036854775808
+out -9223372036854775809
+out -15
+out 12
+out -123456789012345678901234567890
+out 42
+out -1
+out -2
+out -3
+out 4611686018427387905
+out -9223372036854775808
+out 1024.0
+out true
+out 65280
+out 1000000000000
+== bigint_in_containers
+out Ledger(total: 1234567890123456789012345678900, last: null)
+out 1234567890123456789012345678901
+out true
+out false
+out #(3000000000000000000000, "big")
+out true
+out [3, 40000000000000000000000]
+out true
+out 40000000000000000000000
+out null
+out 40000000000000000000003
+out 120000000000000000000000
+out 40000000000000000000003
+out true
+out three
+out large
+== bigint_comptime
+refused error: comptime-bigint: a `bigint` is not computed at compile time yet
+at src/main.bp:6:15
+== bigint_into_i64
+refused error: type mismatch: expected i64, got bigint
+at src/main.bp:6:18
+== bigint_into_unknown
+refused error: bigint-widened: a `bigint` does not widen to `unknown`
+at src/main.bp:8:22
+== bigint_literal_fraction
+refused error[number-suffix-integer-on-float]: a literal with a fraction or an exponent is floating and takes `f` or `d` only
+at src/main.bp:6:16
+label an integer suffix
+== bigint_plus_int_literal
+refused error: the integer literal `1` is not a `bigint` — write `1n`
+at src/main.bp:7:18
+== bigint_type_test
+refused error: bigint-type-test: `is` does not test a `bigint`
+at src/main.bp:8:13
+== bigint_unsuffixed_literal
+refused error: the integer literal `2` is not a `bigint` — write `2n`
+at src/main.bp:7:21

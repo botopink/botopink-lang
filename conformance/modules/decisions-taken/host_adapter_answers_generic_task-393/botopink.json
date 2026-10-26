@@ -1,1 +1,1 @@
-{ "name": "host_adapter_answers_generic_task-393" }
+{"name": "host_adapter_answers_generic_task-393", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

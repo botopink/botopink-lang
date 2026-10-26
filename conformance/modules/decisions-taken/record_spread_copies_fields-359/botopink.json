@@ -1,1 +1,1 @@
-{ "name": "record_spread_copies_fields-359" }
+{"name": "record_spread_copies_fields-359", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

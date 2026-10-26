@@ -1,1 +1,1 @@
-{ "name": "any_type_absent-31" }
+{"name": "any_type_absent-31", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

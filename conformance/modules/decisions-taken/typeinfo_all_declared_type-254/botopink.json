@@ -1,1 +1,1 @@
-{ "name": "typeinfo_all_declared_type-254" }
+{"name": "typeinfo_all_declared_type-254", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

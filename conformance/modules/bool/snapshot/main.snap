@@ -1,0 +1,11 @@
+botopink-cell 2
+== bool_field_print
+out true
+out false
+out true 7
+out false
+out on=true
+out false
+out false
+out false
+out true

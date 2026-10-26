@@ -1,0 +1,15 @@
+botopink-cell 2
+== compiler_escapes_passed
+refused error: compiler-escapes: `compiler` is the compiler at this point, read through its members: it is never passed nor stored
+at src/main.bp:10:12
+== compiler_escapes_stored
+refused error: compiler-escapes: `compiler` is the compiler at this point, read through its members: it is never passed nor stored
+at src/main.bp:7:16
+== compiler_import_alias_at_run_time
+refused error: compiler-at-run-time: `compiler` is the compiler of a body that runs at build, and this body runs when the program runs
+at src/main.bp:8:11
+== compiler_import_missing
+refused error: unbound variable 'compiler'
+at src/main.bp:8:5
+== compiler_ordinary_name
+out built by zig, ZIG

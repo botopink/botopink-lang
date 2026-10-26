@@ -1,0 +1,23 @@
+botopink-cell 2
+== external_lowercase_target
+refused error: unbound variable 'node'
+at src/main.bp:6:21
+== external_std_binding_refused
+refused error: `.Wasm(std: "hash.contentHash")` on `contentHash`: a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead
+at src/main.bp:3:3
+== external_wasm_prefixed_fn_refused
+refused error: `.Wasm("fn:tanBody")` on `tanOf`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(body: tanBody)`
+at src/main.bp:3:81
+== external_wasm_prefixed_op_refused
+refused error: `.Wasm("op:f64.floor")` on `floorOf`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(op: "f64.floor")`
+at src/main.bp:3:85
+== external_wasm_prefixed_std_refused
+refused error: `.Wasm("std:hash.contentHash")` on `contentHash`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(std: "hash.contentHash")`
+at src/main.bp:6:11
+== external_wasm_prefixed_wasi_refused
+refused error: `.Wasm("wasi:delay")` on `later`: a wasm cell is a labelled argument, not a prefixed string (decision 481) — write `.Wasm(wasi: .Delay)`
+at src/main.bp:6:11
+== external_wasm_op_and_fn
+out 2.0
+out 3.0
+out -2.0

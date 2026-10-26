@@ -1,1 +1,1 @@
-{ "name": "comptime_runs_at_build-331" }
+{"name": "comptime_runs_at_build-331", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

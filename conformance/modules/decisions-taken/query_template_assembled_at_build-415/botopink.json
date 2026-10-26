@@ -1,1 +1,1 @@
-{ "name": "query_template_assembled_at_build-415" }
+{"name": "query_template_assembled_at_build-415", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

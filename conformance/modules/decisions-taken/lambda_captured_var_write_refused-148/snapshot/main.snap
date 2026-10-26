@@ -1,0 +1,11 @@
+botopink-cell 2
+== captured_var_write_threaded
+out 6
+out 2
+== closure_capture_statement_position
+out 46
+out 1
+out 1
+== captured_var_write_in_lambda
+refused error: captured-var-write: `n` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `n`
+at src/main.bp:15:9

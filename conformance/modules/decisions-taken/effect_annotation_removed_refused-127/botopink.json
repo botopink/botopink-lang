@@ -1,1 +1,1 @@
-{ "name": "effect_annotation_removed_refused-127" }
+{"name": "effect_annotation_removed_refused-127", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

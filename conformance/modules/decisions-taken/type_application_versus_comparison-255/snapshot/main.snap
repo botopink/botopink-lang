@@ -1,0 +1,19 @@
+botopink-cell 2
+== comptime_expression_type_mismatch
+refused error: type mismatch: expected i32, got string
+at src/main.bp:8:18
+== type_application_argument_count
+refused error: `Box` takes 1 type argument, 2 given
+at src/main.bp:13:13
+== type_application_argument_mismatch
+refused error: type mismatch: expected i32, got string
+at src/main.bp:14:27
+== type_application_on_a_field
+refused error: `value` is not a variant of `Box`, so its type arguments reach nothing
+at src/main.bp:10:22
+== type_application_through_namespace_mismatch
+refused error: type mismatch: expected i32, got string
+at src/main.bp:10:34
+== type_application_variant_payload_mismatch
+refused error: type mismatch: expected i32, got string
+at src/main.bp:12:22

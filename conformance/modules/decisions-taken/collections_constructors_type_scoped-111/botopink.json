@@ -1,1 +1,1 @@
-{ "name": "collections_constructors_type_scoped-111" }
+{"name": "collections_constructors_type_scoped-111", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

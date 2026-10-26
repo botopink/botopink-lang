@@ -1,1 +1,1 @@
-{ "name": "val_decorator_runs_catalogued-356" }
+{"name": "val_decorator_runs_catalogued-356", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

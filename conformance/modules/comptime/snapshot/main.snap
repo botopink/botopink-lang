@@ -1,0 +1,24 @@
+botopink-cell 2
+== comptime_block_value
+out 20
+== comptime_enum_in_record
+out dark
+out 3
+out light
+== comptime_interpolation_in_called_fn
+out n=2 b=true s=x"y
+== comptime_method_nothing_answers
+refused error: unknown-primitive-method: `string` has no method `frobnicate`
+at src/main.bp:11:15
+== comptime_template_call_declared_after
+refused error: the comptime reaches the template call `tag` at 16:12 in `late`, which is not expanded where the comptime runs — declare `late` before the `comptime` in this module
+at src/main.bp:13:17
+== comptime_fn_name_shadowed_by_local
+out 10
+out -1
+out 7
+== comptime_section_value
+out true
+== comptime_value_or_type_param
+out 4
+out none

@@ -1,1 +1,1 @@
-{ "name": "string_from_codepoint-262" }
+{"name": "string_from_codepoint-262", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

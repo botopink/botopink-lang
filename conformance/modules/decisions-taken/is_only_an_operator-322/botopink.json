@@ -1,1 +1,1 @@
-{ "name": "is_only_an_operator-322" }
+{"name": "is_only_an_operator-322", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

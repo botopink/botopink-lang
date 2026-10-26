@@ -1,0 +1,27 @@
+botopink-cell 2
+== fn_falls_off_end
+refused error: `f` declares `-> i32` and its body can reach its end without a `return`
+at src/main.bp:8:11
+== fn_named_like_import
+refused error: import-name-collision: `basename` is already bound by the import of `path.basename`; a function of this module would bind it again
+at src/main.bp:8:4
+== fn_local_rebound_call
+out 23
+out 102
+out 33
+== fn_value_bound_by_val
+out hi
+out hi
+out hey!
+out true
+out hi?
+== fn_value_float_argument
+out 1.75
+== fn_value_in_tuple
+out 3
+out 2
+out 7
+== fn_value_tuple_string_answer
+out 5
+out n=7
+out n=4

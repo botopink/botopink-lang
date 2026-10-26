@@ -1,1 +1,1 @@
-{ "name": "no_declaration_files_compiler_value-575" }
+{"name": "no_declaration_files_compiler_value-575", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

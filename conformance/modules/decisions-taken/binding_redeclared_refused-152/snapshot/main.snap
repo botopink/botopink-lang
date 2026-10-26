@@ -1,0 +1,7 @@
+botopink-cell 2
+== binding_redeclared_in_body
+refused error: binding-redeclared: `n` is already bound in this function, by the binding at 9:5
+at src/main.bp:11:5
+== binding_shadows_parameter
+refused error: binding-redeclared: `x` is already bound in this function, as a parameter
+at src/main.bp:8:5

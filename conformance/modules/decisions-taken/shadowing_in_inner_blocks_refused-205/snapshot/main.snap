@@ -1,0 +1,27 @@
+botopink-cell 2
+== lambda_binds_name_of_enclosing_fn
+out l
+out 5
+out 1
+out 2
+out 6
+out 10
+== sibling_blocks_bind_one_name
+out 1
+out 10
+out 0
+out 2
+out 20
+out 0
+out 730
+out 12
+out 25
+out 1
+out 2
+out 2
+== binding_shadows_in_inner_block
+refused error: binding-redeclared: `y` is already bound in this function, by the binding at 10:5
+at src/main.bp:12:9
+== case_arm_binder_reuses_name
+refused error: binding-redeclared: `s` is already bound in this function, as a parameter
+at src/main.bp:15:9

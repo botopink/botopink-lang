@@ -1,1 +1,1 @@
-{ "name": "integer_overflow_aborts-264" }
+{"name": "integer_overflow_aborts-264", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,4 +1,0 @@
-botopink-cell 1
-out == effect_return_ambiguous_nesting
-out refused error: effect-return-ambiguous-nesting: this `Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `Result` layer (passed through)
-out at src/main.bp:16:5

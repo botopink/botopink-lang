@@ -1,0 +1,31 @@
+botopink-cell 2
+== external_node_prefixed_op_refused
+refused error: `.JavaScript("op:f64.floor")` on `floorOf`: a binding cell is a labelled argument, not a prefixed string (decision 305) — write `.Wasm(op: "f64.floor")`
+at src/main.bp:8:33
+== external_wasm_fn_cell_signature
+refused error: external-body-not-a-fn: `.Wasm(body: tanBody)` on `tanOf`: `tanBody` must take the same parameter types in the same order and answer the same type
+at src/main.bp:7:81
+== external_wasm_fn_cell_string
+refused error: external-body-not-a-fn: `.Wasm(body: "tanBody")` on `tanOf`: `body:` names a private fn of this module by its identifier, not a string (decisions 305, 481) — write `body: <name>`
+at src/main.bp:7:81
+== external_wasm_op_cell_not_string
+refused error: unbound variable 'floor'
+at src/main.bp:6:89
+== external_wasm_op_unknown
+refused error: `.Wasm(op: "f64.flor")` on `floorOf`: `f64.flor` is not a wasm numeric instruction a binding names (an `op:` names one opcode, e.g. `op: "f64.floor"`)
+at src/main.bp:6:3
+== external_wasm_std_cell_not_string
+refused error: unbound variable 'hash'
+at src/main.bp:7:76
+== external_wasm_two_cells
+refused error: `.Wasm` on `floorOf` writes a second cell, `body:` — a wasm binding is one cell (decision 481)
+at src/main.bp:9:28
+== external_wasm_unknown_label
+refused error: `Implementation.Wasm` has no parameter named `js`
+at src/main.bp:6:84
+== external_wasm_wasi_cell_not_enum
+refused error: type mismatch: expected WasiAdapter, got string
+at src/main.bp:6:90
+== external_wasm_wasi_unknown
+refused error: unbound variable 'RandomF46'
+at src/main.bp:6:90

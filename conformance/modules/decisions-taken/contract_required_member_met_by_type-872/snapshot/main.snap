@@ -1,0 +1,16 @@
+botopink-cell 2
+== contract_block_method_on_array_wasm
+out a,b,c/3
+out 5?
+== contract_block_method_on_int
+out n:7
+out n:7!
+out 4
+out t:x
+out t:x!
+== contract_default_fn_type_has_refused
+refused error: behavior-member-redeclared: `Cut.slice` is a member of `string` already — `StringCut implement Cut for string` adds members to `string` and redeclares none
+at src/main.bp:13:11
+== contract_required_member_signature_differs
+refused error: implement-signature-differs: `string.slice` does not match the contract `Shout` — contract: fn slice(self: string, start: i32) -> string · written: fn slice(self: string, start: i32, end: ?i32) -> string
+at src/main.bp:16:13

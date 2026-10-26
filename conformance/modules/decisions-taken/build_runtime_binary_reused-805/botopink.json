@@ -1,1 +1,1 @@
-{ "name": "build_runtime_binary_reused-805" }
+{"name": "build_runtime_binary_reused-805", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

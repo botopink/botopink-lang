@@ -1,1 +1,1 @@
-{ "name": "beam_memory_refused_off_beam-167" }
+{"name": "beam_memory_refused_off_beam-167", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}
