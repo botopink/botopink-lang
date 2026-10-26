@@ -194,6 +194,45 @@ pub fn entryOf(path: []const u8) ?Entry {
     return state.entries.get(path);
 }
 
+/// Decision 1000 — where a module wrote `compiler.load(path)`: the audit of
+/// `codegen/loaded_targets.zig` (at emit, after the compile's `State` is
+/// gone) locates its refusal there. Kept per (module, path), the last write
+/// winning; the module's name is the output's (`ComptimeOutput.name`).
+const LoadSite = struct { module: []const u8, path: []const u8, loc: ast.Loc };
+var load_sites: std.ArrayListUnmanaged(LoadSite) = .empty;
+var load_sites_lock: std.atomic.Mutex = .unlocked;
+
+fn lockSites() void {
+    while (!load_sites_lock.tryLock()) std.Thread.yield() catch {};
+}
+
+/// Note that `module` wrote `compiler.load(path)` at `loc`.
+pub fn noteLoadSite(module: []const u8, path: []const u8, loc: ast.Loc) !void {
+    lockSites();
+    defer load_sites_lock.unlock();
+    for (load_sites.items) |*s| if (std.mem.eql(u8, s.module, module) and std.mem.eql(u8, s.path, path)) {
+        s.loc = loc;
+        return;
+    };
+    try load_sites.append(std.heap.page_allocator, .{
+        .module = try std.heap.page_allocator.dupe(u8, module),
+        .path = try std.heap.page_allocator.dupe(u8, path),
+        .loc = loc,
+    });
+}
+
+/// Where `module` wrote `compiler.load(path)`, else where any module did.
+pub fn loadSite(module: []const u8, path: []const u8) ?ast.Loc {
+    lockSites();
+    defer load_sites_lock.unlock();
+    var any: ?ast.Loc = null;
+    for (load_sites.items) |s| if (std.mem.eql(u8, s.path, path)) {
+        if (std.mem.eql(u8, s.module, module)) return s.loc;
+        if (any == null) any = s.loc;
+    };
+    return any;
+}
+
 /// Record that a `run` reaches `path` (decision 787 (2)).
 pub fn noteRun(path: []const u8) !void {
     for (state.runs.items) |p| if (std.mem.eql(u8, p, path)) return;

@@ -13340,6 +13340,7 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         return error.TypeError;
     };
     const ds = try answerLoad(env, path, argLoc);
+    try loadMod.noteLoadSite(env.modulePath, path, loc);
     const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = path }, ds);
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
@@ -13428,6 +13429,7 @@ fn withBuildLoads(env: *Env, fd: ast.FnDecl) InferError!ast.FnDecl {
             const arg = call.args[0].value;
             const path = (try loadMod.foldedPath(self.env.arena, arg)) orelse return null;
             const ds = try answerLoad(self.env, path, arg.getLoc());
+            try loadMod.noteLoadSite(self.env.modulePath, path, e.call.loc);
             return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = path }, ds);
         }
     };

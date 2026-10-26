@@ -262,7 +262,8 @@ pub fn apply(arena: std.mem.Allocator, outputs: []const ComptimeOutput, config: 
             for (outputs) |caller| {
                 if (changed.contains(caller.name) or !try runs(arena, caller, pkg)) continue;
                 var refused = caller;
-                refused.outcome = .{ .typeError = te };
+                // Decision 1000: at the program's own `compiler.load(…)`.
+                refused.outcome = .{ .typeError = if (loadMod.loadSite(caller.name, path)) |at| te.withLoc(at) else te };
                 try changed.put(arena, caller.name, refused);
                 try replaced.append(arena, caller.name);
             }
