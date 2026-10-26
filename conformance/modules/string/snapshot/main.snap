@@ -1,0 +1,74 @@
+botopink-cell 2
+== string_char_code_after_slice
+out ell
+out 104
+out 111
+out -1
+out -1
+== string_char_code_non_ascii
+out 233
+out 111
+out -1
+out 26085
+out 35486
+out -1
+out 65
+== string_code_points_every_width
+out 5
+out 97
+out 233
+out 26085
+out 128512
+out 122
+out -1
+out -1
+out 0
+out -1
+== string_lines_words
+out ["one two", "three", "", "four\r"]
+out 4
+out [""]
+out ["x", ""]
+out a|b
+out ["alpha", "beta", "gamma"]
+out beta
+out 5
+out 4
+out 5
+out []
+out 0
+out ["a!", "b!"]
+== string_literal_unicode_escape
+out 😀
+out ç
+out é é
+out true
+out ["😀", "ç"]
+== string_parse_float_every_target
+out 1.5
+out -0.25
+out 125.0
+out 0.1
+out 1.7976931348623157e308
+out 2.2250738585072014e-308
+out 0.0
+out parseFloat: "1e400" overflows f64
+out parseFloat: ".5" is not a number
+out parseFloat: "1." is not a number
+out parseFloat: "NaN" is not a number
+out 5.0
+== string_slice_in_if_branch
+out index.html
+out about/index.html
+out 2
+out 3
+out 3 items
+out one item
+== string_split_empty_separator
+out 3
+out a|b|c
+out 5
+out %|0|A|é|z
+out 0
+out a|b
+out 2

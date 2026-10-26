@@ -1,0 +1,11 @@
+botopink-cell 2
+== map_record_field_length
+out 3
+== map_record_field_strings
+out ["abc", "de"]
+out abc-de
+out de
+out abc!
+out yz
+out none
+out 3

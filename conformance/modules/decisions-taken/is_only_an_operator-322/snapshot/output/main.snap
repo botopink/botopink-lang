@@ -1,4 +1,0 @@
-botopink-cell 1
-out == hand_written_is_builtin
-out refused error: unknown-builtin: unknown builtin `@is` — `is` is an operator
-out at src/main.bp:7:13

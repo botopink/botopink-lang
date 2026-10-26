@@ -1,1 +1,1 @@
-{ "name": "module_comptime_block_rules-793" }
+{"name": "module_comptime_block_rules-793", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

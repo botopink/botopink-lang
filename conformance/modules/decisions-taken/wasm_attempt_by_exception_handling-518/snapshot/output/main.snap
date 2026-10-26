@@ -1,7 +1,0 @@
-botopink-cell 1
-out == comptime_attempt_at_build
-out Error panic: the body exploded
-out Ok 42
-out == external_wasm_needs_unknown
-out refused error: unbound variable 'Threads'
-out at src/main.bp:11:34

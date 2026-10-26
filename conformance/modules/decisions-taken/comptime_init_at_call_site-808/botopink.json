@@ -1,1 +1,1 @@
-{ "name": "comptime_init_at_call_site-808" }
+{"name": "comptime_init_at_call_site-808", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

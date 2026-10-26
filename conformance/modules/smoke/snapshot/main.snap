@@ -1,0 +1,6 @@
+botopink-cell 2
+== smoke
+out smoke
+== smoke_refused
+refused error: type mismatch: expected i32, got string
+at src/main.bp:4:18

@@ -1,0 +1,9 @@
+botopink-cell 2
+== array_unique
+out [1, 2, 3]
+out [3, 1]
+out ["b", "a", "c"]
+out [1.5, 2.5]
+out [true, false]
+out []
+out 1

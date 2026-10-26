@@ -1,0 +1,8 @@
+botopink-cell 2
+== meta_expr_field_literal
+out 1
+== meta_expr_param_plain_field
+out cities
+== expr_param_method
+refused error: expr-param-method: `message` is a `syntax` — the expression written — and has no method `.text(…)`
+at src/main.bp:9:20

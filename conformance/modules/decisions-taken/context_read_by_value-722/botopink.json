@@ -1,1 +1,1 @@
-{ "name": "context_read_by_value-722" }
+{"name": "context_read_by_value-722", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "wasm_unicode_case_mapping-443" }
+{"name": "wasm_unicode_case_mapping-443", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

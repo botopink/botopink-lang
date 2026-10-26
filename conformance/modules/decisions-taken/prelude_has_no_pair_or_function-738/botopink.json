@@ -1,1 +1,1 @@
-{ "name": "prelude_has_no_pair_or_function-738" }
+{"name": "prelude_has_no_pair_or_function-738", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

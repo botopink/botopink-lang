@@ -1,1 +1,1 @@
-{ "name": "type_token_run_time_value-758" }
+{"name": "type_token_run_time_value-758", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

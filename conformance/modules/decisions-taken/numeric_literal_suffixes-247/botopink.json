@@ -1,1 +1,1 @@
-{ "name": "numeric_literal_suffixes-247" }
+{"name": "numeric_literal_suffixes-247", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

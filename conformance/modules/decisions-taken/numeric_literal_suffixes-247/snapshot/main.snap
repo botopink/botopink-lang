@@ -1,0 +1,80 @@
+botopink-cell 2
+== comptime_float_keeps_decimal_point
+out 6.0
+== numeric_literal_suffixes
+out 1.0
+out 1.5
+out 42
+out 1
+out 42
+out 42
+out 7
+out 7
+out 7
+out 7
+out 7
+out 7
+out zero
+out one
+out many
+out 255
+out 1000
+out 25.0
+== numeric_suffix_positions
+out after
+out big
+out two
+out 11
+out 7
+out 5
+out 9
+out [6, 7]
+out 4
+out 10
+out 8
+out 20
+out 4
+out high
+out 5
+out sum=7
+== float_literal_never_fits_f32
+refused error: `1.5` is an `f64` where an `f32` is expected — write `1.5f`
+at src/main.bp:11:17
+== integer_literal_beside_float_in_array
+refused error: the integer literal `1` stands beside an `f64` in an array literal — write `1.0`
+at src/main.bp:8:15
+== integer_literal_never_fits_f64
+refused error: the integer literal `1` is not an `f64` — write `1d` or `1.0`
+at src/main.bp:9:18
+== integer_literal_operand_of_f64
+refused error: the integer literal `2` is not an `f64` — write `2d` or `2.0`
+at src/main.bp:8:16
+== integer_suffix_out_of_range
+refused error: the literal `300` does not fit `u8` (at most 255)
+at src/main.bp:7:13
+== number_exponent_without_digits
+refused error[number-exponent-without-digits]: an exponent needs digits
+at src/main.bp:7:14
+label write the exponent's digits after it
+== number_pattern_of_another_type
+refused error: the pattern `1.5` is an `f64` literal and the subject is `u8`
+at src/main.bp:8:9
+== number_pattern_suffix_disagrees
+refused error: the pattern `1l` is an `i64` literal and the subject is `i32`
+at src/main.bp:8:9
+== number_suffix_float_on_radix
+refused error[number-suffix-float-on-radix]: a hexadecimal, octal or binary literal is an integer and takes an integer suffix only
+at src/main.bp:7:16
+label a floating suffix
+== number_suffix_integer_on_float
+refused error[number-suffix-integer-on-float]: a literal with a fraction or an exponent is floating and takes `f` or `d` only
+at src/main.bp:7:16
+label an integer suffix
+== number_suffix_unknown
+refused error[number-suffix-unknown]: the letters after this number are not a numeric suffix
+at src/main.bp:7:15
+label not a suffix: `px`
+== number_suffix_uppercase
+refused error[number-suffix-uppercase]: a numeric suffix is written in lower case
+at src/main.bp:7:15
+label write `l`

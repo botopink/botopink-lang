@@ -1,0 +1,53 @@
+botopink-cell 2
+== derived_type_decorated
+out RecipePatch true (title: ?string #label, description: ?string, servings: ?i32)
+out RecipeTitle true (title: string #label)
+out Feijoada
+== derived_type_functions
+out Feijoada
+out 2
+out Feijoada
+out black beans
+out 6
+out fried
+out DogWithBreed
+out Dog
+out Lua (beagle)
+out calm
+out Vatapá
+out RecipeTitle(title: "Bobó")
+== std_types_module
+out types
+== derived_type_bare_name
+refused error: unbound variable 'partial'
+at src/main.bp:6:17
+== derived_type_field_repeated
+refused error: derived-type-fields: field `.title` is named twice
+at src/main.bp:10:49
+== derived_type_field_string
+refused error: derived-type-field-string: a field is named `.title`, not the string "title"
+at src/main.bp:11:41
+== derived_type_merge_duplicate
+refused error: derived-type-merge-duplicate: field `name` is on both sides of `Type.merge(Dog, Pet)`
+at src/main.bp:10:34
+== derived_type_no_field
+refused error: derived-type-fields: `Type.pick` takes at least one field after the type
+at src/main.bp:10:24
+== derived_type_not_record
+refused error: derived-type-source-not-record: `Type.partial` takes a record type; `Fish` is an enum
+at src/main.bp:11:34
+== derived_type_omit_empty
+refused error: derived-type-fields: `Type.omit` leaves `Recipe` with no field
+at src/main.bp:10:22
+== derived_type_outside_val
+refused error: derived-type-outside-val: a derived type is the whole initializer of a module-level `val`
+at src/main.bp:12:22
+== derived_type_primitive
+refused error: derived-type-source-not-record: `Type.partial` takes a record type; `i32` is a primitive type
+at src/main.bp:5:33
+== derived_type_unknown_field
+refused error: unknown field 'titel' on type 'Recipe'
+at src/main.bp:11:41
+== derived_type_var
+refused error: derived-type-outside-val: a derived type is bound by a module-level `val` with no type annotation — `Patch` is a `var`
+at src/main.bp:10:22

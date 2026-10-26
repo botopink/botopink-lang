@@ -1,1 +1,1 @@
-{ "name": "string_index_counts_codepoints-320" }
+{"name": "string_index_counts_codepoints-320", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

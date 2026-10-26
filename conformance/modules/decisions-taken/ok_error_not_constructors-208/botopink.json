@@ -1,1 +1,1 @@
-{ "name": "ok_error_not_constructors-208" }
+{"name": "ok_error_not_constructors-208", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

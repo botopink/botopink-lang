@@ -1,7 +1,0 @@
-botopink-cell 1
-out == generator_loop_await
-out refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
-out at src/main.bp:13:17
-out == generator_loop_break_outer
-out refused error: generator-loop-closed-scope: `break :outer` crosses the border of an `iter` loop — its body is a closure and cannot leave a loop outside it
-out at src/main.bp:11:26

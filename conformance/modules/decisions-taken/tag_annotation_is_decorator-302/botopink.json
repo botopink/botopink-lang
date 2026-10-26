@@ -1,1 +1,1 @@
-{ "name": "tag_annotation_is_decorator-302" }
+{"name": "tag_annotation_is_decorator-302", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "try_region_closed_by_catch-595" }
+{"name": "try_region_closed_by_catch-595", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

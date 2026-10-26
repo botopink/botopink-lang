@@ -1,0 +1,11 @@
+botopink-cell 2
+== case_optional_bare_name_refused
+refused error[case-bare-name-arm]: a name alone is not a pattern
+at src/main.bp:13:9
+label use _ { n -> … } to bind the matched value
+== case_optional_variant_pattern_refused
+refused error: an optional is matched by `null`, not by a variant
+at src/main.bp:10:9
+== optional_case_null_and_binder
+out present 5
+out absent

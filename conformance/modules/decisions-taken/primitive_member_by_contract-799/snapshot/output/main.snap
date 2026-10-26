@@ -1,7 +1,0 @@
-botopink-cell 1
-out == primitive_behavior_named_like_type_refused
-out refused error: primitive-type-redeclared: `string` is the type of a literal; a module cannot declare a behavior of that name
-out at src/main.bp:6:10
-out == primitive_extend_refused
-out refused error: `extend string` adds methods without a contract — use `implement <Behavior> for string` so the methods satisfy a behavior
-out at src/main.bp:6:14

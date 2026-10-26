@@ -1,4 +1,0 @@
-botopink-cell 1
-out == embed_open_without_fs_import
-out refused error: embed-open-needs-fs: `open()` hands the `Asset` to std's file system, which this module does not import
-out at src/main.bp:7:7

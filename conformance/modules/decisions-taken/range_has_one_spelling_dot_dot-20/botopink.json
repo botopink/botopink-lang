@@ -1,1 +1,1 @@
-{ "name": "range_has_one_spelling_dot_dot-20" }
+{"name": "range_has_one_spelling_dot_dot-20", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

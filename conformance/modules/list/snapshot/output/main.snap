@@ -1,9 +1,0 @@
-botopink-cell 1
-out == list_pattern_spread_alone
-out all 3
-out all 0
-out [4, 5]
-out == list_spread_not_last
-out refused error[list-spread-not-last]: the spread of an array literal comes last
-out at src/main.bp:9:19
-out label nothing after `..rest`

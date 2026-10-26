@@ -1,1 +1,1 @@
-{ "name": "one_typeinfo_reflection_builtin-248" }
+{"name": "one_typeinfo_reflection_builtin-248", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

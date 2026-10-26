@@ -1,1 +1,1 @@
-{ "name": "mutual" }
+{"name": "mutual", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

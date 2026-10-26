@@ -1,1 +1,1 @@
-{ "name": "compiler_is_std_value-579" }
+{"name": "compiler_is_std_value-579", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

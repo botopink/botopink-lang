@@ -1,0 +1,7 @@
+botopink-cell 2
+== local_binding_escapes
+refused error: unbound variable 'v' — `v` is a local of `holder`, and a local ends with its body
+at src/main.bp:15:12
+== local_shadow_ends_with_body
+out 3
+out p:x

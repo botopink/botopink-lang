@@ -1,1 +1,1 @@
-{ "name": "std_bpp_role_annotations-361" }
+{"name": "std_bpp_role_annotations-361", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

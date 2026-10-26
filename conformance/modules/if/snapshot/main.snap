@@ -1,0 +1,38 @@
+botopink-cell 2
+== if_binding_before_loop_closure
+out <|a|b
+out -a-b
+out <ab
+== if_else_if
+out either
+== if_expression
+out positive
+== if_optional_binder
+out 5
+== if_optional_else
+out present
+== if_value_float
+out 2.5
+out 3.0
+out 1.5
+out 2.25
+out 1.5
+out 0.0
+== if_in_parentheses
+refused error[if-operand]: an `if` expression begins an expression; it is not an operand
+at src/main.bp:9:13
+label bind it first: `val x = if …;`
+== if_operand_of_operator
+refused error[if-operand]: an `if` expression begins an expression; it is not an operand
+at src/main.bp:9:16
+label bind it first: `val x = if …;`
+== if_operand_of_unary
+refused error[if-operand]: an `if` expression begins an expression; it is not an operand
+at src/main.bp:7:13
+label bind it first: `val x = if …;`
+== if_optional_needs_a_binder
+refused error: type mismatch: expected bool, got ?string
+at src/main.bp:17:5
+== if_without_else_value
+refused error: an `if` without `else` has no value on its false side
+at src/main.bp:8:13

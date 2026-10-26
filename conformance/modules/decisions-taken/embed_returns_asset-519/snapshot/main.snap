@@ -1,0 +1,16 @@
+botopink-cell 2
+== embed_file_missing
+refused error: embed-file-missing: `@embed("assets/missing.txt")` names no file of the package
+at src/main.bp:7:13
+== embed_path_absolute
+refused error: embed-path-absolute: `@embed("/etc/hostname")` names an absolute path
+at src/main.bp:7:20
+== embed_path_not_known
+refused error: comptime-arg-not-known: the path of `@embed` is not known at build
+at src/main.bp:7:19
+== embed_path_outside_package
+refused error: embed-path-outside-package: `@embed("assets/../../embed_text_file/assets/greeting.txt")` leaves the package
+at src/main.bp:7:20
+== embed_text_not_utf8
+refused error: embed-text-not-utf8: `text()` reads bytes that are not UTF-8
+at src/main.bp:9:13

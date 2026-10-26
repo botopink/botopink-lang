@@ -1,0 +1,34 @@
+botopink-cell 2
+== union_narrowing_flow_and_case
+out 0 12 16
+out dot
+out circle 5
+out square kept r=7
+out 5
+out boxed left
+out 1 2
+out dot x
+out circle 1
+out square 9
+== is_behavior_identity_run_time
+out shown - -
+out - box -
+out - - fn
+out - - -
+out shown - - shown - -
+out shown box other
+== union_narrowed_field_read
+out 7
+out seven
+out 9
+out 8
+out 10
+== is_unbound_type_argument
+refused error: is-type-parameter: `is Box<T>` tests the type parameter `T`, which no target knows at run time — take the type as `comptime t: type<T>` or `t: type<T>` and test `v is t`
+at src/main.bp:8:14
+== union_case_forgotten_member
+refused error: non-exhaustive: `case` on 'Box | Pair | Trio' is not exhaustive: missing member(s) Trio
+at src/main.bp:12:12
+== union_narrowing_forgotten_member_use
+refused error: cannot read a field of a `Circle | Square` — not every member of the union answers it
+at src/main.bp:13:14

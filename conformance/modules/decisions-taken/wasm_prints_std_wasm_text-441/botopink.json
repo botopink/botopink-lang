@@ -1,1 +1,1 @@
-{ "name": "wasm_prints_std_wasm_text-441" }
+{"name": "wasm_prints_std_wasm_text-441", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

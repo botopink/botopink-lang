@@ -1,0 +1,4 @@
+botopink-cell 2
+== any_type_removed
+refused error: any-type-removed: there is no type `any`
+at src/main.bp:8:12

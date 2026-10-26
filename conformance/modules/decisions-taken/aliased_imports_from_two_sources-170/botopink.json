@@ -1,1 +1,1 @@
-{ "name": "aliased_imports_from_two_sources-170" }
+{"name": "aliased_imports_from_two_sources-170", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

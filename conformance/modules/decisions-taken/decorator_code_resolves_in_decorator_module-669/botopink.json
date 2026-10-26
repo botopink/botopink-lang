@@ -1,1 +1,1 @@
-{ "name": "decorator_code_resolves_in_decorator_module-669" }
+{"name": "decorator_code_resolves_in_decorator_module-669", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

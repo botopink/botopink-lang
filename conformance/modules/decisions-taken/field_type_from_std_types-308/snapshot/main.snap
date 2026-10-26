@@ -1,0 +1,12 @@
+botopink-cell 2
+== decorator_arg_unknown_field
+refused error: unknown field 'confrim' on type 'Account'
+at src/main.bp:23:49
+== decorator_field_key_unknown
+refused error: unknown field 'nmae' on type 'City'
+at src/main.bp:15:17
+== decorator_field_keys
+out cities
+out state:string:1,name:string:0
+out code
+out São Paulo

@@ -1,1 +1,1 @@
-{ "name": "asserts_throws_generic-493" }
+{"name": "asserts_throws_generic-493", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

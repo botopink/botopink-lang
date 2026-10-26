@@ -1,1 +1,1 @@
-{ "name": "ast_fn_node_builds_mock_member-753" }
+{"name": "ast_fn_node_builds_mock_member-753", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

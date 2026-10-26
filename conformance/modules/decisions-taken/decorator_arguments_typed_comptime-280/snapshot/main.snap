@@ -1,0 +1,53 @@
+botopink-cell 2
+== comptime_arg_not_known
+refused error: comptime-arg-not-known: `k` is a run-time value, and the parameter `n` is `comptime` — its argument is known while the program compiles
+at src/main.bp:16:17
+== comptime_default_outside_decorator
+refused error: comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator
+at src/main.bp:8:36
+== decorator_arg_function_mismatch
+refused error: type mismatch: `#[check]`'s `rule` expects `?fn(Account) -> bool`, got `fn(Order) -> bool`
+at src/main.bp:25:21
+== decorator_arg_label_unknown
+refused error: `#[check]` has no parameter `where`
+at src/main.bp:18:25
+== decorator_arg_unbound_function
+refused error: unbound variable 'passwordMatch'
+at src/main.bp:25:29
+== decorator_argument_kind
+refused error: type mismatch: `#[value]`'s `key` expects `string`, got `i32`
+at src/main.bp:9:9
+== decorator_check_without_rule_not_bool
+refused error: #[check] without `rule` annotates an `fn(x) -> bool`
+at src/main.bp:24:3
+== decorator_decl_pattern_mismatch
+refused error: `#[on]` expects a declaration of type `fn(E) -> unknown`, and `wrong` is `fn() -> void`
+at src/main.bp:11:3
+== decorator_decl_pattern_return
+refused error: `#[page]` expects a declaration of type `fn(Route<P>) -> View`, and `blog` is `fn(Route<string>) -> string`
+at src/main.bp:18:3
+== decorator_field_key_case
+refused error: unknown field 'Code' on type 'City'
+at src/main.bp:14:10
+== decorator_field_key_too_many
+refused error: `#[unique]` on `City` expects 1 argument(s), got 2
+at src/main.bp:14:17
+== decorator_function_argument_mismatch
+refused error: type mismatch: `#[page]`'s `paths` expects `?fn() -> BlogParams[]`, got `fn() -> User[]`
+at src/main.bp:27:30
+== decorator_param_not_comptime
+refused error: decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`
+at src/main.bp:8:32
+== decorator_record_argument_mismatch
+refused error: type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `Cache<User[]>`
+at src/main.bp:22:13
+== decorator_type_argument_unknown
+refused error: unknown type 'MailSendr'
+at src/main.bp:15:28
+== decorator_variant_case
+refused error: `.custom` names no variant of `Code`
+at src/main.bp:19:24
+== decorator_decl_pattern
+out sendReceipt,refund
+out receipt o1
+out refund o2

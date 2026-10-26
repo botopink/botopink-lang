@@ -1,0 +1,10 @@
+botopink-cell 2
+== load_not_a_package
+refused error: load-not-a-package: `compiler.load("packages/nothing_here")` names no directory holding a `botopink.json`
+at src/main.bp:8:32
+== load_path_absolute
+refused error: load-path-absolute: `compiler.load("/etc/hostname")` names an absolute path
+at src/main.bp:7:32
+== load_path_outside_package
+refused error: load-path-outside-package: `compiler.load("src/../../elsewhere/main.bp")` leaves the package
+at src/main.bp:7:32

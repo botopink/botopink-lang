@@ -1,1 +1,1 @@
-{ "name": "template_call_type_is_built_code-426" }
+{"name": "template_call_type_is_built_code-426", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

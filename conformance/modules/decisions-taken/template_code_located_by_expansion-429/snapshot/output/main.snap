@@ -1,4 +1,0 @@
-botopink-cell 1
-out == template_built_code_diagnostic_located
-out refused error: unknown field 'd' on type 'Box'
-out at src/main.bp:20:44

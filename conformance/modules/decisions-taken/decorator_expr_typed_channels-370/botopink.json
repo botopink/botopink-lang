@@ -1,1 +1,1 @@
-{ "name": "decorator_expr_typed_channels-370" }
+{"name": "decorator_expr_typed_channels-370", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

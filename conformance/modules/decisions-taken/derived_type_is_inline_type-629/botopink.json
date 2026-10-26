@@ -1,1 +1,1 @@
-{ "name": "derived_type_is_inline_type-629" }
+{"name": "derived_type_is_inline_type-629", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

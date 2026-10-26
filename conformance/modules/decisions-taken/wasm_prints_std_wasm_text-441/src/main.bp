@@ -1,25 +1,32 @@
-//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
-//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+//// A module checking itself (decision 989): each case is a package under `cases/`, loaded at build,
+//// run in this program and compared with its section of `snapshot/main.snap`; a difference writes
+//// `snapshot/main.snap.new` and `main` answers `Error`. Nothing here accepts a candidate.
 
 import {compiler, io.terminal.print} from "std";
+import {adapter, candidate, observe, records} from "conformance-lib";
 
+/// The snapshot, read as a build input (decision 989 (5)).
+val accepted: string = @embed("snapshot/main.snap").text();
+
+/// What each case answered, in the order the cases ran.
+var answers: observe.Observed[] = [];
+
+/// One case, expanded where it is called (decision 808 (2)): a refused load answers its
+/// diagnostics, a loaded one runs and answers its output.
 fn runCase(comptime name: string) -> void {
-    print("== " + name + " comptime");
     val loaded = try comptime compiler.load("cases/" + name) catch { r ->
         compiler.init({ ->
-            print("== " + name);
+            var refusals: records.Refusal[] = [];
             for (r.diagnostics) { d ->
-                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
-                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
-                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
-                if (d.label) { l -> print("label " + l); }
+                refusals.push(observe.refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, adapter.frames(d)));
             }
+            answers.push(observe.refusedAnswer(name, adapter.buildOutput(r.module), refusals));
         });
         return;
     };
     compiler.init({ ->
-        print("== " + name);
-        try loaded.run() catch { f -> print("abort " + f.message) }
+        val ran = adapter.ranOf(loaded.run());
+        answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
     });
 }
 
@@ -27,4 +34,6 @@ comptime {
     runCase("float_shortest_text");
 }
 
-pub fn main() -> void {}
+pub async fn main() -> Async<Result<void, string>> {
+    return candidate.finish(accepted, answers, adapter.target());
+}

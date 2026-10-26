@@ -1,1 +1,1 @@
-{ "name": "keyword_without_marker_refused-573" }
+{"name": "keyword_without_marker_refused-573", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,0 +1,40 @@
+botopink-cell 2
+== meta_add_outside_decorator
+refused error: compiler-output-outside-decorator: `compiler.addMeta` writes to the annotated declaration, and only a decorator has one
+at src/main.bp:10:14
+== meta_catalogue_generic
+refused error: typeinfo-meta-type: `metaAll(Check)` on a catalogue entry names a generic record, whose type arguments this read cannot spell
+at src/main.bp:28:25
+== meta_field_type
+refused error: decorator-meta-field-type: the field `run: fn() -> i32` of the meta record `Hook` holds no data the compiler rebuilds where the meta is read
+at src/main.bp:15:22
+== meta_not_record
+refused error: decorator-meta-not-record: `decl.setMeta(…)` records a value of a record type, written as its constructor at the call
+at src/main.bp:14:22
+== meta_read_at_build
+refused error: typeinfo-meta-at-build: `meta(T)` on a catalogue entry reads run-time data, and this body runs while the program compiles
+at src/main.bp:15:24
+== meta_read_not_type
+refused error: typeinfo-meta-type: `metaAll(T)` takes one record type of this module or its imports — `metaAll(Entity)`, `metaAll(orm.Entity)`
+at src/main.bp:21:52
+== meta_several
+refused error: typeinfo-meta-several: `City` holds 2 `Index` values, and `meta(Index)` answers one
+at src/main.bp:18:44
+== meta_twice
+refused error: decorator-meta-twice: `#[entity]` records a second `Entity` on `City`, which holds one
+at src/main.bp:14:3
+== meta_catalogue_private_type
+refused error: typeinfo-all-private: `City` of `models` carries the meta type `Entity` of `models`, which is not `pub`, so the catalogue cannot carry it
+at src/main.bp:11:11
+== meta_typed
+out cities
+out name,state
+out 1.5
+out audited
+out high
+out no alias
+out 2
+out name 1 unique
+out state 2 shared
+out no other
+out 0

@@ -1,0 +1,48 @@
+botopink-cell 2
+== unknown_by_value
+out number 3
+out other
+out empty text
+out text hi
+out other
+out i32
+out string
+out other
+out bool
+out true
+out false
+out true
+out 3
+out 0
+out false
+out true
+out true
+out hi
+== unknown_generic_payload
+out 3
+out -1
+out -2
+out 3
+out 2
+out 0
+out true
+out true
+out 2
+== unknown_generic_type_field
+refused error: unknown type 'Bogus'
+at src/main.bp:5:16
+== unknown_generic_type_param
+refused error: unknown type 'Bogus'
+at src/main.bp:6:12
+== unknown_generic_type_return
+refused error: unknown type 'Bogus'
+at src/main.bp:5:20
+== unknown_generic_type_val
+refused error: unknown type 'Bogus'
+at src/main.bp:6:12
+== unknown_type_val
+refused error: unknown type 'Bogus'
+at src/main.bp:6:12
+== unknown_type_var
+refused error: unknown type 'Bogus'
+at src/main.bp:6:12

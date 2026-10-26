@@ -1,1 +1,1 @@
-{ "name": "implement_signature_differs-800" }
+{"name": "implement_signature_differs-800", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}
