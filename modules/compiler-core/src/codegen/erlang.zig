@@ -692,7 +692,7 @@ pub fn codegenEmit(
                 var scope_enums: std.ArrayListUnmanaged(EnumExport) = .empty;
                 defer scope_enums.deinit(alloc);
                 for (enum_exports.items) |ee| if (scope.holds(ee.module)) try scope_enums.append(alloc, ee);
-                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &scope.cross, scope_enums.items, import_inits.items, &missing, &ambiguous) catch |err| {
+                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &scope.cross, scope_enums.items, import_inits.items, &missing, &ambiguous, ok.std_member) catch |err| {
                     const diag: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (ambiguous) |av|
@@ -1854,7 +1854,7 @@ pub fn emitComptimeModule(
     defer instance_lowerings.deinit();
     // A comptime module keeps its methods inline (`Emitter.type_units`), so
     // it never has units to hand back.
-    const emitted = try emitErlangModule(alloc, module_name, "", program, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
+    const emitted = try emitErlangModule(alloc, module_name, "", program, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null, false);
     return emitted.code;
 }
 
@@ -1915,8 +1915,10 @@ fn emitErlang(
     /// Set when the emit fails with `error.AmbiguousVariant`: a bare variant
     /// name two enums of the program declare, written where nothing says which.
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
+    /// One of std's own modules (`Module.std_member`, decision 906).
+    std_member: bool,
 ) !EmittedModule {
-    return emitErlangModule(alloc, module_name, src_file, program, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
+    return emitErlangModule(alloc, module_name, src_file, program, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous, std_member);
 }
 
 /// What one source file emits on this backend: its own module and, under
@@ -1943,8 +1945,10 @@ fn emitErlangModule(
     comptime_module: ?ComptimeModule,
     missing: ?*?moduleOutput.MissingExternal,
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
+    std_member: bool,
 ) !EmittedModule {
     var em = Emitter.init(alloc, rewrites);
+    em.std_member = std_member;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -3400,6 +3404,9 @@ const Emitter = struct {
     prod_exports: []const Ast.FnRef = &.{},
     /// Module name (`lib/db`), the atom's source.
     module_name: []const u8 = "main",
+    /// One of std's own modules (`Module.std_member`): a `declare fn` with no
+    /// `erlang` cell is emitted unreachable (decision 906).
+    std_member: bool = false,
     /// The package-relative source path (`src/main.bp`) a test's and an
     /// `assert`'s `<file>:<line>` names (`srcFile`); empty → `<module>.bp`.
     src_file: []const u8 = "",
@@ -9249,7 +9256,7 @@ const Emitter = struct {
                 // unreachable: `target_check.zig` refused every call a program
                 // makes of a std function reaching it, so the body that names it
                 // (a method over the cell) must not refuse its whole module.
-                if (std.mem.startsWith(u8, this.module_name, "std/")) {
+                if (this.std_member) {
                     return b.remote("erlang", "error", &.{Ast.Expr.a("unreachable")});
                 }
                 this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };

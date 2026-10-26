@@ -199,6 +199,10 @@ pub const ComptimeOutput = struct {
         /// `codegen/target_check.zig` refuses at emit the first whose host has
         /// no binding for the target (decision 798 (4)).
         std_host_calls: []const envMod.StdCall = &.{},
+        /// One of std's own modules (`Module.std_member`): a backend emits a
+        /// `declare fn` of it with no cell for the target unreachable
+        /// (decision 906), `libs/std` built as itself included.
+        std_member: bool = false,
         /// Decision 798 (1) — the resolved program: the module as written once
         /// comptime has run (folded values spliced, template expansions and
         /// specialised copies in place, the decorators' contributions merged,
@@ -4836,6 +4840,7 @@ pub fn compileTypesOnly(
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
                         .std_host_calls = succ.env.stdHostCalls.items,
+                        .std_member = mod.std_member,
                     } },
                 });
             },
@@ -5283,6 +5288,7 @@ fn compileOnce(
                         .sync_fns = succ.env.syncFns,
                         .sync_calls = succ.env.syncCalls,
                         .std_host_calls = succ.env.stdHostCalls.items,
+                        .std_member = mod.std_member,
                     } },
                 });
             },

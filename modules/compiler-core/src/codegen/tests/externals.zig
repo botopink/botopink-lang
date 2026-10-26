@@ -592,3 +592,32 @@ test "host backends: external ---- a body: cell that names no private fn of the 
         try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, col);
     }
 }
+
+// Decision 906 — inside std, a method whose body calls a `declare fn` with no
+// cell for the target does not refuse its module there: the declaration is
+// emitted unreachable (`target_check.zig` refuses every call a program makes of
+// a std function reaching it). `libs/std` built as itself is a `std_member`
+// package whose modules carry no `std/` prefix.
+test "erlang, beam: external ---- a std method over a commonJS-only declare fn compiles its module (906)" {
+    const src =
+        \\#[compiler.external(.JavaScript("""'only on node'"""))]
+        \\declare fn nodeOnly() -> string;
+        \\
+        \\pub type Probe(label: string) {
+        \\    pub fn reach(self: Self) -> string {
+        \\        return nodeOnly();
+        \\    }
+        \\}
+        \\
+        \\pub async fn waitIt() -> Async<string> {
+        \\    return await nodeOnlyAsync();
+        \\}
+        \\
+        \\#[compiler.external(.JavaScript("""Promise.resolve('x')"""))]
+        \\declare fn nodeOnlyAsync() -> Async<string>;
+        \\
+    ;
+    for (h.configs[0..3]) |cfg| {
+        try h.assertStdModulesCompileOn(std.testing.allocator, cfg, &.{.{ .path = "io/probe", .source = src }});
+    }
+}

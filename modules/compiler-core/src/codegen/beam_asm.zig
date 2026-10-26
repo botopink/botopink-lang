@@ -1831,7 +1831,7 @@ pub fn codegenEmit(
                 // project's.
                 const module_test_mode = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
                 const scope = try scopes.forModule(ct.name);
-                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing) catch |err| {
+                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, &scope.cross, scope.outputs, module_test_mode, &missing, ok.std_member) catch |err| {
                     const me = missing orelse return err;
                     // `evalTemplate`'s refusal is the one field the emitter
                     // allocates for its caller (`alloc`, not its own arena).
@@ -1979,6 +1979,8 @@ fn emitBeamAsm(
     test_mode: bool,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
+    /// One of std's own modules (`Module.std_member`, decision 906).
+    std_member: bool,
 ) !EmittedBeam {
     // Three passes:
     //   1. assign entry labels to every fn/top-val so wrappers can refer to
@@ -2011,6 +2013,7 @@ fn emitBeamAsm(
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, rewrites);
     em.module_path = module_name;
+    em.std_member = std_member;
     em.src_path = src_path;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
@@ -2415,6 +2418,9 @@ const Emitter = struct {
     /// The module PATH this file came from (`std/dict`), beside `module_name`,
     /// which is the rendered atom. `crossModule.typeAtom` is given a path.
     module_path: []const u8 = "",
+    /// One of std's own modules (`Module.std_member`): a `declare fn` with no
+    /// erlang cell is emitted unreachable (decision 906).
+    std_member: bool = false,
     out: *std.Io.Writer,
 
     /// Policy 3 (`13-module-identity` half 2): every `type` declared in this
@@ -8902,7 +8908,7 @@ const Emitter = struct {
             // `target_check.zig` refused every call a program makes of a std
             // function reaching it, so the body that names it must not refuse
             // its whole module.
-            if (std.mem.startsWith(u8, self.module_path, "std/") and f.externalFor("erlang") == null) {
+            if (self.std_member and f.externalFor("erlang") == null) {
                 try beamEmitter.writeMoveOp(self.out, Op.atom("unreachable"), Dst.xr(0));
                 switch (mode) {
                     .non_tail => try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0),

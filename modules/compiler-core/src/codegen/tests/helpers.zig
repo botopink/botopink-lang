@@ -738,12 +738,19 @@ pub fn assertStdModuleRefusedAt(allocator: Allocator, src: []const u8, needle: [
 
 /// Compiles `modules` as std's own (`Module.std_member`) for the JS backend and
 /// asserts none of them is refused — a std module checked beside its siblings.
-pub fn assertStdModulesCompile(allocator: Allocator, modules: []const struct { path: []const u8, source: []const u8 }) !void {
+pub const SourceModule = struct { path: []const u8, source: []const u8 };
+
+pub fn assertStdModulesCompile(allocator: Allocator, modules: []const SourceModule) !void {
+    return assertStdModulesCompileOn(allocator, configs[0], modules);
+}
+
+/// `assertStdModulesCompile` on the backend `cfg` names.
+pub fn assertStdModulesCompileOn(allocator: Allocator, cfg: config.Config, modules: []const SourceModule) !void {
     const io = std.testing.io;
     var list: std.ArrayList(Module) = .empty;
     defer list.deinit(allocator);
     for (modules) |m| try list.append(allocator, .{ .path = m.path, .source = m.source, .std_member = true });
-    var outputs = try codegen.generateWith(allocator, list.items, io, configs[0], .{ .execute = false });
+    var outputs = try codegen.generateWith(allocator, list.items, io, cfg, .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
