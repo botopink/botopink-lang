@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: 'fn' expects 1 argument(s), got 2
-at src/cases/case_function_arms_arity/mod.bp:21:16

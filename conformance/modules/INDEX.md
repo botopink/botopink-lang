@@ -28,24 +28,24 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/annotation_unknown_family | modules/annotation/refused/src/cases/annotation_unknown_family |  |  | c |
 | modules/any_type_removed | modules/decisions-taken/any_type_absent-31/cells/any_type_removed | 31 |  | b |
 | modules/anyvalue_outside_template | modules/decisions-taken/template_marked_by_syntax_text-578/cells/anyvalue_outside_template | 578 |  | b |
-| modules/array_fill | modules/array/run/src/cases/array_fill |  |  | c |
-| modules/array_fill_large | modules/array/run/src/cases/array_fill_large |  |  | c |
-| modules/array_flat_forms | modules/array/run/src/cases/array_flat_forms |  |  | c |
-| modules/array_last_index_of | modules/array/run/src/cases/array_last_index_of |  |  | c |
+| modules/array_fill | modules/array/cases/array_fill |  |  | c |
+| modules/array_fill_large | modules/array/cases/array_fill_large |  |  | c |
+| modules/array_flat_forms | modules/array/cases/array_flat_forms |  |  | c |
+| modules/array_last_index_of | modules/array/cases/array_last_index_of |  |  | c |
 | modules/array_literal_numeric_join | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_numeric_join | 150 | 247 | t |
 | modules/array_literal_union | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union | 150 |  | b |
 | modules/array_literal_union_elements | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/array_literal_union_elements | 150 |  | b |
 | modules/array_literal_union_misuse | modules/decisions-taken/mixed_literals_infer_union-150/cells/array_literal_union_misuse | 150 |  | b |
-| modules/array_map_component_imported | modules/array/run/src/cases/array_map_component_imported |  |  | c |
-| modules/array_pop_rebinds_var | modules/array/run/src/cases/array_pop_rebinds_var |  |  | c |
-| modules/array_pop_removes | modules/array/run/src/cases/array_pop_removes |  |  | c |
-| modules/array_push_rebinds_var | modules/array/run/src/cases/array_push_rebinds_var |  |  | c |
-| modules/array_range_and_repeat | modules/array/run/src/cases/array_range_and_repeat |  |  | c |
-| modules/array_reverse_answers_a_new_array | modules/array/run/src/cases/array_reverse_answers_a_new_array |  |  | c |
-| modules/array_slice_reverse | modules/array/run/src/cases/array_slice_reverse |  |  | c |
-| modules/array_spread_literal | modules/array/run/src/cases/array_spread_literal |  |  | c |
+| modules/array_map_component_imported | modules/array/cases/array_map_component_imported |  |  | c |
+| modules/array_pop_rebinds_var | modules/array/cases/array_pop_rebinds_var |  |  | c |
+| modules/array_pop_removes | modules/array/cases/array_pop_removes |  |  | c |
+| modules/array_push_rebinds_var | modules/array/cases/array_push_rebinds_var |  |  | c |
+| modules/array_range_and_repeat | modules/array/cases/array_range_and_repeat |  |  | c |
+| modules/array_reverse_answers_a_new_array | modules/array/cases/array_reverse_answers_a_new_array |  |  | c |
+| modules/array_slice_reverse | modules/array/cases/array_slice_reverse |  |  | c |
+| modules/array_spread_literal | modules/array/cases/array_spread_literal |  |  | c |
 | modules/array_unique | modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique | 217 |  | b |
-| modules/array_windows | modules/array/run/src/cases/array_windows |  |  | c |
+| modules/array_windows | modules/array/cases/array_windows |  |  | c |
 | modules/assert_failure_is_panic | modules/decisions-taken/failure_kinds_exact_every_target-527/cells/assert_failure_is_panic | 527 |  | b |
 | modules/assert_is_pattern | modules/decisions-taken/pattern_as_binding_refused-11/cells/assert_is_pattern | 11 |  | b |
 | modules/assert_message_aborts | modules/assert/cells/assert_message_aborts |  |  | c |
@@ -221,53 +221,53 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/call_unknown_without_narrowing | modules/decisions-taken/typeinfo_all_declared_type-254/refused/src/cases/call_unknown_without_narrowing | 254 |  | b |
 | modules/captured_var_write_in_lambda | modules/decisions-taken/lambda_captured_var_write_refused-148/cells/captured_var_write_in_lambda | 148 |  | b |
 | modules/captured_var_write_threaded | modules/decisions-taken/lambda_captured_var_write_refused-148/run/src/cases/captured_var_write_threaded | 148 |  | b |
-| modules/case_alternatives_and_arrays | modules/case/run/src/cases/case_alternatives_and_arrays |  |  | c |
-| modules/case_arity_without_rest | modules/case/refused/src/cases/case_arity_without_rest |  |  | c |
+| modules/case_alternatives_and_arrays | modules/case/cases/case_alternatives_and_arrays |  |  | c |
+| modules/case_arity_without_rest | modules/case/cases/case_arity_without_rest |  |  | c |
 | modules/case_arm_binder_reuses_name | modules/decisions-taken/shadowing_in_inner_blocks_refused-205/refused/src/cases/case_arm_binder_reuses_name | 205 |  | b |
-| modules/case_arm_block_comment | modules/case/run/src/cases/case_arm_block_comment |  |  | c |
+| modules/case_arm_block_comment | modules/case/cases/case_arm_block_comment |  |  | c |
 | modules/case_arm_break_value_removed | modules/decisions-taken/lambda_answers_last_expression-541/cells/case_arm_break_value_removed | 541 |  | b |
-| modules/case_arm_ending_in_for | modules/case/run/src/cases/case_arm_ending_in_for |  |  | c |
-| modules/case_arm_lambda_value | modules/case/run/src/cases/case_arm_lambda_value |  |  | c |
-| modules/case_arm_name_is_also_a_type | modules/case/run/src/cases/case_arm_name_is_also_a_type |  |  | c |
+| modules/case_arm_ending_in_for | modules/case/cases/case_arm_ending_in_for |  |  | c |
+| modules/case_arm_lambda_value | modules/case/cases/case_arm_lambda_value |  |  | c |
+| modules/case_arm_name_is_also_a_type | modules/case/cases/case_arm_name_is_also_a_type |  |  | c |
 | modules/case_arm_no_value | modules/decisions-taken/brace_without_arrow_is_block-525/refused/src/cases/case_arm_no_value | 525 |  | b |
 | modules/case_arm_record_named_like_a_variant | modules/case/cells/case_arm_record_named_like_a_variant |  |  | c |
 | modules/case_arm_return_in_yielding_arm | modules/decisions-taken/lambda_answers_last_expression-541/run/src/cases/case_arm_return_in_yielding_arm | 541 |  | b |
 | modules/case_bare_name_arm | modules/decisions-taken/refusal_snap_claims_label-485/cells/case_bare_name_arm | 485 |  | a |
-| modules/case_bare_name_arrow_arm | modules/case/refused/src/cases/case_bare_name_arrow_arm |  |  | c |
-| modules/case_binder_arm_string_value | modules/case/cells/case_binder_arm_string_value |  |  | c |
-| modules/case_bool_literal_arms | modules/case/run/src/cases/case_bool_literal_arms |  |  | c |
-| modules/case_catch_all_binder_record | modules/case/run/src/cases/case_catch_all_binder_record |  |  | c |
-| modules/case_constant_pattern | modules/case/refused/src/cases/case_constant_pattern |  |  | c |
-| modules/case_dot_variant_patterns | modules/case/run/src/cases/case_dot_variant_patterns |  |  | c |
-| modules/case_exhaustive_nested_variants | modules/case/run/src/cases/case_exhaustive_nested_variants |  |  | c |
-| modules/case_function_arms_arity | modules/case/refused/src/cases/case_function_arms_arity |  |  | c |
-| modules/case_function_typed_arms | modules/case/run/src/cases/case_function_typed_arms |  |  | c |
-| modules/case_generic_variant_tuple_payload | modules/case/run/src/cases/case_generic_variant_tuple_payload |  |  | c |
+| modules/case_bare_name_arrow_arm | modules/case/cases/case_bare_name_arrow_arm |  |  | c |
+| modules/case_binder_arm_string_value | modules/case/cases/case_binder_arm_string_value |  |  | c |
+| modules/case_bool_literal_arms | modules/case/cases/case_bool_literal_arms |  |  | c |
+| modules/case_catch_all_binder_record | modules/case/cases/case_catch_all_binder_record |  |  | c |
+| modules/case_constant_pattern | modules/case/cases/case_constant_pattern |  |  | c |
+| modules/case_dot_variant_patterns | modules/case/cases/case_dot_variant_patterns |  |  | c |
+| modules/case_exhaustive_nested_variants | modules/case/cases/case_exhaustive_nested_variants |  |  | c |
+| modules/case_function_arms_arity | modules/case/cases/case_function_arms_arity |  |  | c |
+| modules/case_function_typed_arms | modules/case/cases/case_function_typed_arms |  |  | c |
+| modules/case_generic_variant_tuple_payload | modules/case/cases/case_generic_variant_tuple_payload |  |  | c |
 | modules/case_if_union_value_shapes | modules/decisions-taken/mixed_literals_infer_union-150/run/src/cases/case_if_union_value_shapes | 150 |  | b |
-| modules/case_literals_only | modules/case/refused/src/cases/case_literals_only |  |  | c |
-| modules/case_missing_variant | modules/case/refused/src/cases/case_missing_variant |  |  | c |
+| modules/case_literals_only | modules/case/cases/case_literals_only |  |  | c |
+| modules/case_missing_variant | modules/case/cases/case_missing_variant |  |  | c |
 | modules/case_multi_subject_bare_name | modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_bare_name | 602 |  | a |
 | modules/case_multi_subject_patterns | modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_patterns | 602 |  | a |
 | modules/case_no_arm_matches_raises | modules/case/cells/case_no_arm_matches_raises |  |  | c |
-| modules/case_only_guarded_arms | modules/case/refused/src/cases/case_only_guarded_arms |  |  | c |
-| modules/case_or_pattern_alternatives | modules/case/run/src/cases/case_or_pattern_alternatives |  |  | c |
-| modules/case_payload_null_then_binder | modules/case/cells/case_payload_null_then_binder |  |  | c |
-| modules/case_range_and_guard | modules/case/cells/case_range_and_guard |  |  | c |
-| modules/case_range_value | modules/case/cells/case_range_value |  |  | c |
+| modules/case_only_guarded_arms | modules/case/cases/case_only_guarded_arms |  |  | c |
+| modules/case_or_pattern_alternatives | modules/case/cases/case_or_pattern_alternatives |  |  | c |
+| modules/case_payload_null_then_binder | modules/case/cases/case_payload_null_then_binder |  |  | c |
+| modules/case_range_and_guard | modules/case/cases/case_range_and_guard |  |  | c |
+| modules/case_range_value | modules/case/cases/case_range_value |  |  | c |
 | modules/case_record_field_null | modules/case/cells/case_record_field_null |  |  | c |
-| modules/case_record_labelled_fields | modules/case/cells/case_record_labelled_fields |  |  | c |
-| modules/case_record_union_binder | modules/case/cells/case_record_union_binder |  |  | c |
-| modules/case_section_subtype | modules/case/cells/case_section_subtype |  |  | c |
-| modules/case_shorthand_on_unknown | modules/case/refused/src/cases/case_shorthand_on_unknown |  |  | c |
-| modules/case_tuple_label | modules/case/refused/src/cases/case_tuple_label |  |  | c |
-| modules/case_type_guard_arms | modules/case/cells/case_type_guard_arms |  |  | c |
+| modules/case_record_labelled_fields | modules/case/cases/case_record_labelled_fields |  |  | c |
+| modules/case_record_union_binder | modules/case/cases/case_record_union_binder |  |  | c |
+| modules/case_section_subtype | modules/case/cases/case_section_subtype |  |  | c |
+| modules/case_shorthand_on_unknown | modules/case/cases/case_shorthand_on_unknown |  |  | c |
+| modules/case_tuple_label | modules/case/cases/case_tuple_label |  |  | c |
+| modules/case_type_guard_arms | modules/case/cases/case_type_guard_arms |  |  | c |
 | modules/case_union_constructor_arms | modules/case/cells/case_union_constructor_arms |  |  | c |
-| modules/case_unknown_without_wildcard | modules/case/refused/src/cases/case_unknown_without_wildcard |  |  | c |
-| modules/case_value_string_arms | modules/case/cells/case_value_string_arms |  |  | c |
-| modules/case_value_union_binding | modules/case/cells/case_value_union_binding |  |  | c |
-| modules/case_values | modules/case/cells/case_values |  |  | c |
-| modules/case_variant_fields | modules/case/cells/case_variant_fields |  |  | c |
-| modules/case_wide_integer_scrutinee | modules/case/cells/case_wide_integer_scrutinee |  |  | c |
+| modules/case_unknown_without_wildcard | modules/case/cases/case_unknown_without_wildcard |  |  | c |
+| modules/case_value_string_arms | modules/case/cases/case_value_string_arms |  |  | c |
+| modules/case_value_union_binding | modules/case/cases/case_value_union_binding |  |  | c |
+| modules/case_values | modules/case/cases/case_values |  |  | c |
+| modules/case_variant_fields | modules/case/cases/case_variant_fields |  |  | c |
+| modules/case_wide_integer_scrutinee | modules/case/cases/case_wide_integer_scrutinee |  |  | c |
 | modules/catch_lowest_precedence | modules/decisions-taken/await_try_prefix_catch_infix-537/cells/catch_lowest_precedence | 537 | 523 | b |
 | modules/cell_cases_directory/cases/prints | modules/decisions-taken/cell_cases_directory-765/cells/prints | 765 |  | b |
 | modules/cell_cases_directory/cases/refused | modules/decisions-taken/compiler_note_appended-686/cells/refused | 686 |  | a |
