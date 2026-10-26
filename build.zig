@@ -91,6 +91,10 @@ pub fn build(b: *std.Build) void {
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
     const std_prelude = stdPreludeModule(b, target, std_pkg_files, std_sidecar_files, pkg_table_file);
 
+    // `-Dprebuilt`: the stage steps that run the installed binaries (test-libs, test-conformance,
+    // test-docs, test-cli) do not depend on the install step, so a CI job that downloaded
+    // `zig-out/` builds nothing (scripts/gate.sh --prebuilt).
+    const prebuilt = b.option(bool, "prebuilt", "Run against the binaries already in zig-out/bin; install nothing (gate.sh --stage in a CI job)") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
 
     // ── test_scratch (per-process scratch paths) ──────────────────────────────
@@ -615,7 +619,7 @@ pub fn build(b: *std.Build) void {
     // standalone lib-checkout layout (`<lib>/botopink-lang/`) without the
     // sibling lib workflows needing extra steps to stage it.
     const test_libs_run = b.addSystemCommand(&.{ "bash", "scripts/test-libs.sh" });
-    test_libs_run.step.dependOn(b.getInstallStep());
+    if (!prebuilt) test_libs_run.step.dependOn(b.getInstallStep());
     test_libs_run.setCwd(b.path("."));
     test_libs_run.has_side_effects = true; // spawns child compilers — never cache
     if (b.args) |args| test_libs_run.addArgs(args);
@@ -646,7 +650,7 @@ pub fn build(b: *std.Build) void {
     //   zig build test-conformance -- --only modules/case/cells/case_range_value
     // NOT wired into `zig build test` (spawns node/erl/wasmtime per cell).
     const test_conformance_run = b.addSystemCommand(&.{ "bash", "conformance/run.sh" });
-    test_conformance_run.step.dependOn(b.getInstallStep());
+    if (!prebuilt) test_conformance_run.step.dependOn(b.getInstallStep());
     test_conformance_run.setCwd(b.path("."));
     test_conformance_run.has_side_effects = true; // spawns child compilers — never cache
     if (b.args) |args| test_conformance_run.addArgs(args);
@@ -664,7 +668,7 @@ pub fn build(b: *std.Build) void {
     //   zig build test-docs -- --doc conformance/docs.md --list
     // NOT wired into `zig build test`.
     const test_docs_run = b.addSystemCommand(&.{ "bash", "scripts/check-docs.sh" });
-    test_docs_run.step.dependOn(b.getInstallStep());
+    if (!prebuilt) test_docs_run.step.dependOn(b.getInstallStep());
     test_docs_run.setCwd(b.path("."));
     test_docs_run.has_side_effects = true; // spawns child compilers — never cache
     if (b.args) |args| test_docs_run.addArgs(args);
@@ -678,7 +682,7 @@ pub fn build(b: *std.Build) void {
     // on every backend is the conformance suite's (`test-conformance`). NOT wired
     // into `zig build test` (needs wasmtime on PATH). BOTOPINK_SKIP_BUILD=1
     // avoids nesting a `zig build` — the CLI is installed by the dependency below.
-    const test_backends_run = cliScript(b, "backend_exec.sh");
+    const test_backends_run = cliScript(b, prebuilt, "backend_exec.sh");
     const test_backends_step = b.step("test-backends", "Run the wasm core module's --invoke main contract");
     test_backends_step.dependOn(&test_backends_run.step);
 
@@ -709,7 +713,7 @@ pub fn build(b: *std.Build) void {
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {
-        const run_script = cliScript(b, script);
+        const run_script = cliScript(b, prebuilt, script);
         if (prev_cli_script) |p| run_script.step.dependOn(p);
         prev_cli_script = &run_script.step;
         test_cli_step.dependOn(&run_script.step);
@@ -719,7 +723,7 @@ pub fn build(b: *std.Build) void {
     // B-60): one library built under two consumers emits the same files, byte
     // for byte, on every target (`closure_invariant.sh`); also a `test-cli`
     // script, this step runs it alone.
-    const closure_invariant_run = cliScript(b, "closure_invariant.sh");
+    const closure_invariant_run = cliScript(b, prebuilt, "closure_invariant.sh");
     const closure_invariant_step = b.step("test-closure-invariant", "Build one library under two consumers and compare its output on every target");
     closure_invariant_step.dependOn(&closure_invariant_run.step);
 
@@ -728,7 +732,7 @@ pub fn build(b: *std.Build) void {
     // `.botopinkbuild/analysis/` and reading it, compared byte for byte on
     // every target their features declare (`conformance/<package>/<feature>/<cell>`, decision 548; `analysis_equivalence.sh`); also a
     // `test-cli` script, this step runs it alone.
-    const analysis_equivalence_run = cliScript(b, "analysis_equivalence.sh");
+    const analysis_equivalence_run = cliScript(b, prebuilt, "analysis_equivalence.sh");
     const analysis_equivalence_step = b.step("test-analysis-equivalence", "Build real libraries' consumers cold, writing and reading level B, and compare their output");
     analysis_equivalence_step.dependOn(&analysis_equivalence_run.step);
 
@@ -819,11 +823,11 @@ fn requireStandalone(mod: *std.Build.Module, what: []const u8) void {
 }
 
 /// A `bash modules/compiler-cli/tests/<script>` run against the installed CLI.
-fn cliScript(b: *std.Build, script: []const u8) *std.Build.Step.Run {
+fn cliScript(b: *std.Build, prebuilt_installed: bool, script: []const u8) *std.Build.Step.Run {
     const run = b.addSystemCommand(&.{ "bash", b.fmt("modules/compiler-cli/tests/{s}", .{script}) });
     run.setCwd(b.path("."));
     run.setEnvironmentVariable("BOTOPINK_SKIP_BUILD", "1");
-    run.step.dependOn(b.getInstallStep());
+    if (!prebuilt_installed) run.step.dependOn(b.getInstallStep());
     run.has_side_effects = true; // spawns child runtimes — never cache
     return run;
 }

@@ -146,7 +146,7 @@ stage under it before a change to a script lands.
 
 ## gate.sh
 
-`scripts/gate.sh [--cold] [--staged]` — one ordered run (the STEP gate on a `front/*`
+`scripts/gate.sh [--cold] [--staged] [--stage <name>]… [--prebuilt]` — one ordered run (the STEP gate on a `front/*`
 branch, the FULL gate everywhere else — § Step gate and full gate), stopping at the first
 failing stage (stages 4b–12 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
@@ -174,6 +174,17 @@ that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
+
+**Stages by name (decision 987).** `gate.sh --list-stages` prints the stage names in the order the
+gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-libs
+test-conformance test-docs tsc-check test-web`; `--uses-binaries` prints the ones that run the
+installed binaries); `--stage <name>` (repeatable) runs only those, in the gate's order, and
+never reads or writes the green-tree record; no `--stage` runs every stage as before. `--prebuilt`
+says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
+binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
+`test-cli`, `test-libs`, `test-conformance` and `test-docs`), so nothing recompiles the compiler. The
+conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
+(`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name>`, one job per stage, and keeps no list.
 
 ### tsc-check.sh
 

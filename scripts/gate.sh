@@ -60,6 +60,8 @@
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
+#                   [--stage <name>]… [--prebuilt]
+#   scripts/gate.sh --list-stages [--uses-binaries]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
@@ -96,6 +98,30 @@
 #             gate WITH conformance. Such a run never writes the green-tree
 #             record and is never a full gate.
 #
+#   --list-stages
+#             print the stage names, one per line, in the order the gate runs
+#             them (§ stage names), and exit. The CI workflow reads its jobs
+#             from this list: it keeps no list of stages of its own.
+#
+#             `--list-stages --uses-binaries` prints only the stages that run the
+#             installed binaries (test-cli, test-libs, test-conformance, test-docs,
+#             tsc-check): the jobs that need the build job's artifact.
+#
+#   --stage <name>
+#             (repeatable) run only the named stages, in the gate's order, and
+#             nothing else; no `--stage` runs every stage as always. A selected
+#             run never reads or writes the green-tree record. Stages 5–12
+#             read the binaries stage 2 (`build`) installs, so a run that
+#             selects one of them without `build` needs them in `zig-out/`
+#             already — with `--prebuilt`.
+#
+#   --prebuilt
+#             the binaries are already in zig-out/bin (a CI job that downloaded
+#             them): the stages that run them (`test-cli`, `test-libs`,
+#             `test-conformance`, `test-docs`) pass `-Dprebuilt=true` to
+#             `zig build`, so no stage compiles or installs the compiler again
+#             (build.zig). The gate fails when zig-out/bin/botopink is missing.
+#
 # The gate keeps no lock and no pool (decisions 468, 469, 508): runs started
 # together share the machine through the meta repository's scheduler, and the
 # commit hook's `--no-conformance` run goes free.
@@ -111,6 +137,16 @@
 # Exit 0 when every stage passed; 1 at the first stage that failed.
 set -euo pipefail
 
+# § stage names — the stages in the order the gate runs them. `--list-stages`
+# prints this list; a CI job runs one name (`--stage`).
+STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-libs test-conformance test-docs tsc-check test-web)
+# The stages that run the installed binaries (zig-out/bin) stage 2 builds; every other stage
+# (but `build` itself) reads sources only. `--list-stages --uses-binaries` prints these.
+BIN_STAGES=(test-cli test-libs test-conformance test-docs tsc-check)
+selected=()
+list_stages=0
+only_bin=0
+prebuilt=0
 cold=0
 staged=0
 no_conformance=0
@@ -122,13 +158,38 @@ while [ "$#" -gt 0 ]; do
             [ "$#" -gt 0 ] || { echo "gate: --jobs needs a value" >&2; exit 2; }
             jobs_total="$1"; shift ;;
         --jobs=*) jobs_total="${a#--jobs=}" ;;
+        --list-stages) list_stages=1 ;;
+        --uses-binaries) only_bin=1 ;;
+        --stage)
+            [ "$#" -gt 0 ] || { echo "gate: --stage needs a name" >&2; exit 2; }
+            selected+=("$1"); shift ;;
+        --stage=*) selected+=("${a#--stage=}") ;;
+        --prebuilt) prebuilt=1 ;;
         --cold) cold=1 ;;
         --staged) staged=1 ;;
         --no-conformance) no_conformance=1 ;;
-        -h|--help) sed -n '2,105p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,/^# Exit 0 when/p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
+
+if [ "$list_stages" -eq 1 ]; then
+    if [ "$only_bin" -eq 1 ]; then printf '%s\n' "${BIN_STAGES[@]}"; else printf '%s\n' "${STAGES[@]}"; fi
+    exit 0
+fi
+for a in ${selected[@]+"${selected[@]}"}; do
+    case " ${STAGES[*]} " in
+        *" $a "*) ;;
+        *) echo "gate: unknown stage '$a' (--list-stages names them)" >&2; exit 2 ;;
+    esac
+done
+# want <stage> — the stage runs: every stage when none is selected.
+want() {
+    local s
+    [ "${#selected[@]}" -eq 0 ] && return 0
+    for s in "${selected[@]}"; do [ "$s" = "$1" ] && return 0; done
+    return 1
+}
 
 if [ -n "$jobs_total" ]; then
     case "$jobs_total" in
@@ -274,11 +335,13 @@ fi
 # exits 1 — a file nobody staged is a red the next commit that touches it meets,
 # so it is red now (front 112 of 1.0.11-beta; the fmt of the whole tree is its
 # step 1).
+if want fmt; then
 stage "zig fmt --check modules"
 unformatted="$(zig fmt --check modules 2>&1)" || fail "zig fmt --check modules:
 $unformatted
 (run: zig fmt modules)"
 pass "zig fmt --check modules"
+fi
 
 # ── § the OTP release ────────────────────────────────────────────────────────
 # Decision 228: the compiler emits Erlang for one release, the `OTP_RELEASE`
@@ -286,6 +349,7 @@ pass "zig fmt --check modules"
 # and every erlang and beam run refuses another `erl` on PATH. The gate reads
 # the constant from that source — the binary is not built yet — and stops here,
 # with the compiler's message, before stage 2 builds anything.
+if want otp; then
 stage "Erlang/OTP release"
 otp_want="$(sed -n 's/^pub const OTP_RELEASE = "\([0-9][0-9]*\)";$/\1/p' modules/manifest/src/root.zig)"
 [ -n "$otp_want" ] || fail "modules/manifest/src/root.zig declares no OTP_RELEASE"
@@ -293,6 +357,7 @@ otp_have="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]
 [ -n "$otp_have" ] || fail "botopink emits Erlang for OTP $otp_want, and \`erl\` on PATH did not name its release — install OTP $otp_want and put it on PATH"
 [ "$otp_have" = "$otp_want" ] || fail "botopink emits Erlang for OTP $otp_want, and \`erl\` on PATH is OTP $otp_have — install OTP $otp_want and put it on PATH"
 pass "Erlang/OTP $otp_have, the release botopink emits for"
+fi
 
 # A hook runs with the committing repository's GIT_DIR, GIT_INDEX_FILE, … in
 # the environment. Stage 1 needed them; nothing after it may inherit them: a
@@ -341,8 +406,9 @@ $r"
     rm -f "$idx"
 }
 green_record="$(git rev-parse --path-format=absolute --git-path botopink-gate-green)"
-start_key="$(tree_key)"
-if [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ -f "$green_record" ] &&
+start_key=""
+[ "${#selected[@]}" -eq 0 ] && start_key="$(tree_key)"
+if [ "${#selected[@]}" -eq 0 ] && [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ -f "$green_record" ] &&
     [ "$(cat "$green_record")" = "$start_key" ]; then
     stage "stages 2–11"
     pass "this checkout and its libraries are the trees a gate already passed on (key ${start_key:0:12}) — nothing the diff can affect is left to run"
@@ -363,6 +429,19 @@ fi
 # Debug binary over the one the others run. Stage 4 builds its own unit-test
 # binaries in Debug, as before: `zig build test` installs nothing.
 opt=-Doptimize=ReleaseSafe
+# --prebuilt: the stages that run the installed binaries install nothing (build.zig `-Dprebuilt`).
+pre=()
+if [ "$prebuilt" -eq 1 ]; then
+    pre=(-Dprebuilt=true)
+    [ -x zig-out/bin/botopink ] || fail "--prebuilt: zig-out/bin/botopink is missing — download the build job's binaries first"
+fi
+# The conformance stage's command, the one place it is spelled (stage 9): <jobs> [runner args…].
+# Neither the CI workflow nor the stages above repeat it.
+conformance_cmd() {
+    local j="$1"
+    shift
+    zig build test-conformance "$opt" ${pre[@]+"${pre[@]}"} -- --jobs "$j" "$@"
+}
 
 # ── § ahead of the build: stages 4, 4b, 5 and 6 ──────────────────────────────
 # Four stages read nothing stages 2 and 3 produce: `zig build test` and `zig
@@ -405,23 +484,29 @@ if [ "$cold" -eq 1 ]; then
         done < <(find "$r" \( -name .git -o -name node_modules -o -name .zig-cache \) -prune -o -type d -path '*/.botopinkbuild/cache' -prune -print)
     done
 fi
-launch 0 zig build test
-test_pid=$!
-launch 2 zig build test-bpmp "$opt"
-launch 3 bash scripts/beam_export_audit.sh
+test_pid=""
+if want test; then launch 0 zig build test; test_pid=$!; fi
+if want test-bpmp; then launch 2 zig build test-bpmp "$opt"; fi
+if want beam-export-audit; then launch 3 bash scripts/beam_export_audit.sh; fi
 
+if want build; then
 stage "zig build ($opt)"
 timed "$tdir/build.time" zig build "$opt" || fail "zig build $opt"
 pass "zig build — $(stage_time "$tdir/build.time")"
+fi
 
+if want backend-partition; then
 stage "backend partition audit (scripts/lib/backend-partition-audit.js)"
 node scripts/lib/backend-partition-audit.js || fail "scripts/lib/backend-partition-audit.js (the list modules/compiler-core/src/codegen/backend-partition.txt is wrong where it names)"
+fi
 
+if want test; then
 stage "zig build test$([ "$cold" -eq 1 ] && echo ' (cold runtime cache)')"
 wait "$test_pid" || true
 cat "$par/0.out"
 [ "$(cat "$par/0.rc" 2>/dev/null)" = 0 ] || fail "zig build test"
 pass "zig build test — $(stage_time "$par/0.time")"
+fi
 
 # ── § the plan of stages 8–10 ────────────────────────────────────────────────
 # What stages 8, 9 and 10 must run, read from their own runners before they
@@ -429,6 +514,8 @@ pass "zig build test — $(stage_time "$par/0.time")"
 # count it printed is held to its plan (§ counts), so a stage cannot be
 # narrowed to win time — a run that did fewer cells than the manifests and the
 # trees declare fails the gate, green or not.
+want test-libs || run_libs=0
+want test-conformance || run_lang=0
 if [ "$run_libs" -eq 1 ]; then
     bash scripts/test-libs.sh --list ${libs_args[@]+"${libs_args[@]}"} >"$par/plan.libs" 2>"$par/plan.libs.err" ||
         { cat "$par/plan.libs.err"; fail "scripts/test-libs.sh --list"; }
@@ -437,8 +524,10 @@ if [ "$run_lang" -eq 1 ]; then
     bash conformance/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.conformance" 2>"$par/plan.conformance.err" ||
         { cat "$par/plan.conformance.err"; fail "conformance/run.sh --list"; }
 fi
+if want test-docs; then
 bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
     { cat "$par/plan.docs.err"; fail "scripts/check-docs.sh --list"; }
+fi
 
 # ── § side by side: stages 4b–12 ─────────────────────────────────────────────
 # 4b, 5 and 6 are already running (§ ahead of the build); 7–12 start here.
@@ -505,22 +594,29 @@ else
         budget_total="$(pool_cpus)" # no /proc/meminfo (macOS): one per CPU
     fi
 fi
+share_alone=0
+if [ "${#selected[@]}" -gt 0 ]; then
+    # A selected run splits the total among the pool stages it runs, not among the three.
+    npools=0
+    for s in test-libs test-conformance tsc-check; do want "$s" && npools=$((npools + 1)); done
+    [ "$npools" -gt 0 ] && share_alone=$((100 / npools))
+fi
 share() { # <percent> — that part of the total, at least 1 (pool.sh)
-    pool_share "$budget_total" "$1"
+    if [ "$share_alone" -gt 0 ]; then pool_share "$budget_total" "$share_alone"; else pool_share "$budget_total" "$1"; fi
 }
 echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), tsc-check $(share 10)"
-launch 4 zig build test-cli "$opt"
+want test-cli && launch 4 zig build test-cli "$opt" ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
 if [ "$run_libs" -eq 1 ]; then
-    launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
+    launch 5 zig build test-libs "$opt" ${pre[@]+"${pre[@]}"} -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
 fi
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 zig build test-conformance "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"}
+    launch 6 conformance_cmd "$(share 30)" ${lang_args[@]+"${lang_args[@]}"}
 fi
-launch 7 zig build test-docs "$opt"
-launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
-launch 9 zig build test-web -j"$(share 10)"
+want test-docs && launch 7 zig build test-docs "$opt" ${pre[@]+"${pre[@]}"}
+want tsc-check && launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
+want test-web && launch 9 zig build test-web -j"$(share 10)"
 wait
 
 # ── § counts ─────────────────────────────────────────────────────────────────
@@ -559,6 +655,8 @@ check_counts() { # <n>
 }
 
 report() { # <n> <stage title> <pass text> <fail text>
+    local names=(x x test-bpmp beam-export-audit test-cli test-libs test-conformance test-docs tsc-check test-web)
+    want "${names[$1]}" || return 0
     stage "$2"
     if { [ "$1" = 5 ] && [ "$run_libs" -eq 0 ]; } || { [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; }; then
         echo "0 0 0" >"$par/$1.time"
@@ -591,7 +689,7 @@ report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node
 # Record the trees as green — only when nothing moved while the gate ran.
 # Only the FULL gate records it: a step gate ran a subset of the cells, and the
 # record lets a later `--staged` run on the same bytes — on `feat` — skip stages 2–11.
-if [ "$gate_kind" = full ] && [ "$no_conformance" -eq 0 ] && [ "$(tree_key)" = "$start_key" ]; then
+if [ "${#selected[@]}" -eq 0 ] && [ "$gate_kind" = full ] && [ "$no_conformance" -eq 0 ] && [ "$(tree_key)" = "$start_key" ]; then
     echo "$start_key" >"$green_record"
 fi
 
@@ -601,9 +699,9 @@ fi
 # slow or shared machine is not a broken tree.
 YELLOW='\033[0;33m'
 wall=$(( $(date +%s) - gate_start ))
-cpu="$(cat "$par"/*.time | tr ',' '.' | awk '{ c += $2 + $3 } END { printf "%.0f", c }')"
-printf "\n${GREEN}gate: every stage passed — %s wall, %s CPU-s (budget %s)${NC}\n" \
-    "$(fmt_time "$wall")" "$cpu" "$(fmt_time "$budget")"
+cpu="$({ cat "$par"/*.time 2>/dev/null || true; } | tr ',' '.' | awk '{ c += $2 + $3 } END { printf "%.0f", c }')"
+printf "\n${GREEN}gate: every %sstage passed — %s wall, %s CPU-s (budget %s)${NC}\n" \
+    "$([ "${#selected[@]}" -gt 0 ] && echo 'selected ')" "$(fmt_time "$wall")" "$cpu" "$(fmt_time "$budget")"
 if [ "$wall" -gt "$budget" ]; then
     printf "${YELLOW}gate: over budget — %s wall against %s; load %s${NC}\n" \
         "$(fmt_time "$wall")" "$(fmt_time "$budget")" "$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo '?')"

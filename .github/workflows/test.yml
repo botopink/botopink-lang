@@ -1,22 +1,37 @@
 # Push/PR CI for botopink-lang — `scripts/gate.sh`, the repository's one gate
-# (decisions 466, 470, 477): the same command the commit hook runs with
+# (decisions 466, 470, 477, 987): the same stages the commit hook runs with
 # `--no-conformance`, here WITH conformance and `--cold`, so a push to `feat`
-# runs every stage the gate declares — `zig fmt`, the build, the backend
-# partition audit, the unit suites, test-bpmp, the beam export audit, test-cli, test-libs over
-# the sibling libraries checked out under `repository/`, the conformance suite
-# (`conformance/`, every cell on every target it declares), test-docs (every
-# reference of `conformance/docs.md` names a cell), tsc-check and test-web.
-# The workflow keeps no list of stages of its own: a stage is added to or
-# removed from `scripts/gate.sh`, and CI runs it. A front's Conformance step
-# reads this run (decision 477).
+# runs every stage the gate declares. The workflow keeps no list of stages of
+# its own: the stages and their order are `scripts/gate.sh --list-stages`, a
+# stage runs as `scripts/gate.sh --cold --stage <name>`, and a stage is added to
+# or removed from `scripts/gate.sh`, never here. A front's Conformance step reads
+# this run (decision 477): one verdict per commit, the `scripts/gate.sh` job.
 #
-#   test  one job, hard: ubuntu-22.04 (no macos row). There is no
-#         windows row (1.0.11-beta 00-gate, gate-f): the snapshot capture
-#         carries CRLF / path-separator drift there, and a row that cannot
-#         fail measures nothing. The steps before the gate install what it
-#         runs: zig, the compiler's Erlang/OTP release (decisions 227, 228),
-#         wasmtime, node 22 and the sibling libraries test-libs compiles and
-#         tests on every runnable target (`scripts/AGENTS.md` § test-libs.sh).
+# The jobs, each on its own ubuntu-22.04 runner (no macos row; no windows row —
+# 1.0.11-beta 00-gate, gate-f: the snapshot capture carries CRLF / path-separator
+# drift there, and a row that cannot fail measures nothing), so a run's wall time
+# is its longest job rather than the sum of the stages:
+#
+#   stages     reads the stage list from `scripts/gate.sh --list-stages` (and
+#              `--uses-binaries`) and hands it to the jobs below as matrices.
+#   build      the `build` stage (`zig build`, ReleaseSafe — the mode the gate
+#              builds) once; uploads `zig-out/` as an artifact.
+#   unit       one job per stage that reads sources only (zig fmt, the OTP
+#              release, the backend partition audit, `zig build test`,
+#              `test-bpmp`, the beam export audit, `test-web`); starts at once.
+#   installed  one job per stage that runs the installed binaries (`test-cli`,
+#              `test-libs`, `test-conformance`, `test-docs`, `tsc-check`); downloads
+#              `build`'s artifact and runs with `--prebuilt`, so nothing compiles
+#              the compiler again.
+#   gate       the run's one verdict: red when any job above is.
+#
+# Every stage job runs its stage cold (`--cold`, decisions 509 (5), 754): the run
+# that decides a merge reads no botopink cache. Only Zig's own compile cache and
+# the toolchain downloads are cached (`.github/actions/ci-setup`), never anything
+# under `.botopinkbuild/` (decision 225). The toolchain — zig, the compiler's
+# Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and the sibling
+# libraries test-libs compiles and tests (`scripts/AGENTS.md` § test-libs.sh) —
+# is `.github/actions/ci-setup`'s, one text for every job.
 
 name: test
 
@@ -35,156 +50,112 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
-  test:
-    name: scripts/gate.sh (${{ matrix.runner }})
+  stages:
+    name: stage list (scripts/gate.sh --list-stages)
+    runs-on: ubuntu-22.04
+    outputs:
+      unit: ${{ steps.lists.outputs.unit }}
+      installed: ${{ steps.lists.outputs.installed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+      - name: Read the stage lists from scripts/gate.sh
+        id: lists
+        shell: bash
+        run: |
+          all="$(bash scripts/gate.sh --list-stages)"
+          bins="$(bash scripts/gate.sh --list-stages --uses-binaries)"
+          json() { jq -Rsc 'split("\n") | map(select(. != ""))'; }
+          # every stage but `build` (its own job) and the ones that run the installed binaries
+          unit="$(printf '%s\n' "$all" | grep -vxF build | grep -vxFf <(printf '%s\n' "$bins") | json)"
+          installed="$(printf '%s\n' "$bins" | json)"
+          echo "unit=$unit" >> "$GITHUB_OUTPUT"
+          echo "installed=$installed" >> "$GITHUB_OUTPUT"
+          echo "unit: $unit"
+          echo "installed: $installed"
+
+  build:
+    name: build (scripts/gate.sh --stage build)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+      - uses: ./.github/actions/ci-setup
+        with:
+          zig-cache: 'true'
+      - name: scripts/gate.sh --cold --stage build
+        shell: bash
+        run: bash scripts/gate.sh --cold --stage build
+      # tar keeps the executable bits an artifact upload drops.
+      - name: Pack the binaries
+        shell: bash
+        run: tar -czf zig-out.tgz zig-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zig-out
+          path: zig-out.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  unit:
+    name: ${{ matrix.stage }}
+    needs: stages
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-22.04]
-    runs-on: ${{ matrix.runner }}
+        stage: ${{ fromJSON(needs.stages.outputs.unit) }}
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           submodules: false
-
-      - name: Install Zig (pinned to build.zig.zon minimum_zig_version)
-        uses: mlugg/setup-zig@v2
+      - uses: ./.github/actions/ci-setup
         with:
-          version: 0.16.0
-
-      # The erlang and beam targets' tests run `erl` / `erlc` (the RUN LOGs, the
-      # beam export audit, `botopink run|test --target erlang|beam`); compiling
-      # needs neither — comptime runs on wasm (decision 434). `erlef/setup-beam`
-      # pins the version (decision 227), and the step after asserts it. The release is the
-      # compiler's (decision 228, the step before).
-      # Decision 228: the release is the compiler's `OTP_RELEASE`
-      # (modules/manifest/src/root.zig, printed by `botopink --version`), read
-      # from the source because the compiler is not built yet; every erlang and
-      # beam run of the compiler refuses another `erl` on PATH.
-      - name: Read the Erlang/OTP release the compiler emits for
-        id: otp
+          libs: 'true'
+          zig-cache: 'true'
+      - name: scripts/gate.sh --cold --stage ${{ matrix.stage }}
         shell: bash
-        run: |
-          release="$(sed -n 's/^pub const OTP_RELEASE = "\([0-9][0-9]*\)";$/\1/p' modules/manifest/src/root.zig)"
-          [ -n "$release" ] || { echo "modules/manifest/src/root.zig declares no OTP_RELEASE (decision 228)"; exit 1; }
-          echo "release=$release" >> "$GITHUB_OUTPUT"
+        run: bash scripts/gate.sh --cold --stage "${{ matrix.stage }}"
 
-      - name: Install Erlang/OTP
-        uses: erlef/setup-beam@v1
+  installed:
+    name: ${{ matrix.stage }}
+    needs: [stages, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: ${{ fromJSON(needs.stages.outputs.installed) }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
         with:
-          # OTP 28 (BEAM 16.x) today. OTP 27 (BEAM 15.x) treats the
-          # `ambiguous call of overridden BIF abs/1` diagnostic in the codegen
-          # `if_with_else_branch` fixture as a compile *error*; OTP 28 treats
-          # it as a warning, which is what the runtime expects (erlc must exit
-          # 0 for the test framework's snapshot RUN LOG capture to fire).
-          otp-version: ${{ steps.otp.outputs.release }}
+          submodules: false
+      - uses: ./.github/actions/ci-setup
+        with:
+          libs: 'true'
+          zig-cache: 'true'
+      - uses: actions/download-artifact@v4
+        with:
+          name: zig-out
+      - name: Unpack the binaries
+        shell: bash
+        run: tar -xzf zig-out.tgz
+      - name: scripts/gate.sh --cold --prebuilt --stage ${{ matrix.stage }}
+        shell: bash
+        run: bash scripts/gate.sh --cold --prebuilt --stage "${{ matrix.stage }}"
 
-      # Decisions 227 and 228: the compiler's release; any other release here
-      # fails the job rather than testing against it.
-      - name: Assert Erlang/OTP
+  # The run's one verdict, for a front's Conformance step (decision 477).
+  gate:
+    name: scripts/gate.sh
+    if: always()
+    needs: [stages, build, unit, installed]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Every job green
         shell: bash
         env:
-          OTP: ${{ steps.otp.outputs.release }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
-          [ "$otp" = "$OTP" ] || { echo "Erlang/OTP is '$otp', not $OTP (decisions 227, 228)"; exit 1; }
-
-      # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG`
-      # (stdout of the generated `.wat` evaluated against wasmtime) into
-      # the snapshot itself. Without wasmtime on PATH the run log is
-      # empty and every wasm snapshot mismatches.
-      #
-      # We pin a specific release tarball instead of running the
-      # `wasmtime.dev/install.sh` shell installer — that script's
-      # version lookup is flaky on the GH runners (resolves to
-      # `<!DOCTYPE html>` when the upstream release feed 404s under
-      # rate-limiting).
-      - name: Install wasmtime
-        shell: bash
-        env:
-          WASMTIME_VERSION: v45.0.1
-        run: |
-          set -euo pipefail
-          url="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
-          curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/wasmtime.tar.xz "$url"
-          mkdir -p "$HOME/.wasmtime/bin"
-          tar -xJf /tmp/wasmtime.tar.xz -C /tmp/
-          mv "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" "$HOME/.wasmtime/bin/"
-          chmod +x "$HOME/.wasmtime/bin/wasmtime"
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
-          "$HOME/.wasmtime/bin/wasmtime" --version
-
-      # First step prints the resolved Zig version + SHA so a CI red can be
-      # bisected against a Zig point release without re-running the job.
-      - name: Print build identity
-        shell: bash
-        run: |
-          echo "zig version: $(zig version)"
-          echo "git sha: $GITHUB_SHA"
-          echo "runner: ${{ matrix.runner }}"
-
-      # Node 22, the floor std's commonJS bodies need: `fs.glob` matches a
-      # segment with `fs.globSync` (Node 22+, libs/std/src/io/fs.bp); under
-      # Node 20 it throws, the walk answers `[]` and std's glob tests fail.
-      - name: Install Node 22
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-
-      # The libraries the gate's test-libs stage compiles and tests:
-      # `botopink-lib-test` discovers `<root>/libs` (std) and every project
-      # under `<root>/repository/`, and `botopink` resolves a library's own
-      # dependencies through the same roots. Decision 326: the shared
-      # libraries are repositories of their own, not bundled with the compiler.
-      # Every library of the meta repository's `repository/` is checked out: a
-      # library missing here fails the cells that depend on it (`css`, `snap`).
-      - name: Checkout query
-        uses: actions/checkout@v5
-        with: { repository: botopink/query, ref: feat, path: repository/query }
-      - name: Checkout rakun
-        uses: actions/checkout@v5
-        with: { repository: botopink/rakun, ref: feat, path: repository/rakun }
-      - name: Checkout actions
-        uses: actions/checkout@v5
-        with: { repository: botopink/actions, ref: feat, path: repository/actions }
-      - name: Checkout http
-        uses: actions/checkout@v5
-        with: { repository: botopink/http, ref: feat, path: repository/http }
-      - name: Checkout log
-        uses: actions/checkout@v5
-        with: { repository: botopink/log, ref: feat, path: repository/log }
-      - name: Checkout routing
-        uses: actions/checkout@v5
-        with: { repository: botopink/routing, ref: feat, path: repository/routing }
-      - name: Checkout validation
-        uses: actions/checkout@v5
-        with: { repository: botopink/validation, ref: feat, path: repository/validation }
-      - name: Checkout css
-        uses: actions/checkout@v5
-        with: { repository: botopink/css, ref: feat, path: repository/css }
-      - name: Checkout snap
-        uses: actions/checkout@v5
-        with: { repository: botopink/snap, ref: feat, path: repository/snap }
-      - name: Checkout json
-        uses: actions/checkout@v5
-        with: { repository: botopink/json, ref: feat, path: repository/json }
-      - name: Checkout yaml
-        uses: actions/checkout@v5
-        with: { repository: botopink/yaml, ref: feat, path: repository/yaml }
-      - name: Checkout markdown
-        uses: actions/checkout@v5
-        with: { repository: botopink/markdown, ref: feat, path: repository/markdown }
-
-      - name: Print library identity
-        shell: bash
-        run: |
-          for r in repository/*/; do
-            echo "$(basename "$r"): $(git -C "$r" rev-parse HEAD)"
-          done
-
-      # The gate, with conformance (decision 477) and cold: the run that
-      # decides a merge reads no cache (`scripts/gate.sh` § warm and cold).
-      - name: scripts/gate.sh --cold
-        shell: bash
-        run: bash scripts/gate.sh --cold
+          echo "results: $RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || { echo "a job of the gate is $r"; exit 1; }; done

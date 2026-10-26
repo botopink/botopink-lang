@@ -1,0 +1,188 @@
+# The toolchain a scripts/gate.sh job runs on, shared by every job of test.yml
+# (one text, so the jobs install the same versions): zig, the compiler's
+# Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and, on request, the
+# sibling libraries test-libs compiles and tests (`scripts/AGENTS.md` § test-libs.sh).
+#
+# Caches (decisions 225, 509 (5), 739, 754): only Zig's own compile cache (`.zig-cache` in the
+# checkout and `~/.cache/zig`) and the wasmtime download, keyed on the toolchain version and,
+# for Zig's, on build.zig, build.zig.zon and every *.zig source. Nothing under `.botopinkbuild/`
+# and no botopink cache of $HOME / $XDG_CACHE_HOME is ever cached: `gate.sh --cold` deletes
+# every botopink cache it reads, and nothing here puts one back.
+name: ci-setup
+description: Install the toolchain scripts/gate.sh runs on
+inputs:
+  libs:
+    description: Check out the sibling libraries under repository/ ("true" or "false")
+    default: 'false'
+  zig-cache:
+    description: Restore (and save) Zig's own compile cache ("true" or "false")
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Install Zig (pinned to build.zig.zon minimum_zig_version)
+      uses: mlugg/setup-zig@v2
+      with:
+        version: 0.16.0
+        use-cache: false
+
+    # Zig's own compile cache, never a botopink one. Exact paths, no globs.
+    - name: Cache Zig's compile cache
+      if: inputs.zig-cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          .zig-cache
+          ~/.cache/zig
+        key: zig-0.16.0-${{ runner.os }}-${{ hashFiles('build.zig', 'build.zig.zon', '**/*.zig') }}
+        restore-keys: |
+          zig-0.16.0-${{ runner.os }}-
+
+    # The erlang and beam targets' tests run `erl` / `erlc` (the RUN LOGs, the
+    # beam export audit, `botopink run|test --target erlang|beam`); compiling
+    # needs neither — comptime runs on wasm (decision 434). `erlef/setup-beam`
+    # pins the version (decision 227), and the step after asserts it. The release
+    # is the compiler's `OTP_RELEASE` (modules/manifest/src/root.zig, printed by
+    # `botopink --version`), read from the source because the compiler is not
+    # built yet (decision 228); every erlang and beam run of the compiler refuses
+    # another `erl` on PATH.
+    - name: Read the Erlang/OTP release the compiler emits for
+      id: otp
+      shell: bash
+      run: |
+        release="$(sed -n 's/^pub const OTP_RELEASE = "\([0-9][0-9]*\)";$/\1/p' modules/manifest/src/root.zig)"
+        [ -n "$release" ] || { echo "modules/manifest/src/root.zig declares no OTP_RELEASE (decision 228)"; exit 1; }
+        echo "release=$release" >> "$GITHUB_OUTPUT"
+
+    - name: Install Erlang/OTP
+      uses: erlef/setup-beam@v1
+      with:
+        # OTP 28 (BEAM 16.x) today. OTP 27 (BEAM 15.x) treats the
+        # `ambiguous call of overridden BIF abs/1` diagnostic in the codegen
+        # `if_with_else_branch` fixture as a compile *error*; OTP 28 treats
+        # it as a warning, which is what the runtime expects (erlc must exit
+        # 0 for the test framework's snapshot RUN LOG capture to fire).
+        otp-version: ${{ steps.otp.outputs.release }}
+
+    # Decisions 227 and 228: the compiler's release; any other release here
+    # fails the job rather than testing against it.
+    - name: Assert Erlang/OTP
+      shell: bash
+      env:
+        OTP: ${{ steps.otp.outputs.release }}
+      run: |
+        otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
+        [ "$otp" = "$OTP" ] || { echo "Erlang/OTP is '$otp', not $OTP (decisions 227, 228)"; exit 1; }
+
+    # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG` (stdout of the
+    # generated `.wat` evaluated against wasmtime) into the snapshot itself.
+    # Without wasmtime on PATH the run log is empty and every wasm snapshot
+    # mismatches. A pinned release tarball, not the `wasmtime.dev/install.sh`
+    # installer (its version lookup is flaky on the GH runners); the install
+    # directory is cached on the version.
+    - name: Cache wasmtime
+      id: wasmtime-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.wasmtime/bin
+        key: wasmtime-v45.0.1-${{ runner.os }}-x86_64
+
+    - name: Install wasmtime
+      if: steps.wasmtime-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        WASMTIME_VERSION: v45.0.1
+      run: |
+        set -euo pipefail
+        url="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+        curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/wasmtime.tar.xz "$url"
+        mkdir -p "$HOME/.wasmtime/bin"
+        tar -xJf /tmp/wasmtime.tar.xz -C /tmp/
+        mv "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" "$HOME/.wasmtime/bin/"
+        chmod +x "$HOME/.wasmtime/bin/wasmtime"
+
+    - name: Put wasmtime on PATH
+      shell: bash
+      run: |
+        echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+        "$HOME/.wasmtime/bin/wasmtime" --version
+
+    # Node 22, the floor std's commonJS bodies need: `fs.glob` matches a
+    # segment with `fs.globSync` (Node 22+, libs/std/src/io/fs.bp); under
+    # Node 20 it throws, the walk answers `[]` and std's glob tests fail.
+    - name: Install Node 22
+      uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+
+    # First step that prints the resolved Zig version + SHA so a CI red can be
+    # bisected against a Zig point release without re-running the job.
+    - name: Print build identity
+      shell: bash
+      run: |
+        echo "zig version: $(zig version)"
+        echo "git sha: $GITHUB_SHA"
+
+    # The libraries the gate's test-libs stage compiles and tests:
+    # `botopink-lib-test` discovers `<root>/libs` (std) and every project
+    # under `<root>/repository/`, and `botopink` resolves a library's own
+    # dependencies through the same roots. Decision 326: the shared libraries
+    # are repositories of their own. Every library of the meta repository's
+    # `repository/` is checked out: a library missing here fails the cells that
+    # depend on it (`css`, `snap`).
+    - name: Checkout query
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/query, ref: feat, path: repository/query }
+    - name: Checkout rakun
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/rakun, ref: feat, path: repository/rakun }
+    - name: Checkout actions
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/actions, ref: feat, path: repository/actions }
+    - name: Checkout http
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/http, ref: feat, path: repository/http }
+    - name: Checkout log
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/log, ref: feat, path: repository/log }
+    - name: Checkout routing
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/routing, ref: feat, path: repository/routing }
+    - name: Checkout validation
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/validation, ref: feat, path: repository/validation }
+    - name: Checkout css
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/css, ref: feat, path: repository/css }
+    - name: Checkout snap
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/snap, ref: feat, path: repository/snap }
+    - name: Checkout json
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/json, ref: feat, path: repository/json }
+    - name: Checkout yaml
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/yaml, ref: feat, path: repository/yaml }
+    - name: Checkout markdown
+      if: inputs.libs == 'true'
+      uses: actions/checkout@v5
+      with: { repository: botopink/markdown, ref: feat, path: repository/markdown }
+
+    - name: Print library identity
+      if: inputs.libs == 'true'
+      shell: bash
+      run: |
+        for r in repository/*/; do
+          echo "$(basename "$r"): $(git -C "$r" rev-parse HEAD)"
+        done
