@@ -1,2 +1,0 @@
-pub mod call_of_imported_record_value;
-pub mod call_of_record_value;

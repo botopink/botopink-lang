@@ -1,0 +1,7 @@
+botopink-cell 1
+out == call_of_imported_record_value
+out refused error: callee-not-a-function: `settings` is a value of type `Settings`, not a function — it cannot be called
+out at src/main.bp:11:11
+out == call_of_record_value
+out refused error: callee-not-a-function: `g` is a value of type `G`, not a function — it cannot be called
+out at src/main.bp:17:11

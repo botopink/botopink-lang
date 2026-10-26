@@ -1,0 +1,18 @@
+botopink-cell 1
+out == annotation_family_misspelled
+out refused error: annotation-not-a-decorator: `#[compiler.beamMemroy]` names nothing, not a decorator
+out at src/main.bp:8:3
+out == annotation_not_decorator_namespace
+out refused error: annotation-not-a-decorator: `#[check]` names a namespace, not a decorator
+out at src/main.bp:9:3
+out == annotation_not_decorator_unbound
+out refused error: annotation-not-a-decorator: `#[nope]` names nothing, not a decorator
+out at src/main.bp:7:3
+out == annotation_not_decorator_value
+out refused error: annotation-not-a-decorator: `#[limit]` names a value, not a decorator
+out at src/main.bp:9:3
+out == annotation_unknown_family
+out refused error: unknown-annotation: `#[@TotallyMadeUp.Nonsense]` names no annotation
+out at src/main.bp:8:3
+out == annotation_dotted_through_mod
+out a
