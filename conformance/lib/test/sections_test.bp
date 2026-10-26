@@ -94,6 +94,9 @@ test "a refusal is compared by message, location, label and frames" {
     assert !same(file, "gamma", "commonJS", Snap(refusals: [other]), "");
     val coded = refusalOf("e1", "x", "", 0, 0, null, []);
     assert coded.message == "error[e1]: x";
+    // A message that already starts with its code is printed as written (`botopink build`'s line).
+    val inline = refusalOf("non-exhaustive", "non-exhaustive: `case` on 'i32'", "", 0, 0, null, []);
+    assert inline.message == "error: non-exhaustive: `case` on 'i32'";
 }
 
 test "a changed case yields a candidate with every other section unchanged" {
