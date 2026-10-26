@@ -37,14 +37,14 @@
 /// output is one module for the whole program — the package under test inside
 /// it — so it has no dependency-only step to cache yet.
 ///
-/// **`--cold`** (`cold`): `build`, `run`, `test` and `cell check` read nothing
+/// **`--cold`** (`cold`): `build`, `run` and `test` read nothing
 /// — neither level — and write what they ran.
 ///
 /// `closureKey` is the key of level B (B-60): a package's files and its
 /// effective manifest, its dependencies' closure keys, the target (with the
 /// wasm host) and the compiler by backend partition (decision 249); `stdKey`
 /// std's, per module. `analysis_store.zig` files entries under them, and
-/// `build`, `run`, `test`, `cell check` and `check` read and write them
+/// `build`, `run`, `test` and `check` read and write them
 /// (`analysis_store.Cache`); `--cold` reads none.
 const std = @import("std");
 const builtin = @import("builtin");
@@ -60,8 +60,7 @@ pub const STORE = "code";
 pub var cold: bool = false;
 
 /// The cache root a command uses instead of its project's (decision 509 (4)):
-/// `botopink cell check` builds each cell in a scratch copy, and the cell's
-/// root is where the cell lives — its `conformance/modules/` workspace.
+/// `build` / `run --cache-root <dir>` (decision 798 (6)).
 pub var root_override: ?[]const u8 = null;
 
 /// `<root>/.botopinkbuild/cache/code` for `proj` — `root_override` when set,

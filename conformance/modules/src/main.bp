@@ -1,0 +1,101 @@
+//// The conformance suite's root package (decisions 989, 990 (6)): one program that loads every
+//// self-checking module at build, runs each in turn and prints one verdict per module. Built once
+//// with `botopink build --emit-runtime`, its one `.bpr` run per target (`conformance/run.sh`, the
+//// gate's stage 9). A module is a directory of `conformance/modules/` (or of `decisions-taken/`)
+//// holding `botopink.json`, `src/main.bp` and `snapshot/main.snap`; each has one `runModule` line
+//// below, in path order, and `run.sh` holds the list to the tree (a module on disk with no line, or
+//// a line with no module, is a red). The modules' own dependency (`conformance-lib`) is declared
+//// here too: a loaded package reads the caller's modules for a dependency it names.
+////
+//// Decision 996 (L5): the libraries and the workspace members join this program as more lines of
+//// their own kind (`runLibrary`), beside the modules; until then nothing of a library runs here.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+/// Each module's run, in path order: `run()` is written in the `compiler.init` body
+/// (`run-outside-init`), and `main` awaits one after another, so no two modules' outputs
+/// interleave. Each answers the module's verdict — `ok   <module>` or `FAIL <module> — …` and the
+/// lines under it —, a value: a task's writes to a module `var` stay in its own heap (decision 547).
+var runs: (fn() -> Async<string>)[] = [];
+
+fn verdict(name: string, answer: Result<string, RunFailure>) -> string {
+    return case answer {
+        Ok(_) -> "ok   " + name;
+        Error(f) {
+            val kind = case f.kind {
+                .Failed -> "red";
+                .Abort -> "aborted";
+                .Refused -> "refused on this target";
+                .Excluded -> "excluded on this target";
+            };
+            "FAIL "
+                + name
+                + " — "
+                + kind
+                + "\n"
+                + indent(f.message)
+                + indent(f.output)
+        }
+    };
+}
+
+fn indent(text: string) -> string {
+    if (text == "") return "";
+    var out: string[] = [];
+    for (text.split("\n")) { l ->
+        if (l != "") out.push("    " + l);
+    }
+    return out.join("\n") + "\n";
+}
+
+/// One module, expanded where it is called (decision 808 (2)): a refused load is that module's
+/// red, with its diagnostics; a loaded one is run by `main`.
+fn runModule(comptime name: string) -> void {
+    val loaded = try comptime compiler.load(name) catch { r ->
+        compiler.init({ ->
+            var lines: string[] = [];
+            for (r.diagnostics) { d ->
+                lines.push(d.file
+                    + ":"
+                    + d.line.toString()
+                    + ":"
+                    + d.column.toString()
+                    + ": "
+                    + d.message);
+            }
+            val refused = "FAIL "
+                + name
+                + " — refused at build\n"
+                + indent(lines.join("\n"));
+            runs.push(async fn() -> Async<string> {
+                return refused;
+            });
+        });
+        return;
+    };
+    compiler.init({ ->
+        runs.push(async fn() -> Async<string> {
+            return verdict(name, await loaded.run());
+        });
+    });
+}
+
+comptime {
+    runModule("array");
+}
+
+pub async fn main() -> Async<void> {
+    var red = 0;
+    for runs { r ->
+        val v = await r();
+        if (v.startsWith("FAIL ")) red = red + 1;
+        print(v);
+    }
+    print("modules: "
+        + runs.length.toString()
+        + " checked — "
+        + (runs.length - red).toString()
+        + " passed, "
+        + red.toString()
+        + " failed");
+}

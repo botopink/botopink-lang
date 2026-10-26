@@ -1,9 +1,0 @@
-//// A cell two levels below its workspace's root, the workspace listing its
-//// members as `group/*`, inherits the workspace's dependency as it does in place.
-
-import {greeting} from "greeter";
-import {io.terminal.print} from "std";
-
-pub fn main() -> void {
-    print(greeting());
-}

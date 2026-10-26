@@ -37,7 +37,7 @@ A cell's answer is one `.snap` file per module (decisions 457, 475, 485):
 it — it refuses the module (a host binding it lacks) or names an abort in its
 runtime's words, and replaces the module's whole answer there. A cell narrowed
 to some targets names them in its `botopink.json` `"targets"`, as any project does — never in a
-`targets` file, which `botopink cell check` refuses, naming the manifest field (decision 475 (1)).
+`targets` file, which the suite refuses, naming the manifest field (decision 475 (1)).
 A `test/` suite that narrows its targets is a project suite the same way — its own directory with a
 `botopink.json` naming `"targets"` (decision 536); a single test file declares no narrowing, and a
 `// targets:` line in it is a comment: the manifest is the one place for a restriction.
@@ -51,7 +51,11 @@ A module that checks itself (decision 989; the modules convert with 990 piece 6)
 `snapshot/main.snap` — `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <target>`,
 a case without one answering its plain section on every target. A difference writes `snapshot/main.snap.new`
 beside it (through `io.fs` on every target, decision 992) and the module's `main` answers `Error`;
-the program never writes the accepted file. The shared code is `conformance/lib/`.
+the program never writes the accepted file. The shared code is `conformance/lib/`. The suite's root
+package, `conformance/modules/` itself (decision 990 (6)), loads every module the same way and runs
+each in turn, one verdict per module; it is built once into one `.bpr` and that file run on each
+target (`conformance/run.sh`, the gate's conformance stage). No CLI command checks a cell: `cell
+check` and `cell new` left the CLI with it.
 
 A module holds its cases in two packages (decisions 765, 779): `modules/<module>/run/`, every case that
 prints — `src/cases/<case>/mod.bp` each, its entry `pub fn runCase()`, called in order by the package's
@@ -60,9 +64,8 @@ and `modules/<module>/refused/`, every case the compiler refuses, one build answ
 in its own `snapshot/output/cases/<case>/mod.snap`; a case that cannot share a package (an abort, a
 narrowed `"targets"`, a dependency, a departure, an asset) stays a full cell, `modules/<module>/cells/<case>/`.
 One compilation and one runtime start serve a package, not each case. The module holds a `docs.md` that
-links every case. `botopink cell new <module>/cases/<case>` writes a full cell, which
-`scripts/pack-cells.py apply <module>` packs when its package's check equals its answers, `botopink cell
-check <module>` checks every package and cell, and a `<!-- example: modules/<module>/run/src/cases/<case> -->`
+links every case. That layout is converted into the self-checking module above (decision 990 (6)),
+and a `<!-- example: modules/<module>/run/src/cases/<case> -->`
 line (`refused/…`, `cells/<case>`) names one; a module holding both `cases/` and `src/`, or a `cases/<x>`
 that is no cell, is refused:
 
@@ -4341,7 +4344,7 @@ every `Result` is (decision 783): `try comptime compiler.load(path) catch { r ->
 the refusals — the region's value is the `Module`, so the handler ends with one, `r.module`
 (decision 595 (4)) —, `try comptime compiler.load(path);` propagates them to the enclosing
 function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. There is no `compiler.snapshot`: comparing an answer is
-`botopink cell check`'s.
+the program's own (`conformance/lib/`, decision 989).
 
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/package_answers_module -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/file_path_refused -->
@@ -6305,7 +6308,7 @@ a workspace member, the workspace root's `.botopinkbuild/cache/` and
 workspace share one cache there.
 
 A dependency's analysis is kept between invocations (the code cache's level B,
-decision 509): `botopink build`, `run`, `test`, `check` and `cell check` read
+decision 509): `botopink build`, `run`, `test` and `check` read
 each dependency package's analysis from
 `.botopinkbuild/analysis/<target>/<package>.bpa` (std's one file per module,
 under `std/`) when it was written under the same closure key — the package's

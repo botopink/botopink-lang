@@ -3,7 +3,7 @@
 //! written, a function whose every parameter is `comptime` is expanded at the
 //! call, and what they print is the module's build output
 //! (`OkData.build_output`, which `botopink build` / `run` write to stdout).
-//! `botopink cell check` records no build output (796), so the cells
+//! The CLI's former `cell check` recorded no build output (796), so the cells
 //! `module_comptime_block` and `module_comptime_block_rules` hold the run and
 //! these tests the build — decision 793 (1)'s `throw`, (5)'s prints of a
 //! `comptime` in a function body; (4)'s replay is `level_b.zig`'s test —

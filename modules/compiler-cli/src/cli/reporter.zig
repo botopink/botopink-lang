@@ -1,8 +1,8 @@
 /// CLI status output — colored prefixes.
 ///
 /// All messages go to stderr via `print` — `std.debug.print`, unless a caller
-/// has pointed `sink` at a buffer (`botopink cell check`, `cell.zig`, reads
-/// what a build would have printed). Pass `io` only for the stdout helpers
+/// has pointed `sink` at a buffer (`build --json` discards what reading the
+/// held targets would print). Pass `io` only for the stdout helpers
 /// (help / version).
 const std = @import("std");
 
@@ -11,9 +11,8 @@ const std = @import("std");
 /// Where the CLI's stderr text goes while it is set: every message of this
 /// file, every diagnostic of `diagnostics.zig`, the resolver's and the
 /// dependency loader's refusals, and the OTP tools' stderr relayed by
-/// `otp.job`. `cell.zig` sets it around one in-process build of a cell and
-/// reads the refusals back from the text, so a cell's answer is exactly what
-/// `botopink build` prints. Null (the default) is stderr. The CLI is one
+/// `otp.job`. `build.zig` points it at a discarding writer while `--json`
+/// reads the held targets. Null (the default) is stderr. The CLI is one
 /// thread; nothing sets it concurrently.
 pub var sink: ?*std.Io.Writer = null;
 

@@ -219,9 +219,7 @@ beside the `.wat` with the loader `browser_loader.zig` renders as
 `<module>.mjs` — the same two preview 1 imports in JavaScript (`fd_write` on
 the console, `fs.writeSync` under node; `random_get` on
 `crypto.getRandomValues`), then `__bp_init` and `_start`. `botopink run` is
-`node <module>.mjs`. `botopink cell check` runs every conformance cell's wasm
-target on both hosts and fails one whose answers differ (`cell.zig`'s
-`Scratch.observe`).
+`node <module>.mjs`.
 
 `wasi:clocks/monotonic-clock` and `wasi:io/poll` join the frame when the
 module has host tasks (it imports `bp_host`, § below): `component_host_*` add
@@ -246,7 +244,7 @@ carries them in the custom section `botopink.needs` (`wat_ast.Item.custom`:
 data in the binary), one name per line, and no section when it needs none.
 `needs.zig` reads it back — `needsOf` from the binary (`codegen/runtime.zig`'s
 `executeWat`), `needsOfText` from a `wasi` build's component text (the CLI's
-`run`, `test` and `cell check`, `run.wasmtimeFlags`) — and `wasmtimeArgs` hands
+`run` and `test`, `run.wasmtimeFlags`) — and `wasmtimeArgs` hands
 wasmtime only `-W exceptions=y` / `-S http` / `-W gc=y`; node runs exceptions and GC by default.
 No annotation of a program turns a feature on or off (decision 67), and a
 binding that forgets its need fails visibly: wasmtime refuses to parse a

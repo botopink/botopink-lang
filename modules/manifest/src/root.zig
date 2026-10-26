@@ -158,10 +158,8 @@ pub const Located = struct {
 };
 
 /// Where `Located.print` writes: stderr, unless a caller pointed it at a
-/// buffer — `botopink cell check` (`compiler-cli/src/cli/cell.zig`) reads a
-/// cell's refusals back from exactly the text `botopink build` prints, a
-/// manifest's, a dependency's and a sidecar's included, beside the CLI's own
-/// `reporter.sink`. The CLI is one thread; nothing sets it concurrently.
+/// buffer — `botopink build --json` discards what reading the held targets
+/// would print, beside the CLI's own `reporter.sink`. The CLI is one thread; nothing sets it concurrently.
 pub var sink: ?*std.Io.Writer = null;
 
 /// `botopink build --json` (decision 798 (6)): every located refusal printed is

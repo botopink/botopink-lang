@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# run.sh — botopink-lang's conformance suite (decisions 457, 464, 466, 475):
-# every cell of `modules/` checked by `botopink cell check`, and every `test/`
+# run.sh — botopink-lang's conformance suite (decisions 457, 466, 989, 990 (6)):
+# the root package `modules/` — every self-checking module, loaded and run in one
+# program — built once into one `.bpr` and run on each target, and every `test/`
 # suite run by `botopink test --json` (`zig build test-conformance`, the gate's
 # conformance stage).
 #
@@ -10,19 +11,18 @@
 #                      [--lib-root <dir>] [--only <path>] [--jobs <n>] [--list]
 #   conformance/run.sh --self-test [--compiler <botopink>] [--lib-root <dir>]
 #
-#   --target    the targets the `test/` suites run on; default `all` (a suite
-#               runs on wasm too: `botopink test --target wasm`). A cell is one
-#               job whatever the target: `botopink cell check` runs it on every
-#               target its manifest declares. A missing runtime fails the run;
-#               it never drops a target (decision 67).
+#   --target    the targets the root package and the `test/` suites run on;
+#               default `all`. A missing runtime fails the run; it never drops
+#               a target (decision 67).
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
-#   --only      run one cell or suite (e.g. modules/case/run,
-#               test/case_arms.bp, test/pub_val_in_a_test, check); may repeat
+#   --only      run the root package or one suite (modules, test/case_arms.bp,
+#               test/pub_val_in_a_test); may repeat. One module alone runs by
+#               its own path: `cd modules/<m> && botopink run --target <t>`
 #   --jobs      parallel jobs; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel jobs below
 #   --list      print the plan and run nothing: one `<path>\t<target>\t<run|audit>`
-#               line per job (a cell's target is `*`). A whole run ends with
+#               line per job (the root package's path is `modules`). A whole run ends with
 #               `cells: <J> jobs — <R> run, <A> audits`, and `scripts/gate.sh`
 #               holds J to the number of lines `--list` prints: a run cannot
 #               do fewer jobs than the tree declares
@@ -31,39 +31,38 @@
 #   --self-test prove § the targets of a test suite against synthetic suites:
 #               a narrowing the compiler does not back fails the run, one it
 #               backs schedules the suite on the declared targets alone. A
-#               whole run of the suite (no --only) starts with it. (A cell's
-#               narrowing is `botopink cell check`'s, proved by
-#               modules/compiler-cli/tests/cli_contract.sh.)
+#               whole run of the suite (no --only) starts with it. (A loaded
+#               package's narrowing is the compiler's audit at `emit`, decision
+#               989 (3): `load-excluded-target-compiles`.)
 #   --cold      each `botopink` the run spawns gets `--cold` — the code cache of the
-#               cells' dependencies is not read (decision 509 (5)); `scripts/gate.sh
+#               dependencies is not read (decision 509 (5)); `scripts/gate.sh
 #               --cold` passes it
 #
-# Four kinds, every job (a share of cells, § run) in its own scratch directory:
-#   modules/<m>/run/, modules/<m>/refused/, modules/<m>/cells/<c>/  a module's packages of
-#                      cases and its cells (decision 779; 765's `cases/<c>/` while one remains);
-#                      `--only modules/<m>` stands for all of them
-#   modules/<cell>/    a cell (decisions 457, 475): `botopink.json`, `src/`,
-#                      `snapshot/output/<module>.snap`, `snapshot/targets/<t>/
-#                      <module>.snap` where a target departs, `docs.md`.
-#                      `botopink cell check <cell>` builds and runs it on every
-#                      target its manifest declares (all four, or its
-#                      `"targets"`, each excluded target audited against a
-#                      host-binding refusal) and compares every module's answer
-#                      with its snapshots; a mismatch writes a `.snap.new`
-#                      candidate beside the accepted file and fails the job
-#                      (modules/compiler-cli/AGENTS.md § Cells).
+# Three kinds, every job in its own scratch directory:
+#   modules/           the root package (decisions 989, 990 (6)): `modules/botopink.json`
+#                      and `modules/src/main.bp`, one `runModule("<m>")` line per
+#                      self-checking module — `modules/<m>/` or
+#                      `modules/decisions-taken/<d>/` holding `botopink.json`,
+#                      `src/main.bp` (its cases loaded from `cases/<case>/` at build,
+#                      run, compared with `snapshot/main.snap`) and `snapshot/main.snap`.
+#                      `botopink build --emit-runtime` writes its one `.bpr` once
+#                      (§ the root package); a job per target runs it there
+#                      (`botopink run --target <t> <bpr>`), and its printed verdicts —
+#                      `ok   <m>` or `FAIL <m> — …` and the lines under it, then
+#                      `modules: N checked — P passed, F failed` — are that target's
+#                      result per module. The list is held to the tree: a module on
+#                      disk without its line, a line without its module, and a
+#                      directory still in the old cell shape (`run/`, `refused/`,
+#                      `cells/` with no `snapshot/main.snap`) are reds of their own.
 #   test/<name>.bp     `test "…" { … assert … }` blocks: `botopink test --target
 #                      <t> --json` in a scratch project; every test must pass
-#   check/             `cell check` as a botopink program (decision 790), no cell: its
-#                      own tests, `botopink test --target commonJS --json` (the one
-#                      target its manifest declares), keyed check::<test>
 #   test/<name>/       a whole project with a `test/` tree: `botopink test
 #                      --target <t> --json`, keyed <name>::<test>. `"targets"`
 #                      in its botopink.json narrows it, audited — § the targets
 #                      of a test suite
 #
 # Outcome rules: a job passes or it fails, and a run fails on any `FAIL`. There
-# is no list of known failures (decision 154): a red cell is red until the
+# is no list of known failures (decision 154): a red module is red until the
 # compiler passes it.
 set -uo pipefail
 
@@ -96,15 +95,15 @@ while [ $# -gt 0 ]; do
         --self-test) self_test=1; shift ;;
         --list) list=1; shift ;;
         --cold) cold=1; shift ;;
-        -h|--help) sed -n '2,61p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,66p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
-# `--cold` handed on to every `botopink build` / `test` / `cell check` (decision 509 (5)).
+# `--cold` handed on to every `botopink build` / `test` (decision 509 (5)).
 cold_flag=()
 [ "$cold" -eq 0 ] || cold_flag=(--cold)
 runner="$here/$(basename "${BASH_SOURCE[0]}")"
-# The cells are read from `$here`; `--suite` points it at another tree.
+# The suite is read from `$here`; `--suite` points it at another tree.
 whole_suite=0
 if [ -n "$suite" ]; then
     [ -d "$suite" ] || { echo "run.sh: --suite is not a directory: $suite" >&2; exit 2; }
@@ -123,10 +122,8 @@ fi
 # The pool is scripts/lib/pool.sh — `botopink-lib-test`'s rule: one job per
 # CPU, bounded by `MemAvailable / 768 MiB`, and a job admitted only while the
 # machine's runnable threads are at most the CPU count (other gates share it).
-# A cell is one job of the plan: `botopink cell check` builds it in process on
-# each target its manifest declares and runs the program with node, erl or
-# wasmtime. The cells run in shares (§ run, § in process): one `botopink`
-# process checks a share of them, one after another.
+# The root package is built once before the pool starts (§ the root package);
+# each target's run of its `.bpr` is one job of the plan.
 # shellcheck source=../scripts/lib/pool.sh
 . "$repo/scripts/lib/pool.sh"
 [ -n "$jobs" ] || jobs="$(pool_default_jobs)"
@@ -136,8 +133,8 @@ pool_check_jobs "$jobs" run.sh
 # `botopink test --target beam` assembles every module of the run beside
 # itself and runs each test module's runner with `erl -pa`, and `botopink test
 # --target wasm` runs each test unit under wasmtime (decision 513), so `test/`
-# suites run on all four targets. A cell reaches every target through
-# `botopink cell check`.
+# suites run on all four targets. The root package's `.bpr` runs on each of
+# them with `botopink run --target <t>`.
 #
 # `erlc` and `erl` are gate dependencies already, so beam costs no new tool; a
 # machine without them fails the run below rather than run fewer targets and
@@ -159,8 +156,8 @@ pool_check_jobs "$jobs" run.sh
 # suite; so is a narrowing that names an unknown target, the same one
 # twice, or every target (it narrows nothing: delete it). No flag, list or
 # environment variable turns the audit off (decision 67); `--self-test` shows
-# each refusal firing. A cell's narrowing is the same rule, checked by
-# `botopink cell check` itself.
+# each refusal firing. A loaded package's narrowing is the compiler's own audit
+# at `emit` (decision 989 (3)).
 ALL_TARGETS="commonJS erlang wasm beam"
 TEST_TARGETS="commonJS erlang wasm beam"
 # `--target` takes `all`, one target, or a comma list (`wasm,beam`) — the subset the
@@ -182,8 +179,8 @@ case "$target" in
         [ "${#targets[@]}" -eq "${#asked[@]}" ] || { echo "run.sh: --target names a target twice (got '$target')" >&2; exit 2; }
         ;;
 esac
-# A cell runs on every target it declares, whatever --target says: the tools of
-# all four are needed whenever a cell is in the plan.
+# The tools of all four targets are needed whatever --target says: a run that
+# lacks one fails rather than run fewer targets and say "all".
 command -v erlc >/dev/null || { echo "run.sh: the beam target needs erlc" >&2; exit 2; }
 command -v erl  >/dev/null || { echo "run.sh: the erlang and beam targets need erl" >&2; exit 2; }
 command -v wasmtime >/dev/null || { echo "run.sh: the wasm target needs wasmtime" >&2; exit 2; }
@@ -198,7 +195,8 @@ trap 'rm -rf "$work"' EXIT
 # ── § self-test ───────────────────────────────────────────────────────────────
 # § the targets of a test suite, shown firing. A synthetic suite — two project
 # suites whose narrowing the compiler backs with a host-binding refusal, one
-# of each way a narrowing is refused, and a passing and a red cell — is run
+# of each way a narrowing is refused, and a root package of a green and a red
+# module beside a module still in the old cell shape and one with no line — is run
 # through this script (`--suite`), and the report it prints must hold exactly
 # these lines. A runner whose audit stopped refusing would print a green run
 # over a narrowed suite; this is what reds instead.
@@ -247,15 +245,23 @@ BP
     # Decision 536: a single file declares no narrowing — a `// targets:` line in it is a comment, and
     # the file runs on every target.
     printf '// targets: commonJS\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$suite/test/comment_is_no_narrowing.bp"
-    # A cell answering its snapshot, and one that does not: `botopink cell check`
-    # runs each, and the red one names its candidate.
-    for c in green red; do
-        mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot/output"
-        printf 'import {io.terminal.print} from "std";\n\npub fn main() -> void {\n    print("ok");\n}\n' >"$suite/modules/$c/src/main.bp"
-        printf '{ "name": "%s", "version": "0.0.1", "src": "src/" }\n' "$c" >"$suite/modules/$c/botopink.json"
+    # The root package over two modules — `green`'s `main` answers `Ok`, `red`'s an `Error` —, the
+    # real root program with its `runModule` lines replaced; `unlisted` has no line, and `oldshape`
+    # is still a directory of cells: each a red of its own.
+    mkdir -p "$suite/modules/src"
+    printf '{ "name": "conformance", "version": "0.0.1" }\n' >"$suite/modules/botopink.json"
+    awk '/^comptime \{$/ { print; print "    runModule(\"green\");"; print "    runModule(\"red\");"; skip = 1; next }
+         skip && /^\}$/ { skip = 0 } !skip' "$here/modules/src/main.bp" >"$suite/modules/src/main.bp"
+    for c in green red unlisted; do
+        mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot"
+        printf '{ "name": "%s", "version": "0.0.1" }\n' "$c" >"$suite/modules/$c/botopink.json"
+        printf 'botopink-cell 2\n' >"$suite/modules/$c/snapshot/main.snap"
     done
-    printf 'botopink-cell 1\nout ok\n' >"$suite/modules/green/snapshot/output/main.snap"
-    printf 'botopink-cell 1\nout not what it prints\n' >"$suite/modules/red/snapshot/output/main.snap"
+    # A module's `main` is `async` (decision 989 (9)).
+    printf 'pub async fn main() -> Async<Result<void, string>> {\n    return;\n}\n' >"$suite/modules/green/src/main.bp"
+    printf 'pub async fn main() -> Async<Result<void, string>> {\n    throw "1 red";\n}\n' >"$suite/modules/red/src/main.bp"
+    cp "$suite/modules/green/src/main.bp" "$suite/modules/unlisted/src/main.bp"
+    mkdir -p "$suite/modules/oldshape/run/src"
 
     bash "$runner" --suite "$suite" --target all --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" \
         >"$st/raw.txt" 2>&1
@@ -272,16 +278,21 @@ BP
 [beam] test/another_reason — excluded by test/another_reason/botopink.json "targets", and beam refuses it for another reason than a host binding
 [*] test/narrows_nothing — test/narrows_nothing/botopink.json "targets" names every target the suite runs on, so it narrows nothing
 [*] test/unknown_target — test/unknown_target/botopink.json "targets" names `jvm`, which is no target
-[*] modules/red — botopink cell check: exit 1
-    candidate modules/red/snapshot/output/main.snap.new
+[commonJS] modules/red — red
+[erlang] modules/red — red
+[wasm] modules/red — red
+[beam] modules/red — red
+    1 red
+[*] modules/unlisted — a module with no `runModule("unlisted")` line in modules/src/main.bp
+[*] modules/oldshape — not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion
 narrowings: 2 exclusions audited
-by target: commonJS 2/3 · erlang 3/4 · wasm 1/3 · beam 2/4 · * 1/4
-conformance: 9 passed, 9 failed
+by target: commonJS 3/5 · erlang 4/6 · wasm 2/5 · beam 3/6 · * 0/4
+conformance: 12 passed, 14 failed
 WANT
-    # The backed suite ran where it said and nowhere else, and the green cell
+    # The backed suite ran where it said and nowhere else, and the green module
     # passed: no line may name them.
     if grep -qE 'test/backed|modules/green|comment_is_no_narrowing' "$st/report.txt"; then
-        echo "self-test: a narrowing that stands on a host binding, or a green cell, was reported:" >&2
+        echo "self-test: a narrowing that stands on a host binding, or a green module, was reported:" >&2
         grep -E 'test/backed|modules/green' "$st/report.txt" >&2
         missing=1
     fi
@@ -320,35 +331,25 @@ FAKE
         sed 's/^/    /' "$st/report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red cell named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
+# `modules` is the root package, one path (§ the root package); a module alone is
+# run by its own path, outside this runner.
 files=()
 if [ ${#only[@]} -gt 0 ]; then
-    files=("${only[@]}")
+    for f in "${only[@]}"; do
+        f="${f%/}"
+        case "$f" in
+            modules/*) echo "run.sh: --only takes the root package (modules), not one module: run $f by its path (cd $f && botopink run --target <t>)" >&2; exit 2 ;;
+        esac
+        files+=("$f")
+    done
 else
-    while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ modules/*/ 2>/dev/null | sed 's:/$::'; } | sort)
-    # `check/`, the program of decision 790, is no cell: its own tests are a suite of the run.
-    [ ! -f "$here/check/botopink.json" ] || files+=(check)
+    while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ 2>/dev/null | sed 's:/$::'; } | sort)
+    [ ! -f "$here/modules/botopink.json" ] || files+=(modules)
 fi
-# A module (decisions 765, 779) is not a cell: its packages `run/` and `refused/`, its
-# `cells/<c>` and a 765 `cases/<c>` are, one job each. A path naming a module stands for them.
-expanded=()
-for f in "${files[@]}"; do
-    f="${f%/}"
-    case "$f" in
-        modules/*/cases/*|modules/*/cells/*|modules/*/run|modules/*/refused) expanded+=("$f") ;;
-        modules/*)
-            if [ -d "$here/$f/cases" ] || [ -d "$here/$f/cells" ] || [ -d "$here/$f/run" ] || [ -d "$here/$f/refused" ]; then
-                while IFS= read -r c; do expanded+=("$c"); done < <(cd "$here" && ls -d "$f"/run/ "$f"/refused/ "$f"/cells/*/ "$f"/cases/*/ 2>/dev/null | sed 's:/$::' | sort)
-            else
-                expanded+=("$f")
-            fi ;;
-        *) expanded+=("$f") ;;
-    esac
-done
-files=("${expanded[@]+"${expanded[@]}"}")
 
 # ── one job → result lines in $work/results ──────────────────────────────────
 #   <target>\t<key>\t<ok|fail>\t<detail>
@@ -410,62 +411,115 @@ test_project() { # <dir> <path> <target> <out>
     fi
 }
 
-# A share of the cells — `--list`'s lines, in plan order — checked by ONE
-# `botopink cell check --jobs 1 <cell>…` from a scratch directory of the share's
-# own (its `.botopinkbuild/tmp/` lands there, and no library root is found above
-# it but --lib-root): the process builds each cell in process, one after
-# another, and runs its programs (§ in process). Every cell of the share still
-# writes its own verdict, read off the verdict line `botopink cell check` prints
-# for it (`ok   <cell>`, or `FAIL <cell>` and the lines under it — the
-# candidates and their differences, what a person reads, kept beside a red
-# cell's verdict). A cell the process left without a verdict line (it died on
-# it) is checked again alone, and its verdict is that run's.
-check_share() { # <share id> <path…, one per line>
-    local id="$1" dir="$work/s-$1" path paths=() abs=() code
-    while IFS= read -r path; do [ -n "$path" ] && { paths+=("$path"); abs+=("$here/$path"); }; done <<<"$2"
-    mkdir -p "$dir"
-    (cd "$dir" && with_timeout $((3600 * ${#paths[@]})) "$compiler" cell check --jobs 1 ${cold_flag[@]+"${cold_flag[@]}"} "${abs[@]}" >"$dir/cell.txt" 2>&1)
-    code=$?
-    for path in "${paths[@]}"; do
-        verdict_of "$dir/cell.txt" "$path" "$code" || {
-            local alone="$dir/alone-$(printf '%s' "$path" | tr '/.' '__')"
-            mkdir -p "$alone"
-            (cd "$alone" && with_timeout 3600 "$compiler" cell check --jobs 1 ${cold_flag[@]+"${cold_flag[@]}"} "$here/$path" >"$alone/cell.txt" 2>&1)
-            verdict_of "$alone/cell.txt" "$path" "$?" whole
-        }
-    done
+# ── § the root package ────────────────────────────────────────────────────────
+# `modules/` is one botopink package (decisions 989, 990 (6)): its `main` loads
+# every self-checking module at build (`compiler.load`), runs each in turn and
+# prints its verdicts. It is built ONCE, before the pool starts, into one `.bpr`
+# (`botopink build --emit-runtime`, target-independent: decision 798), and each
+# target's job runs that file (`botopink run --target <t> <bpr>`) from
+# `modules/`, the directory of the project that wrote it — the comptime compile,
+# the whole cost of the suite (m2-0063's ramp), is paid once for four targets.
+# One process per target holds every module (989 (8)); a crash or a hang is that
+# target's run red whole.
+#
+# Decision 996 (L5) joins the libraries and the workspace members here, as lines
+# of their own kind in the same program: `roster` then lists them beside the
+# modules, and nothing else of this section changes.
+root_bpr=""      # the `.bpr` the build wrote, empty when it did not build
+root_refusal=""  # why the root package did not build
+
+# The modules of the tree: every directory of `modules/` (and of
+# `modules/decisions-taken/`) but the root's own `src/` and the build's dot
+# directories, one `<path>` per line, sorted. A module is in decision 989's shape
+# when it holds `botopink.json`, `src/main.bp` and `snapshot/main.snap`.
+module_dirs() {
+    (cd "$here/modules" && for d in */ decisions-taken/*/; do
+        d="${d%/}"
+        case "$d" in src|decisions-taken|'*'|'decisions-taken/*') continue ;; esac
+        [ -d "$d" ] && printf '%s\n' "$d"
+    done) | LC_ALL=C sort
+}
+in_shape() { # <module path, relative to modules/>
+    [ -f "$here/modules/$1/botopink.json" ] && [ -f "$here/modules/$1/src/main.bp" ] && [ -f "$here/modules/$1/snapshot/main.snap" ]
+}
+# The modules the root's `main.bp` runs: its `runModule("<path>")` lines, in order.
+listed_modules() {
+    sed -nE 's/^[[:space:]]*runModule\("([^"]+)"\);[[:space:]]*$/\1/p' "$here/modules/src/main.bp" 2>/dev/null
 }
 
-# The verdict of the cell <path> in what `botopink cell check` printed (<file>):
-# its section — the verdict line naming it and every indented line under it.
-# Returns 1 when no verdict line names the cell, unless `whole` is given: then
-# the cell fails and the whole output is its log.
-verdict_of() { # <file> <path> <exit code> [whole]
-    local file="$1" path="$2" code="$3" slug out
-    slug="$(printf '%s-%s' "$path" '*' | tr '/.*' '___')"
-    out="$work/r-$slug"
-    strip <"$file" | awk -v want="$here/$path" '
-        function verdict(l) { return substr(l, 1, 5) == "ok   " || substr(l, 1, 5) == "FAIL " }
-        verdict($0) {
-            rest = substr($0, 6)
-            on = (rest == want || index(rest, want " — ") == 1)
-            if (on) print
-            next
-        }
-        on { print }' >"$out.section"
-    local first; first="$(head -n1 "$out.section")"
-    case "$first" in
-        "ok   "*)
-            printf '*\t%s\t%s\t\n' "$path" ok >"$out" ;;
-        "FAIL "*)
-            printf '*\t%s\t%s\t%s\n' "$path" fail "botopink cell check: exit 1" >"$out"
-            sed "s#$here/##g" <"$out.section" >"$work/log-$(basename "$out")" ;;
-        *)
-            if [ "${4:-}" != whole ]; then rm -f "$out.section"; return 1; fi
-            printf '*\t%s\t%s\t%s\n' "$path" fail "botopink cell check: exit $code, no verdict for the cell" >"$out"
-            strip <"$file" | sed "s#$here/##g" >"$work/log-$(basename "$out")" ;;
-    esac
-    rm -f "$out.section"
+# The roster held to the tree: a red per module on disk not in 989's shape, per
+# module in the shape with no line, per line naming no module in the shape.
+# Each is a `*` result (`r-plan-*`, no job of the plan).
+roster() {
+    local d slug
+    while IFS= read -r d; do
+        slug="$(printf '%s' "$d" | tr '/.' '__')"
+        if ! in_shape "$d"; then
+            printf '*\tmodules/%s\tfail\t%s\n' "$d" "not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion" >"$work/r-plan-$slug"
+        elif ! listed_modules | grep -qxF -- "$d"; then
+            printf '*\tmodules/%s\tfail\t%s\n' "$d" "a module with no \`runModule(\"$d\")\` line in modules/src/main.bp" >"$work/r-plan-$slug"
+        fi
+    done < <(module_dirs)
+    while IFS= read -r d; do
+        in_shape "$d" && continue
+        slug="$(printf '%s' "$d" | tr '/.' '__')"
+        [ -f "$work/r-plan-$slug" ] && continue
+        printf '*\tmodules/%s\tfail\t%s\n' "$d" "modules/src/main.bp runs \`$d\`, which is no module in decision 989's shape" >"$work/r-plan-$slug"
+    done < <(listed_modules)
+}
+
+# Build the root package once: `root_bpr` the `.bpr` it wrote, or `root_refusal`
+# what the build printed (its first error lines).
+build_root() {
+    local dir="$work/root" code
+    mkdir -p "$dir"
+    export BOTOPINK_LIB_ROOTS="$lib_root"
+    (cd "$here/modules" && with_timeout 7200 "$compiler" build --emit-runtime "$dir/rt" --out "$dir/out" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+    code=$?
+    if [ $code -eq 0 ] && [ -f "$dir/rt/conformance.bpr" ]; then
+        root_bpr="$dir/rt/conformance.bpr"
+    else
+        root_refusal="the root package does not build (botopink build --emit-runtime: exit $code): $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
+    fi
+}
+
+# One target's run of the root package: one result line per module the program
+# printed a verdict for (`<t>\tmodules/<m>\tok|fail\t…`, a red module's lines under
+# its verdict kept as its log), and a red of its own when the run ended without
+# its summary or with fewer verdicts than lines.
+run_root() { # <target> <out file>
+    local t="$1" out="$2" dir="$work/root-$1" code
+    mkdir -p "$dir"
+    if [ -z "$ROOT_BPR" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$t" modules fail "$ROOT_REFUSAL" >"$out"
+        return
+    fi
+    (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" "$ROOT_BPR" >"$dir/o.txt" 2>"$dir/e.txt")
+    code=$?
+    strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
+      const fs = require("fs");
+      const t = process.env.T, lines = fs.readFileSync(0, "utf8").split("\n");
+      const rows = [], logs = new Map();
+      let cur = null, summary = null;
+      for (const l of lines) {
+        let m;
+        if ((m = /^ok   (\S+)$/.exec(l))) { rows.push([`modules/${m[1]}`, "ok", ""]); cur = null; }
+        else if ((m = /^FAIL (\S+) — (.*)$/.exec(l))) { const k = `modules/${m[1]}`; rows.push([k, "fail", m[2]]); cur = k; logs.set(k, []); }
+        else if ((m = /^modules: (\d+) checked/.exec(l))) { summary = Number(m[1]); cur = null; }
+        else if (cur && l.startsWith("    ")) logs.get(cur).push(l.slice(4));
+      }
+      const slug = (k) => k.replace(/[/.]/g, "_");
+      for (const [k, v] of logs) if (v.length) fs.writeFileSync(`${process.env.LOGS}/log-${t}-${slug(k)}`, v.join("\n") + "\n");
+      const expect = Number(process.env.EXPECT);
+      let problem = "";
+      if (summary === null) {
+        const err = fs.readFileSync(process.env.ERR, "utf8").split("\n").filter((l) => l.trim()).slice(-3).join(" ").replace(/\t/g, " ");
+        problem = `the run ended without its summary after ${rows.length} of ${expect} modules (exit ${process.env.CODE})${err ? ": " + err : ""}`;
+      } else if (summary !== rows.length || rows.length !== expect) problem = `${rows.length} verdicts and a summary of ${summary} for ${expect} modules`;
+      let text = rows.map(([k, s, d]) => [t, k, s, d].join("\t") + "\n").join("");
+      if (problem) text += [t, "modules", "fail", problem].join("\t") + "\n";
+      fs.writeFileSync(process.env.OUT, text);
+    '
 }
 
 run_one() { # <path> <target>
@@ -475,14 +529,15 @@ run_one() { # <path> <target>
     rm -rf "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     case "$path" in
+        modules) run_root "$t" "$out" ;;
         test/*.bp)
             project "$dir"
             cp "$here/$path" "$dir/test/$(basename "$path")"
             test_project "$dir" "$path" "$t" "$out" ;;
-        test/*|check)
+        test/*)
             cp -R "$here/$path" "$dir"
             test_project "$dir" "$path" "$t" "$out" ;;
-        *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under modules/ or test/" >"$out" ;;
+        *) printf '*\t%s\t%s\t%s\n' "$path" fail "neither the root package (modules) nor under test/" >"$out" ;;
     esac
 }
 # One exclusion of a narrowed project suite, audited (§ the targets of a test
@@ -520,7 +575,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f run_one check_share verdict_of test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export -f run_one run_root test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
 export here work compiler lib_root
 
 if [ $self_test -eq 1 ]; then
@@ -589,11 +644,12 @@ narrowed() { # <path> <by> <declared>
 for f in "${files[@]}"; do
     f="${f%/}"
     if [ ! -f "$here/$f" ] && [ ! -d "$here/$f" ]; then
-        echo "run.sh: no such cell or suite: $f" >&2; exit 2
+        echo "run.sh: no such root package or suite: $f" >&2; exit 2
     fi
     case "$f" in
-        # A cell is one job: `botopink cell check` runs every target it declares.
-        modules/*) printf '%s\t*\trun\n' "$f" >>"$jobs_list" ;;
+        # The root package: one job per target of the run, each running the one `.bpr`.
+        modules)
+            for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done ;;
         test/*.bp|test/*)
             declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
             # Only a project suite narrows (decision 536): its manifest's "targets"; a single file declares nothing.
@@ -607,13 +663,7 @@ for f in "${files[@]}"; do
                     case " $TEST_TARGETS " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac
                 done
             fi ;;
-        # `check/` (decision 790): a commonJS program, its tests run on commonJS alone — the one
-        # target its manifest declares; a run without commonJS has none of it to run.
-        check)
-            for t in "${targets[@]}"; do
-                [ "$t" != commonJS ] || printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"
-            done ;;
-        *) echo "run.sh: not a cell or a suite (modules/<cell>, test/<name>.bp, test/<project>, check): $f" >&2; exit 2 ;;
+        *) echo "run.sh: not the root package or a suite (modules, test/<name>.bp, test/<project>): $f" >&2; exit 2 ;;
     esac
 done
 # `--list`: the plan is the answer — one line per job, nothing spawned.
@@ -626,27 +676,23 @@ fi
 # Decision 510: every job runs on every run — no verdict is stored nor answered
 # from a store. The jobs are the plan's lines, in plan order.
 #
-# § in process: the cells (target `*`) go to the pool in shares — about two per
-# job, at most 32 cells each — and a share is one `botopink cell check`
-# process that builds its cells in process one after another (144 B-29 step
-# H): no `botopink` process per cell. Each cell keeps its own verdict, so the
-# report, its counts and `--list`'s plan are the cells', not the shares'.
-cells_total="$(awk -F '\t' '$2 == "*"' "$jobs_list" | wc -l | tr -d ' ')"
-share=1
-if [ "$cells_total" -gt 0 ]; then
-    share=$(( (cells_total + 2 * jobs - 1) / (2 * jobs) ))
-    [ "$share" -le 32 ] || share=32
+# The root package (§ the root package) is held to the tree and built once
+# here, before the pool: its targets' jobs only run the `.bpr`.
+ROOT_BPR=""; ROOT_REFUSAL=""; ROOT_LISTED=0
+if grep -q '^modules	' "$jobs_list"; then
+    roster
+    build_root
+    ROOT_BPR="$root_bpr"; ROOT_REFUSAL="$root_refusal"
+    ROOT_LISTED="$(listed_modules | grep -c . || true)"
 fi
+export ROOT_BPR ROOT_REFUSAL ROOT_LISTED
 {
-    awk -F '\t' '$2 == "*" { print $1 }' "$jobs_list" | awk -v n="$share" '
-        { batch = batch $0 "\n"; if (++k == n) { printf "check_share%c%d%c%s%c-%c", 0, ++id, 0, batch, 0, 0; batch = ""; k = 0 } }
-        END { if (k) printf "check_share%c%d%c%s%c-%c", 0, ++id, 0, batch, 0, 0 }'
     while IFS=$'\t' read -r f t what; do
         case "$what" in
             audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
             # The 4th field is `-`, never empty: BSD xargs (macOS) drops an empty
             # argument even under -0, and every later group of 4 would shift.
-            *) [ "$t" = "*" ] || printf 'run_one\0%s\0%s\0-\0' "$f" "$t" ;;
+            *) printf 'run_one\0%s\0%s\0-\0' "$f" "$t" ;;
         esac
     done <"$jobs_list"
 } | xargs -0 -r -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
@@ -654,9 +700,10 @@ fi
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 # How many jobs wrote their verdict — every job writes exactly one file
 # (`r-<slug>`, `r-audit-<slug>`); a malformed narrowing writes `r-narrowing-*`
-# without a job. `scripts/gate.sh` compares the count with `--list`.
+# and the root package's roster `r-plan-*`, without a job. `scripts/gate.sh`
+# compares the count with `--list`.
 jobs_audit="$(ls "$work" | grep -c '^r-audit-' || true)"
-jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vc '^r-narrowing-') ))"
+jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vcE '^r-(narrowing|plan)-') ))"
 
 # ── report ────────────────────────────────────────────────────────────────────
 node - "$work/results" "$jobs_ran" "$jobs_audit" "$work" <<'EOF'
@@ -668,10 +715,10 @@ const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 // exclusion the compiler backs with a host-binding refusal: not a cell that
 // ran, so not in the `passed` count.
 // The per-target line is what a claim of the form "every suite of X has a beam
-// result" quotes; `*` is a cell (`botopink cell check`, every target it
-// declares) and a malformed narrowing (refused before any target ran). A red
-// cell's FAIL line is followed by what `botopink cell check` printed: the
-// candidates it wrote and their differences.
+// result" quotes; `*` is a malformed narrowing (refused before any target ran)
+// and a red of the root package's roster (a module the list and the tree do not
+// agree on). A red module's FAIL line is followed by what the root program
+// printed under its verdict: the module's red cases and their differences.
 let fails = 0, oks = 0, audited = 0;
 const out = [];
 const byTarget = new Map();
@@ -685,10 +732,9 @@ for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
   if (status === "ok") { oks++; tally(t, "ok"); continue; }
   if (status === "audit") { audited++; continue; }
   out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${detail || ""}`);
-  if (t === "*" && key.startsWith("modules/")) {
-    for (const f of fs.readdirSync(work).filter((n) => n.startsWith(`log-r-${key.replace(/[/.]/g, "_")}-`))) {
-      for (const l of fs.readFileSync(`${work}/${f}`, "utf8").replace(/\n$/, "").split("\n")) out.push(`    ${l}`);
-    }
+  const log = `${work}/log-${t}-${key.replace(/[/.]/g, "_")}`;
+  if (fs.existsSync(log)) {
+    for (const l of fs.readFileSync(log, "utf8").replace(/\n$/, "").split("\n")) out.push(`    ${l}`);
   }
   fails++;
   tally(t, "fail");

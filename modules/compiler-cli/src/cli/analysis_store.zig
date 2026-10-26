@@ -8,7 +8,7 @@
 /// std's `<root>/.botopinkbuild/analysis/<target>/std/<module>.bpa` with the
 /// module's `/` written `@` (`std/io/fs` → `std/io@fs.bpa`). `<root>` is the
 /// cache root of decision 225 — the workspace root, else the project's own —
-/// or, under `cell check`, the cell's (`code_cache.root_override`): a
+/// or, under `--cache-root`, that directory (`code_cache.root_override`): a
 /// workspace's members share one directory. `<target>` is
 /// `code_cache.EntryTarget.name`: `wasm` and `wasm.browser` are two. One file
 /// per package and target: an entry under a new key replaces the previous one,
@@ -22,8 +22,8 @@
 /// renamed over it — no lock: a reader sees the old entry or the new one,
 /// never half of one, and two writers of one key leave one whole entry.
 ///
-/// **The compile's store** (`Cache`, S2): `build` (and through it `run` and
-/// `cell check`), `test` and `check` hand one to the comptime pass
+/// **The compile's store** (`Cache`, S2): `build` (and through it `run`),
+/// `test` and `check` hand one to the comptime pass
 /// (`codegen.Config.analysis_store`, `comptime_pipeline.compileWith`): it
 /// answers each group's key — a dependency's closure key
 /// (`libs.ClosureKeys`), std's per module — reads entries, and keeps those the

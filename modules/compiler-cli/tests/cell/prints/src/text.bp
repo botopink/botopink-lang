@@ -1,3 +1,0 @@
-pub fn label(n: i32) -> string {
-    return "value " + n.toString();
-}

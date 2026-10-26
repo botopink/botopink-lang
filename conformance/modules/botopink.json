@@ -1,5 +1,5 @@
 {
   "name": "conformance",
   "version": "0.0.1",
-  "workspaces": ["*/run", "*/refused", "*/cells/*", "decisions-taken/*/run", "decisions-taken/*/refused", "decisions-taken/*/cells/*", "*/cases/*", "decisions-taken/*/cases/*"]
+  "dependencies": { "conformance-lib": { "path": "../lib" } }
 }

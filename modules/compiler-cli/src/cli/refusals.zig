@@ -1,10 +1,25 @@
 //! The refusals in what a build printed (decisions 475 (2), 532, 798 (6)): the
-//! text of a build's stderr read back as `cell_snap.Refusal` records. Shared by
-//! `botopink cell check` (which files them under their module) and
-//! `botopink build --json` (which writes each as a `refused` event).
+//! text of a build's stderr read back as `Refusal` records, filed under their
+//! module; `botopink build --json` writes each as a `refused` event.
 const std = @import("std");
-const snap = @import("./cell_snap.zig");
-const Snap = snap.Snap;
+
+/// One refusal of a module: the compiler's `error…` line, and its location
+/// (`src/<file>.bp:<line>:<col>`) when the diagnostic carries one.
+pub const Refusal = struct {
+    message: []const u8,
+    at: ?[]const u8 = null,
+    /// The text printed beside the caret under `at`, when there is one.
+    label: ?[]const u8 = null,
+    /// The `called from <file>:<line>:<col>` lines under the diagnostic
+    /// (decision 532): the calls a raise at build crossed after the one `at`
+    /// names, innermost first.
+    from: []const []const u8 = &.{},
+};
+
+/// One module's refusals, in the order the build printed them.
+pub const Refused = struct {
+    refusals: []const Refusal = &.{},
+};
 
 /// `text` without its ANSI colour sequences (`ESC [ … m`).
 pub fn stripAnsi(a: std.mem.Allocator, text: []const u8) ![]const u8 {
@@ -36,21 +51,12 @@ pub fn isSummary(line: []const u8) bool {
     return std.mem.indexOf(u8, line, " module(s) failed to compile: ") != null;
 }
 
-pub fn firstErrorLine(text: []const u8) ?[]const u8 {
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trimEnd(u8, raw, " \r");
-        if (isErrorLine(line) and !isSummary(line)) return line;
-    }
-    return null;
-}
-
 /// The refusals in what a build printed, by module: each `error…` line (the
 /// summary aside) and the first `--> <file>:<line>:<col>` under it, filed
 /// under the module that file is (`src/shapes/circle.bp` → `shapes/circle`);
 /// an unlocated refusal is `main`'s.
-pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMapUnmanaged(Snap) {
-    var flat: std.ArrayListUnmanaged(snap.Refusal) = .empty;
+pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMapUnmanaged(Refused) {
+    var flat: std.ArrayListUnmanaged(Refusal) = .empty;
     var open = false;
     // The caret line of the open refusal is read once, right after its `-->`.
     var caret_read = false;
@@ -81,14 +87,14 @@ pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMa
             }
         }
     }
-    var grouped: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(snap.Refusal)) = .empty;
+    var grouped: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(Refusal)) = .empty;
     for (flat.items) |r| {
         const module = if (r.at) |at| moduleOf(at) else "main";
         const gop = try grouped.getOrPut(a, module);
         if (!gop.found_existing) gop.value_ptr.* = .empty;
         try gop.value_ptr.append(a, r);
     }
-    var out: std.StringArrayHashMapUnmanaged(Snap) = .empty;
+    var out: std.StringArrayHashMapUnmanaged(Refused) = .empty;
     for (grouped.keys(), grouped.values()) |k, v| try out.put(a, k, .{ .refusals = v.items });
     return out;
 }

@@ -11,6 +11,32 @@ const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
 const moduleMod = @import("../../module.zig");
 
+/// A loaded package's `main.bp` that loads its own `cases/inner` and runs it.
+const nested_runner =
+    \\import {compiler, io.terminal.print} from "std";
+    \\
+    \\var got: string = "";
+    \\
+    \\comptime {
+    \\    val loaded = comptime compiler.load("cases/inner");
+    \\    case loaded {
+    \\        Ok(m) -> compiler.init({ ->
+    \\            val r = m.run();
+    \\            got = case r {
+    \\                Ok(t) -> t;
+    \\                Error(f) -> f.message;
+    \\            };
+    \\        });
+    \\        Error(r) -> compiler.init({ -> got = "refused"; });
+    \\    }
+    \\}
+    \\
+    \\pub fn main() -> void {
+    \\    print(got);
+    \\}
+    \\
+;
+
 /// The package's files, by path relative to its `botopink.json`.
 const files = [_][2][]const u8{
     .{ "packages/fine/botopink.json", "{ \"name\": \"fine\" }" },
@@ -93,6 +119,16 @@ const files = [_][2][]const u8{
     },
     .{ "packages/bad_target/botopink.json", "{ \"name\": \"bad_target\",\n  \"targets\": [\"jvm\"] }" },
     .{ "packages/bad_target/src/main.bp", "pub fn main() -> void {}\n" },
+    // A loaded package that loads and runs its own (the conformance suite's
+    // root over its modules): two of them each load a `cases/inner` of their own.
+    .{ "packages/outer/botopink.json", "{ \"name\": \"outer\" }" },
+    .{ "packages/outer/src/main.bp", nested_runner },
+    .{ "packages/outer/cases/inner/botopink.json", "{ \"name\": \"inner\" }" },
+    .{ "packages/outer/cases/inner/src/main.bp", "import {io.terminal.print} from \"std\";\n\npub fn main() -> void {\n    print(\"outer's\");\n}\n" },
+    .{ "packages/other/botopink.json", "{ \"name\": \"other\" }" },
+    .{ "packages/other/src/main.bp", nested_runner },
+    .{ "packages/other/cases/inner/botopink.json", "{ \"name\": \"inner\" }" },
+    .{ "packages/other/cases/inner/src/main.bp", "import {io.terminal.print} from \"std\";\n\npub fn main() -> void {\n    print(\"other's\");\n}\n" },
     .{ "packages/bad_json/botopink.json", "{ \"name\": " },
     .{ "packages/bad_json/src/main.bp", "pub fn main() -> void {}\n" },
 
@@ -296,6 +332,44 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
     }
     try std.testing.expect(main_ok);
     try std.testing.expect(loaded_ok);
+}
+
+test "decision 787: a loaded package that loads and runs its own — each nested load its own package, compiled before the package that runs it" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    val a = comptime compiler.load("packages/outer");
+        \\    case a {
+        \\        Ok(m) -> compiler.init({ -> print(try m.run() catch { f -> f.message }); });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\    val b = comptime compiler.load("packages/other");
+        \\    case b {
+        \\        Ok(m) -> compiler.init({ -> print(try m.run() catch { f -> f.message }); });
+        \\        Error(r) -> print("refused");
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    ;
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
+    defer session.deinit(gpa);
+    const names = [_][]const u8{ "bp_load__packages__outer__cases__inner/main", "bp_load__packages__outer/main", "bp_load__packages__other__cases__inner/main", "bp_load__packages__other/main", "main" };
+    var at = [_]?usize{null} ** names.len;
+    for (session.outputs.items, 0..) |o, i| {
+        for (names, 0..) |n, k| if (std.mem.eql(u8, o.name, n)) {
+            try std.testing.expect(o.outcome == .ok);
+            at[k] = i;
+        };
+    }
+    for (at) |i| try std.testing.expect(i != null);
+    // A nested package compiles before the loaded package that runs it.
+    try std.testing.expect(at[0].? < at[1].?);
+    try std.testing.expect(at[2].? < at[3].?);
 }
 
 test "decision 787: a load no `run()` reaches stays out of the program" {

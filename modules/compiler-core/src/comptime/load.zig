@@ -230,7 +230,19 @@ fn stateArena() std.mem.Allocator {
     return if (state.arena) |a| a.allocator() else std.heap.page_allocator;
 }
 
-/// The entry of `path`, when this compile loaded it.
+/// The key a load's entry is kept under: the package's directory relative
+/// to the top-level package — `path` as written, under the directory of the
+/// loaded package that writes it (`files.dir`, empty for the top-level
+/// package's own loads). Two loaded packages loading `cases/<case>` each load
+/// their own; a loaded package that loads and runs its own (the conformance
+/// suite's root running its modules, each running its cases) keys each apart.
+pub fn keyOf(arena: std.mem.Allocator, files: ?PackageFiles, path: []const u8) error{OutOfMemory}![]const u8 {
+    const f = files orelse return path;
+    if (f.dir.len == 0) return path;
+    return std.fs.path.join(arena, &.{ f.dir, path });
+}
+
+/// The entry of `path` (a `keyOf` key), when this compile loaded it.
 pub fn entryOf(path: []const u8) ?Entry {
     return state.entries.get(path);
 }
@@ -509,18 +521,20 @@ fn parseShifted(arena: std.mem.Allocator, src: []const u8, first: usize, col: ?u
 pub const Loaded = struct {
     /// The package's directory as written (`cases/<case>`).
     path: []const u8,
+    /// Its entry's key (`keyOf`), when it differs from `path`.
+    key: ?[]const u8 = null,
 
     /// `name`: the loaded package's manifest name, as its load read it;
     /// `""` before the load answered.
     pub fn name(self: Loaded) []const u8 {
-        const e = entryOf(self.path) orelse return "";
+        const e = entryOf(self.key orelse self.path) orelse return "";
         return e.name;
     }
 
     /// `buildOutput`: what the loaded package's build printed; `""` before
     /// the load answered.
     pub fn buildOutput(self: Loaded) []const u8 {
-        const e = entryOf(self.path) orelse return "";
+        const e = entryOf(self.key orelse self.path) orelse return "";
         return e.build_output;
     }
 
@@ -1032,7 +1046,7 @@ const RunFinder = struct {
 /// (`runRewrite`): std's `failure.attempt` under `attempt_alias`, and the
 /// `loaded_main_fn` of each loaded package already in the program under
 /// `runAlias`. `program` itself when it calls none.
-pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program, files: ?PackageFiles) !ast.Program {
     var t: AliasTracer = .{ .arena = arena };
     for (program.decls) |d| try t.walk(ast.DeclKind, d);
     var f: RunFinder = .{ .arena = arena, .collect_all = true };
@@ -1076,7 +1090,7 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     if (!has_module) try src.appendSlice(arena, "import {compiler.Module as " ++ module_alias ++ "} from \"std\";\n");
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     for (f.paths.items) |p| {
-        const pkg = try packageName(arena, p);
+        const pkg = try packageName(arena, try keyOf(arena, files, p));
         if (seen.contains(pkg)) continue;
         try seen.put(arena, pkg, {});
         const present = for (build_modules) |m| {
@@ -1824,8 +1838,7 @@ fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Ma
             } else false;
             if (!known) {
                 const at = entryPlace(text, "targets", t.string);
-                // The CLI's wording for a target it does not know
-                // (`cell.zig` `readTargets`).
+                // The CLI's wording for a target it does not know.
                 const message = std.fmt.allocPrint(arena, "unknown target `{s}` (commonJS, erlang, beam, wasm)", .{t.string}) catch return .{ .bad = .{ .message = "out of memory" } };
                 return .{ .bad = .{ .message = message, .line = at.line, .column = at.col } };
             }
@@ -1845,11 +1858,12 @@ fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Ma
 pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const comptimeMod = @import("../comptime.zig");
     if (!comptimeMod.stdlibTemplateReady()) return .std_initialising;
-    for (loading.items) |p| if (std.mem.eql(u8, p, req.path)) return .cycle;
+    const key = try keyOf(arena, req.files, req.path);
+    for (loading.items) |p| if (std.mem.eql(u8, p, key)) return .cycle;
     // One compile per file per top-level compile (decision 787): every read
     // of it, and the compile again with the packages `run` reaches, read the
     // first answer.
-    if (state.entries.get(req.path)) |e| return .{ .diagnostics = e.diagnostics };
+    if (state.entries.get(key)) |e| return .{ .diagnostics = e.diagnostics };
 
     var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer scratch_state.deinit();
@@ -1879,7 +1893,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         .ok => |m| m,
         .bad => |why| {
             try refusals.append(arena, .{ .code = "", .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
-            return .{ .diagnostics = try remember(req.path, "", "", refusals.items, &.{}, &.{}, main_of, null) };
+            return .{ .diagnostics = try remember(key, "", "", refusals.items, &.{}, &.{}, main_of, null) };
         },
     };
     var pkg_req = req;
@@ -1888,7 +1902,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         error.FileNotFound => return .{ .not_a_package = .{ .why = .no_main, .entry = entry_file } },
         else => |e| return e,
     };
-    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, &.{}, main_of, manifest.targets) };
+    if (refusals.items.len > 0) return .{ .diagnostics = try remember(key, manifest.name, "", refusals.items, own, &.{}, main_of, manifest.targets) };
 
     // Decisions 982 (1), (3), 993 (1) — the loaded package's own manifest:
     // its targets and its dependencies. With a resolver, the dependencies are
@@ -1920,7 +1934,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             },
             .refused => |why| {
                 try refusals.append(arena, .{ .code = codeOf(why.message), .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
-                return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, &.{}, main_of, manifest.targets) };
+                return .{ .diagnostics = try remember(key, manifest.name, "", refusals.items, own, &.{}, main_of, manifest.targets) };
             },
         }
     } else for (caller) |m| if (m.package.len > 0) {
@@ -1937,7 +1951,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         try modules.append(scratch, mm);
     }
 
-    try loading.append(std.heap.page_allocator, req.path);
+    try loading.append(std.heap.page_allocator, key);
     defer _ = loading.pop();
     const saved = build_modules;
     defer build_modules = saved;
@@ -1998,8 +2012,8 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             else => if (o.target_trace) |t| try printed.appendSlice(scratch, t.build_output),
         }
     }
-    const ds = try remember(req.path, manifest.name, printed.items, refusals.items, own, own_dependencies, main_of, targets);
-    if (state.entries.getPtr(req.path)) |e| e.test_modules = try testSuite(stateArena(), pkg_files, targets, wasm_host);
+    const ds = try remember(key, manifest.name, printed.items, refusals.items, own, own_dependencies, main_of, targets);
+    if (state.entries.getPtr(key)) |e| e.test_modules = try testSuite(stateArena(), pkg_files, targets, wasm_host);
     return .{ .diagnostics = ds };
 }
 
@@ -2058,7 +2072,16 @@ fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []
         .source = try a.dupe(u8, m.source),
         .srcPath = try a.dupe(u8, m.srcPath),
         .root = m.root,
-        .files = m.files,
+        // The reader's paths are the load's (`PackageFiles.under`, the
+        // caller's arena): a later compile that reaches this package — the
+        // build's second pass, after the arena of the first is gone — reads
+        // its own `compiler.load` files through them, so they are kept here.
+        .files = if (m.files) |f| blk: {
+            var kept = f;
+            kept.root = try a.dupe(u8, f.root);
+            kept.dir = try a.dupe(u8, f.dir);
+            break :blk kept;
+        } else null,
     };
     const key = try a.dupe(u8, path);
     try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result, .main_async = main_of.async_, .targets = targets, .dependencies = dependencies });
@@ -2299,7 +2322,7 @@ fn fromRendered(arena: std.mem.Allocator, text: []const u8) !Diagnostic {
 
 /// The text beside the caret of a snippet line (`  |   ^^^ the label`): ""
 /// when the carets stand alone, null when the line is no caret line — as
-/// `botopink cell check` reads it (`cell.zig` `caretLabel`).
+/// `botopink build --json` reads it (`refusals.zig` `caretLabel`).
 fn caretLabel(line: []const u8) ?[]const u8 {
     const bar = std.mem.indexOfScalar(u8, line, '|') orelse return null;
     if (std.mem.trim(u8, line[0..bar], " 0123456789").len != 0) return null;
