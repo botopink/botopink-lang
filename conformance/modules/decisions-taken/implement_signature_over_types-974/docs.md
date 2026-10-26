@@ -5,4 +5,4 @@ The signature check of decision 800 compares types, not their spellings: `array<
 [cells/implement_comptime_marker_dropped/src/main.bp](cells/implement_comptime_marker_dropped/src/main.bp)
 [cells/implement_comptime_marker_added/src/main.bp](cells/implement_comptime_marker_added/src/main.bp)
 [cells/implement_signature_spellings_met/src/main.bp](cells/implement_signature_spellings_met/src/main.bp)
-[cells/implement_body_marker_admitted/src/main.bp](cells/implement_body_marker_admitted/src/main.bp)
+[cases/implement_body_marker_admitted/src/main.bp](cases/implement_body_marker_admitted/src/main.bp)

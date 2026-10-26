@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[unknown-builtin]: there is no `@name`: std's functions are imported and what the compiler does is a member of `compiler`
-at src/cases/builtin_print_removed/mod.bp:5:5
-label no builtin of this name `@print`

@@ -6,6 +6,6 @@ The example writes the same search twice. `firstOf<T>` tests `x is T` with `T` a
 
 The program is refused at `firstOf`; without it, `main` would print `1` and `0`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/comptime_param_value_or_type-297/refused/src/cases/is_type_outside_value_or_type`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cells/type_param_generic_form`.
+Cells in this repository that bear on it: `modules/decisions-taken/comptime_param_value_or_type-297/cases/is_type_outside_value_or_type`, `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/type_param_generic_form`.
 
 [draft/main.bp](draft/main.bp)

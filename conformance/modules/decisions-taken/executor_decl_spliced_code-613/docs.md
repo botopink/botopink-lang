@@ -14,6 +14,6 @@ before `main` in source order, so the program prints `Orders: orders made`, `mak
 Cells in this repository that also bear on it: `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/run/src/cases/init_executor_handle_on_type`,
 `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/run/src/cases/init_executor_handle_not_module_name`,
 `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cells/init_executor_handle_on_method`,
-`modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/refused/src/cases/init_executor_handle_on_type_as_value`.
+`modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_on_type_as_value`.
 
 [draft/main.bp](draft/main.bp)

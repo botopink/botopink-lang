@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: catch-empty: an empty `catch { }` swallows the failure in silence — handle it with a value, a statement or a `throw`, or leave it to propagate
-at src/main.bp:14:31

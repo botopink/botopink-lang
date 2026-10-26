@@ -1,0 +1,20 @@
+//// Decision 409 — an `if` / `else if` / `else` expression is a tail like any
+//// other: the function answers the arm that runs, after a `val` or alone.
+
+import {io.terminal.print} from "std";
+
+fn grade(score: i32) -> string {
+    val pass = score >= 50;
+    if (score >= 90) "A" else if (score >= 70) "B" else if (pass) "C" else "F"
+}
+
+fn abs(n: i32) -> i32 { if (n < 0) -n else n }
+
+pub fn main() -> void {
+    print(grade(95));
+    print(grade(75));
+    print(grade(55));
+    print(grade(10));
+    print(abs(-7));
+    print(abs(7));
+}

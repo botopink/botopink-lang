@@ -1,8 +1,0 @@
-pub mod meta_add_outside_decorator;
-pub mod meta_catalogue_generic;
-pub mod meta_field_type;
-pub mod meta_not_record;
-pub mod meta_read_at_build;
-pub mod meta_read_not_type;
-pub mod meta_several;
-pub mod meta_twice;

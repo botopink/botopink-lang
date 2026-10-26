@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-outside-val: a derived type is bound by a module-level `val` with no type annotation — `Patch` is a `var`
-at src/cases/derived_type_var/mod.bp:10:22

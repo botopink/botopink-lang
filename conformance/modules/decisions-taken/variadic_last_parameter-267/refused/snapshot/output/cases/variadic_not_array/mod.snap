@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[variadic-not-array]: a variadic parameter's type is written as an array `T[]`
-at src/cases/variadic_not_array/mod.bp:7:17
-label not `T[]`

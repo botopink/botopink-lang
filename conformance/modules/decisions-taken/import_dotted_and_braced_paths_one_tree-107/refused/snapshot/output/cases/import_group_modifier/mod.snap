@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[import-group-modifier]: `*` and `as` belong to an import leaf, not to a group
-at src/cases/import_group_modifier/mod.bp:4:20
-label this node opens braces

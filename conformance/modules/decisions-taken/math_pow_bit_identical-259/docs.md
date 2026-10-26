@@ -7,6 +7,6 @@ The second line takes another fractional exponent. The third meets `sqrt`, an op
 stays a host call (`f64.sqrt` on wasm) and agrees with `pow(2.0, 0.5)`. The last two are a negative base with an
 integral exponent, `-512.0`, and `0⁰`, which is `1.0`.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/math_same_bits_every_target-263/cells/std_math_on_every_target`.
+Cells in this repository that also bear on it: `modules/decisions-taken/math_same_bits_every_target-263/cases/std_math_on_every_target`.
 
 [draft/main.bp](draft/main.bp)

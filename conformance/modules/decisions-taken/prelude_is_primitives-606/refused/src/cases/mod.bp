@@ -1,3 +1,0 @@
-pub mod bare_print_call;
-pub mod builtin_print_removed;
-pub mod prelude_name_with_sigil;

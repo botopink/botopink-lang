@@ -1,7 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.decorator_expr_unread_argument.runCase();
-    cases.decorator_expr_value.runCase();
-    cases.expr_param_value_receiver.runCase();
-}

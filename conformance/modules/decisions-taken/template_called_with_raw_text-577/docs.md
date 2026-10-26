@@ -1,11 +1,11 @@
 # Decision 577 — A template is called one way: its name before a template text `` @`…` ``, raw.
 
-[run/src/cases/compiler_template_forms/mod.bp](run/src/cases/compiler_template_forms/mod.bp)
+[cases/compiler_template_forms/src/main.bp](cases/compiler_template_forms/src/main.bp)
 [refused/src/cases/expr_call_outside_expr/mod.bp](refused/src/cases/expr_call_outside_expr/mod.bp)
-[cells/template_annotation/src/main.bp](cells/template_annotation/src/main.bp)
+[cases/template_annotation/src/main.bp](cases/template_annotation/src/main.bp)
 [refused/src/cases/template_annotation_call_form/mod.bp](refused/src/cases/template_annotation_call_form/mod.bp)
 [refused/src/cases/template_annotation_unknown_hole/mod.bp](refused/src/cases/template_annotation_unknown_hole/mod.bp)
-[run/src/cases/template_call_in_built_code/mod.bp](run/src/cases/template_call_in_built_code/mod.bp)
+[cases/template_call_in_built_code/src/main.bp](cases/template_call_in_built_code/src/main.bp)
 [refused/src/cases/template_hole_error_far_in_built_code/mod.bp](refused/src/cases/template_hole_error_far_in_built_code/mod.bp)
 [refused/src/cases/template_hole_error_on_later_line/mod.bp](refused/src/cases/template_hole_error_on_later_line/mod.bp)
 [refused/src/cases/template_hole_typed_at_caller/mod.bp](refused/src/cases/template_hole_typed_at_caller/mod.bp)

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-bigint: a `bigint` is not computed at compile time yet
-at src/cases/bigint_comptime/mod.bp:6:15

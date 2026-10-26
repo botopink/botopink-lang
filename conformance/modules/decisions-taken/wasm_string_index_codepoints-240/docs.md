@@ -7,7 +7,7 @@ not `16`. `at(0)` is `€` and `at(4)` is `本`, whole characters, and `at(-1)` 
 `indexOf` answers reads back through `at` as the same character, so the last line is `true`. erlang, beam and commonJS
 print the same nine lines, giving one answer for the four targets.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/string_index_counts_codepoints-320/run/src/cases/string_index_of_codepoints`,
-`modules/decisions-taken/string_index_counts_codepoints-320/run/src/cases/string_codepoint_slice_and_code`.
+Cells in this repository that also bear on it: `modules/decisions-taken/string_index_counts_codepoints-320/cases/string_index_of_codepoints`,
+`modules/decisions-taken/string_index_counts_codepoints-320/cases/string_codepoint_slice_and_code`.
 
 [draft/main.bp](draft/main.bp)

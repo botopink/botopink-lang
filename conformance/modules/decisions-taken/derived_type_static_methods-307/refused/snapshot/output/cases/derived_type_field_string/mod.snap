@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-field-string: a field is named `.title`, not the string "title"
-at src/cases/derived_type_field_string/mod.bp:11:41

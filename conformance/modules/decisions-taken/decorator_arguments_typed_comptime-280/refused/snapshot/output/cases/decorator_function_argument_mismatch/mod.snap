@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: `#[page]`'s `paths` expects `?fn() -> BlogParams[]`, got `fn() -> User[]`
-at src/cases/decorator_function_argument_mismatch/mod.bp:27:30

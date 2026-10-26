@@ -1,0 +1,11 @@
+botopink-cell 1
+out first block
+out build a
+out build b
+out == block_refusal_names_comptime
+out refused error: decorator-writes-module-var: the `comptime` block writes the module-level `var` `count` — each decorator invocation is independent: its answer depends on the declaration it annotates alone (decision 343)
+out at src/main.bp:10:5
+out == module_comptime_block
+out init a
+out init b
+out main

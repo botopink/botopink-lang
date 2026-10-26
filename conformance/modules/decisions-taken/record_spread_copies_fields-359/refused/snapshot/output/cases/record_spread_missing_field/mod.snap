@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-missing-field: field `nome` of `Pessoa` has no default, and no spread or label supplies it
-at src/cases/record_spread_missing_field/mod.bp:13:13

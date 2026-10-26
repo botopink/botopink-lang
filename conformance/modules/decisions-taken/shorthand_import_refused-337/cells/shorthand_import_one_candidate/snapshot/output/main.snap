@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: shorthand-import: `splitPath` names no module of this package — write import {config.splitPath};
-at src/main.bp:7:9

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: block-break-value: a block's value is its last expression — `break <value>` does not give it
-at src/cases/comptime_block_break_value/mod.bp:10:5

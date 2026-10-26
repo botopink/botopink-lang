@@ -14,6 +14,6 @@ which the entry's import then names. Each refusal is printed field by field. The
 loads, at the argument.
 
 [cells/compiler_load_answers_diagnostics/src/main.bp](cells/compiler_load_answers_diagnostics/src/main.bp)
-[refused/src/cases/load_path_absolute/mod.bp](refused/src/cases/load_path_absolute/mod.bp)
-[refused/src/cases/load_path_outside_package/mod.bp](refused/src/cases/load_path_outside_package/mod.bp)
-[refused/src/cases/load_not_a_package/mod.bp](refused/src/cases/load_not_a_package/mod.bp)
+[cases/load_path_absolute/src/main.bp](cases/load_path_absolute/src/main.bp)
+[cases/load_path_outside_package/src/main.bp](cases/load_path_outside_package/src/main.bp)
+[cases/load_not_a_package/src/main.bp](cases/load_not_a_package/src/main.bp)

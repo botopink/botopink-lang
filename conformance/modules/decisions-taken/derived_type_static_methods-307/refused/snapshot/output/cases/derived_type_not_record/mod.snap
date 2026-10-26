@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: derived-type-source-not-record: `Type.partial` takes a record type; `Fish` is an enum
-at src/cases/derived_type_not_record/mod.bp:11:34

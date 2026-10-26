@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected i32, got ?i32
-at src/cases/index_answer_is_optional/mod.bp:10:20

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: implement-signature-differs: `Square.area` does not match the contract `Shape` — contract: fn area(self: Square) -> f64 · written: fn area(self: Square) -> i32
-at src/main.bp:15:8

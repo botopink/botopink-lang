@@ -1,0 +1,105 @@
+//// Decisions 331, 434 (5) — a primitive computed at build answers what the
+//// program computes when it runs, one answer for every target: integer
+//// conversions (`1000.toI64()` used to raise `integer_overflow` at build,
+//// its bound written `1 bsl 63`, which the comptime runtime's 64-bit
+//// integers cannot hold), string methods, float arithmetic and text, array
+//// methods and integer division. Each family is computed under `comptime`
+//// and again at run time, and the two compared.
+
+import {io.terminal.print} from "std";
+
+fn ints() -> string {
+    val a: i32 = 1000;
+    val b: i64 = 9007199254740993;
+    val c: i64 = 9223372036854775807;
+    return a.toI64().toString()
+        + " "
+        + b.toString()
+        + " "
+        + (b - 1).toString()
+        + " "
+        + a.toU32().toString()
+        + " "
+        + b.toI64().toString()
+        + " "
+        + c.toI64().toString();
+}
+
+fn exact() -> bool {
+    val a: i32 = 1000;
+    return a.toF64() == 1000.0;
+}
+
+fn strs() -> string {
+    val s = "  Héllo, World  ";
+    return s.trim().toUpper()
+        + "|"
+        + s.trim().toLower()
+        + "|"
+        + s.length().toString()
+        + "|"
+        + s.trim().split(", ").join("+")
+        + "|"
+        + s.trim().slice(1, 4)
+        + "|"
+        + s.indexOf("W").toString()
+        + "|"
+        + s.trim().startsWith("H").toString()
+        + "|"
+        + s.trim().replace("l", "L");
+}
+
+fn floats() -> string {
+    val x = 3.5;
+    return (x / 2.0).toString()
+        + " "
+        + (1.0 / 3.0).toString()
+        + " "
+        + (0.1 + 0.2).toString()
+        + " "
+        + (2.0 * 1e-7).toString();
+}
+
+fn arrs() -> string {
+    val xs = [3, 1, 2];
+    return xs.map({ x -> x * 2 }).join(",")
+        + " "
+        + xs.reverse().join(",")
+        + " "
+        + xs.length().toString()
+        + " "
+        + xs.filter({ x -> x > 1 }).join(",")
+        + " "
+        + xs.fold(0, { acc, x -> acc + x }).toString()
+        + " "
+        + xs.contains(2).toString();
+}
+
+fn divs() -> string {
+    return (7 / 2).toString()
+        + " "
+        + ((0 - 7) / 2).toString()
+        + " "
+        + (7 % 3).toString()
+        + " "
+        + ((0 - 7) % 3).toString();
+}
+
+pub fn main() -> void {
+    val i = comptime ints();
+    print(i);
+    print(i == ints());
+    print(comptime exact());
+    val s = comptime strs();
+    print(s);
+    print(s == strs());
+    val f = comptime floats();
+    print(f);
+    print(f == floats());
+    val a = comptime arrs();
+    print(a);
+    print(a == arrs());
+    val d = comptime divs();
+    print(d);
+    print(d == divs());
+}

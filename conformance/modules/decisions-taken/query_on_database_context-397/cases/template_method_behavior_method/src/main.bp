@@ -1,0 +1,50 @@
+//// Decisions 311 (3), 397 (3) — a template method is a name of the call
+//// site's scope; a method the receiver's type has of that name is the
+//// type's, whether written in its body or reached through a behavior it
+//// implements — the behavior's own default included — and a value of a
+//// behavior has the methods it declares. `x.greet "…"` calls that method; on
+//// a type without one, the template method runs.
+
+import {code, compiler, io.terminal.print} from "std";
+
+behavior Greets {
+    fn greet(self: Self, word: string) -> string;
+}
+
+behavior Waves {
+    fn who(self: Self) -> string;
+
+    default fn greet(self: Self, word: string) -> string {
+        return "default " + word + ", " + self.who();
+    }
+}
+
+type Greeter(who: string) implement Greets {
+    fn greet(self: Self, word: string) -> string {
+        return "behavior " + word + ", " + self.who;
+    }
+}
+
+type Waver(name: string) implement Waves {
+    fn who(self: Self) -> string {
+        return self.name;
+    }
+}
+
+type Visitor(who: string)
+
+fn greet(syntax self: Visitor, syntax q: string) -> string {
+    val said = "template " + compiler.text(q) + ", ";
+    return code @`${said} + ${self}.who`;
+}
+
+fn wave(w: Waves) -> string {
+    return w.greet @`hi`;
+}
+
+pub fn main() -> void {
+    print(Greeter(who: "Ana").greet "hello");
+    print(Waver(name: "Caio").greet "hello");
+    print(wave(Waver(name: "Duda")));
+    print(Visitor(who: "Bia").greet "hello");
+}
