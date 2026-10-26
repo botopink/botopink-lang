@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: annotation-not-a-decorator: `#[check]` names a namespace, not a decorator
-at src/cases/annotation_not_decorator_namespace/mod.bp:9:3
