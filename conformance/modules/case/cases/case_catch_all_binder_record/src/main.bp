@@ -1,0 +1,46 @@
+//// 144 B-22 — a `case` over a record value whose catch-all arm binds the value in its body
+//// (`_ { o -> … }`) reads the record's fields through the binder, a generic record's included, and
+//// the `case` is a value of the arms' type wherever it stands — returned, bound by a `val`, printed.
+//// wasm printed the string field's address when the `case` was a `val`'s value or `terminal.print`'s
+//// argument.
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T, label: string)
+
+type Pt(x: i32, label: string)
+
+fn named(b: Box<i32>) -> string {
+    return case b {
+        Box(value: 3, ..) -> "three";
+        _ { o ->
+            o.label
+        }
+    };
+}
+
+pub fn main() -> void {
+    val b = Box(value: 5, label: "box");
+    print(named(b));
+    print(named(Box(value: 3, label: "x")));
+    val s = case b {
+        Box(value: 3, ..) -> "three";
+        _ { o ->
+            o.label + "!"
+        }
+    };
+    print(s);
+    print(case b {
+        Box(value: 3, ..) -> 0;
+        _ { o ->
+            o.value + 1
+        }
+    });
+    val p = Pt(x: 5, label: "pt");
+    print(case p {
+        Pt(x: 3, ..) -> "three";
+        _ { o ->
+            o.label
+        }
+    });
+}
