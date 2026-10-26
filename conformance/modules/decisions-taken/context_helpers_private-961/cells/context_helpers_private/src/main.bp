@@ -1,0 +1,9 @@
+//// Decision 961 — the helpers the component lowering calls are private to std's
+//// `context`: importing `context.stamp` is refused as any import of a private
+//// name, so no program forges a call number or a place.
+
+import {context.stamp, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreached");
+}

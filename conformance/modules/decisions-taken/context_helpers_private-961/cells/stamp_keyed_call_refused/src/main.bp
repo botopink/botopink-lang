@@ -1,0 +1,15 @@
+//// Decision 961 — a call of `stampKeyed` that the lowering did not write meets
+//// the ordinary privacy rule: `context.stampKeyed(…)` is refused at the call.
+
+import {context, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: n.toString());
+}
+
+pub fn main() -> void {
+    val forged = context.stampKeyed(Item(1), 1, 7);
+    print("unreached");
+}

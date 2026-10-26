@@ -59,7 +59,9 @@
 //!
 //! The `bpScope…__` functions are std's `context.enter` / `received` /
 //! `provideIn` / `find` / `answer` / `nowhere` / `root`, imported under those
-//! names when the module needs them (the import is added here). A context's
+//! names when the module needs them (the import is added here). Those the
+//! checker reads private (decision 961) std's `context` exports from its
+//! emitted copy alone (`withHelpersExported`). A context's
 //! identity is its value's type (379), recorded by the checker in
 //! `Env.contextUses`: a read's fallback is the context value it names (723),
 //! an `inject` field's the `val` that declares its type's default (another
@@ -910,11 +912,46 @@ fn needed(env: *Env, program: ast.Program) bool {
 
 /// Lower the component model's scope (decisions 809 (8), 819) over `program`
 /// (the transformed module).
+/// std's lowering functions, under names no source can collide with:
+/// `context`'s module, the std name, the local name.
+const std_helpers = [_][3][]const u8{
+    .{ "context", "enter", enter_fn },
+    .{ "context", "received", received_fn },
+    .{ "context", "provideIn", provide_fn },
+    .{ "context", "find", find_fn },
+    .{ "context", "answer", answer_fn },
+    .{ "context", "nowhere", nowhere_fn },
+    .{ "context", "root", root_fn },
+    .{ "context", "memoIn", memo_in_fn },
+    .{ "context", "allIn", all_in_fn },
+    .{ "context", "stamp", stamp_fn },
+    .{ "context", "stampPlain", stamp_plain_fn },
+    .{ "context", "stampKeyed", stamp_keyed_fn },
+    .{ "context", "countNew", count_new_fn },
+    .{ "context", "countEnd", count_end_fn },
+};
+
+/// Decision 961 (1) — std's `context` declares the helpers the lowering calls
+/// without `pub`, so a program's import of one is refused at check; the
+/// module's emitted copy exports each, for the lowering's calls alone
+/// (961 (2)). The parsed declarations stay private.
+fn withHelpersExported(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+    const decls = try arena.dupe(ast.DeclKind, program.decls);
+    for (decls) |*d| if (d.* == .@"fn" and !d.@"fn".isPub) {
+        for (std_helpers) |h| if (std.mem.eql(u8, d.@"fn".name, h[1])) {
+            d.@"fn".isPub = true;
+        };
+    };
+    var out = program;
+    out.decls = decls;
+    return out;
+}
+
 pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const Env) !ast.Program {
     const env = @constCast(env_const);
     // std's `context` module declares the hooks the lowering replaces where
     // they are `use`d (their bodies panic) and the functions it calls.
-    if (std.mem.eql(u8, env.modulePath, "std/context")) return program;
+    if (std.mem.eql(u8, env.modulePath, "std/context")) return withHelpersExported(arena, program);
     // std's `hooks` module declares `memo`, lowered where it is `use`d (its
     // body panics), and the slot functions the lowering calls.
     if (std.mem.eql(u8, env.modulePath, "std/hooks")) return program;
@@ -974,23 +1011,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         else => {},
     };
     if (!low.uses_std) return .{ .decls = decls };
-    // std's lowering functions, under names no source can collide with.
-    const names = [_][3][]const u8{
-        .{ "context", "enter", enter_fn },
-        .{ "context", "received", received_fn },
-        .{ "context", "provideIn", provide_fn },
-        .{ "context", "find", find_fn },
-        .{ "context", "answer", answer_fn },
-        .{ "context", "nowhere", nowhere_fn },
-        .{ "context", "root", root_fn },
-        .{ "context", "memoIn", memo_in_fn },
-        .{ "context", "allIn", all_in_fn },
-        .{ "context", "stamp", stamp_fn },
-        .{ "context", "stampPlain", stamp_plain_fn },
-        .{ "context", "stampKeyed", stamp_keyed_fn },
-        .{ "context", "countNew", count_new_fn },
-        .{ "context", "countEnd", count_end_fn },
-    };
+    const names = std_helpers;
     var count: usize = 0;
     for (names) |n| if (low.used.contains(n[2])) {
         count += 1;

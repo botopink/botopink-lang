@@ -1,0 +1,20 @@
+//// Decision 961 — with the lowering's helpers private, a component using
+//// `use all`, `use memo` and `#[key]` runs unchanged.
+
+import {context.all, context.run, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: "item " + n.toString());
+}
+
+component fn Page() -> Component<View> {
+    val xs = use all([#[key(1)] Item(1), #[key(2)] Item(2)]);
+    val n = use memo({ -> 3 });
+    return View(text: xs.map({ v -> v.text }).join(",") + " " + n.toString());
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

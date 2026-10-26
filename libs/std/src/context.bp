@@ -470,12 +470,15 @@ pub async fn run<T>(c: Component<T>, scope: ?Scope = null) -> Async<T> {
 // `Place.none()`, and each `return v` answers `answer(v)`. A context's
 // identity is its value's type (379) — the compiler writes it, never a
 // program.
+// The helpers the lowering calls are written without `pub` (decision 961):
+// a program that imports or calls one is refused, so nothing outside std
+// decides a component's identity (817 (1)).
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
 
 // The cell a body opens: `scope`'s child at `key`.
-pub fn enter(scope: unknown, key: unknown) -> unknown {
+fn enter(scope: unknown, key: unknown) -> unknown {
     if (scope is Scope) {
         if (key is Place) return scope.childAt(key);
         return scope.childAt(Place.none());
@@ -492,7 +495,7 @@ pub fn received(cell: unknown) -> unknown {
 
 // `value` provided for `key` in `cell`: what is resolved under it afterwards
 // reads it (809 (8), 812 (3)).
-pub fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
+fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
     if (cell is Scope) {
         provideAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), key, value);
         return null;
@@ -503,7 +506,7 @@ pub fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
 // The value provided nearest above for `key` in `frames`, else `fallback` —
 // the type's declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(frames: unknown, key: string, fallback: unknown) -> unknown {
+fn find(frames: unknown, key: string, fallback: unknown) -> unknown {
     var cur = frames;
     loop {
         if (cur is Frame) {
@@ -541,17 +544,17 @@ pub fn root() -> unknown {
 // passes through, so the stamp written last — the outer call's — wins
 // (821 (2)).
 
-pub fn stamp(c: Component<unknown>, cell: unknown, callNo: i32) -> Composition<unknown> {
+fn stamp(c: Component<unknown>, cell: unknown, callNo: i32) -> Composition<unknown> {
     if (cell is Scope)
         return placed(c, Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
     panic("a component is run with a `Scope` (decision 819)");
 }
 
-pub fn stampPlain(c: Component<unknown>, counter: unknown, callNo: i32) -> Composition<unknown> {
+fn stampPlain(c: Component<unknown>, counter: unknown, callNo: i32) -> Composition<unknown> {
     return placed(c, Place(callNo: callNo, item: PlaceItem.Plain, itemNo: countNext(counter, callNo), keyValue: null, stamped: true));
 }
 
-pub fn stampKeyed(c: Component<unknown>, callNo: i32, k: unknown) -> Composition<unknown> {
+fn stampKeyed(c: Component<unknown>, callNo: i32, k: unknown) -> Composition<unknown> {
     return placed(c, Place(callNo: callNo, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: true));
 }
 
@@ -562,7 +565,7 @@ fn placed(c: Component<unknown>, mine: Place) -> Composition<unknown> {
 
 // `use memo(make)` written as call `callNo` of a body: the slot of its own
 // child cell (818 (1)), filled on that cell's first render.
-pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
+fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
     if (cell is Scope) {
         val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
         return slotAt(child.storeRef(), child.ownerRef(), child.carriedRef(), child.cellId(), make);
@@ -574,7 +577,7 @@ pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
 // under `all`'s own child cell at `Place.index(i)`, in order; the answers as
 // a list, or the task of the list once each settled in order when an entry
 // answered a task.
-pub fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
+fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
     if (cell is Scope) {
         val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
         var answers: unknown[] = [];
@@ -604,12 +607,12 @@ async fn settled(answers: unknown[]) -> Async<unknown[]> {
 
 // A plain function entry's counter of the values each of its calls made
 // (821 (2)).
-pub fn countNew() -> unknown {
+fn countNew() -> unknown {
     return countCellNew();
 }
 
 // The entry's counter gone: on erlang and beam its process-dictionary entry.
-pub fn countEnd(counter: unknown) -> void {
+fn countEnd(counter: unknown) -> void {
     countCellEnd(counter, null);
 }
 

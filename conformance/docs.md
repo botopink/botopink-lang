@@ -3117,7 +3117,10 @@ body built keeps each item by its count, and only an entry no body counted
 follows its position. `all` and `memo` are lowered where they are `use`d, as
 `provide`, `context` and `inject` are: `all(cs)` or `memo(f)` written as a
 value, an argument or an initialiser is `context-hook-without-use` (decision
-959).
+959). The helpers the lowering calls — the stamps, `memoIn`, `allIn`, the
+plain function's counter, `enter`, `provideIn`, `find` — are private to std's
+`context`: importing or calling one is refused as any private name, so no
+program forges a call number or a place (decision 961).
 
 <!-- example: modules/decisions-taken/use_all_resolves_a_list-827/cells/use_all_resolves_a_list -->
 
@@ -3130,6 +3133,12 @@ value, an argument or an initialiser is `context-hook-without-use` (decision
 <!-- example: modules/decisions-taken/hook_outside_use_refused-959/cells/memo_as_argument_refused -->
 
 <!-- example: modules/decisions-taken/hook_outside_use_refused-959/cells/use_all_and_memo_accepted -->
+
+<!-- example: modules/decisions-taken/context_helpers_private-961/cells/context_helpers_private -->
+
+<!-- example: modules/decisions-taken/context_helpers_private-961/cells/stamp_keyed_call_refused -->
+
+<!-- example: modules/decisions-taken/context_helpers_private-961/cells/helpers_private_component_unchanged -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
