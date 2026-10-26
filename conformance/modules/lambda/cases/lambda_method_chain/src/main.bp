@@ -1,0 +1,13 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val double: fn(i32) -> i32 = { n -> n * 2 };
+    val xs = [1, 2, 3, 4];
+
+    val total = xs
+        .filter({ n -> n % 2 == 0 })
+        .map({ n -> n * 2 })
+        .fold(0, { acc, n -> acc + n }); // 12
+    print(double(3)); // 6
+    print(total); // 12
+}

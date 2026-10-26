@@ -1,0 +1,36 @@
+botopink-cell 1
+out == optional_fn_field_narrowed_call
+out x!
+out y!
+out null
+out == optional_function_field_from_fn_value
+out a1-x
+out true
+out == optional_length_method
+out 5
+out 3
+out 2
+out == optional_payload_enum_value
+out Place.There(n: 2)
+out Place.Here
+out null
+out Place.Here
+out Place.Here
+out null
+out R(q: Place.Here)
+out Place.Here
+out R(q: Place.There(n: 5))
+out Place.There(n: 5)
+out R(q: null)
+out null
+out == optional_u64_to_string
+out 18446744073709551615
+out null
+out 18446744073709551615
+out 18446744073709551615
+out o=18446744073709551615
+out 18446744073709551615
+out 18446744073709551615
+out 18446744073709551615
+out #(18446744073709551615, null, 7)
+out 18446744073709551615

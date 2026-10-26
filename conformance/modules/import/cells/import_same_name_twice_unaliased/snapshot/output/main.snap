@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: import-name-collision: `title` is already bound by the import of `title` from `app/page`; `title` from `app/blog/page` would bind it again
-at src/main.bp:12:9

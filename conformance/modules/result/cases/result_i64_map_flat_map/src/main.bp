@@ -1,0 +1,26 @@
+//// Decision 118 — a `Result<i64, E>`'s `map` and `flatMap` at run time
+//// answer the transformed payload, wide integers kept whole: an `Ok` is
+//// transformed, an `Error` passed on untouched.
+
+import {io.terminal.print} from "std";
+
+fn wide(text: string) -> Result<i64, string> {
+    if (text == "nope") throw "no number";
+    return 5000000000l + text.length().toI64();
+}
+
+fn halfWide(n: i64) -> Result<i64, string> {
+    if (n % 2l != 0l) throw "odd";
+    return n / 2l;
+}
+
+pub fn main() -> void {
+    val ok = wide("abcd");
+    print(ok.map({ n -> n * 3l }).unwrapOr(0l));
+    print(ok.flatMap({ n -> halfWide(n) }).unwrapOr(-1l));
+    print(wide("abc").flatMap({ n -> halfWide(n) }).isError());
+    print(ok.map({ n -> n.toString() }).unwrapOr("none"));
+    val bad = wide("nope");
+    print(bad.map({ n -> n * 3l }).unwrapOr(0l));
+    print(bad.flatMap({ n -> halfWide(n) }).unwrapOr(-1l));
+}

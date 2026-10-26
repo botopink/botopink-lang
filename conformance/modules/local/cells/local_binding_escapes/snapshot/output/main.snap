@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'v' — `v` is a local of `holder`, and a local ends with its body
-at src/main.bp:15:12

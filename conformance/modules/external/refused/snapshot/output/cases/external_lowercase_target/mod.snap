@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'node'
-at src/cases/external_lowercase_target/mod.bp:6:21

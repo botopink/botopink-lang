@@ -1,3 +1,0 @@
-pub mod float_literal_spellings;
-pub mod float_record_field;
-pub mod float_slot_keeps_f64;

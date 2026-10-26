@@ -13,7 +13,7 @@ fenced as `text`.
 
 A first program:
 
-<!-- example: modules/greet/cells/greet -->
+<!-- example: modules/greet/cases/greet -->
 
 | Section | What |
 |---|---|
@@ -115,7 +115,7 @@ The move from the previous surface, declaration by declaration, is in
 A Botopink program is a sequence of declarations — bindings, functions, types
 and imports. Execution starts at `fn main()`.
 
-<!-- example: modules/hello/cells/hello -->
+<!-- example: modules/hello/cases/hello -->
 
 A package to run declares `fn main` in its entry module: `botopink run` of one
 whose entry module declares none refuses before running anything, located at
@@ -409,7 +409,7 @@ std module's declaration is located in that module's file:
 
 <!-- example: modules/decisions-taken/import_dotted_and_braced_paths_one_tree-107/refused/src/cases/import_group_modifier -->
 
-<!-- example: modules/import/cells/import_tree_group -->
+<!-- example: modules/import/cases/import_tree_group -->
 
 <!-- example: modules/import/cells/import_record_beside_std_record_of_same_name -->
 
@@ -445,7 +445,7 @@ does what it wants.
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.mocks` (`testing.snapshots` is the `snap` library, decision 391) |
 
-<!-- example: modules/import/cells/import_std_groups -->
+<!-- example: modules/import/cases/import_std_groups -->
 
 **What is generic lives in std, once.** A primitive several libraries need —
 reading a number out of text, a retry loop — is
@@ -470,7 +470,7 @@ is read, one past either end an `Error`, and a numeral is converted to its neare
 
 <!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/string_parse_int_i64_range -->
 
-<!-- example: modules/string/run/src/cases/string_parse_float_every_target -->
+<!-- example: modules/string/cases/string_parse_float_every_target -->
 
 **Exact decimals.** std's `decimal` is Java's `BigDecimal` (decision 332): a
 `Decimal` is an unscaled `bigint` and a `scale`, the value `unscaled × 10^-scale`
@@ -721,10 +721,10 @@ take its name (`from`, `type`, `case`, …). Writing one where a name is declare
 is `reserved-word-as-name`, which names the word, and the label under the caret
 names it too (``reserved word `from` ``):
 
-<!-- example: modules/reserved/refused/src/cases/reserved_word_field_name -->
+<!-- example: modules/reserved/cases/reserved_word_field_name -->
 
-<!-- example: modules/reserved/refused/src/cases/reserved_word_param_name -->
-<!-- example: modules/reserved/refused/src/cases/reserved_word_as_binding_name -->
+<!-- example: modules/reserved/cases/reserved_word_param_name -->
+<!-- example: modules/reserved/cases/reserved_word_as_binding_name -->
 
 A name written between backticks is an identifier, anywhere a name goes
 (decision 561, Kotlin's escaped identifier): `` `text` `` names the text between
@@ -756,19 +756,19 @@ each at the opening backtick.
 
 ### val — immutable binding
 
-<!-- example: modules/val/run/src/cases/val_binding -->
+<!-- example: modules/val/cases/val_binding -->
 
 Types are inferred via Hindley-Milner unification. Explicit annotations are
 optional:
 
-<!-- example: modules/val/run/src/cases/val_annotated -->
+<!-- example: modules/val/cases/val_annotated -->
 
 A `val` is immutable: assigning to it — a local or a module-level `val`, from
 any `fn` body — is a compile-time error. The rule is the same one node already
 enforced at run time (`const`); it now holds on every target before any code
 is emitted.
 
-<!-- example: modules/val/refused/src/cases/val_cannot_be_assigned -->
+<!-- example: modules/val/cases/val_cannot_be_assigned -->
 
 A `val` may bind a pattern instead of a name when the pattern matches every
 value of the initialiser's type, so the binding has no failure path: a list
@@ -778,9 +778,9 @@ every argument is a name, a `_` or such a constructor in turn — so constructor
 nest (`val Pair(Circle(r), n) = p;`). Any other pattern is
 `refutable-val-pattern`; `val assert` and `case` say what a mismatch does.
 
-<!-- example: modules/val/run/src/cases/val_spread_only_list_pattern -->
+<!-- example: modules/val/cases/val_spread_only_list_pattern -->
 
-<!-- example: modules/val/run/src/cases/val_nested_ctor_pattern -->
+<!-- example: modules/val/cases/val_nested_ctor_pattern -->
 
 A `val` at module level is part of the **module body**: it is evaluated **once**,
 in declaration order, when the module loads — before `main` runs and before the
@@ -788,7 +788,7 @@ first `test {}` block. Reading the name afterwards does not evaluate it again,
 and a `_`-named statement, which nothing reads, runs just the same. So a module
 whose initialisers have effects registers itself by being loaded:
 
-<!-- example: modules/val/cells/val_runs_at_module_load -->
+<!-- example: modules/val/cases/val_runs_at_module_load -->
 
 An initialiser is any expression, a call included (`val t = "a b".split(" ");`):
 the functions of the module read the bound value, whatever else they call:
@@ -1035,7 +1035,7 @@ adds no member, naming `implement <Behavior> for string`:
 
 <!-- example: modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_member_by_contract -->
 
-<!-- example: modules/program/cells/program_primitive_behavior_redeclares_std -->
+<!-- example: modules/program/cases/program_primitive_behavior_redeclares_std -->
 
 <!-- example: modules/decisions-taken/primitive_member_by_contract-799/cells/primitive_behavior_named_like_type_refused -->
 
@@ -1094,18 +1094,18 @@ the text codecs' rules and `Error` variants (`NotBase64`, `NotHex`, decision 486
 A `type` whose fields are written in parentheses is a record: the declaration
 mirrors construction.
 
-<!-- example: modules/record/run/src/cases/record_construct_read -->
+<!-- example: modules/record/cases/record_construct_read -->
 
 A record is immutable: a field is never assigned. A changed copy is the update
 form — `..base` and the fields that change, by label; every other field is read
 from `base`, which is a name or a path of names (a call there is refused, since
 it would run once per copied field — bind it with `val` first):
 
-<!-- example: modules/record/run/src/cases/record_update_spread -->
+<!-- example: modules/record/cases/record_update_spread -->
 
 A body adds methods:
 
-<!-- example: modules/record/run/src/cases/record_method -->
+<!-- example: modules/record/cases/record_method -->
 
 An associated function — one taking no `self` — named without a call is a
 function value of its declared signature, as a top-level `fn` is: `apply(1,
@@ -1124,7 +1124,7 @@ decorator adds as for one written by hand:
 A free function that names one is `self-param-outside-type`, refused at the
 name.
 
-<!-- example: modules/self/refused/src/cases/self_param_free_fn -->
+<!-- example: modules/self/cases/self_param_free_fn -->
 
 The field list is always written. A record with no fields is `type Name()`,
 and with members `type Name() { … }`; braces holding variants declare an enum,
@@ -1135,7 +1135,7 @@ and a `self` function in it `namespace-type-self`. A `type` declared in a type's
 body is its associated type, named `Owner.Name` (decision 330), so a name the body already gives a member is `assoc-type-duplicate`, refused at the type's name. `type Name {}` is
 `type-without-field-list`, refused where the `()` belongs:
 
-<!-- example: modules/record/run/src/cases/record_empty -->
+<!-- example: modules/record/cases/record_empty -->
 <!-- example: modules/decisions-taken/optional_typescript_operators-330/refused/src/cases/assoc_type_named_like_member -->
 <!-- example: modules/decisions-taken/namespace_type_without_fields-329/refused/src/cases/namespace_type_self -->
 <!-- example: modules/decisions-taken/empty_record_written_with_parens-138/cells/type_empty_braces -->
@@ -1144,7 +1144,7 @@ An anonymous group of values is a tuple, not a type declaration. A tuple is
 positional at run time; a label is a compile-time name, lent by the variable
 used to build it or written in the type:
 
-<!-- example: modules/tuple/run/src/cases/tuple_label_from_variable -->
+<!-- example: modules/tuple/cases/tuple_label_from_variable -->
 
 A tuple's `bool` element prints `true` / `false`, read by its label or its
 index, a module-level tuple's read inside a function too:
@@ -1153,7 +1153,7 @@ index, a module-level tuple's read inside a function too:
 
 A tuple's `toString()` is the text `print` writes for it — `#(1, 2)`, its string elements quoted, a nested tuple inside — and it joins a string in a `+` the same way:
 
-<!-- example: modules/tuple/run/src/cases/tuple_to_string -->
+<!-- example: modules/tuple/cases/tuple_to_string -->
 
 ### `opaque` types
 
@@ -1200,7 +1200,7 @@ An extension block of another module met by such a method is refused at the bloc
 
 A `type` whose body lists variants is an enum:
 
-<!-- example: modules/enum/cells/enum_declaration -->
+<!-- example: modules/enum/cases/enum_declaration -->
 
 A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)` —
 or by its leading dot where the position expects the enum (`val c: Color = .Red;`);
@@ -1225,7 +1225,7 @@ parameter it is passed to, whichever module declares the function:
 An enum's body may group variants into **sections**, and a section may nest.
 A section is itself a type (`Token.Color`), and a leaf is reached by its path:
 
-<!-- example: modules/enum/cells/enum_sections -->
+<!-- example: modules/enum/cases/enum_sections -->
 
 A section holds variants and nested sections, not methods: a `fn` inside a section's braces is `section-body-method`, refused at the `fn` — declare it in the enum's own body.
 
@@ -1239,7 +1239,7 @@ beside `After(inner: Token[])`, `Token.After(…)` — and `.After(…)` where a
 `Token.Layout.Break` is expected is the leaf, and a `case` over a `Token` matches
 the top-level `After` while one over the section matches the leaf.
 
-<!-- example: modules/enum/refused/src/cases/enum_variant_duplicate -->
+<!-- example: modules/enum/cases/enum_variant_duplicate -->
 
 A value of a section prints as the leaf's whole path, as written —
 `Token.Color.White`, `Token.Layout.Break.After`, a leaf at the top level
@@ -1254,7 +1254,7 @@ expects.** More than one enum can carry the same path, so the answer is read
 from the position the path is written in — a `val`'s annotation, a declared
 parameter, the function's return type, the element type of an array literal:
 
-<!-- example: modules/enum/cells/enum_section_path_by_expected_type -->
+<!-- example: modules/enum/cases/enum_section_path_by_expected_type -->
 
 The expected type names the enum also where the module never does — an enum
 of a dependency or of another module, reached through an imported function's
@@ -1274,7 +1274,7 @@ error: the path ".Color.Red.500" is carried by more than one enum —
 Give the position a type and it resolves — or write the path from its enum,
 which names the answer in the path itself and needs no type around it:
 
-<!-- example: modules/enum/cells/enum_section_path_qualified -->
+<!-- example: modules/enum/cases/enum_section_path_qualified -->
 
 ### behavior
 
@@ -1431,7 +1431,7 @@ argument. A declaration without type parameters writes `Self`, and so does a
 non-generic type implementing a generic behavior — the behavior's `Self<…>` is
 that type:
 
-<!-- example: modules/generic/cells/generic_method_map -->
+<!-- example: modules/generic/cases/generic_method_map -->
 
 Type arguments may be written at a use, adjacent to the name. A function or a
 constructor takes them before its call (`first<string>([], "none")`,
@@ -1444,7 +1444,7 @@ so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say. A
 type's name reached through a module namespace takes them the same way:
 `collections.Dict<string, i32>.empty()`, `shapes.Box<i32>.make(7)`.
 
-<!-- example: modules/explicit/cells/explicit_type_arguments_static -->
+<!-- example: modules/explicit/cases/explicit_type_arguments_static -->
 
 <!-- example: modules/decisions-taken/type_application_versus_comparison-255/run/src/cases/type_application_through_namespace -->
 
@@ -1490,7 +1490,7 @@ function's.
 
 <!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/run/src/cases/comptime_type_param_of_method -->
 
-<!-- example: modules/comptime/cells/comptime_value_or_type_param -->
+<!-- example: modules/comptime/cases/comptime_value_or_type_param -->
 
 A function's or a method's type parameter is **bound by a parameter** (decision
 668): it occurs in a parameter's type — directly (`x: T`), inside one
@@ -1515,7 +1515,7 @@ parameter or a local named like a function with `comptime` parameters is
 the value a call there calls, and every argument of that call is the
 value's — none of them is taken as a `comptime` one.
 
-<!-- example: modules/comptime/cells/comptime_fn_name_shadowed_by_local -->
+<!-- example: modules/comptime/cases/comptime_fn_name_shadowed_by_local -->
 
 A field of a generic record may hold a function: read into a local and called, it
 answers what the function answers — an array, a record, an optional, a string,
@@ -1549,7 +1549,7 @@ against the other. Nothing of the alias reaches the emitted program.
 
 ### Derived types
 
-<!-- example: modules/derived/cells/derived_type_declarations -->
+<!-- example: modules/derived/cases/derived_type_declarations -->
 
 A derived type (decisions 307, 629) is an inline type answered at build by one
 of std's `Type` functions and named by the module-level `val` it is bound to —
@@ -1671,7 +1671,7 @@ cannot be used as another type until it has been tested — `val b: i32 = a;` on
 testing it". `x is <Type>` answers a `bool` and narrows `x` inside the branch it
 guards.
 
-<!-- example: modules/union/cells/union_is_narrowing -->
+<!-- example: modules/union/cases/union_is_narrowing -->
 
 `x is fn(<params>) -> T` narrows an `unknown` to that function type, and a call
 through the narrowed name type-checks against it (decision 254) — the form a
@@ -1684,7 +1684,7 @@ return types: erlang and beam test `is_function(F, N)`, commonJS `typeof f ===
 descriptor. A function of the right arity and another return type passes the
 test; what it answers is the caller's to trust.
 
-<!-- example: modules/is/run/src/cases/is_function_type -->
+<!-- example: modules/is/cases/is_function_type -->
 
 A type parameter is erased at run time, so `v is T` with `T` a type parameter
 of the enclosing function (or of its type) can be decided by no target: it is
@@ -1793,7 +1793,7 @@ These shapes narrow:
 | `if (x) { v -> … }` | `v` is the payload; `x` itself is untouched |
 | `case x { null { … } _ { … x! … } }` | the value is read `x!` |
 
-<!-- example: modules/narrow/run/src/cases/narrow_after_null_return -->
+<!-- example: modules/narrow/cases/narrow_after_null_return -->
 
 A union narrows by the flow of an `is` (decision 810 (2)): inside `if (v is A)` `v` is `A`; in its
 `else`, and after it when the branch leaves (`return`, `throw`, `break`, `continue`), `v` is its union
@@ -1821,7 +1821,7 @@ The binder of `if (x) { v -> … }` (and of `x ?? d`, which reads as one) is bou
 alone: a later closure — a `for` body — that binds the same name in its own `if` reads its own
 binding, never the earlier one, whether the earlier optional was present or absent:
 
-<!-- example: modules/if/run/src/cases/if_binding_before_loop_closure -->
+<!-- example: modules/if/cases/if_binding_before_loop_closure -->
 <!-- example: modules/component/cells/component_loop_await_accumulates -->
 
 ## Expressions
@@ -1840,7 +1840,7 @@ A template is a `string` whatever its parts: a template whose only part is a
 hole (`"${5.0}"`) is the hole written out as text, a `string` as a `val`, as an
 array element and as an operand of `+`.
 
-<!-- example: modules/interpolation/cells/interpolation_single_float_hole -->
+<!-- example: modules/interpolation/cases/interpolation_single_float_hole -->
 
 A template hole holding a value of an enum writes it as `print` writes it at
 the top level (§ What `print` writes) — a variant names its enum, `Shape.Dot`,
@@ -1889,7 +1889,7 @@ Each of those refusals has its own name, located at the suffix or the exponent: 
 <!-- example: modules/decisions-taken/numeric_literal_suffixes-247/refused/src/cases/number_suffix_unknown -->
 <!-- example: modules/decisions-taken/numeric_literal_suffixes-247/refused/src/cases/number_suffix_uppercase -->
 
-<!-- example: modules/numeric/cells/numeric_literal_kinds -->
+<!-- example: modules/numeric/cases/numeric_literal_kinds -->
 
 A `case` over a 64-bit integer (`i64`, `u64`) or a float compares it as its own type: a number pattern, a
 range, an `|` of patterns and a guard see the value whole, on every target.
@@ -1944,7 +1944,7 @@ does `xs.fill(v)`, which is `Array.repeat(v, xs.length)`:
 nothing else to hand the method. The index expression has **no typing rule of
 its own**: its type is whatever the method answers, which for `at` is `?T`.
 
-<!-- example: modules/index/run/src/cases/index_and_slice_sugar -->
+<!-- example: modules/index/cases/index_and_slice_sugar -->
 
 A **negative index counts from the end**, on every backend: `xs.at(-1)` is the
 last element and `xs.at(-xs.length)` the first; an index past either end
@@ -1954,7 +1954,7 @@ by key and has no position to count from. A `Dict`'s value is any type, a float 
 included: `insert` keeps the value whole and `at` (and so `d["k"]`) answers it as the `?V` it is — present,
 absent or overwritten — on every target.
 
-<!-- example: modules/dict/cells/dict_float_value -->
+<!-- example: modules/dict/cases/dict_float_value -->
 
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display` (§ behavior), so the syntax finds them with nothing imported, a
@@ -1978,7 +1978,7 @@ cannot say with a single `V`. A tuple index is checked directly — `t[0]` is
 `i32` and `t[1]` is `string` below, neither of them optional, and an index the
 type has no position for is refused where it is written.
 
-<!-- example: modules/index/run/src/cases/index_tuple_literal -->
+<!-- example: modules/index/cases/index_tuple_literal -->
 
 ### Operators
 
@@ -2048,7 +2048,7 @@ namespace.
 A value of `T` is a value of `?T` for every `T`, a function type included: a
 field typed `?fn(string) -> string` takes a named function as it stands.
 
-<!-- example: modules/optional/cells/optional_function_field_from_fn_value -->
+<!-- example: modules/optional/cases/optional_function_field_from_fn_value -->
 
 A `?.` makes the rest of its chain conditional: at the first absent link the whole
 chain is absent, and a member or a method after the link runs only on a present
@@ -2075,9 +2075,9 @@ reads the payload's list and joins its elements as the list's element type says,
 `(opt?.list ?? []).join(",")` keeps that element type across `??` — an empty default
 adds none, so a list of strings joins as strings on every target:
 
-<!-- example: modules/meta/cells/meta_list_method_on_optional -->
+<!-- example: modules/meta/cases/meta_list_method_on_optional -->
 
-<!-- example: modules/meta/cells/meta_list_coalesced_method -->
+<!-- example: modules/meta/cases/meta_list_coalesced_method -->
 
 A method written after a `?.` field that is a `Dict` (or any other nominal type) is that type's:
 `post?.params.at("slug")` is the `Dict`'s `at` on every target, `null` when `post` is.
@@ -2095,9 +2095,9 @@ reads back as either, and an optional of an enum with a payload variant holds a
 variant or `null`. A leading dot where a `?Place` is expected names `Place`'s
 variant (`.Here` is `Place.Here`):
 
-<!-- example: modules/record/run/src/cases/record_optional_float_field -->
+<!-- example: modules/record/cases/record_optional_float_field -->
 
-<!-- example: modules/optional/cells/optional_payload_enum_value -->
+<!-- example: modules/optional/cases/optional_payload_enum_value -->
 
 `f?.(args)` over a function answering a plain `T` is a `?T`, a present `0`
 included. The default of `??` may itself be such a call, and a default runs only
@@ -2199,7 +2199,7 @@ An `f64` compares as a total order under `==`, as Java's `Double.compare` does:
 
 ### Lambdas and method chains
 
-<!-- example: modules/lambda/run/src/cases/lambda_method_chain -->
+<!-- example: modules/lambda/cases/lambda_method_chain -->
 
 A lambda's parameters take the types of the position it is passed to or the
 `val` it is bound to; `fn(a, b) { … }` is the same function written with
@@ -2236,14 +2236,14 @@ A type's method named as a value, `Users.make`, is the type's method wherever it
 bound to a `val` or handed as a record constructor's argument — never the module's own `fn make`
 declared beside the type:
 
-<!-- example: modules/static/cells/static_method_as_record_field_argument -->
+<!-- example: modules/static/cases/static_method_as_record_field_argument -->
 
 A lambda passed for a function's parameter reads its parameters as the
 parameter's function type says: `{ p -> p.nome }` for `fn(Pessoa) -> Pessoa`
 reads `Pessoa`'s `nome` though another record declares a field of the name,
 and `Pessoa(..p, idade: 31)` spreads a `Pessoa`:
 
-<!-- example: modules/lambda/run/src/cases/lambda_param_shared_field -->
+<!-- example: modules/lambda/cases/lambda_param_shared_field -->
 
 <!-- example: modules/decisions-taken/fn_tail_value-409/run/src/cases/decorator_member_fn_tail -->
 
@@ -2253,7 +2253,7 @@ methods on `acc`. A dependency's module holding such a function builds as the
 program's own does, so a program importing it prints the same whether or not
 it calls the function:
 
-<!-- example: modules/fold/cells/fold_split_join_lambda -->
+<!-- example: modules/fold/cases/fold_split_join_lambda -->
 
 <!-- example: modules/dependency/cells/dependency_prints_with_fold_join -->
 
@@ -2275,12 +2275,12 @@ Ch) -> string)` is not refused:
 A function value is a value like any other: a tuple's element holds one, read by position and
 called after its arguments are evaluated (`p.0("abc")`):
 
-<!-- example: modules/fn/cells/fn_value_in_tuple -->
+<!-- example: modules/fn/cases/fn_value_in_tuple -->
 
 Each element keeps its own function type, so the one answering a string prints the string, and a
 function-typed field called on a loop's element answers its declared type (`op.run(5).toString()`):
 
-<!-- example: modules/fn/cells/fn_value_tuple_string_answer -->
+<!-- example: modules/fn/cases/fn_value_tuple_string_answer -->
 
 <!-- example: modules/fn/run/src/cases/fn_field_call_in_for -->
 
@@ -2395,21 +2395,21 @@ a method or of a plain function, with parameters (`f(3) { n -> n * 3 }`) or with
 Zig and Swift. Several run in reverse order, and each runs on every exit of the block: the end,
 `return`, `break`, `continue`, a panic `attempt` catches:
 
-<!-- example: modules/defer/run/src/cases/defer_block_end_reverse_order -->
+<!-- example: modules/defer/cases/defer_block_end_reverse_order -->
 
-<!-- example: modules/defer/run/src/cases/defer_scope_is_block -->
+<!-- example: modules/defer/cases/defer_scope_is_block -->
 
-<!-- example: modules/defer/run/src/cases/defer_in_loop_break_continue -->
+<!-- example: modules/defer/cases/defer_in_loop_break_continue -->
 
-<!-- example: modules/defer/run/src/cases/defer_panic_attempt_catches -->
+<!-- example: modules/defer/cases/defer_panic_attempt_catches -->
 
 The deferred expression is evaluated when it runs, not when `defer` is written (`var f = open("a");
 defer f.close(); f = open("b");` closes `b`), and a `return <expr>`'s value is computed before the
 block's defers run:
 
-<!-- example: modules/defer/run/src/cases/defer_reads_latest_value -->
+<!-- example: modules/defer/cases/defer_reads_latest_value -->
 
-<!-- example: modules/defer/run/src/cases/defer_return_value_before_defers -->
+<!-- example: modules/defer/cases/defer_return_value_before_defers -->
 
 A reassignment inside a nested arm counts, a value `case`'s or `if`'s included: an arm that reassigns a `var` and
 then panics hands the `defer` the new value:
@@ -2436,7 +2436,7 @@ A deferred statement that panics runs once, even when the way out that ran it is
 In an `async` body a `defer` runs when the task's body ends, after its awaits; in a `AsyncIter` when
 the stream ends or its consumer stops (a `break` in `for await`):
 
-<!-- example: modules/defer/cells/defer_async_after_awaits -->
+<!-- example: modules/defer/cases/defer_async_after_awaits -->
 
 <!-- example: modules/defer/cells/defer_stream_consumer_stops -->
 
@@ -2447,21 +2447,21 @@ failure there, decision 866). The value of the
 deferred expression is discarded, and the compiler checks nothing about what is deferred: a value
 that is never closed compiles (decision 539 (6)).
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_return -->
+<!-- example: modules/defer/cases/defer_refuses_return -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_break -->
+<!-- example: modules/defer/cases/defer_refuses_break -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_continue -->
+<!-- example: modules/defer/cases/defer_refuses_continue -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_yield -->
+<!-- example: modules/defer/cases/defer_refuses_yield -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_await -->
+<!-- example: modules/defer/cases/defer_refuses_await -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_throw -->
+<!-- example: modules/defer/cases/defer_refuses_throw -->
 
-<!-- example: modules/defer/refused/src/cases/defer_refuses_try -->
+<!-- example: modules/defer/cases/defer_refuses_try -->
 
-<!-- example: modules/defer/run/src/cases/defer_try_catch_inside -->
+<!-- example: modules/defer/cases/defer_try_catch_inside -->
 
 `botopink format` migrates the older spellings: a trailing lambda without `->` gains it, the last
 `;` of a `case` arm used as a value is dropped, and `comptime { …; break v; }` and a `case` arm's last
@@ -2505,7 +2505,7 @@ or a `case` in statement position — is one of them: the parser accepts it, and
 
 ### If / else
 
-<!-- example: modules/if/run/src/cases/if_expression -->
+<!-- example: modules/if/cases/if_expression -->
 
 An `if` used as a value needs its `else`: `val s = if (x > 0) { "positive" };` has no value when
 the condition is false and is refused at the `if`. It stands where an expression begins — a `val` /
@@ -2513,27 +2513,27 @@ the condition is false and is refused at the `if`. It stands where an expression
 never an operand: `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2` and `(if (c) a else b).v` are
 `error[if-operand]` at the `if`; bind it first (`val x = if (c) { 2 } else { 3 }; 1 + x`).
 
-<!-- example: modules/if/refused/src/cases/if_in_parentheses -->
-<!-- example: modules/if/refused/src/cases/if_operand_of_operator -->
-<!-- example: modules/if/refused/src/cases/if_operand_of_unary -->
+<!-- example: modules/if/cases/if_in_parentheses -->
+<!-- example: modules/if/cases/if_operand_of_operator -->
+<!-- example: modules/if/cases/if_operand_of_unary -->
 
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
 
-<!-- example: modules/if/run/src/cases/if_else_if -->
+<!-- example: modules/if/cases/if_else_if -->
 
 A value `if` keeps what its branches reassign: a `var` set in whichever branch ran, an `else if`
 chain's included, holds that value after the `if`:
 
-<!-- example: modules/value/cells/value_if_reassigns_var -->
+<!-- example: modules/value/cases/value_if_reassigns_var -->
 
 `if` on an optional unwraps it in the then-branch:
 
-<!-- example: modules/if/run/src/cases/if_optional_binder -->
+<!-- example: modules/if/cases/if_optional_binder -->
 
 Write the binder `_` when the branch only asks whether the value is there:
 
-<!-- example: modules/if/run/src/cases/if_optional_else -->
+<!-- example: modules/if/cases/if_optional_else -->
 
 ### Case (pattern matching)
 
@@ -2575,7 +2575,7 @@ A variant pattern names **every** field of its variant, or ends with `..`:
 A constructor pattern of a record type takes the same `..`, and a field it names
 may hold a literal (`Point(x: 0, ..)` matches a point whose `x` is `0`):
 
-<!-- example: modules/point/cells/point_ctor_rest_in_case -->
+<!-- example: modules/point/cases/point_ctor_rest_in_case -->
 
 `.Rect(width: w)` without the `..` is `error: missing required field 'height' on
 type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
@@ -2590,7 +2590,7 @@ pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
 A tuple pattern is positional, as a tuple literal is: a label in one (`#(name: n, ..)`) is `pattern-tuple-label`, refused at the label — match by position.
 
 <!-- example: modules/case/cases/case_tuple_label -->
-<!-- example: modules/pattern/cells/pattern_range_exclusive -->
+<!-- example: modules/pattern/cases/pattern_range_exclusive -->
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
@@ -2700,15 +2700,15 @@ no parameter is `for-without-binder`; several sources without their parentheses
 `loop (xs) { x -> … }` and `loop (cond)` are `removed-loop-parenthesised`, naming `for` and `while`. `while` and `loop` bind nothing, so a binder on one is `loop-binds-nothing`, refused at the binder. `loop await` does not exist either: a stream is walked with `for await`, and the parser refuses the `await` after `loop`, located at it.
 
 <!-- example: modules/decisions-taken/effect_annotation_removed_refused-127/refused/src/cases/loop_await_removed -->
-<!-- example: modules/loop/refused/src/cases/loop_condition_parameter -->
+<!-- example: modules/loop/cases/loop_condition_parameter -->
 <!-- example: modules/decisions-taken/effect_annotation_removed_refused-127/refused/src/cases/loop_condition_parenthesised -->
-<!-- example: modules/loop/refused/src/cases/loop_parenthesised -->
+<!-- example: modules/loop/cases/loop_parenthesised -->
 
 A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
 `1 2 3`, `for (1...4)` visits `1 2 3 4`. A range is not a value — there is no
 `Range` and no `.rev()`; a countdown is a `while` or `xs.reverse()`.
 
-<!-- example: modules/loop/run/src/cases/loop_forms -->
+<!-- example: modules/loop/cases/loop_forms -->
 
 **`yield v` and `break v` need a generator scope** — a function whose return is
 `Iter<T>` or `AsyncIter<T>`, or an `iter` / `stream` loop. `yield v` emits
@@ -2722,7 +2722,7 @@ With `iter` or `stream` in front, the loop is an expression worth the iterator
 (or the stream), `T` being the type of its `yield` / `break v`. It captures the
 enclosing scope — a `var` it reassigns is its state:
 
-<!-- example: modules/iter/cells/iter_loop_and_for -->
+<!-- example: modules/iter/cases/iter_loop_and_for -->
 
 The rules of the prefixed loop:
 
@@ -2759,7 +2759,7 @@ body starts the loop's next round:
 <!-- example: modules/decisions-taken/lambda_answers_last_expression-541/run/src/cases/block_continue_reaches_loop -->
 <!-- example: modules/decisions-taken/lambda_answers_last_expression-541/run/src/cases/block_jump_label_continue_reaches_loop -->
 
-<!-- example: modules/continue/refused/src/cases/continue_label_unbound -->
+<!-- example: modules/continue/cases/continue_label_unbound -->
 
 A `//` comment inside a loop body parses like any other comment.
 
@@ -2783,7 +2783,7 @@ message on stderr, on every target.
 the match fails, so the names below the binding are never unbound. It takes no
 `catch` — `try … catch` is the form that supplies a fallback.
 
-<!-- example: modules/val/run/src/cases/val_assert_ok -->
+<!-- example: modules/val/cases/val_assert_ok -->
 
 ### use — imports, activation, and hooks
 
@@ -3117,14 +3117,14 @@ A function may call itself. When the call is the **whole** of a `return` — a
 and beam run on VMs that drop the frame. The depth of a tail-recursive walk is
 bounded by the data, not by the runtime.
 
-<!-- example: modules/self/run/src/cases/self_tail_recursion -->
+<!-- example: modules/self/cases/self_tail_recursion -->
 
-<!-- example: modules/tail/run/src/cases/tail_recursive_sum -->
+<!-- example: modules/tail/cases/tail_recursive_sum -->
 
 An expression in the body that reads the parameters — `xs.at(i) ?? 0` — keeps
 the tail call a loop:
 
-<!-- example: modules/self/run/src/cases/self_tail_recursion_nullish -->
+<!-- example: modules/self/cases/self_tail_recursion_nullish -->
 
 Every other recursion uses the stack, and how deep it may go is the host's
 answer, not the language's:
@@ -3140,7 +3140,7 @@ answer, not the language's:
 A function may call one declared after it, so two functions recurse into each
 other in either order:
 
-<!-- example: modules/mutual/cells/mutual_recursion_forward_reference -->
+<!-- example: modules/mutual/cases/mutual_recursion_forward_reference -->
 
 `wasm` recurses for every shape, tail call included — about 30 000 frames.
 Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
@@ -3151,7 +3151,7 @@ between 10 000 and 20 000.
 A parameter's type may be written in place, with the field grammar of `type
 Name(…)` and no name (decision 207):
 
-<!-- example: modules/inline/cells/inline_parameter_type -->
+<!-- example: modules/inline/cases/inline_parameter_type -->
 
 The call builds the value from its own labelled arguments, each naming a field
 (a defaulted one may be left out); a value already of the type is passed as the
@@ -3167,7 +3167,7 @@ A diagnostic names it by its owner: ``the props of `link` ``. An inline type wri
 
 ### Parameters with defaults
 
-<!-- example: modules/parameter/cells/parameter_defaults -->
+<!-- example: modules/parameter/cases/parameter_defaults -->
 
 A call **may leave out an argument whose parameter declares a default**, and the
 declared expression is what the function receives. A default may be declared on
@@ -3184,7 +3184,7 @@ are refused at `b` and `host`; the diagnostic is `fn-param-default-trailing-only
 <!-- example: modules/decisions-taken/defaults_are_trailing-244/refused/src/cases/record_field_default_not_trailing -->
 <!-- example: modules/decisions-taken/defaults_are_trailing-244/refused/src/cases/variant_payload_default_not_trailing -->
 
-<!-- example: modules/parameter/cells/parameter_defaults_record -->
+<!-- example: modules/parameter/cases/parameter_defaults_record -->
 
 Only the parameters a call leaves out take their defaults. A parameter the call
 names by label keeps the argument it was given, whichever position it is in —
@@ -3192,7 +3192,7 @@ names by label keeps the argument it was given, whichever position it is in —
 and a parameter with no default is still **required**: leaving one out is the
 arity error it has always been.
 
-<!-- example: modules/missing/cells/missing_required_argument -->
+<!-- example: modules/missing/cases/missing_required_argument -->
 
 Defaults are filled in by the checker, so every backend receives a call with
 every argument written out; no backend emits a default of its own.
@@ -3208,7 +3208,7 @@ takes defaults and labels like one (`"w" |> greet(mark: "?")`).
 
 ### A variadic parameter
 
-<!-- example: modules/variadic/cells/variadic_parameter_total -->
+<!-- example: modules/variadic/cases/variadic_parameter_total -->
 
 `..name: T[]` as a function's **last** parameter takes zero or more positional
 arguments after the fixed ones, each checked against `T`, and the body reads
@@ -3481,33 +3481,33 @@ marker:
 A function that can fail returns `Result<T, E>`; `throw` produces the error,
 `return` the value, and `try` propagates the error of a call.
 
-<!-- example: modules/result/run/src/cases/result_throw_try -->
+<!-- example: modules/result/cases/result_throw_try -->
 
 A `throw` in a `case` arm is the enclosing function's: in an expression arm
 (`_ -> throw e;`) and in a block arm (`_ { …; throw e; }`), whether the `case` is
 returned, bound by a `val`, passed as an argument or written as a statement, the
 function answers `Error(e)` on that path and the other arms' value on the rest.
 
-<!-- example: modules/throw/cells/throw_in_case_arm_result -->
+<!-- example: modules/throw/cases/throw_in_case_arm_result -->
 
 A method declared `-> Result` is a function like any other (decision 304): a record's and an
 enum's method, and a behavior's method dispatched through a parameter typed by the behavior —
 its `default fn` included — answer `Ok(v)` for `return v` and `Error(e)` for `throw e`, and their
 `try` propagates, on every target:
 
-<!-- example: modules/result/run/src/cases/result_method_throw -->
+<!-- example: modules/result/cases/result_method_throw -->
 <!-- example: modules/decisions-taken/store_answers_result_store_error-304/cells/behavior_method_result_dispatch -->
 
 Three ways to consume a `Result`, and a fourth for when a failure is a bug:
 
-<!-- example: modules/result/run/src/cases/result_four_ways -->
+<!-- example: modules/result/cases/result_four_ways -->
 
 The value a `Result` holds is whole whatever its type: an `f64` or an `i64` comes back unchanged
 through `unwrapOr`, a `case` arm's binder, `try`, `try … catch`, `map` and `flatMap`:
 
 <!-- example: modules/decisions-taken/result_declared_in_primitives-609/cells/result_wide_payloads -->
 
-<!-- example: modules/result/run/src/cases/result_i64_map_flat_map -->
+<!-- example: modules/result/cases/result_i64_map_flat_map -->
 
 **`try` and `await` are prefix operators**, binding as the unary `-` does (decision 537).
 They stand wherever an operand does: `await t * 2` is `(await t) * 2`, `await x + await y` is
@@ -3518,7 +3518,7 @@ the prefixes, as `-t.x` is `-(t.x)`: `await t.x` is `await (t.x)` and `await f()
 
 <!-- example: modules/decisions-taken/await_try_prefix_catch_infix-537/cells/try_await_prefix_operators -->
 <!-- example: modules/decisions-taken/await_try_prefix_catch_infix-537/cells/await_postfix_binds_tighter -->
-<!-- example: modules/result/run/src/cases/result_try_each_operand -->
+<!-- example: modules/result/cases/result_try_each_operand -->
 
 **`catch` is an infix operator of the lowest precedence**: its right side is evaluated first and is
 the fallback, its left side is the whole expression before it. `try await t catch 0 * 2` is
@@ -3586,7 +3586,7 @@ in any function, and needs no channel; a host binding answers a `Result` with
 `fn`, an `Async<T>`, a `Component`, the item of an `Iter<T>`, a lambda's
 expected return:
 
-<!-- example: modules/throw/cells/throw_outside_result -->
+<!-- example: modules/throw/cases/throw_outside_result -->
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/try_in_plain_fn -->
 
@@ -3813,7 +3813,7 @@ a next item may need waiting. Both answer one step type (decision 122):
 - `break v` emits `v` and **ends** (≡ `yield v; break;`);
 - a bare `break` outside any inner loop ends without emitting.
 
-<!-- example: modules/iterator/cells/iterator_yield_break -->
+<!-- example: modules/iterator/cases/iterator_yield_break -->
 
 Nothing of the body runs before the first `next`, and nothing past the `yield` that
 answered the last one: a print before and after a `yield` comes out between the
@@ -3842,12 +3842,12 @@ emits it as is), `throw e` emits `Error(e)` and ends, and a `try x` that fails
 emits `Error(e)` and ends. Whoever iterates receives the `Result` and decides —
 **`for` does no implicit `try`**:
 
-<!-- example: modules/iterator/run/src/cases/iterator_result_items_handled -->
+<!-- example: modules/iterator/cases/iterator_result_items_handled -->
 
 **`AsyncIter<T>` — asynchronous, iterated with `for await`.** The rules above
 hold, and a failing `try await` also emits `Error(e)` and ends:
 
-<!-- example: modules/stream/cells/stream_pages_count -->
+<!-- example: modules/stream/cases/stream_pages_count -->
 
 **Iter or factory.** A function with an `Iter` or `AsyncIter` return is
 an iterator if its own body has `yield` or `break v` (not counting closures and
@@ -3855,18 +3855,18 @@ inner `iter` / `stream` loops); otherwise it is an ordinary function that
 **returns** a ready-made iterator. Mixing the two in one body is
 `iter-mixed-yield-return`.
 
-<!-- example: modules/iterator/run/src/cases/iterator_vs_factory -->
+<!-- example: modules/iterator/cases/iterator_vs_factory -->
 
 **A type that is iterated exposes a method** answering an iterator; there is no
 iterable behavior, and the consumer calls it — `for (grid.iter())`:
 
-<!-- example: modules/iterator/cells/iterator_method -->
+<!-- example: modules/iterator/cases/iterator_method -->
 
 The refusals, each located:
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/iterator_throw_without_result -->
 
-<!-- example: modules/iter/cells/iter_await_refused -->
+<!-- example: modules/iter/cases/iter_await_refused -->
 
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/iter_mixed_yield_return -->
 
@@ -3881,7 +3881,7 @@ variables get the treatment ordinary closures get.
 
 ### Compile-time evaluation
 
-<!-- example: modules/comptime/run/src/cases/comptime_block_value -->
+<!-- example: modules/comptime/cases/comptime_block_value -->
 
 A `comptime` may call the module's functions and imported ones, and they may
 interpolate (`"n=${n}"`) and call template functions: a template call the
@@ -3903,9 +3903,9 @@ otherwise the `comptime` is refused, naming the path. A decorator's argument
 (`#[mark(.Pad.All.4)]`, read as `tokens`) and the functions a decorator
 reaches carry the same values.
 
-<!-- example: modules/comptime/cells/comptime_section_value -->
+<!-- example: modules/comptime/cases/comptime_section_value -->
 
-<!-- example: modules/comptime/run/src/cases/comptime_enum_in_record -->
+<!-- example: modules/comptime/cases/comptime_enum_in_record -->
 
 What a `comptime` computes is what the program computes when it runs, one
 answer for every target (decisions 331, 434 (5)): the primitives' methods —
@@ -4013,12 +4013,12 @@ answers what the function declares.
 
 <!-- example: modules/decisions-taken/comptime_parameter_is_expression-364/run/src/cases/expr_param_value_receiver -->
 
-<!-- example: modules/yamlconf/cells/yamlconf -->
+<!-- example: modules/yamlconf/cases/yamlconf -->
 
 The value a template lifts has the type of what it built, so a label the lifted
 tuple does not have is refused where it is read, located:
 
-<!-- example: modules/yamlconf/cells/yamlconf_unknown_label -->
+<!-- example: modules/yamlconf/cases/yamlconf_unknown_label -->
 
 The code a template builds has two authors, and each name in it resolves in
 the scope of whoever wrote it (decision 112). A name the library's tree writes
@@ -4663,7 +4663,7 @@ name is `unknown-associated-fn` where the call is written.
 
 <!-- example: modules/associated/cases/associated_fn_unknown -->
 
-<!-- example: modules/decorator/cells/decorator_entity_table -->
+<!-- example: modules/decorator/cases/decorator_entity_table -->
 
 A member's handle names its owner (decision 526): `compiler.owner(decl)` is
 the handle of the type or behavior that holds the annotated method or field —
@@ -4779,7 +4779,7 @@ where they are written, as a call's are:
    name of another system (a table, a URL, a cache key, text for a user) stays
    a string.
 
-<!-- example: modules/decorator/cells/decorator_arguments_meta -->
+<!-- example: modules/decorator/cases/decorator_arguments_meta -->
 
 The enum is the one the decorator's own module declares, though the annotating
 module imports none: a decorator another package declares takes
@@ -5007,7 +5007,7 @@ payloads, a `compiler.Field<T>`, an array, an optional or a tuple of those
 the value is the record's constructor written at the call
 (`decorator-meta-not-record`), in the decorator's own body.
 
-<!-- example: modules/meta/cells/meta_typed_records -->
+<!-- example: modules/meta/cases/meta_typed_records -->
 
 A tuple is rebuilt as written (`#(1, 9)`) and a `compiler.Field<T>` as its run-time
 form, `Field(Book, "pages")` — the constructor over its owner and its name
@@ -5036,7 +5036,7 @@ literal. The expressions resolve their names where the annotation wrote them,
 wherever the value is read (decision 385): a private rule of the annotation's
 module is reached, a same-named function of the reader is not.
 
-<!-- example: modules/meta/cells/meta_expr_rule -->
+<!-- example: modules/meta/cases/meta_expr_rule -->
 
 `compiler.typeInfo(T)` answers `compiler.Info<T>` (decisions 606 (3), 630): `.name`
 reads the declaration, `.meta(T)` / `.metaAll(T)` its typed meta (§ Typed meta); in a
@@ -5469,7 +5469,7 @@ method with no implementation at all is refused at its declaration.
 A source is a value of `Implementation`: a target written another way
 (`@external(node, …)`) is no value of it and is refused at the argument.
 
-<!-- example: modules/external/refused/src/cases/external_lowercase_target -->
+<!-- example: modules/external/cases/external_lowercase_target -->
 
 **Only the template is positional** (decisions 487, 621): in a cell of
 `Implementation` every other field — `body:`, `result:` on every variant,
@@ -5679,7 +5679,7 @@ declared parameters, in order.
 | `wasi: .<Adapter>` | an enum value naming a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
 | `std: "<module>.<function>"` | a string naming a function std-wasm implements (checked against std-wasm's exports, never resolved as botopink) — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
 
-<!-- example: modules/external/cells/external_wasm_op_and_fn -->
+<!-- example: modules/external/cases/external_wasm_op_and_fn -->
 
 Each cell holds a value of the kind it names (decision 481): `op:` and `std:` a string, `wasi:` a
 `WasiAdapter`, as `Implementation.Wasm` declares them, so a value of another kind is the
@@ -5727,7 +5727,7 @@ emits into a WasmGC program as one of its functions — `text.length` and `text.
 leaves. A leaf names the codegen's GC types (`$str`, `$arr_any`, …) and declares none (decision
 549); the answer is the same either way:
 
-<!-- example: modules/string/run/src/cases/string_code_points_every_width -->
+<!-- example: modules/string/cases/string_code_points_every_width -->
 
 **A `std:` cell is std's alone** (decision 445). std-wasm's export names are
 internal to std, and std's botopink API is the public contract: a `std:` cell
@@ -5735,7 +5735,7 @@ written anywhere outside `libs/std` is refused at the annotation, on every
 target, naming the std function to call instead. std's own `hash.contentHash`
 carries one; the same declaration in a program is refused:
 
-<!-- example: modules/external/refused/src/cases/external_std_binding_refused -->
+<!-- example: modules/external/cases/external_std_binding_refused -->
 
 <!-- example: modules/decisions-taken/std_cell_is_std_only-445/cells/external_wasm_std_outside_std -->
 
@@ -5749,13 +5749,13 @@ is host code, always:
 
 <!-- example: modules/decisions-taken/compiler_annotation_labelled_arguments-305/refused/src/cases/external_erlang_prefixed_fn_refused -->
 
-<!-- example: modules/external/refused/src/cases/external_wasm_prefixed_fn_refused -->
+<!-- example: modules/external/cases/external_wasm_prefixed_fn_refused -->
 
-<!-- example: modules/external/refused/src/cases/external_wasm_prefixed_op_refused -->
+<!-- example: modules/external/cases/external_wasm_prefixed_op_refused -->
 
-<!-- example: modules/external/refused/src/cases/external_wasm_prefixed_wasi_refused -->
+<!-- example: modules/external/cases/external_wasm_prefixed_wasi_refused -->
 
-<!-- example: modules/external/refused/src/cases/external_wasm_prefixed_std_refused -->
+<!-- example: modules/external/cases/external_wasm_prefixed_std_refused -->
 
 `op:` and `wasi:` are `.Wasm`'s cells alone: written as a prefixed
 string on `.JavaScript` or `.Erlang`, the refusal names the wasm
@@ -5785,7 +5785,7 @@ same text through its helpers, never the JS engine's number text, `trim` or
 case mapping — a string method reached through `?.`, or after a `?.` link in
 the same chain, included.
 
-<!-- example: modules/float/cells/float_text_and_trim -->
+<!-- example: modules/float/cases/float_text_and_trim -->
 
 <!-- example: modules/decisions-taken/commonjs_text_matches_std_wasm-521/run/src/cases/float_text_at_run_time -->
 
@@ -5986,7 +5986,7 @@ not linked, on wasm as on the other targets. A local binding named `print` shado
 inside its scope and reads as the local; the import still binds `print` outside it, so std's
 `io/terminal` module is part of the build on every target.
 
-<!-- example: modules/terminal/cells/terminal_namespace_import_print -->
+<!-- example: modules/terminal/cases/terminal_namespace_import_print -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_from_io_terminal -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_local_shadows_import -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/cells/panic_from_failure -->
@@ -6081,12 +6081,12 @@ fields, a variant names its enum, a container separates its elements with
 `", "`, and a type implementing `Display` prints its `display()` instead —
 nested inside a container too.
 
-<!-- example: modules/print/cells/print_value_text -->
+<!-- example: modules/print/cases/print_value_text -->
 
 A field's name changes nothing: a record with a field called `tag` is a record,
 printed by its type's name and its fields:
 
-<!-- example: modules/record/run/src/cases/record_field_named_tag -->
+<!-- example: modules/record/cases/record_field_named_tag -->
 
 A variant with a payload prints as `Enum.Variant(…)` however it reaches
 `print` — built in place, bound by a `val`, in an array, its enum declared in
@@ -6104,7 +6104,7 @@ A `Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — 
 the top level and nested in a container or a record, its payload printed as any
 nested value is (a string quoted):
 
-<!-- example: modules/print/run/src/cases/print_result -->
+<!-- example: modules/print/cases/print_result -->
 
 A string prints as its text at the top level (`hi`) and quoted inside a
 container (`["hi"]`). erlang, BEAM, commonJS and wasm all write the record and
@@ -6839,21 +6839,21 @@ These forms are **deliberately absent**, so that none reads as unfinished work:
 | `implement A for P { … }` after a bodyless `type P(…)` | `error[implement-clause-for]` — the type's own clause is `type P(…) implement A { … }` |
 | `#(x: 1, y: 2)` | `error[tuple-literal-label]` — a tuple literal is positional, `#(1, 2)`; labels belong to the tuple type, `#(x: i32, y: i32)` |
 
-<!-- example: modules/tuple/refused/src/cases/tuple_literal_label -->
+<!-- example: modules/tuple/cases/tuple_literal_label -->
 
-<!-- example: modules/implement/cells/implement_clause_for -->
+<!-- example: modules/implement/cases/implement_clause_for -->
 
 <!-- example: modules/decisions-taken/range_pattern_excludes_end-36/cells/list_spread_dot_dot_dot -->
 
-<!-- example: modules/list/cells/list_spread_not_last -->
+<!-- example: modules/list/cases/list_spread_not_last -->
 
-<!-- example: modules/nested/cells/nested_fn_decl -->
+<!-- example: modules/nested/cases/nested_fn_decl -->
 
 <!-- example: modules/char/cases/char_literal_absent -->
 
 <!-- example: modules/bitwise/cases/bitwise_operator_absent -->
 
-<!-- example: modules/ternary/cells/ternary_absent -->
+<!-- example: modules/ternary/cases/ternary_absent -->
 
 <!-- example: modules/decisions-taken/variant_payload_field_unnamed_refused-12/cells/variant_payload_without_name -->
 

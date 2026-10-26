@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown type 'Bogus'
-at src/cases/unknown_generic_type_field/mod.bp:5:16

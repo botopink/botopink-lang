@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: primitive-type-name-taken: `i64` names a primitive type; a `val` of this module cannot take its name
-at src/cases/primitive_type_name_taken_val/mod.bp:7:5

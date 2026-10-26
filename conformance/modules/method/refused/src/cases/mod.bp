@@ -1,2 +1,0 @@
-pub mod method_extra_argument;
-pub mod method_missing_argument;

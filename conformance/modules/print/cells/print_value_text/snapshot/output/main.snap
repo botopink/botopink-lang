@@ -1,7 +1,0 @@
-botopink-cell 1
-out [1, 2]
-out #(1, "a")
-out Point(x: 1, y: 2)
-out Shape.Square(side: 4)
-out Shape.Nothing
-out [$1]

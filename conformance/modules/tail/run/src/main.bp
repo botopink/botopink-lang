@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.tail_recursive_sum.runCase();
-    cases.tail_self_call.runCase();
-}
