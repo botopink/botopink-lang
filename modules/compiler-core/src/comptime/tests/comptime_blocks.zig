@@ -176,6 +176,30 @@ test "decision 793 (1): a `throw` inside a top-level block is refused `comptime-
     try std.testing.expect(std.mem.startsWith(u8, got, "error: comptime-block-exit: "));
 }
 
+test "decision 904: a block refused by `compiler.fail` after a print keeps the print as the refused module's build output" {
+    const gpa = std.testing.allocator;
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\comptime {
+        \\    print("building");
+        \\    compiler.fail("stopped");
+        \\}
+        \\
+        \\pub fn main() -> void {}
+        \\
+    ;
+    var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true }}, std.testing.io, null);
+    defer session.deinit(gpa);
+    for (session.outputs.items) |o| if (std.mem.eql(u8, o.name, "main")) {
+        try std.testing.expect(o.outcome == .typeError);
+        const trace = o.target_trace orelse return error.Unexpected;
+        try std.testing.expectEqualStrings("building\n", trace.build_output);
+        return;
+    };
+    return error.Unexpected;
+}
+
 test "decision 793 (1): a `return` inside a lambda of a block is the lambda's, not the block's" {
     const gpa = std.testing.allocator;
     const src =

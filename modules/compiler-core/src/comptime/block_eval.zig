@@ -1743,7 +1743,12 @@ fn hostForms(b: Ast.Builder, makers: usize) Error![]const Ast.Form {
         \\            Printed -> maps:put(printed, unicode:characters_to_binary(lists:reverse(Printed)), Reply)
         \\        end)
         \\    catch
-        \\        Class:Reason -> json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason}), frames => '__bp_frames'(Reason)})
+        \\        Class:Reason ->
+        \\            Raised = #{kind => <<"error">>, message => '__bp_text'({Class, Reason}), frames => '__bp_frames'(Reason)},
+        \\            json:encode(case erlang:get('__bp_printed') of
+        \\                undefined -> Raised;
+        \\                PrintedRaised -> maps:put(printed, unicode:characters_to_binary(lists:reverse(PrintedRaised)), Raised)
+        \\            end)
         \\    end
     ;
     const lift_body =
@@ -2044,6 +2049,8 @@ fn parseReply(arena: std.mem.Allocator, stdout: []const u8, printed: ?*std.Array
         if (printed) |out| if (parsed.object.get("printed")) |p| if (p == .string) try out.appendSlice(arena, p.string);
         return .{ .value = try readValue(arena, v) };
     }
+    // Decision 904 — a raise keeps what the block printed before it.
+    if (printed) |out| if (parsed.object.get("printed")) |p| if (p == .string) try out.appendSlice(arena, p.string);
     const msg = parsed.object.get("message");
     const text = if (msg) |m| (if (m == .string) m.string else "") else "";
     const message = if (unseededDraw(text) orelse runInBuild(text) orelse divisionByZero(text)) |plain| plain else try std.fmt.allocPrint(arena, "the comptime block raised: {s}", .{text});

@@ -1727,6 +1727,7 @@ fn analyzeMerged(
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
+            if (env.targetTrace) |t| t.build_output = env.buildOutput.items;
             env.deinit();
             return .{ .typeError = te };
         },
@@ -2038,6 +2039,7 @@ fn analyzeSource(
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
+            if (env.targetTrace) |t| t.build_output = env.buildOutput.items;
             env.deinit();
             return .{ .typeError = te };
         },

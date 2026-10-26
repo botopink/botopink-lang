@@ -333,12 +333,7 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     const invoke: Ast.Expr = .{ .call = .{ .name = dfn.name, .args = args } };
 
     const emitted = try b.call("__bp_emitted", &.{});
-    const encode = struct {
-        fn json(bb: Ast.Builder, fields: []const Ast.MapField) Ast.Builder.Error!Ast.Expr {
-            return bb.remote("json", "encode", &.{try bb.map(fields)});
-        }
-    }.json;
-    // Decision 788 (3) — an `ok` or `error` reply carries `printed`, the lines
+    // Decisions 788 (3), 904 — an `ok`, `fail` or `error` reply carries `printed`, the lines
     // the body printed (`'__bp_print'/1` of a comptime module,
     // `codegen/erlang.zig`), oldest first: the build's output. A body that
     // printed nothing replies as before. `variable` is the reply's own (a
@@ -361,22 +356,22 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
     const all_catches = [_]Ast.Clause{
         .{
             .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Span") }))}),
-            .body = try b.body(&.{try encode(b, &.{
+            .body = try b.body(&.{try encodePrinted(b, &.{
                 Ast.field("kind", Ast.str("fail")),
                 Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
                 Ast.field("span", V("Span")),
-            })}),
+            }, "PrintedFail")}),
         },
         // Decision 311 — a template annotation's capture API (`lookup/2`)
         // fails with the template's tag; it is reported at the annotation,
         // as the handle's own `fail` is.
         .{
             .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ template_fail_tag, V("Message"), V("_Param"), V("_Span") }))}),
-            .body = try b.body(&.{try encode(b, &.{
+            .body = try b.body(&.{try encodePrinted(b, &.{
                 Ast.field("kind", Ast.str("fail")),
                 Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
                 Ast.field("span", A("null")),
-            })}),
+            }, "PrintedTemplateFail")}),
         },
         .{
             .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),

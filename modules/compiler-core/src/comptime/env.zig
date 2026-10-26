@@ -510,6 +510,10 @@ pub const TemplateEvalCtx = struct {
 /// it is the one the module answers on that target (decision 798 (4)).
 pub const TargetTrace = struct {
     calls: std.ArrayListUnmanaged(StdCall) = .empty,
+    /// Decision 904 — what the module's build bodies printed before inference
+    /// refused it (`Env.buildOutput`): the refused build's lines, which come
+    /// before its refusal.
+    build_output: []const u8 = "",
 };
 
 /// Constraint metadata for one `comptime ...: typeparam` parameter of a function.

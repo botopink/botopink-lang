@@ -94,6 +94,18 @@ fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput,
     for (session) |ct| {
         const ok = switch (ct.outcome) {
             .ok => |ok| ok,
+            // Decision 904 — a module analysis refused still prints what its
+            // build bodies printed before the refusal.
+            .typeError, .validationError => {
+                const trace = ct.target_trace orelse continue;
+                if (trace.build_output.len == 0) continue;
+                for (outputs) |*o| {
+                    if (!std.mem.eql(u8, o.name, ct.name) or o.result.build_output.len > 0) continue;
+                    o.result.build_output = try allocator.dupe(u8, trace.build_output);
+                    break;
+                }
+                continue;
+            },
             else => continue,
         };
         // A module the target refused at emit is a failed module, as one its
