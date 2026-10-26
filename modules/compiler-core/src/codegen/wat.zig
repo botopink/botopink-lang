@@ -208,6 +208,58 @@ fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     };
 }
 
+/// The type parameter `T` of a parameter written `Component<T>` or
+/// `Composition<T>` (decisions 815, 826) — or the `fn(…) -> T` the lowering
+/// wrote for it —, null for any other.
+fn componentParamOf(t: ast.TypeRef, tparams: []const ast.GenericParam) ?[]const u8 {
+    if (t == .function and !isCompositionFnType(t)) return null;
+    const a = componentAnswerOf(t) orelse return null;
+    if (a != .named or !Emitter.isGenericParamName(a.named, tparams, &.{})) return null;
+    return a.named;
+}
+
+/// Whether `name` is std context's stamp a making call is wrapped in
+/// (decisions 820, 821), by its std name or the lowering's alias.
+fn isStampCallee(name: []const u8) bool {
+    for ([_][]const u8{ "stamp", "stampPlain", "stampKeyed", "bpStamp__", "bpStampPlain__", "bpStampKeyed__" }) |n|
+        if (std.mem.eql(u8, name, n)) return true;
+    return false;
+}
+
+/// Whether the function type `t` is a component's at run time: two
+/// parameters, a scope and a place — `fn(Scope, Place)`, or the
+/// `fn(unknown, unknown)` the lowering writes for a component (P-B).
+fn isCompositionFnType(t: ast.TypeRef) bool {
+    if (t != .function or t.function.params.len != 2) return false;
+    const ok = [_][]const u8{ "unknown", "Scope", "Place" };
+    for (t.function.params) |p| {
+        if (p != .named) return false;
+        for (ok) |n| {
+            if (std.mem.eql(u8, p.named, n)) break;
+        } else return false;
+    }
+    return true;
+}
+
+/// What a component of type `t` answers once run: `X` of a `Component<X>` or
+/// a `Composition<X>`, of a function `fn(…) -> X` (a lowered component call,
+/// decision 815), with `X | Async<X>` and `Async<X>` read as `X`.
+fn componentAnswerOf(t: ast.TypeRef) ?ast.TypeRef {
+    const r: ast.TypeRef = switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and (std.mem.eql(u8, g.name, "Component") or std.mem.eql(u8, g.name, "Composition")))
+            g.args[0]
+        else
+            return null,
+        .function => |f| f.returnType.*,
+        else => return null,
+    };
+    if (taskValueTypeRef(r)) |v| return v;
+    if (r == .generic and std.mem.eql(u8, r.generic.name, ast.union_type_name)) {
+        for (r.generic.args) |a| if (!isTaskTypeRef(a)) return a;
+    }
+    return r;
+}
+
 /// Decision 392 — a `@Async<T>` value is the task that settles with its `T`
 /// (`wat_prelude.zig`'s task record): the `i32` word of its address, whatever
 /// `T` is. `await` reads the `T` out of it (`Emitter.lowerAwait`).
@@ -1100,6 +1152,8 @@ const DeferEntry = struct {
 /// How a body that holds a `defer` writes its last statement: the sites that
 /// answer a value (`if` branch, `case` arm, inlined lambda) convert the value
 /// to the type they hand on, and the panic region must enclose that.
+const FnTailConv = struct { from: ?Repr, dropped_task: bool, no_return: bool };
+
 const LastHook = struct {
     ctx: *anyopaque,
     run: *const fn (*anyopaque, *Emitter, ast.Stmt) anyerror!Tail,
@@ -2686,6 +2740,11 @@ const Emitter = struct {
     /// `cur_result` — the one block with a value that can sit in a
     /// `try_table` region.
     defer_fn_body: ?[]const ast.Stmt = null,
+    /// What `renderBody` makes of the function body's tail value — its repr
+    /// met to `cur_result`, a task dropped for the `0` —, written right
+    /// after the tail by `emitStmtsFrom` (inside a `defer` region, whose
+    /// block answers `cur_result`) and cleared there.
+    fn_tail_conv: ?FnTailConv = null,
     /// Numbers a `defer`'s region labels and its parked exception.
     defer_seq: u32 = 0,
     /// The function being emitted, when its body returns a call to itself in
@@ -3181,6 +3240,7 @@ const Emitter = struct {
         else
             std.fmt.allocPrint(self.alloc, f, args) catch |err| return err;
         if (self.refusal) |old| self.alloc.free(old.message);
+        if (gc_debug) { std.debug.print("GCREFUSE {s} mode={s} at {d}\n", .{ message, @tagName(self.mode), if (self.stmt_loc) |l| l.line else 0 }); if (std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{}); }
         self.refusal = .{ .message = message, .loc = self.foreign_origin orelse loc };
         return error.WasmLoweringRefused;
     }
@@ -4053,7 +4113,7 @@ const Emitter = struct {
     /// every anon literal in source maps to a unique `__anon_L{line}_C{col}`
     /// entry in `records`/`record_field_types`, registered on first sight).
     fn recordTypeOfExpr(self: *Emitter, e: ast.Expr) ?[]const u8 {
-        if (self.genericResultOf(e)) |a| return self.recordTypeOfExpr(a);
+        if (self.genericResultOf(e)) |a| if (self.recordTypeOfExpr(a)) |r| return r;
         // `x!` (decision 330): the payload's record.
         if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| {
             if (oi.rec) |r| return r;
@@ -4075,6 +4135,9 @@ const Emitter = struct {
                         const st = self.self_type orelse break :blk null;
                         break :blk self.resolveRecordName(st);
                     }
+                    // A GC local held as a record's reference is that record
+                    // (`val w = await run(App())`, decisions 822, 825).
+                    if (self.mode == .gc and !self.local_types.contains(name)) if (self.locals.get(name)) |r| if (r == .ref and r.ref == .record) break :blk r.ref.record;
                     const tn = self.local_types.get(name) orelse
                         (if (self.locals.contains(name)) null else self.global_rec_types.get(name)) orelse break :blk null;
                     break :blk self.resolveRecordName(tn);
@@ -4160,6 +4223,9 @@ const Emitter = struct {
                 .try_ => |t| if (t) |inner| (self.resultPayloadRecord(inner.*) orelse
                     // A name bound to a task whose value is the payload (`val first = async { return try … }`).
                     (if (inner.* == .jump) self.recordTypeOfExpr(inner.*) else null)) else null,
+                // `await run(App())` (decisions 822, 825): the record the
+                // component answers.
+                .await_ => if (self.typeRefOf(e)) |t| (if (t == .named) self.resolveRecordName(t.named) else null) else null,
                 else => null,
             },
             // `a ?? b` — the transform pass writes it as `if (a) { <this> ->
@@ -5577,6 +5643,15 @@ const Emitter = struct {
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
         // Front 164 s2 P4 — a task is a `$task`, whatever it settles with.
         if (isTaskTypeRef(t0)) return .{ .ref = .task };
+        // Decisions 815 (1), 819 (1), 826 — `Composition<T>` is the function
+        // a component is at run time (`fn(Scope, Place) -> T | Async<T>`,
+        // which the checker builds and no alias erases): a closure. A
+        // `Component<T>` is a `Composition<T>` or a `Composable<T>`: either
+        // reference, held as `unknown`.
+        if (t0 == .generic and t0.generic.is_builtin and t0.generic.args.len == 1) {
+            if (std.mem.eql(u8, t0.generic.name, "Composition")) return .{ .ref = .closure };
+            if (std.mem.eql(u8, t0.generic.name, "Component")) return .{ .ref = .unknown };
+        }
         const t = eagerTypeRef(t0);
         if (isUnknownTypeRef(t)) return .{ .ref = .unknown };
         switch (t) {
@@ -5844,6 +5919,19 @@ const Emitter = struct {
     /// field read off a record, a method's answer. Plain names are not asked:
     /// their declaration's type is the local's.
     fn gcReprOfExpr(self: *Emitter, e: ast.Expr) ?Repr {
+        // `xs[i]!` over an array of references: the element's reference
+        // (`cs[i]!` of a `Component<T>[]`, decision 827) — an optional
+        // reference is the reference, `null` its absence. An `unknown`
+        // element nothing types further stays `unknown`.
+        if (optOperatorParts(e)) |op| if (op.bang and op.cond.* == .call and op.cond.call.kind == .call) {
+            const r = self.wasmTypeOf(op.cond.*);
+            if (r == .ref and r.ref != .unknown) return r;
+            if (gc_debug) std.debug.print("DBG bang r={any} t={any} oi={any}\n", .{ r, self.typeRefOf(op.cond.*), self.optInfoOf(op.cond.*) });
+            if (r == .ref and r.ref == .unknown and self.typeRefOf(op.cond.*) == null) {
+                const oi = self.optInfoOf(op.cond.*);
+                if (oi == null or (!oi.?.str and !oi.?.bool_ and oi.?.cell == .none and (oi.?.inner == null or self.reprOf(oi.?.inner.?).isRef()))) return r;
+            }
+        };
         switch (e) {
             .function => |f| return if (f.kind.syntax != .asyncBlock) .{ .ref = .closure } else .{ .ref = .task },
             .identifier => |id| switch (id.kind) {
@@ -5892,6 +5980,16 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| {
+                    // A method the value answers (`gcLowerBehaviorDispatch`):
+                    // what its implementers answer; `c.compose()` the
+                    // `Composition` closure.
+                    if (cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(c.loc) and self.recordTypeOfExpr(cc.receiver.?.*) == null) {
+                        const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return null;
+                        if (impls.len > 0) {
+                            const first = std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ impls[0], cc.callee }) catch return null;
+                            if (self.fn_sigs.get(first)) |sig| if (sig.result) |r| if (r.isRef()) return r;
+                        } else if (cc.args.len == 0 and std.mem.eql(u8, cc.callee, "compose")) return .{ .ref = .closure };
+                    }
                     if (self.callKind(cc) == .enum_ctor) {
                         const en = receiverName(cc) orelse self.enumOfVariant(cc.callee) orelse return null;
                         if (self.enums.get(en)) |vs| if (enumHasPayload(vs)) return .{ .ref = .{ .enum_ = en } };
@@ -7101,6 +7199,11 @@ const Emitter = struct {
                 return self.refuseUnlessTemplate(value.getLoc(), "unknown: no static type to box this value by (a type parameter's slot?)", .{});
             if (value == .call and value.call.kind == .call and self.external_missing.contains(value.call.kind.call.callee))
                 return self.gcFail("a missing host binding as an unknown");
+            if (gc_debug) {
+                const vc = value.call.kind.call;
+                std.debug.print("DBG box callee={s} recv={any} ce={any}\n", .{ vc.callee, vc.receiver != null, vc.calleeExpr != null });
+                if (vc.calleeExpr) |ce| { std.debug.print("DBG  ce={any} ceT={any} bm={any}\n", .{ce.*, self.typeRefOf(ce.*), self.behavior_methods.get("Composable.compose") != null}); if (ce.* == .call and ce.call.kind == .call) { const ic = ce.call.kind.call; std.debug.print("DBG  inner callee={s} recv={any} args={d} recvT={any} rec={any}\n", .{ ic.callee, ic.receiver != null, ic.args.len, if (ic.receiver) |r| self.typeRefOf(r.*) else null, if (ic.receiver) |r| self.recordTypeOfExpr(r.*) else null }); } }
+            }
             return self.refuse(value.getLoc(), "the wasm backend cannot box this value as `unknown`: nothing gives it a static type here", .{});
         };
         switch (kind) {
@@ -9435,24 +9538,33 @@ const Emitter = struct {
         else
             null;
         self.defer_fn_body = body;
-        const tail = try self.emitBody(body, self.fn_has_result);
-        if (self.fn_has_result and tail == .none) try self.pushZero();
+        // A body ending in a statement loop (`loop { … }`, left only by a
+        // `return` or a panic) is lowered as a statement, and the zero of
+        // `cur_result` stands after it: the loop's own type is no value's.
+        const loop_tail = self.fn_has_result and body.len > 0 and isStatementLoop(body[ast.lastRealIndex(body)].expr);
         // An implicit tail value has to meet the declared `(result …)` too.
-        if (self.fn_has_result and tail == .value) {
+        if (self.fn_has_result and !loop_tail) {
             // A tail that cannot return (`@panic`) leaves the stack polymorphic.
             const last_e: ?ast.Expr = if (body.len > 0) body[ast.lastRealIndex(body)].expr else null;
             const leaves = if (last_e) |le| le == .jump and (le.jump.kind == .@"return" or le.jump.kind == .throw_) else false;
-            const no_return = self.mode == .gc and last_e != null and (isNoReturnCall(last_e.?) or leaves);
             // Front 164 s2 P4 — a function declaring no answer whose last
             // statement makes a task (`pub fn main() { run(); }`): the word
             // linear memory answered was the task's address, which nothing
             // reads; here the task is dropped for the `0`.
-            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and tail_type.?.ref == .task and !self.cur_result.isRef() and prologue != null and ast.answersNothing(prologue.?.returnType);
-            if (dropped_task) {
-                try self.emit(.drop);
-                try self.emit(self.zeroOf(self.cur_result));
-            } else if (tail_type) |t| if (!no_return) try self.emitConvert(t, self.cur_result);
+            self.fn_tail_conv = .{
+                .from = tail_type,
+                .no_return = self.mode == .gc and last_e != null and (isNoReturnCall(last_e.?) or leaves),
+                // So is any reference a body answering nothing ends with —
+                // `await run(App())` closing `async fn main() -> Async<void>`
+                // settles with the root's value, which nothing reads.
+                .dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and !self.cur_result.isRef() and prologue != null and
+                    (ast.answersNothing(prologue.?.returnType) or (tail_type.?.ref != .task and prologue.?.returnType != null and taskValueTypeRef(prologue.?.returnType.?) != null and ast.answersNothing(taskValueTypeRef(prologue.?.returnType.?)))),
+            };
         }
+        defer self.fn_tail_conv = null;
+        const tail = try self.emitBody(body, self.fn_has_result and !loop_tail);
+        if (self.fn_has_result and tail == .none) try self.pushZero();
+        if (tail == .value) try self.emitFnTailConv();
         // `emitBody` normalises: with a result the tail is a value (or the
         // body terminated), without one it is nothing (or terminated).
         const stack: wat.Stack = if (tail == .terminated)
@@ -11444,6 +11556,7 @@ const Emitter = struct {
     /// dispatched. False when no type of the module declares the method.
     fn lowerBehaviorDispatch(self: *Emitter, cc: anytype) anyerror!bool {
         const impls = try self.behaviorImplementers(cc.callee, cc.args.len);
+        if (self.mode == .gc) return self.gcLowerBehaviorDispatch(cc, impls);
         if (impls.len == 0) return false;
         const first = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ impls[0], cc.callee });
         const sig = self.fn_sigs.get(first).?;
@@ -11469,6 +11582,70 @@ const Emitter = struct {
             .sig = sig,
         });
         try self.lowerCoerced(cc.receiver.?.*, .i32);
+        try self.lowerCallArgs(cc.args, sig, 1);
+        try self.emit(.{ .call = sym });
+        return true;
+    }
+
+    /// `lowerBehaviorDispatch` in a GC module: `$__gbdispatch_<method>_<n>(self
+    /// anyref, a0, …)` asks the value's struct type with `ref.test`, one per
+    /// GC type of each implementer, and calls that type's `<Type>_<method>`
+    /// on the value cast to it. Every implementer must take the same
+    /// arguments and answer the same value type (its own `self` aside).
+    /// `c.compose()` on a value `resolve` proved `is Composable<T>` while no
+    /// type implements it (decision 810 (1)) is a branch that never runs:
+    /// it is `unreachable`.
+    fn gcLowerBehaviorDispatch(self: *Emitter, cc: anytype, impls: []const []const u8) anyerror!bool {
+        if (impls.len == 0) {
+            if (!(cc.args.len == 0 and std.mem.eql(u8, cc.callee, "compose"))) return false;
+            try self.emitC(.@"unreachable", "no type implements `Composable` (decision 810 (1))");
+            return true;
+        }
+        const first = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ impls[0], cc.callee });
+        const sig = self.fn_sigs.get(first).?;
+        for (impls) |t| {
+            const isym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, cc.callee });
+            if (self.generic_methods.contains(isym)) try self.noteTemplateCall(isym, self.call_loc);
+            const s = self.fn_sigs.get(isym).?;
+            const same = for (s.params[1..], sig.params[1..]) |x, y| {
+                if (!self.sameVal(x, y)) break false;
+            } else if (s.result == null or sig.result == null) s.result == null and sig.result == null else self.sameVal(s.result.?, sig.result.?);
+            if (!same) return self.gcFail("a behavior dispatch over implementers of different signatures");
+        }
+        const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "__gbdispatch_{s}_{d}", .{ cc.callee, cc.args.len });
+        if (try self.gcHelperOnce(sym)) {
+            const ar = self.arena();
+            var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+            try params.append(ar, wat.Builder.param("self", .anyref));
+            var arg_names: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (0..cc.args.len) |i| {
+                const n = try std.fmt.allocPrint(ar, "a{d}", .{i});
+                try arg_names.append(ar, n);
+                try params.append(ar, wat.Builder.param(n, self.vtOf(sig.params[i + 1])));
+            }
+            var c: Capture = .{};
+            self.open(&c);
+            for (impls) |t| {
+                const isym = try std.fmt.allocPrint(self.reg_arena.allocator(), "{s}_{s}", .{ t, cc.callee });
+                const isig = self.fn_sigs.get(isym).?;
+                for (try self.gcTypeTests(.{ .named = t })) |vt| {
+                    try self.emit(.{ .local_get = "self" });
+                    try self.emit(.{ .ref_test = vt });
+                    var h: Capture = .{};
+                    self.open(&h);
+                    try self.emit(.{ .local_get = "self" });
+                    try self.emit(.{ .ref_cast = self.vtOf(isig.params[0]) });
+                    for (arg_names.items) |n| try self.emit(.{ .local_get = n });
+                    try self.emit(.{ .call = isym });
+                    try self.emit(.@"return");
+                    const seq = self.seal(&h, .terminated);
+                    try self.emitC(.{ .@"if" = .{ .then = .{ .seq = seq } } }, t);
+                }
+            }
+            try self.emitC(.@"unreachable", "no implementer of this behavior method built the value");
+            try self.gcHelperFunc(sym, params.items, if (sig.result) |r| self.vtOf(r) else null, &.{}, self.seal(&c, .terminated));
+        }
+        try self.lowerCoerced(cc.receiver.?.*, .{ .ref = .unknown });
         try self.lowerCallArgs(cc.args, sig, 1);
         try self.emit(.{ .call = sym });
         return true;
@@ -11698,6 +11875,11 @@ const Emitter = struct {
             if (is_last and keep_value and hook != null) {
                 tail = try hook.?.run(hook.?.ctx, self, stmt);
             } else tail = try self.emitStmt(stmt, is_last and keep_value);
+            // The function body's tail meets `cur_result` where it stands, so
+            // a `defer` region around it answers that type.
+            if (is_last and keep_value and tail == .value and self.defer_fn_body != null and
+                self.defer_fn_body.?.ptr == body.ptr and self.defer_fn_body.?.len == body.len)
+                try self.emitFnTailConv();
         }
         // A body whose last statement is a `defer` answers the neutral value.
         if (keep_value and body.len > 0 and body[body.len - 1].deferred) {
@@ -11705,6 +11887,16 @@ const Emitter = struct {
             tail = .value;
         }
         return tail;
+    }
+
+    /// `fn_tail_conv`, once: the function body's tail value as `cur_result`.
+    fn emitFnTailConv(self: *Emitter) anyerror!void {
+        const tc = self.fn_tail_conv orelse return;
+        self.fn_tail_conv = null;
+        if (tc.dropped_task) {
+            try self.emit(.drop);
+            try self.emit(self.zeroOf(self.cur_result));
+        } else if (tc.from) |t| if (!tc.no_return) try self.emitConvert(t, self.cur_result);
     }
 
     /// Whether a statement list holds a `defer` of its own.
@@ -12438,6 +12630,11 @@ const Emitter = struct {
         const t = self.exprTail(e);
         try self.lowerExpr(e);
         if (t == .none) try self.pushZero();
+    }
+
+    /// An unprefixed loop: a statement, worth no value (decision 105).
+    fn isStatementLoop(e: ast.Expr) bool {
+        return e == .loop and e.loop.generator == null;
     }
 
     /// Builtin calls that emit *no* operand-stack push (void on the wasm
@@ -19507,6 +19704,13 @@ const Emitter = struct {
         if (runCallOf(operand_in)) |rc| return self.lowerRun(rc.call.kind.call, true);
         const operand = innerClosureBlock(operand_in) orelse operand_in;
         if (self.mode == .gc and self.isMaybeTaskExpr(operand)) return self.gcAwaitMaybeTask(operand);
+        // An `unknown` awaited — a value `is Async<unknown>` proved a task
+        // (`settled`'s `await r`, decision 823 (3)), or any other — is
+        // tested where it is: a task is awaited, a value answered as it is.
+        if (self.mode == .gc and !self.isTaskExpr(operand)) {
+            const r = self.wasmTypeOf(operand);
+            if (r == .ref and r.ref == .unknown) return self.gcAwaitMaybeTask(operand);
+        }
         if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
         const read: Settled = if (self.mode == .gc)
             .{ .gc = try self.gcAwaitedRead(operand) }
@@ -19539,6 +19743,26 @@ const Emitter = struct {
         return false;
     }
 
+    /// The `T` of a `T | Async<T>` `e` when it names a type this module
+    /// holds as something other than an `unknown` (a record, an array, a
+    /// scalar): what `await e` reads its answer as. Null otherwise — the
+    /// answer stays the `unknown` it is.
+    fn maybeTaskValueType(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
+        const t = self.typeRefOf(e) orelse return null;
+        const members = t.unionMembers() orelse return null;
+        var out: ?ast.TypeRef = null;
+        for (members) |m| {
+            if (isTaskTypeRef(m)) continue;
+            if (out != null) return null;
+            out = m;
+        }
+        const v = out orelse return null;
+        if (!self.typeConcrete(v) or isUnknownTypeRef(v)) return null;
+        if (v == .named and isGenericParamName(v.named, self.owner_tparams, self.fn_tparams)) return null;
+        if (v == .named and std.mem.eql(u8, v.named, "void")) return null;
+        return v;
+    }
+
     /// Decision 823 (4) — `await v` over a `T | Async<T>` in a GC module:
     /// the `unknown` holding `v` is tested with `ref.test (ref $task)`, the
     /// task's state not read; a task is awaited (suspending the machine while
@@ -19562,7 +19786,11 @@ const Emitter = struct {
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = v });
         const op_seq = self.seal(&op_c, .{ .value = .anyref });
-        if (self.machine != null and self.gen_item == null) return self.emitSuspension(lo, op_seq, mk, raw);
+        if (self.machine != null and self.gen_item == null) {
+            try self.emitSuspension(lo, op_seq, mk, raw);
+            if (self.maybeTaskValueType(operand)) |vt| try self.emitConvert(.{ .ref = .unknown }, self.reprOf(vt));
+            return;
+        }
         for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
         try self.emit(.drop);
         try self.emit(.{ .local_get = mk });
@@ -19578,6 +19806,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = v });
         const else_seq = self.seal(&else_c, .{ .value = .anyref });
         try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        if (self.maybeTaskValueType(operand)) |vt| try self.emitConvert(.{ .ref = .unknown }, self.reprOf(vt));
     }
 
     /// How an `await` reads the value a settled task holds: in linear memory
@@ -19629,6 +19858,7 @@ const Emitter = struct {
                 if (r == .ref and r.ref == .task) return self.gcFail("an awaited task of a type parameter");
                 return .{ .repr = r };
             };
+            if (gc_debug) { if (e == .call and e.call.kind == .call and e.call.kind.call.args.len > 0) { const a0 = e.call.kind.call.args[0].value.*; std.debug.print("DBG callee={s} a0tag={s} a0type={any}\n", .{ e.call.kind.call.callee, @tagName(a0), self.typeRefOf(a0) }); if (a0 == .call and a0.call.kind == .call) std.debug.print("DBG a0callee={s}\n", .{a0.call.kind.call.callee}); } }
             return self.gcFail("an awaited task of a type parameter");
         }
         if (inner == .named and std.mem.eql(u8, inner.named, "void")) return .{ .repr = .i32, .void_ = true };
@@ -20496,6 +20726,25 @@ const Emitter = struct {
         try self.emit(.{ .ref_cast = self.gcTy(.task) });
     }
 
+    /// `t`, with a `Composition<T>` read as the function it is (decisions
+    /// 815 (1), 819 (1)): `fn(scope: Scope, key: Place) -> T | Async<T>`,
+    /// which the checker builds and no alias erases.
+    fn compositionFnType(self: *Emitter, t: ast.TypeRef) !ast.TypeRef {
+        if (t != .generic or !t.generic.is_builtin or t.generic.args.len != 1 or !std.mem.eql(u8, t.generic.name, "Composition")) return t;
+        const ra = self.reg_arena.allocator();
+        const ps = try ra.alloc(ast.TypeRef, 2);
+        ps[0] = .{ .named = "Scope" };
+        ps[1] = .{ .named = "Place" };
+        const members = try ra.alloc(ast.TypeRef, 2);
+        members[0] = t.generic.args[0];
+        const task_args = try ra.alloc(ast.TypeRef, 1);
+        task_args[0] = t.generic.args[0];
+        members[1] = .{ .generic = .{ .name = "Async", .args = task_args, .is_builtin = true } };
+        const ret = try ra.create(ast.TypeRef);
+        ret.* = .{ .generic = .{ .name = ast.union_type_name, .args = members, .is_builtin = false } };
+        return .{ .function = .{ .params = ps, .returnType = ret } };
+    }
+
     fn lowerLambdaValue(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, loc: ?ast.Loc) anyerror!void {
         const ra = self.reg_arena.allocator();
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -20525,7 +20774,7 @@ const Emitter = struct {
         // `i32` and `p + x` wrote the number (`a264`, exit 0).
         // An optional function type (`scoper: ?fn(string) -> string`) types the
         // lambda stored in it the same way.
-        const expected: ?ast.TypeRef = if (self.expected_fn) |ef| (if (ef == .optional) ef.optional.* else ef) else null;
+        const expected: ?ast.TypeRef = if (self.expected_fn) |ef| try self.compositionFnType(if (ef == .optional) ef.optional.* else ef) else null;
         self.expected_fn = null;
         const param_rec = try ra.alloc(?[]const u8, params.len);
         @memset(param_rec, null);
@@ -20693,7 +20942,7 @@ const Emitter = struct {
                 self.local_typerefs.get(cc.callee) orelse
                 self.global_typerefs.get(self.resolveName(cc.callee)) orelse return null;
         };
-        var t = eagerTypeRef(t0);
+        var t = eagerTypeRef(self.compositionFnType(t0) catch return null);
         if (t == .optional) t = eagerTypeRef(t.optional.*);
         if (t != .function) return null;
         return .{ .ft = t, .gps = gps };
@@ -20990,6 +21239,7 @@ const Emitter = struct {
                         reads = true;
                     };
                 }
+                if (gc_debug and reads) std.debug.print("DBG lambda {s} param {s} loc={any} nparams={d}\n", .{ l.name, p, l.loc, l.params.len });
                 if (reads) return self.gcFail("a lambda parameter nothing types");
                 r = .i32;
             }
@@ -22364,6 +22614,10 @@ const Emitter = struct {
             // A thunk parameter, `fn() -> T` or `fn() -> @Async<T>` (std's
             // `failure.attempt` / `attemptTask`, decision 518): `T` is what
             // the argument answers — a `@Result` or any other type included.
+            if (componentParamOf(p.typeRef, f.genericParams)) |tp| if (self.componentAnswerOfExpr(cc.args[pi].value.*)) |to| {
+                try subs.append(ar, .{ .name = tp, .to = to });
+                continue;
+            };
             if (p.typeRef == .function) {
                 const want = p.typeRef.function.returnType.*;
                 const got = self.fnArgReturnTyped(cc.args[pi].value.*, p.typeRef, f.genericParams, ctx.items) orelse continue;
@@ -22397,7 +22651,9 @@ const Emitter = struct {
         };
         if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
         const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        if (gc_debug) std.debug.print("DBG bind callee={s} has={any}\n", .{ callee, self.generic_fns.get(callee) != null });
         const f = if (self.generic_fns.get(callee)) |g| g.decl else return null;
+        if (gc_debug) for (f.params) |p| std.debug.print("DBG  param {s} {any}\n", .{ p.name, p.typeRef });
         const ar = self.reg_arena.allocator();
         var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
         var pi: usize = 0;
@@ -22405,13 +22661,35 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
             const arg = cc.args[pi].value.*;
+            // `run<T>(c: Component<T>)` (decisions 822, 825): `T` is what the
+            // component answers — a `Composition<X>`'s or a `Component<X>`'s
+            // `X`, a lowered component call's `fn(…) -> X`'s.
+            if (componentParamOf(p.typeRef, f.genericParams)) |tp| {
+                const to = self.componentAnswerOfExpr(arg) orelse continue;
+                subs.append(ar, .{ .name = tp, .to = to }) catch return null;
+                continue;
+            }
+            if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
             const to: ast.TypeRef = if (self.concreteTypeOf(arg)) |c| .{ .named = c } else (self.typeRefOf(arg) orelse continue);
             subs.append(ar, .{ .name = p.typeRef.named, .to = to }) catch return null;
         }
         if (subs.items.len == 0) return null;
         return substTypeParams(ast.TypeRef, ar, v, subs.items) catch null;
+    }
+
+    /// What the component `arg` answers once run (`componentAnswerOf` of its
+    /// type): through the stamp the lowering wraps a making call in
+    /// (`bpStamp__(Item(p), …)`, decisions 820, 821), whose own type says
+    /// `Composition<unknown>`, the call it stamps.
+    fn componentAnswerOfExpr(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
+        if (arg == .call and arg.call.kind == .call) {
+            const cc = arg.call.kind.call;
+            if (cc.receiver == null and cc.calleeExpr == null and cc.args.len > 0 and isStampCallee(cc.callee))
+                return self.componentAnswerOfExpr(cc.args[0].value.*);
+        }
+        const at = self.typeRefOf(arg) orelse return null;
+        return componentAnswerOf(at);
     }
 
     /// What a function argument answers: a lambda's last expression's type
@@ -23014,6 +23292,12 @@ const Emitter = struct {
             break :blk self.local_typerefs.get(n) orelse
                 (if (self.locals.contains(n)) return null else self.global_typerefs.get(n) orelse return null);
         };
+        // A `Composition<T>` applied answers its `T | Async<T>` (decision
+        // 815 (1)).
+        if (ft == .generic and ft.generic.is_builtin and ft.generic.args.len == 1 and std.mem.eql(u8, ft.generic.name, "Composition")) {
+            const fnt = self.compositionFnType(ft) catch return null;
+            return fnt.function.returnType.*;
+        }
         return switch (ft) {
             .function => |f| f.returnType.*,
             // A value narrowed from an optional function (`val f = cfg.scoper;
@@ -23211,6 +23495,24 @@ const Emitter = struct {
                         if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and self.isBigintExpr(cc.args[1].value.*)) break :blk .{ .named = "bigint" };
                     }
                     if (cc.is_builtin) break :blk null;
+                    // Decision 827 — `use all(cs)`'s call carries the `T[]` it
+                    // answers, or the task of it.
+                    // A call the checker left no type for (`use all([])`)
+                    // answers an array of `unknown`.
+                    if (cc.receiver == null and cc.calleeExpr == null and (std.mem.eql(u8, cc.callee, "allIn") or std.mem.eql(u8, cc.callee, "bpAllIn__"))) {
+                        const ar = self.reg_arena.allocator();
+                        const carried: ast.TypeRef = if (cc.typeArgs) |ta| (if (ta.len == 1) ta[0] else break :blk null) else u: {
+                            const el = ar.create(ast.TypeRef) catch break :blk null;
+                            el.* = .{ .named = ast.unknown_type_name };
+                            break :u .{ .array = el };
+                        };
+                        const members = ar.alloc(ast.TypeRef, 2) catch break :blk null;
+                        const targs = ar.alloc(ast.TypeRef, 1) catch break :blk null;
+                        targs[0] = carried;
+                        members[0] = carried;
+                        members[1] = .{ .generic = .{ .name = "Async", .args = targs, .is_builtin = true } };
+                        break :blk .{ .generic = .{ .name = ast.union_type_name, .args = members, .is_builtin = false } };
+                    }
                     // Decision 332 — `bigint.of(n)` answers a `bigint`, and so
                     // does `xs.fold(0n, f)`: a fold answers its accumulator.
                     if (self.bigintAssoc(cc)) |which| if (which == .of) break :blk .{ .named = "bigint" };
@@ -23275,6 +23577,14 @@ const Emitter = struct {
                         // left, an interface `default fn`, or a method already
                         // flattened to `Dict_at` by the specialisation pass.
                         if (self.calleeSymbol(cc, c.loc)) |sym| if (self.fn_ret_typerefs.get(sym)) |t| break :blk t;
+                        // Decision 815 (3) — `c.compose()` over a value
+                        // `resolve` proved `is Composable<T>`: the behavior's
+                        // `Composition<T>`, its `T` held as `unknown`.
+                        if (cc.args.len == 0 and std.mem.eql(u8, cc.callee, "compose") and self.recordTypeOfExpr(cc.receiver.?.*) == null) {
+                            const args = self.reg_arena.allocator().alloc(ast.TypeRef, 1) catch break :blk null;
+                            args[0] = .{ .named = ast.unknown_type_name };
+                            break :blk .{ .generic = .{ .name = "Composition", .args = args, .is_builtin = true } };
+                        }
                         // No method answers it: a function-typed field
                         // (`op.run(5)`) or a tuple element answers its type's
                         // return, so `op.run(5).toString()` finds the `i32`.
@@ -23368,6 +23678,7 @@ const Emitter = struct {
             // `T` is the argument that binds it.
             .jump => |j| switch (j.kind) {
                 .await_ => |a| blk: {
+                    if (self.mode == .gc and self.isMaybeTaskExpr(a.*)) if (self.maybeTaskValueType(a.*)) |vt| break :blk vt;
                     const inner = self.typeRefOf(a.*);
                     if (inner) |t| if (taskValueTypeRef(t)) |v| {
                         // `await twice(21)` over `-> @Async<@Result<T, string>>`:
@@ -23376,6 +23687,9 @@ const Emitter = struct {
                         if (v == .generic) if (self.bindAwaitedGeneric(a.*, v)) |bound| break :blk bound;
                         if (v != .named or self.namesConcreteType(v.named)) break :blk v;
                         if (self.genericResultOf(a.*)) |pr| break :blk self.typeRefOf(pr);
+                        // `await run(App())` (decisions 822, 825): what the
+                        // component answers.
+                        if (self.bindAwaitedGeneric(a.*, v)) |bound| break :blk bound;
                         break :blk null;
                     };
                     break :blk inner;
@@ -23417,6 +23731,9 @@ const Emitter = struct {
         // A record is its own pointer: `0` is absence, as it is for a string,
         // and a box would only hide the payload from every reader.
         if (self.elemRecordOf(recv)) |rec| return .{ .boxed = false, .rec = rec };
+        // A function element (`cs.at(i)` over a `Component<T>[]`, decision
+        // 827) is its closure's reference in a GC module: `null` is absence.
+        if (self.mode == .gc) if (self.elemTypeRefOf(recv)) |et| if (et == .function) return .{ .boxed = false, .inner = et };
         if (self.elemIsPointer(recv)) {
             const sh = (self.printShapeOf(recv) catch null).?;
             return .{ .boxed = false, .shape = sh[1..] };
@@ -24558,6 +24875,7 @@ const Emitter = struct {
         // Front 164 s2 P2 — a field of a record in a GC module is a read of
         // the struct's field, typed by the declaration.
         if (self.mode == .gc) {
+            if (gc_debug and self.recordTypeOfExpr(ia.receiver.*) == null) std.debug.print("DBG field recv={any} t={any} inner={any}\n", .{ ia.receiver.*, self.typeRefOf(ia.receiver.*), if (ia.receiver.* == .collection and ia.receiver.collection.kind == .grouped) ia.receiver.collection.kind.grouped.* else ia.receiver.* });
             const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return self.gcFail("a field of a receiver of no known record");
             const off = self.fieldOffsetIn(rty, ia.member) orelse return self.gcFail("a field the record does not declare");
             if (ia.optional) return self.gcOptionalField(ia, rty);
@@ -28014,7 +28332,10 @@ const Emitter = struct {
             .useHook => |uh| self.wasmTypeOf(uh.kind.inner.*),
             // Decision 392 — what the task settles with.
             .jump => |j| switch (j.kind) {
-                .await_ => |a| if (self.isTaskExpr(a.*)) self.awaitedType(a.*) else self.wasmTypeOf(a.*),
+                .await_ => |a| if (self.isTaskExpr(a.*)) self.awaitedType(a.*) else if (self.mode == .gc and self.isMaybeTaskExpr(a.*))
+                    (if (self.maybeTaskValueType(a.*)) |vt| self.reprOf(vt) else Repr{ .ref = .unknown })
+                else
+                    self.wasmTypeOf(a.*),
                 // `try r` over a `@Result<f64, E>` answers the `f64` its cell holds.
                 .try_ => |v| if (v) |inner| self.resultOkCell(inner.*).ty() else .i32,
                 else => .i32,
@@ -28145,6 +28466,7 @@ const Emitter = struct {
         // for the value, it refuses.
         if (lossyConversion(from, want))
             return self.refuse(e.getLoc(), "the wasm backend would narrow this `{s}` value to an `{s}` slot it does not fit", .{ from.name(), want.name() });
+        if (gc_debug and from == .i32 and want == .ref) std.debug.print("DBG coerce e={s} {s} line={d}\n", .{ @tagName(e), if (e == .call and e.call.kind == .call) e.call.kind.call.callee else if (e == .identifier and e.identifier.kind == .ident) e.identifier.kind.ident else "-", e.getLoc().line });
         try self.lowerValue(e);
         try self.emitConvert(from, want);
     }
