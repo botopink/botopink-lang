@@ -55,22 +55,25 @@ fn main() -> void {
 `;
 
 const COMPTIME = `
-pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    return q.build("\\"" + q.text().toUpper() + "\\"");
+import {compiler} from "std";
+import {io.terminal.print} from "std";
+
+pub fn shout(syntax q: string) -> string {
+    return compiler.build("\\"" + compiler.text(q).toUpper() + "\\"");
 }
 
-pub fn describe(comptime decl: @Decl) -> void {
-    @emit("pub fn describe" + decl.name + "() -> string { return \\"" + decl.name + "\\"; }");
+pub fn describe(syntax decl: unknown) -> void {
+    @emit("pub fn describe" + compiler.name(decl)! + "() -> string { return \\"" + compiler.name(decl)! + "\\"; }");
 }
 
 #[describe]
 type User(name: string)
 
-val s = shout "browser";
+val s = shout @\`browser\`;
 
 fn main() -> void {
-    @print(s);
-    @print(describeUser());
+    print(s);
+    print(describeUser());
 }
 `;
 
