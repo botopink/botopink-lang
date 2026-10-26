@@ -1,0 +1,21 @@
+botopink-cell 1
+out == return_in_case_arm_statement
+out one
+out other
+out many
+out big
+out small
+out done
+out announce
+out 3
+out == return_nested_in_if_block
+out big
+out small
+out three
+out not three
+out not two
+out low
+out over
+out under
+out true
+out false

@@ -1,3 +1,0 @@
-pub mod template_default_arg_two_expansions;
-pub mod template_name_collision;
-pub mod template_two_alike_expansions;

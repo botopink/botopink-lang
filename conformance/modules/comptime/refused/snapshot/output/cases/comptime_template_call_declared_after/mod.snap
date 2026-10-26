@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the comptime reaches the template call `tag` at 16:12 in `late`, which is not expanded where the comptime runs — declare `late` before the `comptime` in this module
-at src/cases/comptime_template_call_declared_after/mod.bp:13:17

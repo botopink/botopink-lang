@@ -8,6 +8,6 @@ lines show std using its own declaration: `Dict` implements the same `Display`, 
 with string keys quoted, and a `Money` value inside the dictionary still prints as `4210 cents`. All four backends read
 this one declaration, so every target prints the same lines.
 
-Cells in this repository that also bear on it: `modules/display/cells/display_print`.
+Cells in this repository that also bear on it: `modules/display/cases/display_print`.
 
 [draft/main.bp](draft/main.bp)

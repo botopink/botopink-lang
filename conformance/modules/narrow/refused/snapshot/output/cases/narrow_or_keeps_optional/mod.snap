@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `v` is read off an optional `?Node` — write `?.v`
-at src/cases/narrow_or_keeps_optional/mod.bp:10:27

@@ -1,0 +1,25 @@
+botopink-cell 1
+out == program_array_behavior_default
+out 2
+out 8
+out [2, 4]
+out b
+out null
+out b
+out z
+out true
+out false
+out x,y
+out 5
+out == program_primitive_behavior_extends_std
+out +B
+out b
+out 6
+out 3
+out true
+out b
+out 10
+out 5
+out == program_primitive_behavior_redeclares_std
+out refused error: behavior-member-redeclared: `Prefixed.startsWith` is a member of `string` already — `StringPrefixed implement Prefixed for string` adds members to `string` and redeclares none
+out at src/main.bp:14:16

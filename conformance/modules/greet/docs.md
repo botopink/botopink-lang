@@ -1,3 +1,3 @@
 # greet
 
-[cells/greet/src/main.bp](cells/greet/src/main.bp)
+[cases/greet/src/main.bp](cases/greet/src/main.bp)

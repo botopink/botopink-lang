@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Widget' carries no `component` marker (it returns 'Element'): write `component fn`
-at src/cases/use_without_component/mod.bp:12:13

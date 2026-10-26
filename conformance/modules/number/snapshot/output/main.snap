@@ -1,0 +1,15 @@
+botopink-cell 1
+out == number_literal_erlang_spellings
+out true
+out true
+out true
+out true
+out true
+out == number_literal_method
+out 42
+out 7
+out 1
+out == number_method_call
+out 42
+out n=7
+out true

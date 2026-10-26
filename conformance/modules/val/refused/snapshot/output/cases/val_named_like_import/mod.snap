@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: import-name-collision: `extname` is already bound by the import of `path.extname`; a `val` of this module would bind it again
-at src/cases/val_named_like_import/mod.bp:5:5

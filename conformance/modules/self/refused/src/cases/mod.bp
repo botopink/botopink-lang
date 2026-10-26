@@ -1,2 +1,0 @@
-pub mod self_param_free_fn;
-pub mod self_without_argument;

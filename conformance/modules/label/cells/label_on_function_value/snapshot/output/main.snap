@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: label-on-function-value: `f` is a function value, whose parameters have no names — `n:` names nothing
-at src/main.bp:13:17

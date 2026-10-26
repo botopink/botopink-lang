@@ -1,0 +1,5 @@
+botopink-cell 1
+out == pattern_range_exclusive
+out refused error[pattern-range-exclusive]: `..` is iteration, not a pattern's range
+out at src/main.bp:13:10
+out label write `...` — an inclusive range, both ends matched

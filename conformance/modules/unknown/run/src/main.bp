@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.unknown_by_value.runCase();
-    cases.unknown_generic_payload.runCase();
-}

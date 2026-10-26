@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: break-value-outside-generator: `break <value>` needs a generator scope — a body marked `iter` or `async iter`, or an `iter` / `stream` loop; this body carries no marker
-at src/cases/loop_break_value/mod.bp:11:23

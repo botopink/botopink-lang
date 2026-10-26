@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.iterator_result_items_handled.runCase();
-    cases.iterator_vs_factory.runCase();
-}

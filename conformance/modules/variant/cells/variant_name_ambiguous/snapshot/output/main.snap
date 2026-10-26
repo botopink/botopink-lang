@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Circle` is a variant of `Shape` and of `Hole`, and nothing here says which — write `Shape.Circle` or `Hole.Circle`
-at src/main.bp:25:13
