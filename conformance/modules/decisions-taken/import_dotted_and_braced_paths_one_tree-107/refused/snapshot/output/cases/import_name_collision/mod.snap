@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: import-name-collision: `parse` is already bound by the import of `url.parse`; `json.parse` would bind it again
-at src/cases/import_name_collision/mod.bp:5:27

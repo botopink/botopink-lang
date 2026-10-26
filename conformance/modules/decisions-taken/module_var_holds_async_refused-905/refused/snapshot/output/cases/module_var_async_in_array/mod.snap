@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: module-var-holds-async: the module `var` `pending` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))
-at src/cases/module_var_async_in_array/mod.bp:4:14

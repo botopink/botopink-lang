@@ -1,0 +1,30 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("list_spread_dot_dot_dot");
+}
+
+pub fn main() -> void {}

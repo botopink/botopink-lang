@@ -1,0 +1,9 @@
+botopink-cell 1
+out == component_compose_called
+out refused error: component-compose-called: `Card.compose()` calls the body of the type component `Card` — call the component, not its body: `Card(…)`, or place it in the tree (decision 804 (1))
+out at src/main.bp:16:18
+out == component_compose_entry
+out compose ran
+out page dark:used/<b>
+out compose ran
+out light:root/<none>

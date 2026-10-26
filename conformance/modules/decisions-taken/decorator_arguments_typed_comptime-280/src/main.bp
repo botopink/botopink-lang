@@ -1,0 +1,46 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("comptime_arg_not_known");
+    runCase("comptime_default_outside_decorator");
+    runCase("decorator_arg_function_mismatch");
+    runCase("decorator_arg_label_unknown");
+    runCase("decorator_arg_unbound_function");
+    runCase("decorator_argument_kind");
+    runCase("decorator_check_without_rule_not_bool");
+    runCase("decorator_decl_pattern_mismatch");
+    runCase("decorator_decl_pattern_return");
+    runCase("decorator_field_key_case");
+    runCase("decorator_field_key_too_many");
+    runCase("decorator_function_argument_mismatch");
+    runCase("decorator_param_not_comptime");
+    runCase("decorator_record_argument_mismatch");
+    runCase("decorator_type_argument_unknown");
+    runCase("decorator_variant_case");
+    runCase("decorator_decl_pattern");
+}
+
+pub fn main() -> void {}

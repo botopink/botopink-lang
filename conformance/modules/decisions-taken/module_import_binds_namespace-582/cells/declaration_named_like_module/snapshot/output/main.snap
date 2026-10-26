@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: module-item-collision: `config` names both the item declared here and the module `mod config;` declares at line 7 — rename one
-at src/main.bp:9:4

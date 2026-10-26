@@ -1,0 +1,17 @@
+botopink-cell 1
+out == template_build_outside_bound
+out refused error: template-build-outside-bound: `count` built code of type `string`, outside its answer `i32`
+out at src/main.bp:8:21
+out == template_build_outside_bound_component
+out refused error: template-build-outside-bound: `view` built code of type `Component<Other>`, outside its answer `Component<Styled>`
+out at src/main.bp:16:21
+out == template_call_expected_mismatch
+out refused error: type mismatch: expected i32, got string[]
+out at src/main.bp:12:18
+out == template_note_on_mismatch
+out refused error: type mismatch: expected string, got string[] — note: rows answers a list — add limit 1 for one row
+out at src/main.bp:15:23
+out == template_call_typed_by_expansion
+out ana,bia
+out 42
+out solo!

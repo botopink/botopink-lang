@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'result'
-at src/cases/result_namespace_removed/mod.bp:13:11

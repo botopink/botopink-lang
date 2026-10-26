@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'errado' carries no `component` marker (it returns 'Element'): write `component fn`
-at src/cases/use_of_component/mod.bp:13:12

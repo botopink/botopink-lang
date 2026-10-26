@@ -7,8 +7,8 @@ target the program is built for. A commonJS, erlang or beam build, which would n
 the same way as a wasm build. An `op:` absent from the opcode table, an unlisted `wasi:` adapter or a `std:` export
 std-wasm does not have would be refused alike. The program does not build on any target, and nothing prints.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/external_wasm_labelled_cells-481/refused/src/cases/external_wasm_op_unknown`,
-`modules/decisions-taken/external_wasm_labelled_cells-481/refused/src/cases/external_wasm_wasi_unknown`,
-`modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/external_wasm_needs_unknown`.
+Cells in this repository that also bear on it: `modules/decisions-taken/external_wasm_labelled_cells-481/cases/external_wasm_op_unknown`,
+`modules/decisions-taken/external_wasm_labelled_cells-481/cases/external_wasm_wasi_unknown`,
+`modules/decisions-taken/wasm_attempt_by_exception_handling-518/cases/external_wasm_needs_unknown`.
 
 [draft/main.bp](draft/main.bp)

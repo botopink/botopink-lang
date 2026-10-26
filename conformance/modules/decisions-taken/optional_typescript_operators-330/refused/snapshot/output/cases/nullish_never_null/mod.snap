@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: optional-operator-never-null: `??` over a value that is never null — this is `string`, not `?string`
-at src/cases/nullish_never_null/mod.bp:8:13

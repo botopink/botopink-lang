@@ -5,4 +5,4 @@ The example's `main` imports the decorator `stamped` and nothing else from `stam
 Cells in this repository that also bear on it: `modules/decisions-taken/decorator_four_output_places-216/run/src/cases/decorator_add_member_import`.
 
 
-[cells/decorator_member_reaches_decorator_imports/src/main.bp](cells/decorator_member_reaches_decorator_imports/src/main.bp)
+[cases/decorator_member_reaches_decorator_imports/src/main.bp](cases/decorator_member_reaches_decorator_imports/src/main.bp)

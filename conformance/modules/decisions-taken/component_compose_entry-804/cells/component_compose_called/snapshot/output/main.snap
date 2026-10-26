@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: component-compose-called: `Card.compose()` calls the body of the type component `Card` — call the component, not its body: `Card(…)`, or place it in the tree (decision 804 (1))
-at src/main.bp:16:18

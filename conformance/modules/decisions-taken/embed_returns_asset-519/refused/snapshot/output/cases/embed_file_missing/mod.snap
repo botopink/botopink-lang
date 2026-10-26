@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: embed-file-missing: `@embed("assets/missing.txt")` names no file of the package
-at src/cases/embed_file_missing/mod.bp:7:13

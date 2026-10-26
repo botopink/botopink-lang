@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: optional-operator-never-null: `!` over a value that is never null — this is `i32`, not `?i32`
-at src/cases/bang_never_null/mod.bp:8:12

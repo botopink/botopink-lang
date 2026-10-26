@@ -1,0 +1,34 @@
+botopink-cell 1
+out == decorator_expr_unread_argument
+out signup
+out 1
+out == decorator_expr_value
+out CITY 2.5 high 1..9 name a+b
+out 21
+out 10
+out HELLO!
+out == expr_param_value_receiver
+out a|b|c
+out 1
+out 4
+out OI!
+out == decorator_expr_fail_at_argument
+out refused error: the upper bound is below the lower one
+out at src/main.bp:12:22
+out == decorator_inspect_expr_type
+out refused error: expr-value-of-type: `t` is an `@Expr` of a type, which has no `.value`
+out at src/main.bp:11:16
+out == decorator_value_not_comptime
+out refused error: decorator-value-not-comptime: `#[check]`'s argument `env("MSG")` is not known while the program compiles, and the decorator reads `message.value`
+out at src/main.bp:25:9
+out == comptime_decorator_section_value
+out pad-4,bold,pad-8
+out pad-8
+out styled
+out == decorator_arguments_check
+out passwords differ (custom)
+out handle taken (mismatch)
+out the password holds the handle
+out false
+out true
+out true

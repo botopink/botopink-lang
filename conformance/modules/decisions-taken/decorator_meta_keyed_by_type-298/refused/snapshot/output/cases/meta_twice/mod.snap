@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-meta-twice: `#[entity]` records a second `Entity` on `City`, which holds one
-at src/cases/meta_twice/mod.bp:14:3

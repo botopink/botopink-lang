@@ -1,0 +1,14 @@
+botopink-cell 1
+out == result_wide_payloads
+out 1.5
+out 0.5
+out 2.5
+out -1.0
+out 9007199254740993
+out negative
+out 9007199254740993
+out 2.5
+out true
+out 21
+out 0
+out 4.25

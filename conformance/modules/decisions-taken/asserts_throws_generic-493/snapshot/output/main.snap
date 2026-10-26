@@ -1,0 +1,9 @@
+botopink-cell 1
+out == std_asserts_on_every_target
+out asserts.isTrue: condition was false
+out 0
+out asserts.approxEquals: values differ by more than tolerance
+out asserts.approxEquals: values differ by more than tolerance
+out 0
+out asserts.contains: needle not in actual
+out asserts.lengthIs: length differs

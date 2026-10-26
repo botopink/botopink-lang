@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the comptime reaches the section path `.Pad.All.8` at 32:12 in `later`, which is not resolved where the comptime runs — declare `later` before the `comptime` in this module
-at src/cases/comptime_section_path_declared_after/mod.bp:28:11

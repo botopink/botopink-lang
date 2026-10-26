@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: implement-with-body: `magnitude` has a body, and an implementation takes the place of one — `.JavaScript(…)` implements a bodyless `declare fn`
-at src/main.bp:6:3

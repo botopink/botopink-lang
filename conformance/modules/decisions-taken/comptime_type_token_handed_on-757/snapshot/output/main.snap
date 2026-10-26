@@ -1,0 +1,18 @@
+botopink-cell 1
+out == is_comptime_type_parameter
+out 2
+out 1
+out false
+out true
+out == type_parameter_bound_by_token
+out 42
+out true
+out 8
+out == comptime_type_param_of_method
+out 30
+out 10
+out 7
+out == comptime_type_token_handed_on
+out 2
+out 9
+out -1

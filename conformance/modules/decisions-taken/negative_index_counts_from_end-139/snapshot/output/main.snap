@@ -1,0 +1,70 @@
+botopink-cell 1
+out == index_answer_typed_optional
+out 1
+out true
+out true
+out true
+out false
+out b
+out 7
+out == index_at_optional
+out 1
+out null
+out b
+out null
+out == index_dict
+out 1
+out null
+out null
+out after
+out == index_negative_from_end
+out 3
+out 1
+out null
+out null
+out 2
+out 3
+out c
+out a
+out null
+out null
+out b
+out bia
+out null
+out == index_past_the_end_is_null
+out 10
+out null
+out after
+out == index_tuple
+out 1
+out a
+out 30
+out == index_user_type
+out [3, 4]
+out 2
+out 1
+out null
+out == string_at
+out a
+out b
+out c
+out w
+out == ambient_index_implement_missing_method
+out refused error: 'Registry' does not implement 'at' required by behavior 'Index'
+out at src/main.bp:7:6
+out == generic_index_answers_optional
+out refused error: type mismatch: expected `T`, got `?T` — the second holds the first, so the two are never one type
+out at src/main.bp:9:14
+out == index_answer_is_optional
+out refused error: type mismatch: expected i32, got ?i32
+out at src/main.bp:10:20
+out == index_tuple_computed
+out refused error: a tuple index must be a constant — a tuple answers a type per position
+out at src/main.bp:11:12
+out == index_tuple_out_of_range
+out refused error: this tuple has 2 element(s), so `[2]` names no position
+out at src/main.bp:10:12
+out == generic_index_optional_return
+out 4
+out b
+out 9

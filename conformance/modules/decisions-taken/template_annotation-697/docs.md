@@ -4,6 +4,6 @@ The example puts a decorator on each of `Users`'s methods and one on `Users` its
 
 The program prints `byId: select * from users where id = ?; count: select count(*) from users`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/decorator_four_output_places-216/refused/src/cases/decorator_meta_on_member`, `modules/decisions-taken/typed_member_reads_own_meta-395/cells/member_reads_own_meta`.
+Cells in this repository that bear on it: `modules/decisions-taken/decorator_four_output_places-216/cases/decorator_meta_on_member`, `modules/decisions-taken/typed_member_reads_own_meta-395/cases/member_reads_own_meta`.
 
 [draft/main.bp](draft/main.bp)

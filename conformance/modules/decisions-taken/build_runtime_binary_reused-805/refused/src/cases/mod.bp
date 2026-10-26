@@ -1,3 +1,0 @@
-pub mod reserved_name_dollar;
-pub mod reserved_name_bp_prefix;
-pub mod reserved_name_type_prefix;

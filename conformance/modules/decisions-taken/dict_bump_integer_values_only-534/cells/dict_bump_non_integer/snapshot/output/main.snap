@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Dict.bump` counts integers alone — the values of this `Dict` are a `f64`
-at src/main.bp:8:23

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected Decorator, got string
-at src/cases/decorator_same_not_decorator/mod.bp:16:34

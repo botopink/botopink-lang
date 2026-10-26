@@ -1,0 +1,16 @@
+botopink-cell 1
+out == redundant_module_import
+out refused error: redundant-module-import: `config` is already bound by `mod config;` in this module — delete this item
+out at src/main.bp:6:9
+out == shorthand_import
+out refused error: shorthand-import: unresolved import `splitPath` — `splitPath` names no module of this package, and no module of it declares `splitPath` `pub`
+out at src/main.bp:5:9
+out == private_module_through_namespace
+out refused error: private-module: `plane` is a private module of `geo` — declared `mod plane;`, it is reached only from inside `geo`
+out at src/main.bp:10:15
+out == shorthand_import_one_candidate
+out refused error: shorthand-import: `splitPath` names no module of this package — write import {config.splitPath};
+out at src/main.bp:7:9
+out == shorthand_import_several_candidates
+out refused error: shorthand-import: `parse` names no module of this package, and 2 modules declare it `pub` — write import {a.parse}; or import {b.parse};
+out at src/main.bp:10:9

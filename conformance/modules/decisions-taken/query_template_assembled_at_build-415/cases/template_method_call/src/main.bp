@@ -1,0 +1,72 @@
+//// Decisions 311 (3), 397 (3), 415 (1) — a template method: a function whose
+//// first parameter is `comptime self: @Expr<R>` and whose second is
+//// `comptime q: @Expr<…>`, called `value.method "…"` / `value.method """…"""`
+//// as `f "…"` is. The literal is captured unevaluated; `self` is the call
+//// site's code for the receiver (`self.text()`), so the code the template
+//// builds runs on the receiver where the call stands.
+
+mod store;
+import {store.Store, store.read};
+import {code, compiler, io.terminal.print} from "std";
+
+behavior Named {
+    fn name(self: Self) -> string;
+}
+
+type Greeter(who: string) implement Named {
+    fn name(self: Self) -> string {
+        return self.who;
+    }
+
+    pub fn greet(self: Self, word: string) -> string {
+        return word + ", " + self.who;
+    }
+}
+
+fn shout(syntax self: Greeter, syntax q: string) -> string {
+    val word = compiler.text(q).toUpper();
+    return code @`${self}.greet(${word})`;
+}
+
+fn tag(syntax self: Named, syntax q: string) -> string {
+    val said = "[" + compiler.text(q) + "] ";
+    return code @`${said} + ${self}.name()`;
+}
+
+fn shape(syntax self: Greeter, syntax q: string) -> string {
+    val kind = if (compiler.context(q).multiline) "multi" else "single";
+    return code @`${self}.greet(${kind})`;
+}
+
+type Room(host: Greeter) {
+    pub fn open(self: Self) -> string {
+        return self.host.shout "welcome";
+    }
+}
+
+type Memory(prefix: string) implement Store<string> {
+    fn fetch(self: Self, key: string) -> Result<string, string> {
+        if (key == "") throw "empty key";
+        return self.prefix + key;
+    }
+}
+
+type Report(db: Memory) {
+    pub fn title(self: Self) -> Result<string, string> {
+        return self.db.read "title";
+    }
+}
+
+pub fn main() -> void {
+    val g = Greeter(who: "Ana");
+    print(g.shout @`hello`);
+    print(g.shape @`
+        vip
+        `);
+    print(Room(host: Greeter(who: "Bia")).open());
+    print(g.tag @`guest`);
+    val mem = Memory(prefix: "m:");
+    print(try mem.read @`a` catch "none");
+    print(try Report(db: mem).title() catch "none");
+    print(try mem.read @`` catch "none");
+}

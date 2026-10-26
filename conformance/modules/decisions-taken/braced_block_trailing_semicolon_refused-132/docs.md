@@ -4,6 +4,6 @@ The example is `describe`, a function made of statements of both kinds. The brac
 
 `describe(3)` prints `big`, `three`, `1`, `2`, `left 0` and `odd`; `describe(2)` prints `small`, `1`, `2`, `left 0` and `even`.
 
-Cells in this repository that bear on it: `modules/comment/cases/comment_in_braced_block`, `modules/decisions-taken/fn_tail_value-409/refused/src/cases/fn_expr_tail_semicolon`, `modules/decisions-taken/lambda_answers_last_expression-541/cells/lambda_last_statement_semicolon`.
+Cells in this repository that bear on it: `modules/comment/cases/comment_in_braced_block`, `modules/decisions-taken/fn_tail_value-409/cases/fn_expr_tail_semicolon`, `modules/decisions-taken/lambda_answers_last_expression-541/cases/lambda_last_statement_semicolon`.
 
 [draft/main.bp](draft/main.bp)

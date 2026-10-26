@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the integer literal `1` stands beside an `f64` in an array literal — write `1.0`
-at src/cases/integer_literal_beside_float_in_array/mod.bp:8:15

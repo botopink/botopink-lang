@@ -8,7 +8,7 @@ name: `home.sameAddress(side)` is `true`. Inside a list the same structural `==`
 last line is `true`. The program has no `===` and no `behavior Eq`, and no user code runs during a comparison on any
 target.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/equality_rule_by_value-348/cells/equality_rule_by_value`,
-`modules/decisions-taken/equality_is_structural-210/run/src/cases/record_structural_equality`.
+Cells in this repository that also bear on it: `modules/decisions-taken/equality_rule_by_value-348/cases/equality_rule_by_value`,
+`modules/decisions-taken/equality_is_structural-210/cases/record_structural_equality`.
 
 [draft/main.bp](draft/main.bp)

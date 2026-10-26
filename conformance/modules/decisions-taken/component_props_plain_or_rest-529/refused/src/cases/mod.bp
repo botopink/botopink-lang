@@ -1,8 +1,0 @@
-pub mod record_param_clash;
-pub mod record_param_default;
-pub mod record_param_not_record;
-pub mod record_param_spread_other_type;
-pub mod record_param_twice;
-pub mod record_param_unknown_label;
-pub mod record_param_variadic;
-pub mod record_spread_dot_dot_dot;

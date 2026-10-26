@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: opaque-construction: `Module` is an opaque type — `Module(…)` is written only inside its own methods (decisions 811, 814)
-at src/main.bp:8:13

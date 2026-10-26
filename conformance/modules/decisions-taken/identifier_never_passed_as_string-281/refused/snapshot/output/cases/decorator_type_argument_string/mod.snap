@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: `#[conditionalOnMissingBean]`'s `t` expects a `type`, got `string`
-at src/cases/decorator_type_argument_string/mod.bp:15:28

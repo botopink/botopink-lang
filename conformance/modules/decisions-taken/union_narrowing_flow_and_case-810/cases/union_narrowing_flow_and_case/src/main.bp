@@ -1,0 +1,92 @@
+//// Decision 810 — a union narrows by the flow of an `is` and by an
+//// exhaustive `case` with type patterns, both in force. (2) Past an `if`
+//// whose branch leaves, the name is the union without the member it tested,
+//// each further test removing one more; in the `else` too; for a parameter,
+//// a `val`, a loop's binder and a `var` until it is assigned. (1) `v is
+//// Box<T>` is accepted where `Box<T>` is a member of `v`'s type, `T` bound
+//// through it. (3) A `case` over a union covers it with a type pattern per
+//// member, a generic one included (`Box<T> { b -> … }`), and needs no `_`.
+
+import {io.terminal.print} from "std";
+
+type Dot(label: string)
+
+type Circle(r: i32)
+
+type Square(side: i32)
+
+type Box<T>(item: T)
+
+type Pair<T>(left: T, right: T)
+
+fn area(s: Dot | Circle | Square) -> i32 {
+    if (s is Dot) return 0;
+    if (s is Circle) return s.r * s.r * 3;
+    return s.side * s.side;
+}
+
+fn name(s: Dot | Circle) -> string {
+    if (s is Dot) return s.label else return "circle " + s.r.toString();
+}
+
+fn viaLocals(s: Dot | Circle | Square) -> string {
+    val v = s;
+    if (v is Square) return "square";
+    var w = v;
+    if (w is Dot) return w.label;
+    val r = w.r;
+    w = Dot(label: "reset");
+    return "r=" + r.toString();
+}
+
+fn sides(shapes: (Dot | Square)[]) -> i32 {
+    var total = 0;
+    for (shapes) { s ->
+        if (s is Dot) continue;
+        total = total + s.side;
+    }
+    return total;
+}
+
+fn first<T>(v: Box<T> | Pair<T>) -> T {
+    if (v is Box<T>) return v.item;
+    return v.left;
+}
+
+fn firstCase<T>(v: Box<T> | Pair<T>) -> T {
+    return case v {
+        Box<T> { b ->
+            b.item
+        }
+        Pair<T> { p ->
+            p.left
+        }
+    };
+}
+
+fn describe(s: Dot | Circle | Square) -> string {
+    return case s {
+        Dot { d ->
+            "dot " + d.label
+        }
+        Circle { c ->
+            "circle " + c.r.toString()
+        }
+        Square { q ->
+            "square " + q.side.toString()
+        }
+    };
+}
+
+pub fn main() -> void {
+    print(area(Dot(label: "d")), area(Circle(r: 2)), area(Square(side: 4)));
+    print(name(Dot(label: "dot")));
+    print(name(Circle(r: 5)));
+    print(viaLocals(Square(side: 1)), viaLocals(Dot(label: "kept")), viaLocals(Circle(r: 7)));
+    print(sides([Dot(label: "a"), Square(side: 2), Square(side: 3)]));
+    print(first(Box(item: "boxed")), first(Pair(left: "left", right: "right")));
+    print(firstCase(Box(item: 1)), firstCase(Pair(left: 2, right: 3)));
+    print(describe(Dot(label: "x")));
+    print(describe(Circle(r: 1)));
+    print(describe(Square(side: 9)));
+}

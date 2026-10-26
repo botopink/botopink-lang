@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `extend string` adds methods without a contract — use `implement <Behavior> for string` so the methods satisfy a behavior
-at src/main.bp:6:14

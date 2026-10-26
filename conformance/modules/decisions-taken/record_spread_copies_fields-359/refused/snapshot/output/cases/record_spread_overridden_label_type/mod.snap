@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected string, got i32
-at src/cases/record_spread_overridden_label_type/mod.bp:11:26
