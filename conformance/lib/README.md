@@ -38,7 +38,7 @@ target it runs on answers its plain section there.
 | `frames(d)` | built: ``d.`from` `` (989 (4), piece 4, decision 991) |
 | `buildOutput(m)` | built: `Module.buildOutput()` (piece 4) |
 | `target()` | refuses by name: waits on `io.os.target()` (989 (7), piece 3) |
-| `ranOf(r)` | refuses by name: waits on `Module.run()` answering `Result<string, RunFailure>` with `RunFailure.output` (989 (1), piece 2); `m.run()` is written in the `compiler.init` body itself (`run-outside-init`), so the adapter takes its answer |
+| `ranOf(r)` | built: `Module.run()` answers `Result<string, RunFailure>` (989 (1), piece 2); `Ok(text)` the printed text, `Error(f)` `f.output` and `f.message`; `m.run()` is written in the `compiler.init` body itself (`run-outside-init`), so the adapter takes its answer |
 
 ## wasm
 
