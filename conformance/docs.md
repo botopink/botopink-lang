@@ -50,7 +50,7 @@ A module that checks itself (decision 989, `modules/array`) is one package whose
 `cases/<case>` with `compiler.load`, runs it and compares the records of its answer with its section of the one
 `snapshot/main.snap` — `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <target>`,
 a case without one answering its plain section on every target. A difference writes `snapshot/main.snap.new`
-beside it (printed under `candidate snapshot/main.snap.new` on wasm) and the module's `main` answers `Error`;
+beside it (through `io.fs` on every target, decision 992) and the module's `main` answers `Error`;
 the program never writes the accepted file. The shared code is `conformance/lib/`.
 
 A module holds its cases in two packages (decisions 765, 779): `modules/<module>/run/`, every case that
