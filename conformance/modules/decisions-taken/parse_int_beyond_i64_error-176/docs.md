@@ -6,6 +6,6 @@ the message naming the numeral, and so is a thirty-digit numeral. The number is 
 an `f64`. The last line keeps the largest value and subtracts one, printing `9223372036854775806`. commonJS, erlang,
 beam and wasm print the same six lines.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/string_parse_int_i64_range`.
+Cells in this repository that also bear on it: `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/string_parse_int_i64_range`.
 
 [draft/main.bp](draft/main.bp)

@@ -1,0 +1,10 @@
+botopink-cell 1
+out == compiler_at_run_time
+out refused error: compiler-at-run-time: `compiler` is the compiler of a body that runs at build, and this body runs when the program runs
+out at src/main.bp:8:11
+out == compiler_src_is_a_call
+out first src/main.bp 13 30 main
+out second src/main.bp 14 31 main
+out == src_location
+out src/main.bp 7 21 where
+out main

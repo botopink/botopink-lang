@@ -1,3 +1,0 @@
-pub mod decorator_hooks_output;
-pub mod decorator_hooks_output_member_fn;
-pub mod typeinfo_all_hooks_reader;

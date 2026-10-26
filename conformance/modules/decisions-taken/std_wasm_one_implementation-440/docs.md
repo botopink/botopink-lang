@@ -12,7 +12,7 @@ print the same and `==` answers `true`. A `std:` naming no std-wasm export, or o
 declaration's, is refused at the annotation.
 
 Cells that also bear on it:
-`modules/decisions-taken/std_cell_is_std_only-445/cells/external_wasm_std_outside_std`,
-`modules/decisions-taken/wasm_prints_std_wasm_text-441/cells/float_shortest_text`.
+`modules/decisions-taken/std_cell_is_std_only-445/cases/external_wasm_std_outside_std`,
+`modules/decisions-taken/wasm_prints_std_wasm_text-441/cases/float_shortest_text`.
 
 [draft/main.bp](draft/main.bp)

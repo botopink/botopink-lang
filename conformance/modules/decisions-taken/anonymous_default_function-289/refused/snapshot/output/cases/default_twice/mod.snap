@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: default-twice: a module has one default function
-at src/cases/default_twice/mod.bp:15:13

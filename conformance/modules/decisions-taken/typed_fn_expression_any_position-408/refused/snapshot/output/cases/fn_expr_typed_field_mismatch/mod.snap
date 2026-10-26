@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected fn(i32) -> i32, got fn(string) -> i32
-at src/cases/fn_expr_typed_field_mismatch/mod.bp:10:35

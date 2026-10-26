@@ -2,7 +2,7 @@
 
 The example's `Shape` behavior has members of three kinds. `make()` has no `self` and no body: it is a static that each implementor provides, and `Square` and `Dot` each write one. `unit()` and `scaled(n)` have no `self` but do have a body, so they are the behavior's own statics, written `fn` and called through the behavior as `Shape.unit()` and `Shape.scaled(7)`. No implementor overrides them, since each has one owner. `describe` takes `self` and is a `default fn`, an instance member with a default body that `Square` keeps and `Dot` overrides. The program prints `1`, `7`, `area 9` and `a dot`. Writing `default fn unit()` would be refused at the modifier, `default-on-static`.
 
-Cells in this repository that also bear on it: `modules/behavior/cells/behavior_associated_fn_imported`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cells/decl_behavior_member_typed`.
+Cells in this repository that also bear on it: `modules/behavior/cells/behavior_associated_fn_imported`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decl_behavior_member_typed`.
 
-[cells/behavior_static_written_fn/src/main.bp](cells/behavior_static_written_fn/src/main.bp)
-[cells/default_on_static_refused/src/main.bp](cells/default_on_static_refused/src/main.bp)
+[cases/behavior_static_written_fn/src/main.bp](cases/behavior_static_written_fn/src/main.bp)
+[cases/default_on_static_refused/src/main.bp](cases/default_on_static_refused/src/main.bp)

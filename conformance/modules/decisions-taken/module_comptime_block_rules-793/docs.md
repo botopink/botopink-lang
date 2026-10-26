@@ -15,6 +15,6 @@ A cached build replays the build output (793 (4)), and a `comptime { … }` insi
 compiler unit tests: the replay of a dependency read back from its level-B entry, and the prints of a `void`
 `comptime` block and of one that answers a value.
 
-[cells/block_calls_other_module_pub/src/main.bp](cells/block_calls_other_module_pub/src/main.bp)
-[cells/block_return_refused/src/main.bp](cells/block_return_refused/src/main.bp)
+[cases/block_calls_other_module_pub/src/main.bp](cases/block_calls_other_module_pub/src/main.bp)
+[cases/block_return_refused/src/main.bp](cases/block_return_refused/src/main.bp)
 [cells/library_block_level_order/src/main.bp](cells/library_block_level_order/src/main.bp)

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body is marked `component`
-at src/cases/yield_in_context/mod.bp:15:5

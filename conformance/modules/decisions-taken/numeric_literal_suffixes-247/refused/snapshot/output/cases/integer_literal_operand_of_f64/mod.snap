@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the integer literal `2` is not an `f64` — write `2d` or `2.0`
-at src/cases/integer_literal_operand_of_f64/mod.bp:8:16

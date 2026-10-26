@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Box` takes 1 type argument, 2 given
-at src/cases/type_application_argument_count/mod.bp:13:13

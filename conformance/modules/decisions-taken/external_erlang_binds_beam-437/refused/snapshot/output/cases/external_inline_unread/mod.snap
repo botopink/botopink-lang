@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Implementation.JavaScript` has no parameter named `inline`
-at src/cases/external_inline_unread/mod.bp:12:32

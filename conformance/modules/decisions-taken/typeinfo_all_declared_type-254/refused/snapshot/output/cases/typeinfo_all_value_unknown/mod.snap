@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: an `unknown` value cannot be used as another type without testing it
-at src/cases/typeinfo_all_value_unknown/mod.bp:16:38

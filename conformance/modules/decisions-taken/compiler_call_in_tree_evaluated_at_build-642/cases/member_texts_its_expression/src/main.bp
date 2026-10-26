@@ -1,0 +1,18 @@
+//// Decision 642 — a `syntax` parameter of `Compiler` takes its argument as
+//// written, so `compiler.text(x + 1)` over the member's own parameter `x` is
+//// `"x + 1"` at build, whatever `x` holds when the program runs.
+
+import {compiler, io.terminal.print} from "std";
+
+fn spelled(syntax decl: unknown) -> void {
+    compiler.addMember("spell", fn(x: i32) -> string {
+        return compiler.text(x + 1);
+    });
+}
+
+#[spelled]
+pub type Users(id: i32)
+
+pub fn main() -> void {
+    print(Users.spell(41));
+}

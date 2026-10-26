@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: `#[provides]`'s `t` binds `T`, which is `i32` here, to `string`
-at src/cases/type_param_binds_mismatch/mod.bp:13:12

@@ -1,0 +1,10 @@
+botopink-cell 1
+out == primitive_contract_dissolved
+out refused error: unbound variable 'String'
+out at src/main.bp:8:11
+out == primitive_static_on_type
+out A
+out [0, 1, 2]
+out ab,ab
+out 2
+out 35

@@ -1,3 +1,0 @@
-pub mod load_not_a_package;
-pub mod load_path_absolute;
-pub mod load_path_outside_package;

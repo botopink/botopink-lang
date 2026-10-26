@@ -1,0 +1,68 @@
+//// Decision 415 (3) — on a declaration `q.lookup` answered, `decl.meta(T)`
+//// (`?T`) and `decl.metaAll(T)` (`T[]`) are answered at build when the record
+//// `T` is data: what the declaration's decorators recorded, a field the value
+//// left out read as its default. A declaration with no such meta answers
+//// `null` / `[]`, and the template refuses it with `q.fail`.
+
+import {compiler, io.terminal.print} from "std";
+
+type Size { Small, Large }
+
+type Table(name: string, rows: i32, cached: bool = false, size: Size = .Small, tags: string[] = [])
+
+type Index(column: string)
+
+fn table(syntax decl: unknown, comptime name: string, comptime rows: i32) -> void {
+    compiler.setMeta(Table(name: name, rows: rows, size: .Large, tags: ["a", "b"]));
+}
+
+fn index(syntax decl: unknown, comptime column: string) -> void {
+    compiler.addMeta(Index(column: column));
+}
+
+#[table("users", 3), index("email"), index("id")]
+type User(id: i32, email: string)
+
+type Plain(x: i32)
+
+fn sql(syntax q: string) -> string {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val t = compiler.meta(decl, Table) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not an entity", at: q);
+    val cached = if (t.cached) "yes" else "no";
+    val size = if (t.size == Size.Large) "large" else "small";
+    var text = t.name
+        + " rows="
+        + t.rows.toString()
+        + " cached="
+        + cached
+        + " size="
+        + size
+        + " tags="
+        + t.tags.join(",");
+    for (compiler.metaAll(decl, Index)) { i ->
+        text = text + " index=" + i.column;
+    }
+    return compiler.build("\"" + text + "\"");
+}
+
+fn entity(syntax q: string) -> bool {
+    val decl = compiler.lookup(q, compiler.text(q)) ?? compiler.fail("`"
+        + compiler.text(q)
+        + "` is not in scope", at: q);
+    val found = if (compiler.meta(decl, Table) == null
+        && compiler.metaAll(decl, Index).length == 0)
+        "false"
+    else
+        "true";
+    return compiler.build(found);
+}
+
+pub fn main() -> void {
+    print(sql @`User`);
+    print(entity @`User`);
+    print(entity @`Plain`);
+}

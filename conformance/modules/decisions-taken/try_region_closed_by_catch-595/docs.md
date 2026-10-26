@@ -11,16 +11,16 @@ fails with one error type, `ParseError`; `parse` itself turns `parseInt`'s `stri
 `fallback for `, `-1` and `2`.
 
 Cells that also bear on it: `modules/decisions-taken/await_try_prefix_catch_infix-537/cells/catch_lowest_precedence`, `modules/try/cases/try_start_positions`,
-`modules/try/cases/try_catch_handler_mismatch`, `modules/decisions-taken/await_try_prefix_catch_infix-537/cells/try_await_prefix_operators`, `modules/decisions-taken/body_marker_whole_return_type-553/refused/src/cases/try_in_plain_fn`.
+`modules/try/cases/try_catch_handler_mismatch`, `modules/decisions-taken/await_try_prefix_catch_infix-537/cells/try_await_prefix_operators`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/try_in_plain_fn`.
 
-[cells/beam_try_catch_result_void/src/main.bp](cells/beam_try_catch_result_void/src/main.bp)
-[cells/catch_region_covers_left_side/src/main.bp](cells/catch_region_covers_left_side/src/main.bp)
-[cells/catch_without_try/src/main.bp](cells/catch_without_try/src/main.bp)
-[cells/try_block_catch_binder/src/main.bp](cells/try_block_catch_binder/src/main.bp)
-[cells/try_block_catch_empty/src/main.bp](cells/try_block_catch_empty/src/main.bp)
-[cells/try_block_catch_rethrow/src/main.bp](cells/try_block_catch_rethrow/src/main.bp)
-[cells/try_block_catch_value/src/main.bp](cells/try_block_catch_value/src/main.bp)
-[cells/try_block_catch_void_statement/src/main.bp](cells/try_block_catch_void_statement/src/main.bp)
-[cells/try_in_catch_body_propagates/src/main.bp](cells/try_in_catch_body_propagates/src/main.bp)
-[cells/try_region_cannot_fail/src/main.bp](cells/try_region_cannot_fail/src/main.bp)
-[cells/try_region_errors_differ/src/main.bp](cells/try_region_errors_differ/src/main.bp)
+[cases/beam_try_catch_result_void/src/main.bp](cases/beam_try_catch_result_void/src/main.bp)
+[cases/catch_region_covers_left_side/src/main.bp](cases/catch_region_covers_left_side/src/main.bp)
+[cases/catch_without_try/src/main.bp](cases/catch_without_try/src/main.bp)
+[cases/try_block_catch_binder/src/main.bp](cases/try_block_catch_binder/src/main.bp)
+[cases/try_block_catch_empty/src/main.bp](cases/try_block_catch_empty/src/main.bp)
+[cases/try_block_catch_rethrow/src/main.bp](cases/try_block_catch_rethrow/src/main.bp)
+[cases/try_block_catch_value/src/main.bp](cases/try_block_catch_value/src/main.bp)
+[cases/try_block_catch_void_statement/src/main.bp](cases/try_block_catch_void_statement/src/main.bp)
+[cases/try_in_catch_body_propagates/src/main.bp](cases/try_in_catch_body_propagates/src/main.bp)
+[cases/try_region_cannot_fail/src/main.bp](cases/try_region_cannot_fail/src/main.bp)
+[cases/try_region_errors_differ/src/main.bp](cases/try_region_errors_differ/src/main.bp)

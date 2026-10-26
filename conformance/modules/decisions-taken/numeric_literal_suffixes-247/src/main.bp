@@ -1,0 +1,44 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("comptime_float_keeps_decimal_point");
+    runCase("numeric_literal_suffixes");
+    runCase("numeric_suffix_positions");
+    runCase("float_literal_never_fits_f32");
+    runCase("integer_literal_beside_float_in_array");
+    runCase("integer_literal_never_fits_f64");
+    runCase("integer_literal_operand_of_f64");
+    runCase("integer_suffix_out_of_range");
+    runCase("number_exponent_without_digits");
+    runCase("number_pattern_of_another_type");
+    runCase("number_pattern_suffix_disagrees");
+    runCase("number_suffix_float_on_radix");
+    runCase("number_suffix_integer_on_float");
+    runCase("number_suffix_unknown");
+    runCase("number_suffix_uppercase");
+}
+
+pub fn main() -> void {}

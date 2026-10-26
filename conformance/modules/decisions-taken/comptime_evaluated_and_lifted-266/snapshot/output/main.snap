@@ -1,0 +1,10 @@
+botopink-cell 1
+out == comptime_block_in_body
+out 12
+out abcd
+out -3.0
+out 6000000001
+out 3
+out -5
+out == comptime_expression_static_call
+out true

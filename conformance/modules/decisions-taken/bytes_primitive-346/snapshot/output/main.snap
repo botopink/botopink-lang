@@ -1,0 +1,41 @@
+botopink-cell 1
+out == bytes_interpolated
+out refused error: `bytes` is no text to join with `+` or a string template
+out at src/main.bp:8:18
+out == bytes_ordering
+out refused error: `bytes` takes no `<`
+out at src/main.bp:9:11
+out == bytes_plus_string
+out refused error: `bytes` is no text to join with `+` or a string template
+out at src/main.bp:8:19
+out == bytes_string_literal
+out refused error: type mismatch: expected bytes, got string
+out at src/main.bp:9:20
+out == bytes_type_test
+out refused error: bytes-type-test: `is` does not test `bytes`
+out at src/main.bp:7:14
+out == bytes_unknown_associated_fn
+out refused error: `bytes` has no associated function `fromText`
+out at src/main.bp:7:19
+out == bytes_where_string_expected
+out refused error: type mismatch: expected string, got bytes
+out at src/main.bp:12:17
+out == bytes_widened_to_unknown
+out refused error: bytes-widened: `bytes` does not widen to `unknown`
+out at src/main.bp:8:11
+out == bytes_encoding_bridges
+out aGk=
+out 6869
+out 4
+out AP+Aww==
+out bytes 00ff80c3
+out bytes 00ff80c3
+out bytes 6869
+out error NotBase64
+out error NotBase64
+out bytes 
+out bytes 00ffab
+out error NotHex
+out error NotHex
+out true
+out true

@@ -1,3 +1,0 @@
-pub mod import_std_namespace_no_bare_variant;
-pub mod result_error_constructor;
-pub mod result_ok_constructor;

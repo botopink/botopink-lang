@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: implement-signature-differs: `Polite.greet` does not match the contract `Greeting` — contract: fn greet(self: Polite, name: string) -> string · written: fn greet(self: Polite, times: i32) -> string
-at src/main.bp:15:8

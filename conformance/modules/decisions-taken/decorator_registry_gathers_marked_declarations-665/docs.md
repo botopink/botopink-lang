@@ -9,4 +9,4 @@
 [cells/typeinfo_all_default_outside_root/src/main.bp](cells/typeinfo_all_default_outside_root/src/main.bp)
 [cells/typeinfo_all_default_override/src/main.bp](cells/typeinfo_all_default_override/src/main.bp)
 [cells/typeinfo_all_imported_package_default/src/main.bp](cells/typeinfo_all_imported_package_default/src/main.bp)
-[cells/typeinfo_all_template_value/src/main.bp](cells/typeinfo_all_template_value/src/main.bp)
+[cases/typeinfo_all_template_value/src/main.bp](cases/typeinfo_all_template_value/src/main.bp)

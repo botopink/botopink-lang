@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-block-exit: a top-level `comptime` block runs to its end: it answers nothing and leaves nothing early
-at src/main.bp:9:16

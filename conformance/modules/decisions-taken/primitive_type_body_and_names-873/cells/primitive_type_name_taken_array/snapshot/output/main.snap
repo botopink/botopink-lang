@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: primitive-type-name-taken: `array` names a primitive type; a function of this module cannot take its name
-at src/main.bp:6:8

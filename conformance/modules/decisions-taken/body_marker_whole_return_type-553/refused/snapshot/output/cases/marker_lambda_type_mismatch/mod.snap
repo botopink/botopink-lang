@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: marker-type-mismatch: a lambda marked `iter` answers `Iter<…>`, and the function type it is written for returns `Async<i32>`
-at src/cases/marker_lambda_type_mismatch/mod.bp:13:25

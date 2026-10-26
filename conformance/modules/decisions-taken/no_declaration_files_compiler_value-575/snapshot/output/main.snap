@@ -1,0 +1,69 @@
+botopink-cell 1
+out == compiler_decorator_three_kinds
+out NEGATIVE BALANCE Account positive
+out 0
+out negative balance
+out negative balance (positive)
+out == decorator_member_captures
+out 0
+out Signup: invalid
+out == external_library_source_annotation
+out [3, 2, 1]
+out == external_library_source_beside_emit
+out hi
+out [3, 2, 1]
+out == external_library_source_beside_emit_split
+out hi
+out [3, 2, 1]
+out == external_library_source_beside_member
+out tagged
+out [3, 2, 1]
+out == builtin_module_not_lowered
+out refused error: builtin-not-lowered: `@module()` is declared but no target lowers it
+out at src/main.bp:8:13
+out == compiler_output_outside_decorator
+out refused error: compiler-output-outside-decorator: `compiler.setMeta` writes to the annotated declaration, and only a decorator has one
+out at src/main.bp:11:14
+out == declare_in_behavior
+out refused error: declare-in-behavior: `Greeter.greet` is a `declare fn` inside a behavior — a behavior declares a member's signature, or a `default fn` with a body
+out at src/main.bp:7:16
+out == declare_without_implementation
+out refused error: declare-without-implementation: `now` is a bodyless `declare fn`, and no annotation implements it
+out at src/main.bp:6:12
+out == declare_without_implementation_method
+out refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+out at src/main.bp:7:20
+out == declare_without_implementation_static
+out refused error: declare-without-implementation: `Clock.ticks` is a bodyless `declare fn`, and no annotation implements it
+out at src/main.bp:7:20
+out == implementation_twice
+out refused error: implementation-twice: `magnitude` is implemented twice for `.JavaScript` — one implementation per target
+out at src/main.bp:7:3
+out == removed_type_bare_param
+out refused error[removed-type-bare-param]: the type of a type is written `type<T>`
+out at src/main.bp:6:29
+out label write `type<T>`
+out == type_param_binds_mismatch
+out refused error: type mismatch: `#[provides]`'s `t` binds `T`, which is `i32` here, to `string`
+out at src/main.bp:13:12
+out == typeinfo_of_value
+out refused error: typeinfo-unknown-declaration: `@typeInfo` reflects a declaration this module declares or imports, and this names none
+out at src/main.bp:10:38
+out == init_executor_before_main
+out page home
+out again home
+out layout Shell
+out again Shell
+out view Shell
+out again Shell
+out hello
+out greet
+out main
+out home
+out t
+out banner
+out == type_param_generic_form
+out greeting
+out hello
+out 3
+out 9

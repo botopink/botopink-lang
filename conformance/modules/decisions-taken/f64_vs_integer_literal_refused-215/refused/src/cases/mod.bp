@@ -1,2 +1,0 @@
-pub mod f64_equals_integer_literal;
-pub mod f64_not_equals_integer_literal;

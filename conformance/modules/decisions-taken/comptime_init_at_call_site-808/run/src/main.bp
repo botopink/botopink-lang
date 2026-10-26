@@ -1,8 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.init_at_call_order.runCase();
-    cases.init_at_call_if_not_taken.runCase();
-    cases.init_at_call_body_block.runCase();
-    cases.init_at_call_pub_own_module.runCase();
-}

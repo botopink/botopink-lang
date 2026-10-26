@@ -1,0 +1,9 @@
+botopink-cell 1
+out == behavior_method_result_dispatch
+out ok m:a
+out error empty key
+out ok [m:b]
+out error empty key
+out error denied
+out ok m:cm:c
+out error empty key

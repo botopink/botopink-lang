@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[default-on-static]: a member without self is a static: write fn
-at src/main.bp:9:5
-label remove `default`

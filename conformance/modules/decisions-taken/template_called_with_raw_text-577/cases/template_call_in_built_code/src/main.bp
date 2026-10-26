@@ -1,0 +1,27 @@
+//// A template's built code may call another template: the call it builds
+//// expands in turn, as one written at the call site does — at a module `val`,
+//// in a function body, and through a chain of templates. The built call is
+//// written as any template call is, its name before a template text
+//// (decision 577 (3)).
+
+import {compiler, io.terminal.print} from "std";
+
+fn inner(syntax q: string) -> string {
+    return compiler.build("\"inner " + compiler.text(q) + "\"");
+}
+
+fn outer(syntax q: string) -> string {
+    return compiler.build("inner @`" + compiler.text(q) + "`");
+}
+
+fn outermost(syntax q: string) -> string {
+    return compiler.build("outer @`" + compiler.text(q) + "` + \"!\"");
+}
+
+val atModule = outer @`module`;
+
+pub fn main() -> void {
+    print(atModule);
+    print(outer @`body`);
+    print(outermost @`chain`);
+}

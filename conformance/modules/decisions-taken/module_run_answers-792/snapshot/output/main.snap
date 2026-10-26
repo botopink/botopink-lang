@@ -1,0 +1,10 @@
+botopink-cell 1
+out == module_construction
+out refused error: opaque-construction: `Module` is an opaque type — `Module(…)` is written only inside its own methods (decisions 811, 814)
+out at src/main.bp:8:13
+out == run_in_called_function
+out refused error: run-outside-init: `run()` is called outside a `compiler.init` body
+out at src/main.bp:7:11
+out == run_module_refused
+out refused error: run-module-refused: `run()` is called on the `Module` of `packages/broken`, whose load refused
+out at src/main.bp:11:26

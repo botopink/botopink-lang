@@ -1,8 +1,0 @@
-//// Decision 307 — std declares `Type` in `types.bp` and `root.bp` exports
-//// the module: `import {types.Type} from "std"` resolves on every target.
-
-import {types.Type, io.terminal.print} from "std";
-
-pub fn runCase() -> void {
-    print("types");
-}

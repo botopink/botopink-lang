@@ -1,0 +1,29 @@
+botopink-cell 1
+out == init_at_call_order
+out antes
+out case soma
+out depois
+out == init_at_call_if_not_taken
+out not taken
+out case taken
+out == init_at_call_body_block
+out step 1
+out case block
+out step 2
+out case block
+out == init_at_call_pub_own_module
+out case pub
+out == init_at_call_from_decorator
+out refused error: compiler-output-outside-decorator: `check` writes `compiler.init`, and a decorator's body runs at build with no place for its executor
+out at src/main.bp:12:5
+out == init_at_call_from_template
+out refused error: compiler-output-outside-decorator: `check` writes `compiler.init`, and a template's body runs at build with no place for its executor
+out at src/main.bp:12:5
+out == init_at_call_in_value_comptime
+out refused error: compiler-output-outside-decorator: `check` writes `compiler.init`, and this `comptime`, which answers a value, runs at build with no place for its executor
+out at src/main.bp:14:22
+out == init_at_call_other_module
+out case from main
+out go
+out case from lib
+out case through the namespace

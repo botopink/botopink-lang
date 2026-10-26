@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator
-at src/cases/comptime_default_outside_decorator/mod.bp:8:36

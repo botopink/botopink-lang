@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown field 'label' on type the props of `link`
-at src/cases/inline_type_unknown_field/mod.bp:8:18

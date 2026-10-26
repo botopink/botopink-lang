@@ -1,3 +1,0 @@
-pub mod template_annotation_called;
-pub mod template_annotation_not_template;
-pub mod template_annotation_without_decl;

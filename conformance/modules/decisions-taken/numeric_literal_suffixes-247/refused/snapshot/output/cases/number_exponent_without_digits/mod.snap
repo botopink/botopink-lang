@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[number-exponent-without-digits]: an exponent needs digits
-at src/cases/number_exponent_without_digits/mod.bp:7:14
-label write the exponent's digits after it

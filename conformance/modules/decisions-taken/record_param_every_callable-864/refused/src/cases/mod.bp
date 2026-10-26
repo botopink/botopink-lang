@@ -1,2 +1,0 @@
-pub mod record_param_variadic_refused;
-pub mod record_param_default_refused;

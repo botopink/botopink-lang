@@ -1,7 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.comptime_function_value_argument.runCase();
-    cases.comptime_primitives_at_build.runCase();
-    cases.comptime_result_methods.runCase();
-}

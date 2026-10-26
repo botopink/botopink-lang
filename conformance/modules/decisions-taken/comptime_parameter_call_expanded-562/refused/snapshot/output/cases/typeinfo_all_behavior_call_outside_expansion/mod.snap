@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `d.value.make()` calls `Module`'s `make` on a catalogue entry, which is legal only inside a function expanded at its call site
-at src/cases/typeinfo_all_behavior_call_outside_expansion/mod.bp:30:23

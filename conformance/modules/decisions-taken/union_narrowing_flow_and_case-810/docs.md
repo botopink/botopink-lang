@@ -11,9 +11,9 @@ member, a generic one included, `Box<T> { b -> … }` (810 (3)); a member left o
 behavior's (the value's type implements it), a function type's arity — on every target, and so does a
 behavior type pattern (`is_behavior_identity_run_time`). Std's `resolve` (810 (5)) is 809 (6)'s.
 
-[run/src/cases/union_narrowing_flow_and_case/mod.bp](run/src/cases/union_narrowing_flow_and_case/mod.bp)
-[run/src/cases/union_narrowed_field_read/mod.bp](run/src/cases/union_narrowed_field_read/mod.bp)
-[run/src/cases/is_behavior_identity_run_time/mod.bp](run/src/cases/is_behavior_identity_run_time/mod.bp)
-[refused/src/cases/union_narrowing_forgotten_member_use/mod.bp](refused/src/cases/union_narrowing_forgotten_member_use/mod.bp)
-[refused/src/cases/union_case_forgotten_member/mod.bp](refused/src/cases/union_case_forgotten_member/mod.bp)
-[refused/src/cases/is_unbound_type_argument/mod.bp](refused/src/cases/is_unbound_type_argument/mod.bp)
+[cases/union_narrowing_flow_and_case/src/main.bp](cases/union_narrowing_flow_and_case/src/main.bp)
+[cases/union_narrowed_field_read/src/main.bp](cases/union_narrowed_field_read/src/main.bp)
+[cases/is_behavior_identity_run_time/src/main.bp](cases/is_behavior_identity_run_time/src/main.bp)
+[cases/union_narrowing_forgotten_member_use/src/main.bp](cases/union_narrowing_forgotten_member_use/src/main.bp)
+[cases/union_case_forgotten_member/src/main.bp](cases/union_case_forgotten_member/src/main.bp)
+[cases/is_unbound_type_argument/src/main.bp](cases/is_unbound_type_argument/src/main.bp)
