@@ -1,0 +1,53 @@
+//// The `.new` of a run (decision 989 (6)): `snapshot/main.snap.new` holds the module's whole
+//// candidate file. The program never accepts a candidate — it never writes `snapshot/main.snap`
+//// (decision 67).
+
+import {io.fs.writeText, io.terminal.print} from "std";
+import {records.diff};
+import {sections.SnapFile, sections.parseFile, sections.renderFile, sections.HEADER};
+import {observe.Observed, observe.assemble, observe.reds};
+
+/// Where the candidate goes, beside the accepted file.
+pub val CANDIDATE_PATH: string = "snapshot/main.snap.new";
+
+/// The accepted file's path.
+pub val ACCEPTED_PATH: string = "snapshot/main.snap";
+
+/// The header line wasm prints above the candidate, which it cannot write (until front 164's filesystem).
+pub fn candidateHeader() -> string {
+    return "candidate " + CANDIDATE_PATH;
+}
+
+/// What a run on `target` leaves of `text`: on commonJS, erlang and beam the file at `path`; on wasm the
+/// text on stdout under `candidateHeader()`. `Error` when the file cannot be written.
+pub fn deliver(target: string, path: string, text: string) -> Result<void, string> {
+    if (target == "wasm") {
+        print(candidateHeader());
+        print(text);
+        return;
+    }
+    val written = try writeText(path, text) catch { e ->
+        throw "cannot write " + path + ": " + e.message();
+    };
+    return;
+}
+
+/// The whole check of a module: its observed answers against the accepted file's text. `Ok` when
+/// every case is green; else the candidate is delivered (a candidate when the text differs) and the
+/// `Error` names the red cases and the candidate.
+pub fn finish(accepted: string, observed: Observed[], target: string) -> Result<void, string> {
+    val file = try parseFile(accepted) catch { m ->
+        throw "snapshot/main.snap line " + m.line.toString() + ": " + m.reason;
+    };
+    val red = reds(file, observed, target);
+    val text = assemble(file, observed, target);
+    if (red.length == 0 && text == renderFile(file)) return;
+    try deliver(target, CANDIDATE_PATH, text);
+    throw red.length.toString()
+        + " red on "
+        + target
+        + ": "
+        + red.join(", ")
+        + "\n"
+        + diff(renderFile(file), text);
+}
