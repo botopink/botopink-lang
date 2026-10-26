@@ -21,13 +21,15 @@ pub fn buildOutput(m: Module) -> string {
     return m.buildOutput();
 }
 
-/// What a run printed, and why it failed. `m.run()` is written in the `compiler.init` body itself
-/// (`run-outside-init`), so the adapter takes its answer. Waits on 989 (1), piece 2: `Module.run()`
-/// answering `Result<string, RunFailure>`, with `RunFailure.output`. The parameter becomes
-/// `Result<string, compiler.RunFailure>`; `Ok(text)` is `(text, false, "")`, `Error(f)` is
-/// `(f.output, true, f.message)`.
+/// What a run printed, and why it failed (989 (1), piece 2: `Module.run()` answers
+/// `Result<string, RunFailure>`). `m.run()` is written in the `compiler.init` body itself
+/// (`run-outside-init`), so the adapter takes its answer: `Ok(text)` is the printed text, `Error(f)`
+/// the text printed before the failure (`f.output`) and its message.
 pub type Ran(printed: string, failed: bool, failure: string)
 
-pub fn ranOf(r: Result<void, RunFailure>) -> Ran {
-    panic("needs 989 (1): run() answering the printed text");
+pub fn ranOf(r: Result<string, RunFailure>) -> Ran {
+    return case r {
+        Ok(text) -> Ran(printed: text, failed: false, failure: "");
+        Error(f) -> Ran(printed: f.output, failed: true, failure: f.message);
+    };
 }
