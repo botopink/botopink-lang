@@ -1,12 +1,11 @@
-//// The `.new` of decision 989 (6): written through `io.fs` where the target has a filesystem, the
-//// header wasm prints above the candidate otherwise, and the whole check's verdict.
+//// The `.new` of decisions 989 (6), 992: written through `io.fs` on every target, and the whole
+//// check's verdict.
 
 import {io.fs.readText, io.fs.mkdirRecursive} from "std";
-import {candidate.deliver, candidate.candidateHeader, candidate.finish, candidate.CANDIDATE_PATH};
+import {candidate.deliver, candidate.finish, candidate.CANDIDATE_PATH};
 import {observe.Observed, observe.ranAnswer};
 
-test "the candidate header names the path beside the accepted file" {
-    assert candidateHeader() == "candidate snapshot/main.snap.new";
+test "the candidate's path is beside the accepted file" {
     assert CANDIDATE_PATH == "snapshot/main.snap.new";
 }
 
@@ -26,29 +25,17 @@ test "a green module needs no candidate and a red one reports its cases" {
     assert verdictOf(verdict).startsWith("1 red on wasm: b");
 }
 
-test "deliver writes the candidate file where the target has a filesystem" {
+test "deliver writes the candidate file" {
     val dir = ".botopinkbuild/tmp/candidate";
     val made = try mkdirRecursive(dir) catch { e ->
         return;
     };
     val path = dir + "/main.snap.new";
-    val sent = try deliver("commonJS", path, "botopink-cell 2\n== a\nout 1\n") catch { e ->
+    val sent = try deliver(path, "botopink-cell 2\n== a\nout 1\n") catch { e ->
         return;
     };
     val back = try readText(path) catch { e ->
         "unreadable"
     };
     assert back == "botopink-cell 2\n== a\nout 1\n";
-}
-
-test "deliver on wasm prints and writes no file" {
-    val dir = ".botopinkbuild/tmp/candidate";
-    val path = dir + "/wasm.snap.new";
-    val sent = try deliver("wasm", path, "botopink-cell 2\n") catch { e ->
-        return;
-    };
-    val back = try readText(path) catch { e ->
-        "none"
-    };
-    assert back == "none";
 }

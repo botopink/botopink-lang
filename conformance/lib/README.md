@@ -25,7 +25,7 @@ target it runs on answers its plain section there.
 | `observe` | `refusalOf(…)` / `refusedAnswer(…)` / `ranAnswer(…)` | a diagnostic, a refused load, a run, as an `Observed` |
 | `observe` | `reds(file, observed, target)` | the cases that differ, in module order |
 | `observe` | `assemble(file, observed, target)` | the module's whole candidate file: unchanged sections byte for byte, a changed case replaced in the section it answered on `target`, a new case appended, a vanished one dropped |
-| `candidate` | `deliver(target, path, text)` | commonJS, erlang, beam: `io.fs` writes `path`; wasm: prints `candidate snapshot/main.snap.new` and the text |
+| `candidate` | `deliver(path, text)` | `io.fs` writes `path`, on every target (decision 992) |
 | `candidate` | `finish(accepted, observed, target)` | the module's verdict: `Ok`, or the candidate delivered and an `Error` naming the red cases with a line diff. Never writes `snapshot/main.snap` (decision 67) |
 | `adapter` | `target()`, `frames(d)`, `buildOutput(m)`, `ranOf(r)` | the features of 989 built in parallel, below |
 
@@ -42,10 +42,9 @@ target it runs on answers its plain section there.
 
 ## wasm
 
-`candidate.bp` calls `io.fs.writeText`, which has no `.Wasm` binding: the build refuses it on wasm
-(`std-unsupported-on-target`) wherever `finish` is reachable, so a module built on wasm is refused until
-the filesystem lands (front 164) or the language lets the write be absent there. The rest of the library
-(`records`, `sections`, `observe`) builds and passes on wasm.
+`candidate.bp` writes through `io.fs` on wasm as on the other targets (decision 992: std's `io.fs` has a wasm binding,
+machine 2's 990 piece); until it lands a module that reaches `finish` is refused on wasm at build
+(`std-unsupported-on-target`). The rest of the library (`records`, `sections`, `observe`) builds and passes on wasm.
 
 ## Tests
 
