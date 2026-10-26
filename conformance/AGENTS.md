@@ -1303,7 +1303,7 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
-`optional*` (`optional`, decision 54's `optional_null_pattern` / `optional_variant_pattern`, and
+`optional*` (`optional`, decision 980's `optional_case_null_and_binder` / `case_optional_variant_pattern_refused`, and
 1.0.10-beta's `00 · 05-wasm` `modules/decisions-taken/shorthand_import_refused-337/run/src/cases/optional_record_carrier` — § `optional_record_carrier` below),
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
 cell and eleven reject cells), `index_*` (decision 63 as amended: `modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_dict`,

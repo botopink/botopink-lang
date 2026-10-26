@@ -1,0 +1,3 @@
+# Decision 982 — `compiler.load(path)` loads a package, never a file: `path` names a directory holding its own `botopink.json` and `src/main.bp`, compiled with its own manifest and checked for its own targets; a conformance case is such a package under `cases/<case>/`; amends 780 (1), 786 (1), 833 (1)–(2), 789 (4).
+
+[draft/main.bp](draft/main.bp)

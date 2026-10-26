@@ -1359,17 +1359,21 @@ met by `-> string`. A difference is refused at the member,
 
 <!-- example: modules/decisions-taken/implement_signature_differs-800/cells/implement_signature_same -->
 
-Identical is over types, not spellings (decision 871): `array<T>` and `T[]`, an
+Identical is over types, not spellings (decision 974): `array<T>` and `T[]`, an
 alias and its target, are one type, and under `implement Mappable<i32>` a
 member's `Self<U>` takes the clause's argument (`-> Box` meets `-> Self<U>` with
 `U = i32`). A parameter's `comptime` marker is part of the signature: a
-contract's `comptime n: i32` is not met by `n: i32`, nor the reverse.
+contract's `comptime n: i32` is not met by `n: i32`, nor the reverse. A body
+marker (`component`, `async`, `iter`) is not: `fn value(self: Self) ->
+Async<i32>` is met by `async fn value`.
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_comptime_marker_dropped -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_comptime_marker_dropped -->
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_comptime_marker_added -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_comptime_marker_added -->
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-871/cells/implement_signature_spellings_met -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_signature_spellings_met -->
+
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_body_marker_admitted -->
 
 A required member the implemented type already has is met by the type's own
 method — a primitive's (`string`'s `slice`) or a record's — and that method is
@@ -2617,15 +2621,17 @@ whose body reads what is there as `x!` (decisions 330, 951):
 
 Two arms, in that order, and no guards. `null` comes first because `_` written
 first would match the absent value too. A name after the `null` arm is
-`case-bare-name-arm` like a name alone in any other arm (decision 951; it
-amends 54's binder arm), and the arms cover the `?T` between them.
+`case-bare-name-arm` like a name alone in any other arm (decision 980; it
+restates 54's binder arm), and the arms cover the `?T` between them.
 
-<!-- example: modules/decisions-taken/case_optional_bare_name_refused-951/cells/case_optional_bare_name_refused -->
+<!-- example: modules/decisions-taken/case_optional_bare_name_refused-980/cells/case_optional_bare_name_refused -->
 
 An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
 `error: an optional is matched by ``null``, not by a variant`, located at the
 arm. `Some` and `None` are not spellings this language has — `??` and `?.` read
 an optional the same way this does.
+
+<!-- example: modules/decisions-taken/case_optional_bare_name_refused-980/cells/case_optional_variant_pattern_refused -->
 
 ### Loops
 
@@ -3960,13 +3966,13 @@ parameter takes, as `markup("…")` is for a `syntax q: string` one:
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/refused/src/cases/syntax_fn_string_param_needs_template_text -->
 
 A function with a `syntax` parameter is one kind, and the place it is used
-decides how it is read (907): `#[f]` applies it as a decorator, the annotated
+decides how it is read (976): `#[f]` applies it as a decorator, the annotated
 declaration its first `syntax` parameter (663, 716); `f(e)` expands it at the
 call, the written expression its `syntax` parameter. The signature decides
 nothing: one declaration may be annotated and called, each use checked by its
 own rules against the one declared type:
 
-<!-- example: modules/decisions-taken/syntax_fn_use_decides_kind-907/cells/syntax_fn_use_decides_kind -->
+<!-- example: modules/decisions-taken/syntax_fn_use_decides_kind-976/cells/syntax_fn_use_decides_kind -->
 
 A template method's `syntax self: R` is its receiver (578 (1)), not this form.
 

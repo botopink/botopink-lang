@@ -1,0 +1,3 @@
+# Decision 977 — A template's hole known at build whose fold raises is refused at the hole, located — never deferred to render; 380 (2) applied to the hole; a raise written as such in a hole stays 380 (3)'s run-time raise; restates 911 with its example respelled in the language, replacing it.
+
+[draft/main.bp](draft/main.bp)

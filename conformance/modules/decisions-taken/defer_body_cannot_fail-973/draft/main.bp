@@ -1,0 +1,3 @@
+//// Decision 973 — A `defer` body neither throws nor propagates: `throw` is `defer-throw`, a `try` whose region is not inside the body is `defer-try`; a `try … catch` region written in the body is handled there; a `Closeable`'s `close` cannot fail (800), so `defer x.close()` is always admitted; restates 866 with 883 (3) folded in, replacing it; amends 539 (5).
+
+pub fn main() -> void {}

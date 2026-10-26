@@ -1,0 +1,25 @@
+//// Decision 976 — a function with a `syntax` parameter is one kind, and the
+//// place it is used decides how it is read: `#[log]` applies `log` as a
+//// decorator, the annotated `val` its `syntax e`; `log(n)` expands it at the
+//// call, the written expression its `syntax e`. One declaration serves both.
+
+import {code, compiler, io.terminal.print} from "std";
+
+pub fn show(text: string, value: i32) -> void {
+    print(text + " = " + value.toString());
+}
+
+pub fn log(syntax e: unknown) -> void {
+    val text = compiler.name(e) ?? "an expression";
+    return code @`show(${text}, ${e})`;
+}
+
+#[log]
+val answer = 42;
+
+pub fn main() -> void {
+    val n = 3;
+    log(n);
+    log(n + 4);
+    print(answer.toString());
+}

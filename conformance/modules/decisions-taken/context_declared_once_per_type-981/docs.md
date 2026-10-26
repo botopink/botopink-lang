@@ -1,0 +1,3 @@
+# Decision 981 — One declared default per context type: a module-level `createContext(v)` — the handle readers import — declares the type's default once in the program, a second module-level declaration over one key type refused at build naming both (379 (1), 416 (2)); a context made in a body — `val c = comptime createContext(Theme(…));` or `val c = use memo({ -> createContext(Theme(…)) });`, then `use provide(c)` (723) — is a value to provide, never a declaration, and changes no default; a context's identity is its type (379 (5)); restates 844 scoped to module-level declarations, replacing it.
+
+[draft/main.bp](draft/main.bp)

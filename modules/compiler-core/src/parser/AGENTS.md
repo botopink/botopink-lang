@@ -610,9 +610,9 @@ variant, so no consumer has to learn one — and `null` is a keyword token, so n
 binding can ever carry that name and be mistaken for it.
 
 The arm after a `null` arm is `_`, its body reading the value as `x!` (decision
-951 amends 54): a bare name there, `v { … }`, is `case-bare-name-arm` like a name
+980 restates 54): a bare name there, `v { … }`, is `case-bare-name-arm` like a name
 alone in any other arm, and a constant is still `case-constant-pattern`
-(`conformance/modules/decisions-taken/case_optional_bare_name_refused-951`). The
+(`conformance/modules/decisions-taken/case_optional_bare_name_refused-980`). The
 order is the form: `_` written first would match the absent value too, so
 `null` comes first.
 

@@ -1,0 +1,3 @@
+//// Decision 971 — A folded value the language cannot write is printed as the run-time call that builds it, run once at the module's init; restates 835 with 885 and 860 folded in, replacing it.
+
+pub fn main() -> void {}

@@ -1,0 +1,44 @@
+//// Decision 974 — 800's "identical" is over types, not spellings; a member's type parameter inside `Self<…>` takes the clause's argument and the member's own type parameter is not counted; a parameter's `comptime` marker is part of the signature and a body marker is not; restates 871 with 883 (4) folded in, replacing it.
+
+import {io.terminal.print} from "std";
+
+type Ints = i32[];
+
+behavior Listed {
+    fn items(self: Self) -> Ints;
+    fn pairs(self: Self) -> array<string>;
+    fn scale(self: Self, comptime n: i32) -> i32;
+}
+
+behavior Mappable<T> {
+    fn map<U>(self: Self<T>, f: fn(T) -> U) -> Self<U>;
+}
+
+// Each member is written with another spelling of the contract's type —
+// `array<i32>` for `Ints`, `string[]` for `array<string>`, `Box` for
+// `Self<U>` with `U = i32` — and keeps the contract's `comptime` marker.
+type Box(v: i32) implement Listed, Mappable<i32> {
+    fn items(self: Self) -> array<i32> {
+        return [self.v, self.v + 1];
+    }
+
+    fn pairs(self: Self) -> string[] {
+        return ["a", "b"];
+    }
+
+    fn scale(self: Self, comptime n: i32) -> i32 {
+        return self.v * n;
+    }
+
+    fn map(self: Self, f: fn(i32) -> i32) -> Box {
+        return Box(v: f(self.v));
+    }
+}
+
+pub fn main() -> void {
+    val b = Box(v: 2);
+    print(b.items());
+    print(b.pairs());
+    print(b.scale(3));
+    print(b.map({ x -> x * 10 }).v);
+}

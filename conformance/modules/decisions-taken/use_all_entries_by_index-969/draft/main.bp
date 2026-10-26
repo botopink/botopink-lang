@@ -1,0 +1,3 @@
+//// Decision 969 — std's `all<T>(cs: Component<T>[]) -> Component<T[]>` resolves a run-time list of components under one `use`, running entry `i` with `Place.index(i)`; restates 827 with 884, 891 and 959 folded in, replacing 827 and 884.
+
+pub fn main() -> void {}
