@@ -1,0 +1,39 @@
+//// Decision 961 (2) — the lowering reaches std's helpers by their std names
+//// through its marked calls, never through names of this module: a program's
+//// own `stamp`, `find`, `enter` and `bpStampKeyed__` stand beside components
+//// that `use all`, `use memo` and `#[key]`, and each answers its own.
+
+import {context.all, context.run, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+fn stamp(n: i32) -> string {
+    return "stamp " + n.toString();
+}
+
+fn find(xs: i32[], x: i32) -> bool {
+    return xs.contains(x);
+}
+
+fn enter() -> string {
+    return "enter";
+}
+
+fn bpStampKeyed__(n: i32) -> i32 {
+    return n + 1;
+}
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: "item " + n.toString());
+}
+
+component fn Page() -> Component<View> {
+    val xs = use all([#[key(1)] Item(1), #[key(2)] Item(2)]);
+    val n = use memo({ -> bpStampKeyed__(2) });
+    return View(text: xs.map({ v -> v.text }).join(",") + " " + n.toString());
+}
+
+pub async fn main() -> Async<void> {
+    print(stamp(1) + " " + enter() + " " + find([1, 2], 2).toString());
+    print((await run(Page())).text);
+}

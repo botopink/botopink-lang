@@ -3140,6 +3140,8 @@ program forges a call number or a place (decision 961).
 
 <!-- example: modules/decisions-taken/context_helpers_private-961/cells/helpers_private_component_unchanged -->
 
+<!-- example: modules/decisions-taken/context_helpers_private-961/cells/helper_names_free -->
+
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
 alone, and the message names `use c` and `c` placed in the tree as a child.

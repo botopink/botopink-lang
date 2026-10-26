@@ -3,3 +3,4 @@
 [cells/context_helpers_private/src/main.bp](cells/context_helpers_private/src/main.bp)
 [cells/stamp_keyed_call_refused/src/main.bp](cells/stamp_keyed_call_refused/src/main.bp)
 [cells/helpers_private_component_unchanged/src/main.bp](cells/helpers_private_component_unchanged/src/main.bp)
+[cells/helper_names_free/src/main.bp](cells/helper_names_free/src/main.bp)
