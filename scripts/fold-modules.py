@@ -22,6 +22,7 @@ stays `cells/<case>/` (781 (5)).
     fold-modules.py try   [--botopink <bin>] [--keep <dir>] <module>...   build and compare, change nothing
     fold-modules.py apply [--botopink <bin>] <module>...                  fold in place (git mv), what `try` proves
     fold-modules.py list                                                  the modules still holding run/, refused/ or cells/
+    fold-modules.py reshape [--botopink <bin>] <module>...                a folded module into 989's self-checking shape
 
 The four targets are run with `botopink run --target <t>` in the folded copy; stdout is the answer.
 """
@@ -517,6 +518,171 @@ def modules():
     return out
 
 
+# ── reshape: a folded module into 989's self-checking shape (decision 990 piece 6) ──────────
+
+SELF_CHECK_HEAD = '''//// A module checking itself (decision 989): each case is a package under `cases/`, loaded at build,
+//// run in this program and compared with its section of `snapshot/main.snap`; a difference writes
+//// `snapshot/main.snap.new` and `main` answers `Error`. Nothing here accepts a candidate.
+
+import {compiler, io.terminal.print} from "std";
+import {adapter, candidate, observe, records} from "conformance-lib";
+
+/// The snapshot, read as a build input (decision 989 (5)).
+val accepted: string = @embed("snapshot/main.snap").text();
+
+/// What each case answered, in the order the cases ran.
+var answers: observe.Observed[] = [];
+
+/// One case, expanded where it is called (decision 808 (2)): a refused load answers its
+/// diagnostics, a loaded one runs and answers its output.
+fn runCase(comptime name: string) -> void {
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            var refusals: records.Refusal[] = [];
+            for (r.diagnostics) { d ->
+                refusals.push(observe.refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, adapter.frames(d)));
+            }
+            answers.push(observe.refusedAnswer(name, adapter.buildOutput(r.module), refusals));
+        });
+        return;
+    };
+    compiler.init({ ->
+        val ran = adapter.ranOf(loaded.run());
+        answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+    });
+}
+
+comptime {
+'''
+SELF_CHECK_TAIL = '''}
+
+pub async fn main() -> Async<Result<void, string>> {
+    return candidate.finish(accepted, answers, adapter.target());
+}
+'''
+WORKSPACE = os.path.join(MODULES, "botopink.json")
+REFUSAL_PREFIXES = ("refused ", "at ", "label ", "from ")
+
+
+def old_sections(module):
+    """{case: [line]} of a folded module's piece-4 `snapshot/output/main.snap` (`out == <case>` then
+    the case's printed lines), and the cases in order."""
+    text = read(os.path.join(module, "snapshot", "output", "main.snap"))
+    order, out, cur = [], {}, None
+    for kind, rest in records(text):
+        if kind == "out" and rest.startswith("== "):
+            cur = rest[3:]
+            order.append(cur)
+            out[cur] = []
+        elif cur is not None:
+            out[cur].append((kind, rest))
+    return order, out
+
+
+def readings(lines):
+    """The record bodies an old block can mean: every line printed (`out`), or a refusal's
+    `refused` / `at` / `label` / `from` records and a run's `abort` (what 789 (4)'s template printed)."""
+    plain = ["out " + r if k == "out" else k + " " + r for k, r in lines]
+    rec = []
+    for k, r in lines:
+        if k == "out" and (r.startswith(REFUSAL_PREFIXES) or r.startswith("abort ")):
+            rec.append(r)
+        else:
+            rec.append("out " + r if k == "out" else k + " " + r)
+    return [plain, rec]
+
+
+def new_sections(text):
+    """{(case, target or None): [record line]} of a `botopink-cell 2` file."""
+    out, cur = {}, None
+    for line in text.split("\n")[1:]:
+        if line.startswith("== "):
+            head = line[3:]
+            name, _, tgt = head.partition(" on ")
+            cur = (name, tgt or None)
+            out[cur] = []
+        elif cur is not None and line != "":
+            out[cur].append(line)
+    return out
+
+
+class Workspace:
+    """`conformance/modules/botopink.json` narrowed to `*/cases/*` while a module runs in the tree
+    (its `*/run` / `*/refused` / `*/cells/*` members are refused until piece 6's root package), put
+    back after; never committed."""
+    def __enter__(self):
+        self.text = read(WORKSPACE)
+        d = json.loads(self.text)
+        d["workspaces"] = ["*/cases/*", "decisions-taken/*/cases/*"]
+        write(WORKSPACE, json.dumps(d) + "\n")
+    def __exit__(self, *a):
+        write(WORKSPACE, self.text)
+
+
+def run_in_place(botopink, module, target):
+    shutil.rmtree(os.path.join(module, ".botopinkbuild"), ignore_errors=True)
+    try:
+        p = subprocess.run([botopink, "run", "--target", target], cwd=module, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return "timeout"
+    return p
+
+
+def reshape(module, botopink):
+    """Rewrite a folded module into 989's shape, proved: its candidate on erlang must equal, case by
+    case, its old answer (789 (6): the `build` records are new and set aside), and commonJS and beam
+    must then answer it with no `.new`. Anything else puts the module back as it was."""
+    if not os.path.exists(os.path.join(module, "snapshot", "output", "main.snap")) or not os.path.isdir(os.path.join(module, "cases")):
+        return "skip (not a folded module)"
+    order, old = old_sections(module)
+    name = os.path.basename(os.path.normpath(module))
+    depth = os.path.relpath(MODULES, module).count("..") + 1
+    lib = "/".join([".."] * depth) + "/lib"
+    snap = os.path.join(module, "snapshot", "main.snap")
+    new = snap + ".new"
+    keep = {f: read(os.path.join(module, f)) for f in ("botopink.json", "src/main.bp")}
+    write(os.path.join(module, "botopink.json"), json.dumps({"name": name, "dependencies": {"conformance-lib": {"path": lib}}}) + "\n")
+    write(os.path.join(module, "src", "main.bp"), SELF_CHECK_HEAD + "".join('    runCase("%s");\n' % c for c in order) + SELF_CHECK_TAIL)
+    write(snap, HEADER.replace("1", "2") + "\n")
+    why = None
+    with Workspace():
+        p = run_in_place(botopink, module, "erlang")
+        if p == "timeout" or not os.path.exists(new):
+            why = "erlang: no candidate (%s)" % ("timeout" if p == "timeout" else (p.stderr.strip().splitlines() or ["exit %d" % p.returncode])[-1][:160])
+        else:
+            cand = read(new)
+            got = new_sections(cand)
+            for c in order:
+                body = [l for l in got.get((c, None), ["<missing>"]) if not l.startswith("build ") and l != "build"]
+                if body not in readings(old[c]):
+                    why = "%s: %r not %r" % (c, body[:4], readings(old[c])[1][:4])
+                    break
+            if any(t for (_, t) in got):
+                why = why or "the candidate holds a departure"
+            if not why:
+                write(snap, cand)
+                os.remove(new)
+                for t in ("commonJS", "beam"):
+                    q = run_in_place(botopink, module, t)
+                    if os.path.exists(new):
+                        why = "%s: answers otherwise (%s)" % (t, read(new)[:200].replace("\n", " | "))
+                        break
+                    if q == "timeout":
+                        why = t + ": timeout"
+                        break
+    shutil.rmtree(os.path.join(module, ".botopinkbuild"), ignore_errors=True)
+    if why:
+        for f, text in keep.items():
+            write(os.path.join(module, f), text)
+        for f in (snap, new):
+            if os.path.exists(f):
+                os.remove(f)
+        return "stays: " + why
+    git("rm", "-q", "-r", os.path.join(module, "snapshot", "output"))
+    git("add", "-A", module)
+    return "reshaped %d case(s)" % len(order)
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -552,6 +718,10 @@ def main(argv):
             if whys:
                 code = 1
         return code
+    if cmd == "reshape":
+        for m in paths:
+            print("%s: %s" % (m, reshape(m, botopink)), flush=True)
+        return 0
     if cmd == "apply":
         return max([apply(m, botopink) for m in paths] or [0])
     print(__doc__)
