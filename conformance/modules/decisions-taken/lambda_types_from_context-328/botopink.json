@@ -1,1 +1,1 @@
-{ "name": "lambda_types_from_context-328" }
+{"name": "lambda_types_from_context-328", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,4 +1,0 @@
-botopink-cell 1
-out == external_wasm_task_adapter_shape
-out refused error: `.Wasm(wasi: .Delay)`: the adapter `.Delay` is `(i32, T) -> Async<T>` over one type parameter `T`; the declaration's signature differs (on `later`)
-out at src/main.bp:9:3

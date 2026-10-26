@@ -1,1 +1,1 @@
-{ "name": "binding_redeclared_refused-152" }
+{"name": "binding_redeclared_refused-152", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

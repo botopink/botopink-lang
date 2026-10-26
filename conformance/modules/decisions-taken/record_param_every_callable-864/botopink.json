@@ -1,1 +1,1 @@
-{ "name": "record_param_every_callable-864" }
+{"name": "record_param_every_callable-864", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

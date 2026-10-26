@@ -1,0 +1,10 @@
+botopink-cell 2
+== import_std_namespace_no_bare_variant
+refused error: unbound variable 'Error'
+at src/main.bp:10:13
+== result_error_constructor
+refused error: unbound variable 'Error'
+at src/main.bp:7:13
+== result_ok_constructor
+refused error: unbound variable 'Ok'
+at src/main.bp:8:12

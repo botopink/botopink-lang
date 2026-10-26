@@ -1,5 +1,0 @@
-botopink-cell 1
-out == assert_is_pattern
-out refused error[is-variant-binding]: `is` tests a type; it does not bind a variant's payload
-out at src/main.bp:18:28
-out label remove the payload pattern

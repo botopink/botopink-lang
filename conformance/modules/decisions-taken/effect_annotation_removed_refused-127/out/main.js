@@ -1,0 +1,599 @@
+const __bp_surrogate = /[\uD800-\uDFFF]/;
+const __bp_surrogate_k = new Array(64).fill("");
+const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
+function __bp_has_surrogate(s) {
+    const h = s.length & 63;
+    if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
+    const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
+    __bp_surrogate_k[h] = s;
+    __bp_surrogate_v[h] = p;
+    return p;
+}
+
+function __bp_str_count(s, u) {
+    let n = 0;
+    for (const c of s.substring(0, u)) { n += 1; }
+    return n;
+}
+
+function __bp_str_index_of(s, sub) {
+    const u = s.indexOf(sub);
+    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+}
+
+function __bp_task(p) {
+    const t = p.then((r) => { if (r != null && "error" in r) { t.__bp_failure = true; throw r.error; } return (r == null) ? r : r.ok; });
+    t.__bp_fails = true;
+    t.catch(() => {});
+    return t;
+}
+
+function __bp_await(t) {
+    return (t != null && t.__bp_fails === true) ? t.then((v) => ({ ok: v }), (e) => { if (t.__bp_failure === true) { return { error: e }; } throw e; }) : t;
+}
+
+const { RunFailureKind } = require("./std/compiler.js");
+
+class Asset {
+    constructor(path, bytes, size, hash) {
+        this.path = path;
+        this.bytes = bytes;
+        this.size = size;
+        this.hash = hash;
+    }
+}
+Asset.prototype.__bp = "Asset";
+
+// behavior string
+//   fn length(...)
+//   fn split(...)
+//   fn toUpper(...)
+//   fn toLower(...)
+//   fn contains(...)
+//   fn startsWith(...)
+//   fn endsWith(...)
+//   fn trim(...)
+//   fn trimStart(...)
+//   fn trimEnd(...)
+//   fn replace(...)
+//   default fn slice(...)
+//   fn at(...)
+//   fn indexOf(...)
+//   default fn toString(...)
+//   fn fromCodepoint(...)
+//   fn padStart(...)
+//   fn padEnd(...)
+//   fn repeat(...)
+//   fn replaceAll(...)
+//   fn chars(...)
+//   fn lines(...)
+//   fn words(...)
+//   fn normalizeNewlines(...)
+//   fn trimTrailingNewlines(...)
+//   fn firstDifferingLine(...)
+//   fn charCodeAt(...)
+//   fn lastIndexOf(...)
+//   default fn parseInt(...)
+//   default fn parseFloat(...)
+String.prototype.slice = function(start, end) {
+    const self = this.valueOf();
+    if ((end != null)) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
+};
+String.prototype.chars = function() { return (Array.from(this.valueOf())); };
+String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
+String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
+String.prototype.normalizeNewlines = function() { return this.valueOf().replaceAll("\r\n", "\n"); };
+String.prototype.trimTrailingNewlines = function() { return this.valueOf().replace(/\n+$/, ""); };
+String.prototype.firstDifferingLine = function(other) { return ((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })(this.valueOf(), other); };
+String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
+String.prototype.parseInt = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const digits = (() => { if (signed) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
+    return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: 'parseInt: "' + self + '" is not an integer' }); } })();
+};
+String.prototype.parseFloat = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const start = (() => { if (signed) { return 1; } else { return 0; } })();
+    const lowerAt = __bp_str_index_of(self, "e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return __bp_str_index_of(self, "E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = __bp_str_index_of(self, ".");
+    const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
+    const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
+    return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: 'parseFloat: "' + self + '" is not a number' }); } })();
+};
+
+const { Observed } = require("./conformance-lib/observe.js");
+const { Refusal } = require("./conformance-lib/records.js");
+
+const { Diagnostic, Module, Refused } = require("./std/compiler.js");
+const { attempt: __bp_run_attempt } = require("./std/failure.js");
+
+function __bp_loaded(m, ds) {
+    if ((ds.length > 0)) { return ({ error: new Refused(m, ds) }); }
+    return ({ ok: m });
+}
+exports.__bp_loaded = __bp_loaded;
+
+function __bp_load_module(name, path, buildOutput) {
+    return Module.of(name, path, buildOutput);
+}
+exports.__bp_load_module = __bp_load_module;
+
+const __bp_run_failure = require("./std/failure.js");
+const { RunFailure } = require("./std/compiler.js");
+
+function __bp_run(f) {
+    try {
+        const open = Module.captureOpen();
+        const answer = __bp_run_attempt(f);
+        const output = Module.captureClose(open);
+        const _case0 = (() => {
+        const _s = answer;
+        if ("ok" in _s) {
+            const ran = _s.ok;
+            return (() => {
+        const _s = ran;
+        if ("ok" in _s) {
+            throw ({ __bp_try: ({ ok: output }) });
+        }
+        if ("error" in _s) {
+            const m = _s.error;
+            if (m.startsWith("\0bp-off:X")) { throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Excluded, m.slice(9, null), output) }) }); }
+            if (m.startsWith("\0bp-off:R")) { throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Refused, m.slice(9, null), output) }) }); }
+            throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Failed, m, output) }) });
+        }
+        throw new Error("case_clause");
+    })();
+        }
+        if ("error" in _s) {
+            const crash = _s.error;
+            return ({ __bp_return: true, value: ({ error: new RunFailure(RunFailureKind.Abort, crash.message, output) }) });
+        }
+        throw new Error("case_clause");
+    })();
+        if (_case0 && _case0.__bp_return) return _case0.value;
+    } catch (__e) {
+        if (__e !== null && typeof __e === "object" && "__bp_try" in __e) { return __e.__bp_try; }
+        throw __e;
+    }
+}
+exports.__bp_run = __bp_run;
+
+function __bp_run_async(f) {
+    return __bp_task((async () => {
+        try {
+            const open = Module.captureOpen();
+            const answer = await __bp_await(__bp_run_failure.attemptTask(f));
+            const output = Module.captureClose(open);
+            const _case0 = (() => {
+            const _s = answer;
+            if ("ok" in _s) {
+                const ran = _s.ok;
+                return (() => {
+            const _s = ran;
+            if ("ok" in _s) {
+                throw ({ __bp_try: ({ ok: output }) });
+            }
+            if ("error" in _s) {
+                const m = _s.error;
+                if (m.startsWith("\0bp-off:X")) { throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Excluded, m.slice(9, null), output) }) }); }
+                if (m.startsWith("\0bp-off:R")) { throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Refused, m.slice(9, null), output) }) }); }
+                throw ({ __bp_try: ({ error: new RunFailure(RunFailureKind.Failed, m, output) }) });
+            }
+            throw new Error("case_clause");
+        })();
+            }
+            if ("error" in _s) {
+                const crash = _s.error;
+                return ({ __bp_return: true, value: ({ error: new RunFailure(RunFailureKind.Abort, crash.message, output) }) });
+            }
+            throw new Error("case_clause");
+        })();
+            if (_case0 && _case0.__bp_return) return _case0.value;
+        } catch (__e) {
+            if (__e !== null && typeof __e === "object" && "__bp_try" in __e) { return __e.__bp_try; }
+            throw __e;
+        }
+    })());
+}
+exports.__bp_run_async = __bp_run_async;
+
+function __bp_run_none() {
+    return ({ ok: null });
+}
+exports.__bp_run_none = __bp_run_none;
+
+function __bp_run_async_none() {
+    return __bp_task((async () => {
+        return ({ ok: null });
+    })());
+}
+exports.__bp_run_async_none = __bp_run_async_none;
+
+//// A module checking itself (decision 989): each case is a package under `cases/`, loaded at build,
+
+//// run in this program and compared with its section of `snapshot/main.snap`; a difference writes
+
+//// `snapshot/main.snap.new` and `main` answers `Error`. Nothing here accepts a candidate.
+
+const { buildOutput: __bp_ns_adapter__buildOutput, frames: __bp_ns_adapter__frames, target: __bp_ns_adapter__target, ranOf: __bp_ns_adapter__ranOf } = require("./conformance-lib/adapter.js");
+const { finish: __bp_ns_candidate__finish } = require("./conformance-lib/candidate.js");
+const { refusedAnswer: __bp_ns_observe__refusedAnswer, refusalOf: __bp_ns_observe__refusalOf, ranAnswer: __bp_ns_observe__ranAnswer } = require("./conformance-lib/observe.js");
+
+/** The snapshot, read as a build input (decision 989 (5)). */
+
+const accepted = "botopink-cell 2\n== effect_annotation_removed_async_generator\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:8:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_context\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:11:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_future\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:7:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_future_generator\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:6:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_future_generator_loop\nrefused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)\nat src/main.bp:10:15\nlabel remove the annotation; write `iter loop` (or `stream loop`)\n== effect_annotation_removed_generator\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:8:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_generator_loop\nrefused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)\nat src/main.bp:11:15\nlabel remove the annotation; write `iter loop` (or `stream loop`)\n== effect_annotation_removed_iterator\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:11:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_result\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:9:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_result_generator\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:9:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_annotation_removed_result_generator_loop\nrefused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)\nat src/main.bp:10:15\nlabel remove the annotation; write `iter loop` (or `stream loop`)\n== effect_annotation_removed_use\nrefused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)\nat src/main.bp:7:3\nlabel remove the annotation; write the marker before `fn` and the wrapper in the return\n== effect_type_removed_async_iterator\nrefused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)\nat src/main.bp:10:21\nlabel write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`\n== effect_type_removed_future\nrefused error[effect-type-removed]: `@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)\nat src/main.bp:8:21\nlabel write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)\n== effect_type_removed_future_generator\nrefused error[effect-type-removed]: `@FutureGenerator` was removed — the asynchronous sequence is `AsyncIter` (decision 122)\nat src/main.bp:6:21\nlabel write `AsyncIter<Result<T, E>>` (or `AsyncIter<T>`)\n== effect_type_removed_future_no_error\nrefused error[effect-type-removed]: `@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)\nat src/main.bp:11:12\nlabel write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)\n== effect_type_removed_generator\nrefused error[effect-type-removed]: `@Generator` was renamed `Iter` (decision 122)\nat src/main.bp:8:20\nlabel write `Iter<T>`\n== effect_type_removed_iterable\nrefused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)\nat src/main.bp:11:14\nlabel write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`\n== effect_type_removed_iterator_step\nrefused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)\nat src/main.bp:10:16\nlabel write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`\n== effect_type_removed_result_generator\nrefused error[effect-type-removed]: `@ResultGenerator` was removed — the item carries the failure (decision 122)\nat src/main.bp:6:20\nlabel write `Iter<Result<T, E>>`\n== effect_type_removed_use\nrefused error[effect-type-removed]: `@Use` was removed — one wrapper, `Component<R>` (decisions 128, 354)\nat src/main.bp:8:27\nlabel write `Component<R>`\n== effect_type_removed_yield\nrefused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)\nat src/main.bp:9:16\nlabel write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`\n== iterator_error_param_removed\nrefused error[iterator-error-param-removed]: `Iter` has no error parameter — the item carries the failure (decision 122)\nat src/main.bp:10:34\nlabel write `Iter<Result<T, E>>`\n== loop_await_removed\nrefused error: this token cannot appear here\nat src/main.bp:15:10\nlabel unexpected `await`\n== loop_condition_parenthesised\nrefused error[removed-loop-parenthesised]: `loop (…)` does not exist — `for` iterates, `while` repeats\nat src/main.bp:10:5\nlabel write `for (xs) { x -> … }` or `while (cond) { … }`\n";
+
+exports.accepted = accepted;
+
+/** What each case answered, in the order the cases ran. */
+
+let answers = [];
+
+exports.answers = answers;
+
+/** One case, expanded where it is called (decision 808 (2)): a refused load answers its */
+
+/** diagnostics, a loaded one runs and answers its output. */
+
+const __bp_comptime_0_at = 0;
+
+exports.__bp_comptime_0_at = __bp_comptime_0_at;
+
+function __bp_executor_0() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_async_generator", "cases/effect_annotation_removed_async_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 8, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_async_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_async_generator", "cases/effect_annotation_removed_async_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 8, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_0 = __bp_executor_0;
+
+const __bp_init_0 = __bp_executor_0();
+
+exports.__bp_init_0 = __bp_init_0;
+
+function __bp_executor_1() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_context", "cases/effect_annotation_removed_context", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 11, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_context", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_context", "cases/effect_annotation_removed_context", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 11, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_1 = __bp_executor_1;
+
+const __bp_init_1 = __bp_executor_1();
+
+exports.__bp_init_1 = __bp_init_1;
+
+function __bp_executor_2() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_future", "cases/effect_annotation_removed_future", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 7, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_future", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_future", "cases/effect_annotation_removed_future", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 7, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_2 = __bp_executor_2;
+
+const __bp_init_2 = __bp_executor_2();
+
+exports.__bp_init_2 = __bp_init_2;
+
+function __bp_executor_3() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_future_generator", "cases/effect_annotation_removed_future_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 6, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_future_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_future_generator", "cases/effect_annotation_removed_future_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 6, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_3 = __bp_executor_3;
+
+const __bp_init_3 = __bp_executor_3();
+
+exports.__bp_init_3 = __bp_init_3;
+
+function __bp_executor_4() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_future_generator_loop", "cases/effect_annotation_removed_future_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 10, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_future_generator_loop", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_future_generator_loop", "cases/effect_annotation_removed_future_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 10, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).module), refusals)]);
+}
+exports.__bp_executor_4 = __bp_executor_4;
+
+const __bp_init_4 = __bp_executor_4();
+
+exports.__bp_init_4 = __bp_init_4;
+
+function __bp_executor_5() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_generator", "cases/effect_annotation_removed_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 8, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_generator", "cases/effect_annotation_removed_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 8, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_5 = __bp_executor_5;
+
+const __bp_init_5 = __bp_executor_5();
+
+exports.__bp_init_5 = __bp_init_5;
+
+function __bp_executor_6() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_generator_loop", "cases/effect_annotation_removed_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 11, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_generator_loop", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_generator_loop", "cases/effect_annotation_removed_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 11, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).module), refusals)]);
+}
+exports.__bp_executor_6 = __bp_executor_6;
+
+const __bp_init_6 = __bp_executor_6();
+
+exports.__bp_init_6 = __bp_init_6;
+
+function __bp_executor_7() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_iterator", "cases/effect_annotation_removed_iterator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 11, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_iterator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_iterator", "cases/effect_annotation_removed_iterator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 11, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_7 = __bp_executor_7;
+
+const __bp_init_7 = __bp_executor_7();
+
+exports.__bp_init_7 = __bp_init_7;
+
+function __bp_executor_8() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_result", "cases/effect_annotation_removed_result", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 9, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_result", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_result", "cases/effect_annotation_removed_result", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 9, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_8 = __bp_executor_8;
+
+const __bp_init_8 = __bp_executor_8();
+
+exports.__bp_init_8 = __bp_init_8;
+
+function __bp_executor_9() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_result_generator", "cases/effect_annotation_removed_result_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 9, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_result_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_result_generator", "cases/effect_annotation_removed_result_generator", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 9, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_9 = __bp_executor_9;
+
+const __bp_init_9 = __bp_executor_9();
+
+exports.__bp_init_9 = __bp_init_9;
+
+function __bp_executor_10() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_result_generator_loop", "cases/effect_annotation_removed_result_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 10, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_result_generator_loop", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_result_generator_loop", "cases/effect_annotation_removed_result_generator_loop", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)", "src/main.bp", 10, 15, "remove the annotation; write `iter loop` (or `stream loop`)", [])])).module), refusals)]);
+}
+exports.__bp_executor_10 = __bp_executor_10;
+
+const __bp_init_10 = __bp_executor_10();
+
+exports.__bp_init_10 = __bp_init_10;
+
+function __bp_executor_11() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_annotation_removed_use", "cases/effect_annotation_removed_use", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 7, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_annotation_removed_use", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_annotation_removed_use", "cases/effect_annotation_removed_use", ""), [new Diagnostic("effect-annotation-removed", "effect annotations were removed — a body marker and its return type say it (decisions 118, 553)", "src/main.bp", 7, 3, "remove the annotation; write the marker before `fn` and the wrapper in the return", [])])).module), refusals)]);
+}
+exports.__bp_executor_11 = __bp_executor_11;
+
+const __bp_init_11 = __bp_executor_11();
+
+exports.__bp_init_11 = __bp_init_11;
+
+function __bp_executor_12() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_async_iterator", "cases/effect_type_removed_async_iterator", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 10, 21, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_async_iterator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_async_iterator", "cases/effect_type_removed_async_iterator", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 10, 21, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_12 = __bp_executor_12;
+
+const __bp_init_12 = __bp_executor_12();
+
+exports.__bp_init_12 = __bp_init_12;
+
+function __bp_executor_13() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_future", "cases/effect_type_removed_future", ""), [new Diagnostic("effect-type-removed", "`@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)", "src/main.bp", 8, 21, "write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_future", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_future", "cases/effect_type_removed_future", ""), [new Diagnostic("effect-type-removed", "`@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)", "src/main.bp", 8, 21, "write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)", [])])).module), refusals)]);
+}
+exports.__bp_executor_13 = __bp_executor_13;
+
+const __bp_init_13 = __bp_executor_13();
+
+exports.__bp_init_13 = __bp_init_13;
+
+function __bp_executor_14() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_future_generator", "cases/effect_type_removed_future_generator", ""), [new Diagnostic("effect-type-removed", "`@FutureGenerator` was removed — the asynchronous sequence is `AsyncIter` (decision 122)", "src/main.bp", 6, 21, "write `AsyncIter<Result<T, E>>` (or `AsyncIter<T>`)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_future_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_future_generator", "cases/effect_type_removed_future_generator", ""), [new Diagnostic("effect-type-removed", "`@FutureGenerator` was removed — the asynchronous sequence is `AsyncIter` (decision 122)", "src/main.bp", 6, 21, "write `AsyncIter<Result<T, E>>` (or `AsyncIter<T>`)", [])])).module), refusals)]);
+}
+exports.__bp_executor_14 = __bp_executor_14;
+
+const __bp_init_14 = __bp_executor_14();
+
+exports.__bp_init_14 = __bp_init_14;
+
+function __bp_executor_15() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_future_no_error", "cases/effect_type_removed_future_no_error", ""), [new Diagnostic("effect-type-removed", "`@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)", "src/main.bp", 11, 12, "write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_future_no_error", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_future_no_error", "cases/effect_type_removed_future_no_error", ""), [new Diagnostic("effect-type-removed", "`@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)", "src/main.bp", 11, 12, "write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)", [])])).module), refusals)]);
+}
+exports.__bp_executor_15 = __bp_executor_15;
+
+const __bp_init_15 = __bp_executor_15();
+
+exports.__bp_init_15 = __bp_init_15;
+
+function __bp_executor_16() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_generator", "cases/effect_type_removed_generator", ""), [new Diagnostic("effect-type-removed", "`@Generator` was renamed `Iter` (decision 122)", "src/main.bp", 8, 20, "write `Iter<T>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_generator", "cases/effect_type_removed_generator", ""), [new Diagnostic("effect-type-removed", "`@Generator` was renamed `Iter` (decision 122)", "src/main.bp", 8, 20, "write `Iter<T>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_16 = __bp_executor_16;
+
+const __bp_init_16 = __bp_executor_16();
+
+exports.__bp_init_16 = __bp_init_16;
+
+function __bp_executor_17() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_iterable", "cases/effect_type_removed_iterable", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 11, 14, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_iterable", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_iterable", "cases/effect_type_removed_iterable", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 11, 14, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_17 = __bp_executor_17;
+
+const __bp_init_17 = __bp_executor_17();
+
+exports.__bp_init_17 = __bp_init_17;
+
+function __bp_executor_18() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_iterator_step", "cases/effect_type_removed_iterator_step", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 10, 16, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_iterator_step", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_iterator_step", "cases/effect_type_removed_iterator_step", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 10, 16, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_18 = __bp_executor_18;
+
+const __bp_init_18 = __bp_executor_18();
+
+exports.__bp_init_18 = __bp_init_18;
+
+function __bp_executor_19() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_result_generator", "cases/effect_type_removed_result_generator", ""), [new Diagnostic("effect-type-removed", "`@ResultGenerator` was removed — the item carries the failure (decision 122)", "src/main.bp", 6, 20, "write `Iter<Result<T, E>>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_result_generator", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_result_generator", "cases/effect_type_removed_result_generator", ""), [new Diagnostic("effect-type-removed", "`@ResultGenerator` was removed — the item carries the failure (decision 122)", "src/main.bp", 6, 20, "write `Iter<Result<T, E>>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_19 = __bp_executor_19;
+
+const __bp_init_19 = __bp_executor_19();
+
+exports.__bp_init_19 = __bp_init_19;
+
+function __bp_executor_20() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_use", "cases/effect_type_removed_use", ""), [new Diagnostic("effect-type-removed", "`@Use` was removed — one wrapper, `Component<R>` (decisions 128, 354)", "src/main.bp", 8, 27, "write `Component<R>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_use", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_use", "cases/effect_type_removed_use", ""), [new Diagnostic("effect-type-removed", "`@Use` was removed — one wrapper, `Component<R>` (decisions 128, 354)", "src/main.bp", 8, 27, "write `Component<R>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_20 = __bp_executor_20;
+
+const __bp_init_20 = __bp_executor_20();
+
+exports.__bp_init_20 = __bp_init_20;
+
+function __bp_executor_21() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("effect_type_removed_yield", "cases/effect_type_removed_yield", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 9, 16, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("effect_type_removed_yield", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("effect_type_removed_yield", "cases/effect_type_removed_yield", ""), [new Diagnostic("effect-type-removed", "this sequence type left the language (decisions 103, 122)", "src/main.bp", 9, 16, "write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_21 = __bp_executor_21;
+
+const __bp_init_21 = __bp_executor_21();
+
+exports.__bp_init_21 = __bp_init_21;
+
+function __bp_executor_22() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("iterator_error_param_removed", "cases/iterator_error_param_removed", ""), [new Diagnostic("iterator-error-param-removed", "`Iter` has no error parameter — the item carries the failure (decision 122)", "src/main.bp", 10, 34, "write `Iter<Result<T, E>>`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("iterator_error_param_removed", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("iterator_error_param_removed", "cases/iterator_error_param_removed", ""), [new Diagnostic("iterator-error-param-removed", "`Iter` has no error parameter — the item carries the failure (decision 122)", "src/main.bp", 10, 34, "write `Iter<Result<T, E>>`", [])])).module), refusals)]);
+}
+exports.__bp_executor_22 = __bp_executor_22;
+
+const __bp_init_22 = __bp_executor_22();
+
+exports.__bp_init_22 = __bp_init_22;
+
+function __bp_executor_23() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("loop_await_removed", "cases/loop_await_removed", ""), [new Diagnostic("", "this token cannot appear here", "src/main.bp", 15, 10, "unexpected `await`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("loop_await_removed", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("loop_await_removed", "cases/loop_await_removed", ""), [new Diagnostic("", "this token cannot appear here", "src/main.bp", 15, 10, "unexpected `await`", [])])).module), refusals)]);
+}
+exports.__bp_executor_23 = __bp_executor_23;
+
+const __bp_init_23 = __bp_executor_23();
+
+exports.__bp_init_23 = __bp_init_23;
+
+function __bp_executor_24() {
+    let refusals = [];
+    for (const d of (new Refused(__bp_load_module("loop_condition_parenthesised", "cases/loop_condition_parenthesised", ""), [new Diagnostic("removed-loop-parenthesised", "`loop (…)` does not exist — `for` iterates, `while` repeats", "src/main.bp", 10, 5, "write `for (xs) { x -> … }` or `while (cond) { … }`", [])])).diagnostics) {
+    refusals = refusals.concat([__bp_ns_observe__refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, __bp_ns_adapter__frames(d))]);
+}
+    answers = answers.concat([__bp_ns_observe__refusedAnswer("loop_condition_parenthesised", __bp_ns_adapter__buildOutput((new Refused(__bp_load_module("loop_condition_parenthesised", "cases/loop_condition_parenthesised", ""), [new Diagnostic("removed-loop-parenthesised", "`loop (…)` does not exist — `for` iterates, `while` repeats", "src/main.bp", 10, 5, "write `for (xs) { x -> … }` or `while (cond) { … }`", [])])).module), refusals)]);
+}
+exports.__bp_executor_24 = __bp_executor_24;
+
+const __bp_init_24 = __bp_executor_24();
+
+exports.__bp_init_24 = __bp_init_24;
+
+function main() {
+    return __bp_task((async () => {
+        return __bp_ns_candidate__finish(accepted, answers, __bp_ns_adapter__target());
+    })());
+}
+exports.main = main;
+
+function _botopink_main() {
+    main();
+}
+if (require.main === module) {
+    const __bp_abort = (e) => { const k = (e != null && e.__bp_panic != null) ? ["panic", (typeof e.__bp_panic === "string") ? e.__bp_panic : e.message] : (e != null && typeof e.__bp_assert_loc === "string") ? ["panic", e.message] : [(e != null && e.__bp_host === true) ? "host" : "crash", (e instanceof Error) ? e.message : String(e)]; globalThis.process.stderr.write(k[0] + ": " + k[1] + "\n", () => globalThis.process.exit(1)); };
+    globalThis.process.on("uncaughtException", __bp_abort);
+    globalThis.process.on("unhandledRejection", __bp_abort);
+    _botopink_main();
+}
+
+Object.defineProperty(exports, "__bp_priv__", { value: { RunFailureKind, Asset, Observed, Refusal, Diagnostic, Module, Refused, __bp_run_attempt, __bp_loaded, __bp_load_module, __bp_run_failure, RunFailure, __bp_run, __bp_run_async, __bp_run_none, __bp_run_async_none, __bp_ns_adapter__buildOutput, __bp_ns_adapter__frames, __bp_ns_adapter__target, __bp_ns_adapter__ranOf, __bp_ns_candidate__finish, __bp_ns_observe__refusedAnswer, __bp_ns_observe__refusalOf, __bp_ns_observe__ranAnswer, accepted, answers, __bp_comptime_0_at, __bp_executor_0, __bp_init_0, __bp_executor_1, __bp_init_1, __bp_executor_2, __bp_init_2, __bp_executor_3, __bp_init_3, __bp_executor_4, __bp_init_4, __bp_executor_5, __bp_init_5, __bp_executor_6, __bp_init_6, __bp_executor_7, __bp_init_7, __bp_executor_8, __bp_init_8, __bp_executor_9, __bp_init_9, __bp_executor_10, __bp_init_10, __bp_executor_11, __bp_init_11, __bp_executor_12, __bp_init_12, __bp_executor_13, __bp_init_13, __bp_executor_14, __bp_init_14, __bp_executor_15, __bp_init_15, __bp_executor_16, __bp_init_16, __bp_executor_17, __bp_init_17, __bp_executor_18, __bp_init_18, __bp_executor_19, __bp_init_19, __bp_executor_20, __bp_init_20, __bp_executor_21, __bp_init_21, __bp_executor_22, __bp_init_22, __bp_executor_23, __bp_init_23, __bp_executor_24, __bp_init_24, main } });

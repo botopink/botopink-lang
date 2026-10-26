@@ -1,1 +1,1 @@
-{ "name": "record_constructor_arguments_in_written_order-715" }
+{"name": "record_constructor_arguments_in_written_order-715", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

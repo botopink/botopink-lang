@@ -1,1 +1,1 @@
-{ "name": "asset_size_hash_open-538" }
+{"name": "asset_size_hash_open-538", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

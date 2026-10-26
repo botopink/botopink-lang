@@ -1,1 +1,1 @@
-{ "name": "compiler_same_compares_declaration_handles-666" }
+{"name": "compiler_same_compares_declaration_handles-666", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

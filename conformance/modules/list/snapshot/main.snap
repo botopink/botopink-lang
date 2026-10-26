@@ -1,0 +1,9 @@
+botopink-cell 2
+== list_pattern_spread_alone
+out all 3
+out all 0
+out [4, 5]
+== list_spread_not_last
+refused error[list-spread-not-last]: the spread of an array literal comes last
+at src/main.bp:9:19
+label nothing after `..rest`

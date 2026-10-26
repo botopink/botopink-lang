@@ -1,1 +1,1 @@
-{ "name": "effect_return_wraps_each_layer-119" }
+{"name": "effect_return_wraps_each_layer-119", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "compiler_init_executor-615" }
+{"name": "compiler_init_executor-615", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "content_hash_folds_codepoints-260" }
+{"name": "content_hash_folds_codepoints-260", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

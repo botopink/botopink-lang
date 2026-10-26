@@ -1,0 +1,4 @@
+botopink-cell 2
+== method_private_to_module
+refused error: method-not-pub: `Box.label` of module `box` is written without `pub` — a method without `pub` is called only in its own module (decision 859)
+at src/main.bp:12:13

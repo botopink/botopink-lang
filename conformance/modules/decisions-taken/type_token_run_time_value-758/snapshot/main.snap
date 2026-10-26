@@ -1,0 +1,4 @@
+botopink-cell 2
+== is_type_parameter_refused
+refused error: is-type-parameter: `is T` tests the type parameter `T`, which no target knows at run time — take the type as `comptime t: type<T>` or `t: type<T>` and test `v is t`
+at src/main.bp:11:14

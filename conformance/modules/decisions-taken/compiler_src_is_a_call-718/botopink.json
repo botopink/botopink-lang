@@ -1,1 +1,1 @@
-{ "name": "compiler_src_is_a_call-718" }
+{"name": "compiler_src_is_a_call-718", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

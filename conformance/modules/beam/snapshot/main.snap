@@ -1,0 +1,12 @@
+botopink-cell 2
+== beam_memory_annotations
+out 1
+out 101
+out 0
+== beam_memory_ets_recompose
+out 3
+== beam_memory_on_val
+refused error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `hits` is a `val`
+at src/main.bp:7:3
+== beam_memory_pt_write
+out 102

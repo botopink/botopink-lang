@@ -1,0 +1,19 @@
+botopink-cell 2
+== prelude_has_no_pair_or_function
+refused error: unbound variable 'Pair' — a pair is the tuple `#(A, B)`
+at src/main.bp:15:13
+== tuple_destructure_array_element
+out [2, 4]
+out long
+out 2
+== tuple_destructure_discard
+out 1
+out 7
+out 3
+out x
+== tuple_element_array_read
+out [4, 8]
+out 2
+out [1.5, 2.5]
+out a
+out ["a"]

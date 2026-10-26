@@ -1,0 +1,8 @@
+botopink-cell 2
+== load_no_main
+refused error: load-no-main: `run()` is called on `packages/helper`, which declares no `main`
+at src/main.bp:10:19
+== run_outside_init
+build abort Module.run: every call is lowered to the loaded main
+refused error: run-outside-init: `run()` is called outside a `compiler.init` body
+at src/main.bp:11:19

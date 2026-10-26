@@ -1,4 +1,0 @@
-botopink-cell 1
-out == compiler_load_catch_without_try
-out refused error: try-region-cannot-fail: this `catch` closes a region that holds no `try`, so it handles nothing — write `try` before the call that can fail (`try f() catch …`), or drop the `catch`
-out at src/main.bp:10:47

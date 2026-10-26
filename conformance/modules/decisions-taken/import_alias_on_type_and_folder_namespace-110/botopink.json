@@ -1,1 +1,1 @@
-{ "name": "import_alias_on_type_and_folder_namespace-110" }
+{"name": "import_alias_on_type_and_folder_namespace-110", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

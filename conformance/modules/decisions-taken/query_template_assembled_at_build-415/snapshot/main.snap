@@ -1,0 +1,32 @@
+botopink-cell 2
+== template_lookup_decl_members
+out Color Red Green
+out Counter of(start:i32,step:i32)->Counter
+out scale x:i32 factor:f64
+== template_lookup_meta
+out users rows=3 cached=no size=large tags=a,b index=email index=id
+out true
+out false
+== template_lookup_meta_same_module
+out users
+out users
+== template_method_call
+out HELLO, Ana
+out multi, Ana
+out WELCOME, Bia
+out [guest] Ana
+out m:a
+out m:title
+out none
+== template_lookup_decl_write
+refused error: compiler-output-outside-decorator: `compiler.setMeta` writes to the annotated declaration, and only a decorator has one
+at src/main.bp:16:14
+== template_lookup_meta_expr_field
+refused error: template-lookup-meta-expr-field: `metaAll(Check)` is read while the program compiles, and `Check`'s field `rule` is an `@Expr` — code the program runs, not data
+at src/main.bp:19:26
+== template_lookup_meta_hooks_pending
+refused error: typeinfo-meta-hooks-pending: `page` carries a decorator that reads `.hooks`, which records its meta after this read
+at src/main.bp:28:16
+== template_method_not_in_scope
+refused error: 'read' is not declared in any behavior implemented for 'Memory'
+at src/main.bp:13:15

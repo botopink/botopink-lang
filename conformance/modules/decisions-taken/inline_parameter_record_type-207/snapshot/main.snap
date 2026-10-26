@@ -1,0 +1,41 @@
+botopink-cell 2
+== inline_param_type
+out A </a>
+out B </b> (external)
+out C </c>
+out 12px
+out 10em
+== template_builds_inline_props
+out Hello, Partner!
+out Howdy, Partner!
+out Hello, Bob!
+== inline_type_across_modules
+refused error: inline-type-position: `href:` is a field of the props of `link`, an inline type built only in the module that declares `link`
+at src/main.bp:11:11
+== inline_type_field_named_like_param
+refused error: inline-type-position: the field `n` of the props of `col` is named like the parameter `n`, so `col(n: …)` would mean two things
+at src/main.bp:7:15
+== inline_type_in_field
+refused error[inline-type-outside-parameter]: an inline `type(…)` is written only as a parameter's type
+at src/main.bp:6:17
+label not a parameter's type
+== inline_type_in_return
+refused error[inline-type-outside-parameter]: an inline `type(…)` is written only as a parameter's type
+at src/main.bp:6:14
+label not a parameter's type
+== inline_type_in_val_annotation
+refused error[inline-type-outside-parameter]: an inline `type(…)` is written only as a parameter's type
+at src/main.bp:5:12
+label not a parameter's type
+== inline_type_missing_field
+refused error: missing field `label` of the props of `link`
+at src/main.bp:12:11
+== inline_type_on_method_param
+refused error: inline-type-position: an inline `type(…)` is the type of a top-level `fn`'s parameter only — not a method's, a behavior member's or a host declaration's
+at src/main.bp:7:31
+== inline_type_twice_on_one_fn
+refused error: inline-type-position: `two` takes a second inline type (`b`) — one parameter of a function may have one, `a` already does
+at src/main.bp:6:28
+== inline_type_unknown_field
+refused error: unknown field 'label' on type the props of `link`
+at src/main.bp:8:18

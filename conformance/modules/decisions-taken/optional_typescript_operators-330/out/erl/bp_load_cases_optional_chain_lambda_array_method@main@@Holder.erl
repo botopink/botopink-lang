@@ -1,0 +1,6 @@
+-module(bp_load_cases_optional_chain_lambda_array_method@main@@Holder).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, n) -> erlang:element(2, V).
+
+'__bp_format'(V) -> {record, "Holder", [{"n", erlang:element(2, V)}]}.

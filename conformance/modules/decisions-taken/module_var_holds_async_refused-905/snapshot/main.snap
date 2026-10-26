@@ -1,0 +1,10 @@
+botopink-cell 2
+== module_var_async_direct
+refused error: module-var-holds-async: the module `var` `pending` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))
+at src/main.bp:4:14
+== module_var_async_in_array
+refused error: module-var-holds-async: the module `var` `pending` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))
+at src/main.bp:4:14
+== module_var_async_in_record_field
+refused error: module-var-holds-async: the module `var` `current` holds an `Async` — a task never crosses heaps, and a module `var` is one value for the whole program on every target (decision 547 (iii))
+at src/main.bp:6:14

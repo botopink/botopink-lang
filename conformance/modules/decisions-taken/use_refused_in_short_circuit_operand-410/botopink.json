@@ -1,1 +1,1 @@
-{ "name": "use_refused_in_short_circuit_operand-410" }
+{"name": "use_refused_in_short_circuit_operand-410", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

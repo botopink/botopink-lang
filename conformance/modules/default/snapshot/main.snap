@@ -1,0 +1,4 @@
+botopink-cell 2
+== default_argument_open_across_modules
+refused error: 'greetFrom' expects 2 argument(s), got 1
+at src/main.bp:12:11

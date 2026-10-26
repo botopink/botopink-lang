@@ -1,1 +1,1 @@
-{ "name": "module_var_holds_async_refused-905" }
+{"name": "module_var_holds_async_refused-905", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,0 +1,13 @@
+botopink-cell 2
+== index_and_slice_sugar
+out 10
+out null
+out 30
+out null
+out [20, 30]
+out [10, 20]
+out e
+out o
+== index_tuple_literal
+out 1
+out a

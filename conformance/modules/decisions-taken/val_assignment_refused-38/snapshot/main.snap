@@ -1,0 +1,7 @@
+botopink-cell 2
+== val_assign_local
+refused error: `x` is a `val` and cannot be assigned
+at src/main.bp:10:5
+== val_assign_module
+refused error: `hits` is a `val` and cannot be assigned
+at src/main.bp:11:25

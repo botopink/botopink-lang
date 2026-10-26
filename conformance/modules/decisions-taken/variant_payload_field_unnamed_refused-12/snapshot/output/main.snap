@@ -1,5 +1,0 @@
-botopink-cell 1
-out == variant_payload_without_name
-out refused error[field-needs-name]: a field with no name
-out at src/main.bp:13:21
-out label write `name: Type` here

@@ -1,1 +1,1 @@
-{ "name": "folder_import_refused-919" }
+{"name": "folder_import_refused-919", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

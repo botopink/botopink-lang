@@ -1,1 +1,1 @@
-{ "name": "format_applied_canonical_rewrites-524" }
+{"name": "format_applied_canonical_rewrites-524", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

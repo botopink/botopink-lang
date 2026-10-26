@@ -1,0 +1,21 @@
+botopink-cell 2
+== decorator_expr_message_runtime
+out start
+out 0
+out t(signup.mismatch)
+out the passwords differ
+out t(signup.mismatch)
+out 1
+== decorator_expr_rule_called
+out 0
+out 1
+out confirm: the passwords differ
+== decorator_member_fn_untyped
+refused error: decorator-member-fn-untyped: the member's parameter `self` has no type
+at src/main.bp:9:36
+== decorator_member_not_fn
+refused error: decorator-member-not-fn: `decl.addMember(name, f)` takes the member as a function expression written at the call
+at src/main.bp:14:36
+== decorator_member_type
+refused error: decorator-member-type: `#[trimmed]`'s member `trimmedLength` takes `self` as `string`, and the member joins `Signup`
+at src/main.bp:13:19

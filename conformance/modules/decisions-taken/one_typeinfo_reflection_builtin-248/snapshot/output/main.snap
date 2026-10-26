@@ -1,7 +1,0 @@
-botopink-cell 1
-out == typeinfo_all_lowercase
-out refused error: typeinfo-lowercase: `@typeinfo.all` is spelled `@TypeInfo.all`
-out at src/main.bp:12:15
-out == typeinfo_lowercase
-out refused error: typeinfo-lowercase: `@typeinfo` is spelled `@typeInfo`
-out at src/main.bp:9:11

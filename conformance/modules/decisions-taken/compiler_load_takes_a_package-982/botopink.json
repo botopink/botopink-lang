@@ -1,1 +1,1 @@
-{ "name": "compiler_load_takes_a_package-982" }
+{"name": "compiler_load_takes_a_package-982", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

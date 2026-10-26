@@ -1,1 +1,1 @@
-{ "name": "embed_returns_asset-519" }
+{"name": "embed_returns_asset-519", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

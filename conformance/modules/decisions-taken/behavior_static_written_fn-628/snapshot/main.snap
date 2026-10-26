@@ -1,0 +1,10 @@
+botopink-cell 2
+== behavior_static_written_fn
+out 1
+out 7
+out area 9
+out a dot
+== default_on_static_refused
+refused error[default-on-static]: a member without self is a static: write fn
+at src/main.bp:9:5
+label remove `default`

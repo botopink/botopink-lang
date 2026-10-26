@@ -1,1 +1,1 @@
-{ "name": "external_wasm_binding_forms-238" }
+{"name": "external_wasm_binding_forms-238", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}
