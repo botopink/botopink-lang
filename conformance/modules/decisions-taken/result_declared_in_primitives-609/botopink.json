@@ -1,1 +1,1 @@
-{ "name": "result_declared_in_primitives-609" }
+{"name": "result_declared_in_primitives-609", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,4 +1,0 @@
-botopink-cell 1
-out == is_type_parameter_refused
-out refused error: is-type-parameter: `is T` tests the type parameter `T`, which no target knows at run time — take the type as `comptime t: type<T>` or `t: type<T>` and test `v is t`
-out at src/main.bp:11:14

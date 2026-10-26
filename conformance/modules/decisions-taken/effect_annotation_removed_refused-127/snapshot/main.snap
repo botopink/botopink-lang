@@ -1,0 +1,101 @@
+botopink-cell 2
+== effect_annotation_removed_async_generator
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:8:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_context
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:11:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_future
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:7:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_future_generator
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:6:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_future_generator_loop
+refused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)
+at src/main.bp:10:15
+label remove the annotation; write `iter loop` (or `stream loop`)
+== effect_annotation_removed_generator
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:8:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_generator_loop
+refused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)
+at src/main.bp:11:15
+label remove the annotation; write `iter loop` (or `stream loop`)
+== effect_annotation_removed_iterator
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:11:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_result
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:9:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_result_generator
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:9:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_annotation_removed_result_generator_loop
+refused error[effect-annotation-removed]: effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)
+at src/main.bp:10:15
+label remove the annotation; write `iter loop` (or `stream loop`)
+== effect_annotation_removed_use
+refused error[effect-annotation-removed]: effect annotations were removed — a body marker and its return type say it (decisions 118, 553)
+at src/main.bp:7:3
+label remove the annotation; write the marker before `fn` and the wrapper in the return
+== effect_type_removed_async_iterator
+refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
+at src/main.bp:10:21
+label write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`
+== effect_type_removed_future
+refused error[effect-type-removed]: `@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)
+at src/main.bp:8:21
+label write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)
+== effect_type_removed_future_generator
+refused error[effect-type-removed]: `@FutureGenerator` was removed — the asynchronous sequence is `AsyncIter` (decision 122)
+at src/main.bp:6:21
+label write `AsyncIter<Result<T, E>>` (or `AsyncIter<T>`)
+== effect_type_removed_future_no_error
+refused error[effect-type-removed]: `@Future` was removed — the wrapper is `Async<T>`, which never fails (decision 120)
+at src/main.bp:11:12
+label write `Async<Result<T, E>>` (or `Async<T>` when it cannot fail)
+== effect_type_removed_generator
+refused error[effect-type-removed]: `@Generator` was renamed `Iter` (decision 122)
+at src/main.bp:8:20
+label write `Iter<T>`
+== effect_type_removed_iterable
+refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
+at src/main.bp:11:14
+label write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`
+== effect_type_removed_iterator_step
+refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
+at src/main.bp:10:16
+label write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`
+== effect_type_removed_result_generator
+refused error[effect-type-removed]: `@ResultGenerator` was removed — the item carries the failure (decision 122)
+at src/main.bp:6:20
+label write `Iter<Result<T, E>>`
+== effect_type_removed_use
+refused error[effect-type-removed]: `@Use` was removed — one wrapper, `Component<R>` (decisions 128, 354)
+at src/main.bp:8:27
+label write `Component<R>`
+== effect_type_removed_yield
+refused error[effect-type-removed]: this sequence type left the language (decisions 103, 122)
+at src/main.bp:9:16
+label write `AsyncIter<T>`, `Iter<T>` or `YieldStep<T>`
+== iterator_error_param_removed
+refused error[iterator-error-param-removed]: `Iter` has no error parameter — the item carries the failure (decision 122)
+at src/main.bp:10:34
+label write `Iter<Result<T, E>>`
+== loop_await_removed
+refused error: this token cannot appear here
+at src/main.bp:15:10
+label unexpected `await`
+== loop_condition_parenthesised
+refused error[removed-loop-parenthesised]: `loop (…)` does not exist — `for` iterates, `while` repeats
+at src/main.bp:10:5
+label write `for (xs) { x -> … }` or `while (cond) { … }`

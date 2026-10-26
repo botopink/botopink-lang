@@ -1,1 +1,1 @@
-{ "name": "defer_runs_at_block_end-539" }
+{"name": "defer_runs_at_block_end-539", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

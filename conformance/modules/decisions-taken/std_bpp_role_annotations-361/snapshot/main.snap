@@ -1,0 +1,15 @@
+botopink-cell 2
+== bpp_html_not_template
+refused error: #[bpp.html] annotates a template function, whose first parameter is `syntax q: string` — `page` answers `i32`
+at src/main.bp:7:3
+== bpp_html_on_val
+refused error: #[bpp.html] annotates the template function a .bpp file's markup unfolds onto — `page` is not a function
+at src/main.bp:7:3
+== bpp_style_on_val
+refused error: #[bpp.style] annotates the template function a .bpp file's style section unfolds onto — `sheet` is not a function
+at src/main.bp:7:3
+== bpp_style_prelude_on_fn
+refused error: #[bpp.stylePrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `prelude` is not a val
+at src/main.bp:7:3
+== bpp_prelude_on_fn
+out 1

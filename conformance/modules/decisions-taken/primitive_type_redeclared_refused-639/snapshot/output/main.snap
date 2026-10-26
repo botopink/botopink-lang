@@ -1,7 +1,0 @@
-botopink-cell 1
-out == primitive_type_redeclared_refused
-out refused error: primitive-type-redeclared: `i32` is the type of a literal; a module cannot declare a type of that name
-out at src/main.bp:10:6
-out == primitive_width_redeclared_refused
-out refused error: primitive-type-redeclared: `i32` is the type of a literal; a module cannot declare a type of that name
-out at src/main.bp:10:6

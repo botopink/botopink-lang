@@ -1,7 +1,0 @@
-botopink-cell 1
-out == f64_equals_integer_literal
-out refused error: comparing f64 with an integer literal — write 2.0
-out at src/main.bp:10:16
-out == f64_not_equals_integer_literal
-out refused error: comparing f64 with an integer literal — write 3.0
-out at src/main.bp:7:11

@@ -1,1 +1,1 @@
-{ "name": "variant_payload_field_unnamed_refused-12" }
+{"name": "variant_payload_field_unnamed_refused-12", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

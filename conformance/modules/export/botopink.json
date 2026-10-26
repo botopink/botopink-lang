@@ -1,1 +1,1 @@
-{ "name": "export" }
+{"name": "export", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

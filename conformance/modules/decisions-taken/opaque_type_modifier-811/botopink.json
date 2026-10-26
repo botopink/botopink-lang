@@ -1,1 +1,1 @@
-{ "name": "opaque_type_modifier-811" }
+{"name": "opaque_type_modifier-811", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

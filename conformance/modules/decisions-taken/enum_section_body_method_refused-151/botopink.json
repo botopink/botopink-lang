@@ -1,1 +1,1 @@
-{ "name": "enum_section_body_method_refused-151" }
+{"name": "enum_section_body_method_refused-151", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

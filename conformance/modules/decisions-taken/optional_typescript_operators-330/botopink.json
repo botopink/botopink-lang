@@ -1,1 +1,1 @@
-{ "name": "optional_typescript_operators-330" }
+{"name": "optional_typescript_operators-330", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

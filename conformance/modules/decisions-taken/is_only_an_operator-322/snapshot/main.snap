@@ -1,0 +1,4 @@
+botopink-cell 2
+== hand_written_is_builtin
+refused error: unknown-builtin: unknown builtin `@is` — `is` is an operator
+at src/main.bp:7:13

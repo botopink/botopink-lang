@@ -1,1 +1,1 @@
-{ "name": "bare_variant_expression_refused-587" }
+{"name": "bare_variant_expression_refused-587", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

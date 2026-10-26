@@ -1,1 +1,1 @@
-{ "name": "typed_member_reads_own_meta-395" }
+{"name": "typed_member_reads_own_meta-395", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

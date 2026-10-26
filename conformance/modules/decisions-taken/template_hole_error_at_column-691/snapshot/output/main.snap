@@ -1,4 +1,0 @@
-botopink-cell 1
-out == template_hole_error_at_column
-out refused error: unbound variable 'missing'
-out at src/main.bp:36:26

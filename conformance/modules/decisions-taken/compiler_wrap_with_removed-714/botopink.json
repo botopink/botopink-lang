@@ -1,1 +1,1 @@
-{ "name": "compiler_wrap_with_removed-714" }
+{"name": "compiler_wrap_with_removed-714", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

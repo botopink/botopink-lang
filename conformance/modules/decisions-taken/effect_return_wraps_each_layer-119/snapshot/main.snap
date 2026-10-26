@@ -1,0 +1,4 @@
+botopink-cell 2
+== effect_return_ambiguous_nesting
+refused error: effect-return-ambiguous-nesting: this `Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `Result` layer (passed through)
+at src/main.bp:16:5

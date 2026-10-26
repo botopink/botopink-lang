@@ -1,1 +1,1 @@
-{ "name": "interpolation" }
+{"name": "interpolation", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

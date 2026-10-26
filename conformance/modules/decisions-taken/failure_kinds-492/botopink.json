@@ -1,1 +1,1 @@
-{ "name": "failure_kinds-492" }
+{"name": "failure_kinds-492", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,6 +1,0 @@
-botopink-cell 1
-out == smoke
-out smoke
-out == smoke_refused
-out refused error: type mismatch: expected i32, got string
-out at src/main.bp:4:18

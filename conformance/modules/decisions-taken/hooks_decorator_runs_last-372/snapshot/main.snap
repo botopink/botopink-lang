@@ -1,0 +1,10 @@
+botopink-cell 2
+== decorator_hooks_output
+refused error: decorator-hooks-output: the decorator `graph` reads `.hooks` and calls `addMember`
+at src/main.bp:11:14
+== decorator_hooks_output_member_fn
+refused error: decorator-hooks-output: the decorator `graph` reads `.hooks` and calls `addMember`
+at src/main.bp:11:14
+== typeinfo_all_hooks_reader
+refused error: typeinfo-all-hooks-reader: `@TypeInfo.all` lists a decorator that reads `.hooks` and annotates a declaration of this module; it runs after this module's bodies, so the answer could not carry its meta
+at src/main.bp:21:35

@@ -1,1 +1,1 @@
-{ "name": "equality_is_structural-210" }
+{"name": "equality_is_structural-210", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

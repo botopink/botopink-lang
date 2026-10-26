@@ -1,1 +1,1 @@
-{ "name": "result_refused_on_op_fn-491" }
+{"name": "result_refused_on_op_fn-491", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

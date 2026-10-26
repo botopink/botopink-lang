@@ -1,0 +1,19 @@
+botopink-cell 2
+== syntax_fn_expression_param_given_template_text
+refused error: syntax-call-outside-syntax: `shown` takes the expression `value` between parentheses, `shown(…)`, and is called here with a template text
+at src/main.bp:14:11
+== syntax_fn_string_param_needs_template_text
+refused error: syntax-call-outside-syntax: `markup` is a template, called only with a template text, and is called here another way
+at src/main.bp:14:11
+== syntax_fn_code_names_imported_std_function
+out sum: n + 4
+out product: n * 2
+== syntax_fn_expanded_at_call
+out src/main.bp:32 <p>page</p>
+out true
+== syntax_fn_run_time_return
+out 12
+out sum: n + 4 = 7
+== syntax_fn_text_of_expression
+out ok: a == b
+out failed: a == c

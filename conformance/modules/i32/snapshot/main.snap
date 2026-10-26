@@ -1,0 +1,4 @@
+botopink-cell 2
+== i32_value_never_widens
+refused error: type mismatch: expected f64, got i32
+at src/main.bp:13:16

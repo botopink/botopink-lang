@@ -1,1 +1,1 @@
-{ "name": "syntax_fn_use_decides_kind-976" }
+{"name": "syntax_fn_use_decides_kind-976", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

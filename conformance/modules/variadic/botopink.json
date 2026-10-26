@@ -1,1 +1,1 @@
-{ "name": "variadic" }
+{"name": "variadic", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "identifier_never_passed_as_string-281" }
+{"name": "identifier_never_passed_as_string-281", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

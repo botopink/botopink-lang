@@ -1,1 +1,1 @@
-{ "name": "i64" }
+{"name": "i64", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

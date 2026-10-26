@@ -1,1 +1,1 @@
-{ "name": "template_call_expands_any_expression-425" }
+{"name": "template_call_expands_any_expression-425", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

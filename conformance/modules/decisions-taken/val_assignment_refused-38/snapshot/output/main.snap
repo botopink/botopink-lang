@@ -1,7 +1,0 @@
-botopink-cell 1
-out == val_assign_local
-out refused error: `x` is a `val` and cannot be assigned
-out at src/main.bp:10:5
-out == val_assign_module
-out refused error: `hits` is a `val` and cannot be assigned
-out at src/main.bp:11:25

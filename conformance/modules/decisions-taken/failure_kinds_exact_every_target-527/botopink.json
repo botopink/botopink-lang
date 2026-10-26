@@ -1,1 +1,1 @@
-{ "name": "failure_kinds_exact_every_target-527" }
+{"name": "failure_kinds_exact_every_target-527", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

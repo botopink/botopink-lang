@@ -1,0 +1,10 @@
+botopink-cell 2
+== decorator_arguments_meta
+out state,name
+out 2
+out high
+== decorator_entity_table
+out cities
+out cities
+out City
+out n|p

@@ -1,1 +1,1 @@
-{ "name": "fs_error_message_text-563" }
+{"name": "fs_error_message_text-563", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

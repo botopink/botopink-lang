@@ -1,1 +1,1 @@
-{ "name": "empty_record_written_with_parens-138" }
+{"name": "empty_record_written_with_parens-138", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

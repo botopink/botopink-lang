@@ -1,5 +1,0 @@
-botopink-cell 1
-out == section_body_method
-out refused error[section-body-method]: a section of an enum holds variants, not methods
-out at src/main.bp:11:9
-out label declare it in the enum's own body

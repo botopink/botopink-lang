@@ -1,0 +1,4 @@
+botopink-cell 2
+== assoc_type_named_by_owner_in_diagnostic
+refused error: unknown field 'nope' on type 'City.Columns'
+at src/main.bp:16:13

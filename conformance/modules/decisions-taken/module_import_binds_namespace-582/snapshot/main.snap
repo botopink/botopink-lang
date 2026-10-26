@@ -1,0 +1,10 @@
+botopink-cell 2
+== declaration_named_like_module
+refused error: module-item-collision: `config` names both the item declared here and the module `mod config;` declares at line 7 — rename one
+at src/main.bp:9:4
+== namespace_not_a_value
+refused error: namespace-not-a-value: `shapes` is the namespace of the module `geo.shapes`, which declares no `pub default` — it is not a value
+at src/main.bp:10:13
+== namespace_not_a_value_called
+refused error: namespace-not-a-value: `shapes` is the namespace of the module `geo.shapes`, which declares no `pub default` — it is not a value
+at src/main.bp:9:11

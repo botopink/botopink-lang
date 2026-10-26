@@ -1,1 +1,1 @@
-{ "name": "wasm_heap_grows-261" }
+{"name": "wasm_heap_grows-261", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

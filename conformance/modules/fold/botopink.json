@@ -1,1 +1,1 @@
-{ "name": "fold" }
+{"name": "fold", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

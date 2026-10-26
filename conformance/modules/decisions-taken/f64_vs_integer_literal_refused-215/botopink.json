@@ -1,1 +1,1 @@
-{ "name": "f64_vs_integer_literal_refused-215" }
+{"name": "f64_vs_integer_literal_refused-215", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

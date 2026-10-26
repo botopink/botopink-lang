@@ -1,0 +1,20 @@
+botopink-cell 2
+== record_param_on_method
+out s/a:1!
+out s/b*:3?
+out s/c:7.
+out s/d:1#
+== record_param_on_associated
+out p:a:1
+out q:c:7
+out r:z:2
+== record_param_generic
+out v=3
+out s=4
+== record_param_variadic_refused
+refused error: record-param-variadic: `add` takes both `..props: R` and the variadic `..rest` — a record parameter and a variadic do not share a function
+at src/main.bp:9:48
+== record_param_default_refused
+refused error[record-param-default]: a record parameter takes no default
+at src/main.bp:10:47
+label default on a record parameter

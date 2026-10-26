@@ -1,0 +1,44 @@
+botopink-cell 2
+== val_annotated
+out 42
+out ["alice", "bob"]
+== val_assert_ok
+out 42
+== val_assert_record_pattern
+out ann 3
+out none 0
+out bo is 9
+out none is 0
+== val_assert_variant_pattern
+out 3
+out -1
+out 5
+out 0
+== val_binding
+out 42
+out hello
+== val_nested_ctor_pattern
+out 3
+out 4
+out 7
+out 7 x 9
+out deep
+out 2
+out 30
+== val_spread_only_list_pattern
+out 3
+out [1, 2, 3]
+out 2
+out 0
+== val_assert_after_catch
+refused error: after `catch` the value is not a Result — a `val assert` over a `Result` takes no `catch`
+at src/main.bp:12:33
+== val_cannot_be_assigned
+refused error: `x` is a `val` and cannot be assigned
+at src/main.bp:3:5
+== val_named_like_import
+refused error: import-name-collision: `extname` is already bound by the import of `path.extname`; a `val` of this module would bind it again
+at src/main.bp:5:5
+== val_runs_at_module_load
+out Greeter
+out 8080

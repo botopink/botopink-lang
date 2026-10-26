@@ -1,1 +1,1 @@
-{ "name": "body_cell_botopink_body-610" }
+{"name": "body_cell_botopink_body-610", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

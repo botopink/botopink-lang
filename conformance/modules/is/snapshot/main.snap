@@ -1,0 +1,27 @@
+botopink-cell 2
+== is_enum_variant
+out true
+out false
+out true
+out false
+out false
+out true
+out false
+out true
+== is_function_type
+out UTC
+out not a factory
+== is_truth_table
+out TT.T......
+out TT........
+out TT........
+out TTTT......
+out ....T.....
+out .....T....
+out ......T...
+out .......T..
+out .........T
+out ........T.
+out false false true
+out true false true
+out 3

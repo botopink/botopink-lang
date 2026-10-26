@@ -1,0 +1,10 @@
+botopink-cell 2
+== template_default_arg_two_expansions
+out Hello, Partner!
+out bye, Partner
+== template_name_collision
+out LOUD
+out q
+== template_two_alike_expansions
+out [2, 1]
+out [2, 5]

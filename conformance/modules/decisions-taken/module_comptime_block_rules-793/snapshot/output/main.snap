@@ -1,8 +1,0 @@
-botopink-cell 1
-out == block_calls_other_module_pub
-out init first
-out init second
-out init from main
-out == block_return_refused
-out refused error: comptime-block-exit: a top-level `comptime` block runs to its end: it answers nothing and leaves nothing early
-out at src/main.bp:9:16

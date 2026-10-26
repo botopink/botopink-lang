@@ -1,7 +1,0 @@
-botopink-cell 1
-out == decorator_record_argument_string
-out refused error: type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `string`
-out at src/main.bp:19:13
-out == decorator_type_argument_string
-out refused error: type mismatch: `#[conditionalOnMissingBean]`'s `t` expects a `type`, got `string`
-out at src/main.bp:15:28

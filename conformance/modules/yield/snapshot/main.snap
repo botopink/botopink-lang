@@ -1,0 +1,4 @@
+botopink-cell 2
+== yield_label_loop
+refused error: yield-label-not-generator: `yield :<label>` names a loop, and a `yield` feeds a generator scope
+at src/main.bp:9:9

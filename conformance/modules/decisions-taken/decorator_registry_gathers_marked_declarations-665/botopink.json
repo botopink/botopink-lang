@@ -1,1 +1,1 @@
-{ "name": "decorator_registry_gathers_marked_declarations-665" }
+{"name": "decorator_registry_gathers_marked_declarations-665", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

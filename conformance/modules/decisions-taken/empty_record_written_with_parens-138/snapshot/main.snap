@@ -1,0 +1,9 @@
+botopink-cell 2
+== type_empty_braces
+refused error[type-without-field-list]: a record type writes its field list, even when it is empty
+at src/main.bp:7:17
+label write `type Name()` here
+== type_empty_record
+out 42
+out ops
+out marker
