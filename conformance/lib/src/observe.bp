@@ -9,10 +9,11 @@ import {records.parseBody, records.renderBody, records.candidate};
 pub type Observed(name: string, snap: Snap, stderr: string = "")
 
 /// A refused load's diagnostic as the `refused` / `at` / `label` / `from` records of 475, 485, 532:
-/// the whole `error…` line (`error[<code>]: ` when the diagnostic carries a code), its location when it
+/// the whole `error…` line as `botopink build` prints it — `error[<code>]: ` when the diagnostic
+/// carries a code its message does not already start with, `error: ` otherwise —, its location when it
 /// points somewhere, the label beside the caret, the `called from` frames innermost first.
 pub fn refusalOf(code: string, message: string, file: string, line: i32, column: i32, label: ?string, frames: string[]) -> Refusal {
-    val head = if (code == "")
+    val head = if (code == "" || message.startsWith(code + ":"))
         "error: " + message
     else
         "error[" + code + "]: " + message;
