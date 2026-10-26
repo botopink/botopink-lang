@@ -218,14 +218,6 @@ fn componentParamOf(t: ast.TypeRef, tparams: []const ast.GenericParam) ?[]const 
     return a.named;
 }
 
-/// Whether `name` is std context's stamp a making call is wrapped in
-/// (decisions 820, 821), by its std name or the lowering's alias.
-fn isStampCallee(name: []const u8) bool {
-    for ([_][]const u8{ "stamp", "stampPlain", "stampKeyed", "bpStamp__", "bpStampPlain__", "bpStampKeyed__" }) |n|
-        if (std.mem.eql(u8, name, n)) return true;
-    return false;
-}
-
 /// Whether the function type `t` is a component's at run time: two
 /// parameters, a scope and a place — `fn(Scope, Place)`, or the
 /// `fn(unknown, unknown)` the lowering writes for a component (P-B).
@@ -22680,12 +22672,12 @@ const Emitter = struct {
 
     /// What the component `arg` answers once run (`componentAnswerOf` of its
     /// type): through the stamp the lowering wraps a making call in
-    /// (`bpStamp__(Item(p), …)`, decisions 820, 821), whose own type says
+    /// (`stamp(Item(p), …)`, decisions 820, 821), whose own type says
     /// `Composition<unknown>`, the call it stamps.
     fn componentAnswerOfExpr(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
         if (arg == .call and arg.call.kind == .call) {
             const cc = arg.call.kind.call;
-            if (cc.receiver == null and cc.calleeExpr == null and cc.args.len > 0 and isStampCallee(cc.callee))
+            if (cc.args.len > 0 and (context_lower.isHelperCall(cc, context_lower.stamp_fn) or context_lower.isHelperCall(cc, context_lower.stamp_plain_fn) or context_lower.isHelperCall(cc, context_lower.stamp_keyed_fn)))
                 return self.componentAnswerOfExpr(cc.args[0].value.*);
         }
         const at = self.typeRefOf(arg) orelse return null;
@@ -23499,7 +23491,7 @@ const Emitter = struct {
                     // answers, or the task of it.
                     // A call the checker left no type for (`use all([])`)
                     // answers an array of `unknown`.
-                    if (cc.receiver == null and cc.calleeExpr == null and (std.mem.eql(u8, cc.callee, "allIn") or std.mem.eql(u8, cc.callee, "bpAllIn__"))) {
+                    if (context_lower.isHelperCall(cc, context_lower.all_in_fn)) {
                         const ar = self.reg_arena.allocator();
                         const carried: ast.TypeRef = if (cc.typeArgs) |ta| (if (ta.len == 1) ta[0] else break :blk null) else u: {
                             const el = ar.create(ast.TypeRef) catch break :blk null;
