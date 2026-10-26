@@ -1,0 +1,220 @@
+botopink-cell 2
+== case_alternatives_and_arrays
+out true
+out false
+out empty
+out one
+out many
+== case_arm_block_comment
+out 2
+out 11
+out 20
+out 30
+out 41
+== case_arm_ending_in_for
+out [1, 2, -1]
+out ["one", "1", "2"]
+out ["3"]
+out ["other"]
+== case_arm_lambda_value
+out a?
+out b
+== case_arm_name_is_also_a_type
+out display:block
+out display:inline
+out font-size:large
+out font-weight:bold
+out vec
+out other
+== case_bool_literal_arms
+out yes
+out no
+out on
+out off
+out many
+out one
+out none
+== case_catch_all_binder_record
+out box
+out three
+out box!
+out 6
+out pt
+== case_dot_variant_patterns
+out 3
+out 5
+== case_exhaustive_nested_variants
+out run fast
+out run slow
+out stop
+== case_function_typed_arms
+out a
+out b!
+== case_generic_variant_tuple_payload
+out 5
+out -1
+== case_or_pattern_alternatives
+out false
+out false
+out true
+out true
+out early
+out early
+out c
+out d
+out small
+out teen or hundred
+out teen or hundred
+out other
+out greeting
+out greeting
+out farewell
+out unknown
+out round
+out round
+out unit
+out unit
+out angular
+out angular
+out LOUD
+out LOUD
+out quiet
+out hidden
+out zero
+out zero
+out nonzero
+out zero or seven: 0
+out zero or seven: 7
+out else
+== case_arity_without_rest
+refused error: missing required field 'height' on type 'Rect'
+at src/main.bp:13:9
+== case_bare_name_arrow_arm
+refused error[case-bare-name-arm]: a name alone is not a pattern
+at src/main.bp:10:9
+label use _ { n -> … } to bind the matched value
+== case_constant_pattern
+refused error[case-constant-pattern]: a constant is not a pattern
+at src/main.bp:10:9
+label use _ when (x == MAX) { … } to compare with it
+== case_function_arms_arity
+refused error: 'fn' expects 1 argument(s), got 2
+at src/main.bp:21:16
+== case_literals_only
+refused error: non-exhaustive: `case` on 'i32' is not exhaustive: nothing covers the remaining values — use `_ { … }`
+at src/main.bp:7:13
+== case_missing_variant
+refused error: non-exhaustive: `case` on 'Shape' is not exhaustive: missing variant(s) Rect
+at src/main.bp:12:13
+== case_only_guarded_arms
+refused error: non-exhaustive: `case` on 'i32' is not exhaustive: nothing covers the remaining values — use `_ { … }`
+at src/main.bp:7:13
+== case_shorthand_on_unknown
+refused error: `.Some` on an `unknown` value names no enum — write the variant's full name
+at src/main.bp:13:9
+== case_tuple_label
+refused error[pattern-tuple-label]: a tuple pattern is positional — it takes no label
+at src/main.bp:8:11
+label drop the label and match by position
+== case_unknown_without_wildcard
+refused error: non-exhaustive: `case` on 'unknown' is not exhaustive: nothing covers the remaining values — use `_ { … }`
+at src/main.bp:7:13
+== case_binder_arm_string_value
+out max 320
+out three
+out age 320
+== case_payload_null_then_binder
+out filled with nothing
+out filled with a
+out empty
+== case_range_and_guard
+out digit
+out negative
+out other
+== case_range_value
+out 1
+out 1
+out 1
+out 0
+out 0
+== case_record_labelled_fields
+out rex/lab/3
+out max/pug/0
+out rex lab 3
+out pug
+out rex-lab-3
+out max-pug-0
+out dog rex lab
+out cat tom 9
+out ann:rex/lab
+out b0 5
+out a0 6
+out other
+out lab!
+out no
+== case_record_union_binder
+out dog rex 3 a,b
+out cat tom stray
+out cat kit ann
+out guarded rex
+out other
+== case_section_subtype
+out font-weight:bold
+out font-style:italic
+== case_type_guard_arms
+out impossible
+out zero
+out something else
+== case_value_string_arms
+out five
+out five
+out other
+== case_value_union_binding
+out number 8
+out text hi
+== case_values
+out a point
+out circle 3
+out rect 2x5
+== case_variant_fields
+out 4.0
+== case_wide_integer_scrutinee
+out units
+out mid
+out top
+out none
+out top
+out units
+out top
+out top
+out one-two
+out big-first
+out big-second
+out other
+out both-units
+out first-top
+out second-top
+out other
+out all
+out float
+out wide
+out other
+out units
+out far
+out tens
+out one and a half
+out other
+out five
+out seven
+out other
+out other
+out big
+out negative
+out small
+out one
+out other
+out three
+out four
+out nine
+out other
+out huge
