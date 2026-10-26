@@ -1,0 +1,10 @@
+botopink-cell 1
+out == typeinfo_all_behavior_none_shared
+out refused error: an `unknown` value cannot be used as another type without testing it
+out at src/main.bp:39:33
+out == typeinfo_all_behavior_typed
+out 2
+out Users#2 Db#1
+out db up
+out == typeinfo_all_with_decorator
+out about /about

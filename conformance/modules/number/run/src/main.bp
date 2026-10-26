@@ -1,7 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.number_literal_erlang_spellings.runCase();
-    cases.number_literal_method.runCase();
-    cases.number_method_call.runCase();
-}

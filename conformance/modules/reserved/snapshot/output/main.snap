@@ -1,0 +1,13 @@
+botopink-cell 1
+out == reserved_word_as_binding_name
+out refused error[reserved-word-as-name]: a reserved word cannot be a name
+out at src/main.bp:6:9
+out label reserved word `unknown`
+out == reserved_word_field_name
+out refused error[reserved-word-as-name]: a reserved word cannot be a name
+out at src/main.bp:8:15
+out label reserved word `from`
+out == reserved_word_param_name
+out refused error[reserved-word-as-name]: a reserved word cannot be a name
+out at src/main.bp:8:27
+out label reserved word `from`

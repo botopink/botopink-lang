@@ -1,6 +1,0 @@
-pub mod external_lowercase_target;
-pub mod external_std_binding_refused;
-pub mod external_wasm_prefixed_fn_refused;
-pub mod external_wasm_prefixed_op_refused;
-pub mod external_wasm_prefixed_std_refused;
-pub mod external_wasm_prefixed_wasi_refused;

@@ -1,7 +1,0 @@
-pub mod defer_block_end_reverse_order;
-pub mod defer_in_loop_break_continue;
-pub mod defer_panic_attempt_catches;
-pub mod defer_reads_latest_value;
-pub mod defer_return_value_before_defers;
-pub mod defer_scope_is_block;
-pub mod defer_try_catch_inside;

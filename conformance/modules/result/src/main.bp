@@ -1,0 +1,39 @@
+//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
+//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn runCase(comptime name: string) -> void {
+    print("== " + name + " comptime");
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            print("== " + name);
+            for (r.diagnostics) { d ->
+                val bracket = d.code != "" && !d.message.startsWith(d.code + ":");
+                print(if (bracket) "refused error[" + d.code + "]: " + d.message else "refused error: " + d.message);
+                print("at " + d.file + ":" + d.line.toString() + ":" + d.column.toString());
+                if (d.label) { l -> print("label " + l); }
+            }
+        });
+        return;
+    };
+    compiler.init({ ->
+        print("== " + name);
+        try loaded.run() catch { f -> print("abort " + f.message) }
+    });
+}
+
+comptime {
+    runCase("result_four_ways");
+    runCase("result_i64_map_flat_map");
+    runCase("result_method_throw");
+    runCase("result_pattern_beside_enum_variant");
+    runCase("result_string_payloads");
+    runCase("result_throw_try");
+    runCase("result_try_each_operand");
+    runCase("result_field_read");
+    runCase("result_unknown_method");
+    runCase("result_void_falls_off_end");
+}
+
+pub fn main() -> void {}

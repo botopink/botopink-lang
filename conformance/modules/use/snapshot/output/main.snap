@@ -1,0 +1,21 @@
+botopink-cell 1
+out == use_at_module_level
+out refused error: use-of-non-context-fn: `use` not allowed: function returns 'void', which is not a `Component<R>`
+out at src/main.bp:10:9
+out == use_future_without_owner
+out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Page' carries no `component` marker (it returns 'Async<Element>'): write `component fn`
+out at src/main.bp:15:13
+out == use_in_plain_fn
+out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'label' carries no `component` marker (it returns 'string'): write `component fn`
+out at src/main.bp:10:13
+out == use_tuple_arity
+out refused error: use-tuple-arity: `val #(…)` binds 1 name(s) but the hook yields a tuple of 2
+out at src/main.bp:16:5
+out == use_tuple_of_non_tuple
+out refused error: use-tuple-arity: `val #(…)` binds 2 name(s) but the hook yields 'i32', which is not a tuple
+out at src/main.bp:12:5
+out == use_without_component
+out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Widget' carries no `component` marker (it returns 'Element'): write `component fn`
+out at src/main.bp:12:13
+out == use_one_base
+out 33

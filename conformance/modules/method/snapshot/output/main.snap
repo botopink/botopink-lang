@@ -1,0 +1,7 @@
+botopink-cell 1
+out == method_extra_argument
+out refused error: 'get' expects 1 argument(s), got 2
+out at src/main.bp:10:41
+out == method_missing_argument
+out refused error: 'set' expects 3 argument(s), got 2
+out at src/main.bp:15:41

@@ -1,2 +1,0 @@
-pub mod program_array_behavior_default;
-pub mod program_primitive_behavior_extends_std;

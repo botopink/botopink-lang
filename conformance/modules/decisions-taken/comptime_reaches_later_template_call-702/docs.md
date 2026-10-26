@@ -8,6 +8,6 @@ the program is refused at `comptime late()`, the message naming the call — `ta
 `comptime` values; then it goes, and `second` reads `<b>`. `tag` is in
 [draft/comptime/tags.bp](draft/comptime/tags.bp).
 
-Cells that also bear on it: `modules/comptime/refused/src/cases/comptime_template_call_declared_after`, `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/comptime_reaches_package_template`.
+Cells that also bear on it: `modules/comptime/cases/comptime_template_call_declared_after`, `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/comptime_reaches_package_template`.
 
 [draft/main.bp](draft/main.bp)
