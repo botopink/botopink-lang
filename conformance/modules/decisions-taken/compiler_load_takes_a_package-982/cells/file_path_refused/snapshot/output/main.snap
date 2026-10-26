@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-not-a-package: `compiler.load("packages/fine/src/main.bp")` names a file, not a package directory
+at src/main.bp:7:41

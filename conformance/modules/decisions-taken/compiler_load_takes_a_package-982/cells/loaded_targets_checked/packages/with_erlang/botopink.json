@@ -1,0 +1,1 @@
+{ "name": "with_erlang", "targets": ["commonJS", "erlang"] }

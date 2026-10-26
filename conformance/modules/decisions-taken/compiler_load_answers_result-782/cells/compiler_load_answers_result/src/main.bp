@@ -7,19 +7,19 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val fine = comptime compiler.load("src/cases/fine.bp");
+    val fine = comptime compiler.load("packages/fine");
     print(fine.isOk());
     print(fine.isError());
-    val broken = comptime compiler.load("src/cases/broken.bp");
+    val broken = comptime compiler.load("packages/broken");
     print(broken.isOk());
     print(broken.isError());
     // `Ok` runs no handler.
-    try comptime compiler.load("src/cases/fine.bp") catch { r ->
+    try comptime compiler.load("packages/fine") catch { r ->
         print("never: " + r.diagnostics.length.toString());
         r.module
     }
     // `Error` holds at least one refusal.
-    try comptime compiler.load("src/cases/broken.bp") catch { r ->
+    try comptime compiler.load("packages/broken") catch { r ->
         print(r.diagnostics.length > 0);
         r.module
     }

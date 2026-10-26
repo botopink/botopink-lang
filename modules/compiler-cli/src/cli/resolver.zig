@@ -371,7 +371,8 @@ fn loadedFiles(
     return out;
 }
 
-/// The files of `files` that `text` loads by a string literal, onto `pending`.
+/// The files of `files` that `text` loads by a string literal — every file
+/// under a loaded package's directory (decision 982) — onto `pending`.
 fn addLoaded(
     sa: std.mem.Allocator,
     text: []const u8,
@@ -385,8 +386,16 @@ fn addLoaded(
     const program = p.parse(sa) catch return;
     for (bp.load.literalPaths(sa, program) catch return) |path| {
         const rel = if (std.mem.startsWith(u8, path, "./")) path[2..] else path;
-        for (files) |f| if (samePath(f, rel)) try pending.append(sa, f);
+        for (files) |f| if (samePath(f, rel) or underPath(f, rel)) try pending.append(sa, f);
     }
+}
+
+/// Whether package-relative `a` is a file under directory `dir`.
+fn underPath(a: []const u8, dir: []const u8) bool {
+    const x = if (std.mem.startsWith(u8, a, "./")) a[2..] else a;
+    const d = std.mem.trimEnd(u8, dir, "/");
+    if (d.len == 0 or x.len <= d.len or !isSep(x[d.len])) return false;
+    return samePath(x[0..d.len], d);
 }
 
 /// Whether two package-relative paths name one file, separators aside.

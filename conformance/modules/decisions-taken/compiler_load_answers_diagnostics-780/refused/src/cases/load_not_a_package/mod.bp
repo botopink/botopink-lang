@@ -1,0 +1,11 @@
+//// Decisions 780, 982 — a path of `compiler.load` that names no package (here a directory with
+//// no `botopink.json`) is a refusal of the program that loads, at the argument — never an
+//// answer of the load: `load-not-a-package`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    try comptime compiler.load("packages/nothing_here") catch { r ->
+        print(r.diagnostics.length);
+    }
+}

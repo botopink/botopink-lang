@@ -1,7 +1,7 @@
 botopink-cell 1
 out true
 out name=fine
-out path=src/cases/fine/mod.bp
+out path=packages/fine
 out true
-out refused src/cases/broken/mod.bp
+out refused packages/broken
 out refused name=broken

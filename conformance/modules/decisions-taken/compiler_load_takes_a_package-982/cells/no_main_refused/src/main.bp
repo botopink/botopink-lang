@@ -1,0 +1,9 @@
+//// Decision 982 (2) — a directory holding a `botopink.json` but no `src/main.bp` is no package:
+//// `load-not-a-package` at the argument, naming what is missing.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val loaded = comptime compiler.load("packages/empty");
+    print(loaded.isOk());
+}

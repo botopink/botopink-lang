@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: load-no-main: `run()` is called on `src/cases/helper/mod.bp`, which declares no `main`
+refused error: load-no-main: `run()` is called on `packages/helper`, which declares no `main`
 at src/main.bp:10:19

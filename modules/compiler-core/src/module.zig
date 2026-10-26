@@ -65,6 +65,10 @@ pub const PackageFiles = struct {
     /// the files the package's analysis read (decision 519, 144 B-158: a
     /// `compiler.load` file outside `src`).
     log: ?*ReadLog = null,
+    /// Decision 982 — the directory of a package `compiler.load` loads,
+    /// relative to `root`: every `rel` read through this reader is under it,
+    /// and the log notes it as `root`'s path. Empty for the package itself.
+    dir: []const u8 = "",
 
     pub const ReadError = error{ FileNotFound, Unreadable, OutOfMemory };
 
@@ -73,10 +77,19 @@ pub const PackageFiles = struct {
         return .{ .root = root, .io = io, .read = readDisk };
     }
 
+    /// The reader of the package at `sub`, a directory of this one
+    /// (`compiler.load`'s, decision 982): its paths are relative to `sub`.
+    pub fn under(self: PackageFiles, arena: std.mem.Allocator, sub: []const u8) error{OutOfMemory}!PackageFiles {
+        var out = self;
+        out.dir = if (self.dir.len == 0) try arena.dupe(u8, sub) else try std.fs.path.join(arena, &.{ self.dir, sub });
+        return out;
+    }
+
     /// The bytes of `rel` under the package's root.
     pub fn readFile(self: PackageFiles, arena: std.mem.Allocator, rel: []const u8) ReadError![]const u8 {
-        if (self.log) |l| l.note(rel);
-        return self.read(self.io, arena, self.root, rel);
+        const full = if (self.dir.len == 0) rel else std.fs.path.join(arena, &.{ self.dir, rel }) catch return error.OutOfMemory;
+        if (self.log) |l| l.note(full);
+        return self.read(self.io, arena, self.root, full);
     }
 
     fn readDisk(io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const u8 {

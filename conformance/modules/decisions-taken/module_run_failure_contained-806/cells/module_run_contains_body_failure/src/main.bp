@@ -8,7 +8,7 @@ import {compiler, io.terminal.print} from "std";
 // Expanded where the block calls it (decision 788): its load and its `compiler.init`
 // are the block's.
 fn runCase(comptime name: string) -> void {
-    val loaded = comptime compiler.load("src/cases/" + name + "/mod.bp");
+    val loaded = comptime compiler.load("packages/" + name);
     case loaded {
         Ok(m) -> compiler.init({ ->
             print("== " + name);

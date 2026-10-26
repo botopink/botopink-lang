@@ -2,19 +2,19 @@ botopink-cell 1
 out 1
 out code=
 out message=type mismatch: expected i32, got string
-out at=src/cases/broken.bp:4:18
+out at=src/main.bp:4:18
 out label=none
 out 1
 out code=
 out message=this token cannot appear here
-out at=src/cases/unclosed.bp:2:15
+out at=src/main.bp:2:15
 out label=unexpected `;`
 out 2
 out code=
 out message=type mismatch: expected i32, got string
-out at=src/cases/two_modules/helper.bp:2:14
+out at=src/helper.bp:2:14
 out label=none
 out code=import-of-failed-module
-out message=import-of-failed-module: `twice` comes from `helper`, which failed to check — its own errors are reported there (src/cases/two_modules/helper.bp)
-out at=src/cases/two_modules/main.bp:3:9
+out message=import-of-failed-module: `twice` comes from `helper`, which failed to check — its own errors are reported there (src/helper.bp)
+out at=src/main.bp:3:9
 out label=none

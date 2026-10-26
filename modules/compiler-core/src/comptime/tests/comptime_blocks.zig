@@ -121,7 +121,7 @@ test "decision 789 (4): a handled load that returns is read as a `case` on its a
     var lx = Lexer.init(
         \\import {compiler, io.terminal.print} from "std";
         \\fn runCase(comptime name: string) -> void {
-        \\    val loaded = try comptime compiler.load("src/cases/" + name + "/mod.bp") catch { r ->
+        \\    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
         \\        compiler.init({ -> print("refused " + name) });
         \\        return;
         \\    };

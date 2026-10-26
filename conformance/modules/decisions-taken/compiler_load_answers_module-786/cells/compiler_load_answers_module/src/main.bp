@@ -12,14 +12,14 @@ fn show(m: compiler.Module) -> void {
 
 pub fn main() -> void {
     // A file that compiles: `Ok(m)`.
-    val fine = comptime compiler.load("src/cases/fine/mod.bp");
+    val fine = comptime compiler.load("packages/fine");
     print(fine.isOk());
     case fine {
         Ok(m) -> show(m);
         Error(r) -> print("never");
     }
     // A file that refuses: `Error(r)`, the same `Module` beside its refusals.
-    val broken = comptime compiler.load("src/cases/broken/mod.bp");
+    val broken = comptime compiler.load("packages/broken");
     case broken {
         Ok(m) -> print("never");
         Error(r) {

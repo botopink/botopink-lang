@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 comptime {
-    val loaded = comptime compiler.load("src/cases/once/mod.bp");
+    val loaded = comptime compiler.load("packages/once");
     case loaded {
         Ok(m) -> compiler.init({ ->
             try m.run() catch { f ->

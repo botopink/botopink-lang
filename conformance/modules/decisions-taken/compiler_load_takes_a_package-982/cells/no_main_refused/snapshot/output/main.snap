@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-not-a-package: `compiler.load("packages/empty")` names a package with no `src/main.bp`
+at src/main.bp:7:41

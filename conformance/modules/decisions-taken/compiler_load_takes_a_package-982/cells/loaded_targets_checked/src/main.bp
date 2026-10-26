@@ -1,0 +1,19 @@
+//// Decisions 982 (3), 833 — a loaded package is checked for the targets its own manifest declares,
+//// never the caller's: `io.process.start` is commonJS's alone (906), so the package declaring
+//// `commonJS` only compiles, and the one also declaring `erlang` is refused for erlang.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val nodeOnly = comptime compiler.load("packages/node_only");
+    print("node_only " + nodeOnly.isOk().toString());
+    val withErlang = comptime compiler.load("packages/with_erlang");
+    case withErlang {
+        Ok(m) -> print("never");
+        Error(r) {
+            for (r.diagnostics) { d ->
+                print("with_erlang refused " + d.code + " at " + d.file + ":" + d.line.toString());
+            }
+        }
+    }
+}

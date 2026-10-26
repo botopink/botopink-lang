@@ -1,4 +1,4 @@
 botopink-cell 1
-out handled src/cases/broken.bp:2
-out propagated src/cases/broken.bp:2
+out handled src/main.bp:2
+out propagated src/main.bp:2
 out fine loaded

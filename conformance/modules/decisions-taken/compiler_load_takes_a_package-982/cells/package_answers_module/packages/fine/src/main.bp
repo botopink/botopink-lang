@@ -1,0 +1,7 @@
+import {io.terminal.print} from "std";
+
+mod helper;
+
+pub fn main() -> void {
+    print(helper.greeting());
+}

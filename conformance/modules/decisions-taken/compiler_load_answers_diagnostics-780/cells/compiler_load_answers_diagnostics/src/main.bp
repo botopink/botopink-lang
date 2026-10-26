@@ -17,7 +17,7 @@ fn show(d: compiler.Diagnostic) -> void {
 
 pub fn main() -> void {
     // A type error: one refusal, its message naming no code, no label.
-    try comptime compiler.load("src/cases/broken.bp") catch { r ->
+    try comptime compiler.load("packages/broken") catch { r ->
         print(r.diagnostics.length);
         for (r.diagnostics) { d ->
             show(d);
@@ -25,7 +25,7 @@ pub fn main() -> void {
         r.module
     }
     // A parse error: its code and the label beside its caret.
-    try comptime compiler.load("src/cases/unclosed.bp") catch { r ->
+    try comptime compiler.load("packages/unclosed") catch { r ->
         print(r.diagnostics.length);
         for (r.diagnostics) { d ->
             show(d);
@@ -34,7 +34,7 @@ pub fn main() -> void {
     }
     // The `mod` tree beside the loaded file is its package's: a refusal in
     // `helper.bp` is located there.
-    try comptime compiler.load("src/cases/two_modules/main.bp") catch { r ->
+    try comptime compiler.load("packages/two_modules") catch { r ->
         print(r.diagnostics.length);
         for (r.diagnostics) { d ->
             show(d);

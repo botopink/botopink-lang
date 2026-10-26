@@ -4291,15 +4291,18 @@ a decorator registers its own executor.
 
 ### `compiler.load`
 
-`comptime compiler.load(path)` compiles a file of the package at build, as the entry of a
-package of its own — the caller's manifest, the `mod` tree beside the file, the build's target
-(decision 780) — and answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
+`comptime compiler.load(path)` compiles a package at build (decisions 780, 982): `path` names a
+directory, relative to the caller's `botopink.json`, holding its own `botopink.json` and
+`src/main.bp`; it is compiled from its `src/main.bp` under its own manifest — its name, its targets,
+its dependencies, never the caller's — and checked for every target that manifest declares (every
+target when it declares none). A path naming a file (`compiler.load("example/mod.bp")`), a directory
+with no `botopink.json` or one with no `src/main.bp` is `load-not-a-package`, at the argument. It answers `Result<compiler.Module, compiler.Refused>` (decisions 782, 786):
 `Ok(m)` when it compiles, `Error(r)` when it is refused, `r.module` the same `Module` and
 `r.diagnostics` its refusals in the order `botopink build` prints them, never empty. A
-`Diagnostic` is the refusal as printed: `message` the text after `error: `, `file`, `line` and
-`column` where it points, `label` the text beside the caret.
+`Diagnostic` is the refusal as printed: `message` the text after `error: `, `file` (relative to
+the loaded package's root), `line` and `column` where it points, `label` the text beside the caret.
 
-The loaded file never joins the program that loads it — unless a `run()` reaches it, below: no
+The loaded package never joins the program that loads it — unless a `run()` reaches it, below: no
 module declares it, the package's module tree leaves it out, and its refusals never refuse the
 program. The answer is read as
 every `Result` is (decision 783): `try comptime compiler.load(path) catch { r -> … }` handles
@@ -4308,12 +4311,16 @@ the refusals — the region's value is the `Module`, so the handler ends with on
 function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. There is no `compiler.snapshot`: comparing an answer is
 `botopink cell check`'s.
 
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/package_answers_module -->
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/file_path_refused -->
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/no_main_refused -->
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/loaded_targets_checked -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
 <!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->
 
-`botopink test` leaves them out the same way: a `test/` module that loads a file under `src/`
-reads its answer, and the file is no failed module of the package under test.
+`botopink test` leaves them out the same way: a `test/` module that loads a package reads its
+answer, and no file of it is a failed module of the package under test.
 
 <!-- example: test/compiler_load_in_a_test_suite -->
 
@@ -4322,9 +4329,9 @@ A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `comp
 
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_catch_without_try -->
 
-The `Module` (decision 786) is the loaded file's, on both sides: `name()` the directory it sits in,
-`path()` the file relative to the package (as a `Diagnostic`'s `file`). It carries no target
-(decision 805 (4)) and no dependency list: the loaded package still resolves its own to compile.
+The `Module` (decisions 786, 982 (4)) is the loaded package's, on both sides: `name()` its manifest's
+name, `path()` the directory as written (`cases/<case>`). It carries no target (decision 805 (4))
+and no dependency list: the loaded package still resolves its own to compile.
 It is an opaque type (decision 811 (4)): its fields are read through `name()` and `path()`.
 
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
@@ -4376,15 +4383,15 @@ receiver the build traces to no `compiler.load` of the body — a parameter, a `
 
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/run_on_module_alias -->
 
-The path follows `@embed`'s rules: relative to the package's `botopink.json`, no
+The path follows `@embed`'s rules: relative to the caller's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`
-segment `load-path-outside-package` and a path that names no file of the package
-`load-file-missing`, each a refusal of the program that loads, at the argument; a
+segment `load-path-outside-package` and a path that names no package
+`load-not-a-package`, each a refusal of the program that loads, at the argument; a
 compiler handed no reader refuses every load, `load-no-reader`.
 
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_path_absolute -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_path_outside_package -->
-<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_file_missing -->
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/refused/src/cases/load_not_a_package -->
 
 ### `compiler.ast`
 

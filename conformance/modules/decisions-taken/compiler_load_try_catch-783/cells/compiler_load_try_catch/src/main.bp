@@ -8,21 +8,21 @@ import {compiler, io.terminal.print} from "std";
 
 // Propagated: the load's `Error(r)` is this function's.
 fn checked() -> Result<void, compiler.Refused> {
-    try comptime compiler.load("src/cases/broken.bp");
+    try comptime compiler.load("packages/broken");
     print("not reached");
     return;
 }
 
 // A file that compiles propagates nothing.
 fn passes() -> Result<void, compiler.Refused> {
-    try comptime compiler.load("src/cases/fine.bp");
+    try comptime compiler.load("packages/fine");
     print("fine loaded");
     return;
 }
 
 pub fn main() -> void {
     // Handled in the region.
-    try comptime compiler.load("src/cases/broken.bp") catch { r ->
+    try comptime compiler.load("packages/broken") catch { r ->
         for (r.diagnostics) { d ->
             print("handled " + d.file + ":" + d.line.toString());
         }

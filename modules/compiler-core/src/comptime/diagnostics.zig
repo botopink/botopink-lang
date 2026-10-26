@@ -330,6 +330,9 @@ pub const load_path_absolute: []const u8 = "load-path-absolute";
 pub const load_path_outside_package: []const u8 = "load-path-outside-package";
 /// Decision 780 — the file `compiler.load` names is not in the package.
 pub const load_file_missing: []const u8 = "load-file-missing";
+/// Decision 982 (2) — `compiler.load`'s path names no package: a file, a
+/// directory with no `botopink.json`, or one with no `src/main.bp`.
+pub const load_not_a_package: []const u8 = "load-not-a-package";
 /// Decision 780 — `compiler.load` in a compiler handed no reader.
 pub const load_no_reader: []const u8 = "load-no-reader";
 /// Decision 780 — `compiler.load` takes one argument, the path.
@@ -1058,6 +1061,7 @@ pub const all_codes = [_][]const u8{
     load_path_absolute,
     load_path_outside_package,
     load_file_missing,
+    load_not_a_package,
     load_no_reader,
     load_arguments,
     load_cycle,

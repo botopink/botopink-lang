@@ -1,0 +1,4 @@
+botopink-cell 1
+out ok name=fine_package path=packages/fine
+out refused name=broken_package path=packages/broken
+out at src/main.bp:2

@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: load-not-a-package: `compiler.load("packages/nothing_here")` names no directory holding a `botopink.json`
+at src/cases/load_not_a_package/mod.bp:8:32

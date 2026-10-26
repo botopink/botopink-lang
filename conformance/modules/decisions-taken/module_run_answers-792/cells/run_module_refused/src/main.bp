@@ -4,7 +4,7 @@
 import {compiler, io.terminal.print} from "std";
 
 comptime {
-    val loaded = comptime compiler.load("src/cases/broken/mod.bp");
+    val loaded = comptime compiler.load("packages/broken");
     case loaded {
         Ok(m) -> print("never");
         Error(r) -> compiler.init({ ->

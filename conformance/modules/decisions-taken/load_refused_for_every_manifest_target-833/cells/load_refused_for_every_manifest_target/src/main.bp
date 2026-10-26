@@ -8,9 +8,9 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() -> void {
-    val walks = comptime compiler.load("src/cases/walks.bp");
+    val walks = comptime compiler.load("packages/walks");
     print(walks.isError());
-    try comptime compiler.load("src/cases/walks.bp") catch { r ->
+    try comptime compiler.load("packages/walks") catch { r ->
         print(r.diagnostics.length);
         print(r.diagnostics[0]?.code);
         r.module

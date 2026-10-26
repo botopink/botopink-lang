@@ -1,13 +1,16 @@
-//! Decisions 780–783, 786 — `comptime compiler.load(path)`: a file of the
-//! package compiled at build as the entry of a package of its own, answered
-//! as its `Module` and its refusals.
+//! Decisions 780–783, 786, 982 — `comptime compiler.load(path)`: a package
+//! directory (its own `botopink.json` and `src/main.bp`, `load-not-a-package`
+//! otherwise) compiled at build under its own manifest, answered as its
+//! `Module` and its refusals.
 //!
 //! - `parser/compiler_surface.zig` reads `compiler.load(p)` onto the builtin
 //!   `surface.load_builtin`; the checker (`infer.zig` `inferLoadBuiltin`, beside
 //!   `@embed`'s) reads the path by `@embed`'s rules and calls `compileFile`.
-//! - `compileFile` gathers the file's own `mod` tree beside it through the
-//!   package's reader (`Module.files`), adds the caller build's dependency
-//!   modules (the caller's manifest), and runs `comptime.compile` on them —
+//! - `compileFile` gathers the package's `src/main.bp` and its `mod` tree
+//!   through a reader rooted at the package (`PackageFiles.under`), so a
+//!   `Diagnostic`'s `file` is relative to it; reads its `botopink.json` — its
+//!   name (`Module.name`), its targets (833's check) and the dependencies it
+//!   names, each the build's module of that package —, and runs `comptime.compile` on them —
 //!   no target, which comptime never reads (decision 798 (4)): a refusal
 //!   that depends on the target is the emit's — captured: nothing is printed, and the caller's
 //!   program never sees the modules. Each refused module is one `Diagnostic`,
@@ -18,8 +21,9 @@
 //!   declares in the module that loads (`Ok(m)` for `[]`, `Error(Refused(m,
 //!   ds))` otherwise, decisions 782, 786), std's `compiler.Module`,
 //!   `compiler.Refused` and `compiler.Diagnostic` imported under names no
-//!   source writes. The `Module` is the loaded file's (`Loaded`): `name` its
-//!   directory's, `path` the file — no target (decision 805 (4)).
+//!   source writes. The `Module` is the loaded package's (`Loaded`): `name`
+//!   its manifest's, `path` the directory as written — no target (decision
+//!   805 (4)).
 //! - A nested compile re-enters nothing of std's one-time initialisation: it
 //!   runs only once std's template is ready (`comptime.stdlibTemplateReady`),
 //!   and a file that loads itself through a chain of loads is refused
@@ -110,6 +114,8 @@ pub fn isLoadedPackage(package: []const u8) bool {
 /// and what a `run` of it needs.
 pub const Entry = struct {
     path: []const u8,
+    /// Decision 982 (4) — the loaded package's manifest name.
+    name: []const u8 = "",
     /// The refusals, empty when the file compiled.
     diagnostics: []const Diagnostic,
     /// The file and its `mod` tree (`gatherTree`), children first, each
@@ -324,17 +330,16 @@ fn parseShifted(arena: std.mem.Allocator, src: []const u8, first: usize, col: ?u
 
 // ── the answer as code ───────────────────────────────────────────────────────
 
-/// The loaded file's `Module` (decisions 786 (1), 805 (4)).
+/// The loaded package's `Module` (decisions 786 (1), 805 (4), 982 (4)).
 pub const Loaded = struct {
-    /// The file, relative to the package's `botopink.json`.
+    /// The package's directory as written (`cases/<case>`).
     path: []const u8,
 
-    /// `name`: the directory the file sits in, by its last segment
-    /// (`src/cases/<case>/mod.bp` → `<case>`); `""` for a file at the
-    /// package's root.
+    /// `name`: the loaded package's manifest name, as its load read it;
+    /// `""` before the load answered.
     pub fn name(self: Loaded) []const u8 {
-        const dir = std.fs.path.dirnamePosix(self.path) orelse return "";
-        return std.fs.path.basenamePosix(dir);
+        const e = entryOf(self.path) orelse return "";
+        return e.name;
     }
 };
 
@@ -881,8 +886,9 @@ fn writeDiagnostics(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8),
 // ── the nested compile ───────────────────────────────────────────────────────
 
 pub const Request = struct {
-    /// The file, relative to the package's `botopink.json`; its path rules
-    /// already checked (`embed.checkPath`).
+    /// The loaded package's directory, relative to the caller's
+    /// `botopink.json` (decision 982 (1)); its path rules already checked
+    /// (`embed.checkPath`).
     path: []const u8,
     files: PackageFiles,
     io: std.Io,
@@ -890,18 +896,67 @@ pub const Request = struct {
 };
 
 pub const Answer = union(enum) {
-    /// The refusals, in order; empty when the file compiles.
+    /// The refusals, in order; empty when the package compiles.
     diagnostics: []const Diagnostic,
-    /// The file is not one of the package.
-    missing,
+    /// Decision 982 (2) — the path names no package: what it lacks.
+    not_a_package: NotAPackage,
     /// The file is already being loaded on this thread.
     cycle,
     /// std's one-time initialisation is running: no compile may start.
     std_initialising,
 };
 
-/// Compile `req.path` as the entry of a package of its own and answer its
-/// refusals, allocated with `arena`.
+/// Decision 982 (2) — why a path is no package: it names a file, or a
+/// directory with no `botopink.json`, or one with no `src/main.bp`.
+pub const NotAPackage = enum {
+    file,
+    no_manifest,
+    no_main,
+
+    pub fn text(self: NotAPackage) []const u8 {
+        return switch (self) {
+            .file => "names a file, not a package directory",
+            .no_manifest => "names no directory holding a `botopink.json`",
+            .no_main => "names a package with no `src/main.bp`",
+        };
+    }
+};
+
+/// The entry every loaded package is compiled from (decision 982 (1)).
+pub const package_main = "src/main.bp";
+
+/// What a loaded package's own `botopink.json` says (decision 982 (1), (3)):
+/// its name, its targets (null when it declares none) and the names of its
+/// dependencies.
+const Manifest = struct {
+    name: []const u8 = "",
+    targets: ?moduleMod.Targets = null,
+    dependencies: []const []const u8 = &.{},
+};
+
+/// `text`, a loaded package's `botopink.json`, or the message of why it is
+/// no manifest.
+fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Manifest, bad: []const u8 } {
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch
+        return .{ .bad = "botopink.json is not valid JSON" };
+    if (parsed != .object) return .{ .bad = "botopink.json is not a JSON object" };
+    var m: Manifest = .{};
+    if (parsed.object.get("name")) |v| if (v == .string) {
+        m.name = v.string;
+    };
+    if (parsed.object.get("targets")) |v| if (v == .array) {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (v.array.items) |t| if (t == .string) names.append(arena, t.string) catch return .{ .bad = "out of memory" };
+        m.targets = moduleMod.Targets.of(names.items);
+    };
+    if (parsed.object.get("dependencies")) |v| if (v == .object) {
+        m.dependencies = v.object.keys();
+    };
+    return .{ .ok = m };
+}
+
+/// Compile the package at `req.path` (decision 982) from its `src/main.bp`,
+/// under its own manifest, and answer its refusals, allocated with `arena`.
 pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const comptimeMod = @import("../comptime.zig");
     if (!comptimeMod.stdlibTemplateReady()) return .std_initialising;
@@ -915,30 +970,56 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     defer scratch_state.deinit();
     const scratch = scratch_state.allocator();
 
+    // Decision 982 (2) — a package directory: its own `botopink.json` and
+    // `src/main.bp`; a file, or a directory short of either, is none.
+    if (exists(scratch, req.files, req.path)) return .{ .not_a_package = .file };
+    const pkg_files = try req.files.under(arena, req.path);
+    const manifest_text = pkg_files.readFile(scratch, "botopink.json") catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return .{ .not_a_package = .no_manifest },
+    };
+    if (!exists(scratch, pkg_files, package_main)) return .{ .not_a_package = .no_main };
+
     var refusals: std.ArrayListUnmanaged(Diagnostic) = .empty;
     var main_of: MainOf = .{};
-    const own = gatherTree(scratch, arena, req, &refusals, &main_of) catch |err| switch (err) {
-        error.FileNotFound => return .missing,
+    const manifest = switch (readManifest(scratch, manifest_text)) {
+        .ok => |m| m,
+        .bad => |why| {
+            try refusals.append(arena, .{ .code = "", .message = try arena.dupe(u8, why), .file = "botopink.json", .line = 0, .column = 0 });
+            return .{ .diagnostics = try remember(req.path, "", refusals.items, &.{}, main_of) };
+        },
+    };
+    var pkg_req = req;
+    pkg_req.files = pkg_files;
+    const own = gatherTree(scratch, arena, pkg_req, package_main, &refusals, &main_of) catch |err| switch (err) {
+        error.FileNotFound => return .{ .not_a_package = .no_main },
         else => |e| return e,
     };
-    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, refusals.items, own, main_of) };
+    if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, refusals.items, own, main_of) };
 
-    // The caller's manifest: its targets, its reader and its dependencies.
+    // Decision 982 (1), (3) — the loaded package's own manifest: its targets
+    // and its dependencies (each the one the build resolved under that name;
+    // one the build has none of is left out, and the loaded package's import
+    // of it is its own refusal). The wasm host stays the build's.
     const caller = build_modules;
-    var targets: ?moduleMod.Targets = null;
+    const targets = manifest.targets;
     var wasm_host: ast.WasmHost = .wasi;
     for (caller) |m| if (m.package.len == 0) {
-        targets = m.targets;
         wasm_host = m.wasm_host;
         break;
     };
     var modules: std.ArrayListUnmanaged(Module) = .empty;
-    for (caller) |m| if (m.package.len > 0) try modules.append(scratch, m);
+    for (caller) |m| if (m.package.len > 0) {
+        const named = for (manifest.dependencies) |d| {
+            if (std.mem.eql(u8, d, m.package)) break true;
+        } else false;
+        if (named) try modules.append(scratch, m);
+    };
     for (own) |m| {
         var mm = m;
         mm.targets = targets;
         mm.wasm_host = wasm_host;
-        mm.files = req.files;
+        mm.files = pkg_files;
         try modules.append(scratch, mm);
     }
 
@@ -958,8 +1039,9 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         if (!ownModule) continue;
         if (try diagnosticOf(arena, o)) |d| try refusals.append(arena, d);
     }
-    // Decision 833 — the target refusals, for every target the caller's
-    // manifest declares (all when it declares none), after the analysis ones.
+    // Decisions 833, 982 (3) — the target refusals, for every target the
+    // loaded package's manifest declares (all when it declares none), after
+    // the analysis ones.
     const declared = targets orelse moduleMod.Targets{ .commonJS = true, .typescript = true, .erlang = true, .beam = true, .wasm = true };
     var lookups: [3][]const u8 = undefined;
     var n_lookups: usize = 0;
@@ -989,14 +1071,14 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             else => {},
         }
     };
-    return .{ .diagnostics = try remember(req.path, refusals.items, own, main_of) };
+    return .{ .diagnostics = try remember(req.path, manifest.name, refusals.items, own, main_of) };
 }
 
 const MainOf = struct { has: bool = false, result: bool = false };
 
 /// `path`'s entry in this compile's state, copied into the state's arena;
 /// its diagnostics.
-fn remember(path: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
+fn remember(path: []const u8, name: []const u8, ds: []const Diagnostic, own: []const Module, main_of: MainOf) ![]const Diagnostic {
     const a = stateArena();
     const dcopy = try a.alloc(Diagnostic, ds.len);
     for (ds, 0..) |d, i| dcopy[i] = .{
@@ -1016,7 +1098,7 @@ fn remember(path: []const u8, ds: []const Diagnostic, own: []const Module, main_
         .files = m.files,
     };
     const key = try a.dupe(u8, path);
-    try state.entries.put(a, key, .{ .path = key, .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
+    try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result });
     return dcopy;
 }
 
@@ -1025,12 +1107,12 @@ fn remember(path: []const u8, ds: []const Diagnostic, own: []const Module, main_
 /// logical path as the CLI's resolver names a package's modules. A `mod`
 /// naming no file, or two, is a refusal of the tree (`refusals`), as the
 /// resolver's.
-fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request, refusals: *std.ArrayListUnmanaged(Diagnostic), main_of: *MainOf) ![]const Module {
+fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request, entry: []const u8, refusals: *std.ArrayListUnmanaged(Diagnostic), main_of: *MainOf) ![]const Module {
     const Item = struct { logical: []const u8, file: []const u8, root: bool };
     var work: std.ArrayListUnmanaged(Item) = .empty;
-    const base = std.fs.path.basename(req.path);
+    const base = std.fs.path.basename(entry);
     const rootLogical = if (std.mem.endsWith(u8, base, ".bp")) base[0 .. base.len - 3] else base;
-    try work.append(scratch, .{ .logical = rootLogical, .file = req.path, .root = true });
+    try work.append(scratch, .{ .logical = rootLogical, .file = entry, .root = true });
     var out: std.ArrayListUnmanaged(Module) = .empty;
     var i: usize = 0;
     while (i < work.items.len) : (i += 1) {

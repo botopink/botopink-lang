@@ -1,0 +1,9 @@
+//// Decision 982 (2) — `compiler.load` has no file form: a path naming a file, even a package's own
+//// `src/main.bp`, is `load-not-a-package` at the argument.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val loaded = comptime compiler.load("packages/fine/src/main.bp");
+    print(loaded.isOk());
+}

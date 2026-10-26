@@ -1,0 +1,24 @@
+//// Decision 982 — `compiler.load(path)` loads a package: `path` names a directory holding its own
+//// `botopink.json` and `src/main.bp`, compiled from its `src/main.bp` with its `mod` tree. The
+//// `Module`'s `name` is the loaded manifest's, its `path` the directory as written, and a
+//// `Diagnostic`'s `file` is relative to the loaded package's root.
+
+import {compiler, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val fine = comptime compiler.load("packages/fine");
+    case fine {
+        Ok(m) -> print("ok name=" + m.name() + " path=" + m.path());
+        Error(r) -> print("never");
+    }
+    val broken = comptime compiler.load("packages/broken");
+    case broken {
+        Ok(m) -> print("never");
+        Error(r) {
+            print("refused name=" + r.module.name() + " path=" + r.module.path());
+            for (r.diagnostics) { d ->
+                print("at " + d.file + ":" + d.line.toString());
+            }
+        }
+    }
+}

@@ -1,9 +1,11 @@
-//! Decisions 780–783, 786 — `comptime compiler.load(path)` through the same
-//! `comptime.compile` the CLI runs, over a package held in memory: the
-//! loaded file's refusals are the answer and never the caller's; a compiler
-//! with no reader refuses the load (`load-no-reader`); a file that loads
-//! itself is refused inside the nested compile (`load-cycle`) instead of
-//! compiling forever.
+//! Decisions 780–783, 786, 982 — `comptime compiler.load(path)` through the
+//! same `comptime.compile` the CLI runs, over a package held in memory whose
+//! loads name packages beside it (`packages/<x>/botopink.json` and
+//! `packages/<x>/src/main.bp`): the loaded package's refusals are the answer
+//! and never the caller's; a path naming no package is `load-not-a-package`;
+//! a compiler with no reader refuses the load (`load-no-reader`); a package
+//! that loads itself is refused inside the nested compile (`load-cycle`)
+//! instead of compiling forever.
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -11,24 +13,27 @@ const moduleMod = @import("../../module.zig");
 
 /// The package's files, by path relative to its `botopink.json`.
 const files = [_][2][]const u8{
+    .{ "packages/fine/botopink.json", "{ \"name\": \"fine\" }" },
     .{
-        "src/cases/fine.bp",
+        "packages/fine/src/main.bp",
         \\pub fn main() -> void {}
         \\
     },
+    .{ "packages/broken/botopink.json", "{ \"name\": \"broken\" }" },
     .{
-        "src/cases/broken.bp",
+        "packages/broken/src/main.bp",
         \\pub fn main() -> void {
         \\    val n: i32 = "not a number";
         \\}
         \\
     },
+    .{ "packages/self/botopink.json", "{ \"name\": \"self\" }" },
     .{
-        "src/cases/self.bp",
+        "packages/self/src/main.bp",
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\pub fn main() -> void {
-        \\    try comptime compiler.load("src/cases/self.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\    try comptime compiler.load("packages/self") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
     },
@@ -65,7 +70,7 @@ test "decision 780: a loaded file's refusals are the answer, never a refusal of 
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\pub fn main() -> void {
-        \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\    try comptime compiler.load("packages/broken") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
     ;
@@ -80,7 +85,7 @@ test "decision 780: a compiler handed no reader refuses the load, `load-no-reade
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\pub fn main() -> void {
-        \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\    try comptime compiler.load("packages/broken") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
     ;
@@ -89,19 +94,29 @@ test "decision 780: a compiler handed no reader refuses the load, `load-no-reade
     try std.testing.expect(std.mem.startsWith(u8, got, "load-no-reader: "));
 }
 
-test "decision 780: a path that names no file of the package is `load-file-missing`" {
+test "decision 982 (2): a path that names no package is `load-not-a-package`" {
     const gpa = std.testing.allocator;
     const src =
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\pub fn main() -> void {
-        \\    try comptime compiler.load("src/cases/nothing.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\    try comptime compiler.load("packages/nothing") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
     ;
     const got = (try compileMain(gpa, src, memory(std.testing.io))) orelse return error.TestExpectedRefusal;
     defer gpa.free(got);
-    try std.testing.expect(std.mem.startsWith(u8, got, "load-file-missing: "));
+    try std.testing.expect(std.mem.startsWith(u8, got, "load-not-a-package: "));
+    const file = (try compileMain(gpa,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    try comptime compiler.load("packages/fine/src/main.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\}
+        \\
+    , memory(std.testing.io))) orelse return error.TestExpectedRefusal;
+    defer gpa.free(file);
+    try std.testing.expect(std.mem.indexOf(u8, file, "load-not-a-package: ") != null and std.mem.indexOf(u8, file, "names a file") != null);
 }
 
 test "decision 780 (5): a file that loads itself ends — its own load is refused inside the nested compile" {
@@ -110,7 +125,7 @@ test "decision 780 (5): a file that loads itself ends — its own load is refuse
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\pub fn main() -> void {
-        \\    try comptime compiler.load("src/cases/self.bp") catch { r -> print(r.diagnostics.length); r.module };
+        \\    try comptime compiler.load("packages/self") catch { r -> print(r.diagnostics.length); r.module };
         \\}
         \\
     ;
@@ -129,9 +144,9 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
         \\}
         \\
         \\pub fn main() -> void {
-        \\    val fine = comptime compiler.load("src/cases/fine.bp");
+        \\    val fine = comptime compiler.load("packages/fine");
         \\    try fine catch { r -> print(r.diagnostics.length); r.module };
-        \\    try comptime compiler.load("src/cases/broken.bp") catch { r -> show(r.module); r.module };
+        \\    try comptime compiler.load("packages/broken") catch { r -> show(r.module); r.module };
         \\}
         \\
     ;
@@ -151,13 +166,13 @@ test "decision 786: the answer is the loaded file's `Module` on both sides" {
     return error.TestMainMissing;
 }
 
-test "decisions 786, 805 (4): the `Module`'s `name` is the file's directory, and it carries no target" {
+test "decisions 786, 805 (4), 982 (4): the `Module`'s `name` is the loaded manifest's — none before its load answered — and it carries no target" {
     const loadMod = @import("../load.zig");
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const loaded: loadMod.Loaded = .{ .path = "src/cases/alpha/mod.bp" };
-    try std.testing.expectEqualStrings("alpha", loaded.name());
+    const loaded: loadMod.Loaded = .{ .path = "packages/alpha" };
+    try std.testing.expectEqualStrings("", loaded.name());
     const e = try loadMod.rewrite(arena, .{ .line = 3, .col = 5 }, loaded, &.{});
     try std.testing.expect(e.* == .call);
 }
@@ -168,7 +183,7 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\comptime {
-        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    val loaded = comptime compiler.load("packages/fine");
         \\    case loaded {
         \\        Ok(m) -> compiler.init({ -> try m.run() catch { f -> print(f.message) }; });
         \\        Error(r) -> print("refused");
@@ -185,7 +200,7 @@ test "decision 787: a `run()` in an init body brings the loaded file into the pr
     var loaded_ok = false;
     for (session.outputs.items) |o| {
         if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
-        if (std.mem.eql(u8, o.name, "bp_load__src__cases__fine/fine")) loaded_ok = o.outcome == .ok;
+        if (std.mem.eql(u8, o.name, "bp_load__packages__fine/main")) loaded_ok = o.outcome == .ok;
     }
     try std.testing.expect(main_ok);
     try std.testing.expect(loaded_ok);
@@ -197,7 +212,7 @@ test "decision 787: a load no `run()` reaches stays out of the program" {
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\comptime {
-        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    val loaded = comptime compiler.load("packages/fine");
         \\    case loaded {
         \\        Ok(m) -> compiler.init({ -> print(m.path()) });
         \\        Error(r) -> print("refused");
@@ -221,8 +236,8 @@ test "decision 792 (5): a loaded package is named from its path" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    try std.testing.expectEqualStrings("bp_load__src__cases__fine__mod", try loadMod.packageName(arena, "src/cases/fine/mod.bp"));
-    try std.testing.expect(loadMod.isLoadedPackage("bp_load__src__cases__fine__mod"));
+    try std.testing.expectEqualStrings("bp_load__packages__fine", try loadMod.packageName(arena, "packages/fine"));
+    try std.testing.expect(loadMod.isLoadedPackage("bp_load__packages__fine"));
     try std.testing.expect(!loadMod.isLoadedPackage("lib"));
 }
 
@@ -233,12 +248,12 @@ test "decision 787: a read's path is known as written — a literal, or a `+` of
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const at: ast.Loc = .{ .line = 1, .col = 1 };
-    var a: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "src/cases/" } } };
+    var a: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "packages/" } } };
     var b: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "fine" } } };
-    var c: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "/mod.bp" } } };
+    var c: ast.Expr = .{ .literal = .{ .loc = at, .kind = .{ .stringLit = "/" } } };
     var ab: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &a, .rhs = &b } };
     const abc: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &ab, .rhs = &c } };
-    try std.testing.expectEqualStrings("src/cases/fine/mod.bp", (try loadMod.foldedPath(arena, &abc)).?);
+    try std.testing.expectEqualStrings("packages/fine/", (try loadMod.foldedPath(arena, &abc)).?);
     var n: ast.Expr = .{ .identifier = .{ .loc = at, .kind = .{ .ident = "name" } } };
     const an: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &a, .rhs = &n } };
     try std.testing.expect((try loadMod.foldedPath(arena, &an)) == null);
@@ -249,19 +264,19 @@ test "decision 787: a `Module` a body handed an executor is written back as its 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"src/cases/fine/mod.bp\"}", .{});
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"packages/fine\"}", .{});
     try std.testing.expectEqualStrings(
-        loadMod.module_fn ++ "(name: \"fine\", path: \"src/cases/fine/mod.bp\")",
+        loadMod.module_fn ++ "(name: \"fine\", path: \"packages/fine\")",
         (try loadMod.recordSource(arena, parsed)).?,
     );
-    try std.testing.expectEqualStrings("src/cases/fine/mod.bp", loadMod.valuePath(parsed, null).?);
-    const refused = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"module\":{\"name\":\"b\",\"path\":\"src/cases/b/mod.bp\"},\"diagnostics\":[]}", .{});
-    try std.testing.expectEqualStrings("src/cases/b/mod.bp", loadMod.valuePath(refused, "module").?);
+    try std.testing.expectEqualStrings("packages/fine", loadMod.valuePath(parsed, null).?);
+    const refused = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"module\":{\"name\":\"b\",\"path\":\"packages/b\"},\"diagnostics\":[]}", .{});
+    try std.testing.expectEqualStrings("packages/b", loadMod.valuePath(refused, "module").?);
     try std.testing.expect((try loadMod.recordSource(arena, .{ .integer = 3 })) == null);
 }
 
 /// Whether compiling `src` (its `main` and every loaded package) succeeds and
-/// brings the loaded `src/cases/fine.bp` into the program.
+/// brings the loaded `packages/fine` into the program.
 fn bringsFine(gpa: std.mem.Allocator, src: []const u8) !bool {
     const io = std.testing.io;
     var session = try comptimeMod.compile(gpa, &.{.{ .path = "", .source = src, .srcPath = "src/main.bp", .root = true, .files = memory(io) }}, io, null);
@@ -270,7 +285,7 @@ fn bringsFine(gpa: std.mem.Allocator, src: []const u8) !bool {
     var loaded_ok = false;
     for (session.outputs.items) |o| {
         if (std.mem.eql(u8, o.name, "main")) main_ok = o.outcome == .ok;
-        if (std.mem.eql(u8, o.name, "bp_load__src__cases__fine/fine")) loaded_ok = o.outcome == .ok;
+        if (std.mem.eql(u8, o.name, "bp_load__packages__fine/main")) loaded_ok = o.outcome == .ok;
     }
     return main_ok and loaded_ok;
 }
@@ -280,7 +295,7 @@ test "decision 792 (4), (7): `run()` on a local alias of the captured `Module` i
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\comptime {
-        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    val loaded = comptime compiler.load("packages/fine");
         \\    case loaded {
         \\        Ok(m) -> compiler.init({ ->
         \\            val m2 = m;
@@ -302,7 +317,7 @@ test "decision 792 (4): `run()` on a receiver traced to no load of the body is `
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\comptime {
-        \\    val loaded = comptime compiler.load("src/cases/fine.bp");
+        \\    val loaded = comptime compiler.load("packages/fine");
         \\    case loaded {
         \\        Ok(m) -> compiler.init({ ->
         \\            var m2 = m;
@@ -324,7 +339,7 @@ test "decision 789 (4): an expanded function's handled load that returns takes i
         \\import {compiler, io.terminal.print} from "std";
         \\
         \\fn runCase(comptime name: string) -> void {
-        \\    val loaded = try comptime compiler.load("src/cases/" + name + ".bp") catch { r ->
+        \\    val loaded = try comptime compiler.load("packages/" + name) catch { r ->
         \\        compiler.init({ -> print("refused " + r.module.path()) });
         \\        return;
         \\    };

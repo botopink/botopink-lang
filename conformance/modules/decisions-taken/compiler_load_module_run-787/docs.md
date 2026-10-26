@@ -6,7 +6,7 @@ of the init body, and answers `Result<void, Failure>`: `Ok` when `main` returns,
 target, named from its path; a load no `run` reaches stays out of it.
 
 In the cell a top-level `comptime` block calls `runCase`, whose every parameter is `comptime`, once per case
-(decision 788): each call loads `src/cases/<case>/mod.bp` and registers an init that prints `== <case>`, runs the
+(decision 788): each call loads the package `packages/<case>` and registers an init that prints `== <case>`, runs the
 loaded `main` under `try … catch` and prints `end <case>`. `fine`'s `main` returns; `crash`'s panics, answered
 `Error` with the panic's message; `err`'s answers `Error("bad answer")`, answered `Error` too, the `Failure`'s
 message the error's text. The program's own `main` prints last.

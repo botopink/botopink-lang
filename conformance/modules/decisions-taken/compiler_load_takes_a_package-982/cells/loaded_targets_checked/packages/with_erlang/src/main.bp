@@ -1,0 +1,6 @@
+import {io.process, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val started = process.start("true", [], null, []);
+    print(started.isOk());
+}

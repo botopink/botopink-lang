@@ -7,7 +7,7 @@
 import {compiler, io.terminal.print} from "std";
 
 pub fn main() -> void {
-    comptime compiler.load("src/cases/broken.bp") catch { r ->
+    comptime compiler.load("packages/broken") catch { r ->
         for (r.diagnostics) { d ->
             print("handled " + d.file + ":" + d.line.toString());
         }

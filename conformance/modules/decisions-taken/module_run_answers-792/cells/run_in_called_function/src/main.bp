@@ -10,7 +10,7 @@ fn go(m: compiler.Module) -> void {
 }
 
 comptime {
-    val loaded = comptime compiler.load("src/cases/fine/mod.bp");
+    val loaded = comptime compiler.load("packages/fine");
     case loaded {
         Ok(m) -> compiler.init({ -> go(m) });
         Error(r) -> print("refused");

@@ -1,3 +1,3 @@
 botopink-cell 1
-refused error: run-module-refused: `run()` is called on the `Module` of `src/cases/broken/mod.bp`, whose load refused
+refused error: run-module-refused: `run()` is called on the `Module` of `packages/broken`, whose load refused
 at src/main.bp:11:26

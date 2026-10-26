@@ -17,7 +17,7 @@ fn label(t: Target) -> string {
 }
 
 pub fn main() -> void {
-    val fine = comptime compiler.load("src/cases/fine/mod.bp");
+    val fine = comptime compiler.load("packages/fine");
     print(fine.isOk());
     print(label(Target.Erlang));
     print(label(Target.Browser));

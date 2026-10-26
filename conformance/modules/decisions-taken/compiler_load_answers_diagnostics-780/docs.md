@@ -7,13 +7,13 @@ Each `Diagnostic` holds a `code`, a `message`, a `file`, a `line`, a `column` an
 refuse the caller. Decision 782 makes the answer a `Result` (`Ok` when the file compiles), read with `try … catch`
 (783). There is no `compiler.snapshot`: comparing an answer stays `botopink cell check`'s job.
 
-In the cell `main` loads three files under `src/cases/`, none of them a module of the program: a type error, a
+In the cell `main` loads three packages under `packages/`, none of them a module of the program: a type error, a
 parse error whose caret carries a label, and a file whose sibling module `helper.bp` (its `mod` tree) is refused,
 which the entry's import then names. Each refusal is printed field by field. The refused cases are the path rules,
-`@embed`'s: an absolute path, a `..` segment and a file that does not exist are refusals of the program that
+`@embed`'s: an absolute path, a `..` segment and a path that names no package are refusals of the program that
 loads, at the argument.
 
 [cells/compiler_load_answers_diagnostics/src/main.bp](cells/compiler_load_answers_diagnostics/src/main.bp)
 [refused/src/cases/load_path_absolute/mod.bp](refused/src/cases/load_path_absolute/mod.bp)
 [refused/src/cases/load_path_outside_package/mod.bp](refused/src/cases/load_path_outside_package/mod.bp)
-[refused/src/cases/load_file_missing/mod.bp](refused/src/cases/load_file_missing/mod.bp)
+[refused/src/cases/load_not_a_package/mod.bp](refused/src/cases/load_not_a_package/mod.bp)

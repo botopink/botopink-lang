@@ -6,11 +6,11 @@
 import {compiler} from "std";
 
 test "a refused file under src is an Error, not a failed module" {
-    val broken = comptime compiler.load("src/cases/broken.bp");
+    val broken = comptime compiler.load("packages/broken");
     assert broken.isError(), "broken.bp is refused";
 }
 
 test "a file under src that compiles is an Ok" {
-    val fine = comptime compiler.load("src/cases/fine.bp");
+    val fine = comptime compiler.load("packages/fine");
     assert fine.isOk(), "fine.bp compiles";
 }

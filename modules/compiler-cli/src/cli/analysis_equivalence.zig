@@ -664,8 +664,9 @@ test "level B: a file a library's `compiler.load` reads outside its `src` is in 
     const files = [_][2][]const u8{
         .{ "probe/botopink.json", "{ \"name\": \"probe\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"root.bp\", \"files\": [\"root.bp\", \"probe.bp\"] }" },
         .{ "probe/src/root.bp", "pub mod probe;\n" },
-        .{ "probe/src/probe.bp", "import {compiler} from \"std\";\n\npub fn loads() -> bool {\n    val r = comptime compiler.load(\"cases/checked/mod.bp\");\n    return r.isOk();\n}\n" },
-        .{ "probe/cases/checked/mod.bp", "pub fn answer() -> i32 {\n    return 1;\n}\n" },
+        .{ "probe/src/probe.bp", "import {compiler} from \"std\";\n\npub fn loads() -> bool {\n    val r = comptime compiler.load(\"cases/checked\");\n    return r.isOk();\n}\n" },
+        .{ "probe/cases/checked/botopink.json", "{ \"name\": \"checked\" }" },
+        .{ "probe/cases/checked/src/main.bp", "pub fn answer() -> i32 {\n    return 1;\n}\n" },
         .{ "app/botopink.json", "{ \"name\": \"app\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"main.bp\", \"dependencies\": { \"probe\": { \"path\": \"../probe\" } } }" },
         .{ "app/src/main.bp", "import {probe.loads} from \"probe\";\nimport {io.terminal.print} from \"std\";\n\npub fn main() -> void {\n    print(loads());\n}\n" },
     };
@@ -697,8 +698,10 @@ test "level B: a file a library's `compiler.load` reads outside its `src` is in 
     try testing.expect(builds[0].len > 0);
     try testing.expectEqualStrings(builds[0], builds[2]);
 
-    // The loaded file now refuses; nothing under the library's `src` changed.
-    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ dir, "probe", "cases", "checked", "mod.bp" }), .data = "pub fn answer() -> i32 {\n    return \"one\";\n}\n" });
+    // The loaded package now refuses (decision 982: its `src/main.bp`, read
+    // through the reader under its directory); nothing under the library's
+    // `src` changed.
+    try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ dir, "probe", "cases", "checked", "src", "main.bp" }), .data = "pub fn answer() -> i32 {\n    return \"one\";\n}\n" });
     var changed_fx = try Fixture.loadKeyed(gpa, arena, io, app_dir, entryTarget(erl), root);
     defer changed_fx.free(gpa);
     var changed = try invoke(gpa, io, &changed_fx, erl, root, changed_fx.keys);

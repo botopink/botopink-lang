@@ -148,13 +148,15 @@ pub behavior Compiler {
     fn find(self: Self, with: unknown, member: ?string = null) -> unknown[];
     // A type's reflection (decision 253).
     fn typeInfo<T>(self: Self, comptime t: type<T>) -> TypeInfo<T>;
-    // A file of the package compiled at build as the entry of a package of
-    // its own — the caller's manifest, its `mod` tree beside it, the build's
-    // target — never joining the caller's program (decisions 780, 782, 786):
-    // `Ok` the loaded file's `Module` when it compiles, `Error` a `Refused` —
+    // A package compiled at build (decisions 780, 782, 786, 982): `path`
+    // names a directory, relative to the caller's `botopink.json` (no
+    // absolute path, no `..`), holding its own `botopink.json` and
+    // `src/main.bp`, compiled from its `src/main.bp` under its own manifest
+    // and checked for its own targets, never joining the caller's program —
+    // a file or a directory short of either is `load-not-a-package`. `Ok`
+    // the loaded package's `Module` when it compiles, `Error` a `Refused` —
     // that `Module` and its refusals in the order `botopink build` prints
-    // them, never empty and never a refusal of the caller. `path` is relative
-    // to the package's `botopink.json` (no absolute path, no `..`); read with
+    // them, never empty and never a refusal of the caller; read with
     // `try … catch` or `try` (decision 783).
     fn load(self: Self, comptime path: string) -> Result<Module, Refused>;
 }
@@ -274,10 +276,10 @@ pub type GenericType(name: string, args: Node[])
 pub type UnionType(members: Node[])
 
 // ── A refusal `compiler.load` answers (decisions 780 (2), 781) ────────────
-// One refusal of the loaded file, as `botopink build` prints it: `message`
+// One refusal of the loaded package, as `botopink build` prints it: `message`
 // the text after `error: ` (after `error[<code>]: ` when the refusal carries
 // its code there), `code` the refusal's code (`""` when it has none), `file`
-// relative to the package's root with `line` and `column` where the refusal
+// relative to the loaded package's root with `line` and `column` where the refusal
 // points (`""` and `0` when it points nowhere), `label` the text beside the
 // caret when there is one.
 pub type Diagnostic(
@@ -290,9 +292,8 @@ pub type Diagnostic(
 )
 
 // ── What `compiler.load` answers (decisions 786, 787, 792, 811) ──────────
-// The loaded file (decisions 786 (1), 805 (4)): `name()` the directory it
-// sits in (`<case>` for `src/cases/<case>/mod.bp`), `path()` the file
-// relative to the package (as a `Diagnostic`'s `file`). No target — comptime
+// The loaded package (decisions 786 (1), 805 (4), 982 (4)): `name()` its
+// manifest's name, `path()` the directory as written (`cases/<case>`). No target — comptime
 // reads none — and no dependency list: the loaded package still resolves its
 // own to compile. Opaque (decision 811 (4)): only `compiler.load` answers one,
 // through `of`, which no program names — `Module(…)` written outside is
