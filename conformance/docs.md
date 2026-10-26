@@ -46,6 +46,13 @@ project's is to its own; every cell found is reported, a cell that cannot run as
 
 <!-- example: modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency -->
 
+A module that checks itself (decision 989, `modules/array`) is one package whose `src/main.bp` loads each
+`cases/<case>` with `compiler.load`, runs it and compares the records of its answer with its section of the one
+`snapshot/main.snap` — `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <target>`,
+a case without one answering its plain section on every target. A difference writes `snapshot/main.snap.new`
+beside it (printed under `candidate snapshot/main.snap.new` on wasm) and the module's `main` answers `Error`;
+the program never writes the accepted file. The shared code is `conformance/lib/`.
+
 A module holds its cases in two packages (decisions 765, 779): `modules/<module>/run/`, every case that
 prints — `src/cases/<case>/mod.bp` each, its entry `pub fn runCase()`, called in order by the package's
 `src/main.bp`, the package's one `snapshot/output/main.snap` holding the cases' `out` lines in that order —
@@ -1896,7 +1903,7 @@ Every exhaustiveness refusal of a `case` — an enum's, a union's and an open do
 
 ### Arrays
 
-<!-- example: modules/array/run/src/cases/array_slice_reverse -->
+<!-- example: modules/array/cases/array_slice_reverse -->
 
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
@@ -1905,21 +1912,21 @@ A statement `v.push(x)` on a `var` — a module `var` or a local — rebinds the
 `var` to the grown array, so a `val` that read the array before keeps the array
 of its moment:
 
-<!-- example: modules/array/run/src/cases/array_push_rebinds_var -->
+<!-- example: modules/array/cases/array_push_rebinds_var -->
 
 A `v.pop()` on a `var` answers the last item and rebinds the `var` to the shrunk
 array in the same way:
 
-<!-- example: modules/array/run/src/cases/array_pop_rebinds_var -->
+<!-- example: modules/array/cases/array_pop_rebinds_var -->
 
 `Array.range(start, stop)` is the integers of `[start, stop)`, empty when
 `stop <= start`; `Array.repeat(value, times)` is `times` copies of `value`, empty
 when `times <= 0`. A result costs its own length in memory, a long one too, and so
 does `xs.fill(v)`, which is `Array.repeat(v, xs.length)`:
 
-<!-- example: modules/array/run/src/cases/array_range_and_repeat -->
+<!-- example: modules/array/cases/array_range_and_repeat -->
 
-<!-- example: modules/array/run/src/cases/array_fill_large -->
+<!-- example: modules/array/cases/array_fill_large -->
 
 ### Indexing and slicing
 
@@ -5123,7 +5130,7 @@ checker cannot follow (a parameter, a method, generic code) is an edge with `cal
 
 <!-- example: modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call -->
 
-<!-- example: modules/array/run/src/cases/array_map_component_imported -->
+<!-- example: modules/array/cases/array_map_component_imported -->
 
 ### Template annotations (decision 311)
 

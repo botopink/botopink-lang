@@ -1,0 +1,169 @@
+//// A module's `snapshot/main.snap` (decision 989 (5)): the sectioned file.
+////
+////     botopink-cell 2                 the format and its version, always line 1
+////     == <case>                       the case's answer on every target, the records of
+////     out 1                             `records.bp`, one run per section
+////     == <case> on <t>                the case's answer on target <t> alone (a departure;
+////     out 2                             <t> one of commonJS, erlang, beam, wasm)
+////
+//// A case with no departure for the target it runs on answers its plain section on that target; a
+//// departure replaces the plain section whole (decision 475 (3), per case). A section's body is the
+//// text between its header and the next, kept as written: `parseFile` accepts only a file whose
+//// every body is the canonical spelling of its records, so `renderFile(parseFile(text))` is the
+//// file byte for byte. A `== ` line is never a record, so a body never swallows a header.
+
+import {records.Snap, records.Malformed, records.parseBody, records.renderBody, records.matches, records.candidate};
+
+/// Line 1 of the sectioned file.
+pub val HEADER: string = "botopink-cell 2";
+
+/// The targets a departure names.
+pub fn targets() -> string[] {
+    return ["commonJS", "erlang", "beam", "wasm"];
+}
+
+/// One section: the case, the target it departs on (`null` for the plain one) and its records as written.
+pub type Section(name: string, target: ?string, body: string)
+
+/// The sectioned file, in file order.
+pub type SnapFile(sections: Section[] = [])
+
+fn fail(line: i32, reason: string) -> Result<SnapFile, Malformed> {
+    throw Malformed(line: line, reason: reason);
+}
+
+fn isTarget(t: string) -> bool {
+    return targets().any({ x -> x == t });
+}
+
+/// The header line of a section.
+pub fn headerOf(name: string, target: ?string) -> string {
+    if (target) {
+        t ->
+        return "== " + name + " on " + t;
+    }
+    return "== " + name;
+}
+
+/// Why a section's body is not its records' one spelling (`""` when it is).
+fn badBody(s: Section) -> string {
+    return case parseBody(s.body) {
+        Ok(_) -> "";
+        Error(m) -> "section `"
+            + headerOf(s.name, s.target)
+            + "` line "
+            + m.line.toString()
+            + ": "
+            + m.reason;
+    };
+}
+
+/// Parse a sectioned file; a malformed one answers its 1-based line and the reason.
+pub fn parseFile(text: string) -> Result<SnapFile, Malformed> {
+    if (text == "" || !text.endsWith("\n"))
+        return fail(text.split("\n").length, "every line ends with a newline");
+    val lines = text.slice(0, text.length - 1).split("\n");
+    if ((lines.at(0) ?? "") != HEADER)
+        return fail(1, "line 1 must be `" + HEADER + "`");
+    var sections: Section[] = [];
+    var name = "";
+    var target: ?string = null;
+    var body = "";
+    var open = false;
+    var n = 1;
+    while (n < lines.length) {
+        val line = lines.at(n) ?? "";
+        n = n + 1;
+        if (line.startsWith("== ")) {
+            if (open)
+                sections = sections.append([Section(name: name, target: target, body: body)]);
+            val head = line.slice(3);
+            val on = head.indexOf(" on ");
+            val caseName = if (on < 0) head else head.slice(0, on);
+            target = if (on < 0) null else head.slice(on + 4);
+            if (caseName == "" || caseName.contains(" "))
+                return fail(n, "a section names one case: `== <case>` or `== <case> on <target>`");
+            if (!(target == null || isTarget(target)))
+                return fail(n, "a departure names commonJS, erlang, beam or wasm");
+            if (sections.any({ s -> s.name == caseName && s.target == target }))
+                return fail(n, "a section is written once");
+            name = caseName;
+            body = "";
+            open = true;
+        } else {
+            if (!open) return fail(n, "records come after a `== <case>` line");
+            body = body + line + "\n";
+        }
+    }
+    if (open)
+        sections = sections.append([Section(name: name, target: target, body: body)]);
+    // Each body must be its records' one spelling.
+    var k = 0;
+    while (k < sections.length) {
+        val s = sections.at(k) ?? Section(name: "", target: null, body: "");
+        k = k + 1;
+        val bad = badBody(s);
+        if (bad != "") return fail(1, bad);
+    }
+    return SnapFile(sections: sections);
+}
+
+/// The file's text: the header, then each section's header line and body.
+pub fn renderFile(file: SnapFile) -> string {
+    var out = HEADER + "\n";
+    for (file.sections) { s ->
+        out = out + headerOf(s.name, s.target) + "\n" + s.body;
+    }
+    return out;
+}
+
+fn sectionOf(file: SnapFile, name: string, target: ?string) -> ?Section {
+    for (file.sections) { s ->
+        if (s.name == name && s.target == target) return s;
+    }
+    return null;
+}
+
+/// The section a case answers on `target`: its departure there when it has one, else its plain section.
+pub fn find(file: SnapFile, name: string, target: string) -> ?Section {
+    val departure = sectionOf(file, name, target);
+    if (departure) {
+        d ->
+        return d;
+    }
+    return sectionOf(file, name, null);
+}
+
+/// The target of the section `find` would answer: `target` when the case departs there, else `null`.
+pub fn answeringTarget(file: SnapFile, name: string, target: string) -> ?string {
+    if (sectionOf(file, name, target) != null) return target;
+    return null;
+}
+
+fn snapOfSection(s: ?Section) -> ?Snap {
+    if (s) {
+        x ->
+        return try parseBody(x.body) catch null;
+    }
+    return null;
+}
+
+/// Whether the observed answer of `name` on `target` is the accepted one (`records.matches`):
+/// a case the file does not have is not equal.
+pub fn same(file: SnapFile, name: string, target: string, observed: Snap, observedStderr: string) -> bool {
+    val accepted = snapOfSection(find(file, name, target));
+    if (accepted) {
+        a ->
+        return matches(a, observed, observedStderr);
+    }
+    return false;
+}
+
+/// The candidate section for an observed answer: its header line and its records. The accepted
+/// section's `stderr` claims that still hold are kept; a candidate never invents one.
+pub fn renderCandidate(file: SnapFile, name: string, target: string, observed: Snap, observedStderr: string) -> string {
+    val cand = candidate(snapOfSection(find(file, name, target)), observed, observedStderr);
+    return headerOf(name, answeringTarget(file, name, target))
+        + "\n"
+        + renderBody(cand);
+}
