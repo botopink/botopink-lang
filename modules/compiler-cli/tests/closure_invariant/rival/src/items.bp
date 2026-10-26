@@ -9,7 +9,7 @@ pub type Shape {
 }
 
 pub type Gauge(n: i32) {
-    fn reading(self: Self) -> i32 {
+    pub fn reading(self: Self) -> i32 {
         return self.n;
     }
 }
