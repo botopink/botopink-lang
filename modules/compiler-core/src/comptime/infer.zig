@@ -13502,7 +13502,8 @@ fn withBuildLoads(env: *Env, fd: ast.FnDecl) InferError!ast.FnDecl {
             const text = (try loadMod.foldedPath(self.env.arena, arg)) orelse return null;
             const answered = try answerLoad(self.env, if (loadMod.isPackageArg(call.args[0])) .{ .package = text } else .{ .path = text }, arg.getLoc());
             try loadMod.noteLoadSite(self.env.modulePath, answered.path, e.call.loc);
-            return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = answered.path }, answered.ds);
+            const key = try loadMod.keyOf(self.env.arena, self.env.packageFiles, answered.path);
+            return try loadMod.runtimeAnswer(self.env.arena, e.call.loc, .{ .path = answered.path, .key = key }, answered.ds);
         }
     };
     return loadMod.replaceReads(env.arena, ast.FnDecl, fd, Ctx{ .env = env }) catch |err| switch (err) {
@@ -13719,7 +13720,7 @@ fn refuseExecutorRuns(env: *Env, func: ast.FunctionExpr, captured: []const []con
         } else continue;
         if (k >= handed.len) continue;
         const path = loadMod.valuePath(handed[k], member) orelse continue;
-        const entry = loadMod.entryOf(path) orelse continue;
+        const entry = loadMod.entryOf(try loadMod.keyOf(env.arena, env.packageFiles, path)) orelse continue;
         if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, rc.loc);
         // `` `test`() `` runs the package's tests, not its `main` (993 (3)).
         if (rc.kind == .run and !entry.has_main) return refuseRun(env, .no_main, path, rc.loc);
@@ -13785,7 +13786,8 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         ).withLoc(loc);
         return error.TypeError;
     };
-    const entry = loadMod.entryOf(path) orelse {
+    const key = try loadMod.keyOf(env.arena, env.packageFiles, path);
+    const entry = loadMod.entryOf(key) orelse {
         env.lastError = TypeError.custom(
             try std.fmt.allocPrint(env.arena, "{s}: `run()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_module_untraced, path }),
             "Call `run()` on the `Module` the body's `compiler.load` answered (decision 787).",
@@ -13794,8 +13796,8 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
     };
     if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, loc);
     if (!entry.has_main) return refuseRun(env, .no_main, path, loc);
-    try loadMod.noteRun(path);
-    const alias = try loadMod.runAlias(env.arena, try loadMod.packageName(env.arena, path));
+    try loadMod.noteRun(key);
+    const alias = try loadMod.runAlias(env.arena, try loadMod.packageName(env.arena, key));
     const present = env.lookup(alias) != null;
     const rewrite = try loadMod.runRewrite(env.arena, loc, if (present) alias else null, entry.main_async);
     try env.srcRewrites.put(loc, rewrite);
@@ -13842,7 +13844,8 @@ fn inferModuleTest(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr
         ).withLoc(loc);
         return error.TypeError;
     };
-    const entry = loadMod.entryOf(path) orelse {
+    const key = try loadMod.keyOf(env.arena, env.packageFiles, path);
+    const entry = loadMod.entryOf(key) orelse {
         env.lastError = TypeError.custom(
             try std.fmt.allocPrint(env.arena, "{s}: `test()` is called on `{s}`, which no `compiler.load` of this build loaded", .{ diagnostics.run_module_untraced, path }),
             "Call ``m.`test`()`` on the `Module` the body's `compiler.load` answered (decision 993 (3)).",
@@ -13850,9 +13853,9 @@ fn inferModuleTest(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr
         return error.TypeError;
     };
     if (entry.diagnostics.len > 0) return refuseRun(env, .refused, path, loc);
-    try loadMod.noteTest(path);
+    try loadMod.noteTest(key);
     const async_ = try loadMod.testsAsync(entry);
-    const alias = try loadMod.testsAlias(env.arena, try loadMod.packageName(env.arena, path));
+    const alias = try loadMod.testsAlias(env.arena, try loadMod.packageName(env.arena, key));
     const present = env.lookup(alias) != null;
     const rewrite = try loadMod.testRewrite(env.arena, loc, if (present) alias else null, async_);
     try env.srcRewrites.put(loc, rewrite);

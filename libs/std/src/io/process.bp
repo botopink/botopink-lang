@@ -268,7 +268,7 @@ pub fn spawn(cmd: string, args: string[]) -> Result<Child, ProcessError> {
 // folds stderr into stdout, and `Captured` keeps the two apart. The host declarations below have no
 // erlang, beam or wasm binding, so a call to `start` is refused at the call there
 // (`std-unsupported-on-target`, decisions 518 (4), 906) while the module still imports and `run` / `spawn`
-// are unchanged. The programs that need the two apart (`cell check`'s, decision 790) run on commonJS.
+// are unchanged. A program that needs the two apart runs on commonJS.
 
 // Start `cmd` with `args` (no shell), in `cwd` (the parent's when absent), with the parent's environment
 // plus `env` (each entry `NAME=value`, the first `=` ends the name). `cmd` is looked up on `PATH` when it has no `/`;

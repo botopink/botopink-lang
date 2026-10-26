@@ -24,7 +24,6 @@ const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
 const packages_cmd = @import("./cli/packages.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
-const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
 const libs = @import("./cli/libs.zig");
@@ -60,7 +59,6 @@ const HELP =
     \\  new      Create a new botopink project
     \\  clean    Remove build artifacts
     \\  packages List the packages of the checkout
-    \\  cell     Scaffold a language cell, or check cells against their snapshots
     \\  help     Show this message
     \\  version  Show the compiler version and the Erlang/OTP release it emits for
     \\
@@ -107,18 +105,6 @@ const HELP =
     \\Options for `new`:
     \\  <name>                       Project name
     \\  --target <commonJS|erlang|beam|wasm>   Initial target (default: commonJS)
-    \\
-    \\`cell new <path>` scaffolds a cell: <path>/botopink.json (its package named
-    \\after the directory), <path>/src/main.bp and <path>/docs.md.
-    \\`cell check [--jobs <N>] <cell|directory>…` builds and runs each cell on every target it
-    \\declares (all four, or those of its botopink.json "targets") and compares each module's
-    \\answer with snapshot/output/<module>.snap and snapshot/targets/<t>/<module>.snap.
-    \\A difference writes a <file>.snap.new candidate beside it and exits 1; a new
-    \\cell gets candidates. An accepted snapshot is never overwritten, and no flag
-    \\accepts a candidate: rename it. `--jobs <N>` checks N cells at once (default: the machine's
-    \\jobs, as the gate counts them, halved), each worker a process checking a share of them
-    \\one after another; the report is in the cells' order whatever N is.
-    \\`cell check --cold` reads nothing from the code cache and writes what it compiled.
     \\
     \\The code cache (.botopinkbuild/cache/code/ under the workspace root, else the
     \\project): the compiled modules of a project's dependencies — std and the
@@ -276,11 +262,6 @@ fn dispatch(init: std.process.Init) !u8 {
         return packages_cmd.run(gpa, io, env_map);
     }
 
-    if (std.mem.eql(u8, cmd, "cell")) {
-        const opts = parseCellOpts(arena, rest, &diag) catch |err| return usageError(cmd, err, diag);
-        return cell_cmd.run(gpa, io, opts, env_map);
-    }
-
     // Unknown command.
     const msg = try std.fmt.allocPrint(gpa, "unknown command: {s}", .{cmd});
     defer gpa.free(msg);
@@ -318,10 +299,8 @@ pub const ArgError = error{
     UnknownFlag,
     MissingArgument,
     InvalidTarget,
-    InvalidJobs,
     UnexpectedArgument,
     MissingProjectName,
-    MissingCellCommand,
     OutOfMemory,
 };
 
@@ -336,10 +315,8 @@ fn usageError(cmd: []const u8, err: ArgError, diag: ArgDiag) u8 {
         error.UnknownFlag => std.fmt.bufPrint(&buf, "`{s}`: unknown flag '{s}'", .{ cmd, diag.token }),
         error.MissingArgument => std.fmt.bufPrint(&buf, "`{s}`: flag '{s}' needs a value", .{ cmd, diag.token }),
         error.InvalidTarget => std.fmt.bufPrint(&buf, "`{s}`: unsupported target '{s}' (expected commonJS, erlang, beam or wasm)", .{ cmd, diag.token }),
-        error.InvalidJobs => std.fmt.bufPrint(&buf, "`{s}`: --jobs takes a positive number of cells to check at once, got '{s}'", .{ cmd, diag.token }),
         error.UnexpectedArgument => std.fmt.bufPrint(&buf, "`{s}`: unexpected argument '{s}'", .{ cmd, diag.token }),
         error.MissingProjectName => std.fmt.bufPrint(&buf, "usage: botopink new <name> [--target <t>]", .{}),
-        error.MissingCellCommand => std.fmt.bufPrint(&buf, "usage: botopink cell new <path> | botopink cell check <cell|directory>…", .{}),
         error.OutOfMemory => std.fmt.bufPrint(&buf, "out of memory while parsing arguments", .{}),
     } catch "invalid arguments";
     reporter.errMsg(msg);
@@ -555,42 +532,6 @@ fn parseNewOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!new_cmd.Opt
     return opts;
 }
 
-/// `cell new <path>` / `cell check [--jobs <N>] [--cold] <path>…`: a subcommand
-/// and one path (`check`: one or more — the cells under each, in the order
-/// given); `check` takes `--jobs` and `--cold` (decision 509 (5)) — no flag
-/// accepts a candidate.
-fn parseCellOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.Options {
-    if (args.len == 0) return error.MissingCellCommand;
-    const sub = args[0];
-    const is_new = std.mem.eql(u8, sub, "new");
-    if (!is_new and !std.mem.eql(u8, sub, "check")) return reject(sub, diag);
-    var paths: std.ArrayListUnmanaged([]const u8) = .empty;
-    var jobs: ?usize = null;
-    var cold = false;
-    var i: usize = 1;
-    while (i < args.len) : (i += 1) {
-        const a = args[i];
-        const flag = splitFlag(a);
-        if (!is_new and std.mem.eql(u8, a, "--cold")) {
-            cold = true;
-            continue;
-        }
-        if (!is_new and std.mem.eql(u8, flag.name, "--jobs")) {
-            const v = try flagValue(args, &i, flag, diag);
-            jobs = std.fmt.parseUnsigned(usize, v, 10) catch 0;
-            if (jobs.? == 0) {
-                diag.token = v;
-                return error.InvalidJobs;
-            }
-            continue;
-        }
-        if (isFlag(a) or (is_new and paths.items.len > 0)) return reject(a, diag);
-        try paths.append(arena, a);
-    }
-    if (paths.items.len == 0) return error.MissingCellCommand;
-    return if (is_new) .{ .new = paths.items[0] } else .{ .check = .{ .paths = paths.items, .jobs = jobs, .cold = cold } };
-}
-
 fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
     if (args.len > 0) return reject(args[0], diag);
 }
@@ -623,8 +564,6 @@ test {
     _ = @import("./cli/bpp.zig");
     _ = @import("./cli/bpp_unfold.zig");
     _ = @import("./cli/build.zig");
-    _ = @import("./cli/cell.zig");
-    _ = @import("./cli/cell_snap.zig");
     _ = @import("./cli/check.zig");
     _ = @import("./cli/code_cache.zig");
     _ = @import("./cli/clean.zig");
@@ -746,39 +685,6 @@ test "C12: new --target validates and stores the canonical name" {
     try std.testing.expectEqualStrings("app", o.name);
     try std.testing.expectError(error.MissingProjectName, parseNewOpts(argv(&.{}), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseNewOpts(argv(&.{ "app", "other" }), &d));
-}
-
-test "cell takes `new` and one path, or `check` and its paths, no flag (decision 464: no update flag)" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const ar = arena_state.allocator();
-    var d: ArgDiag = .{};
-    const n = try parseCellOpts(ar, argv(&.{ "new", "cells/hello" }), &d);
-    try std.testing.expectEqualStrings("cells/hello", n.new);
-    const c = try parseCellOpts(ar, argv(&.{ "check", "cells" }), &d);
-    try std.testing.expectEqual(@as(usize, 1), c.check.paths.len);
-    try std.testing.expectEqualStrings("cells", c.check.paths[0]);
-    try std.testing.expectEqual(@as(?usize, null), c.check.jobs);
-    const j = try parseCellOpts(ar, argv(&.{ "check", "--jobs", "3", "cells" }), &d);
-    try std.testing.expectEqual(@as(?usize, 3), j.check.jobs);
-    try std.testing.expectError(error.InvalidJobs, parseCellOpts(ar, argv(&.{ "check", "--jobs=0", "cells" }), &d));
-    try std.testing.expectError(error.UnknownFlag, parseCellOpts(ar, argv(&.{ "new", "--jobs", "2", "x" }), &d));
-    try std.testing.expect(!c.check.cold);
-    // `--cold` (decision 509 (5)): the code cache is not read.
-    const cold = try parseCellOpts(ar, argv(&.{ "check", "--cold", "cells" }), &d);
-    try std.testing.expect(cold.check.cold);
-    try std.testing.expectError(error.UnknownFlag, parseCellOpts(ar, argv(&.{ "new", "--cold", "cells/x" }), &d));
-    try std.testing.expectError(error.MissingCellCommand, parseCellOpts(ar, argv(&.{}), &d));
-    try std.testing.expectError(error.MissingCellCommand, parseCellOpts(ar, argv(&.{"check"}), &d));
-    try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(ar, argv(&.{ "accept", "cells" }), &d));
-    try std.testing.expectError(error.UnknownFlag, parseCellOpts(ar, argv(&.{ "check", "--update", "cells" }), &d));
-    try std.testing.expectEqualStrings("--update", d.token);
-    // `check` takes several paths, in the order given; `new` one.
-    const two = try parseCellOpts(ar, argv(&.{ "check", "a", "--jobs", "1", "b" }), &d);
-    try std.testing.expectEqual(@as(usize, 2), two.check.paths.len);
-    try std.testing.expectEqualStrings("a", two.check.paths[0]);
-    try std.testing.expectEqualStrings("b", two.check.paths[1]);
-    try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(ar, argv(&.{ "new", "a", "b" }), &d));
 }
 
 test "C12: a manifest target the compiler does not support is not degraded to commonJS" {

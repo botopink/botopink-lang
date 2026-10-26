@@ -7,8 +7,7 @@
 #     workspace's manifest), on erlang and on beam
 #   • two members over one dependency compile it once: the second run links
 #     every dependency `.beam` from the store (the entry's inode, unchanged),
-#     adds no entry, and `cell check` over two cells keeps the store where the
-#     cells live — never in a scratch copy
+#     adds no entry, and beam's runs of both keep the store in the workspace
 #   • `run`, `test` and `build` share a dependency's entries: its production
 #     unit is the same bytes under each (decision 513, 144 B-64)
 #   • the member's own modules are compiled every time: never stored, never a
@@ -64,8 +63,6 @@ EOF
 for c in one two; do
   printf '{ "name": "%s" }\n' "$c" >"$WS/$c/botopink.json"
   printf 'import {io.terminal.print} from "std";\nimport {greet} from "lib";\n\npub fn main() -> void {\n    print(greet("%s"));\n}\n' "$c" >"$WS/$c/src/main.bp"
-  mkdir -p "$WS/$c/snapshot/output"
-  printf 'botopink-cell 1\nout hello %s\n' "$c" >"$WS/$c/snapshot/output/main.snap"
 done
 
 run_in() { # <dir> <args…> — stdout+stderr to $OUT, status to $CODE
@@ -132,19 +129,22 @@ DEP_BEAMS="$(find "$WS/one/out/erl" -name '*@*.beam' | wc -l | tr -d ' ')"
 [[ "$DEP_BEAMS" -eq "$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')" ]] || fail "one .beam per dependency module"
 ok "$DEP_BEAMS dependency .beam files, links to the entries; the member's own module has none"
 
-echo "==> cell check: two cells, one store where the cells live"
-run_in "$WORK" cell check "$WS"
-[[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "cell check over the two cells (exit $CODE)"; }
-grep -q 'cells: 2 checked — 2 passed' <<<"$OUT" || { echo "$OUT" >&2; fail "both cells pass, on every target"; }
+echo "==> beam: both members, one store in the workspace"
+for m in one two; do
+  run_in "$WS/$m" run --target beam
+  [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "run --target beam of member $m (exit $CODE)"; }
+  grep -q "hello $m" <<<"$OUT" || { echo "$OUT" >&2; fail "member $m prints its greeting on beam"; }
+done
 # erlang reads the entries the runs stored; beam adds its own (the `.S` step).
 N_BEAM="$(entries)"
 [[ "$N_BEAM" -gt "$N1" ]] || fail "beam's assembly of the dependencies is stored too"
-[[ -z "$(find "$WORK/.botopinkbuild" -name cache 2>/dev/null)" ]] || fail "a cell's scratch copy holds no cache"
-AFTER_CELLS="$(inodes)"
-run_in "$WORK" cell check "$WS"
-[[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "a second cell check"; }
-[[ "$(inodes)" == "$AFTER_CELLS" ]] || fail "a warm cell check wrote an entry again"
-ok "$N_BEAM entries in the workspace's store; a warm check writes none"
+AFTER_BEAM="$(inodes)"
+for m in one two; do
+  run_in "$WS/$m" run --target beam
+  [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "a second beam run of member $m"; }
+done
+[[ "$(inodes)" == "$AFTER_BEAM" ]] || fail "a warm beam run wrote an entry again"
+ok "$N_BEAM entries in the workspace's store; a warm run writes none"
 
 echo "==> a changed byte of the dependency misses"
 printf 'pub fn greet(n: string) -> string {\n    return "hullo " + n;\n}\n' >"$WORK/lib/src/root.bp"

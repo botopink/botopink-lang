@@ -39,8 +39,9 @@ botopink-lang/                 ← language core (this project)
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
 │                                docs.md (the reference, the manifest schema included; every example a cell),
-│                                modules/<module>/{run,refused,cells/<case>}/ and
-│                                modules/decisions-taken/<slug>-<N>/ (decisions 765, 779), checked by `botopink cell check`, test/ suites by
+│                                modules/ — the root package (decisions 989, 990 (6)) loading every self-checking module
+│                                (modules/<module>/ and modules/decisions-taken/<slug>-<N>/: cases/<case>/, snapshot/main.snap),
+│                                built once into one `.bpr` and run per target —, lib/ (their shared library), test/ suites by
 │                                `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
@@ -64,7 +65,7 @@ zig build test-backends # the wasm core module's --invoke main (modules/compiler
 zig build test-closure-invariant # one library built under two consumers, its files compared byte for byte on every target (modules/compiler-cli/tests/closure_invariant.sh, decision 509 (2)); alone — `test-cli` runs it too
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
-zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)
+zig build test-conformance # the conformance suite (conformance/run.sh: the root package built once and run per target, every test/ suite; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every example of conformance/docs.md (and each cell's docs.md, README.md) names a conformance cell (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/internal/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
@@ -242,13 +243,13 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
   links the reference. A doc claim that the compiler does not yet honour belongs
   in the reference's "Decided, not yet implemented" table, with the front that
   closes it — never as an example whose cell is not green.
-- **A behaviour change carries its cells** (decision 458): a step that adds,
-  changes or refuses observable behaviour writes the cells that prove it under
-  `conformance/modules/decisions-taken/<slug>-<N>/cells/<case>/` for the decision it proves, else
-  `conformance/modules/<prefix>/cells/<case>/` (`botopink cell new <that path>`, which writes its `botopink.json`,
-  `src/main.bp` and `docs.md`; then `botopink cell
-  check`; a person renames each candidate it writes, never a flag), red on the
-  parent and green on the step. A cell's answer is never edited to match the
+- **A behaviour change carries its cases** (decision 458): a step that adds,
+  changes or refuses observable behaviour writes the cases that prove it under
+  `conformance/modules/decisions-taken/<slug>-<N>/cases/<case>/` for the decision it proves, else
+  `conformance/modules/<prefix>/cases/<case>/` (a package: `botopink.json`, `src/main.bp`, `docs.md`), a
+  `runCase("<case>")` line in its module's `src/main.bp`; then the module run by its path (`botopink run --target <t>`
+  in the module, each target) writes `snapshot/main.snap.new`, which a person renames, never a flag (decisions 67,
+  989), red on the parent and green on the step. A cell's answer is never edited to match the
   compiler (`conformance/AGENTS.md`).
 - **English only** for source, comments, commits and compiler docs.
 - **One fact, one source.** Each fact lives in a single file; others link to it.
@@ -299,7 +300,7 @@ gate's time goes):
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
-9. `zig build test-conformance` (the conformance suite, `conformance/`: every cell of `conformance/modules/` by `botopink cell check` on every target its manifest declares — its answers against `snapshot/output/` and `snapshot/targets/<t>/`, every `"targets"` narrowing audited against the compiler's host-binding refusal — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, after the runner's own `--self-test`);
+9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with `botopink build --emit-runtime` and its one `.bpr` run on each target — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
@@ -410,10 +411,10 @@ Do not use `--no-verify`.
   `.botopinkbuild/runtime-cache/`. Keys ignore toolchain versions — delete the dir
   after upgrading node/erl.
 - **The code cache** (decision 509, `modules/compiler-cli/src/cli/code_cache.zig`).
-  `build`, `run`, `test` and `cell check` keep a DEPENDENCY's compiled module —
+  `build`, `run` and `test` keep a DEPENDENCY's compiled module —
   the `.beam` of std's or a library's `.erl` (erlang) or `.S` (beam) — in
   `<cache root>/.botopinkbuild/cache/code/`, the workspace root (else the
-  project; a cell's, its `conformance/modules/` workspace), by the hash of the
+  project; the conformance suite's, its root package `conformance/modules/`), by the hash of the
   bytes compiled and the OTP compiler's version, and link it (hard link, else
   copy) into the run's own output; the package under test is compiled every
   time. `--cold` reads nothing and writes what it compiled; `rm -rf

@@ -1,1 +1,0 @@
-{ "name": "deps", "version": "0.0.1", "workspaces": ["absent", "shared"] }

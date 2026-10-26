@@ -34,11 +34,13 @@
 #                           green or the stage fails — and every target a
 #                           member's "targets" list excludes is audited
 #   9. zig build test-conformance  conformance/ — the conformance suite
-#                           (decisions 457, 464, 466): every cell of
-#                           conformance/modules/ by `botopink cell check` on
-#                           every target it declares, every conformance/test/
-#                           suite by `botopink test --json`; a red cell fails
-#                           the stage
+#                           (decisions 457, 466, 989, 990 (6)): the root package
+#                           conformance/modules/ — every self-checking module,
+#                           loaded and run in one program — built once into one
+#                           `.bpr` (`botopink build --emit-runtime`) and run on
+#                           each target (`botopink run --target <t> <bpr>`),
+#                           every conformance/test/ suite by `botopink test
+#                           --json`; a red module fails the stage
 #  10. zig build test-docs  every `<!-- example: … -->` of the language reference
 #                           (conformance/docs.md, each cell's docs.md, README.md)
 #                           names a conformance cell or suite, and no
@@ -576,7 +578,9 @@ fi
 #   test-libs job (one library: build and test, commonJS + erlang): 0.4–3.55 GiB —
 #       rakun-ssr 3.55, rakun-app 2.42, rakun-security 2.35, rakun-data 2.13,
 #       rakun-cli 1.80, onze-server 1.58, rakun 1.45, std 0.69, query 0.47;
-#   test-conformance job (one `botopink cell check`): 0.28–0.89 GiB over 50 cells;
+#   test-conformance job (one `botopink test` suite, or one target's run of the root
+#       package's `.bpr`: 0.09–0.32 GiB, m2-0063): under 0.89 GiB; the root package's
+#       one build runs before its pool starts (§ the root package, conformance/run.sh);
 #   tsc-check job (`--jobs 1`, one `tsc` and its `node --check`): 0.62 GiB;
 #   test-web (`zig build test-web`, the wasm32-wasi compile of compiler-web,
 #       one process whatever `-j`): 7.39 GiB;
@@ -689,7 +693,7 @@ report 3 "beam export audit" "beam export audit" \
 report 4 "zig build test-cli" "zig build test-cli" "zig build test-cli"
 report 5 "zig build test-libs" "zig build test-libs" "zig build test-libs"
 report 6 "zig build test-conformance" "zig build test-conformance" \
-    "zig build test-conformance (a FAIL line above names the cell or the suite; a red cell's candidates and their differences follow it)"
+    "zig build test-conformance (a FAIL line above names the module or the suite; a red module's cases and their differences follow it)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the line and why)"
 report 8 "tsc --noEmit over the emitted .d.ts, node --check over the emitted .js (scripts/tsc-check.sh)" "tsc-check" \

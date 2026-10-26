@@ -410,8 +410,8 @@ fn runBuild(
     diagnostics.renderWarnings(gpa, io, arena, outputs.items);
     // Decision 788 (3) — what the build bodies printed is the build's output,
     // on stdout, module by module in build order; the CLI's own messages stay
-    // on stderr. A cell check's in-process build (`reporter.sink` set) keeps
-    // it out of its own output.
+    // on stderr. A build whose messages are redirected (`reporter.sink` set)
+    // keeps it out of its own output.
     if (json_state) |j| {
         j.modules = outputs.items.len;
         for (outputs.items) |o| if (o.result.build_output.len > 0) jsonBuildLines(j, o.result.build_output);

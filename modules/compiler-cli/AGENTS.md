@@ -22,12 +22,7 @@ compiler-cli/
 │   │                          1 MiB ARG_MAX, and the OTP release rows: `--version`,
 │   │                          an `erl` shim answering 29 / 28, a manifest `"otp"`,
 │   │                          and `build` / `test` printing the checker warning
-│   │                          `check` prints — decision 57, and `botopink cell`:
-│   │                          a passing cell, a mismatch's `.snap.new` and
-│   │                          exit 1, a new cell's candidates and manifest, a
-│   │                          departing target, no majority, every way a
-│   │                          `"targets"` narrowing is refused, a cell without
-│   │                          `botopink.json`, malformed input; and `check`
+│   │                          `check` prints — decision 57; and `check`
 │   │                          of `local_dependency`, a type its dependency
 │   │                          declares — decisions 514, 575 (1))
 │   │                          against the real binary
@@ -62,19 +57,6 @@ compiler-cli/
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
-│   └── cell/                ← fixture cells of `botopink cell` (§ Cells): prints,
-│   │                          aborts, departs, narrowed, refused — each with its
-│   │                          own `botopink.json`, each green
-│   │                          under `botopink cell check`; cli_contract.sh copies
-│   │                          them before it edits one
-│   └── cell-cases/          ← a module of cases (decision 765): `cases_module/cases/` holds a printing,
-│   │                          a refused and a narrowed case, each a full cell; `cell check`, `cell new`
-│   │                          and the layout refusals run over a copy in cli_contract.sh
-│   └── cell-workspace/      ← a workspace of cells with nested member entries
-│   │                          (`group/*`, `second/group/*`, 144 B-113): each cell
-│   │                          inherits the workspace's dependency in `cell check`'s
-│   │                          copy; a workspace itself, so not a member of
-│   │                          `conformance/modules/` (workspaces do not nest)
 │   └── code_cache.sh        ← the code cache (decision 509) and the workspace a cell
 │   │                          inherits from (512): a member that writes its name alone
 │   │                          builds against its workspace's dependency; two members
@@ -82,8 +64,8 @@ compiler-cli/
 │   │                          kept, the second member's `.beam` a link to the first's
 │   │                          entry); `test` and `build` link the entries `run`
 │   │                          stored (a dependency's production unit is one under
-│   │                          all three, decision 513); `cell check` keeps the store where the cells
-│   │                          live; the member's own module never stored; a changed
+│   │                          all three, decision 513); beam's runs of both keep the store in the
+│   │                          workspace; the member's own module never stored; a changed
 │   │                          byte misses; `--cold` rewrites every entry; two
 │   │                          concurrent writers leave whole entries, nothing staged.
 │   │                          An inode it compares is pinned by a link of its own
@@ -211,7 +193,7 @@ bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime
 > fails the script. **What a program answers is not here**: the language half
 > these scripts held moved to conformance cells in 144 B-29 step H, each run on
-> the four targets by `botopink cell check` — `backend_exec.sh`'s numeric
+> the four targets by the conformance suite — `backend_exec.sh`'s numeric
 > program (`conformance/modules/tail/run/src/cases/tail_recursive_sum`: `55` everywhere, beam
 > included, which the script had left out), its records / enum / `case` /
 > lambda program (`record_enum_case_lambda`, wasm included) and the `mod` /
@@ -391,8 +373,6 @@ What each command promises. A row the code does not meet yet is marked
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. No gate stage calls it: the formatter is applied by the commit hook, never checked (decision 524) |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links, and `.botopinkbuild/cache/`, every build cache, and `.botopinkbuild/build/comptime/`, the compiled comptime modules `build`, `check` and `test` keep under their cache root through `bp.comptime_runtime.useCompiledCache` — decision 543, `--cold` reading none), and in a workspace member the workspace root's `.botopinkbuild/cache/` and `.botopinkbuild/analysis/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
-| `cell new <path>` | nothing | `<path>/src/main.bp` (it prints `hello`) and `<path>/docs.md`; for `<module>/cases/<case>` also a link line in the module's `docs.md` (decision 765) | nothing | scaffolded | `<path>` exists |
-| `cell check [--jobs <N>] [--cold] <cell\|directory>…` | each cell, in the order the paths are given, a cell reached twice checked once (a directory holding `src/`, or a case `<module>/cases/<case>` of a directory holding `cases/` and no `src/` — decision 765, both refused; a directory argument is walked for them, not into a cell, a hidden directory, `node_modules` or a `deps` directory): `src/`, `snapshot/`, `targets`, an optional `botopink.json` — never `docs.md` | `<file>.snap.new` candidates under the cell's `snapshot/` (the previous run's deleted first); a scratch copy under `.botopinkbuild/tmp/cell-<id>/` of the current directory, removed when the cell ends. Never an accepted `.snap` | `node`, `erl`, `wasmtime` — the built program; the build itself runs in process | every cell answers its accepted snapshots on every target it declares, and every narrowing stands | a mismatch (candidate written, difference shown), a new cell, a tool that could not run, a malformed cell, or no cell found (§ Cells) |
 
 Cross-command rules:
 
@@ -703,150 +683,17 @@ inherits stdio so the envelope streams live.
 See [`src/AGENTS.md`](src/AGENTS.md) for the dispatch flow and
 [`src/cli/AGENTS.md`](src/cli/AGENTS.md) for the per-command list.
 
-## Cells — `botopink cell` (decision 464)
+## Cells — no CLI command (decisions 989, 990 (6))
 
-A **cell** states one piece of behaviour any implementation of botopink must
-give (decision 457) — its source and its answers, no generated code:
-
-```text
-<cell>/botopink.json                       its own manifest (decision 475 (1)): its package
-                                           name, `"targets"` when narrowed, a path dependency,
-                                           a named wasm host — what its workspace
-                                           (`conformance/modules/botopink.json`, decision 512)
-                                           does not declare for every cell
-<cell>/src/<module>.bp                     the program; src/main.bp holds `pub fn main`
-<cell>/snapshot/output/<module>.snap       the answer on every target
-<cell>/snapshot/targets/<t>/<module>.snap  target <t>'s departure, only where it departs
-<cell>/docs.md                             the reference text beside it (decision 462) — never read
-```
-
-`botopink cell new <path>` scaffolds `botopink.json` (`{ "name": "<the directory's name>",
-"version": "0.0.1", "src": "src/" }` — a name the manifest refuses is refused here), `src/main.bp`
-and `docs.md`. The suite these commands serve is `../../conformance/` (`conformance/AGENTS.md`).
-`botopink cell check <cell|directory>…` (`src/cli/cell.zig`) builds each cell
-**in this process** — `build.zig`'s pipeline over a scratch copy of the cell
-made afresh for each target (a program that writes into its working directory
-finds it as it would alone; the copy's manifest has its relative `path` dependencies made absolute against the cell's own directory, and its `BOTOPINK_LIB_ROOTS` carries the command's roots, the cell's `.botopinkbuild/deps/` tiers and the walk-up from the cell, so a cell run from any directory resolves its dependencies as it does in place, and a library's cells need no per-cell `deps/` workspace of links; a cell that is a member of a workspace — every `conformance/modules/` is one, decision 512 — is copied into a scratch workspace of its own whose manifest is the cell's workspace's, its `path` dependencies made absolute, and whose one member is the cell, so it inherits what it inherits in place and no sibling is read; its `"targets"`, when it writes none, are its workspace's; its dependencies' compiled modules are kept in the cell's own cache root (`code_cache.root_override`: its workspace's `.botopinkbuild/cache/code/`), never in the scratch copy; the report is written with a retried write, never dropped; one process checks any number of cells one after another (144 B-29 step H: no process per cell), each cell's allocations in an arena of its own freed once its report is out, so the process holds one cell's at a time (a module the erlang backend refuses frees the type units it had rendered — `codegen/tests/externals.zig` — so a long share's memory stays flat per cell); under `--jobs N` each of N workers is a `botopink cell check --jobs 1 <cell>…` process over a **share** of the cells (`shareSize`: about two shares per job, at most 32 cells), its report cut into each cell's section by the cell's verdict line (`sectionFor`), and a cell its process left with no verdict line (the process died on it) checked again in a process of its own (`needsAlone`, a pure decision pinned by a unit test over a report cut short); the parent adds a `FAIL <cell>` line when a cell's section holds no verdict line, so every cell found is reported in the cells' order and the summary's count is the cells found — `cli_contract.sh` counts a directory with two cells that cannot run), with `reporter.sink` and the manifest module's
-`manifest.sink` (where `Located.print` writes: a manifest's, a dependency's and
-a sidecar's refusals) pointed at a buffer, so a refusal is read off exactly the
-text `botopink build` prints — and runs the built program (`run.programArgv`: `node`,
-`erl` after the in-session compile of every `.erl` / `.S`, `wasmtime`; `node` bare: a commonJS entry installs its own abort handler so an uncaught abort writes the `Failure` text, decisions 535 and 870, `bp.otp.cjs_abort_handler`), its
-stdout, stderr and exit status captured, on every declared target. Then, per
-module and target, the accepted answer is `snapshot/targets/<t>/<m>.snap` when
-it exists, else `snapshot/output/<m>.snap`, else empty, and it is compared with
-what the target answered:
-
-- **equal on every target** → `ok   <cell>`; a run where every cell is ok exits 0;
-- **a departure that no longer holds** → `targets/<t>/<m>.snap.new` beside it;
-- **`output/` holds on some targets, not on others** → `targets/<t>/<m>.snap.new`
-  for each other target, reported as a departure to review;
-- **no target holds `output/`, or there is none** (a new cell: no `.snap` at
-  all, every module that answers and `main` get candidates) → the targets'
-  answers grouped: all agreeing → `output/<m>.snap.new` only; a strict majority
-  → `output/<m>.snap.new` from it and `targets/<t>/<m>.snap.new` for each other
-  target, a departure to review; no strict majority → `targets/<t>/<m>.snap.new`
-  for every target and `no majority — a person chooses …`: the tool never
-  decides the language's answer.
-
-Each candidate is printed with a line diff (`- ` accepted, `+ ` observed) and
-the run exits 1. An accepted `.snap` is never written; a person accepts a
-candidate by renaming it, as `snap`'s `.new` flow (decision 67: there is no
-update flag, and `check` refuses any flag). The candidates are the run's
-output: `check` deletes a cell's old `*.snap.new` before it runs it.
-
-A cell without `botopink.json` fails (decision 475 (1): no implicit package),
-and so does a leftover `targets` file. A target that gives no answer fails the
-cell by name and writes nothing — a runtime that cannot be run (never skipped),
-a program past 300 s, a build that fails naming no refusal, `erl` on another OTP
-release, or the two wasm hosts disagreeing (decision 334: on wasm the cell runs
-as the `wasi` build under `wasmtime` **and** the `browser` build under `node`
-unless its manifest names its host — the `browser` manifest is the cell's with
-`"wasm": { "host": "browser" }` added last, so every location in the cell's own
-manifest is the same in both builds —, and both must answer alike: the same
-text, or, when both refuse, the same modules refused at the same places, since
-a refusal may name the host it was built for). The manifest's `"targets"`
-narrows the cell to the targets it names — a cell that writes none holds its
-workspace's and its dependencies' (`libs.heldTargets`, decision 770), resolved
-in a scratch copy, and runs on those — (an array of target names, in any
-order; an unknown target, one named twice, none, all four or a value that is
-not an array is malformed), and each target it leaves out is **audited**:
-`botopink build --target <t>` must refuse the cell on a host binding (`has no #[@external(.<Target>(…))]`,
-`std-unsupported-on-target:`) — a build that accepts it, or refuses it otherwise, fails the cell
-(`conformance/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything
-but `output/` and `targets/<t>/`, a departure for a target the cell does not
-run, and a malformed `.snap` (named `<file>:<line>: <reason>`) fail the cell.
-
-### The `.snap` format
-
-One module's answer, a record per line; `src/cli/cell_snap.zig` is the one
-place it is written, read and compared (`conformance/check/src/records.bp` is its port for the program
-of decision 790, with 789's `build` record; the two agree until the switch):
-
-```text
-botopink-cell 1                 the format and its version — always line 1
-refused <message line>          the compiler refuses the module: its `error…` line
-at <file>:<line>:<col>          … and where, when the diagnostic is located
-label <text>                    after `at`: the label printed beside the caret, as printed (decision 485);
-                                absent when the caret has none; the `hint` lines are not claimed
-from <file>:<line>:<col>        after `at` and `label`: one `called from` line of a raise at build (decision 532),
-                                innermost first, down to the program's call, annotation or `comptime`
-out <text>                      one line the program printed (`out` alone: an empty line)
-no-final-newline                the last `out` line ended without `\n`
-abort                           the program exits non-zero (the number is never pinned)
-stderr <text>                   with `abort`: the program's stderr contains <text>
-```
-
-```text
-botopink-cell 1                         botopink-cell 1
-out 3                                   refused error[namespace-type-self]: a namespace type has no value, …
-abort                                   at src/main.bp:7:15
-stderr integer overflow: + on i32 at src/main.bp:6:14
-```
-
-The records come in that order (`refused`, `at`, `label`, `from`); a `from` follows its `at`, read off the `= called from …` lines under the first `-->` of the refusal; a `label` belongs to a refusal and follows its `at`
-(anywhere else it is a malformed `.snap`, located); a changed or vanished label is a red, a candidate
-beside the accepted file like any other difference. A refusal and an output never share a file;
-a record's text is never empty; a file parses only when rendering what it
-parsed gives back its bytes, so each answer has one spelling. The header alone
-is the empty answer — a module that compiles and, for `main`, a program that
-printed nothing and exited 0 — and a missing file answers the same. Everything
-is compared exactly but `stderr`, which is a claim that the abort names its
-cause: the stderr (ANSI stripped) must contain the text, because the rest of a
-runtime's stderr — a stack trace, absolute paths, a crash-dump notice — is not
-the language's answer. `check` never writes a `stderr` line of its own; a
-candidate keeps the accepted claims that still hold.
-
-What a target answered, as `.snap`s: a build that fails gives every `error…`
-line it printed (the `N module(s) failed to compile` summary aside) with the
-first `--> <file>:<L>:<C>` under it and the text beside the first caret line below that (`label`), filed under the module that file is
-(`src/shapes/circle.bp` → `shapes/circle.snap`; an unlocated refusal is
-`main`'s) — a refusal the compiler cascades into an importer is that
-importer's answer too; a build that succeeds gives `main.snap`: stdout, and
-`abort` when the exit status is not 0 or the program died of a signal.
-
-### Choices made here, for the maintainer to confirm
-
-1. **The format** above: line-oriented records, `botopink-cell 1` as its first
-   line; an abort is `abort` with no status (decision 457 "that it aborts";
-   `conformance/AGENTS.md` § Never pin an erlang exit status); `stderr` is
-   containment, not equality, and lives wherever the abort's words are
-   claimed — `targets/<t>/` per decision 457, `output/` allowed when every
-   target names the same text.
-2. **A departure replaces `output/` for its module on its target, whole** — it
-   is that target's full answer, not a patch over `output/` (an abort's stderr
-   claim on commonJS repeats the `out` lines).
-3. **The cell's package and manifest** — decided by 475 (1): every cell has its
-   own `botopink.json`, and `check` refuses a cell without one. The migration of
-   `tests/language` named each cell's package after the cell, and every cell's package is its directory's
-   name (decision 511); the `targets` file became the manifest's `"targets"`.
-4. **The entry** is `src/main.bp`, required in every cell, its `main` the
-   program; the other modules are what its `mod` tree reaches. Snapshots are
-   named after the module's file under `src/` (`x/mod.bp` → `x/mod.snap`).
-5. **Majority** is strict (more than half of the targets that read `output/`):
-   two against two is no majority.
-6. **A cell whose module answers nothing** needs no file; a new cell is one
-   with no `.snap` at all, and its `main` always gets a candidate, so an empty
-   answer is accepted by a person, never by default.
+`botopink cell` (`new` and `check`, decision 464) left the CLI with 990 (6): the conformance suite
+checks itself in process — each module a botopink package whose `main` loads its cases with
+`compiler.load`, runs them and compares each answer with its section of `snapshot/main.snap`
+(`conformance/lib/`, the records and the comparison ported from the `.snap` format the CLI held),
+writing `snapshot/main.snap.new` and never accepting (decision 67). The suite's root package
+`conformance/modules/` loads every module; `conformance/run.sh` builds it once with
+`build --emit-runtime` and runs its `.bpr` on each target (`../../conformance/AGENTS.md`). What the
+CLI keeps for it: `compiler.load` itself (compiler-core), `build --json` and its `refused` events
+(`cli/refusals.zig`), `--emit-runtime` / `run <file>.bpr` and `--cache-root`.
 
 ## Tagging
 

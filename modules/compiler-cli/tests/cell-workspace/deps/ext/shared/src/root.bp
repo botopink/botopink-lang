@@ -1,5 +1,0 @@
-//// A package a cell reaches through a symlink in its own `deps/`.
-
-pub fn word() -> string {
-    return "shared";
-}

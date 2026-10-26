@@ -253,8 +253,7 @@ fn runInSession(arena: std.mem.Allocator, io: std.Io, s: *Session, eval: []const
     const t3 = try std.mem.replaceOwned(u8, arena, t2, "halt(", "BpSessionHalt(");
     // The job runs in the command's current directory, as an `erl` of its own
     // would: the session keeps the directory it was spawned in, and the
-    // command may have moved since (`botopink cell check` builds each cell in
-    // a scratch project of its own, `cell.zig`), while a job's paths — the
+    // command may have moved since, while a job's paths — the
     // list file, the output directory — are relative to where it is now.
     const text = try std.mem.concat(arena, u8, &.{ try setCwdExpr(arena, io), t3 });
 
