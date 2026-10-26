@@ -1,0 +1,26 @@
+botopink-cell 1
+out == adopted_default_builds_opaque
+out refused error: opaque-construction: `Token` is an opaque type — `Token(…)` is written only inside its own methods (decisions 811, 814)
+out at src/main.bp:16:16
+out == lowering_call_marked
+out refused error: reserved-name: `__bp_load_module` is reserved for the compiler (a name starting with `__bp_` is the compiler's)
+out at src/main.bp:8:13
+out == opaque_construction
+out refused error: opaque-construction: `Token` is an opaque type — `Token(…)` is written only inside its own methods (decisions 811, 814)
+out at src/main.bp:31:13
+out == opaque_field
+out refused error: opaque-field: `Token` is an opaque type — its field `uses` is read only inside its own methods (decisions 811, 814)
+out at src/main.bp:32:13
+out == opaque_method
+out refused error: method-not-pub: `Token.bumped` of module `token` is written without `pub` — a method without `pub` is called only in its own module (decision 859)
+out at src/main.bp:9:19
+out == opaque_pattern
+out refused error: opaque-field: `Token` is an opaque type — a pattern of its fields opens it, and only its own methods do (decisions 811, 814)
+out at src/main.bp:33:9
+out == opaque_type_through_methods
+out a×2
+out a×2
+out 2
+out true
+out false
+out true

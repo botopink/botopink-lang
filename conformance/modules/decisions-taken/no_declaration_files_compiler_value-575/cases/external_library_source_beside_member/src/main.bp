@@ -1,0 +1,31 @@
+//// Decision 575 (6) — a library's `compiler.implement` survives the module's
+//// re-analysis: a decorator of the same module that adds a member
+//// (`compiler.addMember`) does not lose the implementation `#[bif]` gave.
+
+import {compiler, io.terminal.print} from "std";
+
+fn bif(syntax decl: unknown, comptime module: string) -> void {
+    compiler.implement(Implementation.Erlang(module + ":reverse($0)"));
+}
+
+fn tagged<T>(syntax decl: T) -> void {
+    compiler.addMember("tag", fn(self: T) -> string {
+        return "tagged";
+    });
+}
+
+#[tagged]
+type Box(size: i32)
+
+#[bif("lists")]
+#[compiler.external(.JavaScript("[...$0].reverse()"), .Wasm(body: reverseBody))]
+declare fn backwards(xs: i32[]) -> i32[];
+
+fn reverseBody(xs: i32[]) -> i32[] {
+    return xs.reverse();
+}
+
+pub fn main() -> void {
+    print(Box(size: 1).tag());
+    print(backwards([1, 2, 3]));
+}

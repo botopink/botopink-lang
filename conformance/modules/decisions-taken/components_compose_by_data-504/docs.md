@@ -1,6 +1,6 @@
 # Decision 504 — Components compose by data on every target (388 to the end): only a body that awaits is a state machine, the renderer awaits only marked lambdas; `Suspense` and `ErrorBoundary` are tree nodes the renderer resolves while descending. Comptime unchanged.
 
-[cells/component_awaits_host_task/src/main.bp](cells/component_awaits_host_task/src/main.bp)
+[cases/component_awaits_host_task/src/main.bp](cases/component_awaits_host_task/src/main.bp)
 [cells/component_try_catch_then_awaits_host_task/src/main.bp](cells/component_try_catch_then_awaits_host_task/src/main.bp)
 [cells/component_try_then_awaits_host_task/src/main.bp](cells/component_try_then_awaits_host_task/src/main.bp)
 

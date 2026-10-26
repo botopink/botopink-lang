@@ -15,7 +15,7 @@ is `run-module-untraced`.
 
 [cells/module_run_body_at_run/src/main.bp](cells/module_run_body_at_run/src/main.bp)
 [cells/module_run_twice/src/main.bp](cells/module_run_twice/src/main.bp)
-[cells/run_in_called_function/src/main.bp](cells/run_in_called_function/src/main.bp)
-[cells/run_module_refused/src/main.bp](cells/run_module_refused/src/main.bp)
-[cells/module_construction/src/main.bp](cells/module_construction/src/main.bp)
+[cases/run_in_called_function/src/main.bp](cases/run_in_called_function/src/main.bp)
+[cases/run_module_refused/src/main.bp](cases/run_module_refused/src/main.bp)
+[cases/module_construction/src/main.bp](cases/module_construction/src/main.bp)
 [cells/run_on_module_alias/src/main.bp](cells/run_on_module_alias/src/main.bp)

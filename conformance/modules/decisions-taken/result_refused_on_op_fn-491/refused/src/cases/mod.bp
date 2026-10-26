@@ -1,2 +1,0 @@
-pub mod external_result_on_fn_cell;
-pub mod external_result_on_wasm_op_cell;

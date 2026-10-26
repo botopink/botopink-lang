@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: typeinfo-meta-hooks-pending: `page` carries a decorator that reads `.hooks`, which records its meta after this read
-at src/cases/template_lookup_meta_hooks_pending/mod.bp:28:16

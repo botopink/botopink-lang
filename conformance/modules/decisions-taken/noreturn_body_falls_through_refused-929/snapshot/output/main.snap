@@ -1,0 +1,13 @@
+botopink-cell 1
+out == noreturn_body_falls_through_default_fn_refused
+out refused error: noreturn-falls-through: `Halting.bad` declares `-> noreturn` and its body can complete
+out at src/main.bp:7:16
+out == noreturn_body_falls_through_lambda_refused
+out refused error: noreturn-falls-through: the function expression declares `-> noreturn` and its body can complete
+out at src/main.bp:7:15
+out == noreturn_body_falls_through_method_refused
+out refused error: noreturn-falls-through: `Gate.bad` declares `-> noreturn` and its body can complete
+out at src/main.bp:8:8
+out == noreturn_body_falls_through_refused
+out refused error: noreturn-falls-through: `bad` declares `-> noreturn` and its body can complete
+out at src/main.bp:7:4

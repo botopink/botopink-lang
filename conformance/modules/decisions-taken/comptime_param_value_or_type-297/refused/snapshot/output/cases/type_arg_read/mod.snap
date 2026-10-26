@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type-arg-read: `s` is a type where `s is type` holds — a type has no value to read
-at src/cases/type_arg_read/mod.bp:11:16

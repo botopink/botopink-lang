@@ -2,4 +2,4 @@
 
 [cells/dependency_imports_itself_with_from/src/main.bp](cells/dependency_imports_itself_with_from/src/main.bp)
 [cells/import_own_package_with_from/src/main.bp](cells/import_own_package_with_from/src/main.bp)
-[cells/std_module_imports_std_module/src/main.bp](cells/std_module_imports_std_module/src/main.bp)
+[cases/std_module_imports_std_module/src/main.bp](cases/std_module_imports_std_module/src/main.bp)

@@ -1,2 +1,0 @@
-pub mod binding_shadows_in_inner_block;
-pub mod case_arm_binder_reuses_name;

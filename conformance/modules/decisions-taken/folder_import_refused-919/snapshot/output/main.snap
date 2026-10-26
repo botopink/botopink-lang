@@ -1,0 +1,7 @@
+botopink-cell 1
+out == folder_import_refused
+out refused error: folder-import: `io` is a folder of std, not a module, and a folder is not importable
+out at src/main.bp:4:9
+out == folder_import_testing_refused
+out refused error: folder-import: `testing` is a folder of std, not a module, and a folder is not importable
+out at src/main.bp:4:9

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'Wasi'
-at src/cases/external_host_on_node/mod.bp:7:57

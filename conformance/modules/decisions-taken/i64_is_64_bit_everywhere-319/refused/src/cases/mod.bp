@@ -1,3 +1,0 @@
-pub mod integer_literal_below_minimum;
-pub mod integer_literal_unsuffixed_default_out_of_range;
-pub mod integer_literal_unsuffixed_out_of_range;

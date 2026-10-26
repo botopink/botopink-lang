@@ -1,0 +1,5 @@
+botopink-cell 1
+out == template_stringify_marker
+out refused error[template-stringify-marker]: `$stringify` is not a template marker
+out at src/main.bp:9:33
+out label write the host's conversion

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: template-build-outside-bound: `count` built code of type `string`, outside its answer `i32`
-at src/cases/template_build_outside_bound/mod.bp:8:21

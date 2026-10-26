@@ -1,0 +1,29 @@
+botopink-cell 1
+out == template_destructuring_init
+out 3 abc zz
+out == template_in_argument
+out EFEF
+out a+b
+out == template_in_case_arm
+out ghgh
+out other
+out okok
+out == template_in_field_default
+out xx!
+out xx!own
+out hi nana
+out == template_in_lambda
+out cdcd!
+out a--,b--
+out == template_in_module_val_lambda
+out template x
+out == template_in_type_method
+out abab7
+out == template_name_shadowed_by_local
+out template before
+out param x
+out local a
+out local b
+out == template_function_value
+out refused error: template-function-value: `shout` is a template function, which exists only while the program compiles, so it is no value
+out at src/main.bp:11:13

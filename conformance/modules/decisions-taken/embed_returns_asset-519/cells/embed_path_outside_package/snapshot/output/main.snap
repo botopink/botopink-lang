@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: embed-path-outside-package: `@embed("assets/../../embed_text_file/assets/greeting.txt")` leaves the package
-at src/main.bp:7:20

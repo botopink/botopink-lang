@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[module]` needs a type implementing `Module` — `City` does not
-at src/cases/decorator_decl_behavior_not_implemented/mod.bp:17:3

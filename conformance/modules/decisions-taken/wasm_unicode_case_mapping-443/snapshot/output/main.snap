@@ -1,0 +1,22 @@
+botopink-cell 1
+out == comptime_text_one_answer
+out 5.0
+out 5.0
+out 1.0e21
+out 1.0e-7
+out [ a]
+out É
+out STRASSE
+out οδοσ
+out école
+out == string_case_unicode
+out É
+out STRASSE
+out école
+out σα
+out ΣΑΣ
+out Ǆ
+out FI
+out 2
+out ПРИВЕТ
+out ʼN

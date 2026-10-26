@@ -1,0 +1,17 @@
+botopink-cell 1
+out == implement_signature_differs
+out refused error: implement-signature-differs: `Tag.label` does not match the contract `Labelled` — contract: fn label(self: Tag) -> string · written: fn label(self: Tag, extra: i32) -> i32
+out at src/main.bp:14:8
+out == implement_signature_differs_default_fn
+out refused error: implement-signature-differs: `Polite.greet` does not match the contract `Greeting` — contract: fn greet(self: Polite, name: string) -> string · written: fn greet(self: Polite, times: i32) -> string
+out at src/main.bp:15:8
+out == implement_signature_differs_extension_block
+out refused error: implement-signature-differs: `Square.area` does not match the contract `Shape` — contract: fn area(self: Square) -> f64 · written: fn area(self: Square) -> i32
+out at src/main.bp:15:8
+out == implement_signature_differs_no_variance
+out refused error: implement-signature-differs: `Always.find` does not match the contract `Lookup` — contract: fn find(self: Always, key: string) -> ?string · written: fn find(self: Always, key: string) -> string
+out at src/main.bp:12:8
+out == implement_signature_same
+out #a
+out ab
+out 1

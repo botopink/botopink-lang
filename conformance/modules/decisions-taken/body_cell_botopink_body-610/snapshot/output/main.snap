@@ -1,0 +1,12 @@
+botopink-cell 1
+out == external_all_bodies
+out refused error: external-all-bodies: every source of `backwards` is a `body:` cell — write the function with that body
+out at src/main.bp:13:3
+out == external_body_not_a_fn
+out refused error: external-body-not-a-fn: `.Wasm(body: reverseBody)` on `backwards`: `reverseBody` is `pub` — a binding names a private fn, so no body becomes the module's surface twice
+out at src/main.bp:12:91
+out == external_source_empty
+out refused error: external-source-empty: `.Erlang` on `magnitude` names no code — write its template, or `body:` naming a private fn of this module
+out at src/main.bp:7:22
+out == external_fn_body_every_target
+out 5.0

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: internal-import: `internal.unicode_tables` is in `internal/` of package `std`, which is private to that package
-at src/main.bp:4:9

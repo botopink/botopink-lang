@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: opaque-field: `Token` is an opaque type — its field `uses` is read only inside its own methods (decisions 811, 814)
-at src/main.bp:32:13

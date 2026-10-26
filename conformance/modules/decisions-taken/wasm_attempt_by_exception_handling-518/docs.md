@@ -1,7 +1,7 @@
 # Decision 518 — `attempt` on wasm by wasm exception handling on every host; a binding declares the host features it needs; STD-001 refuses at the call.
 
-[cells/comptime_attempt_at_build/src/main.bp](cells/comptime_attempt_at_build/src/main.bp)
-[cells/external_wasm_needs_unknown/src/main.bp](cells/external_wasm_needs_unknown/src/main.bp)
+[cases/comptime_attempt_at_build/src/main.bp](cases/comptime_attempt_at_build/src/main.bp)
+[cases/external_wasm_needs_unknown/src/main.bp](cases/external_wasm_needs_unknown/src/main.bp)
 [cells/std_asserts_host_cell_on_wasm/src/main.bp](cells/std_asserts_host_cell_on_wasm/src/main.bp)
 [cells/std_json_on_every_target/src/main.bp](cells/std_json_on_every_target/src/main.bp)
 [cells/std_unsupported_refused_at_the_call/src/main.bp](cells/std_unsupported_refused_at_the_call/src/main.bp)

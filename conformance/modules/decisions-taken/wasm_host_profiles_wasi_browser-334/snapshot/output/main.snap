@@ -1,0 +1,16 @@
+botopink-cell 1
+out == external_host_on_node
+out refused error: unbound variable 'Wasi'
+out at src/main.bp:7:57
+out == external_wasm_host_beside_unhosted
+out refused error: `roundOf` binds wasm twice for host 'browser' — one `.Wasm(…)` per host
+out at src/main.bp:7:3
+out == external_wasm_host_twice
+out refused error: `roundOf` binds wasm twice for host 'wasi' — one `.Wasm(…)` per host
+out at src/main.bp:7:3
+out == external_wasm_host_unknown
+out refused error: unbound variable 'Deno'
+out at src/main.bp:8:81
+out == external_wasm_host_binding
+out 2.0
+out -2.0

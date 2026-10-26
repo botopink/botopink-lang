@@ -17,8 +17,8 @@ Each refusal is located: `Token(…)` written in `main` is `opaque-construction`
 std's `compiler.Module` is opaque (811 (4)): `compiler.load` answers one through its method without `pub`, and its
 fields are read through `name()` and `path()` — the cells of decisions 786, 787, 792 and 806.
 
-[cells/opaque_type_through_methods/src/main.bp](cells/opaque_type_through_methods/src/main.bp)
-[cells/opaque_construction/src/main.bp](cells/opaque_construction/src/main.bp)
-[cells/opaque_field/src/main.bp](cells/opaque_field/src/main.bp)
-[cells/opaque_method/src/main.bp](cells/opaque_method/src/main.bp)
-[cells/opaque_pattern/src/main.bp](cells/opaque_pattern/src/main.bp)
+[cases/opaque_type_through_methods/src/main.bp](cases/opaque_type_through_methods/src/main.bp)
+[cases/opaque_construction/src/main.bp](cases/opaque_construction/src/main.bp)
+[cases/opaque_field/src/main.bp](cases/opaque_field/src/main.bp)
+[cases/opaque_method/src/main.bp](cases/opaque_method/src/main.bp)
+[cases/opaque_pattern/src/main.bp](cases/opaque_pattern/src/main.bp)

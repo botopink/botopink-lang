@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: the integer literal `1` is not a `bigint` — write `1n`
-at src/cases/bigint_plus_int_literal/mod.bp:7:18

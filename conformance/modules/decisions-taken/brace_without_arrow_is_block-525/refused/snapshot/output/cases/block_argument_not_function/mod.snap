@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: block-not-function: expected a function, got a block's value — missing `->`?
-at src/cases/block_argument_not_function/mod.bp:11:17

@@ -1,2 +1,0 @@
-pub mod record_structural_equality;
-pub mod type_identity_equality;

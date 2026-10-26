@@ -1,0 +1,10 @@
+botopink-cell 1
+out == record_spread_derived_partial
+out refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `SoNome` is neither
+out at src/main.bp:16:20
+out == record_spread_partial
+out refused error: record-spread-partial: `PessoaPatch` is `Type.partial(…)`'s answer — a field of it may be null, so it is not spread into `Pessoa`
+out at src/main.bp:12:20
+out == record_spread_required
+out refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `Full` is neither
+out at src/main.bp:16:20

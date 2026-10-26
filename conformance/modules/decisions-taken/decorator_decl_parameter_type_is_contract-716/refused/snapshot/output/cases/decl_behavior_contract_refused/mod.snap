@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[module]` needs a type implementing `Module` — `City` does not
-at src/cases/decl_behavior_contract_refused/mod.bp:17:3

@@ -1,5 +1,0 @@
-botopink-cell 1
-out Ok 3
-out Error panic: assertion failed: x > 0 at src/main.bp:10:5
-out Error panic: assertion failed: x > 0 && s != "a\"b": x must be positive at src/main.bp:15:5
-out after

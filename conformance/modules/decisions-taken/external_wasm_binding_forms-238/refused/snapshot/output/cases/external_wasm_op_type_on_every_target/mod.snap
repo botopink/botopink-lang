@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `.Wasm(op: "f64.floor")`: `f64.floor` is `(f64) -> f64`, and the declared parameters and return must be exactly those types (on `floorOf`)
-at src/cases/external_wasm_op_type_on_every_target/mod.bp:8:3

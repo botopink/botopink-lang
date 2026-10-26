@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'passwordMatch'
-at src/cases/decorator_arg_unbound_function/mod.bp:25:29

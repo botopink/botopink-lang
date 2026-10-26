@@ -1,0 +1,10 @@
+botopink-cell 1
+out == await_without_marker_refused
+out refused error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
+out at src/main.bp:13:13
+out == use_without_marker_refused
+out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Badge' carries no `component` marker (it returns 'Component<View>'): write `component fn`
+out at src/main.bp:13:13
+out == yield_without_marker_refused
+out refused error: yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body carries no marker
+out at src/main.bp:10:25

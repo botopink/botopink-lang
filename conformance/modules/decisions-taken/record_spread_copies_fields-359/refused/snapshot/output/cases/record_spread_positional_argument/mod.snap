@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: record-spread-arguments: beside a spread, every argument of `Pessoa` names its field
-at src/cases/record_spread_positional_argument/mod.bp:10:27
