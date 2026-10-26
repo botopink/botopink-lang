@@ -310,6 +310,20 @@ pub fn loadDependenciesWith(
     env_map: EnvMap,
     keys: ?*ClosureKeys,
 ) ![]Module {
+    return loadDependenciesIn(gpa, io, proj, env_map, keys, proj.srcDir());
+}
+
+/// `loadDependenciesWith`, the project's `.bpp` files looked for in
+/// `src_dir` (cwd's `proj.srcDir()` for the package a command builds; a
+/// loaded package's own, under its directory, `resolveLoaded`).
+fn loadDependenciesIn(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    env_map: EnvMap,
+    keys: ?*ClosureKeys,
+    src_dir: []const u8,
+) ![]Module {
     var modules: std.ArrayListUnmanaged(Module) = .empty;
     // On error, free what was accumulated, then the list backing — in this order
     // (a single block, not two errdefers, which would run LIFO and free the
@@ -337,7 +351,7 @@ pub fn loadDependenciesWith(
     // names are checked once that package is loaded (`loadClosure`).
     var bpp_arena = std.heap.ArenaAllocator.init(gpa);
     defer bpp_arena.deinit();
-    const bpp_files = try bpp.scanBppFiles(bpp_arena.allocator(), io, proj.srcDir());
+    const bpp_files = try bpp.scanBppFiles(bpp_arena.allocator(), io, src_dir);
     if (proj.manifest.bpp == null and bpp_files.len > 0) return bpp.refuseUnnamed(bpp_arena.allocator(), bpp_files);
     try bpp.refuseTwins(bpp_arena.allocator(), io, bpp_files);
 
@@ -355,6 +369,128 @@ pub fn loadDependenciesWith(
 
     try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.workspace, proj.dependencies, tiers, &modules, bpp_files, keys);
     return try modules.toOwnedSlice(gpa);
+}
+
+// ── A loaded package's own dependencies (decision 993 (1)) ──────────────────
+
+/// The environment the CLI's commands run with, for `resolveLoaded`'s tiers.
+var load_env: EnvMap = null;
+
+/// Hand compiler-core the resolver of a `compiler.load`ed package's own
+/// dependencies (`bp.load.resolver`): every command that compiles calls it
+/// once, before its first compile.
+pub fn installLoadResolver(env_map: EnvMap) void {
+    load_env = env_map;
+    bp.load.resolver = .{ .resolve = resolveLoaded };
+}
+
+/// One resolution per package directory per process (decision 993 (1)): a
+/// package two loads reach is resolved once, its modules shared.
+var loaded_mutex: std.atomic.Mutex = .unlocked;
+var loaded_arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var loaded_cache: std.StringHashMapUnmanaged(bp.load.Resolution) = .empty;
+
+/// Decision 993 (1) — the dependencies of the package whose `botopink.json`
+/// is in `dir`, as `botopink build` there resolves them: its manifest read
+/// with its workspace's (512), `path` from its directory, `{ "workspace": true }`
+/// from its workspace's root, `git` through 483's tiers; and the targets it
+/// holds when it writes none (75, 770). What `botopink build` there would
+/// print as a refusal is answered as the package's own (`refused`), never
+/// printed: a nested compile is captured (780 (5)). Lives as long as the process.
+fn resolveLoaded(_: ?*anyopaque, io: std.Io, dir: []const u8) anyerror!bp.load.Resolution {
+    while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer loaded_mutex.unlock();
+    const a = loaded_arena.allocator();
+    if (loaded_cache.get(dir)) |r| return r;
+    const key = try a.dupe(u8, dir);
+    const r = try resolveLoadedUncached(a, io, key);
+    try loaded_cache.put(a, key, r);
+    return r;
+}
+
+fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.load.Resolution {
+    // What a refusal prints, read back instead of printed.
+    var captured: std.Io.Writer.Allocating = .init(a);
+    const saved_sink = reporter.sink;
+    const saved_manifest_sink = manifest.sink;
+    reporter.sink = &captured.writer;
+    manifest.sink = &captured.writer;
+    defer {
+        reporter.sink = saved_sink;
+        manifest.sink = saved_manifest_sink;
+    }
+    const refused = struct {
+        fn of(arena: std.mem.Allocator, text: []const u8, err: anyerror) !bp.load.Resolution {
+            return .{ .refused = try refusalOf(arena, text, err) };
+        }
+    };
+    const proj = config.loadAt(a, io, dir) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return refused.of(a, captured.written(), err),
+    };
+    // The modules live as long as the process (`a` is never freed), so they
+    // may join the program a `run()` compiles.
+    const modules = loadDependenciesIn(a, io, proj, load_env, null, try std.fs.path.join(a, &.{ proj.dir, proj.srcDir() })) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return refused.of(a, captured.written(), err),
+    };
+    var targets: ?[]const []const u8 = null;
+    if (proj.manifest.targets == null or proj.manifest.targets_inherited) {
+        const held = heldTargets(a, io, a, proj, load_env) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return refused.of(a, captured.written(), err),
+        };
+        // Every target held is no narrowing: the package declares none.
+        if (held.len < ALL_TARGET_NAMES.len) targets = held;
+    }
+    return .{ .ok = .{ .modules = modules, .targets = targets } };
+}
+
+/// The first `error…: <message>` line of `text` (a refusal as the CLI prints
+/// it, colours stripped) and the `--> <file>:<line>:<col>` under it when it
+/// points at `botopink.json`; the error's name when nothing was printed.
+fn refusalOf(a: std.mem.Allocator, text: []const u8, err: anyerror) !std.meta.TagPayload(bp.load.Resolution, .refused) {
+    const plain = try stripAnsi(a, text);
+    var lines = std.mem.splitScalar(u8, plain, '\n');
+    var out: std.meta.TagPayload(bp.load.Resolution, .refused) = .{ .message = "" };
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \r");
+        if (out.message.len == 0) {
+            if (std.mem.startsWith(u8, line, "error")) {
+                const colon = std.mem.indexOf(u8, line, ": ") orelse continue;
+                out.message = line[colon + 2 ..];
+            }
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "--> ")) {
+            const place = line["--> ".len..];
+            const c2 = std.mem.lastIndexOfScalar(u8, place, ':') orelse break;
+            const c1 = std.mem.lastIndexOfScalar(u8, place[0..c2], ':') orelse break;
+            if (std.mem.eql(u8, std.fs.path.basename(place[0..c1]), manifest.FILENAME)) {
+                out.line = std.fmt.parseInt(usize, place[c1 + 1 .. c2], 10) catch 0;
+                out.column = std.fmt.parseInt(usize, place[c2 + 1 ..], 10) catch 0;
+            }
+        }
+        break;
+    }
+    if (out.message.len == 0) out.message = try std.fmt.allocPrint(a, "the package's dependencies could not be resolved ({s})", .{@errorName(err)});
+    return out;
+}
+
+fn stripAnsi(a: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (i < text.len) {
+        if (text[i] == 0x1b and i + 1 < text.len and text[i + 1] == '[') {
+            i += 2;
+            while (i < text.len and !std.ascii.isAlphabetic(text[i])) i += 1;
+            i += 1;
+            continue;
+        }
+        try out.append(a, text[i]);
+        i += 1;
+    }
+    return out.items;
 }
 
 /// Decision 770 — the targets the project holds: its own `"targets"` when

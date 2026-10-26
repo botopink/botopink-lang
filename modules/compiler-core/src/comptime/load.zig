@@ -927,7 +927,7 @@ pub const Answer = union(enum) {
     /// The refusals, in order; empty when the package compiles.
     diagnostics: []const Diagnostic,
     /// Decision 982 (2) — the path names no package: what it lacks.
-    not_a_package: NotAPackage,
+    not_a_package: NotAPackageWhy,
     /// The file is already being loaded on this thread.
     cycle,
     /// std's one-time initialisation is running: no compile may start.
@@ -935,32 +935,107 @@ pub const Answer = union(enum) {
 };
 
 /// Decision 982 (2) — why a path is no package: it names a file, or a
-/// directory with no `botopink.json`, or one with no `src/main.bp`.
+/// directory with no `botopink.json`, or one with no entry file.
 pub const NotAPackage = enum {
     file,
     no_manifest,
     no_main,
+};
 
-    pub fn text(self: NotAPackage) []const u8 {
-        return switch (self) {
+/// `NotAPackage` and the entry file the package lacks (decision 993 (1):
+/// its manifest's `src` and `entry`, `src/main.bp` by default).
+pub const NotAPackageWhy = struct {
+    why: NotAPackage,
+    entry: []const u8 = package_main,
+
+    /// The refusal's text after the path, allocated with `arena`.
+    pub fn text(self: NotAPackageWhy, arena: std.mem.Allocator) ![]const u8 {
+        return switch (self.why) {
             .file => "names a file, not a package directory",
             .no_manifest => "names no directory holding a `botopink.json`",
-            .no_main => "names a package with no `src/main.bp`",
+            .no_main => try std.fmt.allocPrint(arena, "names a package with no `{s}`", .{self.entry}),
         };
     }
 };
 
-/// The entry every loaded package is compiled from (decision 982 (1)).
+/// The entry a loaded package is compiled from when its manifest writes
+/// neither `src` nor `entry` (decisions 982 (1), 993 (1), 512 (4)).
 pub const package_main = "src/main.bp";
 
-/// What a loaded package's own `botopink.json` says (decision 982 (1), (3)):
-/// its name, its targets (null when it declares none) and the names of its
-/// dependencies.
+/// What a loaded package's own `botopink.json` says (decisions 982 (1), (3),
+/// 993 (1)): its name, its targets (null when it declares none) and the
+/// names of its dependencies; its entry file is `entryFileOf`'s.
 const Manifest = struct {
     name: []const u8 = "",
     targets: ?moduleMod.Targets = null,
     dependencies: []const []const u8 = &.{},
 };
+
+/// Decision 993 (1) — what resolves a loaded package's own dependencies, as
+/// `botopink build` in its directory would: `path` from its directory,
+/// `{ "workspace": true }` from its workspace's root, `git` through decision
+/// 483's tiers. The CLI hands it (`libs.installLoadResolver`); with none (the
+/// language server, the browser build, a unit test) a loaded package's
+/// dependency is the caller build's module of that name (decision 982 (1)).
+pub const Resolver = struct {
+    ctx: ?*anyopaque = null,
+    /// The dependencies of the package whose `botopink.json` is in `dir` (a
+    /// directory as the caller's reader roots it, joined with the loaded
+    /// path). What it answers lives as long as the process.
+    resolve: *const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8) anyerror!Resolution,
+};
+
+/// A `Resolver`'s answer for one loaded package.
+pub const Resolution = union(enum) {
+    ok: struct {
+        /// Every module of the package's dependency closure, dependencies
+        /// before dependents, each carrying its package (`Module.package`).
+        modules: []const Module,
+        /// Decisions 75, 512 (3), 770 — the targets the package holds when its
+        /// manifest writes none (its workspace's, narrowed by its
+        /// dependencies'); null when nothing narrows them.
+        targets: ?[]const []const u8 = null,
+    },
+    /// The package's manifest or its dependencies refused, as `botopink
+    /// build` there would refuse them: one `Diagnostic` at `botopink.json`.
+    refused: struct { message: []const u8, line: usize = 0, column: usize = 0 },
+};
+
+/// The resolver of this process (set once by the CLI, before any compile).
+pub var resolver: ?Resolver = null;
+
+/// The directory of the loaded package `files` reads, as its reader roots it.
+fn packageDir(arena: std.mem.Allocator, files: PackageFiles) ![]const u8 {
+    if (files.dir.len == 0) return arena.dupe(u8, files.root);
+    return std.fs.path.join(arena, &.{ files.root, files.dir });
+}
+
+/// The manifest's `src` as a directory of the package — `"src/"` → `"src"`,
+/// `"."` or `"./"` → `""` (the CLI's `ProjectConfig.srcDir`).
+fn srcDirOf(src: []const u8) []const u8 {
+    var s = std.mem.trimEnd(u8, src, "/");
+    while (std.mem.startsWith(u8, s, "./")) s = s[2..];
+    if (std.mem.eql(u8, s, ".")) return "";
+    return s;
+}
+
+/// The entry file `text`'s `src` and `entry` name (decision 993 (1)), read
+/// before the manifest is checked: a manifest that does not parse keeps
+/// `package_main`, and its refusal is `readManifest`'s.
+fn entryFileOf(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch return package_main;
+    if (parsed != .object) return package_main;
+    var src: []const u8 = "src";
+    var entry: []const u8 = "main.bp";
+    if (parsed.object.get("src")) |v| if (v == .string) {
+        src = srcDirOf(v.string);
+    };
+    if (parsed.object.get("entry")) |v| if (v == .string and v.string.len > 0) {
+        entry = v.string;
+    };
+    if (src.len == 0) return arena.dupe(u8, entry);
+    return std.mem.concat(arena, u8, &.{ src, "/", entry });
+}
 
 /// Why a loaded package's `botopink.json` is refused, and where it points
 /// (`line` and `column` 0 when nowhere).
@@ -1022,8 +1097,9 @@ fn readManifest(arena: std.mem.Allocator, text: []const u8) union(enum) { ok: Ma
     return .{ .ok = m };
 }
 
-/// Compile the package at `req.path` (decision 982) from its `src/main.bp`,
-/// under its own manifest, and answer its refusals, allocated with `arena`.
+/// Compile the package at `req.path` (decision 982) from the entry its
+/// manifest names (`src/main.bp` by default, decision 993 (1)), under its own
+/// manifest, and answer its refusals, allocated with `arena`.
 pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const comptimeMod = @import("../comptime.zig");
     if (!comptimeMod.stdlibTemplateReady()) return .std_initialising;
@@ -1039,13 +1115,15 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
 
     // Decision 982 (2) — a package directory: its own `botopink.json` and
     // `src/main.bp`; a file, or a directory short of either, is none.
-    if (exists(scratch, req.files, req.path)) return .{ .not_a_package = .file };
+    if (exists(scratch, req.files, req.path)) return .{ .not_a_package = .{ .why = .file } };
     const pkg_files = try req.files.under(arena, req.path);
     const manifest_text = pkg_files.readFile(scratch, "botopink.json") catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return .{ .not_a_package = .no_manifest },
+        else => return .{ .not_a_package = .{ .why = .no_manifest } },
     };
-    if (!exists(scratch, pkg_files, package_main)) return .{ .not_a_package = .no_main };
+    // Decision 993 (1) — the entry the manifest's `src` and `entry` name.
+    const entry_file = try entryFileOf(arena, manifest_text);
+    if (!exists(scratch, pkg_files, entry_file)) return .{ .not_a_package = .{ .why = .no_main, .entry = entry_file } };
 
     var refusals: std.ArrayListUnmanaged(Diagnostic) = .empty;
     var main_of: MainOf = .{};
@@ -1058,25 +1136,44 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     };
     var pkg_req = req;
     pkg_req.files = pkg_files;
-    const own = gatherTree(scratch, arena, pkg_req, package_main, &refusals, &main_of) catch |err| switch (err) {
-        error.FileNotFound => return .{ .not_a_package = .no_main },
+    const own = gatherTree(scratch, arena, pkg_req, entry_file, &refusals, &main_of) catch |err| switch (err) {
+        error.FileNotFound => return .{ .not_a_package = .{ .why = .no_main, .entry = entry_file } },
         else => |e| return e,
     };
     if (refusals.items.len > 0) return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, main_of) };
 
-    // Decision 982 (1), (3) — the loaded package's own manifest: its targets
-    // and its dependencies (each the one the build resolved under that name;
-    // one the build has none of is left out, and the loaded package's import
-    // of it is its own refusal). The wasm host stays the build's.
+    // Decisions 982 (1), (3), 993 (1) — the loaded package's own manifest:
+    // its targets and its dependencies. With a resolver, the dependencies are
+    // the package's own, resolved from its directory, and a manifest that
+    // writes no targets holds what its workspace and its dependencies leave
+    // it (75, 770); without one, each is the one the build resolved under that
+    // name (one the build has none of is left out, and the loaded package's
+    // import of it is its own refusal). The wasm host stays the build's.
     const caller = build_modules;
-    const targets = manifest.targets;
+    var targets = manifest.targets;
     var wasm_host: ast.WasmHost = .wasi;
     for (caller) |m| if (m.package.len == 0) {
         wasm_host = m.wasm_host;
         break;
     };
     var modules: std.ArrayListUnmanaged(Module) = .empty;
-    for (caller) |m| if (m.package.len > 0) {
+    if (resolver) |r| {
+        const dir = try packageDir(scratch, pkg_files);
+        const resolution = r.resolve(r.ctx, req.io, dir) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => Resolution{ .refused = .{ .message = try std.fmt.allocPrint(arena, "the dependencies of `{s}` could not be resolved ({s})", .{ req.path, @errorName(err) }) } },
+        };
+        switch (resolution) {
+            .ok => |ok| {
+                try modules.appendSlice(scratch, ok.modules);
+                if (targets == null) targets = moduleMod.Targets.of(ok.targets);
+            },
+            .refused => |why| {
+                try refusals.append(arena, .{ .code = codeOf(why.message), .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
+                return .{ .diagnostics = try remember(req.path, manifest.name, "", refusals.items, own, main_of) };
+            },
+        }
+    } else for (caller) |m| if (m.package.len > 0) {
         const named = for (manifest.dependencies) |d| {
             if (std.mem.eql(u8, d, m.package)) break true;
         } else false;

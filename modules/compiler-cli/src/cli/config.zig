@@ -126,9 +126,19 @@ pub const LoadError = error{
 /// Load and parse `botopink.json` from the current working directory.
 /// The returned value and all strings in it are owned by `arena`.
 pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
+    return loadAt(arena, io, null);
+}
+
+/// `load` for the package whose `botopink.json` is in `at` (absolute, or
+/// relative to cwd) instead of cwd's — a package `compiler.load` loads
+/// resolves its dependencies from its own directory (decision 993 (1),
+/// `libs.installLoadResolver`). Its messages name `botopink.json`, as
+/// `load`'s do.
+pub fn loadAt(arena: std.mem.Allocator, io: std.Io, at: ?[]const u8) LoadError!ProjectConfig {
+    const manifest_path = if (at) |d| try std.fs.path.join(arena, &.{ d, manifest.FILENAME }) else manifest.FILENAME;
     const data = std.Io.Dir.cwd().readFileAlloc(
         io,
-        manifest.FILENAME,
+        manifest_path,
         arena,
         .limited(64 * 1024),
     ) catch return error.ConfigNotFound;
@@ -139,7 +149,7 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
     // A member's `"bpp"` may name a dependency it inherits (decision 512):
     // checked once the workspace's are in.
     const parsed = manifest.parseWith(arena, data, manifest.FILENAME, &err, .{
-        .bundled_std = manifest.isBundledStd(io, "."),
+        .bundled_std = manifest.isBundledStd(io, at orelse "."),
         .defer_bpp = true,
     });
     var m = parsed catch |e| switch (e) {
@@ -156,7 +166,10 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
     }
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const n = std.process.currentPath(io, &cwd_buf) catch return fromManifest(m);
-    const dir = try arena.dupe(u8, cwd_buf[0..n]);
+    const dir = if (at) |d|
+        (if (std.fs.path.isAbsolute(d)) try arena.dupe(u8, d) else try std.fs.path.resolve(arena, &.{ cwd_buf[0..n], d }))
+    else
+        try arena.dupe(u8, cwd_buf[0..n]);
 
     // Decision 512: a member takes what its workspace declares for every
     // member — the dependencies above all. Applied here, on the project's own
