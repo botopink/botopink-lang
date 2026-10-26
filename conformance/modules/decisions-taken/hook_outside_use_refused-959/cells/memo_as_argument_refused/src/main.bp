@@ -1,0 +1,19 @@
+//// Decision 959 — `memo` is lowered where it is `use`d: `memo(g)` passed as an
+//// argument is refused at the call, `context-hook-without-use`.
+
+import {context.run, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+fn keep(c: Component<i32>) -> Component<i32> {
+    return c;
+}
+
+component fn Page() -> Component<View> {
+    val n = use keep(memo({ -> 3 }));
+    return View(text: n.toString());
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

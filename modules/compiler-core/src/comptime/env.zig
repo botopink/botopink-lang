@@ -1209,6 +1209,10 @@ pub const Env = struct {
     /// initializer is being inferred: the one place `Context<T>()` may be
     /// written (a context's identity is its declaration).
     contextDeclSite: ?ast.Loc = null,
+    /// Decision 960 — the name of the module-level `val` / `var` whose
+    /// initializer is being inferred: a value made there carries no stamp,
+    /// so a `#[key]` written there is refused.
+    moduleInitName: ?[]const u8 = null,
     /// Decision 354 — each `use provide(…)` / `use context(…)`, by the
     /// `use`'s location: what the scope lowering makes of it (388 (4)).
     contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,

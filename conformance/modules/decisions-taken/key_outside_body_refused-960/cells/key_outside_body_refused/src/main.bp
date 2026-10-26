@@ -1,0 +1,26 @@
+//// Decision 960 — a key is a stamp, and a value made outside every function body
+//// carries none: `#[key(…)]` in a module-level initialiser is refused at the
+//// `#`, `key-outside-body`.
+
+import {context.all, context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: "item " + n.toString());
+}
+
+component fn Card(n: i32) -> Component<View> {
+    return View(text: "card " + n.toString());
+}
+
+val views = [#[key(1)] Item(1), #[key(1)] Card(1)];
+
+component fn Page() -> Component<View> {
+    val xs = use all(views);
+    return View(text: xs.map({ v -> v.text }).join(","));
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

@@ -1,0 +1,26 @@
+//// Decision 960 — the same keys written inside a component body are accepted,
+//// and a list made at module level is keyed where it is run.
+
+import {context.all, context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: "item " + n.toString());
+}
+
+component fn Card(n: i32) -> Component<View> {
+    return View(text: "card " + n.toString());
+}
+
+val ids = [1, 2];
+
+component fn Page() -> Component<View> {
+    val xs = use all([#[key(1)] Item(1), #[key(2)] Card(1)]);
+    val ys = use all(ids.map({ i -> #[key(i)] Item(i) }));
+    return View(text: xs.map({ v -> v.text }).join(",") + " | " + ys.map({ v -> v.text }).join(","));
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

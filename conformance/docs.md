@@ -3086,7 +3086,12 @@ Item(p) })` — and puts `k` in the item's stead, so a reordered list keeps each
 item's state (decision 818 (3)); before any other expression it is
 `key-not-component`, and a key `==` does not compare as a value — a record, a
 function — is `key-type`. Two siblings with one key fail at run time,
-`key-duplicate` (decision 819 (5)).
+`key-duplicate` (decision 819 (5)); any other place met twice in one render
+of one parent — `use h` twice, or `h` twice in one `all` list — fails
+`place-duplicate`: write the call twice, or key each run (decision 958). A
+key is a stamp, so `#[key(k)]` written outside every function body — in a
+module-level initialiser — is `key-outside-body`; such a list is keyed where
+it is run (decision 960).
 
 <!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/identity_by_call_and_key -->
 
@@ -3096,6 +3101,12 @@ function — is `key-type`. Two siblings with one key fail at run time,
 
 <!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_type -->
 
+<!-- example: modules/decisions-taken/place_repeat_refused-958/cells/place_repeat_refused -->
+
+<!-- example: modules/decisions-taken/key_outside_body_refused-960/cells/key_outside_body_refused -->
+
+<!-- example: modules/decisions-taken/key_outside_body_refused-960/cells/key_inside_body_accepted -->
+
 `use all(cs)` (decision 827) resolves a run-time list of components under one
 `use`: `all`'s cell stands at the call's place and entry `i` runs under it with
 `Place.index(i)`, in order, and the `use` answers `T[]` — awaited when an
@@ -3103,13 +3114,22 @@ entry answered a task, its node asynchronous. An index fills an item half
 that is absent or a plain function's count and keeps a body's count and a key
 (decisions 884, 891), so a keyed list keeps each item by its key, a list a
 body built keeps each item by its count, and only an entry no body counted
-follows its position.
+follows its position. `all` and `memo` are lowered where they are `use`d, as
+`provide`, `context` and `inject` are: `all(cs)` or `memo(f)` written as a
+value, an argument or an initialiser is `context-hook-without-use` (decision
+959).
 
 <!-- example: modules/decisions-taken/use_all_resolves_a_list-827/cells/use_all_resolves_a_list -->
 
 <!-- example: modules/decisions-taken/all_entries_by_index-884/cells/all_entries_by_index -->
 
 <!-- example: modules/decisions-taken/index_keeps_body_count-891/cells/index_keeps_body_count -->
+
+<!-- example: modules/decisions-taken/hook_outside_use_refused-959/cells/hook_outside_use_refused -->
+
+<!-- example: modules/decisions-taken/hook_outside_use_refused-959/cells/memo_as_argument_refused -->
+
+<!-- example: modules/decisions-taken/hook_outside_use_refused-959/cells/use_all_and_memo_accepted -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`

@@ -1,0 +1,5 @@
+botopink-cell 1
+out used twice: place-duplicate: one place is run twice in one render of its parent (cell 1, call 1) — write the call twice, or key each run (decision 958)
+out listed twice: place-duplicate: one place is run twice in one render of its parent (cell 2, call 1) — write the call twice, or key each run (decision 958)
+out called twice: hh
+out keyed twice: hh

@@ -1912,6 +1912,9 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             const prevDeclSite = env.contextDeclSite;
             env.contextDeclSite = if (v.mutable) null else v.value.getLoc();
             defer env.contextDeclSite = prevDeclSite;
+            const prevInit = env.moduleInitName;
+            env.moduleInitName = v.name;
+            defer env.moduleInitName = prevInit;
             const typedExpr = if (annType != null and v.value.* == .function)
                 try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
@@ -4520,6 +4523,9 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             const prevDeclSite = env.contextDeclSite;
             env.contextDeclSite = if (v.mutable) null else v.value.getLoc();
             defer env.contextDeclSite = prevDeclSite;
+            const prevInit = env.moduleInitName;
+            env.moduleInitName = v.name;
+            defer env.moduleInitName = prevInit;
             const ty = try inferExprExpecting(env, v.value.*, annType);
             try noteContextDeclaration(env, v, annType orelse ty);
             // Bind the DECLARED (annotated) type when present.
@@ -22552,6 +22558,16 @@ fn noteMemoUse(env: *Env, operand: ast.Expr, typed: TypedExpr, loc: ast.Loc) Inf
 /// whole initializer of a module-level `val` (its identity is the
 /// declaration, 281).
 fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    // Decision 959 — `all` and `memo` are lowered where they are `use`d, as
+    // the three above are: a call of either outside a `use` operand makes no
+    // value whose body runs.
+    if (isStdAllCall(env, c) or isStdMemoCall(env, c)) {
+        if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
+        const name = c.kind.call.callee;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a hook std lowers where it is `use`d — `use {s}(…)`; written as a value it makes nothing that runs (decision 959)", .{ diagnostics.context_hook_without_use, name, name });
+        env.lastError = TypeError.custom(msg, "Write `val xs = use all(cs);` or `val v = use memo(make);` in a `component fn` body; a list made elsewhere is passed to the body that runs it.").withLoc(c.loc);
+        return error.TypeError;
+    }
     const which = stdContextCallee(env, c) orelse return;
     switch (which) {
         .context_type => {
@@ -24128,6 +24144,15 @@ const optional_synthetic_col = ast.optional_synthetic_col;
 /// function `key-type`). The call answers `x`'s type; `context_lower.zig`
 /// writes the key into the place the value carries (820 (1)).
 fn inferKeyedExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    // Decision 960 — a key is a stamp (818 (3)), and a value made outside
+    // every function body carries none (820 (3)).
+    if (env.moduleInitName) |name| if (env.currentFnName.len == 0) {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, diagnostics.key_outside_body ++ ": `#[key(…)]` is written in the initializer of `{s}`, outside every function body — a value made there carries no place for a key to name (decision 960)", .{name}),
+            "Key the list where it is run, inside a component body: `use all(views.map({ v -> #[key(v.id)] v }))`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
     const saved = env.expectedType;
     const typedValue = try inferExprTyped(env, call.args[0].value.*);
     env.expectedType = null;

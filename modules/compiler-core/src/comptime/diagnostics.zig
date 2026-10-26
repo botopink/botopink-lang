@@ -85,6 +85,10 @@ pub const key_not_component: []const u8 = "key-not-component";
 /// Decision 818 (3) — a `#[key(k)]` whose key `==` does not compare as a
 /// value: a record or a function. Located at the `#`.
 pub const key_type: []const u8 = "key-type";
+/// Decision 960 — a `#[key(k)]` written outside every function body (a
+/// module-level initializer): a key is a stamp, and a value made there
+/// carries none. Located at the `#`.
+pub const key_outside_body: []const u8 = "key-outside-body";
 /// Decisions 804 (1), 388 (5) — a type component's field typed `Scope`:
 /// the renderer hands the scope to `compose` at each run. Located at the
 /// field's type.
@@ -944,6 +948,7 @@ pub const all_codes = [_][]const u8{
     component_compose_missing,
     key_not_component,
     key_type,
+    key_outside_body,
     component_scope_field,
     component_use_outside_compose,
     component_compose_called,

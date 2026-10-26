@@ -3,7 +3,7 @@
 //// verb twice: it is refused at its name, `hook-name-use-prefix`. Name the hook for
 //// what it yields: `use actionState(…)`.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.Scope, io.terminal.print} from "std";
 
 component fn useCounter(start: i32) -> Component<i32> {
     return start;

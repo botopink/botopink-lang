@@ -1,0 +1,19 @@
+//// Decision 959 — `use all(cs)` and `use memo(g)` stand as before.
+
+import {context.all, context.run, hooks.memo, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: n.toString());
+}
+
+component fn Page() -> Component<View> {
+    val xs = use all([Item(1), Item(2)]);
+    val n = use memo({ -> 3 });
+    return View(text: xs.map({ v -> v.text }).join(",") + " " + n.toString());
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

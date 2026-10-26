@@ -1,0 +1,51 @@
+//// Decision 958 — one stamped value is one place: `use h` twice in one body, or
+//// `h` twice in one list `all` runs, fails `place-duplicate` at the second run;
+//// two calls of `Header()`, or one value under two keys, are two places and pass.
+
+import {context.all, context.run, failure.attemptTask, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Header() -> Component<View> {
+    return View(text: "h");
+}
+
+component fn UsedTwice() -> Component<View> {
+    val h = Header();
+    val a = use h;
+    val b = use h;
+    return View(text: a.text + b.text);
+}
+
+component fn ListedTwice() -> Component<View> {
+    val h = Header();
+    val xs = use all([h, h]);
+    return View(text: xs.map({ v -> v.text }).join(""));
+}
+
+component fn CalledTwice() -> Component<View> {
+    val a = use Header();
+    val b = use Header();
+    return View(text: a.text + b.text);
+}
+
+component fn KeyedTwice() -> Component<View> {
+    val h = Header();
+    val xs = use all([#[key(1)] h, #[key(2)] h]);
+    return View(text: xs.map({ v -> v.text }).join(""));
+}
+
+async fn attempt(name: string, c: Component<View>) -> Async<void> {
+    val r = await attemptTask({ -> run(c) });
+    case r {
+        Ok(v) -> print(name + ": " + v.text);
+        Error(f) -> print(name + ": " + f.message);
+    }
+}
+
+pub async fn main() -> Async<void> {
+    await attempt("used twice", UsedTwice());
+    await attempt("listed twice", ListedTwice());
+    await attempt("called twice", CalledTwice());
+    await attempt("keyed twice", KeyedTwice());
+}

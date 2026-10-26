@@ -1,0 +1,20 @@
+//// Decision 959 — `all` is lowered where it is `use`d: `all(cs)` written as a
+//// `val` initialiser is refused at the call, `context-hook-without-use`.
+
+import {context.all, context.run, io.terminal.print} from "std";
+
+type View(text: string)
+
+component fn Item(n: i32) -> Component<View> {
+    return View(text: n.toString());
+}
+
+component fn Page() -> Component<View> {
+    val a = all([Item(1), Item(2)]);
+    val xs = use a;
+    return View(text: xs.map({ v -> v.text }).join(","));
+}
+
+pub async fn main() -> Async<void> {
+    print((await run(Page())).text);
+}

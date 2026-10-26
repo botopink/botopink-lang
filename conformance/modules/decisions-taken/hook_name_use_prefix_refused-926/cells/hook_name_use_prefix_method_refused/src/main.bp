@@ -2,7 +2,7 @@
 //// upper-case letter spells the verb twice: it is refused at its name,
 //// `hook-name-use-prefix`, as a `fn` is.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {context.Scope, io.terminal.print} from "std";
 
 type Box(start: i32) {
     component fn useCounter(self: Self) -> Component<i32> {

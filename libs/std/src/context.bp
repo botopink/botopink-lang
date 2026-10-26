@@ -295,12 +295,21 @@ fn openChild(store: unknown, owner: unknown, carried: unknown, parent: i32, key:
     val found = linkAt(treeLinks(t), parent, key);
     if (found is PlaceLink) {
         val l: PlaceLink = found;
-        // Two siblings with one key in one render (819 (5)); the root's
-        // children are each run's own.
-        if (parent != 0 && l.linkSeen == p.cellGen && key.item == PlaceItem.Key)
-            panic("key-duplicate: two siblings carry the key "
-                + keyText(placeKey(key))
-                + " (decision 819 (5))");
+        // One place met twice in one render of one parent (958): two
+        // siblings with one key fail `key-duplicate` (819 (5)), any other
+        // place — one stamped value run twice — `place-duplicate`; the
+        // root's children are each run's own.
+        if (parent != 0 && l.linkSeen == p.cellGen) {
+            if (key.item == PlaceItem.Key)
+                panic("key-duplicate: two siblings carry the key "
+                    + keyText(placeKey(key))
+                    + " (decision 819 (5))");
+            panic("place-duplicate: one place is run twice in one render of its parent (cell "
+                + parent.toString()
+                + ", call "
+                + key.callNo.toString()
+                + ") — write the call twice, or key each run (decision 958)");
+        }
         // Met in the parent's previous render or in this one: the same cell,
         // its contexts taken anew and its counts reset (816 (2), 817 (5)).
         if (parent == 0 || l.linkSeen >= p.cellGen - 1) {
