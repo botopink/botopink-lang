@@ -1,4 +1,4 @@
-Generated from botopink/projects · specs/decisions-taken-steps.md — edit there.
+Generated from botopink/specs-data · specs/decisions-taken-steps.md — change it through specs-bot (answer, supersede), never here.
 
 ## Rows 1–143 — 1.0.5-beta and 1.0.10-beta
 
