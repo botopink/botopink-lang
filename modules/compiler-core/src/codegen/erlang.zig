@@ -9201,6 +9201,13 @@ const Emitter = struct {
         if (cc.calleeExpr) |ce| {
             return b.applyParen(try this.exprNode(b, ce.*), try this.callArgs(b, null, cc));
         }
+        // Decision 961 (2) — a lowering's marked call of a std helper by its
+        // std name: the remote call into that std module, whatever this
+        // module binds under the name.
+        if (cc.stdModule) |m| if (cc.receiver == null) {
+            const path = try std.fmt.allocPrint(b.arena, "std/{s}", .{m});
+            return b.remote(this.atomOf(path), cc.callee, try this.callArgs(b, null, cc));
+        };
         const recv = cc.receiver orelse {
             if (this.user_erlang_templates.contains(cc.callee)) {
                 // §A2 per-callee template / arity-branched annotation. With no

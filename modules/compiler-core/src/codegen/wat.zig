@@ -20,8 +20,8 @@ const scopeCarry = @import("wat/scope_carry.zig");
 /// Decision 504 — one of std's `context` functions the scope lowering calls
 /// that answers a value of the scope (`find`), or takes one (`provideIn`,
 /// `answer`): called only from `wat/scope_carry.zig`'s wrappers.
-fn isScopeReadFn(name: []const u8) bool {
-    for ([_][]const u8{ context_lower.find_fn, context_lower.enter_fn, context_lower.provide_fn, context_lower.answer_fn, context_lower.memo_read_fn }) |f| if (std.mem.eql(u8, name, f)) return true;
+fn isScopeReadFn(cc: anytype) bool {
+    for ([_][]const u8{ context_lower.find_fn, context_lower.enter_fn, context_lower.provide_fn, context_lower.answer_fn }) |f| if (context_lower.isHelperCall(cc, f)) return true;
     return false;
 }
 
@@ -784,6 +784,11 @@ fn linkRenames(
     linked_module: bool,
     out: *std.StringHashMapUnmanaged([]const u8),
 ) !void {
+    // Decision 961 (2) — std's mangled functions under their link keys, for
+    // the marked calls of std's helpers (`renameLinkedCalls`); a key holds
+    // a NUL, so no call's name is one.
+    var mit = mangled.iterator();
+    while (mit.next()) |e| if (std.mem.startsWith(u8, e.key_ptr.*, "std/")) try out.put(arena, e.key_ptr.*, e.value_ptr.*);
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (mangled.get(try linkKey(arena, module_name, f.name))) |m| try out.put(arena, f.name, m),
         .use => |u| for (u.imports) |imp| {
@@ -993,6 +998,14 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
                 @field(out, f.name) = try renameLinkedCalls(f.type, arena, @field(value, f.name), renames);
             }
             if (comptime @hasField(T, "callee") and @hasField(T, "receiver") and @hasField(T, "calleeExpr") and @hasField(T, "is_builtin")) {
+                if (comptime @hasField(T, "stdModule")) if (out.stdModule) |sm| if (out.receiver == null) {
+                    // Decision 961 (2) — a marked call of a std helper names
+                    // that std module's function, mangled or as declared,
+                    // never a name of the calling module (`linkRenames`).
+                    const key = try std.fmt.allocPrint(arena, "std/{s}\x00{s}", .{ sm, out.callee });
+                    if (renames.get(key)) |m| out.callee = m;
+                    return out;
+                };
                 if (out.receiver == null and out.calleeExpr == null and !out.is_builtin) {
                     if (renames.get(out.callee)) |m| out.callee = m;
                 } else if (out.calleeExpr == null and !out.is_builtin) {
@@ -12564,7 +12577,7 @@ const Emitter = struct {
                         // wrote it carried no type this backend can hold —
                         // unresolved, or a float / `i64` no slot here holds
                         // as a word. Only a carry wrapper calls std's own.
-                        if (cc.receiver == null and !self.raw_return and isScopeReadFn(cc.callee))
+                        if (cc.receiver == null and !self.raw_return and isScopeReadFn(cc))
                             return self.refuse(c.loc, "the wasm backend cannot read this value back from a component's render scope: its type is not known here, or it is not one word (a float, an `i64`)", .{});
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the

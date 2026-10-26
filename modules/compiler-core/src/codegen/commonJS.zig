@@ -3000,6 +3000,16 @@ const Emitter = struct {
         return self.b.call(.{ .name = "require" }, &.{.{ .quoted = path }});
     }
 
+    /// The `require` path of std module `module` (`out/std/<module>.js`) from
+    /// this module, one `../` per segment of its path.
+    fn stdModulePath(self: *Emitter, module: []const u8) ![]const u8 {
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        const depth = std.mem.count(u8, self.module_name, "/");
+        if (depth == 0) try buf.appendSlice(self.arena(), "./") else for (0..depth) |_| try buf.appendSlice(self.arena(), "../");
+        try buf.print(self.arena(), "std/{s}.js", .{module});
+        return buf.toOwnedSlice(self.arena());
+    }
+
     /// The parameter names of `params` when every one is a plain binding.
     /// Null when one destructures or carries a default: the rewrite has to
     /// ASSIGN each parameter, and neither shape has a name to assign to.
@@ -7321,6 +7331,14 @@ const Emitter = struct {
     }
 
     fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
+        // Decision 961 (2) — a lowering's marked call of a std helper by its
+        // std name: a member of that std module's object, whatever this
+        // module binds under the name. Its arguments are positional.
+        if (cc.stdModule) |m| if (cc.receiver == null) {
+            const args = try self.arena().alloc(js.Expr, cc.args.len);
+            for (cc.args, 0..) |a, i| args[i] = try self.buildExpr(a.value.*);
+            return self.b.call(try self.b.member(try self.requireCall(try self.stdModulePath(m)), cc.callee), args);
+        };
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         if (try self.paramShapeToString(cc)) |text| return text;
         if (try self.tupleToString(cc)) |text| return text;

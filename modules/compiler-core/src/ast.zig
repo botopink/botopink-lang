@@ -1438,9 +1438,16 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// on every call a program writes, and then left out of the AST
             /// dump.
             lowering: bool = false,
+            /// Decision 961 (2) — the std module (`context`) a lowering's
+            /// marked call reaches `callee` in, by its std name: no import
+            /// binds it, so no name of the calling module meets it, and each
+            /// backend calls into that module directly. Set only with
+            /// `lowering`; null on every call a program writes, and then left
+            /// out of the AST dump.
+            stdModule: ?[]const u8 = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "lowering", "templateText" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked", "recordPacked", "lowering", "stdModule", "templateText" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain

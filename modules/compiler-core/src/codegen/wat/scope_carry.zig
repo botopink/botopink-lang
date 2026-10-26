@@ -1,10 +1,12 @@
 //! Decision 504 — the component scope's values on wasm, typed.
 //!
 //! The scope lowering (`comptime/context_lower.zig`, decisions 809 (8), 819)
-//! carries values through std's `context` functions in `unknown` slots — a
+//! carries values through std's `context` functions in `unknown` slots — its
+//! marked calls of them by their std names (`context_lower.isHelperCall`,
+//! decision 961 (2)) — a
 //! provided value, a body's answer, the value a run answers — and writes, on
 //! each call that crosses one, the checker's type of the value as the call's
-//! one type argument (`bpScopeFind__<T>(…)`, the `bpRun__<R>` a run of a
+//! one type argument (`find<T>(…)`, the `bpRun__<R>` a run of a
 //! component value carries). This backend boxes and unboxes only by a static
 //! type, so before anything is registered each module's program is rewritten
 //! here (a copy: the transformed program is shared with the module's other
@@ -20,9 +22,6 @@
 //!   reader of the call's answer — a field read, a string concatenation, a
 //!   printer — asks a declared return, as of any function; the wrapper's
 //!   `return` passes the word as it is (`Emitter.raw_return`);
-//! - a `use memo` slot's value (decision 771) is read the same way, through
-//!   a wrapper of its own (`bpScopeRaw__memo<n>`) declared to answer the `T`
-//!   the slot's `read` carries;
 //! - a written `Component<R>` is the function a component is at run time
 //!   (819): `fn(unknown, unknown) -> R`, wherever it is written but a host
 //!   declaration (a bodyless `declare fn` answers the host's own value).
@@ -109,6 +108,10 @@ const Carry = struct {
             .args = args,
             .trailing = &.{},
             .calleeExpr = if (callee == null) try self.ident(ps[0].name, loc) else null,
+            // Decision 961 (2) — the wrapper calls std's helper by its std
+            // name, marked as the lowering's call it stands in for.
+            .lowering = callee != null,
+            .stdModule = if (callee != null) context_lower.helper_module else null,
         } } } };
         const body = try self.arena.alloc(ast.Stmt, 1);
         body[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = call } } } };
@@ -144,24 +147,30 @@ const Carry = struct {
             cc.* = .{ .receiver = null, .callee = name, .is_builtin = false, .args = args, .trailing = &.{} };
             return;
         }
-        if (std.mem.eql(u8, cc.callee, context_lower.provide_fn)) {
+        if (context_lower.isHelperCall(cc.*, context_lower.provide_fn)) {
             const name = wrapper_prefix ++ "provide";
             if (!self.provide_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("v", unknown_ref) }, unknown_ref, context_lower.provide_fn, c.loc);
             self.provide_done = true;
             cc.callee = name;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.enter_fn)) {
+            cc.stdModule = null;
+            cc.lowering = false;
+        } else if (context_lower.isHelperCall(cc.*, context_lower.enter_fn)) {
             // The function's own parameters, the scope and the place: passed
             // on as the words they are.
             const name = wrapper_prefix ++ "enter";
             if (!self.enter_done) try self.declare(name, &.{ param("s", unknown_ref), param("k", unknown_ref) }, unknown_ref, context_lower.enter_fn, c.loc);
             self.enter_done = true;
             cc.callee = name;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.answer_fn)) {
+            cc.stdModule = null;
+            cc.lowering = false;
+        } else if (context_lower.isHelperCall(cc.*, context_lower.answer_fn)) {
             const name = wrapper_prefix ++ "answer";
             if (!self.answer_done) try self.declare(name, &.{param("v", unknown_ref)}, unknown_ref, context_lower.answer_fn, c.loc);
             self.answer_done = true;
             cc.callee = name;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.find_fn)) {
+            cc.stdModule = null;
+            cc.lowering = false;
+        } else if (context_lower.isHelperCall(cc.*, context_lower.find_fn)) {
             const ta = cc.typeArgs orelse return;
             if (ta.len != 1) return;
             const name = try self.fresh("find");
@@ -169,17 +178,8 @@ const Carry = struct {
             // default, moved through `find`'s `unknown` slot as `push`'s value is.
             try self.declare(name, &.{ param("s", unknown_ref), param("k", .{ .named = "string" }), param("f", unknown_ref) }, ta[0], context_lower.find_fn, c.loc);
             cc.callee = name;
-        } else if (std.mem.eql(u8, cc.callee, context_lower.memo_read_fn)) {
-            // Decision 771 — a `use memo` slot's value, typed by the `T` the
-            // call carries: `make`'s answer crosses the slot as its own word.
-            const ta = cc.typeArgs orelse return;
-            if (ta.len != 1) return;
-            const name = try self.fresh("memo");
-            const ret = try self.arena.create(ast.TypeRef);
-            ret.* = unknown_ref;
-            try self.declare(name, &.{ param("s", unknown_ref), param("m", .{ .function = .{ .params = &.{}, .returnType = ret } }) }, ta[0], context_lower.memo_read_fn, c.loc);
-            cc.callee = name;
-            cc.typeArgs = null;
+            cc.stdModule = null;
+            cc.lowering = false;
         }
     }
 
@@ -249,7 +249,7 @@ fn needs(comptime N: type, v: *const N) bool {
         if (v.* == .call and v.call.kind == .call) {
             const cc = v.call.kind.call;
             if (cc.calleeExpr != null and cc.typeArgs != null) return true;
-            for (context_lower.lowered_fns) |f| if (std.mem.eql(u8, cc.callee, f)) return true;
+            if (context_lower.isAnyHelperCall(cc)) return true;
         }
     }
     if (comptime !mayHold(N)) return false;

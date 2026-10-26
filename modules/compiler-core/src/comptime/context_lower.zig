@@ -7,22 +7,22 @@
 //!
 //!   fn Card(item: Item) -> Component<View> { body }
 //!     →  fn Card(item: Item) -> fn(unknown, unknown) -> unknown {
-//!            return { bpScope__, bpKey__ -> val bpCell__N = bpScopeEnter__(bpScope__, bpKey__); body' };
+//!            return { bpScope__, bpKey__ -> val bpCell__N = enter(bpScope__, bpKey__); body' };
 //!        }
 //!
 //! The body opens its own cell, the child at `key` of the scope it was handed
 //! (819 (1)), and `body'` reads and writes it:
 //!
-//!   use provide(c);      →  bpScopeProvide__(bpCell__N, "<T's identity>", c);
-//!   use context(ctx)     →  bpScopeFind__(bpRecv__N, "<ctx's type's identity>", ctx)
+//!   use provide(c);      →  provideIn(bpCell__N, "<T's identity>", c);
+//!   use context(ctx)     →  find(bpRecv__N, "<ctx's type's identity>", ctx)
 //!
 //! where a `Context<T>` is its value at run time (`createContext(v)` is `v`)
-//! and `bpRecv__N = bpScopeReceived__(bpCell__N)`, bound at the body's entry,
+//! and `bpRecv__N = received(bpCell__N)`, bound at the body's entry,
 //! is what the cell held then — a body reads the contexts it received, never
 //! its own provides (354 (2), 809 (8)).
 //!
-//!   use h(…) / use c     →  await (h(…))(bpCell__N, bpScopeNowhere__())   — a child cell of the body's (812 (1), 818 (1))
-//!   return v             →  return bpScopeAnswer__(v)
+//!   use h(…) / use c     →  await (h(…))(bpCell__N, nowhere())   — a child cell of the body's (812 (1), 818 (1))
+//!   return v             →  return answer(v)
 //!
 //! and a body that ends without a `return` answers `answer(null)`. A `use
 //! provide` writes the cell where it is written, so what the body resolves
@@ -32,16 +32,16 @@
 //! place on the value, numbered in written order within the nearest
 //! `component` body, the lambdas written in it counted with it:
 //!
-//!   Item(p)              →  bpStamp__(Item(p), bpCell__N, <n>)            — in a component body
-//!   Item(p)              →  bpStampPlain__(Item(p), bpCount__N, <n>)      — in a plain function
-//!   #[key(k)] Item(p)    →  bpStampKeyed__(Item(p), <n>, k)               — 818 (3)
-//!   itens.map(Card)      →  itens.map({ a -> bpStamp__(Card(a), bpCell__N, <n>) })
+//!   Item(p)              →  stamp(Item(p), bpCell__N, <n>)            — in a component body
+//!   Item(p)              →  stampPlain(Item(p), bpCount__N, <n>)      — in a plain function
+//!   #[key(k)] Item(p)    →  stampKeyed(Item(p), <n>, k)               — 818 (3)
+//!   itens.map(Card)      →  itens.map({ a -> stamp(Card(a), bpCell__N, <n>) })
 //!
-//! A plain function that stamps opens `val bpCount__N = bpCountNew__();
-//! defer bpCountEnd__(bpCount__N);`, its counter reset at each entry; a value
+//! A plain function that stamps opens `val bpCount__N = countNew();
+//! defer countEnd(bpCount__N);`, its counter reset at each entry; a value
 //! made outside every function carries no stamp (820 (3)). Decisions 816,
 //! 818 (1) — `use memo(make)` is a call of the body like the others, its
-//! slot its own child cell's: `bpMemoIn__(bpCell__N, <n>, make)`.
+//! slot its own child cell's: `memoIn(bpCell__N, <n>, make)`.
 //! A `{ component x -> body }` lambda (decision 574, `Env.componentLambdas`)
 //! is lowered the same way, its tail made its `return`:
 //! `{ x -> return { bpScope__, bpKey__ -> body' }; }` — its parameters and
@@ -57,11 +57,13 @@
 //! `Component<R>` (`Env.hostCalls`) answers the host's own value: a `use` of
 //! it runs nothing.
 //!
-//! The `bpScope…__` functions are std's `context.enter` / `received` /
-//! `provideIn` / `find` / `answer` / `nowhere` / `root`, imported under those
-//! names when the module needs them (the import is added here). Those the
-//! checker reads private (decision 961) std's `context` exports from its
-//! emitted copy alone (`withHelpersExported`). A context's
+//! The calls above are std's `context.enter` / `received` / `provideIn` /
+//! `find` / `answer` / `nowhere` / `root` and the stamps', by their std names:
+//! each is marked (`CallExpr.lowering`, decision 830) and names its module
+//! (`CallExpr.stdModule`, decision 961 (2)), so no import binds it and no
+//! name of the module meets it (`isHelperCall`). Those the checker reads
+//! private (decision 961) std's `context` exports from its emitted copy
+//! alone (`withHelpersExported`). A context's
 //! identity is its value's type (379), recorded by the checker in
 //! `Env.contextUses`: a read's fallback is the context value it names (723),
 //! an `inject` field's the `val` that declares its type's default (another
@@ -81,29 +83,29 @@ const Env = envMod.Env;
 /// place (819 (1)).
 pub const scope_param = "bpScope__";
 pub const key_param = "bpKey__";
-/// The local names std's lowering functions are imported under.
-pub const enter_fn = "bpScopeEnter__";
-pub const received_fn = "bpScopeReceived__";
-pub const provide_fn = "bpScopeProvide__";
-pub const find_fn = "bpScopeFind__";
-pub const answer_fn = "bpScopeAnswer__";
-pub const nowhere_fn = "bpScopeNowhere__";
-pub const root_fn = "bpScopeRoot__";
-/// Decision 771's slot functions, gone with 816 (a slot belongs to a cell):
-/// no lowering writes them; the names stay for the wasm backend's list.
-pub const memo_new_fn = "bpMemoNew__";
-pub const memo_read_fn = "bpMemoRead__";
+/// The std module the lowering's functions are declared in, and their std
+/// names: each call of one is marked (`CallExpr.lowering`, decision 830) and
+/// names the module (`CallExpr.stdModule`, decision 961 (2)), so no import
+/// binds it and no name of the calling module meets it (`isHelperCall`).
+pub const helper_module = "context";
+pub const enter_fn = "enter";
+pub const received_fn = "received";
+pub const provide_fn = "provideIn";
+pub const find_fn = "find";
+pub const answer_fn = "answer";
+pub const nowhere_fn = "nowhere";
+pub const root_fn = "root";
 /// std's `context.memoIn` (816, 818 (1)): `use memo` over its own child cell.
-pub const memo_in_fn = "bpMemoIn__";
+pub const memo_in_fn = "memoIn";
 /// std's `context.allIn` (827, 884): `use all(cs)` over its own child cell.
-pub const all_in_fn = "bpAllIn__";
+pub const all_in_fn = "allIn";
 /// std's `context.stamp` / `stampPlain` / `stampKeyed` (820, 821, 818 (3))
 /// and the plain function's counter, `countNew` / `countEnd`.
-pub const stamp_fn = "bpStamp__";
-pub const stamp_plain_fn = "bpStampPlain__";
-pub const stamp_keyed_fn = "bpStampKeyed__";
-pub const count_new_fn = "bpCountNew__";
-pub const count_end_fn = "bpCountEnd__";
+pub const stamp_fn = "stamp";
+pub const stamp_plain_fn = "stampPlain";
+pub const stamp_keyed_fn = "stampKeyed";
+pub const count_new_fn = "countNew";
+pub const count_end_fn = "countEnd";
 /// The column a stamp's call is written at past the call it wraps: its loc
 /// keys none of the checker's plans of the wrapped call (`ast.optional_synthetic_col`'s reason).
 const stamp_col: usize = ast.stamp_synthetic_col;
@@ -121,7 +123,20 @@ const count_prefix = "bpCount__";
 const result_local = "bpScopeResult__";
 
 /// The lowering's functions, as `wat.zig` refuses them.
-pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_new_fn, memo_read_fn, memo_in_fn, all_in_fn, stamp_fn, stamp_plain_fn, stamp_keyed_fn, count_new_fn, count_end_fn };
+pub const lowered_fns = [_][]const u8{ enter_fn, received_fn, provide_fn, find_fn, answer_fn, nowhere_fn, root_fn, memo_in_fn, all_in_fn, stamp_fn, stamp_plain_fn, stamp_keyed_fn, count_new_fn, count_end_fn };
+
+/// Whether `cc` is the lowering's marked call of std's `context.<name>`
+/// (decision 961 (2)); a call a program writes never is, whatever it names.
+pub fn isHelperCall(cc: anytype, name: []const u8) bool {
+    const m = cc.stdModule orelse return false;
+    return cc.lowering and cc.receiver == null and std.mem.eql(u8, m, helper_module) and std.mem.eql(u8, cc.callee, name);
+}
+
+/// Whether `cc` is the lowering's marked call of any of std's helpers.
+pub fn isAnyHelperCall(cc: anytype) bool {
+    for (lowered_fns) |f| if (isHelperCall(cc, f)) return true;
+    return false;
+}
 
 const Frame = struct {
     /// The cell this body opened.
@@ -164,13 +179,9 @@ const Lowering = struct {
     /// for a body that is none (a lambda, a plain function, a test).
     frames: std.ArrayListUnmanaged(?Frame) = .empty,
     body_count: usize = 0,
-    uses_std: bool = false,
     /// One entry per component body or plain function being walked.
     stamps: std.ArrayListUnmanaged(StampScope) = .empty,
     count_count: usize = 0,
-    /// The lowering functions the module calls: only these are imported, so
-    /// a target reaches no other of std's lowering code.
-    used: std.StringHashMapUnmanaged(void) = .empty,
 
     /// The next call's number in the nearest stamping body, and the
     /// expression that body counts its items by (the cell or the counter);
@@ -270,10 +281,9 @@ const Lowering = struct {
         return out;
     }
 
-    /// A call of one of std's lowering functions.
+    /// A call of one of std's lowering functions, by its std name, marked
+    /// (decisions 830, 961 (2)).
     fn call(self: *Lowering, callee: []const u8, args: []const *ast.Expr, loc: ast.Loc) !*ast.Expr {
-        self.uses_std = true;
-        try self.used.put(self.arena, callee, {});
         const e = try self.arena.create(ast.Expr);
         e.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
             .receiver = null,
@@ -281,6 +291,8 @@ const Lowering = struct {
             .is_builtin = false,
             .args = try self.callArgs(args),
             .trailing = &.{},
+            .lowering = true,
+            .stdModule = helper_module,
         } } } };
         return e;
     }
@@ -402,7 +414,7 @@ const Lowering = struct {
         if (e.* != .call or e.call.kind != .call) return null;
         const cc = e.call.kind.call;
         if (cc.receiver != null or cc.args.len == 0) return null;
-        if (!std.mem.eql(u8, cc.callee, stamp_fn) and !std.mem.eql(u8, cc.callee, stamp_plain_fn) and !std.mem.eql(u8, cc.callee, stamp_keyed_fn)) return null;
+        if (!isHelperCall(cc, stamp_fn) and !isHelperCall(cc, stamp_plain_fn) and !isHelperCall(cc, stamp_keyed_fn)) return null;
         return cc.args[0].value;
     }
 
@@ -677,7 +689,7 @@ const Lowering = struct {
         const rest: []ast.Stmt = if (inner_closure) blk: {
             var split: usize = 0;
             for (body, 0..) |st, i| if (st.expr == .call and st.expr.call.kind == .call and
-                std.mem.eql(u8, st.expr.call.kind.call.callee, provide_fn))
+                isHelperCall(st.expr.call.kind.call, provide_fn))
             {
                 split = i + 1;
             };
@@ -912,25 +924,6 @@ fn needed(env: *Env, program: ast.Program) bool {
 
 /// Lower the component model's scope (decisions 809 (8), 819) over `program`
 /// (the transformed module).
-/// std's lowering functions, under names no source can collide with:
-/// `context`'s module, the std name, the local name.
-const std_helpers = [_][3][]const u8{
-    .{ "context", "enter", enter_fn },
-    .{ "context", "received", received_fn },
-    .{ "context", "provideIn", provide_fn },
-    .{ "context", "find", find_fn },
-    .{ "context", "answer", answer_fn },
-    .{ "context", "nowhere", nowhere_fn },
-    .{ "context", "root", root_fn },
-    .{ "context", "memoIn", memo_in_fn },
-    .{ "context", "allIn", all_in_fn },
-    .{ "context", "stamp", stamp_fn },
-    .{ "context", "stampPlain", stamp_plain_fn },
-    .{ "context", "stampKeyed", stamp_keyed_fn },
-    .{ "context", "countNew", count_new_fn },
-    .{ "context", "countEnd", count_end_fn },
-};
-
 /// Decision 961 (1) — std's `context` declares the helpers the lowering calls
 /// without `pub`, so a program's import of one is refused at check; the
 /// module's emitted copy exports each, for the lowering's calls alone
@@ -938,7 +931,7 @@ const std_helpers = [_][3][]const u8{
 fn withHelpersExported(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
     const decls = try arena.dupe(ast.DeclKind, program.decls);
     for (decls) |*d| if (d.* == .@"fn" and !d.@"fn".isPub) {
-        for (std_helpers) |h| if (std.mem.eql(u8, d.@"fn".name, h[1])) {
+        for (lowered_fns) |h| if (std.mem.eql(u8, d.@"fn".name, h)) {
             d.@"fn".isPub = true;
         };
     };
@@ -1010,22 +1003,7 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         },
         else => {},
     };
-    if (!low.uses_std) return .{ .decls = decls };
-    const names = std_helpers;
-    var count: usize = 0;
-    for (names) |n| if (low.used.contains(n[2])) {
-        count += 1;
-    };
-    const items = try arena.alloc(ast.ImportPath, count);
-    var i: usize = 0;
-    for (names) |n| if (low.used.contains(n[2])) {
-        items[i] = .{ .segments = try arena.dupe([]const u8, &.{ n[0], n[1] }), .alias = n[2] };
-        i += 1;
-    };
-    const grown = try arena.alloc(ast.DeclKind, decls.len + 1);
-    grown[0] = .{ .use = .{ .imports = items, .source = .{ .module = "std" } } };
-    @memcpy(grown[1..], decls);
-    return .{ .decls = grown };
+    return .{ .decls = decls };
 }
 
 /// A type's method or a behavior's: a body answering `@Component<R>` becomes

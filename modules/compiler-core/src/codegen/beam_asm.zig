@@ -7496,6 +7496,23 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
+        // Decision 961 (2) — a lowering's marked call of a std helper by its
+        // std name: a `call_ext` into that std module, whatever this module
+        // binds under the name.
+        if (cc.stdModule) |m| if (cc.receiver == null) {
+            const path = try std.fmt.allocPrint(self.atom_arena.allocator(), "std/{s}", .{m});
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            var name_buf: [256]u8 = undefined;
+            const fn_atom = atomName(cc.callee, &name_buf) catch cc.callee;
+            try beamEmitter.writeCall(
+                self.out,
+                if (mode == .tail) .last else .normal,
+                @intCast(cc.args.len + cc.trailing.len),
+                .{ .ext = .{ .module = self.atomOf(path), .function = fn_atom } },
+                self.num_y,
+            );
+            return;
+        };
         if (cc.is_builtin) {
             // `print` / `println` / `debug` are no backend's by name (decision
             // 575 (6)): a builtin declared `#[external(.Erlang(…))]` lowers as
