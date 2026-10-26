@@ -242,7 +242,7 @@ at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result
 `optional-has-no-methods`. Every one was refused or accepted otherwise by the parent binary. The
 suite's `.unwrapOr` on a `?T` became `??` (`scripts/codemod-optional-operators.py`), and a second
 index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`modules/decisions-taken/record_field_assignment_refused-37/run/src/cases/index_expression`,
-`modules/array/run/src/cases/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
+`modules/array/cases/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
 `modules/optional/run/src/cases/optional_chain_method`): the chain runs under the `?.`'s guard.
 `modules/decisions-taken/optional_typescript_operators-330/run/src/cases/optional_method_absent_receiver` — `recv?.m(args)` with the optional itself as the receiver (a
 local, a call, an array element; `length`, `toUpper`, `contains`, `slice`), absent and present, four
@@ -358,7 +358,7 @@ record field, a lambda answering one) and `modules/decisions-taken/component_val
 generic answer as `null` edges, the node asynchronous), each red on the parent binary; the `decl.hooks`
 readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it is now.
 144 B-141 adds `modules/meta/cells/meta_list_method_on_optional` and `modules/meta/cells/meta_list_coalesced_method` (a method on an
-optional's list, a coalesced list) and `modules/array/run/src/cases/array_map_component_imported` (a component of an imported module),
+optional's list, a coalesced list) and `modules/array/cases/array_map_component_imported` (a component of an imported module),
 each red on wasm on the parent binary and green on the four targets.
 Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
@@ -458,12 +458,12 @@ naming the widening element) and `test/case_value_union` (a `case` whose arms di
 read back through `case` narrowing, beside the array literal's union). The `case` half is a `test/`
 cell because wasm traps on a union of primitives produced by a `case` (`05-wasm`'s row); each array
 cell was refused by the parent binary.
-Step 2 (rows 28 and 31) adds `modules/case/run/src/cases/case_function_typed_arms` (two arms answering `fn(string) -> string`
-join into that type and the result is applied, four targets), `modules/case/refused/src/cases/case_function_arms_arity` (arms
+Step 2 (rows 28 and 31) adds `modules/case/cases/case_function_typed_arms` (two arms answering `fn(string) -> string`
+join into that type and the result is applied, four targets), `modules/case/cases/case_function_arms_arity` (arms
 whose arity differs are refused at the second) and `test/case_arm_lambda_value` (`A(x) -> { item ->
 f(item) }` is a lambda value; a `test/` cell because beam answered `{badfun, ok}` for a lambda a `case`
 arm produces — `03-beam`'s row). Each was refused by the parent binary. `03-beam` step 9 moved the
-last to `modules/case/run/src/cases/case_arm_lambda_value` (four targets print `a?` / `b`) and deleted row 28.
+last to `modules/case/cases/case_arm_lambda_value` (four targets print `a?` / `b`) and deleted row 28.
 Step 3 (decision 151, row 22) adds `modules/decisions-taken/enum_section_body_method_refused-151/cells/section_body_method` (a `fn` in a section body is
 `section-body-method` at the `fn`), `modules/section/run/src/cases/section_numeric_leaf_standalone` (`val n: Tok.Percent =
 .50;`, a leaf argument, and a section-typed field of a payload variant built with `.100`, four
@@ -902,8 +902,8 @@ through their namespaces — the mangled one's receiver was dropped) and `module
 The backend rows of `status.md` (`front/backend-rows-2`) add, each failing on the parent binary
 on the targets named: `modules/case/cells/case_arm_record_named_like_a_variant` (a `case` over `Block | Vec` naming
 a record an enum section also declares as a variant — erlang `case_clause`, wasm a trap, beam the
-subject itself), `modules/array/run/src/cases/array_last_index_of` (all four; `Array` declared no `lastIndexOf`),
-`modules/array/run/src/cases/array_pop_removes` (erlang and beam read without removing, wasm trapped),
+subject itself), `modules/array/cases/array_last_index_of` (all four; `Array` declared no `lastIndexOf`),
+`modules/array/cases/array_pop_removes` (erlang and beam read without removing, wasm trapped),
 `modules/module/run/src/cases/module_var_self_registration` and its `_test` twin (a module-level `var` grown by `push` at
 module load — erlang and beam dropped the write), `modules/decisions-taken/negative_index_counts_from_end-139/run/src/cases/index_answer_typed_optional` and
 `modules/decisions-taken/negative_index_counts_from_end-139/refused/src/cases/index_answer_is_optional` (`xs[k]` is `?T`; wasm's `?Color` compare and `??` binder),
@@ -915,10 +915,10 @@ module load — erlang and beam dropped the write), `modules/decisions-taken/neg
 `modules/renderer/cells/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
 `snapshot/output/` answer shared by four targets: `modules/string/run/src/cases/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
-one empty line — and `words` over blanks), `modules/array/run/src/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
-over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array/run/src/cases/array_windows`
-(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array/run/src/cases/array_fill` (a value of
-each primitive, an empty receiver). `pop` is `modules/array/run/src/cases/array_pop_removes`; `unique`'s cell is
+one empty line — and `words` over blanks), `modules/array/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
+over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `modules/array/cases/array_windows`
+(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `modules/array/cases/array_fill` (a value of
+each primitive, an empty receiver). `pop` is `modules/array/cases/array_pop_removes`; `unique`'s cell is
 `02-erlang`'s `modules/decisions-taken/array_unique_keeps_first-217/cells/array_unique` (C-35).
 `modules/generic/cells/generic_field_fn_value` — a top-level fn stored in a generic record's field (`Box<T>(value: T)`)
 and called through the field, through an untyped local and through a generic wrapper, and a lambda
@@ -1091,7 +1091,7 @@ gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the im
 `modules/std/cells/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`), `modules/annotation_not_decorator_{unbound,namespace,value}` (a bare `#[name]` naming no decorator is `annotation-not-a-decorator`),
 `modules/std/cells/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
 `modules/pipeline/cells/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
-defaults and labels, at expression and statement position) and `modules/case/run/src/cases/case_bool_literal_arms` (`true` /
+defaults and labels, at expression and statement position) and `modules/case/cases/case_bool_literal_arms` (`true` /
 `false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
 `test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
 The residual backend rows (`front/residual-backend-3`) add a cell each, every one failing on the
@@ -1101,7 +1101,7 @@ its argument's shape, `unwrapOr` its default's — wasm printed a string's addre
 present first variant is not absent — wasm printed the ordinal or trapped),
 `modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_patterns` (a multi-subject `case` over literals, strings, type arms, variant
 payloads and guards over the subjects (a bare name is refused, `modules/decisions-taken/multi_subject_bare_name_refused-602/cells/case_multi_subject_bare_name`, decision 602) — wasm answered the first arm, beam matched a string or a type arm on anything,
-commonJS never bound a variant's payload), `modules/case/run/src/cases/case_or_pattern_alternatives` (an or-pattern
+commonJS never bound a variant's payload), `modules/case/cases/case_or_pattern_alternatives` (an or-pattern
 over unit variants, numbers, strings, payload variants with a wildcard, a literal or a label and
 `..`, a guarded arm, tuples, a range and a block arm — beam tested a number alternative alone, so
 `C | D -> true` answered `false` and `A | B` raised `case_clause`), `modules/behavior/run/src/cases/behavior_implemented_by_enum` (an enum implementing a
@@ -1394,12 +1394,12 @@ leading-dot section path names — `modules/enum/run/src/cases/enum_section_expe
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `modules/enum/refused/src/cases/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
 candidates, and `modules/enum/run/src/cases/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
-needs no expectation at all), `modules/case/cells/case_value_string_arms` (1.0.10-beta's `00 · 05-wasm`: a `case` used as a VALUE with string
+needs no expectation at all), `modules/case/cases/case_value_string_arms` (1.0.10-beta's `00 · 05-wasm`: a `case` used as a VALUE with string
 arms, in BOTH arm spellings — the two took different paths through `wat.zig` and only the ARROW one
 was a string, so `val a = case x { 5 { "five" } … }` printed the arm's heap address `256` on wasm at
-exit 0 where the other three printed `five`; the `-> string` function form is `modules/case/cells/case_values`'
+exit 0 where the other three printed `five`; the `-> string` function form is `modules/case/cases/case_values`'
 question and not this one, because a declared return type registers the shape on its own),
-`modules/case/run/src/cases/case_arm_name_is_also_a_type` (§5.3b's collision: a
+`modules/case/cases/case_arm_name_is_also_a_type` (§5.3b's collision: a
 module declaring a record `Block` and an enum section carrying a `Block` leaf — the arm over the
 section is the VARIANT, the arm over a union of records is still the type, and the cell asserts
 both values on all four targets. commonJS tested only `instanceof`, so the section arm never
@@ -2029,7 +2029,7 @@ cell: wasm has no `String.parseInt` (`stringSlice0/2`, `05-wasm`).
 `for`, in an `if` block ending in `return` (and in one holding a nested `return`), two `var k` in
 sibling `else if` branches of a `while` body, and `val kids = case c { Box(kids) -> kids; … }` (erlang
 refused the module, `Out@1` unbound; beam lost the arms' writes at the end of each round; commonJS ran
-a `_` arm after an arm whose block answered nothing); `modules/case/run/src/cases/case_arm_ending_in_for` — a statement
+a `_` arm after an arm whose block answered nothing); `modules/case/cases/case_arm_ending_in_for` — a statement
 `case` arm whose block ends in a `for` (commonJS fell into the next arm, erlang refused the module,
 beam dropped a `push` that was an arm's last statement); `modules/record/run/src/cases/record_update_on_lambda_parameter` —
 `xs.map({ b -> Brk(..b, active: false) })` and a block lambda ending in the update (commonJS, erlang
@@ -2252,7 +2252,7 @@ exit, clean) and each abnormal one must exit 1 naming `[commonJS] test/trap_mid.
 ```bash
 zig build test-conformance                                 # the installed botopink: every cell, every suite
 zig build test-conformance -- --target erlang              # the suites on erlang alone; every cell still runs
-zig-out/bin/botopink cell check conformance/modules/case/cells/case_range_value   # one cell, in process
+zig-out/bin/botopink cell check conformance/modules/case/cases/case_range_value   # one cell, in process
 zig-out/bin/botopink cell check conformance/modules       # every cell, one after another, in process
 conformance/run.sh --compiler <botopink> --only modules/two/run/src/cases/two_modules
 conformance/run.sh --compiler <botopink> --only test/case_arms.bp
@@ -2399,7 +2399,7 @@ row is pinned by a cell that passes on every target its kind has:
 **The range pattern — decision 53.** `...` is inclusive in a pattern; `..` is exclusive in a slice
 and in `for (a..b)`, Zig's split. `1..9` in an arm is `error[pattern-range-exclusive]` located at
 the `..`, with `1...9` as the hint (`modules/pattern/cells/pattern_range_exclusive`). `1...9` matches both endpoints
-and nothing outside them on all four targets — in a `case` used as a value (`modules/case/cells/case_range_value`,
+and nothing outside them on all four targets — in a `case` used as a value (`modules/case/cases/case_range_value`,
 five probes) and as a typed function's return (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`
 prints `0 1 1 0` for 0, 1, 9 and 10). **An endpoint probe is the minimum a range cell may print**: a
 single value inside the range cannot tell an arm that matches from one that always matches — beam
