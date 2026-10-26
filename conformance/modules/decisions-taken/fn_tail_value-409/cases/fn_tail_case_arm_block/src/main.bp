@@ -1,0 +1,39 @@
+//// Decision 409 — a function's tail after a `case` bound by a `val`: each arm's
+//// block answers its last statement (front 16), and an arm's value may be a
+//// typed function expression whose own body is a tail (`{ x + 1 }`) or a
+//// lambda; the function answers the `val`.
+
+import {io.terminal.print} from "std";
+
+fn classify(n: i32) -> string {
+    val label = case n {
+        0 {
+            "zero"
+        }
+        _ {
+            val sign = if (n < 0) "neg" else "pos";
+            sign + n.toString()
+        }
+    };
+    label
+}
+
+fn pick(n: i32) -> fn(x: i32) -> i32 {
+    val f = case n {
+        1 {
+            fn(x: i32) -> i32 { x + 1 }
+        }
+        _ {
+            { x -> x * n }
+        }
+    };
+    f
+}
+
+pub fn main() -> void {
+    print(classify(0));
+    print(classify(-3));
+    print(classify(4));
+    print(pick(1)(10));
+    print(pick(3)(10));
+}

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown field '`y pos`' on type '`my point`'
-at src/cases/backtick_name_in_diagnostic/mod.bp:11:13

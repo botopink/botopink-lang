@@ -1,0 +1,4 @@
+botopink-cell 1
+out == builtin_arguments
+out refused error: builtin-arguments: `@panic` takes 1 argument, 2 given — `@panic(message: string = "panic") -> noreturn` is declared in `primitives.bp`'s compiler section
+out at src/main.bp:8:5

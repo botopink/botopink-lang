@@ -1,0 +1,44 @@
+//// Decision 330 — a function taking or answering a float (or an `i64`) is
+//// a value like any other: bound out of an optional (`if (h) { g -> … }`),
+//// called through `?.()`, held by a typed local, or a top-level function
+//// named as a value. The argument reaches it and its answer comes back
+//// unchanged, on every target.
+
+import {io.terminal.print} from "std";
+
+fn halver(present: bool) -> ?fn(f64) -> f64 {
+    val f: fn(f64) -> f64 = { x -> x / 2.0 };
+    return if (present) f else null;
+}
+
+fn shower(present: bool) -> ?fn(f64) -> string {
+    val f: fn(f64) -> string = { x -> "v=" + x.toString() };
+    return if (present) f else null;
+}
+
+fn quarter(x: f64) -> f64 {
+    return x / 4.0;
+}
+
+fn wide(present: bool) -> ?fn(i64) -> i64 {
+    val f: fn(i64) -> i64 = { n -> n * 2l };
+    return if (present) f else null;
+}
+
+pub fn main() -> void {
+    val h = halver(true);
+    if (h) {
+        g ->
+        print(g(3.0));
+    }
+    print(halver(true)?.(3.0) ?? 0.0);
+    print(halver(false)?.(3.0) ?? -1.0);
+    print(shower(true)?.(1.5) ?? "none");
+    print(shower(false)?.(1.5) ?? "none");
+    val q: fn(f64) -> f64 = quarter;
+    print(q(2.0));
+    val local: fn(f64) -> f64 = { x -> x + 0.25 };
+    print(local(1.0));
+    print(wide(true)?.(5000000000l) ?? 0l);
+    print(wide(false)?.(5l) ?? -1l);
+}

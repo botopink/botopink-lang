@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: external-all-bodies: every source of `backwards` is a `body:` cell — write the function with that body
-at src/cases/external_all_bodies/mod.bp:13:3

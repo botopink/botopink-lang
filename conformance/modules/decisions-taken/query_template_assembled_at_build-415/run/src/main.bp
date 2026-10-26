@@ -1,8 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.template_lookup_decl_members.runCase();
-    cases.template_lookup_meta.runCase();
-    cases.template_lookup_meta_same_module.runCase();
-    cases.template_method_call.runCase();
-}

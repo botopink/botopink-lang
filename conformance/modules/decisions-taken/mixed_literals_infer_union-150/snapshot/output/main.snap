@@ -1,0 +1,55 @@
+botopink-cell 1
+out == array_literal_numeric_join
+out 2.0
+out 5.0
+out 19.5
+out 2
+out 7
+out == array_literal_union
+out 2
+out 3
+out 4
+out == array_literal_union_elements
+out [3, "abcd"]
+out 3
+out abcd
+out abcd
+out null
+out 3
+out abcd
+out 7
+out 2
+out b
+out 3
+out [2, "b", 3]
+out [true, "t"]
+out [5, "xy"]
+out == case_if_union_value_shapes
+out number 2
+out text b
+out number 3
+out text l!
+out number 4
+out text other
+out number 5
+out text p
+out number 6
+out text a
+out number 7
+out text seven
+out number 8
+out text eight
+out number 9
+out text nine
+out number 11
+out text pb
+out number 12
+out text ab
+out number 13
+out text thirteen
+out number 14
+out text fourteen
+out number 15
+out text fifteen
+out number 10
+out text m

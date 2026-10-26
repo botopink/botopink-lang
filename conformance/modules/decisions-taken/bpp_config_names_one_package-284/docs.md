@@ -11,6 +11,6 @@ plain name, with no import, and unfolds onto `markup`, so `Greeting()` prints it
 name and no package name tells the toolchain anything about `.bpp`.
 
 Cells in this repository that also bear on it: `modules/bpp/cells/bpp_roles_found`, `modules/bpp/cells/bpp_file_without_key`,
-`modules/bpp/cells/bpp_html_missing`, `modules/bpp/cells/bpp_html_twice`, `modules/decisions-taken/std_bpp_role_annotations-361/cells/bpp_prelude_on_fn`.
+`modules/bpp/cells/bpp_html_missing`, `modules/bpp/cells/bpp_html_twice`, `modules/decisions-taken/std_bpp_role_annotations-361/cases/bpp_prelude_on_fn`.
 
 [draft/main.bp](draft/main.bp)

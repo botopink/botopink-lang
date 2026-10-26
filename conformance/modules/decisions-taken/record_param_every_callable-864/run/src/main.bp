@@ -1,7 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.record_param_on_method.runCase();
-    cases.record_param_on_associated.runCase();
-    cases.record_param_generic.runCase();
-}

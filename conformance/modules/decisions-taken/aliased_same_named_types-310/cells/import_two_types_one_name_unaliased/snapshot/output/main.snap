@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: import-name-collision: `Policy` is already bound by the import of `Policy` from `a/p`; `Policy` from `b/p` would bind it again
-at src/main.bp:9:9

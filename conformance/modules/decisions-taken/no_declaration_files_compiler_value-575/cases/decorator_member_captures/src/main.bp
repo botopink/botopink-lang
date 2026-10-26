@@ -1,0 +1,31 @@
+//// Decision 575 (4), the tree rule — a member a decorator writes holds the
+//// run-time code written in it, the decorator's parameters spliced where
+//// they are written, and the body's locals spliced as literals: `field`,
+//// computed at build from the declaration's name, is a string in the member.
+//// (Decision 370 (2) refused the read; 575 makes it the literal.)
+
+import {compiler, io.terminal.print} from "std";
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(syntax decl: T, syntax rule: fn(v: T) -> bool) -> void {
+    val field = compiler.name(decl)!;
+    compiler.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: field, message: "invalid")];
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() -> void {
+    print(Signup(password: "a", confirm: "a").validate().length);
+    Signup(password: "a", confirm: "b")
+        .validate()
+        .forEach({ v -> print(v.field + ": " + v.message) });
+}

@@ -1,0 +1,41 @@
+//// Decision 280 (0), 757 — a `comptime` parameter of a type method is known
+//// at build: inside the method it is handed on to another `comptime`
+//// parameter, and a `comptime t: type<T>` parameter of a method hands its
+//// type on to another method's.
+
+import {io.terminal.print} from "std";
+
+pub type Users(count: i32)
+
+pub type Orders(total: i32)
+
+fn scaled(comptime n: i32, v: i32) -> i32 {
+    return n * v;
+}
+
+pub type Registry(entries: unknown[]) {
+    pub fn times(self: Self, comptime n: i32) -> i32 {
+        return scaled(n, self.entries.length);
+    }
+
+    pub fn count<T>(self: Self, comptime t: type<T>) -> i32 {
+        var k = 0;
+        for (self.entries) { e ->
+            if (e is t) k = k + 1;
+        }
+        return k;
+    }
+
+    pub fn weighted<T>(self: Self, comptime t: type<T>, comptime w: i32) -> i32 {
+        return scaled(w, self.count(t));
+    }
+}
+
+pub fn main() -> void {
+    val order: unknown = Orders(total: 9);
+    val user: unknown = Users(count: 2);
+    val r = Registry(entries: [order, user, user]);
+    print(r.times(10));
+    print(r.weighted(Users, 5));
+    print(r.weighted(Orders, 7));
+}

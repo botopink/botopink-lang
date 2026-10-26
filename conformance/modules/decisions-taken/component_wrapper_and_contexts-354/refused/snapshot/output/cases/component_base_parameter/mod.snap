@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[generic-arg-count-exceeded]: `Component` takes one type argument, `Component<R>` — its base parameter was removed (decision 354)
-at src/cases/component_base_parameter/mod.bp:7:36
-label drop the base: `Component<R>`

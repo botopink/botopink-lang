@@ -1,0 +1,66 @@
+//// Decision 330 — `recv?.m()` over a method of a record or of an all-unit
+//// enum: the receiver is evaluated once, the method runs only on a present
+//// one, and the call is the optional of its answer — a present `0`, `false`
+//// stays present, a float answer too, an answer that is itself optional is
+//// not nested — on every target (`modules/optional_method_absent_receiver`
+//// is a primitive receiver, `modules/optional_enum_method_absent_receiver`
+//// an enum with payloads).
+
+import {io.terminal.print} from "std";
+
+type P(x: i32) {
+    fn twice(self: Self) -> i32 {
+        return self.x * 2;
+    }
+    fn half(self: Self) -> f64 {
+        return 1.5;
+    }
+    fn zero(self: Self) -> bool {
+        return self.x == 0;
+    }
+    fn maybe(self: Self) -> ?i32 {
+        return if (self.x == 0) 0 else null;
+    }
+    fn me(self: Self) -> P {
+        return P(x: self.x + 1);
+    }
+}
+
+type C {
+    Red,
+    Green,
+
+    fn n(self: Self) -> i32 {
+        return case self {
+            Red -> 0;
+            Green -> 1;
+        };
+    }
+}
+
+fn p(c: bool) -> ?P {
+    return if (c) P(x: 0) else null;
+}
+
+fn col(c: i32) -> ?C {
+    if (c == 0) return null;
+    if (c == 1) return C.Red;
+    return C.Green;
+}
+
+pub fn main() -> void {
+    print(p(true)?.twice());
+    print(p(true)?.half() ?? -1.0);
+    print(p(false)?.half() ?? -1.0);
+    print(p(true)?.zero() ?? false);
+    print(p(false)?.zero() ?? false);
+    print(p(true)?.maybe() ?? -1);
+    print(p(false)?.maybe() ?? -1);
+    print(p(true)?.me()?.x ?? -1);
+    print(p(false)?.me()?.x ?? -1);
+    print(col(1)?.n() ?? -1);
+    print(col(2)?.n() ?? -1);
+    print(col(0)?.n() ?? -1);
+    val q = p(true);
+    print(q?.twice() ?? 7);
+}

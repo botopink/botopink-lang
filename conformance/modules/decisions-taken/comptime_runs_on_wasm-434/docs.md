@@ -1,8 +1,8 @@
 # Decision 434 — Comptime runs on wasm only — the first thing the milestone does.
 
-[run/src/cases/comptime_function_value_argument/mod.bp](run/src/cases/comptime_function_value_argument/mod.bp)
-[run/src/cases/comptime_primitives_at_build/mod.bp](run/src/cases/comptime_primitives_at_build/mod.bp)
-[run/src/cases/comptime_result_methods/mod.bp](run/src/cases/comptime_result_methods/mod.bp)
+[cases/comptime_function_value_argument/src/main.bp](cases/comptime_function_value_argument/src/main.bp)
+[cases/comptime_primitives_at_build/src/main.bp](cases/comptime_primitives_at_build/src/main.bp)
+[cases/comptime_result_methods/src/main.bp](cases/comptime_result_methods/src/main.bp)
 
 Proved also by [comptime_erlang_cell_never_runs_at_build](../comptime_never_translates_erlang-452/run/src/cases/comptime_erlang_cell_never_runs_at_build/mod.bp)
 Proved also by [comptime_expression_erlang_cell_never_runs](../comptime_never_translates_erlang-452/refused/src/cases/comptime_expression_erlang_cell_never_runs/mod.bp)

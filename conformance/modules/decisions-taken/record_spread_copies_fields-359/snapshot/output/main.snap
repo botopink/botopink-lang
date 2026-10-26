@@ -1,0 +1,22 @@
+botopink-cell 1
+out == call_spread
+out refused error: call-spread: `soma` constructs no record — a spread copies a record's fields into its constructor, and a function call takes none
+out at src/main.bp:14:16
+out == record_spread_label_twice
+out refused error: record-spread-arguments: field `nome` of `Pessoa` is labelled twice
+out at src/main.bp:11:40
+out == record_spread_missing_field
+out refused error: record-spread-missing-field: field `nome` of `Pessoa` has no default, and no spread or label supplies it
+out at src/main.bp:13:13
+out == record_spread_optional
+out refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `?Pessoa` is neither
+out at src/main.bp:15:20
+out == record_spread_other_type
+out refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `Animal` is neither
+out at src/main.bp:13:20
+out == record_spread_overridden_label_type
+out refused error: type mismatch: expected string, got i32
+out at src/main.bp:11:26
+out == record_spread_positional_argument
+out refused error: record-spread-arguments: beside a spread, every argument of `Pessoa` names its field
+out at src/main.bp:10:27

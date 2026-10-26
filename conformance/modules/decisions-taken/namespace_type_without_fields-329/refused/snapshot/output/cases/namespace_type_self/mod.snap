@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[namespace-type-self]: a namespace type has no value, so no function in it takes `self`
-at src/cases/namespace_type_self/mod.bp:9:15
-label no value to be `self` here

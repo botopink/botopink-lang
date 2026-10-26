@@ -1,0 +1,20 @@
+//// Decision 409 — in a function answering `Result<T, E>` the tail is the `T`
+//// it answers, as `return value;` is: after a `throw` that did not run and
+//// after a `try` that did not fail.
+
+import {io.terminal.print} from "std";
+
+fn check(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negative";
+    n * 2
+}
+
+fn twice(n: i32) -> Result<i32, string> {
+    val v = try check(n);
+    v + 1
+}
+
+pub fn main() -> void {
+    print(twice(3));
+    print(twice(-1));
+}

@@ -1,0 +1,28 @@
+botopink-cell 1
+out == fn_return_missing
+out refused error: fn-return-missing: `greet` writes no return type — write -> void, or the type it answers
+out at src/main.bp:7:4
+out == fn_return_missing_fn_expr
+out refused error: fn-return-missing: this `fn` expression writes no return type — write -> void, or the type it answers
+out at src/main.bp:8:28
+out == fn_return_missing_main
+out refused error: fn-return-missing: `main` writes no return type — write -> void, or the type it answers
+out at src/main.bp:7:8
+out == fn_return_missing_method
+out refused error: fn-return-missing: `Square.area` writes no return type — write -> void, or the type it answers
+out at src/main.bp:8:8
+out == fn_return_without_arrow
+out refused error: fn-return-missing: `double` writes no return type — write -> void, or the type it answers
+out at src/main.bp:5:4
+out == fn_tail_in_void
+out refused error: `noRet` answers nothing, and its last expression, written without `;`, is a `i32`
+out at src/main.bp:5:30
+out == fn_tail_value
+out 2
+out -1
+out 5
+out 9
+out 7
+out none
+out hello, ana
+out 8

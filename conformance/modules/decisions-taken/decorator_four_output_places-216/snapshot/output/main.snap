@@ -1,0 +1,43 @@
+botopink-cell 1
+out == decorator_add_member_duplicate
+out refused error: decorator-member-duplicate: `#[sized]` adds `size` to `Box`, which already has a member called `size`
+out at src/main.bp:12:3
+out == decorator_add_member_not_one
+out refused error: decorator-member-not-one-fn: `#[twice]` added a member to `Pair` that is not one `fn`: `pub fn a() -> i32 { return 1; } pub fn b() -> i32 { return 2; }`
+out at src/main.bp:11:3
+out == decorator_add_member_on_fn
+out refused error: decorator-member-without-type: `#[helper]` on the function `work` calls `decl.addMember`, and a member belongs to a type
+out at src/main.bp:13:3
+out == decorator_add_type_duplicate
+out refused error: decorator-type-duplicate: `#[table]` declares `City.Columns`, and `City` already has an associated type `Columns`
+out at src/main.bp:16:3
+out == decorator_add_type_name
+out refused error: decorator-type-name: `#[entity]` names an associated type of `City` `columns`, which is not a type name
+out at src/main.bp:11:3
+out == decorator_add_type_not_one
+out refused error: decorator-type-not-one-type: `#[entity]` declares `City.Columns` from a source that is not one type: `(id: string) fn extra() -> void {}`
+out at src/main.bp:11:3
+out == decorator_add_type_without_owner
+out refused error: decorator-type-without-owner: `#[helper]` on the function `work` calls `decl.addType`, and an associated type belongs to a type
+out at src/main.bp:10:3
+out == decorator_member_unknown
+out refused error: unknown-associated-fn: `City` has no associated fn `revisions`
+out at src/main.bp:23:16
+out == decorator_meta_on_member
+out refused error: decorator-meta-on-member: `#[column]` on the field `name` calls `decl.setMeta`, and meta describes a top-level declaration
+out at src/main.bp:11:13
+out == typeinfo_all_arguments
+out refused error: typeinfo-all-arguments: `@TypeInfo.all` takes labelled arguments, and this one has none
+out at src/main.bp:11:11
+out == typeinfo_all_mixed
+out refused error: typeinfo-all-mixed: `#[tagged]` is carried by the function `job` and by the type `Box`, and one query answers one kind of value
+out at src/main.bp:19:11
+out == typeinfo_all_needs_member
+out refused error: typeinfo-all-needs-member: `#[component]` is carried by the type `Box`, and a type is no value: name the associated fn each entry calls
+out at src/main.bp:16:11
+out == typeinfo_unknown_declaration
+out refused error: typeinfo-unknown-declaration: `@typeInfo` reflects a declaration this module declares or imports, and this names none
+out at src/main.bp:7:38
+out == typeinfo_all_imported
+out refused error: typeinfo-all-imported: `catalog` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it
+out at src/main.bp:7:9

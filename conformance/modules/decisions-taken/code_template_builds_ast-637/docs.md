@@ -9,6 +9,6 @@ the literal `"section"`, while `${h[0]!}` and `${h[1]!}` splice the caller's exp
 scope where `name` is bound. No string is parsed back into code and no `Hole(index)` node exists. `main` prints
 `section` and `hello Ana | ANA`, the holes evaluated at run time.
 
-Cells that also bear on it: `modules/decisions-taken/template_called_with_raw_text-577/run/src/cases/compiler_template_forms`, `modules/decisions-taken/template_marked_by_syntax_text-578/run/src/cases/compiler_template_expr_return`.
+Cells that also bear on it: `modules/decisions-taken/template_called_with_raw_text-577/cases/compiler_template_forms`, `modules/decisions-taken/template_marked_by_syntax_text-578/cases/compiler_template_expr_return`.
 
-[cells/code_text_not_code_refused/src/main.bp](cells/code_text_not_code_refused/src/main.bp)
+[cases/code_text_not_code_refused/src/main.bp](cases/code_text_not_code_refused/src/main.bp)

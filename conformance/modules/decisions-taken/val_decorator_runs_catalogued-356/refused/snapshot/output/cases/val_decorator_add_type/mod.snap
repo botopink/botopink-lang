@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-type-without-owner: `#[helper]` on the val `limit` calls `decl.addType`, and an associated type belongs to a type
-at src/cases/val_decorator_add_type/mod.bp:10:3

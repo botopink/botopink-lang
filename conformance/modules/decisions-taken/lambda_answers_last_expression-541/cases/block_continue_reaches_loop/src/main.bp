@@ -1,0 +1,33 @@
+//// Decision 541 (2) — a bare `continue` inside a block or a `case` arm of a
+//// loop's body reaches the enclosing loop: the loop's next round starts, and
+//// nothing after the `continue` in that round runs.
+
+import {io.terminal.print} from "std";
+
+fn sumSkippingFives(xs: i32[]) -> i32 {
+    var s = 0;
+    for (xs) { x ->
+        case x {
+            5 {
+                continue;
+            }
+            _ {}
+        }
+        s = s + x;
+    }
+    return s;
+}
+
+fn countOdd(xs: i32[]) -> i32 {
+    var n = 0;
+    for (xs) { x ->
+        { if (x % 2 == 0) continue }
+        n = n + 1;
+    }
+    return n;
+}
+
+pub fn main() -> void {
+    print(sumSkippingFives([1, 5, 2, 5, 3]));
+    print(countOdd([1, 2, 3, 4, 5]));
+}

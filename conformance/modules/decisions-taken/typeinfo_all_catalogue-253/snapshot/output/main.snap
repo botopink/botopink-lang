@@ -1,0 +1,4 @@
+botopink-cell 1
+out == typeinfo_all_on_function
+out refused error: typeinfo-all-on-function: `@typeInfo.all` is spelled `@TypeInfo.all` — the catalogue is a static method of the type `TypeInfo`
+out at src/main.bp:13:15

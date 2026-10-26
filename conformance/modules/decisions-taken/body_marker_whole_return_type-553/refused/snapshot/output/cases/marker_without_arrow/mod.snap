@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error[marker-without-arrow]: a marker inside `{` opens a lambda, which writes `->`
-at src/cases/marker_without_arrow/mod.bp:9:16
-label no block form: write `iter loop { … }`, or `{ iter -> … }`

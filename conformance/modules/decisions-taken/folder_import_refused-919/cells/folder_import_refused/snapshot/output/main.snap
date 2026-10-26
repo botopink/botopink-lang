@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: folder-import: `io` is a folder of std, not a module, and a folder is not importable
-at src/main.bp:4:9

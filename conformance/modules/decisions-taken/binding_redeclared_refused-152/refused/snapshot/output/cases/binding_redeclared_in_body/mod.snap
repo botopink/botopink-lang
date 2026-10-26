@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: binding-redeclared: `n` is already bound in this function, by the binding at 9:5
-at src/cases/binding_redeclared_in_body/mod.bp:11:5

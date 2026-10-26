@@ -1,2 +1,0 @@
-pub mod decorator_argument_decorator_alias;
-pub mod decorator_argument_decorator_name;

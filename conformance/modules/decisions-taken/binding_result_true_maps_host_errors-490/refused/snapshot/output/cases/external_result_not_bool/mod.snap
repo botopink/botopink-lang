@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected bool, got i32
-at src/cases/external_result_not_bool/mod.bp:7:59

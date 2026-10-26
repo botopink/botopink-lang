@@ -1,3 +1,0 @@
-pub mod init_at_call_from_decorator;
-pub mod init_at_call_from_template;
-pub mod init_at_call_in_value_comptime;

@@ -1,5 +1,0 @@
-botopink-cell 1
-out Ok(1) Error("not one: 2")
-out 42
-out 0 1 2 3
-out card hi

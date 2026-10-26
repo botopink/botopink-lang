@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'Pair' — a pair is the tuple `#(A, B)`
-at src/main.bp:15:13

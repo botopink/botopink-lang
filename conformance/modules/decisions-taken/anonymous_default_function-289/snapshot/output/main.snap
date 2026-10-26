@@ -1,0 +1,12 @@
+botopink-cell 1
+out == default_named_twice
+out refused error[default-twice]: a module has one default function
+out at src/main.bp:11:13
+out label already the default `render`
+out == default_twice
+out refused error: default-twice: a module has one default function
+out at src/main.bp:15:13
+out == default_unknown
+out refused error[default-unknown]: `pub default` names no function of this module
+out at src/main.bp:12:13
+out label no `fn` of this name `nope`
