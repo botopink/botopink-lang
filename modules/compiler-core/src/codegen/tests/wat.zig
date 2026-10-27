@@ -5452,6 +5452,173 @@ fn runUnitsFrame(a: std.mem.Allocator, ar: std.mem.Allocator, entry: []const u8,
     return ar.dupe(u8, out.stdout orelse "");
 }
 
+/// The index oracle over a program's units (decision 1037): each unit's face
+/// reads — no import or exported function names a type definition — and
+/// every import of every unit is an export of the unit it names, typed alike.
+fn expectUnitsLink(ar: std.mem.Allocator, program: []const @import("../wat/wat_emitter.zig").UnitBytes) !void {
+    const ru = @import("../wat/runtime_unit.zig");
+    const rt = try ru.get();
+    for (program) |p| {
+        const face = ru.faceOfBytes(ar, p.bytes) catch |err| {
+            std.debug.print("\n=== {s}: the face does not read: {s}\n", .{ p.name, @errorName(err) });
+            return err;
+        };
+        var lines = std.mem.tokenizeScalar(u8, face.text, '\n');
+        while (lines.next()) |l| {
+            const head = "    (import \"";
+            if (!std.mem.startsWith(u8, l, head)) continue;
+            const rest = l[head.len..];
+            const q = std.mem.indexOfScalar(u8, rest, '"').?;
+            const module = rest[0..q];
+            const unit_face = if (std.mem.eql(u8, module, ru.name)) rt.core_face else if (rt.unit(module)) |u| u.face else for (program) |o| {
+                if (std.mem.eql(u8, o.name, module)) break try ru.faceOfBytes(ar, o.bytes);
+            } else {
+                std.debug.print("\n=== {s}: imports the unknown unit {s}\n", .{ p.name, module });
+                return error.TestUnexpectedResult;
+            };
+            const want = try std.fmt.allocPrint(ar, "    (export {s}", .{rest[q + 2 ..]});
+            if (std.mem.indexOf(u8, unit_face.text, want[0 .. want.len - 1]) == null) {
+                std.debug.print("\n=== {s}: no export for {s}\n", .{ p.name, l });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+}
+
+/// Each program unit `outputs` holds, by its stem (its `botopink.units`'
+/// last line), and the bytes of the module `entry_name`.
+fn programUnitsOf(ar: std.mem.Allocator, outputs: []const ModuleOutput, entry_name: []const u8, program: *std.ArrayListUnmanaged(@import("../wat/wat_emitter.zig").UnitBytes)) !?[]const u8 {
+    const ru = @import("../wat/runtime_unit.zig");
+    var entry: ?[]const u8 = null;
+    for (outputs) |o| {
+        const bin = o.result.wasm orelse continue;
+        const stems = try ru.unitsOf(ar, bin);
+        if (stems.len == 0) continue;
+        try program.append(ar, .{ .name = stems[stems.len - 1], .bytes = bin });
+        if (std.mem.eql(u8, o.name, entry_name)) entry = bin;
+    }
+    return entry;
+}
+
+// Decisions 1032 (6) P4, 1037 — a `pub` function answering `Result` (a
+// prelude GC type, its error payload a declared record) crosses the unit
+// boundary through its 1037 wrapper: `test@lib` exports `half` with abstract
+// types only, `test@main` imports it and calls it through a thunk; the index
+// oracle reads every unit and the frame runs through `runner.run`.
+test "wat: units ---- a pub fn answering Result crosses the boundary through its wrapper" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    var outputs = try h.generate(a, &.{
+        .{ .path = "lib", .source =
+        \\pub type Odd(n: i32)
+        \\
+        \\pub fn half(n: i32) -> Result<i32, Odd> {
+        \\    if (n % 2 != 0) throw Odd(n: n);
+        \\    return n / 2;
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {half} from "lib";
+        \\
+        \\fn main() -> void {
+        \\    print("${half(4)}");
+        \\    print("${half(3)}");
+        \\}
+        },
+    }, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var program: std.ArrayListUnmanaged(@import("../wat/wat_emitter.zig").UnitBytes) = .empty;
+    const bin = (try programUnitsOf(ar, outputs.items, "main", &program)) orelse return error.ModuleDidNotCompile;
+    try expectUnitsLink(ar, program.items);
+    for (program.items) |p| if (std.mem.eql(u8, p.name, "test@lib")) {
+        const face = (try ru.faceOfBytes(ar, p.bytes)).text;
+        try std.testing.expect(std.mem.indexOf(u8, face, "(export \"half\" (func (param i32) (result structref)))") != null);
+    };
+    const main_face = (try ru.faceOfBytes(ar, bin)).text;
+    try std.testing.expect(std.mem.indexOf(u8, main_face, "(import \"test@lib\" \"half\" ") != null);
+    try std.testing.expectEqualStrings("Ok(2)\nError(Odd(n: 3))\n", try runUnitsFrame(a, ar, bin, program.items));
+}
+
+// Decisions 1026, 1028, 1032 (6) P4 — a program reaching std's `.bp` modules
+// (`io.fs`, which reaches `path`): no std module is a unit of its own (its
+// bodies are linked into the importer; the one `std@<path>` unit is
+// std-wasm's), so no program unit is named `std@…`, the entry's
+// `botopink.units` lists every unit its units import, each before its
+// importer, and the frame builds and compiles.
+test "wat: units ---- an io.fs program's entry lists every unit its frame needs" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const engine = @import("../wat/engine.zig");
+    const watEmitter = @import("../wat/wat_emitter.zig");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    var outputs = try h.generate(a, &.{
+        .{ .path = "main", .source =
+        \\import {io.fs, io.terminal.print} from "std";
+        \\
+        \\fn main() -> void {
+        \\    print("${fs.readText("missing.txt")}");
+        \\}
+        },
+    }, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const rt = try ru.get();
+    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
+    const bin = (try programUnitsOf(ar, outputs.items, "main", &program)) orelse return error.ModuleDidNotCompile;
+    for (program.items) |p| if (std.mem.startsWith(u8, p.name, "std@")) {
+        std.debug.print("\n=== a std module emitted as the unit {s}\n", .{p.name});
+        return error.TestUnexpectedResult;
+    };
+    try expectUnitsLink(ar, program.items);
+    // Each unit the list names imports only units listed before it.
+    const stems = try ru.unitsOf(ar, bin);
+    for (stems, 0..) |s, k| {
+        const face = if (k == stems.len - 1) try ru.faceOfBytes(ar, bin) else if (std.mem.eql(u8, s, ru.name)) rt.core_face else if (rt.unit(s)) |u| u.face else for (program.items) |p| {
+            if (std.mem.eql(u8, p.name, s)) break try ru.faceOfBytes(ar, p.bytes);
+        } else return error.TestUnexpectedResult;
+        for (face.modules) |m| {
+            if (std.mem.eql(u8, m, "wasi_snapshot_preview1") or std.mem.eql(u8, m, "bp_fs") or std.mem.eql(u8, m, "bp_host")) continue;
+            for (stems[0..k]) |d| {
+                if (std.mem.eql(u8, d, m)) break;
+            } else {
+                std.debug.print("\n=== {s} imports {s}, not listed before it\n", .{ s, m });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+    var listed_fs = false;
+    for (stems) |s| listed_fs = listed_fs or std.mem.eql(u8, s, "std@io@fs");
+    try std.testing.expect(listed_fs);
+    var fw: std.Io.Writer.Allocating = .init(ar);
+    try watEmitter.frameOf(ar, &fw.writer, bin, program.items);
+    var failure: ?[]u8 = null;
+    const comp = (try engine.precompiled(a, io, null, fw.written(), .component, false, &failure)) orelse {
+        std.debug.print("\n=== frame refused: {s}\n", .{failure.?});
+        a.free(failure.?);
+        return error.TestUnexpectedResult;
+    };
+    comp.code.deinit();
+}
+
 // Decision 1032 (6) P4 — under `botopink test` with the units on, a module's
 // test entry is the unit `<pkg>@<module>.test` (its `botopink.units`' last
 // line), importing the program units its tests reach as the module does;

@@ -426,6 +426,13 @@ pub fn codegenEmit(
                 // With the units on, every module is a unit the entry's frame
                 // composes (decision 1032 (6)).
                 if (config.wasm_entry_only) |entry_name| if (!units_mode and !std.mem.eql(u8, ct.name, entry_name)) continue;
+                // A std module is no unit of its own: its bodies are linked
+                // into each importer (`isProgramUnit`), and the one
+                // `std@<path>` unit is std-wasm's (decisions 1026, 1028), so
+                // nothing of it is emitted — unless it is the package under
+                // test.
+                const under_test = config.test_mode and !config.packages.idOf(ct.name).package_in_path;
+                if (units_mode and !isProgramUnit(ct.name) and !under_test) continue;
                 // Decision 1008 (2) — a dependency module whose unit the
                 // unit cache holds is not emitted again. Its unit links only
                 // its own dependencies (its closure, decision 509 (2)); a
@@ -483,7 +490,7 @@ pub fn codegenEmit(
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
                 unit_inits = inits.items;
-                registering_unit = units_mode;
+                registering_unit = units_mode and isProgramUnit(ct.name);
                 const emitted_or = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused);
                 unit_inits = &.{};
                 registering_unit = false;
@@ -3072,6 +3079,17 @@ fn unitBoundary(
             try exports.put(ar, f.name, ft);
         }
     }
+    // Decision 1037 — no unit exports a function whose signature names a
+    // type definition: one the lowering exported that cannot cross to an
+    // importer (`crossesUnit`) is still exported through its wrapper, never
+    // with its concrete type.
+    for (items.items) |*it| {
+        if (it.* != .func or it.func.exports.len == 0 or std.mem.startsWith(u8, it.func.name, runtimeUnit.abi_prefix)) continue;
+        const ft = try funcTypeOf(ar, it.func);
+        if (!runtimeUnit.crossesAbstract(ft)) continue;
+        try wrappers.append(ar, .{ .func = try runtimeUnit.exportWrapper(ar, defs, it.func, it.func.exports) });
+        it.func.exports = &.{};
+    }
     try items.appendSlice(ar, wrappers.items);
 
     const reg = program_units orelse return;
@@ -3125,12 +3143,14 @@ fn sameFuncType(a: wat.FuncType, b: wat.FuncType) bool {
 }
 
 /// Whether a function of a program unit may cross into another unit: no
-/// generic parameter (each importer instantiates its own), no effect (a task's
-/// state machine is its module's), no host binding. A function value crosses
+/// generic parameter (each importer instantiates its own), no effect but
+/// `result` (a task's state machine is its module's; a `Result` is a value of
+/// the prelude's GC type), no host binding. A function value crosses
 /// (decision 1055 (4)): a closure is a GC value holding its entry's `funcref`,
 /// typed by the prelude's `$sig_<n>` in every unit.
 fn crossesUnit(f: ast.FnDecl, decls: []const ast.DeclKind) bool {
-    if (f.genericParams.len > 0 or f.effect != null or f.marker != null or f.isDeclare or f.anonymousDefault) return false;
+    const effect_free = if (f.effect) |e| e == .result else true;
+    if (f.genericParams.len > 0 or !effect_free or f.marker != null or f.isDeclare or f.anonymousDefault) return false;
     for (f.params) |p| if (!unitCrossable(p.typeRef, decls, 0)) return false;
     if (f.returnType) |r| if (!unitCrossable(r, decls, 0)) return false;
     return true;
@@ -3162,6 +3182,11 @@ fn unitCrossable(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
         .function => |f| !f.anyParams and f.params.len <= prelude.gc_closure_max_arity and unitCrossable(f.returnType.*, decls, depth + 1) and for (f.params) |p| {
             if (!unitCrossable(p, decls, depth + 1)) break false;
         } else true,
+        // `Result<T, E>` / `Option<T>`, the prelude's: a crossable payload
+        // crosses as the prelude's own GC type does.
+        .generic => |g| g.is_builtin and (std.mem.endsWith(u8, g.name, "Result") or std.mem.endsWith(u8, g.name, "Option")) and (for (g.args) |a| {
+            if (!unitCrossable(a, decls, depth + 1)) break false;
+        } else true),
         else => false,
     };
 }

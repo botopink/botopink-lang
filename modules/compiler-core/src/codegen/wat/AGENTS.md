@@ -1369,18 +1369,26 @@ stem) and the entry's from their bytes.
 **Program and library units** (decision 1032 (6) P4): with the units on, every module of a `wasi` build is
 a unit `<pkg>@<path>` of its own (`Config.wasm_entry_only` is not applied), emitted after the program
 units it reaches (`wat.zig` `unitOrder`): a module std does not own and no loaded package's
-(`isProgramUnit`); std's `.bp` modules stay linked into their importer. Its start is its `__bp_init`;
+(`isProgramUnit`); std's `.bp` modules stay linked into their importer — none is emitted or registered
+as a unit (unless it is the package under test), so the one `std@<path>` unit is std-wasm's and no file
+is written twice (decisions 1026, 1028). Its start is its `__bp_init`;
 an entry no longer links the modules whose bodies the program runs (decisions 660, 677) — their own
 `__bp_init` runs in the frame (`unit_inits`). On a GC module, after `finishGc`, `unitBoundary` exports
-each of the unit's own `pub` functions that may cross (`crossesUnit`: no generic parameter, no effect,
-no host binding; a function value crosses, decision 1055 (4)) under its name, through 1037's wrapper when its type
-names a type definition, and records the boundary's type (`ProgramUnit.exports`); each function linked
+each of the unit's own `pub` functions that may cross (`crossesUnit`: no generic parameter, no effect but
+`result`, no host binding, a `Result` / `Option` crossing when its payloads do; a function value crosses,
+decision 1055 (4)) under its name, through 1037's wrapper when its type
+names a type definition, and records the boundary's type (`ProgramUnit.exports`); any other function
+the lowering exported whose type names a type definition is exported through its wrapper too (no unit's
+export is concrete, 1037) but not offered to importers; each function linked
 from another program unit that the unit exports with the same type is imported from it
 (`(import "<pkg>@<path>" "<name>" …)`, through a thunk when abstract) instead of defined — anything
 else (a generic function, a method, a linear module's) stays linked. `botopink.units` merges what the
 program units it links or runs name: the core, every std unit any of them imports, the program units in
 dependency order, the module itself. `tests/wat.zig` `units ---- each module of a program is a unit`
-holds the index oracle over every unit of a two-module program and runs its frame. **The test entry**:
+holds the index oracle over every unit of a two-module program and runs its frame; `units ---- a pub fn
+answering Result` the same for a `Result`-answering export (wrapper, thunk, `runner.run`), and `units ---- an
+io.fs program's entry` checks that no std module is a unit, that every unit the entry lists imports only
+units listed before it, and that the frame builds. **The test entry**:
 under `botopink test` (`Config.test_mode`) a module's test program is the unit `<pkg>@<module>.test`
 (`unit_stem_suffix`, the last line of its `botopink.units`), shaped as the module's unit and importing
 what its tests reach; its binary is `ModuleOutput.test_unit.wasm` (`units ---- a module's test entry`
