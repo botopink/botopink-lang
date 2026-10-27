@@ -749,7 +749,9 @@ want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 conformance_cmd "$(share 80)" ${lang_args[@]+"${lang_args[@]}"} ${sets_args[@]+"${sets_args[@]}"}
+    # launch runs its command under `setsid sh` (decision 1061 (1)), where a shell function does not
+    # exist: conformance_cmd is spelled out here.
+    launch 6 zig build test-conformance "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"} -- --jobs "$(share 80)" ${lang_args[@]+"${lang_args[@]}"} ${sets_args[@]+"${sets_args[@]}"}
 fi
 want test-docs && launch 7 zig build test-docs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 want test-web && launch 9 zig build test-web -j"$(share 10)"
