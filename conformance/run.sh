@@ -451,12 +451,13 @@ listed_modules() {
 # module in the shape with no line, per line naming no module in the shape.
 # Each is a `*` result (`r-plan-*`, no job of the plan).
 roster() {
-    local d slug
+    local d slug listed="$work/root-listed"
+    listed_modules >"$listed"
     while IFS= read -r d; do
         slug="$(printf '%s' "$d" | tr '/.' '__')"
         if ! in_shape "$d"; then
             printf '*\tmodules/%s\tfail\t%s\n' "$d" "not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion" >"$work/r-plan-$slug"
-        elif ! listed_modules | grep -qxF -- "$d"; then
+        elif ! grep -qxF -- "$d" "$listed"; then
             printf '*\tmodules/%s\tfail\t%s\n' "$d" "a module with no \`runModule(\"$d\")\` line in modules/src/main.bp" >"$work/r-plan-$slug"
         fi
     done < <(module_dirs)
@@ -465,7 +466,7 @@ roster() {
         slug="$(printf '%s' "$d" | tr '/.' '__')"
         [ -f "$work/r-plan-$slug" ] && continue
         printf '*\tmodules/%s\tfail\t%s\n' "$d" "modules/src/main.bp runs \`$d\`, which is no module in decision 989's shape" >"$work/r-plan-$slug"
-    done < <(listed_modules)
+    done <"$listed"
 }
 
 # Build the root package once: `root_bpr` the `.bpr` it wrote, or `root_refusal`
