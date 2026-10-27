@@ -3542,7 +3542,7 @@ fn unitCrossable(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
         .tuple_ => |elems| for (elems) |e| {
             if (!unitCrossable(e, decls, depth + 1)) break false;
         } else true,
-        .function => |f| !f.anyParams and f.params.len <= prelude.gc_closure_max_arity and unitCrossable(f.returnType.*, decls, depth + 1) and for (f.params) |p| {
+        .function => |f| !f.anyParams and unitCrossable(f.returnType.*, decls, depth + 1) and for (f.params) |p| {
             if (!unitCrossable(p, decls, depth + 1)) break false;
         } else true,
         // `Result<T, E>` / `Option<T>`, the prelude's: a crossable payload
@@ -6632,9 +6632,10 @@ const Emitter = struct {
         /// is — its entry's funcref, its arity and its component mark
         /// (decisions 504, 1055 (4)).
         closure,
-        /// Decision 1055 (1) — the prelude's `$sig_<n>`, the function type of
-        /// a lambda's entry of `n` parameters; its `$__decl` and `$__tinfo`.
-        sig: u8,
+        /// Decisions 1055 (1), 1076 (2) — `$sig_<n>`, the function type of a
+        /// lambda's entry of `n` parameters, a singleton group after the
+        /// prelude's; its `$__decl` and `$__tinfo`.
+        sig: u16,
         decl,
         tinfo,
         /// The environment of lifted lambda `n`: a subtype of `closure`
@@ -7287,7 +7288,7 @@ const Emitter = struct {
                 .big => .box_big,
             },
             .closure => .closure,
-            .sig => |n| return prelude.gcSigIndex(n),
+            .sig => return null,
             .decl => .decl,
             .tinfo => .tinfo,
             .result => .result,
@@ -7327,7 +7328,21 @@ const Emitter = struct {
         // or a private type.
         const keys = try ar.alloc(?[]const u8, n);
         @memset(keys, null);
+        // Decision 1076 (2) — right after the prelude's group, one singleton
+        // group per closure signature the module uses, by arity.
+        var next: u16 = n_pre;
+        var group_starts: std.ArrayListUnmanaged(u16) = .empty;
+        try group_starts.append(ar, 0);
+        var sigs: std.ArrayListUnmanaged(u16) = .empty;
+        for (self.gc_types.items) |t| if (t == .sig) try sigs.append(ar, t.sig);
+        std.mem.sort(u16, sigs.items, {}, std.sort.asc(u16));
+        for (sigs.items) |arity| for (self.gc_types.items, 1..) |t, k| if (t == .sig and t.sig == arity) {
+            try group_starts.append(ar, next);
+            perm[k] = next;
+            next += 1;
+        };
         for (self.gc_types.items, 1..) |t, k| {
+            if (t == .sig) continue;
             if (gcPreludeSlot(t)) |slot| {
                 perm[k] = slot;
                 continue;
@@ -7361,9 +7376,6 @@ const Emitter = struct {
         for (comps) |c| std.mem.sort(u16, c, keys, keyLess);
         const done = try ar.alloc(bool, comps.len);
         @memset(done, false);
-        var next: u16 = n_pre;
-        var group_starts: std.ArrayListUnmanaged(u16) = .empty;
-        try group_starts.append(ar, 0);
         var brands: std.ArrayListUnmanaged(struct { at: u16, def: wat.TypeDef }) = .empty;
         var left = comps.len;
         while (left > 0) : (left -= 1) {
@@ -7589,7 +7601,7 @@ const Emitter = struct {
                 .closure => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.closure)]),
                 .decl => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.decl)]),
                 .tinfo => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.tinfo)]),
-                .sig => |n| try defs.append(ar, gc_prelude_defs[prelude.gcSigIndex(n)]),
+                .sig => |n| try defs.append(ar, try prelude.gcSigDef(ar, n)),
                 .env => |li| {
                     const caps = self.lambdas.items[li].captures;
                     const fs = try ar.alloc(wat.Field, env_caps_at + caps.len);
@@ -23429,10 +23441,9 @@ const Emitter = struct {
         return l.params.len;
     }
 
-    /// The prelude's `$sig_<n>` a lambda's entry of `n` parameters is
-    /// declared with (decision 1055 (4)).
+    /// The `$sig_<n>` a lambda's entry of `n` parameters is declared with
+    /// (decisions 1055 (4), 1076 (2)).
     fn gcSigOf(self: *Emitter, n: usize) !u16 {
-        if (n > prelude.gc_closure_max_arity) return self.gcFail("a function value of more parameters than the prelude's signatures");
         return self.gcTyIndex(.{ .sig = @intCast(n) });
     }
 
@@ -23543,7 +23554,6 @@ const Emitter = struct {
     /// `call_indirect` of the function value in the local `fnv`, its
     /// arguments boxed on the stack under the environment.
     fn gcEmitIndirect(self: *Emitter, fnv: []const u8, argc: usize) anyerror!void {
-        if (argc > prelude.gc_closure_max_arity) return self.gcFail("a call through a function value of more parameters than the prelude's signatures");
         const sig = self.gcTyIndex(.{ .sig = @intCast(argc) });
         try self.emit(.{ .local_get = fnv });
         try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 0 } }, "the entry");

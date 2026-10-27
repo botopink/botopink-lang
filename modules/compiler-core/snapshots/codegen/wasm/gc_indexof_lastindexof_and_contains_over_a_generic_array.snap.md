@@ -139,15 +139,9 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
+  )
+  (rec
     (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Failure (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
@@ -271,7 +265,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_31
+    call $__new_23
     struct.new $result
     return
       )
@@ -438,7 +432,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    call $__new_31
+    call $__new_23
     struct.new $result
     return
       )
@@ -1336,13 +1330,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     global.set $__s6
     call $__init_types
   )
-  (func $__new_31 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_31
+  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4)
   (func $__init_types
     global.get $__s6
@@ -1351,8 +1345,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -2035,15 +2029,9 @@ test "asserts: errorText answers the empty string for Ok" {
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
+  )
+  (rec
     (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Failure (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
@@ -2108,7 +2096,7 @@ test "asserts: errorText answers the empty string for Ok" {
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_31
+    call $__new_23
     struct.new $result
     return
       )
@@ -4279,13 +4267,13 @@ test "asserts: errorText answers the empty string for Ok" {
     global.set $__s35
     call $__init_types
   )
-  (func $__new_31 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_31
+  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip3 $__tie3)
   (func $__init_types
     global.get $__s35
@@ -4294,8 +4282,8 @@ test "asserts: errorText answers the empty string for Ok" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -4360,15 +4348,6 @@ import {testing.asserts} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
   (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))

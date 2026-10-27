@@ -47,15 +47,6 @@ import {io.terminal.print} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $var_YieldStep_Done (sub final $__decl (struct (field $ti (ref null $__tinfo)))))
@@ -251,10 +242,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc0
     struct.get $gen $value
-    call $__new_33
+    call $__new_24
       )
       (else
-    call $__new_31
+    call $__new_22
       )
     )
     call $stepText
@@ -267,10 +258,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc1
     struct.get $gen $value
-    call $__new_33
+    call $__new_24
       )
       (else
-    call $__new_31
+    call $__new_22
       )
     )
     call $stepText
@@ -283,10 +274,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc2
     struct.get $gen $value
-    call $__new_33
+    call $__new_24
       )
       (else
-    call $__new_31
+    call $__new_22
       )
     )
     call $stepText
@@ -1425,17 +1416,17 @@ import {io.terminal.print} from "std";
     global.set $__s9
     call $__init_types
   )
-  (func $__new_33 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
-    global.get $__ti_33
+  (func $__new_24 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
+    global.get $__ti_24
     local.get $f0
     struct.new $var_YieldStep_Yield
   )
-  (func $__new_31 (result (ref null $var_YieldStep_Done))
-    global.get $__ti_31
+  (func $__new_22 (result (ref null $var_YieldStep_Done))
+    global.get $__ti_22
     struct.new $var_YieldStep_Done
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4 $__tip5 $__tie5)
   (func $__init_types
     global.get $__s7
@@ -1444,8 +1435,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_33
-    global.get $__ti_33
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
     global.get $__s9
     ref.func $__tip5
@@ -1453,8 +1444,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_22
+    global.get $__ti_22
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

@@ -41,15 +41,6 @@ import {io.terminal.print} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Point (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut i32)))))
@@ -95,19 +86,19 @@ import {io.terminal.print} from "std";
     call $__print_nl
     i32.const 1
     i32.const 2
-    call $__new_31
+    call $__new_22
     call $__pr4
     call $__print_nl
     i32.const 4
-    call $__new_35
+    call $__new_26
     call $__print_tagged_raw
     call $__print_nl
-    call $__new_33
+    call $__new_24
     call $__print_tagged_raw
     call $__print_nl
     i32.const 1
     i32.const 2
-    call $__new_31
+    call $__new_22
     array.new_fixed $arr_any 1
     call $__pr5
     call $__print_nl
@@ -912,24 +903,24 @@ import {io.terminal.print} from "std";
     global.set $__s16
     call $__init_types
   )
-  (func $__new_31 (param $f0 i32) (param $f1 i32) (result (ref null $rec_Point))
-    global.get $__ti_31
+  (func $__new_22 (param $f0 i32) (param $f1 i32) (result (ref null $rec_Point))
+    global.get $__ti_22
     local.get $f0
     local.get $f1
     struct.new $rec_Point
   )
-  (func $__new_35 (param $f0 i32) (result (ref null $var_Shape_Square))
-    global.get $__ti_35
+  (func $__new_26 (param $f0 i32) (result (ref null $var_Shape_Square))
+    global.get $__ti_26
     local.get $f0
     struct.new $var_Shape_Square
   )
-  (func $__new_33 (result (ref null $var_Shape_Nothing))
-    global.get $__ti_33
+  (func $__new_24 (result (ref null $var_Shape_Nothing))
+    global.get $__ti_24
     struct.new $var_Shape_Nothing
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip5 $__tie5 $__tip6 $__tie6 $__tip7 $__tie7)
   (func $__init_types
     global.get $__s11
@@ -938,8 +929,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_22
+    global.get $__ti_22
     call $__ti_register
     global.get $__s14
     ref.func $__tip6
@@ -947,8 +938,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_35
-    global.get $__ti_35
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s16
     ref.func $__tip7
@@ -956,8 +947,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_33
-    global.get $__ti_33
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

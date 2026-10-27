@@ -46,15 +46,6 @@ pub fn make() -> Counter { return Counter(n: 41); }
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Counter (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)))))
@@ -77,7 +68,7 @@ pub fn make() -> Counter { return Counter(n: 41); }
   (func $Counter_zero (result (ref null $rec_Counter))
     (local $__mem0 i32)
     i32.const 0
-    call $__new_31
+    call $__new_22
     return
   )
   (func $Counter_bump (param $self (ref null $rec_Counter)) (result i32)
@@ -143,7 +134,7 @@ pub fn make() -> Counter { return Counter(n: 41); }
   (func $make (export "make") (result (ref null $rec_Counter))
     (local $__mem0 i32)
     i32.const 41
-    call $__new_31
+    call $__new_22
     return
   )
   (func $__eq_Counter (param $a (ref null $rec_Counter)) (param $b (ref null $rec_Counter)) (result i32)
@@ -732,12 +723,12 @@ pub fn make() -> Counter { return Counter(n: 41); }
     global.set $__s8
     call $__init_types
   )
-  (func $__new_31 (param $f0 i32) (result (ref null $rec_Counter))
-    global.get $__ti_31
+  (func $__new_22 (param $f0 i32) (result (ref null $rec_Counter))
+    global.get $__ti_22
     local.get $f0
     struct.new $rec_Counter
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s8
@@ -746,8 +737,8 @@ pub fn make() -> Counter { return Counter(n: 41); }
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_22
+    global.get $__ti_22
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
@@ -797,15 +788,6 @@ import {io.terminal.print} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Counter (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)))))
@@ -828,7 +810,7 @@ import {io.terminal.print} from "std";
   (func $Counter_zero (result (ref null $rec_Counter))
     (local $__mem0 i32)
     i32.const 0
-    call $__new_31
+    call $__new_22
     return
   )
   (func $Counter_bump (param $self (ref null $rec_Counter)) (result i32)
@@ -894,7 +876,7 @@ import {io.terminal.print} from "std";
   (func $make (result (ref null $rec_Counter))
     (local $__mem0 i32)
     i32.const 41
-    call $__new_31
+    call $__new_22
     return
   )
   (func $main
@@ -906,7 +888,7 @@ import {io.terminal.print} from "std";
     call $Counter_bump
     call $__print_i32
     i32.const 4
-    call $__new_35
+    call $__new_26
     call $Shape_area
     call $__print_i32
     call $make
@@ -1605,18 +1587,18 @@ import {io.terminal.print} from "std";
     global.set $__s11
     call $__init_types
   )
-  (func $__new_31 (param $f0 i32) (result (ref null $rec_Counter))
-    global.get $__ti_31
+  (func $__new_22 (param $f0 i32) (result (ref null $rec_Counter))
+    global.get $__ti_22
     local.get $f0
     struct.new $rec_Counter
   )
-  (func $__new_35 (param $f0 i32) (result (ref null $var_Shape_Square))
-    global.get $__ti_35
+  (func $__new_26 (param $f0 i32) (result (ref null $var_Shape_Square))
+    global.get $__ti_26
     local.get $f0
     struct.new $var_Shape_Square
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1 $__tip3 $__tie3)
   (func $__init_types
     global.get $__s8
@@ -1625,8 +1607,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_22
+    global.get $__ti_22
     call $__ti_register
     global.get $__s11
     ref.func $__tip3
@@ -1634,8 +1616,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_35
-    global.get $__ti_35
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

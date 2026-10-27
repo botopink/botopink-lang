@@ -6111,8 +6111,9 @@ fn programUnits(ar: std.mem.Allocator, outputs: anytype, entry_name: []const u8)
 // units' frame (`Config.wasm_units`): `maker` exports `adder` (answering a
 // closure) and `apply` (taking one), which `main` imports instead of linking;
 // a closure made in `maker` is called in `main`, one made in `main` in `maker`,
-// one goes to `std@array`'s `map`, a type's method is taken as a value and one
-// captures `maker`'s module `val` — the cell's own answers.
+// one goes to `std@array`'s `map`, a type's method is taken as a value, one
+// captures `maker`'s module `val` and closures of eleven parameters cross
+// both ways (decision 1076 (2)) — the cell's own answers.
 test "wat: units ---- decision 1055 (4): a closure crosses units (cell wasm_closure_crosses_units)" {
     const a = std.testing.allocator;
     const ru = @import("../wat/runtime_unit.zig");
@@ -6132,6 +6133,10 @@ test "wat: units ---- decision 1055 (4): a closure crosses units (cell wasm_clos
     const main_text = (try ru.faceOfBytes(ar, pu.entry)).text;
     try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"adder\" ") != null);
     try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"apply\" ") != null);
+    // Decision 1076 (2) — a closure of eleven parameters crosses too: no
+    // arity is capped.
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"apply11\" ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"sum11\" ") != null);
     const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
     const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
     try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_closure_crosses_units"), out);

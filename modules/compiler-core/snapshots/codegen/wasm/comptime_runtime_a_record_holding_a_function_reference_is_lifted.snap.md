@@ -1114,15 +1114,9 @@ import {io.terminal.print} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
+  )
+  (rec
     (type $sig_0 (func (param (ref null $closure)) (result anyref)))
-    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Op (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $closure))) (field $f2 (mut (ref null $closure))))))
@@ -1161,7 +1155,7 @@ import {io.terminal.print} from "std";
     i32.const 0 ;; arity
     i32.const 0
     struct.new $env1
-    call $__new_31
+    call $__new_23
     local.set $op
     local.get $op
     struct.get $rec_Op $f0
@@ -2253,14 +2247,14 @@ import {io.terminal.print} from "std";
     global.set $__s9
     call $__init_types
   )
-  (func $__new_31 (param $f0 (ref null $str)) (param $f1 (ref null $closure)) (param $f2 (ref null $closure)) (result (ref null $rec_Op))
-    global.get $__ti_31
+  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $closure)) (param $f2 (ref null $closure)) (result (ref null $rec_Op))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_Op
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s9
@@ -2269,8 +2263,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

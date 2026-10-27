@@ -44,15 +44,9 @@ import {io.terminal.print} from "std";
     (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
     (type $__print_sig (func (param anyref)))
     (type $__eq_sig (func (param anyref anyref) (result i32)))
-    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+  )
+  (rec
     (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
-    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
-    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
-    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
-    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
-    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
     (type $rec_Cell (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut (ref null $closure))))))
@@ -77,7 +71,7 @@ import {io.terminal.print} from "std";
     i32.const 0
     local.get $v ;; capture v
     struct.new $env0
-    call $__new_31
+    call $__new_23
     return
   )
   (func $main (export "main")
@@ -957,13 +951,13 @@ import {io.terminal.print} from "std";
     global.set $__s7
     call $__init_types
   )
-  (func $__new_31 (param $f0 i32) (param $f1 (ref null $closure)) (result (ref null $rec_Cell))
-    global.get $__ti_31
+  (func $__new_23 (param $f0 i32) (param $f1 (ref null $closure)) (result (ref null $rec_Cell))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     struct.new $rec_Cell
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip3 $__tie3)
   (func $__init_types
     global.get $__s7
@@ -972,8 +966,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

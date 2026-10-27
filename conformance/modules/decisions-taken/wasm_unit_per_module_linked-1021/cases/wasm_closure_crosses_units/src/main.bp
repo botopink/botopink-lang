@@ -2,7 +2,7 @@
 
 import {io.terminal.print} from "std";
 mod maker;
-import {maker.base, maker.adder, maker.apply, maker.Scale};
+import {maker.base, maker.adder, maker.apply, maker.Scale, maker.sum11, maker.apply11};
 
 pub fn main() -> void {
     val add2 = adder(2);
@@ -18,4 +18,8 @@ pub fn main() -> void {
         return x + base;
     };
     print(apply(withBase, 1));
+    print(apply11(sum11()));
+    print(apply11(fn(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32, j: i32, k: i32) -> i32 {
+        return a * k;
+    }));
 }

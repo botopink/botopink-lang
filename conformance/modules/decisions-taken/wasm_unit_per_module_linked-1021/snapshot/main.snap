@@ -137,6 +137,8 @@ out [3, 4, 5]
 out 40
 out 50
 out 101
+out 66
+out 11
 == wasm_foreign_type_prints
 out Point(x: 0, y: 0)
 out true

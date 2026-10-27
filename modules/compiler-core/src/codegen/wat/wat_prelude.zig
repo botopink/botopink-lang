@@ -3042,30 +3042,20 @@ const gc_print_items_capture = blk: {
 /// subtypes, its first field the type's `$__tinfo` (its name
 /// `<pkg>@<path>.<Type>`, its `print` / `eq` / `display` funcrefs, its
 /// `kind`); `$__print_sig` and `$__eq_sig`, what the core casts those
-/// funcrefs to; and `$sig_0 … $sig_<gc_closure_max_arity>`, the function type
-/// of a lambda's entry of each arity (`$closure` and `anyref`s to an
-/// `anyref`), declared here so a `ref.cast` to it holds in every unit — a
-/// structurally equal type outside the group is another type.
-pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell, decl, tinfo, print_sig, eq_sig, sig0, sig1, sig2, sig3, sig4, sig5, sig6, sig7, sig8 };
+/// funcrefs to. The group holds no closure signature (decision 1076 (2)):
+/// each `$sig_<n>` is a singleton group after it (`gcSigDef`).
+pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell, decl, tinfo, print_sig, eq_sig };
 
-/// The most parameters a function value takes on wasm in the GC lowering:
-/// one prelude `$sig_n` per arity (decision 1055 (1)); a call of more falls
-/// back to linear memory.
-pub const gc_closure_max_arity = 8;
-
-/// The prelude index of the entry type of a lambda of `n` parameters.
-pub fn gcSigIndex(n: usize) u16 {
-    return @intFromEnum(GcPrelude.sig0) + @as(u16, @intCast(n));
-}
-
-fn sigDef(comptime n: usize) ast.TypeDef {
-    const params = comptime blk: {
-        var ps: [n + 1]ast.ValType = undefined;
-        ps[0] = gcPreludeRef(.closure);
-        for (ps[1..]) |*p| p.* = .anyref;
-        break :blk ps;
-    };
-    return .{ .name = std.fmt.comptimePrint("sig_{d}", .{n}), .kind = .{ .func = .{ .params = &params, .result = .anyref } } };
+/// Decision 1076 (2) — `$sig_<n>`, the function type of a lambda's entry of
+/// `n` parameters (`$closure` and `n` `anyref`s to an `anyref`): a unit
+/// declares one per arity it uses, each a rec group of its own right after
+/// the prelude's, so it is one type in every unit by structure (a `$sig_n`
+/// inside another group would be another type); no arity is capped.
+pub fn gcSigDef(ar: std.mem.Allocator, n: usize) !ast.TypeDef {
+    const ps = try ar.alloc(ast.ValType, n + 1);
+    ps[0] = gcPreludeRef(.closure);
+    for (ps[1..]) |*p| p.* = .anyref;
+    return .{ .name = try std.fmt.allocPrint(ar, "sig_{d}", .{n}), .kind = .{ .func = .{ .params = ps, .result = .anyref } } };
 }
 
 pub fn gcPreludeRef(p: GcPrelude) ast.ValType {
@@ -3138,15 +3128,6 @@ pub const gc_prelude_defs = [_]ast.TypeDef{
     } } },
     .{ .name = "__print_sig", .kind = .{ .func = .{ .params = &.{.anyref} } } },
     .{ .name = "__eq_sig", .kind = .{ .func = .{ .params = &.{ .anyref, .anyref }, .result = .i32 } } },
-    sigDef(0),
-    sigDef(1),
-    sigDef(2),
-    sigDef(3),
-    sigDef(4),
-    sigDef(5),
-    sigDef(6),
-    sigDef(7),
-    sigDef(8),
 };
 
 // ── the core's capture, type registry and dispatch (decision 1055 (2), (3), (5)) ──
