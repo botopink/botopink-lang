@@ -39,6 +39,7 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("case_alternatives_and_arrays");
+    runCase("case_arm_assigns_local");
     runCase("case_arm_block_comment");
     runCase("case_arm_ending_in_for");
     runCase("case_arm_lambda_value");

@@ -525,6 +525,35 @@ test "beam: a loop closure does not capture the register of an earlier `??`" {
     , "<a|b|c>\n", &.{"{make_fun3, "});
 }
 
+// ── a `case` arm that assigns a local ────────────────────────────────────────
+
+test "beam: a `case` arm that assigns a local keeps the new value" {
+    // `Ok(s) -> kept = s;` is a statement arm: lowered as a value it wrote
+    // `undefined` and the write to `kept` was lost, so `print(kept)` printed
+    // `none` (`conformance/modules/case/cases/case_arm_assigns_local`).
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn parse(n: i32) -> Result<string, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return "n" + n.toString();
+        \\}
+        \\fn main() -> void {
+        \\    var kept = "none";
+        \\    case parse(4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    }
+        \\    print(kept);
+        \\    case parse(-4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    }
+        \\    print(kept);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    , "n4\nnegative\n", &.{});
+}
+
 test "beam: a member call through a library's default handle is a call into the library" {
     // `qlib.make(5)` after `import {qlib} from "qlib"`: the handle is a comptime
     // fn with no run-time binding, so the receiver used to lower as an unbound

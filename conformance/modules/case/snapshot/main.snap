@@ -5,6 +5,9 @@ out false
 out empty
 out one
 out many
+== case_arm_assigns_local
+out n4
+out negative
 == case_arm_block_comment
 out 2
 out 11

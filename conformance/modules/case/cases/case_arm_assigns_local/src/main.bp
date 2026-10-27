@@ -1,0 +1,20 @@
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<string, string> {
+    if (n < 0) throw "negative";
+    return "n" + n.toString();
+}
+
+pub fn main() -> void {
+    var kept = "none";
+    case parse(4) {
+        Ok(s) -> kept = s;
+        Error(e) -> kept = e;
+    }
+    print(kept);
+    case parse(-4) {
+        Ok(s) -> kept = s;
+        Error(e) -> kept = e;
+    }
+    print(kept);
+}

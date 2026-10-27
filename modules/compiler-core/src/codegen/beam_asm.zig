@@ -11213,6 +11213,15 @@ const Emitter = struct {
 
     fn lowerArmBodyStmts(self: *Emitter, body: ast.Expr) anyerror!bool {
         const blk = armBlock(body) orelse {
+            // `Ok(s) -> kept = s;` — an assignment is a statement, not a
+            // value: `lowerExprIntoX0` has no lowering for it and wrote
+            // `undefined`, so the write to `kept` was lost. Run it as the
+            // statement it is; the arm's value is `ok`.
+            if (body == .binding and body.binding.kind == .assign) {
+                try self.emitStmt(.{ .expr = body });
+                try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                return false;
+            }
             try self.lowerExprIntoX0(body);
             return false;
         };
