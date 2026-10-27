@@ -105,15 +105,26 @@ compiler-cli/
 │   │                          the same answer on the three targets; decision 1023:
 │   │                          a build on each of the four targets lays exactly
 │   │                          `out/<t>/`, and `--out <dir>` exactly `<dir>/<t>/`
-│   ├── comptime_reply_codecs.sh ← std's comptime reply codecs (decisions 550, 1035 (4),
-│   │                          1038 (3); `compiler.bp` § the crossing): every distinct
-│   │                          `COMPTIME REPLY` section of compiler-core's snapshots,
-│   │                          read by `compiler.jsonRead` into its evaluator's typed
-│   │                          reply and written back by that dialect's encoder, is the
-│   │                          recorded text byte for byte on erlang and commonJS (wasm
-│   │                          once the GC lowering hosts the codecs); and the three
-│   │                          runtime errors 1038 (3) keeps, as `raisedText` writes them
-│   ├── comptime_reply_codecs/ ← its fixture: `codecs` (`cases.bp` generated per run)
+│   ├── comptime_reply_codecs.sh ← std's comptime crossing codecs (decisions 550, 1035 (4),
+│   │                          1038 (3), 1058 (1), 1059, 1060; `compiler.bp` § the crossing):
+│   │                          every distinct `COMPTIME REPLY` section of compiler-core's
+│   │                          snapshots, read by `compiler.jsonRead` into its evaluator's
+│   │                          typed reply and written back by that dialect's encoder, is the
+│   │                          recorded text byte for byte on erlang and commonJS (wasm once
+│   │                          the GC lowering hosts the codecs) — the floats of
+│   │                          `comptime_floats_in_a_block_reply` and the `null` of
+│   │                          `comptime_index_out_of_range_answers_null` included; every
+│   │                          distinct `;; ArgN = <term>` a snapshot lists and each line of
+│   │                          `inputs.txt`, read into its typed slot (`Decl`, `Capture`, a
+│   │                          plain value, a whole `Input`) and written back, is its JSON;
+│   │                          the float texts are OTP's `float_to_binary(F, [short])`; the
+│   │                          runtime errors 1038 (3) keeps, as `raisedText` writes them; and
+│   │                          `printed` written only when the body printed
+│   ├── comptime_reply_codecs/ ← its fixture: `codecs` (`cases.bp` generated per run),
+│   │                          `term_json.js` (a listed Erlang term as the crossing's JSON,
+│   │                          keys sorted) and `inputs.txt` (hand-written inputs of the
+│   │                          shapes no snapshot lists: hooks, typed meta, a lookup and a
+│   │                          tag handle, holes, tag answers, a whole `Input`)
 │   ├── packages_list.sh     ← `packages --list` and `--check-docs` (decisions 993 (2), (7)): a throwaway
 │   │                          checkout — a library, a workspace with a member
 │   │                          inheriting its targets and one declaring its own, a

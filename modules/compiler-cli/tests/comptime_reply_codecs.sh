@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
-# Decisions 550, 1035 (4), 1038 (3) — the comptime reply codecs written in botopink
-# (`libs/std/src/compiler.bp` § the crossing), against every `COMPTIME REPLY`
-# section of compiler-core's snapshots:
-#   • every distinct section (its evaluator's kind and its JSON) is read by
-#     `compiler.jsonRead` into the typed reply of its dialect
-#     (`decoratorReplyOf` / `templateReplyOf` / `blockReplyOf`), written back by
-#     that dialect's encoder and rendered by `compiler.jsonPretty`;
-#   • the program's output is the recorded sections byte for byte on erlang
-#     and commonJS — the oracle of C2: the reply the botopink encoder writes is
-#     the reply the Erlang path recorded. wasm joins the loop once the GC
-#     lowering hosts the codecs (two gaps of front 144 stop it: an optional of
-#     an enum — `xs.at(i)` over `Json[]` — has no GC conversion, and an array
-#     bound by a `case` arm and mapped by a lambda reads the wrong slot);
-#   • `compiler.raisedText` writes the three runtime errors 1038 (3) keeps
-#     (division by zero, a `case` no arm matched, `badarith`) as the matchers of
-#     `comptime/block_eval.zig` read them.
+# Decisions 550, 1035 (4), 1038 (3), 1058 (1), 1060 — the comptime crossing's
+# codecs written in botopink (`libs/std/src/compiler.bp` § the crossing),
+# against what the Erlang path records:
+#   • every distinct `COMPTIME REPLY` section of compiler-core's snapshots (its
+#     evaluator's kind and its JSON) is read by `compiler.jsonRead` into the
+#     typed reply of its dialect (`decoratorReplyOf` / `templateReplyOf` /
+#     `blockReplyOf`), written back by that dialect's encoder and rendered by
+#     `compiler.jsonPretty` — the oracle of C2: the reply the botopink encoder
+#     writes is the reply the Erlang path recorded, the float texts of
+#     `comptime_floats_in_a_block_reply` and the `null` of an index out of
+#     range (`comptime_index_out_of_range_answers_null`, 1060 (3)) included;
+#   • every distinct argument a snapshot lists (`;; ArgN = <term>`, a
+#     decorator's handle, a template's capture, a plain argument), written as
+#     the crossing's JSON by `term_json.js`, read by `compiler.argOf` into its
+#     typed slot (`Decl`, `Capture`, a plain value) and written back by
+#     `argJson`, is that JSON — and so are the hand-written inputs of
+#     `inputs.txt` (the shapes no snapshot lists: hooks, typed meta, a lookup
+#     handle, a tag, holes, tag answers, a whole `Input`);
+#   • a block's reply writes each float as the Erlang path does,
+#     `float_to_binary(F, [short])` (1060 (2)): `1.5`, `0.30000000000000004`,
+#     `1.0e21`, `1.0e-7`, `-0.0`;
+#   • `compiler.raisedText` writes the runtime errors 1038 (3) keeps
+#     (division by zero, a `case` no arm matched, `badarith`) as the matchers
+#     of `comptime/block_eval.zig` read them; `decoratorEnd` / `blockEnd`
+#     write `printed` only when the body printed (1059 (2)).
+# The program's output is all of it byte for byte on erlang and commonJS.
+# wasm joins the loop once the GC lowering hosts the codecs (two gaps of
+# front 144 stop it: an optional of an enum — `xs.at(i)` over `Json[]` — has
+# no GC conversion, and an array bound by a `case` arm and mapped by a lambda
+# reads the wrong slot).
 #
 # The cases are generated from the snapshots at each run, so a re-recorded
 # section is checked as it is. BOTOPINK_BIN points the script at another
-# binary. Exit 0 = every section equal on every target.
+# binary. Exit 0 = every case equal on every target.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,8 +81,28 @@ for f in "$WORK/sections"/*; do
 done
 distinct="$(find "$WORK/distinct" -type f | wc -l)"
 
-# `cases.bp`: each section as a botopink string literal, and what the program
-# must print for it.
+# Every argument a snapshot lists, one term a line, then the hand-written
+# inputs: `<kind>\t<json>` (`arg` a slot, `input` a whole `Input`).
+grep -rl --include='*.snap.md' -e '^;; Arg[0-9]* = ' "$SNAP" | LC_ALL=C sort | xargs cat | awk '
+  function flush() { if (term != "") print term; term = "" }
+  /^;; Arg[0-9]+ = / { flush(); sub(/^;; Arg[0-9]+ = /, ""); term = $0; inarg = 1; next }
+  inarg && /^;; main\/1/ { flush(); inarg = 0; next }
+  inarg && /^;;/ { sub(/^;; */, " "); term = term $0; next }
+  inarg { flush(); inarg = 0 }
+  END { flush() }
+' | LC_ALL=C sort -u > "$WORK/terms.txt"
+args="$(wc -l < "$WORK/terms.txt")"
+(( args > 0 )) || { echo "error: no argument listing under $SNAP" >&2; exit 1; }
+node "$SCRIPT_DIR/comptime_reply_codecs/term_json.js" < "$WORK/terms.txt" | sed 's/^/arg\t/' > "$WORK/inputs.txt"
+cut -f1 "$SCRIPT_DIR/comptime_reply_codecs/inputs.txt" > "$WORK/kinds.txt"
+cut -f2- "$SCRIPT_DIR/comptime_reply_codecs/inputs.txt" | node "$SCRIPT_DIR/comptime_reply_codecs/term_json.js" --json | paste "$WORK/kinds.txt" - >> "$WORK/inputs.txt"
+handwritten="$(wc -l < "$SCRIPT_DIR/comptime_reply_codecs/inputs.txt")"
+
+# A botopink string literal of stdin's text.
+literal() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' | awk 'BEGIN { ORS = "" } NR > 1 { print "\\n" } { print }'; }
+
+# `cases.bp`: each section and each input as a botopink string literal, and
+# what the program must print for it.
 {
   echo '//// Generated by comptime_reply_codecs.sh from the COMPTIME REPLY sections.'
   echo ''
@@ -81,9 +115,17 @@ distinct="$(find "$WORK/distinct" -type f | wc -l)"
     dialect="block"
     [[ "$kind" == "template" ]] && dialect="template"
     [[ "$kind" == "decorator" ]] && dialect="decorator"
-    text="$(tail -n +2 "$f" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' | awk 'BEGIN { ORS = "" } NR > 1 { print "\\n" } { print }')"
+    text="$(tail -n +2 "$f" | literal)"
     printf '        Recorded(dialect: "%s", text: "%s"),\n' "$dialect" "$text"
   done
+  echo '    ];'
+  echo '}'
+  echo ''
+  echo 'pub fn inputs() -> Recorded[] {'
+  echo '    return ['
+  while IFS=$'\t' read -r kind json; do
+    printf '        Recorded(dialect: "%s", text: "%s"),\n' "$kind" "$(printf '%s' "$json" | literal)"
+  done < "$WORK/inputs.txt"
   echo '    ];'
   echo '}'
 } > "$APP/src/cases.bp"
@@ -92,16 +134,29 @@ distinct="$(find "$WORK/distinct" -type f | wc -l)"
     tail -n +2 "$f"
     echo '----- end'
   done
+  cut -f2- "$WORK/inputs.txt"
+  echo '----- floats'
+  echo '{"float":1.5}'
+  echo '{"float":0.30000000000000004}'
+  echo '{"float":1.0e21}'
+  echo '{"float":1.0e-7}'
+  echo '{"float":-0.0}'
+  echo '----- errors'
   echo '{error,{bp_wat_runtime,<<"division by zero">>}}'
   echo '{error,{case_clause,#{label => <<"x">>,size => 3}}}'
   echo '{error,badarith}'
+  echo '----- printed'
+  echo '{"kind":"value","value":null}'
+  echo '{"kind":"value","printed":"hi\n","value":null}'
+  echo '{"contributions":[],"kind":"ok"}'
+  echo '{"contributions":[],"kind":"ok","printed":"a\nb\n"}'
 } > "$WORK/want.out"
 
 for target in erlang commonJS; do
   if ( cd "$APP" && "$BP_BIN" run --target "$target" --out "$WORK/out-$target" ) > "$WORK/$target.log" 2>&1; then
     grep -v -e 'Compiling' -e 'Compiled' "$WORK/$target.log" > "$WORK/$target.out" || true
     if diff "$WORK/want.out" "$WORK/$target.out" > "$WORK/$target.diff"; then
-      echo "  ✓ $target: $distinct of $distinct distinct replies ($total sections) written back byte for byte"
+      echo "  ✓ $target: $distinct of $distinct distinct replies ($total sections) and $((args + handwritten)) inputs ($args listed, $handwritten hand-written) written back byte for byte"
     else
       fail "$target: the replies the botopink encoder writes differ from the recorded ones"
       sed 's/^/      /' "$WORK/$target.diff" | head -60 >&2

@@ -1,14 +1,20 @@
-//// Decisions 550, 1035 (4) — each recorded `COMPTIME REPLY` read into the typed
-//// reply of its evaluator and written back by std's codecs
-//// (`comptime_reply_codecs.sh` generates `cases.bp` from the snapshots).
+//// Decisions 550, 1035 (4), 1058 (1), 1060 — each recorded `COMPTIME REPLY`
+//// read into the typed reply of its evaluator and written back by std's
+//// codecs, each recorded input read into its typed slot and written back
+//// (`comptime_reply_codecs.sh` generates `cases.bp` from the snapshots and
+//// `inputs.txt`).
 
 pub mod cases;
-import {cases.recorded, cases.Recorded};
+import {cases.recorded, cases.inputs, cases.Recorded};
 import {
     compiler.Json,
     compiler.BuildValue,
     compiler.BuildField,
+    compiler.BlockReply,
+    compiler.DecoratorReply,
     compiler.jsonRead,
+    compiler.jsonText,
+    compiler.jsonSorted,
     compiler.jsonPretty,
     compiler.decoratorReplyOf,
     compiler.decoratorReplyJson,
@@ -16,6 +22,13 @@ import {
     compiler.templateReplyJson,
     compiler.blockReplyOf,
     compiler.blockReplyJson,
+    compiler.blockValueJson,
+    compiler.argOf,
+    compiler.argJson,
+    compiler.inputOf,
+    compiler.inputJson,
+    compiler.decoratorEnd,
+    compiler.blockEnd,
     compiler.raisedText,
     compiler.divisionByZero,
     compiler.noMatch,
@@ -34,15 +47,48 @@ fn writtenBack(r: Recorded) -> string {
     return jsonPretty(blockReplyJson(blockReplyOf(j)));
 }
 
+// An input read into its typed form and written back, keys sorted.
+fn inputBack(r: Recorded) -> string {
+    val read = jsonRead(r.text);
+    if (read.isError()) return "unreadable: " + r.text;
+    val j = read.unwrapOr(Json.JsonNull);
+    if (r.dialect == "input")
+        return jsonText(jsonSorted(inputJson(inputOf(j))));
+    return jsonText(jsonSorted(argJson(argOf(j))));
+}
+
+fn half(x: f64) -> f64 {
+    return x / 2.0;
+}
+
+fn optionalInt(n: ?i64) -> BuildValue {
+    if (n != null) return BuildValue.IntValue(value: n);
+    return BuildValue.NullValue;
+}
+
 pub fn main() -> void {
     for (recorded()) { r ->
         print(writtenBack(r));
         print("----- end");
     }
+    for (inputs()) { r ->
+        print(inputBack(r));
+    }
+    print("----- floats");
+    for ([half(3.0), half(0.2) + 0.2 + 0.0, 1e21, 1e-7, -0.0]) { x ->
+        print(jsonText(blockValueJson(BuildValue.FloatValue(value: x))));
+    }
+    print("----- errors");
     print(raisedText("error", divisionByZero()));
     print(raisedText("error", noMatch(BuildValue.RecordValue(fields: [
         BuildField(name: "size", value: BuildValue.IntValue(value: 3)),
         BuildField(name: "label", value: BuildValue.StringValue(value: "x")),
     ]))));
     print(raisedText("error", badArith()));
+    print("----- printed");
+    val xs: i64[] = [1, 2, 3];
+    print(blockEnd(BlockReply.BlockValue(value: optionalInt(xs[9]), printed: null), ""));
+    print(blockEnd(BlockReply.BlockValue(value: BuildValue.NullValue, printed: null), "hi\n"));
+    print(decoratorEnd(DecoratorReply.DecoratorOk(contributions: [], printed: null), ""));
+    print(decoratorEnd(DecoratorReply.DecoratorOk(contributions: [], printed: null), "a\nb\n"));
 }

@@ -46,7 +46,12 @@
 ////   out of a comptime evaluation as JSON — `Json`, `jsonRead`, `jsonText`,
 ////   `jsonSorted`, `jsonPretty`; the values a body hands back, `BuildValue`;
 ////   the three replies `DecoratorReply`, `TemplateReply`, `BlockReply` with
-////   their encoders and readers; an error reply's text, `raisedText`.
+////   their encoders and readers; an error reply's text, `raisedText`; what
+////   crosses in — the opaque declaration handle `Decl` (`declOf`, decision
+////   1058 (1)), a template's `Capture`, the hooks, the typed meta and the
+////   main argument `Input`, each with a reader and a writer; and the
+////   evaluation's ends `evalDecorator`, `evalTemplate`, `evalBlock`
+////   (decisions 1059, 1063 (3)).
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -710,8 +715,58 @@ fn prettyAt(j: Json, indent: string) -> string {
         JsonArray(items: _) -> prettyArray(itemsOf(j), indent);
         JsonObject(fields: _) -> prettyObject(fieldsOf(j), indent);
         JsonString(value: s) -> quoteJson(s, false);
+        JsonFloat(value: x) -> decimalText(x.toString());
         _ -> jsonText(j);
     };
+}
+
+// A float as the section writes it (Zig's `std.json`): its shortest digits in
+// plain decimal, no exponent, no `.0` — `1.0e21` is `1000000000000000000000`,
+// `1.0e-7` `0.0000001`, `-0.0` `-0`. `text` is `f64.toString()`'s.
+fn decimalText(text: string) -> string {
+    val cs = text.chars();
+    val negative = (cs.at(0) ?? "") == "-";
+    val unsigned = if (negative) cs.slice(1, cs.length) else cs;
+    var mantissa: string[] = [];
+    var exponent: string[] = [];
+    var inExponent = false;
+    var n = 0;
+    while (n < unsigned.length) {
+        val c = unsigned.at(n) ?? "";
+        if (c == "e" || c == "E") inExponent = true else if (inExponent) {
+            if (c != "+") exponent.push(c);
+        } else mantissa.push(c);
+        n = n + 1;
+    }
+    val dot = mantissa.indexOf(".");
+    val point = if (dot < 0) mantissa.length else dot;
+    val digits = mantissa.filter({ c -> c != "." });
+    val shift = exponent.join("").parseInt().unwrapOr(noInt());
+    val at = point + shift.toI32();
+    var whole: string[] = [];
+    var fraction: string[] = [];
+    var k = at;
+    while (k < 0) {
+        fraction.push("0");
+        k = k + 1;
+    }
+    var i = 0;
+    while (i < at || i < digits.length) {
+        val d = digits.at(i) ?? "0";
+        if (i < at) {
+            if (whole.length > 0 || d != "0") whole.push(d);
+        } else fraction.push(d);
+        i = i + 1;
+    }
+    var last = fraction.length;
+    while (last > 0 && (fraction.at(last - 1) ?? "") == "0") {
+        last = last - 1;
+    }
+    fraction = fraction.slice(0, last);
+    val integral = if (whole.length == 0) "0" else whole.join("");
+    val sign = if (negative) "-" else "";
+    if (fraction.length == 0) return sign + integral;
+    return sign + integral + "." + fraction.join("");
 }
 
 fn boolText(b: bool) -> string {
@@ -724,8 +779,8 @@ fn boolText(b: bool) -> string {
 // `json:encode` writes it (`upper`), lower-case as the compiler's renderer
 // does — and every other code point as it is.
 fn quoteJson(s: string, upper: bool) -> string {
-    val cps = codePointsOf(s);
-    val texts = textsOf(s);
+    val cps = s.chars().map({ c -> c.charCodeAt(0) });
+    val texts = s.chars();
     var out: string[] = ["\""];
     var i = 0;
     while (i < cps.length) {
@@ -751,7 +806,7 @@ fn jsonChar(c: i32, text: string, upper: bool) -> string {
 
 fn hexDigit(d: i32, upper: bool) -> string {
     val digits = if (upper) "0123456789ABCDEF" else "0123456789abcdef";
-    return textsOf(digits).at(d) ?? "";
+    return digits.chars().at(d) ?? "";
 }
 
 // Insertion by name: the members of `fs` ordered by their names' code points,
@@ -782,8 +837,8 @@ fn sortFields(fs: JsonField[]) -> JsonField[] {
 
 // Whether `a` sorts strictly before `b`, code point by code point.
 fn textBefore(a: string, b: string) -> bool {
-    val x = codePointsOf(a);
-    val y = codePointsOf(b);
+    val x = a.chars().map({ c -> c.charCodeAt(0) });
+    val y = b.chars().map({ c -> c.charCodeAt(0) });
     var i = 0;
     var answer = x.length < y.length;
     var decided = false;
@@ -808,10 +863,13 @@ type ReadJson(value: Json, next: i32)
 type ReadText(text: string, next: i32)
 
 // One RFC 8259 document. An integer without a fraction or an exponent is a
-// `JsonInt`; any other number a `JsonFloat`. An error names the code point
+// `JsonInt` when an `i64` holds it; any other number — `-0` and a whole
+// number beyond an `i64` included — a `JsonFloat`. An error names the code point
 // index where reading stopped.
 pub fn jsonRead(text: string) -> Result<Json, string> {
-    val doc = Reading(cps: codePointsOf(text), texts: textsOf(text));
+    val doc = Reading(cps: text
+        .chars()
+        .map({ c -> c.charCodeAt(0) }), texts: text.chars());
     val read = try readJson(doc, skipSpace(doc, 0));
     val end = skipSpace(doc, read.next);
     if (end < doc.cps.length) throw readProblem(end, "text after the value");
@@ -855,7 +913,7 @@ fn readJson(doc: Reading, i: i32) -> Result<ReadJson, string> {
 }
 
 fn readWord(doc: Reading, i: i32, word: string, value: Json) -> Result<ReadJson, string> {
-    val want = textsOf(word);
+    val want = word.chars();
     var ok = true;
     var k = 0;
     while (k < want.length) {
@@ -882,10 +940,12 @@ fn readNumber(doc: Reading, i: i32) -> Result<ReadJson, string> {
         } else go = false;
     }
     val numeral = doc.texts.slice(i, k).join("");
-    if (whole) {
+    // A whole number an `i64` holds is a `JsonInt`; `-0` (which an `i64`
+    // has not) and one beyond an `i64` are read as the float they write.
+    if (whole && numeral != "-0") {
         val n = numeral.parseInt();
-        if (n.isError()) throw readProblem(i, "a number out of range");
-        return ReadJson(value: Json.JsonInt(value: n.unwrapOr(noInt())), next: k);
+        if (!n.isError())
+            return ReadJson(value: Json.JsonInt(value: n.unwrapOr(noInt())), next: k);
     }
     val x = numeral.parseFloat();
     if (x.isError()) throw readProblem(i, "a malformed number");
@@ -905,7 +965,7 @@ fn readString(doc: Reading, i: i32) -> Result<ReadText, string> {
         } else if (c == 34) done = true else if (c == 92) {
             val e = cpAt(doc, k + 1);
             if (e == 117) {
-                out.push(codepointText(hexValue(doc, k + 2)));
+                out.push(string.fromCodepoint(hexValue(doc, k + 2)));
                 k = k + 6;
             } else {
                 out.push(escapedChar(e));
@@ -924,9 +984,9 @@ fn escapedChar(e: i32) -> string {
     if (e == 110) return "\n";
     if (e == 114) return "\r";
     if (e == 116) return "\t";
-    if (e == 98) return codepointText(8);
-    if (e == 102) return codepointText(12);
-    return codepointText(e);
+    if (e == 98) return string.fromCodepoint(8);
+    if (e == 102) return string.fromCodepoint(12);
+    return string.fromCodepoint(e);
 }
 
 // The four hex digits at `i`, as a code point (no surrogate pair: a reply's
@@ -1521,8 +1581,8 @@ fn termChar(c: i32, text: string) -> string {
 }
 
 fn binaryText(s: string) -> string {
-    val cps = codePointsOf(s);
-    val texts = textsOf(s);
+    val cps = s.chars().map({ c -> c.charCodeAt(0) });
+    val texts = s.chars();
     val ascii = cps.filter({ c -> !printableLatin1(c) || c >= 128 }).length
         == 0;
     val unicode = cps.filter({ c -> !printableUnicode(c) }).length == 0;
@@ -1569,7 +1629,7 @@ fn listText(xs: BuildValue[]) -> string {
     val codes = xs.filter({ x -> printableCode(x) }).length == xs.length;
     if (codes)
         return ["\"", xs
-            .map({ x -> termChar(codeOf(x), codepointText(codeOf(x))) })
+            .map({ x -> termChar(codeOf(x), string.fromCodepoint(codeOf(x))) })
             .join(""), "\""].join("");
     return ["[", xs.map({ x -> termText(x) }).join(","), "]"].join("");
 }
@@ -1591,7 +1651,7 @@ fn codeOf(v: BuildValue) -> i32 {
 }
 
 fn atomText(name: string) -> string {
-    val cps = codePointsOf(name);
+    val cps = name.chars().map({ c -> c.charCodeAt(0) });
     val first = cps.at(0) ?? 0;
     val plain = cps.length > 0
         && first >= 97
@@ -1600,7 +1660,7 @@ fn atomText(name: string) -> string {
             == 0
         && !reservedWord(name);
     if (plain) return name;
-    val texts = textsOf(name);
+    val texts = name.chars();
     var out: string[] = ["'"];
     var i = 0;
     while (i < cps.length) {
@@ -1742,38 +1802,749 @@ fn blockFrames(r: BlockReply) -> Frame[] {
     };
 }
 
-// ── host conversions (as `json.bp`'s: on commonJS a std module does not load
-// the `String` prelude its `chars` / `charCodeAt` need) ─────────────────────
+// ── what crosses in (decisions 1035 (4), 1058 (1)) ───────────────────────────
+// The input of an evaluation, JSON in the core unit's memory: each value the
+// Erlang path hands a body as a term (C0's I1–I9) with one spelling — a map an
+// object of the same keys, a binary a string, an atom a string (`kind`,
+// `stage`), `undefined` `null`, a tuple an array; a typed meta value (I5),
+// whose type is the body's, as a template's value is written (`{"$tuple":
+// […]}`, a variant its name). A key the Erlang path writes only when it holds
+// something (a capture's `value`, `holes`, `__bp_annotations`) is written only
+// then. Each shape has a reader (`…Of(Json)`) and a writer (`…Json`); the
+// records are closed — no `unknown` —, and the compiler's reflection types
+// (`Field`, `Method`, `DeclKind`, `Stage`, `HookNode`, `Declared`) have no
+// run-time form, so the crossing spells its own (`…Entry`), the kind and the
+// stage as their names.
 
-#[compiler.external(
-    .JavaScript("""Array.from($0, (__c) => __c.codePointAt(0))"""),
-    .Erlang("""unicode:characters_to_list($0, utf8)"""),
-    .Wasm(body: codePointsOfBody),
-)]
-declare fn codePointsOf(s: string) -> i32[];
+// One annotation (`#[name(args…)]`): its raw argument lexemes and the
+// identity of the decorator its name names (`main@@column`).
+pub type AnnotationEntry(name: string, args: string[], decorator: string)
 
-#[compiler.external(
-    .JavaScript("""Array.from($0)"""),
-    .Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"""),
-    .Wasm(body: textsOfBody),
-)]
-declare fn textsOf(s: string) -> string[];
+pub type ParamEntry(name: string, typeName: string)
 
-#[compiler.external(
-    .JavaScript("""String.fromCodePoint($0)"""),
-    .Erlang("""unicode:characters_to_binary([$0])"""),
-    .Wasm(body: codepointTextBody),
-)]
-declare fn codepointText(cp: i32) -> string;
+pub type FieldEntry(name: string, typeName: string, annotations: AnnotationEntry[])
 
-fn codePointsOfBody(s: string) -> i32[] {
-    return s.chars().map({ c -> c.charCodeAt(0) });
+// One typed meta value a decorator recorded (decision 298): the record type's
+// name and its value (JSON key `type`).
+pub type MetaEntry(typeName: string, value: BuildValue)
+
+pub type MethodEntry(
+    name: string,
+    params: ParamEntry[],
+    returnType: string,
+    annotations: AnnotationEntry[],
+    meta: MetaEntry[],
+)
+
+pub type VariantEntry(
+    name: string,
+    fields: FieldEntry[],
+    annotations: AnnotationEntry[],
+    section: ?string,
+)
+
+// One string meta entry of a declaration (`<decorator>.<key>`).
+pub type MetaPair(key: string, value: string)
+
+// A declaration a hook reads (`Declared<unknown>`): its `value` is `null` at
+// build (decision 364 (3)), so it does not cross.
+pub type DeclaredEntry(
+    name: string,
+    module: string,
+    meta: MetaPair[],
+    returnTypeName: string,
+)
+
+// A `use`'s explicit type argument (`TypeInfo<unknown>`).
+pub type TypeArgEntry(
+    name: string,
+    module: string,
+    fields: FieldEntry[],
+    methods: MethodEntry[],
+    meta: MetaPair[],
+)
+
+pub type HookUseEntry(
+    hook: ?DeclaredEntry,
+    annotations: AnnotationEntry[],
+    at: string,
+    typeArgs: TypeArgEntry[],
+    context: ?DeclaredEntry,
+)
+
+pub type HookCallEntry(callee: ?DeclaredEntry, at: string)
+
+// One node of `compiler.hooks(d)` (decisions 277, 375, 376); `stage` is
+// `Build`, `Run` or `Any`.
+pub type HookEntry(
+    function: DeclaredEntry,
+    uses: HookUseEntry[],
+    calls: HookCallEntry[],
+    async: bool,
+    stage: string,
+)
+
+// What a handle `compiler.lookup` answered carries (decision 415 (2)): the
+// typed meta its decorators recorded — `pending` while they have not run
+// (`{'__bp_pending', Name}`) —, its identity and the name the scope spells.
+pub type DeclLookup(
+    meta: MetaEntry[],
+    pending: bool,
+    identity: string,
+    local: string,
+)
+
+// What a tag's handle carries (decision 302): its static attributes and the
+// typed meta recorded on it.
+pub type AttrEntry(name: string, value: string)
+
+pub type DeclTag(attrs: AttrEntry[], meta: MetaEntry[])
+
+// The declaration handle a comptime body reads (decisions 576 (3), 1058 (1)):
+// C0's I3 fields, `component` and `owner` optional, `lookup` on a handle
+// `compiler.lookup` answered, `tag` on a tag's. Opaque: only `declOf` builds
+// one, and no program reads a field — the checker types `syntax decl` as
+// `unknown` and reads it through `compiler.X(decl)`; after the check, the
+// erased body's lowering declares the handle as this type and each
+// `compiler.X(decl)` becomes a read of its field.
+pub opaque type Decl(
+    kind: string,
+    name: string,
+    fields: FieldEntry[],
+    variants: VariantEntry[],
+    methods: MethodEntry[],
+    returnType: string,
+    annotations: AnnotationEntry[],
+    hooks: HookEntry[],
+    params: ParamEntry[],
+    component: ?Decl,
+    module: string,
+    owner: ?DeclaredEntry,
+    package: string,
+    lookup: ?DeclLookup,
+    tag: ?DeclTag,
+) {
+    fn of(j: Json) -> Decl {
+        val component = jsonField(j, "component") ?? Json.JsonNull;
+        val owner = jsonField(j, "owner") ?? Json.JsonNull;
+        return Decl(
+            kind: textField(j, "kind") ?? "",
+            name: textField(j, "name") ?? "",
+            fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
+            variants: itemsOf(jsonField(j, "variants") ?? Json.JsonNull).map({ v -> variantEntryOf(v) }),
+            methods: methodEntriesOf(jsonField(j, "methods") ?? Json.JsonNull),
+            returnType: textField(j, "returnType") ?? "",
+            annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+            hooks: itemsOf(jsonField(j, "hooks") ?? Json.JsonNull).map({ h -> hookEntryOf(h) }),
+            params: paramEntriesOf(jsonField(j, "params") ?? Json.JsonNull),
+            component: if (isNull(component)) null else Decl.of(component),
+            module: textField(j, "module") ?? "",
+            owner: if (isNull(owner)) null else declaredEntryOf(owner),
+            package: textField(j, "package") ?? "",
+            lookup: declLookupOf(j),
+            tag: declTagOf(j),
+        );
+    }
+
+    // The handle as the input writes it, its keys in the Erlang path's
+    // order.
+    fn json(self: Self) -> Json {
+        var fs: JsonField[] = [
+            JsonField(key: "kind", value: Json.JsonString(value: self.kind)),
+            JsonField(key: "name", value: Json.JsonString(value: self.name)),
+            JsonField(key: "fields", value: fieldEntriesJson(self.fields)),
+            JsonField(key: "variants", value: Json.JsonArray(items: self.variants.map({ v -> variantEntryJson(v) }))),
+            JsonField(key: "methods", value: methodEntriesJson(self.methods)),
+            JsonField(key: "returnType", value: Json.JsonString(value: self.returnType)),
+            JsonField(key: "annotations", value: annotationEntriesJson(self.annotations)),
+            JsonField(key: "hooks", value: Json.JsonArray(items: self.hooks.map({ h -> hookEntryJson(h) }))),
+            JsonField(key: "params", value: paramEntriesJson(self.params)),
+            JsonField(key: "component", value: optionalDeclJson(self.component)),
+            JsonField(key: "module", value: Json.JsonString(value: self.module)),
+            JsonField(key: "owner", value: optionalDeclaredJson(self.owner)),
+            JsonField(key: "package", value: Json.JsonString(value: self.package)),
+        ];
+        val lookup = self.lookup;
+        if (lookup != null) {
+            fs.push(JsonField(key: "meta", value: if (lookup.pending)
+                Json.JsonArray(items: [Json.JsonString(value: "__bp_pending"), Json.JsonString(value: self.name)])
+            else
+                metaEntriesJson(lookup.meta)));
+            fs.push(JsonField(key: "identity", value: Json.JsonString(value: lookup.identity)));
+            fs.push(JsonField(key: "local", value: Json.JsonString(value: lookup.local)));
+        }
+        val tag = self.tag;
+        if (tag != null) {
+            fs.push(JsonField(key: "attrs", value: Json.JsonArray(items: tag.attrs.map({ a -> Json.JsonArray(items: [Json.JsonString(value: a.name), Json.JsonString(value: a.value)]) }))));
+            fs.push(JsonField(key: "meta", value: metaEntriesJson(tag.meta)));
+        }
+        return Json.JsonObject(fields: fs);
+    }
+
+    // The scope's view of a handle a capture's binding holds.
+    fn binding(self: Self) -> Binding {
+        val lookup = self.lookup;
+        val identity = if (lookup != null) lookup.identity else "";
+        val local = if (lookup != null) lookup.local else self.name;
+        return Binding(name: self.name, kind: self.kind, identity: identity, local: local, handle: self);
+    }
 }
 
-fn textsOfBody(s: string) -> string[] {
-    return s.chars();
+// The handle `j` holds (decision 792 (3)'s opaque shape: the one way to build
+// a `Decl`).
+pub fn declOf(j: Json) -> Decl {
+    return Decl.of(j);
 }
 
-fn codepointTextBody(cp: i32) -> string {
-    return string.fromCodepoint(cp);
+pub fn declJson(d: Decl) -> Json {
+    return d.json();
+}
+
+fn optionalDeclJson(d: ?Decl) -> Json {
+    if (d != null) return d.json();
+    return Json.JsonNull;
+}
+
+fn isNull(j: Json) -> bool {
+    return case j {
+        JsonNull -> true;
+        _ -> false;
+    };
+}
+
+fn isArray(j: Json) -> bool {
+    return case j {
+        JsonArray(items: _) -> true;
+        _ -> false;
+    };
+}
+
+fn boolField(j: Json, key: string) -> bool {
+    val v = jsonField(j, key) ?? Json.JsonNull;
+    return case v {
+        JsonBool(value: b) -> b;
+        _ -> false;
+    };
+}
+
+fn textsOfJson(j: Json) -> string[] {
+    return itemsOf(j).map({ x -> stringOf(x) });
+}
+
+fn textsJson(xs: string[]) -> Json {
+    return Json.JsonArray(items: xs.map({ x -> Json.JsonString(value: x) }));
+}
+
+pub fn annotationEntryOf(j: Json) -> AnnotationEntry {
+    return AnnotationEntry(name: textField(j, "name") ?? "", args: textsOfJson(jsonField(j, "args") ?? Json.JsonNull), decorator: textField(j, "decorator") ?? "");
+}
+
+pub fn annotationEntryJson(a: AnnotationEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: a.name)),
+        JsonField(key: "args", value: textsJson(a.args)),
+        JsonField(key: "decorator", value: Json.JsonString(value: a.decorator)),
+    ]);
+}
+
+fn annotationEntriesOf(j: Json) -> AnnotationEntry[] {
+    return itemsOf(j).map({ a -> annotationEntryOf(a) });
+}
+
+fn annotationEntriesJson(xs: AnnotationEntry[]) -> Json {
+    return Json.JsonArray(items: xs.map({ a -> annotationEntryJson(a) }));
+}
+
+fn paramEntriesOf(j: Json) -> ParamEntry[] {
+    return itemsOf(j).map({ p -> ParamEntry(name: textField(p, "name") ?? "", typeName: textField(p, "typeName") ?? "") });
+}
+
+fn paramEntriesJson(xs: ParamEntry[]) -> Json {
+    return Json.JsonArray(items: xs.map({ p -> Json.JsonObject(fields: [JsonField(key: "name", value: Json.JsonString(value: p.name)), JsonField(key: "typeName", value: Json.JsonString(value: p.typeName))]) }));
+}
+
+pub fn fieldEntryOf(j: Json) -> FieldEntry {
+    return FieldEntry(name: textField(j, "name") ?? "", typeName: textField(j, "typeName") ?? "", annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull));
+}
+
+pub fn fieldEntryJson(f: FieldEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: f.name)),
+        JsonField(key: "typeName", value: Json.JsonString(value: f.typeName)),
+        JsonField(key: "annotations", value: annotationEntriesJson(f.annotations)),
+    ]);
+}
+
+fn fieldEntriesOf(j: Json) -> FieldEntry[] {
+    return itemsOf(j).map({ f -> fieldEntryOf(f) });
+}
+
+fn fieldEntriesJson(xs: FieldEntry[]) -> Json {
+    return Json.JsonArray(items: xs.map({ f -> fieldEntryJson(f) }));
+}
+
+// A typed meta value (I5): `{"type": name, "value": v}`, `v` written as a
+// template's value is.
+pub fn metaEntryOf(j: Json) -> MetaEntry {
+    return MetaEntry(typeName: textField(j, "type") ?? "", value: templateValueOf(jsonField(j, "value") ?? Json.JsonNull));
+}
+
+pub fn metaEntryJson(m: MetaEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "type", value: Json.JsonString(value: m.typeName)),
+        JsonField(key: "value", value: templateValueJson(m.value)),
+    ]);
+}
+
+fn metaEntriesOf(j: Json) -> MetaEntry[] {
+    return itemsOf(j).map({ m -> metaEntryOf(m) });
+}
+
+fn metaEntriesJson(xs: MetaEntry[]) -> Json {
+    return Json.JsonArray(items: xs.map({ m -> metaEntryJson(m) }));
+}
+
+pub fn methodEntryOf(j: Json) -> MethodEntry {
+    return MethodEntry(
+        name: textField(j, "name") ?? "",
+        params: paramEntriesOf(jsonField(j, "params") ?? Json.JsonNull),
+        returnType: textField(j, "returnType") ?? "",
+        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        meta: metaEntriesOf(jsonField(j, "meta") ?? Json.JsonNull),
+    );
+}
+
+pub fn methodEntryJson(m: MethodEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: m.name)),
+        JsonField(key: "params", value: paramEntriesJson(m.params)),
+        JsonField(key: "returnType", value: Json.JsonString(value: m.returnType)),
+        JsonField(key: "annotations", value: annotationEntriesJson(m.annotations)),
+        JsonField(key: "meta", value: metaEntriesJson(m.meta)),
+    ]);
+}
+
+fn methodEntriesOf(j: Json) -> MethodEntry[] {
+    return itemsOf(j).map({ m -> methodEntryOf(m) });
+}
+
+fn methodEntriesJson(xs: MethodEntry[]) -> Json {
+    return Json.JsonArray(items: xs.map({ m -> methodEntryJson(m) }));
+}
+
+pub fn variantEntryOf(j: Json) -> VariantEntry {
+    return VariantEntry(
+        name: textField(j, "name") ?? "",
+        fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
+        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        section: textField(j, "section"),
+    );
+}
+
+pub fn variantEntryJson(v: VariantEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: v.name)),
+        JsonField(key: "fields", value: fieldEntriesJson(v.fields)),
+        JsonField(key: "annotations", value: annotationEntriesJson(v.annotations)),
+        JsonField(key: "section", value: optionalText(v.section)),
+    ]);
+}
+
+fn metaPairsOf(j: Json) -> MetaPair[] {
+    return itemsOf(j).map({ m -> MetaPair(key: textField(m, "key") ?? "", value: textField(m, "value") ?? "") });
+}
+
+fn metaPairsJson(xs: MetaPair[]) -> Json {
+    return Json.JsonArray(items: xs.map({ m -> Json.JsonObject(fields: [JsonField(key: "key", value: Json.JsonString(value: m.key)), JsonField(key: "value", value: Json.JsonString(value: m.value))]) }));
+}
+
+pub fn declaredEntryOf(j: Json) -> DeclaredEntry {
+    return DeclaredEntry(
+        name: textField(j, "name") ?? "",
+        module: textField(j, "module") ?? "",
+        meta: metaPairsOf(jsonField(j, "meta") ?? Json.JsonNull),
+        returnTypeName: textField(j, "returnTypeName") ?? "",
+    );
+}
+
+pub fn declaredEntryJson(d: DeclaredEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: d.name)),
+        JsonField(key: "module", value: Json.JsonString(value: d.module)),
+        JsonField(key: "meta", value: metaPairsJson(d.meta)),
+        JsonField(key: "returnTypeName", value: Json.JsonString(value: d.returnTypeName)),
+        JsonField(key: "value", value: Json.JsonNull),
+    ]);
+}
+
+fn optionalDeclaredOf(j: ?Json) -> ?DeclaredEntry {
+    val v = j ?? Json.JsonNull;
+    if (isNull(v)) return null;
+    return declaredEntryOf(v);
+}
+
+fn optionalDeclaredJson(d: ?DeclaredEntry) -> Json {
+    if (d != null) return declaredEntryJson(d);
+    return Json.JsonNull;
+}
+
+fn typeArgEntryOf(j: Json) -> TypeArgEntry {
+    return TypeArgEntry(
+        name: textField(j, "name") ?? "",
+        module: textField(j, "module") ?? "",
+        fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
+        methods: methodEntriesOf(jsonField(j, "methods") ?? Json.JsonNull),
+        meta: metaPairsOf(jsonField(j, "meta") ?? Json.JsonNull),
+    );
+}
+
+fn typeArgEntryJson(t: TypeArgEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: t.name)),
+        JsonField(key: "module", value: Json.JsonString(value: t.module)),
+        JsonField(key: "fields", value: fieldEntriesJson(t.fields)),
+        JsonField(key: "methods", value: methodEntriesJson(t.methods)),
+        JsonField(key: "meta", value: metaPairsJson(t.meta)),
+    ]);
+}
+
+fn hookUseEntryOf(j: Json) -> HookUseEntry {
+    return HookUseEntry(
+        hook: optionalDeclaredOf(jsonField(j, "hook")),
+        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        at: textField(j, "at") ?? "",
+        typeArgs: itemsOf(jsonField(j, "typeArgs") ?? Json.JsonNull).map({ t -> typeArgEntryOf(t) }),
+        context: optionalDeclaredOf(jsonField(j, "context")),
+    );
+}
+
+fn hookUseEntryJson(u: HookUseEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "hook", value: optionalDeclaredJson(u.hook)),
+        JsonField(key: "annotations", value: annotationEntriesJson(u.annotations)),
+        JsonField(key: "at", value: Json.JsonString(value: u.at)),
+        JsonField(key: "typeArgs", value: Json.JsonArray(items: u.typeArgs.map({ t -> typeArgEntryJson(t) }))),
+        JsonField(key: "context", value: optionalDeclaredJson(u.context)),
+    ]);
+}
+
+pub fn hookEntryOf(j: Json) -> HookEntry {
+    return HookEntry(
+        function: declaredEntryOf(jsonField(j, "function") ?? Json.JsonNull),
+        uses: itemsOf(jsonField(j, "uses") ?? Json.JsonNull).map({ u -> hookUseEntryOf(u) }),
+        calls: itemsOf(jsonField(j, "calls") ?? Json.JsonNull).map({ c -> HookCallEntry(callee: optionalDeclaredOf(jsonField(c, "callee")), at: textField(c, "at") ?? "") }),
+        async: boolField(j, "async"),
+        stage: textField(j, "stage") ?? "",
+    );
+}
+
+pub fn hookEntryJson(h: HookEntry) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "function", value: declaredEntryJson(h.function)),
+        JsonField(key: "uses", value: Json.JsonArray(items: h.uses.map({ u -> hookUseEntryJson(u) }))),
+        JsonField(key: "calls", value: Json.JsonArray(items: h.calls.map({ c -> Json.JsonObject(fields: [JsonField(key: "callee", value: optionalDeclaredJson(c.callee)), JsonField(key: "at", value: Json.JsonString(value: c.at))]) }))),
+        JsonField(key: "async", value: Json.JsonBool(value: h.async)),
+        JsonField(key: "stage", value: Json.JsonString(value: h.stage)),
+    ]);
+}
+
+// A lookup handle's three keys, when `identity` is there; its `meta` the
+// pending pair `["__bp_pending", name]` while its decorators have not run.
+fn declLookupOf(j: Json) -> ?DeclLookup {
+    if (textField(j, "identity") == null || jsonField(j, "attrs") != null)
+        return null;
+    val identity = textField(j, "identity") ?? "";
+    val meta = jsonField(j, "meta") ?? Json.JsonNull;
+    val first = itemsOf(meta).at(0) ?? Json.JsonNull;
+    val pending = case first {
+        JsonString(value: s) -> s == "__bp_pending";
+        _ -> false;
+    };
+    return DeclLookup(meta: if (pending)
+        []
+    else
+        metaEntriesOf(meta), pending: pending, identity: identity, local: textField(j, "local") ?? "");
+}
+
+fn declTagOf(j: Json) -> ?DeclTag {
+    if (jsonField(j, "attrs") == null) return null;
+    val attrs = jsonField(j, "attrs") ?? Json.JsonNull;
+    return DeclTag(
+        attrs: itemsOf(attrs).map({ a -> AttrEntry(name: stringOf(itemsOf(a).at(0) ?? Json.JsonNull), value: stringOf(itemsOf(a).at(1) ?? Json.JsonNull)) }),
+        meta: metaEntriesOf(jsonField(j, "meta") ?? Json.JsonNull),
+    );
+}
+
+// ── a template's capture (I7, I8) ─────────────────────────────────────────────
+
+pub type CaptureSource(file: string, line: i64, col: i64, root: string)
+
+pub type CaptureContext(source: CaptureSource, text: string, multiline: bool)
+
+// A word of the text the scope binds (decision 237): the declaration's name,
+// kind, identity and the name the scope spells, or the whole handle when the
+// call site computed it (decision 415 (2)).
+pub type Binding(
+    name: string,
+    kind: string,
+    identity: string,
+    local: string,
+    handle: ?Decl,
+)
+
+// A tag answer `compiler.annotate` has had (decision 302): the tag's handle
+// and the answer's index (`'__bp_answer'`).
+pub type TagAnswer(decl: Decl, answer: i64)
+
+// A `syntax` parameter's capture (`'__bp_capture'` the parameter's name):
+// `value` the literal's text when the body reads it, `holes` each `${…}` a
+// capture of its own (decision 637), `annotations` the tag answers so far.
+pub type Capture(
+    param: string,
+    text: string,
+    source: CaptureSource,
+    context: CaptureContext,
+    bindings: Binding[],
+    words: string[],
+    name: ?string,
+    value: ?string,
+    holes: Capture[],
+    annotations: TagAnswer[],
+)
+
+fn captureSourceOf(j: Json) -> CaptureSource {
+    return CaptureSource(file: textField(j, "file") ?? "", line: wholeOf(jsonField(j, "line") ?? Json.JsonNull), col: wholeOf(jsonField(j, "col") ?? Json.JsonNull), root: textField(j, "root") ?? "");
+}
+
+fn captureSourceJson(s: CaptureSource) -> Json {
+    return Json.JsonObject(fields: [
+        JsonField(key: "file", value: Json.JsonString(value: s.file)),
+        JsonField(key: "line", value: Json.JsonInt(value: s.line)),
+        JsonField(key: "col", value: Json.JsonInt(value: s.col)),
+        JsonField(key: "root", value: Json.JsonString(value: s.root)),
+    ]);
+}
+
+pub fn bindingOf(j: Json) -> Binding {
+    if (jsonField(j, "fields") != null) return Decl.of(j).binding();
+    return Binding(name: textField(j, "name") ?? "", kind: textField(j, "kind") ?? "", identity: textField(j, "identity") ?? "", local: textField(j, "local") ?? "", handle: null);
+}
+
+pub fn bindingJson(b: Binding) -> Json {
+    val handle = b.handle;
+    if (handle != null) return handle.json();
+    return Json.JsonObject(fields: [
+        JsonField(key: "name", value: Json.JsonString(value: b.name)),
+        JsonField(key: "kind", value: Json.JsonString(value: b.kind)),
+        JsonField(key: "identity", value: Json.JsonString(value: b.identity)),
+        JsonField(key: "local", value: Json.JsonString(value: b.local)),
+    ]);
+}
+
+pub fn captureOf(j: Json) -> Capture {
+    val context = jsonField(j, "context") ?? Json.JsonNull;
+    return Capture(
+        param: textField(j, "__bp_capture") ?? "",
+        text: textField(j, "text") ?? "",
+        source: captureSourceOf(jsonField(j, "source") ?? Json.JsonNull),
+        context: CaptureContext(source: captureSourceOf(jsonField(context, "source") ?? Json.JsonNull), text: textField(context, "text") ?? "", multiline: boolField(context, "multiline")),
+        bindings: itemsOf(jsonField(j, "bindings") ?? Json.JsonNull).map({ b -> bindingOf(b) }),
+        words: textsOfJson(jsonField(j, "words") ?? Json.JsonNull),
+        name: textField(j, "name"),
+        value: textField(j, "value"),
+        holes: itemsOf(jsonField(j, "holes") ?? Json.JsonNull).map({ h -> captureOf(h) }),
+        annotations: itemsOf(jsonField(j, "__bp_annotations") ?? Json.JsonNull).map({ a -> TagAnswer(decl: Decl.of(a), answer: wholeOf(jsonField(a, "__bp_answer") ?? Json.JsonNull)) }),
+    );
+}
+
+pub fn captureJson(c: Capture) -> Json {
+    var fs: JsonField[] = [
+        JsonField(key: "__bp_capture", value: Json.JsonString(value: c.param)),
+        JsonField(key: "text", value: Json.JsonString(value: c.text)),
+        JsonField(key: "source", value: captureSourceJson(c.source)),
+        JsonField(key: "context", value: Json.JsonObject(fields: [
+            JsonField(key: "source", value: captureSourceJson(c.context.source)),
+            JsonField(key: "text", value: Json.JsonString(value: c.context.text)),
+            JsonField(key: "multiline", value: Json.JsonBool(value: c.context.multiline)),
+        ])),
+        JsonField(key: "bindings", value: Json.JsonArray(items: c.bindings.map({ b -> bindingJson(b) }))),
+        JsonField(key: "words", value: textsJson(c.words)),
+        JsonField(key: "name", value: optionalText(c.name)),
+    ];
+    if (c.value != null)
+        fs.push(JsonField(key: "value", value: optionalText(c.value)));
+    if (c.holes.length > 0)
+        fs.push(JsonField(key: "holes", value: Json.JsonArray(items: c.holes.map({ h -> captureJson(h) }))));
+    if (c.annotations.length > 0)
+        fs.push(JsonField(key: "__bp_annotations", value: Json.JsonArray(items: c.annotations.map({ a -> tagAnswerJson(a) }))));
+    return Json.JsonObject(fields: fs);
+}
+
+fn tagAnswerJson(a: TagAnswer) -> Json {
+    var fs = fieldsOf(a.decl.json());
+    fs.push(JsonField(key: "__bp_answer", value: Json.JsonInt(value: a.answer)));
+    return Json.JsonObject(fields: fs);
+}
+
+// ── the main argument (I1, I2) ────────────────────────────────────────────────
+
+// One parameter's slot of `main`'s argument: the annotated declaration's
+// handle, a `syntax` parameter's capture, a plain value (a string, a bool, a
+// number, a literal's raw source as a string), or nothing — the literal stays
+// in the module.
+pub type InputArg {
+    HandleArg(decl: Decl),
+    CaptureArg(capture: Capture),
+    PlainArg(value: BuildValue),
+    Unbound,
+}
+
+// A plain argument's text as written and the name it is written as
+// (`compiler.text(x)` / `compiler.name(x)` of a decorator's argument,
+// decision 576 (2)).
+pub type ArgText(text: string, name: ?string)
+
+// What an evaluation is handed: one slot per parameter of the body (none
+// for a `comptime { }` block), and, for a decorator whose body reads
+// `compiler.text`, the texts of its plain arguments — the JSON then the pair
+// `[[slots…], [[text, name]…]]`.
+pub type Input(args: InputArg[], texts: ?ArgText[])
+
+pub fn argOf(j: Json) -> InputArg {
+    return case j {
+        JsonNull -> InputArg.Unbound;
+        JsonObject(fields: _) -> objectArgOf(j);
+        _ -> InputArg.PlainArg(value: templateValueOf(j));
+    };
+}
+
+fn objectArgOf(j: Json) -> InputArg {
+    if (jsonField(j, "__bp_capture") != null)
+        return InputArg.CaptureArg(capture: captureOf(j));
+    return InputArg.HandleArg(decl: Decl.of(j));
+}
+
+pub fn argJson(a: InputArg) -> Json {
+    return case a {
+        HandleArg(decl: d) -> d.json();
+        CaptureArg(capture: c) -> captureJson(c);
+        PlainArg(value: v) -> templateValueJson(v);
+        Unbound -> Json.JsonNull;
+    };
+}
+
+pub fn inputOf(j: Json) -> Input {
+    val items = itemsOf(j);
+    val first = items.at(0) ?? Json.JsonNull;
+    val paired = items.length == 2 && isArray(first);
+    if (paired)
+        return Input(args: itemsOf(first).map({ a -> argOf(a) }), texts: itemsOf(items.at(1) ?? Json.JsonNull).map({ t -> argTextOf(t) }));
+    return Input(args: items.map({ a -> argOf(a) }), texts: null);
+}
+
+fn argTextOf(j: Json) -> ArgText {
+    val pair = itemsOf(j);
+    val name = pair.at(1) ?? Json.JsonNull;
+    return ArgText(text: stringOf(pair.at(0) ?? Json.JsonNull), name: if (isNull(name))
+        null
+    else
+        stringOf(name));
+}
+
+pub fn inputJson(i: Input) -> Json {
+    val args = Json.JsonArray(items: i.args.map({ a -> argJson(a) }));
+    val texts = i.texts;
+    if (texts == null) return args;
+    return Json.JsonArray(items: [args, Json.JsonArray(items: texts.map({ t -> Json.JsonArray(items: [Json.JsonString(value: t.text), optionalText(t.name)]) }))]);
+}
+
+// ── the evaluation's two ends (decisions 1059 (1), (2), 1063 (3)) ──────────
+// What the evaluated module's `__bp_comptime_eval(ptr, len)` runs (C1 wires
+// the export and hands `input` over from the core's memory): the input read
+// into its `Input`, the body run, and the reply's text. The unit's `__bp_init`
+// has opened the core's capture (`__cap_begin`), so what the body prints is
+// kept there; the end closes it (`__cap_end`, `printedSoFar`) and writes it as
+// the reply's `printed` — absent when nothing was printed, as the Erlang path
+// writes it. A template's reply has no `printed`: what its body prints is
+// closed and dropped, as there. An input that is no JSON is an `error` reply
+// naming it. A raise that leaves the body — a trap — ends the evaluation with
+// no reply written: the host's reply then, with what it captured
+// (1059 (2), 1063 (3)). `decoratorEnd` and `blockEnd` are the writing alone.
+
+pub fn evalDecorator(input: string, body: fn(Input) -> DecoratorReply) -> string {
+    val read = jsonRead(input);
+    val reply = if (read.isError())
+        DecoratorReply.DecoratorError(message: unreadableInput(read), frames: [], printed: null)
+    else
+        body(inputOf(read.unwrapOr(Json.JsonNull)));
+    return decoratorEnd(reply, printedSoFar());
+}
+
+pub fn evalTemplate(input: string, body: fn(Input) -> TemplateReply) -> string {
+    val read = jsonRead(input);
+    val reply = if (read.isError())
+        TemplateReply.TemplateError(message: unreadableInput(read), frames: null)
+    else
+        body(inputOf(read.unwrapOr(Json.JsonNull)));
+    printedSoFar();
+    return jsonText(templateReplyJson(reply));
+}
+
+pub fn evalBlock(body: fn() -> BlockReply) -> string {
+    val reply = body();
+    return blockEnd(reply, printedSoFar());
+}
+
+// A decorator's reply text, `printed` what the body printed (`""` none).
+pub fn decoratorEnd(reply: DecoratorReply, printed: string) -> string {
+    return jsonText(decoratorReplyJson(decoratorWithPrinted(reply, printedOf(printed))));
+}
+
+// A block's reply text, `printed` what the body printed (`""` none).
+pub fn blockEnd(reply: BlockReply, printed: string) -> string {
+    return jsonText(blockReplyJson(blockWithPrinted(reply, printedOf(printed))));
+}
+
+// What the body printed since the evaluated unit's `__bp_init` opened the
+// core's capture, the capture closed. Only a comptime unit opens one: on
+// erlang and commonJS, which run no comptime unit, nothing was kept.
+#[compiler.external(
+    .JavaScript("\"\""),
+    .Erlang("""<<>>"""),
+    .Wasm(body: printedSoFarOnWasm),
+)]
+declare fn printedSoFar() -> string;
+
+// `__cap_end` of the capture `__bp_init` opened, restoring an empty one: what
+// the core writes after it is kept there, read by no one.
+fn printedSoFarOnWasm() -> string {
+    return closeCapture("");
+}
+
+fn unreadableInput(read: Result<Json, string>) -> string {
+    return case read {
+        Error(e) -> "the evaluation's input is no JSON: " + e;
+        _ -> "";
+    };
+}
+
+fn printedOf(kept: string) -> ?string {
+    if (kept == "") return null;
+    return kept;
+}
+
+// `r` with `printed` the kept text (a reply the body built carries none).
+pub fn decoratorWithPrinted(r: DecoratorReply, printed: ?string) -> DecoratorReply {
+    return case r {
+        DecoratorOk(contributions: cs, printed: _) -> DecoratorReply.DecoratorOk(contributions: cs, printed: printed);
+        DecoratorFail(message: m, span: s, printed: _) -> DecoratorReply.DecoratorFail(message: m, span: s, printed: printed);
+        DecoratorError(message: m, frames: fs, printed: _) -> DecoratorReply.DecoratorError(message: m, frames: fs, printed: printed);
+    };
+}
+
+pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
+    return case r {
+        BlockValue(value: v, printed: _) -> BlockReply.BlockValue(value: v, printed: printed);
+        BlockError(message: m, frames: fs, printed: _) -> BlockReply.BlockError(message: m, frames: fs, printed: printed);
+    };
 }

@@ -23,3 +23,27 @@ test "eval pipeline: comptime record lit" {
         \\val f = comptime RecordField(name: "x", typeName: "i32");
     );
 }
+
+// Decision 1060 (2) — the float texts a block's reply carries, recorded from
+// the comptime runtime as it writes them; std's codecs
+// (`compiler.bp` § the crossing) are held to this section by
+// `modules/compiler-cli/tests/comptime_reply_codecs.sh`.
+test "eval pipeline: comptime floats in a block reply" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn half(x: f64) -> f64 {
+        \\    return x / 2.0;
+        \\}
+        \\val f = comptime [half(3.0), half(0.2) + 0.2 + 0.0, 1e21, 1e-7, -0.0];
+    );
+}
+
+// Decision 1060 (3) — an index out of range in a comptime body answers
+// `null` and raises nothing, as in a program; the reply writes it `null`.
+test "eval pipeline: comptime index out of range answers null" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val m = comptime {
+        \\    val xs = [1, 2, 3];
+        \\    xs[9]
+        \\};
+    );
+}

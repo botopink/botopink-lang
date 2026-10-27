@@ -1775,6 +1775,33 @@ forms: `block_eval.unseededDraw` drops the runtime's `{error,{bp_wat_runtime,<<"
 and `decorator_eval.parseOutcome`. Cells: `modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/comptime_random_unseeded`, `comptime_random_float_unseeded`,
 `decorator_random_float_unseeded`.
 
+## The crossing in botopink, for C1 and C4 (decisions 1035 (4), 1058, 1059, 1060, 1063)
+
+`libs/std/src/compiler.bp` § the crossing holds both directions in botopink: the replies (`DecoratorReply`,
+`TemplateReply`, `BlockReply`), the input (`Input`, `InputArg`, the opaque `Decl` built only by `declOf`, `Capture`, the
+hooks and typed meta), and the evaluation's ends `evalDecorator(input, body)` / `evalTemplate` / `evalBlock(body)` the
+evaluated unit's `__bp_comptime_eval(ptr, len)` calls (the export's name is `codegen/wat/runtime_unit.zig`
+`comptime_eval_export`; C1 wires it and hands the input over as a `string`). The input's JSON is the Erlang term's with
+one spelling (a map an object, a binary or an atom a string, `undefined` `null`, a tuple an array); the evaluators still
+write ETF until C4, which writes this JSON instead. What C1 and C4 must keep:
+
+- **`printed`** is the codec's: the evaluated unit's `__bp_init` opens the core's capture (`__cap_begin`); the end
+  closes it (`printedSoFar`, `__cap_end`) and writes `printed` only when the body printed. A raise that leaves `body`
+  writes no reply: the host's, with what it captured — its own `fd_write` capture until the core mirrors
+  each write to it under comptime (1063 (3), P4b).
+- **An index out of range answers `null`** (1060 (3)): `xs[i]` is `?T` in a comptime body as in a program; the Erlang
+  path's `undefined` is that null and the reply writes it `null` (`comptime_index_out_of_range_answers_null`). A GC
+  body's array read must check the bound and answer null — never an `array.get` that traps.
+- **Division by zero, a non-exhaustive `case`, `badarith`** keep today's error text through explicit checks
+  (1038 (3)): `compiler.raisedText(class, divisionByZero() | noMatch(v) | badArith())`.
+- **Floats** are written by `f64.toString()`, OTP's `float_to_binary(F, [short])` on erlang and commonJS (1060 (2),
+  `comptime_floats_in_a_block_reply`); definitive once the codecs run on wasm (B-196, B-197).
+- **`Decl`'s records are std's own** (`FieldEntry`, `MethodEntry`, … `kind` and `stage` as names): the reflection types
+  `__Decl__Field`, `__Decl__Method`, `__DeclKind`, `Stage`, `__HookNode`, `Declared` are checker-only — a program that
+  builds one is refused by the OTP compiler on erlang (`'__Decl__Field'/3 undefined`) and crashes on commonJS
+  (`__DeclKind is not defined`) — so
+  `compiler.fields(d)` becoming a field read of `Decl` waits on whether those types gain a run-time form.
+
 ## One variant table, four symptoms (01 step 12)
 
 Every enum variant's constructor is bound under its bare name in `Env.bindings`, where the last
