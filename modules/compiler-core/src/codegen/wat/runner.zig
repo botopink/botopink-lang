@@ -166,6 +166,34 @@ fn onDeadline(
     return null;
 }
 
+/// The time limit and `interrupt` of a store outside this file's sessions
+/// (the comptime host, `comptime_host.zig`, decision 1035 (2)): the same
+/// watch, callback and watchdog, so `interrupt` ends its runs too and they
+/// count in `running`. `begin` before the first call, `end` after the last;
+/// `self` must not move between them.
+pub const StoreWatch = struct {
+    watch: Watch,
+    thread: ?std.Thread = null,
+
+    pub fn begin(self: *StoreWatch, store: *c.wasmtime_store_t, timeout_ns: ?u64) void {
+        self.* = .{ .watch = .{ .gen = interrupt_gen.load(.acquire), .deadline = if (timeout_ns) |t| nowNs() + t else null } };
+        _ = active.fetchAdd(1, .acq_rel);
+        c.wasmtime_context_set_epoch_deadline(c.wasmtime_store_context(store), 1);
+        c.wasmtime_store_epoch_deadline_callback(store, onDeadline, &self.watch, null);
+        if (self.watch.deadline != null)
+            self.thread = std.Thread.spawn(.{}, watchdog, .{&self.watch}) catch null;
+    }
+
+    /// How the run ended; call before the store is deleted or reused.
+    pub fn end(self: *StoreWatch) End {
+        self.watch.done.store(true, .release);
+        if (self.thread) |t| t.join();
+        self.thread = null;
+        _ = active.fetchSub(1, .acq_rel);
+        return self.watch.end;
+    }
+};
+
 // ── the session: a store, its WASI context, its watch ───────────────────────
 
 const Capture = struct {
@@ -286,7 +314,13 @@ const Session = struct {
 // ── running ──────────────────────────────────────────────────────────────────
 
 /// Instantiate `component` with `units` and run it. See the file comment.
+/// The call runs on a thread whose stack holds the engine's wasm stack
+/// (`engine.onWasmStack`).
 pub fn run(alloc: std.mem.Allocator, component: *const c.wasmtime_component_t, units: []const Unit, opts: Options) Error!Outcome {
+    return engine_mod.onWasmStack(runHere, .{ alloc, component, units, opts });
+}
+
+fn runHere(alloc: std.mem.Allocator, component: *const c.wasmtime_component_t, units: []const Unit, opts: Options) Error!Outcome {
     const eng = try engine_mod.theEngine();
     const http = opts.needs.contains(.http);
     const linker = c.wasmtime_component_linker_new(eng) orelse return error.OutOfMemory;
@@ -362,6 +396,10 @@ pub fn invokeCore(alloc: std.mem.Allocator, module: *const c.wasmtime_module_t, 
 }
 
 fn callCore(alloc: std.mem.Allocator, module: *const c.wasmtime_module_t, units: []const Unit, name: []const u8, opts: Options, value: ?*?i64) Error!Outcome {
+    return engine_mod.onWasmStack(callCoreHere, .{ alloc, module, units, name, opts, value });
+}
+
+fn callCoreHere(alloc: std.mem.Allocator, module: *const c.wasmtime_module_t, units: []const Unit, name: []const u8, opts: Options, value: ?*?i64) Error!Outcome {
     const eng = try engine_mod.theEngine();
     const linker = c.wasmtime_linker_new(eng) orelse return error.OutOfMemory;
     defer c.wasmtime_linker_delete(linker);

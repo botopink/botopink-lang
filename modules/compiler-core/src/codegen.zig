@@ -41,6 +41,8 @@ pub const wasmComptimeUnits = @import("./codegen/wat/comptime_units.zig");
 /// runner over it (decisions 1032, 1034); native builds only.
 pub const wasmEngine = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/engine.zig");
 pub const wasmRunner = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/runner.zig");
+/// The native comptime host over the runner (decision 1035 (2), C3a).
+pub const wasmComptimeHost = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/comptime_host.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {

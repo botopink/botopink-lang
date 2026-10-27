@@ -4,7 +4,10 @@
 //! The engine is configured here once (decision 67: no flag): exception
 //! handling, GC, the component model and parallel compilation on, epoch
 //! interruption on (`incrementEpoch` is what a SIGINT handler or a timeout
-//! calls; a store whose deadline is one tick traps at the next increment).
+//! calls; a store whose deadline is one tick traps at the next increment),
+//! and a 64 MiB wasm stack (`wasm_stack`, comptime's bound: one configuration
+//! serves the program and comptime, decision 1033 (1)), a call reaching that
+//! depth running on a thread that holds it (`onWasmStack`).
 //! `wasm_component_model_async` stays off: `add_wasip2` (sync) needs the sync
 //! `func_call` path. The engine is not the CLI's: decision 1033 puts comptime on
 //! this same GC engine, so nothing here knows a command.
@@ -34,7 +37,21 @@ pub const version_tag = "wasmtime " ++ manifest.WASMTIME_VERSION;
 
 /// The literal of the engine's settings, part of the cache key: whatever
 /// `theEngine` configures is named here, in the same order.
-pub const settings_key = "exceptions=1;gc=1;component-model=1;parallel-compilation=1;epoch-interruption=1";
+pub const settings_key = "exceptions=1;gc=1;component-model=1;parallel-compilation=1;epoch-interruption=1;max-wasm-stack=67108864;async-stack-size=68157440";
+
+/// The wasm stack a call may use (decision 1033 (1): one configuration for
+/// the program and comptime). Comptime's Erlang-shaped loops are recursion
+/// with no tail calls, so a body's depth is its iteration count: the bound
+/// persistent_wat ran with. A call deeper than the native stack it runs on
+/// would fault before this bound, so a deep caller runs on a thread of
+/// `thread_stack` bytes (the comptime host does).
+pub const wasm_stack: usize = 64 * 1024 * 1024;
+/// The engine refuses a wasm stack past its fibers' stacks, which no call
+/// here uses (every call is synchronous).
+pub const async_stack: usize = wasm_stack + 1024 * 1024;
+/// The native stack of a thread that runs a call to `wasm_stack`'s depth: the
+/// wasm stack and the host's own frames under it.
+pub const thread_stack: usize = wasm_stack + 16 * 1024 * 1024;
 
 var engine: ?*c.wasm_engine_t = null;
 var engine_lock: std.atomic.Value(u8) = .init(0);
@@ -51,9 +68,30 @@ pub fn theEngine() Error!*c.wasm_engine_t {
     c.wasmtime_config_wasm_component_model_set(config, true);
     c.wasmtime_config_parallel_compilation_set(config, true);
     c.wasmtime_config_epoch_interruption_set(config, true);
+    c.wasmtime_config_max_wasm_stack_set(config, wasm_stack);
+    c.wasmtime_config_async_stack_size_set(config, async_stack);
     // Takes `config`.
     engine = c.wasm_engine_new_with_config(config) orelse return error.OutOfMemory;
     return engine.?;
+}
+
+/// `f(args)` run on a thread of `thread_stack` bytes, joined before the
+/// answer: a wasm call may use the whole `wasm_stack`, which no caller's own
+/// stack is sure to hold (a deeper call than the native stack faults instead
+/// of trapping `call stack exhausted`). Inline when no thread can be made.
+pub fn onWasmStack(comptime f: anytype, args: anytype) @typeInfo(@TypeOf(f)).@"fn".return_type.? {
+    const R = @typeInfo(@TypeOf(f)).@"fn".return_type.?;
+    const Call = struct {
+        args: @TypeOf(args),
+        out: R = undefined,
+        fn work(call: *@This()) void {
+            call.out = @call(.auto, f, call.args);
+        }
+    };
+    var call: Call = .{ .args = args };
+    const thread = std.Thread.spawn(.{ .stack_size = thread_stack }, Call.work, .{&call}) catch return @call(.auto, f, args);
+    thread.join();
+    return call.out;
 }
 
 /// Test support: replace the engine with a private one that does not use the
@@ -67,6 +105,8 @@ pub fn resetEngineAfterFork() void {
     c.wasmtime_config_wasm_component_model_set(config, true);
     c.wasmtime_config_parallel_compilation_set(config, false);
     c.wasmtime_config_epoch_interruption_set(config, true);
+    c.wasmtime_config_max_wasm_stack_set(config, wasm_stack);
+    c.wasmtime_config_async_stack_size_set(config, async_stack);
     engine = c.wasm_engine_new_with_config(config).?;
     engine_lock.store(0, .release);
 }
