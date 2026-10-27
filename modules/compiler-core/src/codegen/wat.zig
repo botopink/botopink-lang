@@ -10346,6 +10346,13 @@ const Emitter = struct {
         }
     }
 
+    /// With a function value (a `$closure`, or an `anyref` holding one) on the
+    /// stack, leave its arity: the closure's field 1 (decision 1055 (4)).
+    fn gcClosureArity(self: *Emitter) !void {
+        try self.emit(.{ .ref_cast = self.gcTy(.closure) });
+        try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 1 } });
+    }
+
     /// Writes the text `text` (a GC string literal through `$__print_str_raw`).
     fn gcPutStr(self: *Emitter, text: []const u8) !void {
         try self.emitStrLit(text);
@@ -10420,8 +10427,13 @@ const Emitter = struct {
                 try self.emit(.{ .call = "__print_tagged_raw" });
             },
             // A function value prints `fn/<arity>` (decision 1051): the
-            // arity the shape carries, the closure not read.
-            'F' => try self.gcPutStr(try std.fmt.allocPrint(ar, "fn/{d}", .{sh[1]})),
+            // arity its `$closure` carries (field 1, decision 1055 (4)).
+            'F' => {
+                try self.gcPutStr("fn/");
+                try self.emit(get_v);
+                try self.gcClosureArity();
+                try self.emit(b.helper(.print_i32_raw));
+            },
             // A union's (or `unknown`'s) slot: printed by what it holds, a
             // string quoted.
             'U' => {
@@ -15056,10 +15068,20 @@ const Emitter = struct {
         }
         // Decision 1051 — a function value prints `fn/<arity>`, its declared
         // arity: the value is computed for its effects, then the text written.
+        // In a GC module the arity is the one the `$closure` carries (decision
+        // 1055 (4)); linear memory's closure cell has none, so there it is the
+        // declared one the value's type gives.
         if (self.fnValueArity(arg)) |n| {
-            try self.lowerValue(arg);
-            try self.emit(.drop);
-            try self.gcPutStr(try std.fmt.allocPrint(self.arena(), "fn/{d}", .{n}));
+            if (self.mode == .gc) {
+                try self.gcPutStr("fn/");
+                try self.lowerCoerced(arg, .{ .ref = .closure });
+                try self.gcClosureArity();
+                try self.emit(self.builder().helper(.print_i32_raw));
+            } else {
+                try self.lowerValue(arg);
+                try self.emit(.drop);
+                try self.gcPutStr(try std.fmt.allocPrint(self.arena(), "fn/{d}", .{n}));
+            }
             if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
