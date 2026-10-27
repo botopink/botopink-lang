@@ -616,9 +616,8 @@ fi
 # peak memory stays within MemAvailable minus a 3 GiB reserve (144 B-129; the
 # old bound, MemAvailable / 768 MiB, let ~10 test-libs jobs of 1–3.5 GiB run
 # beside a 7 GiB wasm compile, and the hook alone took a 31 GB machine to 0–1 GB).
-# Each stage that runs a pool gets its share of the total, in proportion to the
-# CPU-seconds it measured (test-libs 2540, test-conformance 1468, the rest under
-# 300): 50 % / 30 % / 10 %, at least 1 each; test-docs reads files and runs no
+# Each stage that runs a pool gets its share of the total (the libraries' stage is part of
+# test-conformance since decision 996): test-conformance 80 %, tsc-check 10 %, at least 1 each; test-docs reads files and runs no
 # pool. The stages keep their own `--jobs` flag and admission; only the number
 # they are given changes, so a report is the bytes it was.
 #
@@ -644,10 +643,9 @@ budget_reserve_mib=3072
 budget_web_mib=7700      # test-web 7.39 GiB, rounded up; counted only when test-web runs in this invocation
 budget_cli_mib=3500      # test-cli 3.45 GiB, rounded up; counted only when test-cli runs in this invocation
 budget_fixed_mib=$((budget_web_mib + budget_cli_mib)) # both, the whole gate's
-# A test-conformance job is now also one library's program on one target (decision 996), so its
-# figure is a library's (rakun-ssr 3.55 GiB); pool.sh's libraries' slot names no stage any more and
-# takes nothing (`pool_budget_for` is given no test-libs, and the whole gate's 50 % goes to conformance).
-budget_libs_mib=3700
+# A test-conformance job is also one library's program on one target (decision 996), so its
+# figure is a library's (rakun-ssr 3.55 GiB); the libraries' own stage is gone, and the whole gate's
+# 80 % goes to conformance.
 budget_conf_mib=3700
 budget_tsc_mib=768       # a tsc-check job (0.62 GiB)
 # shellcheck source=lib/pool.sh
@@ -659,7 +657,7 @@ else
     budget_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
     if [ -n "$budget_avail_kb" ]; then
         budget_total="$(pool_budget_for "$budget_avail_kb" "$(pool_cpus)" "$budget_reserve_mib" "$budget_web_mib" \
-            "$budget_cli_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib" ${selected[@]+"${selected[@]}"})"
+            "$budget_cli_mib" "$budget_conf_mib" "$budget_tsc_mib" ${selected[@]+"${selected[@]}"})"
     else
         budget_total="$(pool_cpus)" # no /proc/meminfo (macOS): one per CPU
     fi

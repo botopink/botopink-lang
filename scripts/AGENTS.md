@@ -439,9 +439,9 @@ pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
 the largest whose estimated peak fits `MemAvailable` minus a 3 GiB reserve and the uncounted `test-web` and `test-cli`;
 144 B-129 — the old `MemAvailable / 768 MiB` bound let ~10 `test-libs` jobs of 1–3.5 GiB run beside test-web's 7 GiB wasm
 compile, and the hook alone took a 31 GB machine to 0–1 GB available), and passes each stage its share through the flag it
-already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
+already had: `test-conformance` 80 % (`-- --jobs N`; the libraries' stage is part of it since decision 996, so its per-job figure is a library's, 3700 MiB),
 `tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`
-10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 8 / 4 / 1 / 1 on 16 CPUs.
+10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 12 / 1 / 1 on 16 CPUs.
 `modules/compiler-cli/tests/cli_contract.sh` holds the shares, the `--jobs` refusals and
 `lib/gate-mode.sh`'s answers (§ Step gate and full gate) to their contract. `test-docs` had 5 % until 144
 B-29 step I; it reads files and takes no share. The shares follow the stages' measured CPU-seconds. Each runner keeps its
@@ -453,10 +453,10 @@ nothing to the head.
 **Only the stages this invocation runs are counted** (decision 1004 P0). `pool_budget_for` (`lib/pool.sh`) takes the
 `--stage` names: with none, the whole gate's budget as above (`test-web` 7700 MiB + `test-cli` 3500 MiB as `budget_web_mib` /
 `budget_cli_mib`); with `--stage`, the 11.2 GiB of those two is counted only for the one(s) named, and the pool
-stages split 100 % among the pool stages named (`test-libs` alone is 100 %, a stage not named costs nothing). Before this, a
+stages split 100 % among the pool stages named (`test-conformance` alone is 100 %, a stage not named costs nothing). Before this, a
 CI job running one stage on a 16 GB runner still counted both fixed stages and ran at `job budget 1`. `cli_contract.sh` prints the
-budget of a whole gate and of `--stage test-libs` / `test-conformance` / `test-cli` on a 14 GiB / 4-CPU runner (1 / 3 / 4 / 4)
-and asserts the stage runs at least 3.
+budget of a whole gate and of `--stage test-conformance` / `test-cli` on a 14 GiB / 4-CPU runner
+and asserts each stage runs at least 3.
 
 Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 `.zig-cache`, load below 3 at start:

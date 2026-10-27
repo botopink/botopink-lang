@@ -1431,26 +1431,29 @@ gate_mode_says "mode=full reach_all=1 targets=none why=shared file: libs/std/AGE
 gate_mode_says "mode=step reach_all=1 targets=none why=no changed file to measure" \
   "a step with no changed file reaches every cell" \
   front/x
-POOL_SHARES="$(bash -c '. "$1"; for p in 50 30 10; do pool_share 16 "$p"; done; pool_share 1 10' _ "$REPO_ROOT/scripts/lib/pool.sh" | tr '\n' ' ')"
-[[ "$POOL_SHARES" == "8 4 1 1 " ]] && ok "one total of 16 jobs: test-libs 8, test-conformance 4, tsc-check 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '8 4 1 1 '"
+POOL_SHARES="$(bash -c '. "$1"; for p in 80 10; do pool_share 16 "$p"; done; pool_share 1 10' _ "$REPO_ROOT/scripts/lib/pool.sh" | tr '\n' ' ')"
+[[ "$POOL_SHARES" == "12 1 1 " ]] && ok "one total of 16 jobs: test-conformance 12 (80 %), tsc-check 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '12 1 1 '"
 # 144 B-129: the total of jobs is bounded by the stages' measured peaks (the
 # `budget_*_mib` of gate.sh § job budget): the largest n <= CPUs whose estimated
 # peak fits MemAvailable minus the reserve and the uncounted test-web / test-cli.
-eval "$(grep -E '^budget_(reserve|web|cli|fixed|libs|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
+eval "$(grep -E '^budget_(reserve|web|cli|fixed|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
 budget() { # <MemAvailable GiB> <cpus>
-  bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6" "$7" "$8"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
-    "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib"
+  bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6" "$7"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
+    "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_conf_mib" "$budget_tsc_mib"
 }
-[[ "$(budget 28 16)" == "7" ]] && ok "28 GiB available, 16 CPUs: a total of 7 jobs, not 16" || fail "pool_budget_jobs 28 GiB / 16 CPUs: got '$(budget 28 16)', want 7"
+# By hand: room = 28 GiB - 3 GiB reserve - 11 200 MiB (test-web 7700 + test-cli 3500) = 14 400 MiB; a test-conformance job
+# costs 3700 MiB (a library's peak, decision 996) and gets 80 % of the total, a tsc-check job 768 MiB and 10 %:
+# n = 5 -> 4 * 3700 + 768 = 15 568 > 14 400; n = 4 -> 3 * 3700 + 768 = 11 868 <= 14 400, so 4 jobs, not 16.
+[[ "$(budget 28 16)" == "4" ]] && ok "28 GiB available, 16 CPUs: a total of 4 jobs, not 16" || fail "pool_budget_jobs 28 GiB / 16 CPUs: got '$(budget 28 16)', want 4"
 [[ "$(budget 4 16)" == "1" ]] && ok "4 GiB available: a total of 1 job (the floor)" || fail "pool_budget_jobs 4 GiB / 16 CPUs: got '$(budget 4 16)', want 1"
 [[ "$(budget 64 4)" == "4" ]] && ok "64 GiB available, 4 CPUs: bounded by the CPUs" || fail "pool_budget_jobs 64 GiB / 4 CPUs: got '$(budget 64 4)', want 4"
 BUDGET_OVER=""
 for gib in 8 12 16 20 24 28 31 40 64 128; do
   for cpus in 2 4 8 16 32; do
     n="$(budget "$gib" "$cpus")"
-    sh_libs=$(( n * 50 / 100 )); sh_conf=$(( n * 30 / 100 )); sh_tsc=$(( n * 10 / 100 ))
-    [[ "$sh_libs" -ge 1 ]] || sh_libs=1; [[ "$sh_conf" -ge 1 ]] || sh_conf=1; [[ "$sh_tsc" -ge 1 ]] || sh_tsc=1
-    cost=$(( sh_libs * budget_libs_mib + sh_conf * budget_conf_mib + sh_tsc * budget_tsc_mib + budget_fixed_mib + budget_reserve_mib ))
+    sh_conf=$(( n * 80 / 100 )); sh_tsc=$(( n * 10 / 100 ))
+    [[ "$sh_conf" -ge 1 ]] || sh_conf=1; [[ "$sh_tsc" -ge 1 ]] || sh_tsc=1
+    cost=$(( sh_conf * budget_conf_mib + sh_tsc * budget_tsc_mib + budget_fixed_mib + budget_reserve_mib ))
     if [[ "$n" -gt "$cpus" || ( "$n" -gt 1 && "$cost" -gt $(( gib * 1024 )) ) ]]; then BUDGET_OVER="$BUDGET_OVER ${gib}GiB/${cpus}cpu=$n"; fi
   done
 done
@@ -1460,14 +1463,14 @@ done
 budget_for() { # <MemAvailable GiB> <cpus> [<stage>…]
   local gib="$1" cpus="$2"; shift 2
   bash -c '. "$1"; shift; pool_budget_for "$@"' _ "$REPO_ROOT/scripts/lib/pool.sh" $(( gib * 1048576 )) "$cpus" \
-    "$budget_reserve_mib" "$budget_web_mib" "$budget_cli_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib" "$@"
+    "$budget_reserve_mib" "$budget_web_mib" "$budget_cli_mib" "$budget_conf_mib" "$budget_tsc_mib" "$@"
 }
 RUNNER_GIB=14 RUNNER_CPUS=4
-B_WHOLE="$(budget_for $RUNNER_GIB $RUNNER_CPUS)"; B_LIBS="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-libs)"
+B_WHOLE="$(budget_for $RUNNER_GIB $RUNNER_CPUS)"
 B_CONF="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-conformance)"; B_CLI="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-cli)"
-echo "  job budget on a ${RUNNER_GIB} GiB / ${RUNNER_CPUS}-CPU runner: whole gate $B_WHOLE, --stage test-libs $B_LIBS, --stage test-conformance $B_CONF, --stage test-cli $B_CLI"
+echo "  job budget on a ${RUNNER_GIB} GiB / ${RUNNER_CPUS}-CPU runner: whole gate $B_WHOLE, --stage test-conformance $B_CONF, --stage test-cli $B_CLI"
 [[ "$B_WHOLE" == "$(budget "$RUNNER_GIB" "$RUNNER_CPUS")" ]] && ok "no --stage: the whole gate's budget, test-web and test-cli counted" || fail "pool_budget_for without a stage: got '$B_WHOLE', want '$(budget "$RUNNER_GIB" "$RUNNER_CPUS")'"
-[[ "$B_LIBS" -ge 3 && "$B_CONF" -ge 3 ]] && ok "--stage test-libs / test-conformance on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_LIBS, $B_CONF)" || fail "stage budget on a 16 GB runner: test-libs '$B_LIBS', test-conformance '$B_CONF', want >= 3"
+[[ "$B_CONF" -ge 3 ]] && ok "--stage test-conformance on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_CONF)" || fail "stage budget on a 16 GB runner: test-conformance '$B_CONF', want >= 3"
 [[ "$B_CLI" -ge 3 ]] && ok "--stage test-cli on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_CLI)" || fail "--stage test-cli budget: got '$B_CLI', want >= 3"
 [[ "$(budget_for 14 4 test-web)" -ge "$(budget_for 14 4 test-web test-cli)" ]] && ok "a stage adds its own memory to the budget, never another's" || fail "pool_budget_for: test-web alone is below test-web + test-cli"
 gate_args() { # <want exit> <want text> <label> <arg>… — `gate.sh` refuses the arguments before it starts

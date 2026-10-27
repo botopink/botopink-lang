@@ -44,22 +44,23 @@ pool_default_jobs() {
     echo "$jobs"
 }
 
-# pool_budget_jobs <avail_kb> <cpus> <fixed_mib> <reserve_mib> <libs_mib> <conf_mib> <tsc_mib>
+# pool_budget_jobs <avail_kb> <cpus> <fixed_mib> <reserve_mib> <conf_mib> <tsc_mib> [<conf_pct> <tsc_pct>]
 # The one total of jobs `scripts/gate.sh` shares among its side-by-side stages
 # (§ job budget there): the largest n <= cpus, at least 1, whose estimated peak
-#   fixed + share(n,50) * libs + share(n,30) * conf + share(n,10) * tsc
+#   fixed + share(n,80) * conf + share(n,10) * tsc
 # stays within MemAvailable - reserve. <fixed_mib> is what runs beside the pools
-# uncounted by any of them (test-web's wasm compile, test-cli); the three
-# per-job figures are the stages' measured peaks, in MiB. Pure arithmetic over
+# uncounted by any of them (test-web's wasm compile, test-cli); the two
+# per-job figures are the stages' measured peaks, in MiB (a test-conformance job
+# is also one library's program, decision 996). Pure arithmetic over
 # its arguments, so a test gives it a MemAvailable and a CPU count.
 pool_budget_jobs() {
-    local avail_kb="$1" cpus="$2" fixed="$3" reserve="$4" libs="$5" conf="$6" tsc="$7"
-    local p_libs="${8:-50}" p_conf="${9:-30}" p_tsc="${10:-10}"
+    local avail_kb="$1" cpus="$2" fixed="$3" reserve="$4" conf="$5" tsc="$6"
+    local p_conf="${7:-80}" p_tsc="${8:-10}"
     local room n cost
     room=$(( avail_kb / 1024 - reserve - fixed ))
     n="$cpus"
     while [ "$n" -gt 1 ]; do
-        cost=$(( $(pool_pct_share "$n" "$p_libs") * libs + $(pool_pct_share "$n" "$p_conf") * conf + $(pool_pct_share "$n" "$p_tsc") * tsc ))
+        cost=$(( $(pool_pct_share "$n" "$p_conf") * conf + $(pool_pct_share "$n" "$p_tsc") * tsc ))
         [ "$cost" -le "$room" ] && break
         n=$(( n - 1 ))
     done
@@ -71,35 +72,33 @@ pool_pct_share() {
     if [ "$2" -eq 0 ]; then echo 0; else pool_share "$1" "$2"; fi
 }
 
-# pool_budget_for <avail_kb> <cpus> <reserve> <web> <cpu_cli> <libs> <conf> <tsc> [<stage>…]
+# pool_budget_for <avail_kb> <cpus> <reserve> <web> <cpu_cli> <conf> <tsc> [<stage>…]
 # The total of jobs for the stages this invocation runs (§ job budget in gate.sh): with no stage
 # every stage runs (the whole gate); with `--stage` names, the memory of test-web and test-cli
-# counts only when that stage is among them, and the three pools split 100 % among the pool stages
-# selected (50 / 30 / 10 in the whole gate), a stage not selected costing nothing.
+# counts only when that stage is among them, and the two pools split 100 % among the pool stages
+# selected (80 / 10 in the whole gate), a stage not selected costing nothing.
 pool_budget_for() {
-    local avail_kb="$1" cpus="$2" reserve="$3" web="$4" cli="$5" libs="$6" conf="$7" tsc="$8"
-    shift 8
-    local fixed=0 pl=50 pc=30 pt=10 npools=0 s
+    local avail_kb="$1" cpus="$2" reserve="$3" web="$4" cli="$5" conf="$6" tsc="$7"
+    shift 7
+    local fixed=0 pc=80 pt=10 npools=0 s
     if [ "$#" -gt 0 ]; then
-        pl=0; pc=0; pt=0
+        pc=0; pt=0
         for s in "$@"; do
             case "$s" in
                 test-web) fixed=$(( fixed + web )) ;;
                 test-cli) fixed=$(( fixed + cli )) ;;
-                test-libs) pl=1; npools=$(( npools + 1 )) ;;
                 test-conformance) pc=1; npools=$(( npools + 1 )) ;;
                 tsc-check) pt=1; npools=$(( npools + 1 )) ;;
             esac
         done
         if [ "$npools" -gt 0 ]; then
-            [ "$pl" -eq 1 ] && pl=$(( 100 / npools ))
             [ "$pc" -eq 1 ] && pc=$(( 100 / npools ))
             [ "$pt" -eq 1 ] && pt=$(( 100 / npools ))
         fi
     else
         fixed=$(( web + cli ))
     fi
-    pool_budget_jobs "$avail_kb" "$cpus" "$fixed" "$reserve" "$libs" "$conf" "$tsc" "$pl" "$pc" "$pt"
+    pool_budget_jobs "$avail_kb" "$cpus" "$fixed" "$reserve" "$conf" "$tsc" "$pc" "$pt"
 }
 
 # pool_check_jobs <value> <who> — exit 2 unless a positive count
