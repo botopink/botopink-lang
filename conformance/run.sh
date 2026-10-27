@@ -274,9 +274,9 @@ BP
     # is still a directory of cells: each a red of its own.
     mkdir -p "$suite/modules/src"
     printf '{ "name": "conformance", "version": "0.0.1" }\n' >"$suite/modules/botopink.json"
-    awk '/^comptime \{$/ { print; print "    runModule(\"green\");"; print "    runModule(\"red\");"; skip = 1; next }
+    awk '/^comptime \{$/ { print; print "    runModule(\"green\");"; print "    runModule(\"red\");"; print "    runModule(\"leftover\");"; print "    runModule(\"coverage\");"; skip = 1; next }
          skip && /^\}$/ { skip = 0 } !skip' "$here/modules/src/main.bp" >"$suite/modules/src/main.bp"
-    for c in green red unlisted; do
+    for c in green red unlisted leftover coverage; do
         mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot"
         printf '{ "name": "%s", "version": "0.0.1" }\n' "$c" >"$suite/modules/$c/botopink.json"
         printf 'botopink-cell 2\n' >"$suite/modules/$c/snapshot/main.snap"
@@ -285,6 +285,13 @@ BP
     printf 'pub async fn main() -> Async<Result<void, string>> {\n    return;\n}\n' >"$suite/modules/green/src/main.bp"
     printf 'pub async fn main() -> Async<Result<void, string>> {\n    throw "1 red";\n}\n' >"$suite/modules/red/src/main.bp"
     cp "$suite/modules/green/src/main.bp" "$suite/modules/unlisted/src/main.bp"
+    # Leftover cases (decisions 67, 989): `leftover` names `cells/covered` in a runCase and not `cells/uncovered`.
+    printf 'fn runCase(comptime name: string) -> void {}\n\npub async fn main() -> Async<Result<void, string>> {\n    runCase("cells/covered");\n    return;\n}\n' >"$suite/modules/leftover/src/main.bp"
+    mkdir -p "$suite/modules/leftover/cells/covered" "$suite/modules/leftover/cells/uncovered"
+    printf '%s\n' '# the frozen list (decision 1011)' 'leftover cells/uncovered' >"$suite/leftover-cases.txt"
+    # Decision 1011 (1): `cases/idle` is never run, and `runCase("ghost")` has no directory.
+    printf 'fn runCase(comptime name: string) -> void {}\n\npub async fn main() -> Async<Result<void, string>> {\n    runCase("ran");\n    runCase("ghost");\n    return;\n}\n' >"$suite/modules/coverage/src/main.bp"
+    mkdir -p "$suite/modules/coverage/cases/ran" "$suite/modules/coverage/cases/idle"
     mkdir -p "$suite/modules/oldshape/run/src"
     # A front-166 draft (decision 1002 (a)): no module, never reported.
     mkdir -p "$suite/modules/decisions-taken/drafted-1/draft"
@@ -312,10 +319,13 @@ BP
 [beam] modules/red — red
     1 red
 [*] modules/unlisted — a module with no `runModule("unlisted")` line in modules/src/main.bp
+[*] modules/coverage — case `cases/idle` is on disk and its main never runs it: no `runCase("idle")` in src/main.bp, decision 1011
+[*] modules/coverage — `runCase("ghost")` names a case with no directory (cases/ghost), decision 1011
+1 cases outside 989's shape (shrink-only)
 [*] modules/oldshape — not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion
 narrowings: 2 exclusions audited
-by target: commonJS 3/5 · erlang 4/6 · wasm 2/5 · beam 3/6 · * 0/4
-conformance: 12 passed, 14 failed
+by target: commonJS 5/7 · erlang 6/8 · wasm 4/7 · beam 5/8 · * 0/6
+conformance: 20 passed, 16 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green module
     # passed: no line may name them.
@@ -552,9 +562,59 @@ listed_modules() {
 # The roster held to the tree: a red per module on disk not in 989's shape, per
 # module in the shape with no line, per line naming no module in the shape.
 # Each is a `*` result (`r-plan-*`, no job of the plan).
+#
+# Decision 1011: no case on disk goes unrun without a red. In a module in the shape,
+# each `cases/<c>` needs a `runCase("<c>")` in its `src/main.bp`, and each literal
+# `runCase("<x>")` needs its directory (`cases/<x>`, or the path from the module when
+# it holds a `/`); a comment does not count. The cases still in a leftover `cells/`,
+# `run/src/cases/` or `refused/src/cases/` are held to `conformance/leftover-cases.txt`,
+# one `<module> <path from the module>` per line, frozen and shrink-only: a leftover
+# case not on the list is red; a listed one that a `runCase("<path>")` now runs, or that
+# is gone from the disk, is red until its line is deleted. The report prints
+# `<N> cases outside 989's shape (shrink-only)`.
+main_code() { grep -v '^[[:space:]]*//' "$here/modules/$1/src/main.bp"; } # <module>: its code, no comment lines
+roster_red() { # <module> <slug> <detail>
+    printf '*\tmodules/%s\tfail\t%s\n' "$1" "$3" >"$work/r-plan-$2"
+}
+roster_cases() { # <module>: decision 1011 (1) and (2) for one module in the shape
+    local d="$1" m="$here/modules/$1" slug root c rel x code
+    slug="$(printf '%s' "$d" | tr '/.' '__')"
+    code="$(main_code "$d")"
+    if [ -d "$m/cases" ]; then
+        for c in "$m"/cases/*/; do
+            [ -d "$c" ] || continue
+            c="$(basename "$c")"
+            printf '%s\n' "$code" | grep -qF -- "runCase(\"$c\")" \
+                || roster_red "$d" "case-$slug-$c" "case \`cases/$c\` is on disk and its main never runs it: no \`runCase(\"$c\")\` in src/main.bp, decision 1011"
+        done
+    fi
+    while IFS= read -r x; do
+        [ -n "$x" ] || continue
+        case "$x" in */*) rel="$x" ;; *) rel="cases/$x" ;; esac
+        [ -d "$m/$rel" ] || roster_red "$d" "call-$slug-$(printf '%s' "$x" | tr '/.' '__')" "\`runCase(\"$x\")\` names a case with no directory ($rel), decision 1011"
+    done < <(printf '%s\n' "$code" | sed -nE 's/.*runCase\("([^"]+)"\).*/\1/p' | sort -u)
+    for root in cells run/src/cases refused/src/cases; do
+        [ -d "$m/$root" ] || continue
+        for c in "$m/$root"/*/; do
+            [ -d "$c" ] || continue
+            rel="$root/$(basename "$c")"
+            printf '%s %s\n' "$d" "$rel" >>"$work/leftover-disk"
+            if printf '%s\n' "$code" | grep -qF -- "runCase(\"$rel\")"; then
+                grep -qxF -- "$d $rel" "$work/leftover-list" \
+                    && roster_red "$d" "left-$slug-$(printf '%s' "$rel" | tr '/.' '__')" "\`$rel\` is now run by a runCase: delete its line from conformance/leftover-cases.txt (shrink-only, decision 1011)"
+            elif grep -qxF -- "$d $rel" "$work/leftover-list"; then
+                echo x >>"$work/leftover-count"
+            else
+                roster_red "$d" "left-$slug-$(printf '%s' "$rel" | tr '/.' '__')" "\`$rel\` is a case outside 989's shape and not on conformance/leftover-cases.txt: move it into cases/ and run it (decision 1011)"
+            fi
+        done
+    done
+}
 roster() {
-    local d slug listed="$work/root-listed"
+    local d slug listed="$work/root-listed" l n
     listed_modules >"$listed"
+    : >"$work/leftover-disk"; : >"$work/leftover-count"
+    grep -vE '^[[:space:]]*(#|$)' "$here/leftover-cases.txt" 2>/dev/null >"$work/leftover-list" || : >"$work/leftover-list"
     while IFS= read -r d; do
         slug="$(printf '%s' "$d" | tr '/.' '__')"
         if ! in_shape "$d"; then
@@ -562,7 +622,14 @@ roster() {
         elif ! grep -qxF -- "$d" "$listed"; then
             printf '*\tmodules/%s\tfail\t%s\n' "$d" "a module with no \`runModule(\"$d\")\` line in modules/src/main.bp" >"$work/r-plan-$slug"
         fi
+        if in_shape "$d"; then roster_cases "$d"; fi
     done < <(module_dirs)
+    n=0
+    while IFS= read -r l; do
+        n=$((n + 1))
+        grep -qxF -- "$l" "$work/leftover-disk" \
+            || printf '*\tconformance/leftover-cases.txt\tfail\t%s\n' "\`$l\` is on the list and no longer a case on disk: delete its line (shrink-only, decision 1011)" >"$work/r-plan-stale-$n"
+    done <"$work/leftover-list"
     while IFS= read -r d; do
         in_shape "$d" && continue
         slug="$(printf '%s' "$d" | tr '/.' '__')"
@@ -1051,9 +1118,11 @@ jobs_audit="$(ls "$work" | grep -c '^r-audit-' || true)"
 jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vcE '^r-(narrowing|plan)-') ))"
 
 # ── report ────────────────────────────────────────────────────────────────────
-node - "$work/results" "$jobs_ran" "$jobs_audit" "$work" "$DISABLED_COUNT" "$([ -f "$here/disabled.txt" ] && echo 1 || echo 0)" <<'EOF'
+leftover_total=""
+[ -f "$work/leftover-count" ] && leftover_total="$(grep -c . "$work/leftover-count" || true)"
+node - "$work/results" "$jobs_ran" "$jobs_audit" "$work" "$DISABLED_COUNT" "$([ -f "$here/disabled.txt" ] && echo 1 || echo 0)" "$leftover_total" <<'EOF'
 const fs = require("fs");
-const [resultsPath, jobsRan, jobsAudit, work, disabledCount, hasDisabled] = process.argv.slice(2);
+const [resultsPath, jobsRan, jobsAudit, work, disabledCount, hasDisabled, leftover] = process.argv.slice(2);
 const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 
 // <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
@@ -1099,6 +1168,7 @@ if (hasDisabled === "1") console.log(`${disabledCount} disabled (shrink-only, de
 const order = ["commonJS", "erlang", "wasm", "beam", "*"];
 const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
+if (leftover !== "") console.log(`${leftover} cases outside 989's shape (shrink-only)`);
 console.log(`cells: ${jobsRan} jobs — ${jobsRan - jobsAudit} run, ${jobsAudit} audits`);
 const colour = fails ? RED : GREEN;
 console.log(`\n${colour}conformance: ${oks} passed, ${fails} failed${NC}`);
