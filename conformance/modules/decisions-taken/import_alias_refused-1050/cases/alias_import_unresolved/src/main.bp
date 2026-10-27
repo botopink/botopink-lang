@@ -1,0 +1,7 @@
+//// Decision 1050 — import aliases do not exist: `@/lib.db` names no package, so the import is refused as any unresolved import source is.
+
+import {readPost} from "@/lib.db";
+
+pub fn main() -> void {
+    readPost();
+}

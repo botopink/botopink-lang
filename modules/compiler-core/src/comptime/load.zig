@@ -1720,7 +1720,17 @@ pub const Resolver = struct {
     /// directories the packages it loaded by name live in (`namedLoadsSince`),
     /// which its key covers.
     runtime_write: ?*const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, wasm_host: ast.WasmHost, outputs: []const ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void = null,
+    /// Decisions 242, 989 (4), 1050 — the import-source rule a package's own
+    /// build applies (`from` names std, a bundled package or a dependency its
+    /// manifest declares): the first refusal of the package in `dir` whose own
+    /// modules are `mods`, in the text and place `check` prints, or null. The
+    /// answer is allocated with `arena`. Null function: no rule is applied.
+    check_sources: ?*const fn (ctx: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8, mods: []const Module) anyerror!?SourceRefusal = null,
 };
+
+/// A `Resolver.check_sources` refusal: the message and the place (file
+/// relative to the package, 1-based line and column) of the `from` string.
+pub const SourceRefusal = struct { message: []const u8, file: []const u8, line: usize, column: usize };
 
 const ComptimeOutput = @import("../comptime.zig").ComptimeOutput;
 
@@ -2027,6 +2037,18 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             if (std.mem.eql(u8, d, m.package)) break true;
         } else false;
         if (named) try modules.append(scratch, m);
+    };
+    // Decisions 242, 989 (4) — an import whose `from` names no package is
+    // refused as `check` refuses it, before any analysis binds nothing.
+    if (resolver) |r| if (r.check_sources) |check| {
+        const dir = try packageDir(scratch, pkg_files);
+        if (check(r.ctx, req.io, arena, dir, own) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => null,
+        }) |why| {
+            try refusals.append(arena, .{ .code = "", .message = why.message, .file = why.file, .line = why.line, .column = why.column });
+            return .{ .diagnostics = try remember(key, manifest.name, "", refusals.items, own, own_dependencies, main_of, targets) };
+        }
     };
     for (own) |m| {
         var mm = m;

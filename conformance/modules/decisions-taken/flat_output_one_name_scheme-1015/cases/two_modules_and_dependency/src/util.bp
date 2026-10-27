@@ -1,5 +1,0 @@
-//// This package's `util`: the dependency has one of its own.
-
-pub fn shout(s: string) -> string {
-    return s + "!";
-}

@@ -393,7 +393,7 @@ var load_env: EnvMap = null;
 /// once, before its first compile.
 pub fn installLoadResolver(env_map: EnvMap) void {
     load_env = env_map;
-    bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName, .runtime_read = runtimeRead, .runtime_write = runtimeWrite };
+    bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName, .runtime_read = runtimeRead, .runtime_write = runtimeWrite, .check_sources = checkLoadedSources };
 }
 
 // ── A by-name load's `.bpr` set (decisions 1006 (6) P5, 1030, 1039) ─────────
@@ -686,6 +686,31 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         if (held.len < ALL_TARGET_NAMES.len) targets = held;
     }
     return .{ .ok = .{ .modules = modules, .targets = targets } };
+}
+
+/// `bp.load.Resolver.check_sources` (decisions 242, 989 (4), 1050): the
+/// import-source rule of the package's own build (`resolver.checkSources`)
+/// over the loaded package's own modules, against the dependencies its
+/// manifest in `dir` declares; the refusal as `check` prints it.
+fn checkLoadedSources(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8, mods: []const Module) anyerror!?bp.load.SourceRefusal {
+    const proj = config.loadAt(arena, io, dir) catch return null;
+    const declared = try proj.dependencyNames(arena);
+    const files = try arena.alloc([]const u8, mods.len);
+    for (mods, files) |m, *f| f.* = m.srcPath;
+    var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
+    resolver.checkSources(arena, mods, files, declared, proj.name, arena, &diag) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            if (diag.kind != resolver.Error.UnresolvedImportSource and diag.kind != resolver.Error.ModuleImportWithFrom) return null;
+            return .{
+                .message = try resolver.importSourceMessage(arena, diag),
+                .file = diag.file,
+                .line = diag.line,
+                .column = diag.col,
+            };
+        },
+    };
+    return null;
 }
 
 /// The first `error…: <message>` line of `text` (its `[code]` moved to the message's head) (a refusal as the CLI prints

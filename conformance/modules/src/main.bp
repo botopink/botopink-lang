@@ -219,7 +219,6 @@ comptime {
     runModule("decisions-taken/fetch_one_typed_surface-623");
     runModule("decisions-taken/field_has_runtime_form-631");
     runModule("decisions-taken/field_type_from_std_types-308");
-    runModule("decisions-taken/flat_output_one_name_scheme-1015");
     runModule("decisions-taken/fn_tail_value-409");
     runModule("decisions-taken/folder_import_refused-919");
     runModule("decisions-taken/format_applied_canonical_rewrites-524");
@@ -240,6 +239,7 @@ comptime {
     runModule("decisions-taken/implement_signature_differs-800");
     runModule("decisions-taken/implement_signature_over_types-974");
     runModule("decisions-taken/import_alias_on_type_and_folder_namespace-110");
+    runModule("decisions-taken/import_alias_refused-1050");
     runModule("decisions-taken/import_dotted_and_braced_paths_one_tree-107");
     runModule("decisions-taken/init_async_executor_in_async_body-998");
     runModule("decisions-taken/inject_rides_context_tree-416");
