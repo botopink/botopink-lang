@@ -28,6 +28,8 @@ wat/
 ├── scope_carry.zig   ← decision 504: each module's render-scope values typed by the checker's type the scope lowering carries
 ├── repr.zig          ← front 164 s2: `Repr` — what a lowered value is (a scalar, or a reference and its kind) — and `Mode` (`.linear` / `.gc`)
 ├── typecheck.zig     ← front 164 s2: the operand-stack type check a GC module passes before it is kept
+├── engine.zig        ← decisions 1032, 1034 (R0): the embedded wasmtime engine, one per process (exceptions, GC, component model, parallel compilation, epoch interruption; `incrementEpoch` for SIGINT / a watchdog), and `precompiled(cache_dir, bytes, kind, cold)` — `.wat` or binary → compiled code through `<dir>/<sha256(tag ‖ wasmtime version ‖ settings ‖ bytes)>.cwasm`, staged `<path>.<rand>.tmp` then renamed (`writeAtomic`); comptime's `persistent_wat.zig` has its own engine until 1033
+├── runner.zig        ← decisions 1032, 1034 (R0): `run` a component whose core units the linker defines by name (`instance_add_module`), WASI p2, `wasi:cli/run@0.2.0`'s `run`; `Outcome{status, stdout?, trap?}` (exit status from `wasmtime_error_exit_status`, a trap is `wasm trap: <message>`, status 1); holds the import-name probe test
 └── wat_prelude.zig   ← the runtime helpers (`$__print_i32`, `$__str_concat`, …) as built nodes
 ```
 

@@ -14,4 +14,6 @@ test {
     _ = @import("./comptime/level_b.zig");
     _ = @import("./comptime/runtime_file.zig");
     _ = @import("./codegen/tests.zig");
+    _ = @import("./codegen/wat/engine.zig");
+    _ = @import("./codegen/wat/runner.zig");
 }

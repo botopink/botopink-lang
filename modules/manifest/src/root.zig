@@ -43,6 +43,26 @@ pub const FILENAME = "botopink.json";
 /// and this module depends on `std` only.
 pub const OTP_RELEASE = "28";
 
+/// The wasmtime release the embedded engine is built from (decision 543): the
+/// version `build.zig.zon`'s prebuilt C API tarballs name. It is part of the
+/// compiled-code cache key (`compiler-core/src/codegen/wat/engine.zig`), so a
+/// bump here, with the tarballs, retires every cached `.cwasm`.
+pub const WASMTIME_VERSION = "49.0.3";
+
+test "WASMTIME_VERSION is the version every build.zig.zon tarball URL names" {
+    const text = std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../build.zig.zon", std.testing.allocator, .limited(64 * 1024)) catch |e| return e;
+    defer std.testing.allocator.free(text);
+    const want = "/download/v" ++ WASMTIME_VERSION ++ "/wasmtime-v" ++ WASMTIME_VERSION ++ "-";
+    var urls: usize = 0;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (std.mem.indexOf(u8, line, ".url = \"") == null or std.mem.indexOf(u8, line, "wasmtime") == null) continue;
+        urls += 1;
+        try std.testing.expect(std.mem.indexOf(u8, line, want) != null);
+    }
+    try std.testing.expect(urls >= 5);
+}
+
 // ── Source files ───────────────────────────────────────────────────────────────
 
 /// Every extension a botopink module is written in — the one list the CLI,
