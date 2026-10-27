@@ -1,0 +1,7 @@
+//// Decision 1048 — the `"wasm"` host object carries `"typings"` beside `"host"`: refused at the key.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreachable");
+}

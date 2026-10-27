@@ -270,6 +270,62 @@ fn located(text: []const u8, file: []const u8, span: Span, message: []const u8) 
     return .{ .message = message, .file = file, .source = text, .line = lc.line, .col = lc.col, .span = span.len };
 }
 
+/// Where `"<key>"` sits after each of `anchors` in turn (`"dependencies"`, then
+/// the dependency's name): the key inside that object. Falls back to the first
+/// `"<key>"` of the text, then to the first byte.
+fn locateWithin(text: []const u8, anchors: []const []const u8, key: []const u8) Span {
+    var pos: usize = 0;
+    for (anchors) |a| {
+        var buf: [512]u8 = undefined;
+        const q = std.fmt.bufPrint(&buf, "\"{s}\"", .{a}) catch return locateKey(text, key);
+        pos = std.mem.indexOfPos(u8, text, pos, q) orelse return locateKey(text, key);
+        pos += q.len;
+    }
+    var kbuf: [256]u8 = undefined;
+    const qk = std.fmt.bufPrint(&kbuf, "\"{s}\"", .{key}) catch return .{ .offset = 0, .len = 1 };
+    if (std.mem.indexOfPos(u8, text, pos, qk)) |at| return .{ .offset = at, .len = qk.len };
+    return locateKey(text, key);
+}
+
+/// The code of the refusal of a key no object of the manifest knows (decision 1048).
+pub const UNKNOWN_FIELD_CODE = "manifest-unknown-field";
+
+/// The fields of the root object. `botopink` and `requires` are bpmp's (it
+/// reads and writes them: `modules/bpmp/src/manifest.zig`).
+const ROOT_FIELDS = [_][]const u8{
+    "name",     "version", "description", "src",  "entry",        "target", "targets",
+    "files",    "otp",     "workspaces",  "wasm", "dependencies", "bpp",    "botopink",
+    "requires",
+};
+const DEPENDENCY_FIELDS = [_][]const u8{ "git", "path", "workspace", "subdir", "branch", "tag", "rev" };
+const WASM_FIELDS = [_][]const u8{"host"};
+
+/// Decision 1048: an object of the manifest refuses every key it does not
+/// know, located at the key; the message names the key and the object.
+fn refuseUnknownFields(
+    arena: std.mem.Allocator,
+    obj: std.json.ObjectMap,
+    known: []const []const u8,
+    anchors: []const []const u8,
+    what: []const u8,
+    text: []const u8,
+    path: []const u8,
+    out_err: *?Located,
+) Error!void {
+    var it = obj.iterator();
+    outer: while (it.next()) |e| {
+        for (known) |k| if (std.mem.eql(u8, k, e.key_ptr.*)) continue :outer;
+        var l = located(text, path, locateWithin(text, anchors, e.key_ptr.*), try std.fmt.allocPrint(
+            arena,
+            "{s} has no field \"{s}\" — the fields it reads are {s}",
+            .{ what, e.key_ptr.*, try joinQuoted(arena, known) },
+        ));
+        l.code = UNKNOWN_FIELD_CODE;
+        out_err.* = l;
+        return error.Invalid;
+    }
+}
+
 // ── The model ──────────────────────────────────────────────────────────────────
 
 /// The pin of a `git` dependency. The three spellings are exclusive: an entry
@@ -579,6 +635,7 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         return error.Invalid;
     }
     const obj = root.object;
+    try refuseUnknownFields(arena, obj, &ROOT_FIELDS, &.{}, "botopink.json", text, path, out_err);
 
     var m: Manifest = .{ .path = path, .text = text, .kind = .package, .name = "" };
 
@@ -638,6 +695,7 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
                 return error.Invalid;
             }
         }
+        try checkBpmpFields(arena, obj, m, text, path, out_err);
         return m;
     }
 
@@ -649,7 +707,42 @@ fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err
         m.bpp = try parseBppShape(arena, v, text, path, out_err);
         if (!opts.defer_bpp) try checkBpp(arena, m, out_err);
     }
+    try checkBpmpFields(arena, obj, m, text, path, out_err);
     return m;
+}
+
+/// Decision 1049: `"botopink"` (bpmp's compiler-version constraint) is a string,
+/// and `"requires"` (its per-dependency constraints) an object of
+/// `<name>` → string whose every name is an entry of `"dependencies"`; a wrong
+/// shape is refused at the key.
+fn checkBpmpFields(arena: std.mem.Allocator, obj: std.json.ObjectMap, m: Manifest, text: []const u8, path: []const u8, out_err: *?Located) Error!void {
+    if (obj.get("botopink")) |v| {
+        if (v != .string) {
+            out_err.* = located(text, path, locateKey(text, "botopink"), "\"botopink\" must be a string — the compiler-version constraint");
+            return error.Invalid;
+        }
+    }
+    const req = obj.get("requires") orelse return;
+    if (req != .object) {
+        out_err.* = located(text, path, locateKey(text, "requires"), "\"requires\" must be an object — { \"<dependency>\": \"<constraint>\" }");
+        return error.Invalid;
+    }
+    var it = req.object.iterator();
+    while (it.next()) |e| {
+        const name = e.key_ptr.*;
+        const at = locateEntry(text, "requires", name);
+        if (e.value_ptr.* != .string) {
+            out_err.* = located(text, path, at, try std.fmt.allocPrint(arena, "\"requires\": \"{s}\" must be a string — the constraint on that dependency", .{name}));
+            return error.Invalid;
+        }
+        const declared = for (m.dependencies) |d| {
+            if (std.mem.eql(u8, d.name, name)) break true;
+        } else false;
+        if (!declared) {
+            out_err.* = located(text, path, at, try std.fmt.allocPrint(arena, "\"requires\" names \"{s}\", which is no entry of \"dependencies\"", .{name}));
+            return error.Invalid;
+        }
+    }
 }
 
 /// Each entry of `"files"` is one module, `<package>/<stem>`: two entries of
@@ -842,12 +935,7 @@ fn parseWasm(arena: std.mem.Allocator, v: std.json.Value, text: []const u8, path
         out_err.* = located(text, path, locateKey(text, "wasm"), "\"wasm\" must be an object — " ++ WASM_SHAPE);
         return error.Invalid;
     }
-    var it = v.object.iterator();
-    while (it.next()) |e| {
-        if (std.mem.eql(u8, e.key_ptr.*, "host")) continue;
-        out_err.* = located(text, path, locateEntry(text, "wasm", e.key_ptr.*), try std.fmt.allocPrint(arena, "\"wasm\" has no field \"{s}\" — its one field is \"host\": {s}", .{ e.key_ptr.*, WASM_SHAPE }));
-        return error.Invalid;
-    }
+    try refuseUnknownFields(arena, v.object, &WASM_FIELDS, &.{"wasm"}, "\"wasm\"", text, path, out_err);
     const host = v.object.get("host") orelse {
         out_err.* = located(text, path, locateKey(text, "wasm"), "\"wasm\" names no \"host\" — write " ++ WASM_SHAPE ++ ", or omit \"wasm\" for the default \"wasi\"");
         return error.Invalid;
@@ -916,6 +1004,7 @@ fn parseDependencies(arena: std.mem.Allocator, node: std.json.Value, text: []con
             return error.Invalid;
         }
         const s = spec_node.object;
+        try refuseUnknownFields(arena, s, &DEPENDENCY_FIELDS, &.{ "dependencies", name }, try std.fmt.allocPrint(arena, "dependency \"{s}\"", .{name}), text, path, out_err);
         var spec: DepSpec = .{};
         var pins: usize = 0;
 
@@ -2578,7 +2667,59 @@ test "parse: a \"wasm\" that names no known host, or anything beside it, is a lo
     ), "error: \"wasm\": \"host\" must be a string — \"wasi\" or \"browser\"", "--> botopink.json:1:28");
     try expectHead(try refuse(a,
         \\{ "name": "app", "wasm": { "host": "wasi", "jspi": true } }
-    ), "error: \"wasm\" has no field \"jspi\" — its one field is \"host\": { \"host\": \"wasi\" | \"browser\" }", "--> botopink.json:1:44");
+    ), "error[manifest-unknown-field]: \"wasm\" has no field \"jspi\" — the fields it reads are \"host\"", "--> botopink.json:1:44");
+}
+
+test "parse: \"botopink\" is a string and \"requires\" an object of strings naming dependencies (decision 1049)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const m = try parseText(a,
+        \\{ "name": "app", "botopink": ">=0.2.0", "dependencies": { "kit": { "path": "../kit" } }, "requires": { "kit": "^1.0.0" } }
+    );
+    try testing.expectEqual(@as(usize, 1), m.dependencies.len);
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "botopink": 1 }
+    ), "error: \"botopink\" must be a string — the compiler-version constraint", "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "requires": ["kit"] }
+    ), "error: \"requires\" must be an object — { \"<dependency>\": \"<constraint>\" }", "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "dependencies": { "kit": { "path": "../kit" } }, "requires": { "kit": 1 } }
+    ), "error: \"requires\": \"kit\" must be a string — the constraint on that dependency", "--> botopink.json:1:81");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "requires": { "ghost": "1" } }
+    ), "error: \"requires\" names \"ghost\", which is no entry of \"dependencies\"", "--> botopink.json:1:32");
+}
+
+test "parse: an unknown key is refused in the root, in a dependency, in a workspace and in the host object (decision 1048)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    // The root: any key, `typings` and editor metadata alike, at the key.
+    const fields = "\"name\", \"version\", \"description\", \"src\", \"entry\", \"target\", \"targets\", \"files\", \"otp\", \"workspaces\", \"wasm\", \"dependencies\", \"bpp\", \"botopink\", \"requires\"";
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "typings": true }
+    ), "error[manifest-unknown-field]: botopink.json has no field \"typings\" — the fields it reads are " ++ fields, "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "$schema": "x", "name": "app" }
+    ), "error[manifest-unknown-field]: botopink.json has no field \"$schema\" — the fields it reads are " ++ fields, "--> botopink.json:1:3");
+    // `targets` is a list of target names: a key-valued object is no shape of it.
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "targets": { "erlang": true } }
+    ), "error: \"targets\" must be an array of strings", "--> botopink.json:1:18");
+    // A dependency: at the key inside that dependency, not at the first spelling.
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "version": "1", "dependencies": { "kit": { "path": "../kit", "version": "0.0.1" } } }
+    ), "error[manifest-unknown-field]: dependency \"kit\" has no field \"version\" — the fields it reads are \"git\", \"path\", \"workspace\", \"subdir\", \"branch\", \"tag\", \"rev\"", "--> botopink.json:1:79");
+    // A workspace manifest is the same object.
+    try expectHead(try refuse(a,
+        \\{ "name": "ws", "workspaces": ["*"], "typings": true }
+    ), "error[manifest-unknown-field]: botopink.json has no field \"typings\" — the fields it reads are " ++ fields, "--> botopink.json:1:38");
+    // The host object.
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "wasm": { "host": "wasi", "typings": 1 } }
+    ), "error[manifest-unknown-field]: \"wasm\" has no field \"typings\" — the fields it reads are \"host\"", "--> botopink.json:1:44");
 }
 
 test "parse: \"bpp\" is one package name, a dependency (decision 361)" {

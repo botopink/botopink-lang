@@ -1,0 +1,15 @@
+botopink-cell 2
+== botopink_not_a_string
+refused error: "botopink" must be a string — the compiler-version constraint
+at botopink.json:1:36
+== requires_not_an_object
+refused error: "requires" must be an object — { "<dependency>": "<constraint>" }
+at botopink.json:1:37
+== requires_value_not_a_string
+refused error: "requires": "kit" must be a string — the constraint on that dependency
+at botopink.json:1:107
+== requires_names_no_dependency
+refused error: "requires" names "ghost", which is no entry of "dependencies"
+at botopink.json:1:57
+== bpmp_fields_accepted
+out ok

@@ -138,7 +138,6 @@ comptime {
     runModule("decisions-taken/code_never_enters_as_string-625");
     runModule("decisions-taken/code_template_builds_ast-637");
     runModule("decisions-taken/collections_constructors_type_scoped-111");
-    runModule("decisions-taken/commonjs_dts_always_emitted-1013");
     runModule("decisions-taken/commonjs_text_matches_std_wasm-521");
     runModule("decisions-taken/compiler_annotation_labelled_arguments-305");
     runModule("decisions-taken/compiler_call_in_executor_literal-614");
@@ -257,6 +256,8 @@ comptime {
     runModule("decisions-taken/lambda_types_from_context-328");
     runModule("decisions-taken/libraries_run_at_build_on_wasm-594");
     runModule("decisions-taken/local_type_beside_aliased_import-603");
+    runModule("decisions-taken/manifest_bpmp_fields_validated-1049");
+    runModule("decisions-taken/manifest_unknown_field_refused-1048");
     runModule("decisions-taken/math_same_bits_every_target-263");
     runModule("decisions-taken/meta_expr_names_resolve_where_written-385");
     runModule("decisions-taken/method_private_to_module-859");

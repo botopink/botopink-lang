@@ -1,0 +1,7 @@
+//// Decision 1049 — `"botopink"` is not a string: refused at the key.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreachable");
+}

@@ -189,6 +189,8 @@ compiler-cli/
 │   ├── beam_reuse/          ← its fixture: `beam_reused_when_source_unchanged`,
 │   │                          `beam_recompiled_when_source_changes` (`greeting.bp`
 │   │                          the script edits, `shapes.bp` untouched)
+│   ├── import_alias_refused.sh ← `from "@/lib.db"` is an unresolved import source and `"alias"` an unknown
+│   │                          manifest key (decisions 1050, 1048)
 │   ├── workspace_out.sh     ← a workspace root's one output folder (decision 1015 (4)),
 │   │                          its fixture written inline: two members over one
 │   │                          library, on erlang and beam — a member handed
@@ -281,6 +283,7 @@ bash modules/compiler-cli/tests/runtime_reuse.sh     # the .bpr set reused while
 bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alone while its target key matches (1008)
 bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030, 1039)
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
+bash modules/compiler-cli/tests/import_alias_refused.sh  # no import alias: an unresolved source, `alias` an unknown key (1050, 1048)
 bash modules/compiler-cli/tests/workspace_out.sh     # a workspace root's one out/<t>/ folder, dependencies written once, one name one member (1015 (4), 1023, 1013 (2))
 bash modules/compiler-cli/tests/unit_cache.sh        # a dependency's units taken from the unit cache by a second package (1008 (2))
 ```

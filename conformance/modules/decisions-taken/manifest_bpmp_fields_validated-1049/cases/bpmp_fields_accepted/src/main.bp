@@ -1,0 +1,7 @@
+//// Decision 1049 — `"botopink"` and `"requires"` in their shapes are accepted: the program runs.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("ok");
+}

@@ -1,0 +1,7 @@
+//// Decision 1049 — `"requires"` is not an object: refused at the key.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreachable");
+}

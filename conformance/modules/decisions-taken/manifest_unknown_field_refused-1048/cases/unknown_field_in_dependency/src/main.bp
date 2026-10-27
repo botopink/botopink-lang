@@ -1,0 +1,7 @@
+//// Decision 1048 — a dependency entry carries `"version"`, a key a dependency does not have: refused at the key.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreachable");
+}

@@ -1,0 +1,1 @@
+{ "name": "requires_value_not_a_string", "dependencies": { "kit": { "path": "deps/kit" } }, "requires": { "kit": 1 } }

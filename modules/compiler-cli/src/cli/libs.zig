@@ -688,7 +688,7 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
     return .{ .ok = .{ .modules = modules, .targets = targets } };
 }
 
-/// The first `error…: <message>` line of `text` (a refusal as the CLI prints
+/// The first `error…: <message>` line of `text` (its `[code]` moved to the message's head) (a refusal as the CLI prints
 /// it, colours stripped) and the `--> <file>:<line>:<col>` under it when it
 /// points at `botopink.json`; the error's name when nothing was printed.
 fn refusalOf(a: std.mem.Allocator, text: []const u8, err: anyerror) !bp.load.Resolution.Refusal {
@@ -701,6 +701,9 @@ fn refusalOf(a: std.mem.Allocator, text: []const u8, err: anyerror) !bp.load.Res
             if (std.mem.startsWith(u8, line, "error")) {
                 const colon = std.mem.indexOf(u8, line, ": ") orelse continue;
                 out.message = line[colon + 2 ..];
+                // `error[<code>]: …`: the code leads the message (`<code>: …`), as `load.codeOf` reads it back.
+                if (std.mem.startsWith(u8, line, "error[") and colon > "error[]".len - 1)
+                    out.message = try std.fmt.allocPrint(a, "{s}: {s}", .{ line["error[".len .. colon - 1], line[colon + 2 ..] });
             }
             continue;
         }

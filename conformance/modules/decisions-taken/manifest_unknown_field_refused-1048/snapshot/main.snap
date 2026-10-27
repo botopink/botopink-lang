@@ -1,0 +1,10 @@
+botopink-cell 2
+== unknown_field_in_root
+refused error: manifest-unknown-field: botopink.json has no field "typings" — the fields it reads are "name", "version", "description", "src", "entry", "target", "targets", "files", "otp", "workspaces", "wasm", "dependencies", "bpp", "botopink", "requires"
+at botopink.json:1:36
+== unknown_field_in_dependency
+refused error: manifest-unknown-field: dependency "kit" has no field "version" — the fields it reads are "git", "path", "workspace", "subdir", "branch", "tag", "rev"
+at botopink.json:1:89
+== unknown_field_in_wasm_host
+refused error: manifest-unknown-field: "wasm" has no field "typings" — the fields it reads are "host"
+at botopink.json:1:67

@@ -1,0 +1,7 @@
+//// Decision 1048 — the root object of this package's `botopink.json` carries `"typings"`, a key nothing reads: refused at the key.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("unreachable");
+}

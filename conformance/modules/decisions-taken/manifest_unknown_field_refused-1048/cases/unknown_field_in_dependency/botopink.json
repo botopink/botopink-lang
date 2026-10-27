@@ -1,0 +1,1 @@
+{ "name": "unknown_field_in_dependency", "dependencies": { "kit": { "path": "deps/kit", "version": "0.0.1" } } }

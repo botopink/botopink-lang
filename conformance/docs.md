@@ -6560,7 +6560,9 @@ fetches.
 | `"wasm": "wasi"` (not an object) | `"wasm" must be an object — { "host": "wasi" \| "browser" }` |
 | `"wasm": {}` | `"wasm" names no "host" — write { "host": "wasi" \| "browser" }, or omit "wasm" for the default "wasi"` |
 | `"wasm": { "host": 1 }` | `"wasm": "host" must be a string — "wasi" or "browser"` |
-| `"wasm": { "host": "wasi", "jspi": true }` (any field beside `host`) | `"wasm" has no field "jspi" — its one field is "host": { "host": "wasi" \| "browser" }` (on the field) |
+| `"wasm": { "host": "wasi", "jspi": true }` (any field beside `host`) | `error[manifest-unknown-field]: "wasm" has no field "jspi" — the fields it reads are "host"` (on the field) |
+| a key no object reads — `"typings"`, `"$schema"` or any other, in the root, in a `dependencies.<name>`, in a workspace manifest or in the `wasm` host object (decisions 1048, 1050) | `error[manifest-unknown-field]: botopink.json has no field "typings" — the fields it reads are …` (on the key); a program sees a `Diagnostic` with `file: botopink.json` on all four targets |
+| `"botopink": 1`, `"requires": [..]`, a `requires` value that is no string, a `requires` name that is no `dependencies` entry (decision 1049) | `"botopink" must be a string — the compiler-version constraint` / `"requires" must be an object — …` / `"requires": "<name>" must be a string …` / `"requires" names "<name>", which is no entry of "dependencies"` (on the key or the entry) |
 | `"otp": "26"` (any release but the compiler's) | `botopink emits Erlang for OTP 28; "otp" names 26` (on the value) |
 | a dependency of the closure whose `"otp"` differs from the project's (or the first pin's) | `"otp" names 29 here, but 28 in <first>/botopink.json — every package of a build pins one OTP release` (on the dependency's value) |
 
