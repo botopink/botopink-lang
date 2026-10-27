@@ -29,10 +29,6 @@ pub const Options = struct {
     /// is given none.
     target: ?config.Target = null,
     out_dir: []const u8 = "out",
-    /// `--typescript`: write a `.d.ts` beside each `.js` for this build. The
-    /// package's `"typings": true` turns it on too (decisions 619, 620):
-    /// either one says so, and neither turns it off.
-    typescript: bool = false,
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5), `code_cache.zig`).
     cold: bool = false,
@@ -395,7 +391,8 @@ fn runBuild(
     // units taken from it instead of emitted again; what this build emitted
     // of one is written there once the emit returned.
     const packages = try libs.packagesOf(arena, proj, dep_modules);
-    const typings = opts.typescript or proj.manifest.typings;
+    // A commonJS build always writes a `.d.ts` beside each `.js` (decision 1013 (1)).
+    const typings = target == .commonJS;
     var units: unit_cache.Cache = undefined;
     try units.init(gpa, arena, io, analysis_store.root(proj), entry_target, packages, &closure_keys.runtime, .{ .wasm_artifact = true, .typedef = typings });
 
@@ -463,7 +460,7 @@ fn runBuild(
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
-    writeOutputs(gpa, io, arena, outputs.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared, cfg.typeDefLanguage != null) catch |err| switch (err) {
+    writeOutputs(gpa, io, arena, outputs.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared) catch |err| switch (err) {
         // A sidecar the build cannot ship: the located refusal is already
         // printed by the shipper, and the build ends here with exit 1.
         error.SidecarRefused => return 1,
@@ -499,7 +496,6 @@ fn targetKeyFor(proj: config.ProjectConfig, opts: Options, target: config.Target
         .bpr_key = bpr_key,
         .target = target,
         .wasm_host = proj.wasmHost(),
-        .typings = opts.typescript or proj.manifest.typings,
         .out_dir = opts.out_dir,
         .entry = opts.entry,
     });
@@ -594,8 +590,8 @@ pub fn runRuntime(
     env_map: libs.EnvMap,
     entry: ?[]const u8,
     /// The project a fresh `.bpr` set is built for (decision 1006 (2)), its
-    /// manifest read: its directory is the working one, its code cache and
-    /// `"typings"` its own. Null for a `.bpr` named on the command line.
+    /// manifest read: its directory is the working one, its code cache
+    /// its own. Null for a `.bpr` named on the command line.
     project: ?config.ProjectConfig,
     /// `--workspace-out`'s keys (`workspace_out.Shared`); null otherwise.
     shared: ?workspace_out.Shared,
@@ -645,7 +641,7 @@ pub fn runRuntime(
     // Read before the emit, which may rewrite a tree in place.
     const has_main = if (entry) |name| declaresMain(outputs, name) else false;
     const proj: config.ProjectConfig = project orelse .{ .name = meta.root };
-    const typings = opts.typescript or (project != null and proj.manifest.typings);
+    const typings = target == .commonJS;
     const packages: bp.codegen.crossModule.Packages = .{ .root = meta.root, .deps = meta.deps };
     // The unit cache (decision 1008 (2)), as a direct build reads it; a
     // dependency module the root's file holds answers for the whole program.
@@ -673,7 +669,7 @@ pub fn runRuntime(
     }
     if (runtime_keys != null) units.iface.record(emitted.items);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items, false);
-    writeOutputs(gpa, io, arena, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared, cfg.typeDefLanguage != null) catch |err| switch (err) {
+    writeOutputs(gpa, io, arena, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared) catch |err| switch (err) {
         error.SidecarRefused => return .{ .exit = 1 },
         else => return err,
     };
@@ -1087,8 +1083,6 @@ fn writeOutputs(
     /// `--workspace-out` (decision 1015 (4)): each dependency's files
     /// written once per its key (`workspace_out.Once`); null writes every file.
     shared: ?workspace_out.Shared,
-    /// Whether this build writes `.d.ts` files — part of a dependency's key.
-    typings: bool,
 ) !void {
     // Ensure output directory exists.
     std.Io.Dir.cwd().createDirPath(io, out_dir) catch |err| switch (err) {
@@ -1099,7 +1093,7 @@ fn writeOutputs(
     const ext = artifactExt(target);
     const folder = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, targetSubdir(target) });
     var once: ?workspace_out.Once = if (shared) |sh|
-        try workspace_out.Once.begin(arena, io, sh, folder, packages.deps, target.toString(), @tagName(wasm_host), typings)
+        try workspace_out.Once.begin(arena, io, sh, folder, packages.deps, target.toString(), @tagName(wasm_host))
     else
         null;
 

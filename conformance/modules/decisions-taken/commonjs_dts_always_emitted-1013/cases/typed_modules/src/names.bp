@@ -1,0 +1,9 @@
+//// Typed functions a `.d.ts` declares: `greet(name: string): string`.
+
+pub fn greet(name: string) -> string {
+    return "hi " + name;
+}
+
+pub fn shout(s: string) -> string {
+    return s + "!";
+}

@@ -72,7 +72,6 @@ const HELP =
     \\  --target <commonJS|erlang|beam|wasm>   Emit that target into --out, from the .bpr set when it is fresh, else
     \\                               building it first in the same pass
     \\  --out <dir>                  Output directory (default: out)
-    \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled; ignore the .bpr key and the target key and rewrite
     \\  --cache-root <dir>           File the code cache (levels A and B) and the unit cache under <dir>, not the project's or its workspace's
     \\  --json                       Stdout is JSON lines, one event each, stderr as without it: {"event":"targets","target":T,"targets":[…]},
@@ -404,7 +403,7 @@ fn targetValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *Ar
     };
 }
 
-/// A flag that takes no value must not carry one (`--typescript=yes`).
+/// A flag that takes no value must not carry one (`--cold=yes`).
 fn noValue(flag: FlagToken, diag: *ArgDiag) ArgError!void {
     if (flag.inline_value != null) {
         diag.token = flag.name;
@@ -426,9 +425,6 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             opts.target = try targetValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--out")) {
             opts.out_dir = try flagValue(args, &i, flag, diag);
-        } else if (std.mem.eql(u8, flag.name, "--typescript")) {
-            try noValue(flag, diag);
-            opts.typescript = true;
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
             // `build --cold` ignores the `.bpr` key and rebuilds (decision 1006 (4)).
@@ -684,7 +680,9 @@ test "C11: build and test reject positional arguments" {
     var d: ArgDiag = .{};
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"src"}), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseTestOpts(argv(&.{"main_test"}), &d));
-    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"--typescript=yes"}), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"--cold=yes"}), &d));
+    // The `.d.ts` is always written (decision 1013 (1)): no flag asks for it.
+    try std.testing.expectError(error.UnknownFlag, parseBuildOpts(argv(&.{"--typescript"}), &d));
 }
 
 test "C11: test parses --json and --filter=value" {

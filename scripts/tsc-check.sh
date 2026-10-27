@@ -3,7 +3,7 @@
 # `tsc` accepts, and every `.js` it emits is a module `node --check` parses
 # (1.0.11-beta 01-compiler/04-js step 3 and its gate, C-18 of 1.0.10-beta).
 #
-# A scratch `botopink build --target commonJS --typescript` of the library
+# A scratch `botopink build --target commonJS` of the library
 # the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
 # what a host TypeScript consumer of a botopink build reads), of the project
 # query's consumer cell `generic_loader_binding` (the sibling checkout's
@@ -138,7 +138,7 @@ check_project() { # <n> <project>
         cp "$p/botopink.json" "$src/"
         cp -R "$p/test" "$src/src"
     fi
-    if ! log="$(cd "$src" && "$bin" build --target commonJS --typescript --out "$out" 2>&1)"; then
+    if ! log="$(cd "$src" && "$bin" build --target commonJS --out "$out" 2>&1)"; then
         { printf '%s\n' "$log" | tail -5; printf '  ✗ %s (does not build on commonJS)\n' "$p"; } >>"$err"
         return 0
     fi

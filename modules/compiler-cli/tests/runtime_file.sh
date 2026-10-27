@@ -87,17 +87,15 @@ refused() { # <what> <code> <args…>
 
 RT="$WORK/rt"
 for target in commonJS erlang beam wasm; do
-  flags=()
-  [[ "$target" == commonJS ]] && flags=(--typescript)
   rt="$RT-$target"
-  if ! bp "$WORK/direct.log" build --target "$target" --out "$WORK/direct-$target" --emit-runtime "$rt" "${flags[@]}"; then
+  if ! bp "$WORK/direct.log" build --target "$target" --out "$WORK/direct-$target" --emit-runtime "$rt"; then
     fail "$target: the direct build failed"; sed 's/^/      /' "$WORK/direct.log" >&2; continue
   fi
   for f in app.bpr lib.bpr std/math.bpr; do
     [[ -f "$rt/$f" ]] || fail "$target: --emit-runtime wrote no $f"
     grep -q "wrote $rt/$f" "$WORK/direct.log" || fail "$target: --emit-runtime did not name $f"
   done
-  if ! bp "$WORK/bpr.log" build --target "$target" --out "$WORK/bpr-$target" "${flags[@]}" "$rt/app.bpr"; then
+  if ! bp "$WORK/bpr.log" build --target "$target" --out "$WORK/bpr-$target" "$rt/app.bpr"; then
     fail "$target: the build from app.bpr failed"; sed 's/^/      /' "$WORK/bpr.log" >&2; continue
   fi
   diff -r "$WORK/direct-$target" "$WORK/bpr-$target" > "$WORK/diff.log" \

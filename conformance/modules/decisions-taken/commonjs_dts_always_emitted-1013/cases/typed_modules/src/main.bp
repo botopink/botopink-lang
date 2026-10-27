@@ -1,0 +1,12 @@
+//// Decision 1013 (1) — two modules of typed `pub` functions: on commonJS each
+//// one's `.js` has its `.d.ts` beside it, with no flag and no manifest field.
+
+pub mod names;
+
+import {names.greet, names.shout};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(greet("dts"));
+    print(shout("typed"));
+}

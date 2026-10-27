@@ -137,16 +137,14 @@ cell, ws = (json.load(open(p)) for p in sys.argv[1:])
 print(" ".join(cell.get("targets") or ws["targets"]))' "$C/${cells[0]}/botopink.json" "$ws_manifest")"
 
   for target in $targets; do
-    flags=()
-    [[ "$target" == commonJS ]] && flags=(--typescript)
     rm -rf "${ANALYSIS:?}/$target"
     bad=0
     for c in "${cells[@]}"; do
       cell="$C/$c"
       [[ -d "$cell" ]] || continue
-      build "$cell" "$target" "out-cold" --cold ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
-      build "$cell" "$target" "out-warm" ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
-      build "$cell" "$target" "out-read" ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
+      build "$cell" "$target" "out-cold" --cold || { bad=1; continue; }
+      build "$cell" "$target" "out-warm" || { bad=1; continue; }
+      build "$cell" "$target" "out-read" || { bad=1; continue; }
       for run in warm read; do
         if ! diff -r "$cell/out-cold" "$cell/out-$run" > "$WORK/diff.log"; then
           fail "$lib/$target: $c's output built through level B ($run) differs from its --cold build"

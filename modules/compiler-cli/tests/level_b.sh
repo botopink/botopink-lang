@@ -17,8 +17,7 @@
 #     (2)): `check` writes none and its analysis entry is read, not rewritten,
 #     by the next build, which writes the dependency's unit entry
 #     (`.botopinkbuild/cache/unit/<target>/<package>.bpu`); the build after
-#     reads it, not rewritten; `--typescript` is another key — the same bytes
-#     as `--cold` throughout;
+#     reads it, not rewritten — the same bytes as `--cold` throughout;
 #   • the entries live under the workspace's cache root,
 #     `.botopinkbuild/analysis/<target>/<package>.bpa`, std's one per module
 #     under `std/`, `wasm` and `wasm.browser` apart.
@@ -79,18 +78,17 @@ PY
 ANALYSIS="$WORK/.botopinkbuild/analysis"
 
 for variant in commonJS erlang beam wasm wasm.browser; do
-  target="$variant"; flags=()
-  [[ "$variant" == commonJS ]] && flags=(--typescript)
+  target="$variant"
   if [[ "$variant" == wasm.browser ]]; then
     target=wasm
     for c in crowded plain; do cp "$WORK/$c/botopink.json" "$WORK/$c/botopink.json.orig"; browser "$c"; done
   fi
   bad=0
   for consumer in crowded plain; do
-    build "$consumer" "$target" "out-cold-$variant" --cold ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
+    build "$consumer" "$target" "out-cold-$variant" --cold || { bad=1; continue; }
     if [[ "$consumer" == crowded ]]; then rm -rf "$ANALYSIS/$variant"; fi
-    build "$consumer" "$target" "out-write-$variant" ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
-    build "$consumer" "$target" "out-read-$variant" ${flags[@]+"${flags[@]}"} || { bad=1; continue; }
+    build "$consumer" "$target" "out-write-$variant" || { bad=1; continue; }
+    build "$consumer" "$target" "out-read-$variant" || { bad=1; continue; }
     for run in write read; do
       if ! diff -r "$WORK/$consumer/out-cold-$variant" "$WORK/$consumer/out-$run-$variant" > "$WORK/diff.log"; then
         fail "$variant: $consumer's output built through level B ($run) differs from its --cold build"
@@ -170,15 +168,13 @@ diff -r "$WORK/plain/out-truncated-cold" "$WORK/plain/out-truncated" > "$WORK/di
 # The units (decision 1008 (2), which absorbed level B's CODE): `check`
 # (commonJS) writes an analysis entry and no unit; the next build reads that
 # entry — not rewritten — and writes shelf's unit entry; the build after reads
-# it and writes nothing; `--typescript` is another key, written once — every
-# output the same bytes as `--cold`. (That a reading build emitted no
-# dependency module is `UnitCache.Stats.units_read`,
+# it and writes nothing — every output the same bytes as `--cold`. (That a
+# reading build emitted no dependency module is `UnitCache.Stats.units_read`,
 # `cli/analysis_equivalence.zig`'s.)
 code_failures=$failures
 cjs_entry="$ANALYSIS/commonJS/shelf.bpa"
 cjs_units="$WORK/.botopinkbuild/cache/unit/commonJS/shelf.bpu"
 build plain commonJS out-code-cold --cold || true
-build plain commonJS out-code-cold-ts --cold --typescript || true
 rm -rf "$ANALYSIS/commonJS" "$WORK/.botopinkbuild/cache/unit/commonJS"
 ( cd "$WORK/plain" && "$BP_BIN" check ) > "$WORK/check.log" 2>&1 || { fail "\`botopink check\` of plain failed"; sed 's/^/      /' "$WORK/check.log" >&2; }
 [[ ! -e "$cjs_units" ]] || fail "commonJS: \`check\` wrote a unit entry"
@@ -190,20 +186,14 @@ if [[ -f "$cjs_entry" ]]; then
   coded_inode="$(inode "$cjs_units" 2>/dev/null || echo none)"
   build plain commonJS out-code-second || true
   [[ "$(inode "$cjs_units" 2>/dev/null || echo none)" == "$coded_inode" ]] || fail "commonJS: a build reading shelf's unit entry wrote it again"
-  build plain commonJS out-code-second-ts --typescript || true
-  ts_inode="$(inode "$cjs_units" 2>/dev/null || echo none)"
-  [[ "$ts_inode" != "$coded_inode" ]] || fail "commonJS: a --typescript build read the units of a build without it"
-  build plain commonJS out-code-third-ts --typescript || true
-  [[ "$(inode "$cjs_units" 2>/dev/null || echo none)" == "$ts_inode" ]] || fail "commonJS: a --typescript build reading its units wrote them again"
-  for run in first second second-ts third-ts; do
-    cold="out-code-cold"; [[ "$run" == *-ts ]] && cold="out-code-cold-ts"
-    diff -r "$WORK/plain/$cold" "$WORK/plain/out-code-$run" > "$WORK/diff.log" \
+  for run in first second; do
+    diff -r "$WORK/plain/out-code-cold" "$WORK/plain/out-code-$run" > "$WORK/diff.log" \
       || { fail "commonJS: plain's $run build through the unit cache differs from its --cold build"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
   done
 else
   fail "commonJS: \`check\` wrote no shelf entry"
 fi
-[[ "$failures" -eq "$code_failures" ]] && echo "  ✓ \`check\` writes no unit; the next build writes shelf's units, once per key (--typescript another); reading them emits the same bytes"
+[[ "$failures" -eq "$code_failures" ]] && echo "  ✓ \`check\` writes no unit; the next build writes shelf's units, once; reading them emits the same bytes"
 
 if [[ "$failures" -ne 0 ]]; then
   echo "level B: $failures failure(s)" >&2

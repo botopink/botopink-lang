@@ -2,7 +2,7 @@
 # Decision 1015 — every target's output is one flat folder, each module once,
 # named `<pkg>@<path>` (decision 109's module atom). A throwaway `app` (modules
 # `main`, `util`, `models/user`) over a dependency `lib` (modules `root`,
-# `util` — named like the app's) is built on commonJS (with `--typescript`),
+# `util` — named like the app's) is built on commonJS,
 # erlang and beam. Checked: the exact list of module files of each target's
 # folder (no subfolder, `app@models@user.js`, `lib@util.js` beside
 # `app@util.js`, each `.d.ts` beside its `.js`); a commonJS module requiring
@@ -92,10 +92,8 @@ listing() { # <target> <subdir> <ext…>
 
 want_answer=$'app!\n<bia>'
 for target in commonJS erlang beam; do
-  flags=()
-  [[ "$target" == commonJS ]] && flags=(--typescript)
   rm -rf "$WORK/app/out"
-  if ! (cd "$WORK/app" && "$BP_BIN" build --target "$target" "${flags[@]}" >/dev/null 2>"$WORK/build-$target.log"); then
+  if ! (cd "$WORK/app" && "$BP_BIN" build --target "$target" >/dev/null 2>"$WORK/build-$target.log"); then
     fail "$target: build failed"; sed 's/^/      /' "$WORK/build-$target.log" >&2; continue
   fi
   laid="$(cd "$WORK/app/out" && ls -A)"

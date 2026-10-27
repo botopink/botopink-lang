@@ -383,8 +383,6 @@ pub const EmitInputs = struct {
     wasm_host: bp.ast.WasmHost,
     /// The compiler's source stamp (805 (2)).
     stamp: []const u8 = build_stamp.source_hash,
-    /// `--typescript` or the manifest's `"typings"`.
-    typings: bool,
     /// `--out`, as given.
     out_dir: []const u8,
     /// The module `run` starts (wasm emits only its component).
@@ -407,8 +405,6 @@ pub fn targetKey(in: EmitInputs) Key {
     h.update(@tagName(in.wasm_host));
     h.update(&.{0});
     h.update(in.stamp);
-    h.update(&.{0});
-    h.update(if (in.typings) "typings" else "no-typings");
     h.update(&.{0});
     h.update(in.out_dir);
     h.update(&.{0});
@@ -451,7 +447,7 @@ const test_scratch = @import("test_scratch");
 const manifest = @import("manifest");
 
 test "targetKey: the target, the host, the emit options and the .bpr key move it; the OTP release only for erlang and beam" {
-    const base: EmitInputs = .{ .bpr_key = @splat('a'), .target = .commonJS, .wasm_host = .wasi, .typings = false, .out_dir = "out", .entry = "main" };
+    const base: EmitInputs = .{ .bpr_key = @splat('a'), .target = .commonJS, .wasm_host = .wasi, .out_dir = "out", .entry = "main" };
     const k0 = targetKey(base);
     try testing.expectEqualSlices(u8, &k0, &targetKey(base));
     var v = base;
@@ -459,9 +455,6 @@ test "targetKey: the target, the host, the emit options and the .bpr key move it
     try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
     v = base;
     v.bpr_key = @splat('b');
-    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
-    v = base;
-    v.typings = true;
     try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
     v = base;
     v.out_dir = "o2";

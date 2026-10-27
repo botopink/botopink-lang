@@ -134,6 +134,7 @@ comptime {
     runModule("decisions-taken/code_never_enters_as_string-625");
     runModule("decisions-taken/code_template_builds_ast-637");
     runModule("decisions-taken/collections_constructors_type_scoped-111");
+    runModule("decisions-taken/commonjs_dts_always_emitted-1013");
     runModule("decisions-taken/commonjs_text_matches_std_wasm-521");
     runModule("decisions-taken/compiler_annotation_labelled_arguments-305");
     runModule("decisions-taken/compiler_call_in_executor_literal-614");

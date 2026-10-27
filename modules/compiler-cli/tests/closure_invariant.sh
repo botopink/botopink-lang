@@ -90,9 +90,7 @@ for target in commonJS erlang beam wasm; do
   consumers=(plain crowded)
   [[ "$target" == erlang || "$target" == beam ]] && consumers+=(hosted)
   for consumer in "${consumers[@]}"; do
-    flags=()
-    [[ "$target" == commonJS ]] && flags=(--typescript)
-    if ! ( cd "$WORK/$consumer" && "$BP_BIN" build --target "$target" --out "out-$target" "${flags[@]}" ) > "$WORK/$consumer-$target.log" 2>&1; then
+    if ! ( cd "$WORK/$consumer" && "$BP_BIN" build --target "$target" --out "out-$target" ) > "$WORK/$consumer-$target.log" 2>&1; then
       echo "  ✗ $target: \`botopink build\` of $consumer failed" >&2
       sed 's/^/      /' "$WORK/$consumer-$target.log" >&2
       failures=$((failures + 1))

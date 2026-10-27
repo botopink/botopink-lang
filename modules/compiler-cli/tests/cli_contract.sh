@@ -109,29 +109,24 @@ run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
-# ── the .d.ts: "typings": true or --typescript, either one (decisions 619, 620)
-echo "==> \"typings\": true writes the .d.ts without --typescript; neither writes none"
+# ── the .d.ts is always written; --typescript is no flag (decision 1013 (1))
+echo "==> a plain commonJS build writes a .d.ts beside every .js; --typescript is refused"
 P="$(project typings)"
 printf 'pub fn greet(name: string) -> string {\n    return "hi " + name;\n}\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf 'pub fn twice(s: string) -> string {\n    return s + s;\n}\n' >"$P/src/extra.bp"
 run "$P" build --target commonJS
-expect_code 0 "build without typings"
-[[ ! -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "no .d.ts without \"typings\" or --typescript" || fail "out/typings@main.d.ts written with neither"
+expect_code 0 "build --target commonJS"
+js_count=0
+for js in "$P"/out/commonJS/*.js; do
+  [[ -e "$js" ]] || continue
+  js_count=$((js_count + 1))
+  [[ -e "${js%.js}.d.ts" ]] && ok "$(basename "$js") has $(basename "${js%.js}.d.ts") beside it" || fail "$(basename "$js") has no .d.ts beside it"
+done
+[[ "$js_count" -ge 2 ]] || fail "expected a .js per module under out/commonJS/, found $js_count"
+expect_file_out "$P/out/commonJS/typings@main.d.ts" "greet(name: string): string" "the .d.ts types greet"
 run "$P" build --target commonJS --typescript
-expect_code 0 "build --typescript"
-[[ -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "--typescript writes out/commonJS/typings@main.d.ts" || fail "--typescript wrote no out/commonJS/typings@main.d.ts"
-rm -rf "$P/out"
-printf '{ "name": "typings", "version": "0.1.0", "target": "commonJS", "typings": true }\n' >"$P/botopink.json"
-run "$P" build --target commonJS
-expect_code 0 "build with \"typings\": true"
-if [[ -e "$P/out/commonJS/typings@main.d.ts" ]]; then
-  ok "\"typings\": true writes out/commonJS/typings@main.d.ts"
-  expect_file_out "$P/out/commonJS/typings@main.d.ts" "greet(name: string): string" "the .d.ts types greet"
-else
-  fail "\"typings\": true wrote no out/commonJS/typings@main.d.ts"
-fi
-run "$P" build --target commonJS --typescript
-expect_code 0 "build with both"
-[[ -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "both together write out/commonJS/typings@main.d.ts" || fail "both together wrote no out/commonJS/typings@main.d.ts"
+expect_code 1 "build --typescript"
+expect_out "--typescript" "the refusal names --typescript"
 
 # ── checker warnings reach build and test (decision 57, front 26 step 4) ─────
 # `check` prints `OkData.warnings`; `build` and `test` read the compiler's

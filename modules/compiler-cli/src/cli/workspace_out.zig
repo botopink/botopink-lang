@@ -52,9 +52,9 @@ pub fn keyPath(arena: std.mem.Allocator, folder: []const u8, pkg: []const u8) ![
 }
 
 /// The key a dependency `pkg`'s files are written once under.
-pub fn depKey(pkg: []const u8, runtime: ?Key, target: []const u8, host: []const u8, typings: bool) Key {
+pub fn depKey(pkg: []const u8, runtime: ?Key, target: []const u8, host: []const u8) Key {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
-    for ([_][]const u8{ "botopink flat dependency", pkg, if (runtime) |*r| r else "", target, host, if (typings) "d.ts" else "", build_stamp.source_hash }) |part| {
+    for ([_][]const u8{ "botopink flat dependency", pkg, if (runtime) |*r| r else "", target, host, build_stamp.source_hash }) |part| {
         h.update(part);
         h.update("\x00");
     }
@@ -83,14 +83,13 @@ pub const Once = struct {
         deps: []const []const u8,
         target: []const u8,
         host: []const u8,
-        typings: bool,
     ) !Once {
         var self: Once = .{ .arena = arena, .io = io, .folder = folder };
         // std is embedded: in every program, never one of `deps`.
         const all = try std.mem.concat(arena, []const u8, &.{ &.{bp.codegen.crossModule.EMBEDDED_PACKAGE}, deps });
         for (all) |pkg| {
             if (self.keys.contains(pkg)) continue;
-            const key = depKey(pkg, shared.runtime.get(pkg), target, host, typings);
+            const key = depKey(pkg, shared.runtime.get(pkg), target, host);
             try self.keys.put(arena, pkg, key);
             if (shared.rebuild) continue;
             const held = std.Io.Dir.cwd().readFileAlloc(io, try keyPath(arena, folder, pkg), arena, .limited(4096)) catch continue;
@@ -288,15 +287,14 @@ fn fanOut(arena: std.mem.Allocator, io: std.Io, cwd: []const u8, ws: manifest.Wo
 
 const testing = std.testing;
 
-test "depKey: the package's key, the target, the host, the typings move it" {
+test "depKey: the package's key, the target, the host move it" {
     const r: Key = @splat('a');
-    const k = depKey("lib", r, "erlang", "wasi", false);
-    try testing.expectEqualSlices(u8, &k, &depKey("lib", r, "erlang", "wasi", false));
-    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", @splat('b'), "erlang", "wasi", false)));
-    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", r, "beam", "wasi", false)));
-    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", r, "erlang", "browser", false)));
-    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", r, "erlang", "wasi", true)));
-    try testing.expect(!std.mem.eql(u8, &k, &depKey("other", r, "erlang", "wasi", false)));
+    const k = depKey("lib", r, "erlang", "wasi");
+    try testing.expectEqualSlices(u8, &k, &depKey("lib", r, "erlang", "wasi"));
+    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", @splat('b'), "erlang", "wasi")));
+    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", r, "beam", "wasi")));
+    try testing.expect(!std.mem.eql(u8, &k, &depKey("lib", r, "erlang", "browser")));
+    try testing.expect(!std.mem.eql(u8, &k, &depKey("other", r, "erlang", "wasi")));
 }
 
 test "foldedName: a package name as its atoms start" {

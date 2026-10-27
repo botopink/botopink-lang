@@ -12,7 +12,8 @@
 #     the root's next build; a key file that does not match is written again,
 #     and so is everything under `build --cold`;
 #   • two packages of one name at two directories (two members' dependencies)
-#     are refused before anything is built, naming both directories.
+#     are refused before anything is built, naming both directories; so are
+#     two members of one package name (decision 1013 (2)), naming both.
 # erlang and beam (their files are `<pkg>@<path>` already); commonJS's flat
 # names are codegen's (1015 (1)).
 #   • the folder is named by the target, literally (decision 1023): the root's
@@ -155,6 +156,24 @@ ok "refused, naming json1 and json2, nothing written"
 # Each member alone builds: the refusal is the shared folder's.
 run_in "$DUP/c" build --target erlang
 [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "member c alone builds (exit $CODE)"; }
+
+# ── two members of one package name (decision 1013 (2)) ─────────────────────
+echo "==> two members of one name are refused at the root, named"
+SAME="$WORK/same"
+mkdir -p "$SAME/e/src" "$SAME/f/src"
+printf '{ "name": "same", "version": "0.0.1", "workspaces": ["*"] }\n' >"$SAME/botopink.json"
+for c in e f; do
+  printf '{ "name": "twin" }\n' >"$SAME/$c/botopink.json"
+  printf 'import {io.terminal.print} from "std";\n\npub fn main() -> void {\n    print("%s");\n}\n' "$c" >"$SAME/$c/src/main.bp"
+done
+for target in commonJS erlang; do
+  run_in "$SAME" build --target "$target"
+  [[ $CODE -eq 1 ]] || fail "$target: the root's build over two members named \`twin\` exits 1 (exit $CODE)"
+  grep -q '"twin"' <<<"$OUT" && grep -q 'e/botopink.json' <<<"$OUT" && grep -q 'f/botopink.json' <<<"$OUT" \
+    || { echo "$OUT" >&2; fail "$target: the refusal names twin and both members"; }
+  [[ ! -e "$SAME/out" && ! -e "$SAME/e/out" && ! -e "$SAME/f/out" ]] || fail "$target: the refused build wrote an out/"
+done
+ok "refused, naming twin and both members' manifests, nothing written"
 
 if (( failures > 0 )); then
   echo "workspace_out.sh: $failures failure(s)" >&2

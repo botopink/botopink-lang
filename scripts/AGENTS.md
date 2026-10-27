@@ -199,8 +199,8 @@ conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; t
 (`libs/std/` — decision 326: the shared libraries are repositories of their
 own, checked by their own gates), query's consumer cell
 (`../query/conformance/modules/generic_loader_binding`, the sibling checkout's), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
-manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
---typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
+manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS`
+into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
 per project, (a `conformance/test/<project>/` that holds `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/` is that `test/`) and `node --check` over each build's `.js` files (one `node` at a time inside a project) — the run cells execute their module under node, this reaches
 the modules nothing runs: the libraries' and the example's. A cell is left out
