@@ -1498,11 +1498,12 @@ fn pruneUnreached(
     /// is a dependency's, whose functions the program reaches or not
     /// (decision 531).
     own_roots: bool,
-    /// The local names that mean a mangled function (`linkRenames`, every
-    /// module's): a name read as a VALUE (`__bp_run(__bp_run__<pkg>)`) is
-    /// no call `renameLinkedCalls` rewrites, so the name it means is reached
-    /// through this map.
-    renames: *const std.StringHashMapUnmanaged([]const u8),
+    /// Per module (indexed as `owner`), the local names that mean a mangled
+    /// function (`linkRenames`): a name read as a VALUE
+    /// (`__bp_run(__bp_run__<pkg>)`) is no call `renameLinkedCalls`
+    /// rewrites, so a declaration's names reach what they mean in its own
+    /// module's map. Empty when nothing was mangled.
+    renames: []const std.StringHashMapUnmanaged([]const u8),
 ) error{OutOfMemory}!void {
     const n = decls.items.len;
     const keep = try ar.alloc(bool, n);
@@ -1530,10 +1531,23 @@ fn pruneUnreached(
         }
     }
     while (true) {
-        while (queue.pop()) |i| try collectStrings(ast.DeclKind, decls.items[i], &seen, ar);
+        while (queue.pop()) |i| {
+            const o = owner.items[i];
+            if (o >= renames.len or renames[o].count() == 0) {
+                try collectStrings(ast.DeclKind, decls.items[i], &seen, ar);
+                continue;
+            }
+            var mine: std.StringHashMapUnmanaged(void) = .empty;
+            try collectStrings(ast.DeclKind, decls.items[i], &mine, ar);
+            var mi = mine.keyIterator();
+            while (mi.next()) |k| {
+                try seen.put(ar, k.*, {});
+                if (renames[o].get(k.*)) |m| try seen.put(ar, m, {});
+            }
+        }
         var progressed = false;
         var it = seen.keyIterator();
-        while (it.next()) |k| for ([_]?[]const u8{ k.*, renames.get(k.*) }) |name| if (name) |nm| if (by_name.get(nm)) |idxs| for (idxs.items) |i| if (!keep[i]) {
+        while (it.next()) |k| if (by_name.get(k.*)) |idxs| for (idxs.items) |i| if (!keep[i]) {
             keep[i] = true;
             try queue.append(ar, i);
             progressed = true;
@@ -1896,16 +1910,15 @@ fn emitWatPass(
     // rewritten to the mangled name, in a copy of its declarations (the
     // module's own program is shared with its own emission); a linked
     // module's aliased imports are rewritten to the declared names.
-    var prune_renames: std.StringHashMapUnmanaged([]const u8) = .empty;
+    var prune_renames: []const std.StringHashMapUnmanaged([]const u8) = &.{};
     if (em.link_mangled.count() > 0 or linked.len > 0) {
         var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        prune_renames = maps;
         for (maps, 0..) |*m, i| {
             m.* = .empty;
             const mod_name = if (i < linked.len) linked[i].name else module_name;
             const prog = if (i < linked.len) linked[i].program else own_program;
             try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, i < linked.len, m);
-            var it = m.iterator();
-            while (it.next()) |e| try prune_renames.put(ar0, e.key_ptr.*, e.value_ptr.*);
         }
         for (decls.items, owner.items) |*d, from| {
             if (maps[from].count() == 0) continue;
@@ -1959,7 +1972,7 @@ fn emitWatPass(
     // lowered and stops nothing, in either lowering.
     if (plan.mode == .gc or plan.reached_only) {
         const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
-        try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency), &prune_renames);
+        try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency), prune_renames);
     }
     if (plan.mode == .gc) try em.gcKeyTypes(decls.items, owner.items, linked, module_name, &spliced);
     const program: ast.Program = .{ .decls = decls.items };
