@@ -87,6 +87,9 @@ import {io.terminal.print} from "std";
     (type $var_Shape_Rect (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut i32)))))
     (type $brand_var_Shape_Rect (struct (field i32) (field i64) (field f64) (field f64) (field i32) (field f32) (field f32) (field i32) (field f32) (field f32) (field f32) (field f64) (field f32) (field f32) (field f64) (field i64) (field f32) (field i64) (field f64) (field f32) (field f64) (field i64) (field i64) (field f32) (field f32) (field f64) (field i64) (field f64) (field i64) (field f32) (field i64) (field f32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__print_decl" (func $__print_decl (param anyref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
@@ -349,17 +352,36 @@ import {io.terminal.print} from "std";
     global.get $__s9
     call $__print_str_raw
   )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Shape_Circle)
+    call $__pr0
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Shape_Circle)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Shape
+  )
   (func $__pr2 (param $v (ref null $var_Shape_Rect))
-    global.get $__s10
+    global.get $__s11
     call $__print_str_raw
     global.get $__s7
     call $__print_str_raw
-    global.get $__s11
+    global.get $__s12
     call $__print_str_raw
     local.get $v
     struct.get $var_Shape_Rect $f0
     call $__pr1
-    global.get $__s12
+    global.get $__s13
     call $__print_str_raw
     local.get $v
     struct.get $var_Shape_Rect $f1
@@ -367,9 +389,47 @@ import {io.terminal.print} from "std";
     global.get $__s9
     call $__print_str_raw
   )
+  (func $__tip2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Shape_Rect)
+    call $__pr2
+  )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Shape_Rect)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Shape
+  )
   (func $__pr3 (param $v (ref null $var_Shape_Dot))
-    global.get $__s13
+    global.get $__s15
     call $__print_str_raw
+  )
+  (func $__tip3 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Shape_Dot)
+    call $__pr3
+  )
+  (func $__tie3 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Shape_Dot)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Shape
   )
   (func $__print_tagged_raw (param $v anyref)
     local.get $v
@@ -402,25 +462,20 @@ import {io.terminal.print} from "std";
     return
       )
     )
+    local.get $v
+    ref.test (ref null $__decl)
+    (if
+      (then
+    local.get $v
+    call $__print_decl
+    return
+      )
+    )
     unreachable
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -947,14 +1002,20 @@ import {io.terminal.print} from "std";
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 ")")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
-  (data $__d10 "Shape.Rect")
+  (data $__d10 "test@main.Shape.Circle")
   (global $__s10 (mut (ref null $str)) (ref.null $str))
-  (data $__d11 "w: ")
+  (data $__d11 "Shape.Rect")
   (global $__s11 (mut (ref null $str)) (ref.null $str))
-  (data $__d12 ", h: ")
+  (data $__d12 "w: ")
   (global $__s12 (mut (ref null $str)) (ref.null $str))
-  (data $__d13 "Shape.Dot")
+  (data $__d13 ", h: ")
   (global $__s13 (mut (ref null $str)) (ref.null $str))
+  (data $__d14 "test@main.Shape.Rect")
+  (global $__s14 (mut (ref null $str)) (ref.null $str))
+  (data $__d15 "Shape.Dot")
+  (global $__s15 (mut (ref null $str)) (ref.null $str))
+  (data $__d16 "test@main.Shape.Dot")
+  (global $__s16 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -998,39 +1059,82 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d9
     global.set $__s9
     i32.const 0
-    i32.const 10
+    i32.const 22
     array.new_data $str $__d10
     global.set $__s10
     i32.const 0
-    i32.const 3
+    i32.const 10
     array.new_data $str $__d11
     global.set $__s11
     i32.const 0
-    i32.const 5
+    i32.const 3
     array.new_data $str $__d12
     global.set $__s12
     i32.const 0
-    i32.const 9
+    i32.const 5
     array.new_data $str $__d13
     global.set $__s13
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d14
+    global.set $__s14
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d15
+    global.set $__s15
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d16
+    global.set $__s16
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 i32) (result (ref null $var_Shape_Circle))
     global.get $__ti_31
     local.get $f0
     struct.new $var_Shape_Circle
   )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_35 (param $f0 i32) (param $f1 i32) (result (ref null $var_Shape_Rect))
     global.get $__ti_35
     local.get $f0
     local.get $f1
     struct.new $var_Shape_Rect
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (result (ref null $var_Shape_Dot))
     global.get $__ti_33
     struct.new $var_Shape_Dot
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1 $__tip2 $__tie2 $__tip3 $__tie3)
+  (func $__init_types
+    global.get $__s10
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
+    global.get $__s14
+    ref.func $__tip2
+    ref.func $__tie2
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_35
+    global.get $__ti_35
+    call $__ti_register
+    global.get $__s16
+    ref.func $__tip3
+    ref.func $__tie3
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

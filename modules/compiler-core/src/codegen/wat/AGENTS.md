@@ -1312,9 +1312,23 @@ bindings reach (decision 518), and a run takes all of them (`codegen/runtime.zig
 units'). `renderComponent` never embeds a unit: a module importing one is refused there (1037 (5)).
 `codegen/runtime.zig`'s RUN LOG runs a module that imports
 the core in process with each unit defined under its name first (`runner.runCoreWith`, what `wasmtime run --preload std@__rt=… --preload std@<path>=… <module>` did; their
-bytes in the cache key). Not in the core yet: the scheduler's globals and the type registry (P4b; a closure needs
-no table, decision 1055 (4)); `$__write_bytes` and the GC print helpers stay with the program unit (they name its
-per-program capture state). `modules/compiler-cli/tests/wasm_runtime_unit.sh` and
+bytes in the cache key). **The core's GC items** (decision 1055 (2), (3), (5); `wat_prelude.core_gc_items`, the
+prelude group declared in the core): `__write_bytes(p, n)` — every program unit's, imported (`prelude.gcItems(.print)`
+less its own) —, the capture `__cap` (an exported `(mut arrayref)`, null when closed) and `__cap_depth`, `__cap_begin()`
+(the core's capture opened: comptime's evaluated unit, 1063 (3)) and `__cap_end() -> arrayref` (its text, the capture
+closed, 1071 (2)); while the core's own capture is open at depth 0 each write also goes to `fd_write` (the host's
+mirror); a unit's own capture (`text_capture`: a `Display` hole, a `run()`'s) is `unit_cap_items` over the imported
+`__cap`, one depth deeper, so the core mirrors none of it. `__ti_register(structref)` appends a unit's `$__tinfo` to the
+core's list (`__type_infos() -> arrayref`, typeinfo's and debugging's); `__print_decl(anyref)`, `__eq_decl(anyref,
+anyref) -> i32` and `__display_decl(anyref) -> i32` cast the value to `$__decl`, read its `$__tinfo`'s funcref, cast it to
+`$__print_sig` / `$__eq_sig` and `call_ref` it. **A unit's type infos** (`gcTypeInfos`, `gcInitTypes`): per declared
+type the unit builds (a `struct.new` of it), `$__tip<k>(v)` (its printer, none for a record with a field written
+`array<T>`), `$__tie<k>(a, b)` (`0` for a `b` of another type; `$__eq_<T>` when every field is a scalar, a `bool` or a
+`string`, else `$__unk_eq_ref`) and, with a `display`, `$__tid<k>(v)`; `$__init_types`, which the start runs after the
+string literals and before `$__init_globals` (any module `val`), builds each `$__tinfo` (the name `<pkg>@<path>.<Type>`,
+kind 0 a record, 1 a variant) into `$__ti_<k>` and registers it. A unit's `$__print_tagged_raw` and `$__unk_eq_ref` end,
+past every type it declares, with `__print_decl` / `__eq_decl` for a `$__decl` value. Not in the core yet: the
+scheduler's globals and the print helpers other than `$__write_bytes` (a closure needs no table, decision 1055 (4)). `modules/compiler-cli/tests/wasm_runtime_unit.sh` and
 `wasm_std_unit_per_module.sh` (cell `wasm_std_unit_per_module`) are the oracles.
 
 ### The comptime units (decisions 1033, 1035 (1), (3), 1038 (4), 1058 (2), (3), piece C1)

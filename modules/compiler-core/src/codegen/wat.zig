@@ -2654,6 +2654,9 @@ fn emitWatPass(
         if (em.gen_close_used) try items.append(ar, .{ .func = try em.genCloseFunc() });
     }
     for (em.behavior_dispatch.values()) |bd| try items.append(ar, .{ .func = try em.behaviorDispatchFunc(bd) });
+    // Decision 1055 (2) — each declared type's printer, equality and display
+    // as its `$__tinfo` names them (they ask for its `$__eq_<T>`).
+    if (em.mode == .gc) try em.gcTypeInfos();
     // Decision 210 — each equality may ask for the equality of a part.
     var eq_i: usize = 0;
     while (eq_i < em.eq_requests.count()) : (eq_i += 1) {
@@ -2735,6 +2738,24 @@ fn emitWatPass(
             }
             if (group == .chk_fail and em.exceptions) {
                 try items.append(ar, .{ .func = prelude.gc_chk_fail_raise });
+                continue;
+            }
+            // Decision 1055 (5), 1028 (2) — with the core, `$__write_bytes` and
+            // the capture are the core's: a unit writes and captures through
+            // them, its own capture nested in the core's (1071 (2)).
+            if (rt != null and group == .print) {
+                try rt_imports.append(ar, .{ .import = .{ .module = runtimeUnit.name, .name = "__write_bytes", .func = "__write_bytes", .type = .{ .params = &.{ .i32, .i32 } } } });
+                for (prelude.gcItems(.print, false).?) |it| {
+                    if (it == .func and std.mem.eql(u8, it.func.name, "__write_bytes")) continue;
+                    try items.append(ar, it);
+                }
+                continue;
+            }
+            if (rt != null and group == .text_capture) {
+                try rt_imports.append(ar, .{ .global = .{ .name = "__cap", .ty = .arrayref, .mutable = true, .import = .{ .module = runtimeUnit.name, .name = "__cap" } } });
+                try rt_imports.append(ar, .{ .global = .{ .name = "__cap_depth", .ty = .i32, .mutable = true, .import = .{ .module = runtimeUnit.name, .name = "__cap_depth" } } });
+                try items.appendSlice(ar, &prelude.unit_cap_items);
+                em.gc_str_used = true;
                 continue;
             }
             const gc_items = prelude.gcItems(group, em.b.helpers.has(.text_capture)) orelse return em.gcFail(@tagName(group));
@@ -3187,7 +3208,9 @@ fn unitCrossable(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
                 }
                 break :blk true;
             };
-            break :blk isUnitScalarName(n);
+            // Decision 1055 (3) — an `unknown` is an `anyref` as it is: a
+            // declared type's value in it carries its `$__tinfo`.
+            break :blk isUnitScalarName(n) or std.mem.eql(u8, n, "unknown");
         },
         .array => |inner| unitCrossable(inner.*, decls, depth + 1),
         .optional => |inner| unitCrossable(inner.*, decls, depth + 1),
@@ -3467,6 +3490,12 @@ const Emitter = struct {
     /// gets its constructor `$__new_<type>`, which reads the type's
     /// `$__tinfo` from `$__ti_<type>` (`gcDeclCtors`).
     gc_decl_ctors: std.AutoArrayHashMapUnmanaged(u16, void) = .empty,
+    /// Decision 1055 (2) — each declared type's `$__tinfo`, built by the
+    /// unit's start before any module `val` (`gcTypeInfos`, `finishGc`).
+    gc_tinfos: std.ArrayListUnmanaged(TypeInfo) = .empty,
+    /// Decision 1055 (3) — the core's functions the module calls
+    /// (`__print_decl`, `__eq_decl`, `__ti_register`), imported by `finishGc`.
+    gc_core_calls: std.StringArrayHashMapUnmanaged(void) = .empty,
     /// The environment type of the lifted lambda being emitted (`.gc`).
     gc_env_ty: u16 = 0,
     /// Front 164 s2 P4 — per state machine of a GC module, the value types
@@ -4311,6 +4340,8 @@ const Emitter = struct {
         self.gc_types.deinit(self.alloc);
         self.gc_type_keys.deinit(self.alloc);
         self.gc_decl_ctors.deinit(self.alloc);
+        self.gc_tinfos.deinit(self.alloc);
+        self.gc_core_calls.deinit(self.alloc);
         self.gc_frames.deinit(self.alloc);
         self.gc_block_locals.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
@@ -6451,12 +6482,10 @@ const Emitter = struct {
     /// struct with it first.
     fn gcDeclCtors(self: *Emitter, items: *std.ArrayListUnmanaged(Item), defs: []const wat.TypeDef) !void {
         const ar = self.arena();
-        const ti_vt = ValType.def(@intFromEnum(GcPrelude.tinfo));
         for (self.gc_decl_ctors.keys()) |old| {
             const k = self.gc_perm.?[old];
             const fields = defs[k].kind.@"struct";
             const ti = try self.gcTinfoGlobal(k);
-            try items.append(ar, .{ .global = .{ .name = ti, .ty = ti_vt, .mutable = true, .init = "" } });
             const params = try ar.alloc(wat.Param, fields.len - 1);
             const lines = try ar.alloc(Line, fields.len + 1);
             lines[0] = .{ .instr = .{ .global_get = ti } };
@@ -6472,7 +6501,47 @@ const Emitter = struct {
                 .body = .{ .lines = lines, .stack = .{ .value = ValType.def(k) } },
             } });
         }
+    }
+
+    const gc_init_types = "__init_types";
+
+    /// Decision 1055 (2) — `$__ti_<k>` per declared type (its constructor
+    /// reads it), and `$__init_types`, which the start runs after the string
+    /// literals and before any module `val`: each type's `$__tinfo` — its
+    /// declared name, its printer, equality and display (`gcTypeInfos`), its
+    /// kind (0 a record, 1 a variant) — built and, with the core, registered
+    /// in the core's list (`__ti_register`).
+    fn gcInitTypes(self: *Emitter, items: *std.ArrayListUnmanaged(Item)) !void {
+        const ar = self.arena();
+        const perm = self.gc_perm.?;
+        const ti_k: u16 = @intFromEnum(GcPrelude.tinfo);
+        var globals: std.AutoArrayHashMapUnmanaged(u16, void) = .empty;
+        for (self.gc_decl_ctors.keys()) |old| try globals.put(ar, perm[old], {});
+        for (self.gc_tinfos.items) |ti| try globals.put(ar, perm[ti.old], {});
+        for (globals.keys()) |k| try items.append(ar, .{ .global = .{ .name = try self.gcTinfoGlobal(k), .ty = ValType.def(ti_k), .mutable = true, .init = "" } });
         self.gc_decl_ctors.clearRetainingCapacity();
+        if (self.gc_tinfos.items.len == 0) return;
+        var body: std.ArrayListUnmanaged(Line) = .empty;
+        var refs: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (self.gc_tinfos.items) |ti| {
+            const g = try self.gcTinfoGlobal(perm[ti.old]);
+            try body.append(ar, .{ .instr = .{ .global_get = try std.fmt.allocPrint(ar, "__s{d}", .{ti.name}) } });
+            try body.append(ar, .{ .instr = if (ti.print) |p| .{ .ref_func = p } else .{ .ref_null = .funcref } });
+            try body.append(ar, .{ .instr = .{ .ref_func = ti.eq } });
+            try body.append(ar, .{ .instr = if (ti.display) |d| .{ .ref_func = d } else .{ .ref_null = .funcref } });
+            try body.append(ar, .{ .instr = try self.constInt(ti.kind) });
+            try body.append(ar, .{ .instr = .{ .struct_new = ti_k } });
+            try body.append(ar, .{ .instr = .{ .global_set = g } });
+            if (self.rt != null) {
+                try body.append(ar, .{ .instr = .{ .global_get = g } });
+                try body.append(ar, .{ .instr = .{ .call = "__ti_register" } });
+            }
+            if (ti.print) |p| try refs.append(ar, p);
+            try refs.append(ar, ti.eq);
+            if (ti.display) |d| try refs.append(ar, d);
+        }
+        try items.append(ar, .{ .elem_declare = refs.items });
+        try items.append(ar, .{ .func = .{ .name = gc_init_types, .body = .{ .lines = body.items, .stack = .none } } });
     }
 
     /// The global holding declared type `k`'s `$__tinfo` (decision 1055 (2)).
@@ -6634,6 +6703,16 @@ const Emitter = struct {
             it.func.body = .{ .lines = stub, .stack = .terminated };
             it.func.locals = &.{};
         };
+        // Decision 1055 (2), (3) — the core's functions the module calls.
+        if (self.rt != null) {
+            if (self.gc_tinfos.items.len > 0) _ = try self.coreCall("__ti_register");
+            for (self.gc_core_calls.keys()) |name| {
+                const ft = for (prelude.core_gc_exports) |x| {
+                    if (std.mem.eql(u8, x.name, name)) break x.type;
+                } else unreachable;
+                try items.insert(ar, 0, .{ .import = .{ .module = runtimeUnit.name, .name = name, .func = name, .type = ft } });
+            }
+        }
         if (self.gc_strs.count() > 0) {
             var body: std.ArrayListUnmanaged(Line) = .empty;
             for (self.gc_strs.keys(), 0..) |bytes, k| {
@@ -6649,6 +6728,8 @@ const Emitter = struct {
             const start_at: ?usize = for (items.items, 0..) |it, i| {
                 if (it == .start) break i;
             } else null;
+            // Decision 1055 (2) — the types' infos, before any module `val`.
+            if (self.gc_tinfos.items.len > 0) try body.append(ar, .{ .instr = .{ .call = gc_init_types } });
             if (start_at) |i| {
                 try body.append(ar, .{ .instr = .{ .call = items.items[i].start } });
                 items.items[i] = .{ .start = gc_init_strs };
@@ -6660,6 +6741,7 @@ const Emitter = struct {
         // Every type the lowering named, renumbered into its canonical group.
         for (items.items) |*it| it.* = try self.gcRemapItem(it.*);
         try self.gcDeclCtors(items, defs);
+        try self.gcInitTypes(items);
         self.gc_perm = null;
         if (self.gc_str_used) try items.insert(ar, 0, .{ .types = defs });
         var diag: typecheck.Diag = .{};
@@ -8442,6 +8524,16 @@ const Emitter = struct {
                 },
                 else => {},
             }
+        }
+        // Decision 1055 (3) — two values of declared types of another unit:
+        // the first's `$__tinfo`'s equality, through the core.
+        if (self.rt != null) {
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .ref_test = self.gcTy(.decl) });
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .ref_test = self.gcTy(.decl) });
+            try self.emit(opOf(.i32, "and"));
+            try self.gcWhenReturn(&.{ .{ .local_get = "a" }, .{ .local_get = "b" }, .{ .call = try self.coreCall("__eq_decl") } });
         }
         try self.emit(zero);
         try self.gcHelperFunc("__unk_eq_ref", &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
@@ -10897,6 +10989,152 @@ const Emitter = struct {
 
     /// `__print_tagged_raw(v: anyref)`: the text of a value of any declared
     /// type, by the first record or variant type that `v` is a value of.
+    const TypeInfo = struct { old: u16, print: ?[]const u8, eq: []const u8, display: ?[]const u8, name: usize, kind: u8 };
+
+    /// The core's function `name` (decision 1055 (3)), imported by `finishGc`.
+    fn coreCall(self: *Emitter, name: []const u8) ![]const u8 {
+        try self.gc_core_calls.put(self.alloc, name, {});
+        return name;
+    }
+
+    /// Decision 1055 (2) — per declared type the lowering holds (a record, a
+    /// variant), what its `$__tinfo` names: `$__tip<k>(v)` its printer,
+    /// `$__tie<k>(a, b)` its equality (`0` for a `b` of another type) and,
+    /// for a type with a `display`, `$__tid<k>(v)` its text; its declared name
+    /// `<pkg>@<path>.<Type>` a string. `finishGc` builds each into `$__ti_<k>`.
+    fn gcTypeInfos(self: *Emitter) anyerror!void {
+        const ar = self.arena();
+        // The declared types the module builds: a value carries the `$__tinfo`
+        // of the unit that built it, so a type nothing here builds needs none.
+        var built: std.AutoArrayHashMapUnmanaged(u16, void) = .empty;
+        for (self.items.items) |it| if (it == .func) try builtTypes(ar, it.func.body, &built);
+        const n0 = self.gc_types.items.len;
+        var i: usize = 0;
+        while (i < n0) : (i += 1) {
+            const t = self.gc_types.items[i];
+            const k: u16 = @intCast(i + 1);
+            if (!built.contains(k)) continue;
+            const vt = ValType.def(k);
+            var rec: []const u8 = undefined;
+            var key: []const u8 = undefined;
+            var kind: u8 = 0;
+            switch (t) {
+                .record => |n| {
+                    rec = n;
+                    key = self.gc_type_keys.get(n) orelse displayTypeName(n);
+                },
+                .variant => |v| {
+                    rec = v.en;
+                    key = try std.fmt.allocPrint(ar, "{s}.{s}", .{ self.gc_type_keys.get(v.en) orelse displayTypeName(v.en), v.name });
+                    kind = 1;
+                },
+                else => continue,
+            }
+            // A record whose field is written `array<T>` has no printer of
+            // its own in the GC lowering (its field prints by the `i32`
+            // printer, a type error): its `$__tinfo` names none.
+            const printable = t != .record or for (self.record_field_typerefs.get(rec) orelse &.{}) |tr| {
+                if (tr == .generic and std.mem.eql(u8, tr.generic.name, "array")) break false;
+            } else true;
+            const tip: ?[]const u8 = if (printable) try std.fmt.allocPrint(ar, "__tip{d}", .{k}) else null;
+            if (tip) |name| {
+                const sym = switch (t) {
+                    .record => |n| try self.gcDeclPrinter(n, null),
+                    .variant => |v| try self.gcDeclPrinter(v.en, v.name),
+                    else => unreachable,
+                };
+                var c: Capture = .{};
+                self.open(&c);
+                try self.emit(.{ .local_get = "v" });
+                try self.emit(.{ .ref_cast = vt });
+                try self.emit(.{ .call = sym });
+                try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{ .name = name, .params = &.{wat.Builder.param("v", .anyref)}, .body = self.seal(&c, .none) }) });
+            }
+            const tie = try std.fmt.allocPrint(ar, "__tie{d}", .{k});
+            {
+                var c: Capture = .{};
+                self.open(&c);
+                try self.emit(.{ .local_get = "b" });
+                try self.emit(.{ .ref_test = vt });
+                try self.emit(opOf(.i32, "eqz"));
+                try self.gcWhenReturn(&.{zero});
+                // A generic type compares each erased slot by what it holds.
+                // A generic type compares each erased slot by what it holds; a
+                // function-typed field has no typed equality (a function value
+                // is equal only to itself, `$__unk_eq_ref`'s identity).
+                const generic = if (t == .record) self.record_generics.contains(rec) else self.enum_generics.contains(rec);
+                if (generic or !self.declScalarFields(t)) {
+                    _ = try self.gcUnkEq();
+                    try self.emit(.{ .local_get = "a" });
+                    try self.emit(.{ .local_get = "b" });
+                    try self.emit(.{ .call = "__unk_eq_ref" });
+                } else {
+                    const eq = try self.eqFnFor(.{ .named = rec });
+                    try self.emit(.{ .local_get = "a" });
+                    if (t == .record) try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .local_get = "b" });
+                    if (t == .record) try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .call = eq });
+                }
+                try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{ .name = tie, .params = &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .result = .i32, .body = self.seal(&c, .{ .value = .i32 }) }) });
+            }
+            var tid: ?[]const u8 = null;
+            if (t == .record) {
+                const dsym = try std.fmt.allocPrint(ar, "{s}_display", .{rec});
+                if (self.fn_sigs.get(dsym)) |sig| if (sig.params.len == 1 and sig.result != null and sig.result.?.isStr() and !self.record_generics.contains(rec)) {
+                    const name = try std.fmt.allocPrint(ar, "__tid{d}", .{k});
+                    var c: Capture = .{};
+                    self.open(&c);
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .call = dsym });
+                    try self.emit(self.builder().helper(.print_str_raw));
+                    try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{ .name = name, .params = &.{wat.Builder.param("v", .anyref)}, .body = self.seal(&c, .none) }) });
+                    tid = name;
+                };
+            }
+            const gop = try self.gc_strs.getOrPut(self.alloc, key);
+            self.gc_str_used = true;
+            try self.gc_tinfos.append(self.alloc, .{ .old = k, .print = tip, .eq = tie, .display = tid, .name = gop.index, .kind = kind });
+        }
+    }
+
+    /// Whether every field of a record or of a variant's enum is a scalar, a
+    /// `bool` or a `string` — what `$__eq_<T>` compares; another field's
+    /// type (a function value, an `unknown`, a container) compares through
+    /// `$__unk_eq_ref`.
+    fn declScalarFields(self: *Emitter, t: GcTy) bool {
+        const plain = struct {
+            fn f(tr: ast.TypeRef) bool {
+                const e = eagerTypeRef(tr);
+                return e == .named and isUnitScalarName(e.named);
+            }
+        }.f;
+        switch (t) {
+            .record => |n| for (self.record_field_typerefs.get(n) orelse &.{}) |tr| {
+                if (!plain(tr)) return false;
+            },
+            .variant => |v| if (self.enums.get(v.en)) |vs| for (vs) |ev| for (ev.fields) |f| {
+                if (!plain(f.typeRef)) return false;
+            },
+            else => return false,
+        }
+        return true;
+    }
+
+    /// Every type a `struct.new` of `s` builds.
+    fn builtTypes(ar: std.mem.Allocator, s: Seq, out: *std.AutoArrayHashMapUnmanaged(u16, void)) !void {
+        for (s.lines) |l| switch (l.instr) {
+            .struct_new => |k| try out.put(ar, k, {}),
+            .@"if" => |n| {
+                try builtTypes(ar, n.then.seq, out);
+                if (n.@"else") |e| try builtTypes(ar, e.seq, out);
+            },
+            .block => |b| try builtTypes(ar, b.body, out),
+            else => {},
+        };
+    }
+
     fn gcTaggedPrinter(self: *Emitter) anyerror!void {
         var c: Capture = .{};
         self.open(&c);
@@ -10927,6 +11165,13 @@ const Emitter = struct {
             try self.emit(.{ .local_get = "v" });
             try self.emit(.{ .ref_test = vt });
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+        }
+        // Decision 1055 (3) — a declared type of another unit: printed by its
+        // own `$__tinfo`, through the core.
+        if (self.rt != null) {
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = self.gcTy(.decl) });
+            try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .call = try self.coreCall("__print_decl") } });
         }
         try self.emit(.@"unreachable");
         const body = self.seal(&c, .terminated);

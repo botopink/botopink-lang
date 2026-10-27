@@ -53,5 +53,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("gc_result_alias_return");
     runCase("gc_param_destructure");
     runCase("wasm_closure_crosses_units");
+    runCase("wasm_foreign_type_prints");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

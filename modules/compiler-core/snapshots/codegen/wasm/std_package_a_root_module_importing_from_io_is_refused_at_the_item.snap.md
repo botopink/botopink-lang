@@ -360,11 +360,17 @@ test "path.isInside treats a name starting with two dots as a name" {
     (type $rec_PathAccum (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut (ref null $arr_any))))))
     (type $brand_rec_PathAccum (struct (field i64) (field i32) (field f32) (field f32) (field f64) (field f32) (field i64) (field i64) (field i64) (field i32) (field i64) (field i32) (field i32) (field i64) (field i32) (field f64) (field i64) (field f32) (field i32) (field i64) (field f32) (field i32) (field i64) (field f32) (field f64) (field i32) (field i32) (field f32) (field f64) (field i32) (field f64) (field f32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.split" (func $__std_text_split (param i32 i32) (result i32)))
   (import "std@string" "std:text.startsWith" (func $__std_text_startsWith (param i32 i32) (result i32)))
   (import "std@string" "std:text.slice" (func $__std_text_slice (param i32 i32 i32) (result i32)))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
   (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -1762,6 +1768,344 @@ test "path.isInside treats a name starting with two dots as a name" {
     array.copy $arr_any $arr_any
     local.get $r
   )
+  (func $__pr1 (param $v i32)
+    local.get $v
+    call $__print_bool_raw
+  )
+  (func $__pr3 (param $v (ref null $str))
+    local.get $v
+    call $__print_quoted_raw
+  )
+  (func $__pr2 (param $v (ref null $arr_any))
+    (local $n i32)
+    (local $i i32)
+    global.get $__s19
+    call $__print_str_raw
+    local.get $v
+    array.len
+    local.set $n
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $i
+    (if
+      (then
+    global.get $__s20
+    call $__print_str_raw
+      )
+    )
+    local.get $v
+    local.get $i
+    array.get $arr_any
+    ref.cast (ref null $str)
+    call $__pr3
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    global.get $__s21
+    call $__print_str_raw
+  )
+  (func $__pr0 (param $v (ref null $rec_PathAccum))
+    global.get $__s15
+    call $__print_str_raw
+    global.get $__s16
+    call $__print_str_raw
+    global.get $__s17
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_PathAccum $f0
+    call $__pr1
+    global.get $__s18
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_PathAccum $f1
+    call $__pr2
+    global.get $__s22
+    call $__print_str_raw
+  )
+  (func $__tip2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_PathAccum)
+    call $__pr0
+  )
+  (func $__unk_is_num (param $v anyref) (result i32)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    local.get $v
+    ref.test (ref null $box_bool)
+    i32.eqz
+    i32.and
+    local.get $v
+    ref.test (ref null $box_f64)
+    i32.or
+  )
+  (func $__unk_as_f64 (param $v anyref) (result f64)
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    f64.convert_i32_s
+    return
+      )
+    )
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+  )
+  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    call $__unk_is_num
+    local.get $b
+    call $__unk_is_num
+    i32.and
+    (if
+      (then
+    local.get $a
+    call $__unk_as_f64
+    local.get $b
+    call $__unk_as_f64
+    f64.eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $str)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $str)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $str)
+    local.get $b
+    ref.cast (ref null $str)
+    call $__str_eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_bool)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $box_bool)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.get $b
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    i32.eq
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_PathAccum)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__unk_eq_arr_any (param $a (ref null $arr_any)) (param $b (ref null $arr_any)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_any
+    local.get $b
+    local.get $i
+    array.get $arr_any
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s2 (param $a (ref null $rec_PathAccum)) (param $b (ref null $rec_PathAccum)) (result i32)
+    local.get $a
+    struct.get $rec_PathAccum $f0
+    local.get $b
+    struct.get $rec_PathAccum $f0
+    i32.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    struct.get $rec_PathAccum $f1
+    local.get $b
+    struct.get $rec_PathAccum $f1
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $arr_any)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_any)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_any)
+    local.get $b
+    ref.cast (ref null $arr_any)
+    call $__unk_eq_arr_any
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_PathAccum)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_PathAccum)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_PathAccum)
+    local.get $b
+    ref.cast (ref null $rec_PathAccum)
+    call $__unk_eq_s2
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $__decl)
+    local.get $b
+    ref.test (ref null $__decl)
+    i32.and
+    (if
+      (then
+    local.get $a
+    local.get $b
+    call $__eq_decl
+    return
+      )
+    )
+    i32.const 0
+  )
   (func $__lin_to_gc_strs (param $p i32) (result (ref null $arr_any))
     (local $n i32)
     (local $i i32)
@@ -1800,20 +2144,6 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -1976,6 +2306,99 @@ test "path.isInside treats a name starting with two dots as a name" {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
     (local $r (ref null $str)) (local $alen i32) (local $blen i32)
@@ -2172,6 +2595,118 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $top
     global.set $__heap_ptr
   )
+  (func $__print_quoted_raw (param $s (ref null $str))
+    (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $s
+    array.len
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $i
+        array.get_u $str
+        local.set $ch
+        i32.const 0
+        local.set $e
+        local.get $ch
+        i32.const 34
+        i32.eq
+        local.get $ch
+        i32.const 92
+        i32.eq
+        i32.or
+        (if
+          (then
+            local.get $ch
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 10
+        i32.eq
+        (if
+          (then
+            i32.const 110
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 13
+        i32.eq
+        (if
+          (then
+            i32.const 114
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 9
+        i32.eq
+        (if
+          (then
+            i32.const 116
+            local.set $e
+          )
+        )
+        local.get $e
+        (if
+          (then
+            i32.const 8
+            i32.const 92
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+            i32.const 8
+            local.get $e
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+          (else
+            i32.const 8
+            local.get $ch
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
@@ -2330,6 +2865,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
+  (func $__print_u64_raw (param $v i64)
+    local.get $v
+    call $__std_number_u64ToString
+    call $__print_str_raw
+  )
+  (func $__print_u64 (param $v i64)
+    local.get $v
+    call $__print_u64_raw
+    call $__print_nl
+  )
   (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
     (local $n i32) (local $p i32) (local $i i32)
     local.get $s
@@ -2404,6 +2949,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $p0
     call $__abi___std_text_length
   )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "integer overflow: - on i32 at src/path.bp:40:23")
@@ -2434,6 +2989,24 @@ test "path.isInside treats a name starting with two dots as a name" {
   (global $__s13 (mut (ref null $str)) (ref.null $str))
   (data $__d14 ":")
   (global $__s14 (mut (ref null $str)) (ref.null $str))
+  (data $__d15 "PathAccum")
+  (global $__s15 (mut (ref null $str)) (ref.null $str))
+  (data $__d16 "(")
+  (global $__s16 (mut (ref null $str)) (ref.null $str))
+  (data $__d17 "isAbs: ")
+  (global $__s17 (mut (ref null $str)) (ref.null $str))
+  (data $__d18 ", parts: ")
+  (global $__s18 (mut (ref null $str)) (ref.null $str))
+  (data $__d19 "[")
+  (global $__s19 (mut (ref null $str)) (ref.null $str))
+  (data $__d20 ", ")
+  (global $__s20 (mut (ref null $str)) (ref.null $str))
+  (data $__d21 "]")
+  (global $__s21 (mut (ref null $str)) (ref.null $str))
+  (data $__d22 ")")
+  (global $__s22 (mut (ref null $str)) (ref.null $str))
+  (data $__d23 "std@path.PathAccum")
+  (global $__s23 (mut (ref null $str)) (ref.null $str))
   (func $__init_strs
     i32.const 0
     i32.const 0
@@ -2495,14 +3068,63 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 1
     array.new_data $str $__d14
     global.set $__s14
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d15
+    global.set $__s15
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d16
+    global.set $__s16
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d17
+    global.set $__s17
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d18
+    global.set $__s18
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d19
+    global.set $__s19
+    i32.const 0
+    i32.const 2
+    array.new_data $str $__d20
+    global.set $__s20
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d21
+    global.set $__s21
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d22
+    global.set $__s22
+    i32.const 0
+    i32.const 18
+    array.new_data $str $__d23
+    global.set $__s23
+    call $__init_types
     call $__init_globals
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
     global.get $__ti_31
     local.get $f0
     local.get $f1
     struct.new $rec_PathAccum
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip2 $__tie2)
+  (func $__init_types
+    global.get $__s23
+    ref.func $__tip2
+    ref.func $__tie2
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )
@@ -2670,7 +3292,12 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
   (rec
     (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut (ref null $closure))) (field $s1 (mut i32)) (field $s2 (mut i32)) (field $s3 (mut i32)) (field $s4 (mut (ref null $result))) (field $s5 (mut (ref null $task))) (field $s6 (mut (ref null $task))) (field $s7 (mut (ref null $str)))))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (tag $__bp_panic (param anyref))
@@ -2974,6 +3601,511 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     local.get $__task
     local.get $__v
     call $__task_settle
+  )
+  (func $__eq_Failure (param $a (ref null $rec_Failure)) (param $b (ref null $rec_Failure)) (result i32)
+    local.get $a
+    struct.get $rec_Failure $f0
+    local.get $b
+    struct.get $rec_Failure $f0
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_Failure $f1
+    local.get $b
+    struct.get $rec_Failure $f1
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__pr1 (param $v (ref null $str))
+    local.get $v
+    call $__print_quoted_raw
+  )
+  (func $__pr0 (param $v (ref null $rec_Failure))
+    global.get $__s1
+    call $__print_str_raw
+    global.get $__s2
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Failure $f0
+    call $__pr1
+    global.get $__s4
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Failure $f1
+    call $__pr1
+    global.get $__s5
+    call $__print_str_raw
+  )
+  (func $__tip4 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Failure)
+    call $__pr0
+  )
+  (func $__tie4 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Failure)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Failure)
+    local.get $b
+    ref.cast (ref null $rec_Failure)
+    call $__eq_Failure
+  )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $a
+        local.get $i
+        array.get_u $str
+        local.get $b
+        local.get $i
+        array.get_u $str
+        i32.ne
+        (if
+          (then
+            i32.const 0
+            return
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 1
+  )
+  (func $__print_quoted_raw (param $s (ref null $str))
+    (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $s
+    array.len
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $i
+        array.get_u $str
+        local.set $ch
+        i32.const 0
+        local.set $e
+        local.get $ch
+        i32.const 34
+        i32.eq
+        local.get $ch
+        i32.const 92
+        i32.eq
+        i32.or
+        (if
+          (then
+            local.get $ch
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 10
+        i32.eq
+        (if
+          (then
+            i32.const 110
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 13
+        i32.eq
+        (if
+          (then
+            i32.const 114
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 9
+        i32.eq
+        (if
+          (then
+            i32.const 116
+            local.set $e
+          )
+        )
+        local.get $e
+        (if
+          (then
+            i32.const 8
+            i32.const 92
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+            i32.const 8
+            local.get $e
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+          (else
+            i32.const 8
+            local.get $ch
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
+  (func $__print_u64_raw (param $v i64)
+    local.get $v
+    call $__std_number_u64ToString
+    call $__print_str_raw
+  )
+  (func $__print_u64 (param $v i64)
+    local.get $v
+    call $__print_u64_raw
+    call $__print_nl
   )
   (global $__task_head (mut (ref null $task)) (ref.null $task))
   (global $__task_tail (mut (ref null $task)) (ref.null $task))
@@ -3284,21 +4416,80 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     local.get $m
     struct.new $result
   )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 "panic")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "Failure")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "(")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "message: ")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 ", kind: ")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 ")")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "std@failure.Failure")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
     i32.const 5
     array.new_data $str $__d0
     global.set $__s0
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d1
+    global.set $__s1
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d6
+    global.set $__s6
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
     global.get $__ti_31
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip4 $__tie4)
+  (func $__init_types
+    global.get $__s6
+    ref.func $__tip4
+    ref.func $__tie4
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
 )
@@ -3759,6 +4950,7 @@ fn wholeOf(v: f64) -> i32 {
     (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
     (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.at" (func $__std_text_at (param i32 i32) (result i32)))
   (import "std@io@random" "wat:random.float" (func $__std_random_float (result f64)))
@@ -5204,20 +6396,6 @@ fn wholeOf(v: f64) -> i32 {
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -8174,100 +9352,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
     (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
-  (rec
-    (type $rec_Asset (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i64)) (field $f3 (mut (ref null $str))))))
-    (type $brand_rec_Asset (struct (field f32) (field i32) (field i64) (field f32) (field f32) (field i64) (field i64) (field f64) (field f64) (field i64) (field f64) (field f32) (field f32) (field i64) (field i32) (field i64) (field i64) (field i64) (field f64) (field i64) (field i64) (field i32) (field i32) (field f32) (field i64) (field f64) (field i64) (field f64) (field f32) (field f64) (field i32) (field f64)))
-  )
-  (rec
-    (type $rec_Failure (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
-    (type $brand_rec_Failure (struct (field f32) (field f64) (field i64) (field i64) (field i32) (field f32) (field f64) (field i32) (field i64) (field i64) (field f64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field f64) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field f64) (field i64)))
-  )
-  (rec
-    (type $rec_HostError (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i32)) (field $f3 (mut (ref null $str))))))
-    (type $brand_rec_HostError (struct (field i32) (field i32) (field f32) (field i64) (field i32) (field i64) (field f64) (field f64) (field f32) (field f64) (field i32) (field i64) (field f32) (field i64) (field i64) (field f32) (field i64) (field f64) (field f64) (field i64) (field f64) (field i64) (field f32) (field f32) (field f32) (field i64) (field f32) (field f32) (field f64) (field f32) (field i32) (field i32)))
-  )
-  (rec
-    (type $rec_File (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut anyref)))))
-    (type $brand_rec_File (struct (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field i32) (field f32) (field i32) (field f64) (field f32) (field i64) (field f64) (field f64) (field i32) (field i32) (field i64) (field f32) (field i64) (field i32) (field f64) (field f32) (field i64) (field f32) (field f64) (field f32) (field i32) (field f64) (field i64) (field i32) (field f64) (field i64)))
-  )
-  (rec
-    (type $rec_FileStat (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i64)) (field $f1 (mut i64)) (field $f2 (mut i32)))))
-    (type $brand_rec_FileStat (struct (field f64) (field i32) (field f64) (field i32) (field i32) (field i32) (field i32) (field f64) (field f32) (field i64) (field i32) (field f64) (field i64) (field f32) (field i32) (field i64) (field f32) (field f64) (field i64) (field f32) (field f32) (field f32) (field i32) (field f32) (field i64) (field i32) (field f32) (field i32) (field i32) (field i32) (field f64) (field i64)))
-  )
-  (rec
-    (type $var_FsError_AlreadyExists (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
-    (type $brand_var_FsError_AlreadyExists (struct (field f32) (field i32) (field f64) (field f64) (field i64) (field i64) (field i64) (field i32) (field f64) (field i64) (field i32) (field f32) (field i32) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field f64) (field i32) (field i64) (field i32) (field i32) (field f64) (field f64) (field f64) (field f64) (field i32) (field f64) (field i64) (field i32)))
-  )
-  (rec
-    (type $var_FsError_InvalidUtf8 (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut i64)))))
-    (type $brand_var_FsError_InvalidUtf8 (struct (field f64) (field f32) (field i32) (field i64) (field i32) (field i32) (field i64) (field i64) (field i64) (field i64) (field i32) (field i32) (field i64) (field f32) (field i64) (field f32) (field f64) (field f64) (field i32) (field f32) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field i32) (field i64) (field f32) (field f64) (field f64)))
-  )
-  (rec
-    (type $var_FsError_IsDirectory (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
-    (type $brand_var_FsError_IsDirectory (struct (field i64) (field f32) (field f64) (field f32) (field i64) (field f32) (field f32) (field f32) (field f32) (field f32) (field f64) (field i64) (field i32) (field f64) (field i64) (field i32) (field i64) (field f32) (field i64) (field i64) (field f32) (field f64) (field i32) (field f64) (field f32) (field f32) (field i32) (field i32) (field f32) (field i64) (field f64) (field i32)))
-  )
-  (rec
-    (type $var_FsError_NotDirectory (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
-    (type $brand_var_FsError_NotDirectory (struct (field f64) (field f64) (field i64) (field i32) (field i32) (field f64) (field f32) (field i32) (field f64) (field i64) (field f32) (field f64) (field i64) (field f64) (field i32) (field i32) (field f32) (field f64) (field i32) (field f64) (field i32) (field i64) (field f64) (field f32) (field i32) (field i32) (field i64) (field i32) (field f64) (field i64) (field f32) (field f32)))
-  )
-  (rec
-    (type $var_FsError_NotFound (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
-    (type $brand_var_FsError_NotFound (struct (field i32) (field f64) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field f64) (field i32) (field f32) (field i64) (field i32) (field i32) (field f32) (field i64) (field f64) (field i64) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field i32) (field f32) (field i64) (field f64) (field i32) (field f64) (field i32) (field f32)))
-  )
-  (rec
-    (type $var_FsError_Other (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
-    (type $brand_var_FsError_Other (struct (field i64) (field f64) (field f32) (field i32) (field f32) (field f32) (field i32) (field f32) (field i64) (field i64) (field i32) (field f64) (field f64) (field i32) (field f64) (field f32) (field i32) (field f64) (field i32) (field f64) (field i32) (field i64) (field f64) (field f64) (field i64) (field i32) (field i64) (field f32) (field i64) (field f64) (field f32) (field i32)))
-  )
-  (rec
-    (type $var_FsError_PermissionDenied (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
-    (type $brand_var_FsError_PermissionDenied (struct (field i32) (field i32) (field i32) (field f32) (field i32) (field i32) (field i64) (field i32) (field f32) (field f32) (field f32) (field i32) (field f64) (field f32) (field i32) (field f64) (field i32) (field i32) (field i64) (field i64) (field i64) (field i32) (field f64) (field i32) (field i64) (field i64) (field i32) (field i32) (field f32) (field f32) (field f32) (field i32)))
-  )
-  (rec
-    (type $rec_Walked (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))) (field $f1 (mut (ref null $arr_any))))))
-    (type $brand_rec_Walked (struct (field i32) (field i32) (field f32) (field i64) (field i64) (field i32) (field i32) (field i64) (field f32) (field i32) (field i32) (field i64) (field i64) (field i32) (field i64) (field i32) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field i32) (field f64) (field f32) (field f64) (field i64) (field f32) (field f64) (field f64) (field i32) (field f64)))
-  )
-  (rec
-    (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut (ref null $rec_File))) (field $s1 (mut i32)) (field $s2 (mut (ref null $str))) (field $s3 (mut (ref null $result))) (field $s4 (mut i32))))
-    (type $frame1 (struct (field $resume (mut i32)) (field $s0 (mut (ref null $rec_File))) (field $s1 (mut i32)) (field $s2 (mut i32)) (field $s3 (mut (ref null $str))) (field $s4 (mut (ref null $str))) (field $s5 (mut i64)) (field $s6 (mut i32)) (field $s7 (mut (ref null $result))) (field $s8 (mut i32)) (field $s9 (mut i32)) (field $s10 (mut i32)) (field $s11 (mut (ref null $result))) (field $s12 (mut (ref null $str))) (field $s13 (mut (ref null $str))) (field $s14 (mut i32))))
-  )
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.split" (func $__std_text_split (param i32 i32) (result i32)))
   (import "std@string" "std:text.startsWith" (func $__std_text_startsWith (param i32 i32) (result i32)))
-  (import "std@string" "std:text.at" (func $__std_text_at (param i32 i32) (result i32)))
-  (import "std@string" "std:text.toUpper" (func $__std_text_toUpper (param i32) (result i32)))
-  (import "std@bytes" "std:bytes.isUtf8" (func $__std_bytes_isUtf8 (param i32) (result i32)))
-  (import "std@string" "std:text.slice" (func $__std_text_slice (param i32 i32 i32) (result i32)))
-  (import "std@bytes" "std:bytes.slice" (func $__std_bytes_slice (param i32 i32 i32) (result i32)))
-  (import "std@string" "std:text.contains" (func $__std_text_contains (param i32 i32) (result i32)))
-  (import "std@string" "std:text.chars" (func $__std_text_chars (param i32) (result i32)))
-  (import "std@string" "std:text.endsWith" (func $__std_text_endsWith (param i32 i32) (result i32)))
-  (import "std@io@random" "wat:random.float" (func $__std_random_float (result f64)))
-  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
-  (import "std@io@fs" "wat:fs.cwd" (func $__abi___std_fs_cwd (result arrayref)))
-  (import "std@io@fs" "wat:fs.getenv" (func $__abi___std_fs_getenv (param arrayref) (result arrayref)))
-  (import "std@io@fs" "wat:fs.open" (func $__abi___std_fs_open (param arrayref i32) (result i32)))
-  (import "std@io@fs" "wat:fs.openMem" (func $__abi___std_fs_openMem (param arrayref) (result i32)))
-  (import "std@io@fs" "wat:fs.close" (func $__std_fs_close (param i32)))
-  (import "std@io@fs" "wat:fs.isMem" (func $__std_fs_isMem (param i32) (result i32)))
-  (import "std@io@fs" "wat:fs.tell" (func $__std_fs_tell (param i32) (result i64)))
-  (import "std@io@fs" "wat:fs.seek" (func $__std_fs_seek (param i32 i64)))
-  (import "std@io@fs" "wat:fs.size" (func $__abi___std_fs_size (param i32) (result structref)))
-  (import "std@io@fs" "wat:fs.sizeRaw" (func $__std_fs_sizeRaw (param i32) (result i64)))
-  (import "std@io@fs" "wat:fs.read" (func $__abi___std_fs_read (param i32 i32) (result structref)))
-  (import "std@io@fs" "wat:fs.readAll" (func $__abi___std_fs_readAll (param i32) (result structref)))
-  (import "std@io@fs" "wat:fs.readLine" (func $__abi___std_fs_readLine (param i32) (result structref)))
-  (import "std@io@fs" "wat:fs.write" (func $__abi___std_fs_write (param i32 arrayref) (result i32)))
-  (import "std@io@fs" "wat:fs.statKind" (func $__abi___std_fs_statKind (param arrayref i32) (result i32)))
-  (import "std@io@fs" "wat:fs.statSize" (func $__abi___std_fs_statSize (param arrayref) (result structref)))
-  (import "std@io@fs" "wat:fs.statMtime" (func $__abi___std_fs_statMtime (param arrayref) (result structref)))
-  (import "std@io@fs" "wat:fs.list" (func $__abi___std_fs_list (param arrayref) (result structref)))
-  (import "std@io@fs" "wat:fs.mkdir" (func $__abi___std_fs_mkdir (param arrayref) (result i32)))
-  (import "std@io@fs" "wat:fs.rmdir" (func $__abi___std_fs_rmdir (param arrayref) (result i32)))
-  (import "std@io@fs" "wat:fs.unlink" (func $__abi___std_fs_unlink (param arrayref) (result i32)))
-  (import "std@io@fs" "wat:fs.symlink" (func $__abi___std_fs_symlink (param arrayref arrayref) (result i32)))
-  (import "std@bytes" "wat:bytes.at" (func $__abi___std_bytes_at (param arrayref i32) (result i32)))
-  (import "std@hash" "wat:hash.sha256Hex" (func $__abi___std_hash_sha256Hex (param arrayref) (result arrayref)))
-  (import "std@string" "wat:text.charCodeAt" (func $__abi___std_text_charCodeAt (param arrayref i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -8696,227 +9784,6 @@ test "fs answers PermissionDenied for an OS permission error" {
     )
     return
   )
-  ;; declare fn panic — no wasm implementation (host-backed)
-  ;; attempt — .Wasm(body: attemptOnWasm)
-  ;; float — .Wasm(std: "random.float")
-  (func $float (result f64)
-    call $__std_random_float
-  )
-  ;; randomBytes — .Wasm(body: randomBytesBody)
-  (func $randomBytes (param $n i32) (result (ref null $str))
-    local.get $n
-    call $randomBytesBody
-  )
-  (func $randomBytesBody (param $n i32) (result (ref null $str))
-    local.get $n
-    call $randomBytesOf
-    call $hexOf
-    return
-  )
-  (func $randomByte (result i32)
-    call $float
-    f64.const 256.0
-    f64.mul
-    f64.floor
-    call $wholeOf
-    return
-  )
-  (func $randomBytesOf (param $n i32) (result (ref null $arr_i32))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $out (ref null $arr_i32))
-    (local $i i32)
-    array.new_fixed $arr_i32 0
-    local.set $out
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $n
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $out
-    call $randomByte
-    array.new_fixed $arr_i32 1
-    call $__arr_concat_i32
-    local.set $out
-    local.get $i
-    i32.const 1
-    global.get $__s7
-    call $__i32_add_chk
-    local.set $i
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $out
-    return
-  )
-  (func $hexDigit (param $n i32) (result (ref null $str))
-    (local $__bp_nullish i32)
-    (local $__opt0 (ref null $str))
-    (local $__gc6 i32)
-    (local $__gc7 (ref null $str))
-    (local $__gc8 i32)
-    (local $__gc9 i32)
-    (local $__bp_nullish__5 (ref null $str))
-    global.get $__s8
-    local.get $n
-    local.set $__gc6
-    local.set $__gc7
-    global.get $__heap_ptr
-    local.set $__gc8
-    local.get $__gc7
-    call $__gc_to_lin_str
-    local.get $__gc6
-    call $__std_text_at
-    local.tee $__gc9
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    ref.null $str
-      )
-      (else
-    local.get $__gc9
-    call $__lin_to_gc_str
-      )
-    )
-    local.get $__gc8
-    global.set $__heap_ptr
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__5
-    local.get $__bp_nullish__5
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    return
-  )
-  (func $hexOf (param $bytes (ref null $arr_i32)) (result (ref null $str))
-    (local $__iter0 (ref null $arr_i32))
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $b i32)
-    (local $__out0 (ref null $arr_any))
-    local.get $bytes
-    local.set $__iter0
-    local.get $__iter0
-    array.len
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    local.get $__len0
-    array.new_default $arr_any
-    local.set $__out0
-    i32.const 0
-    local.set $__acc0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        array.get $arr_i32
-        local.set $b
-    local.get $__out0
-    local.get $__idx0
-    local.get $b
-    i32.const 16
-    global.get $__s9
-    global.get $__s10
-    call $__i32_divs
-    call $hexDigit
-    local.get $b
-    i32.const 16
-    global.get $__s11
-    call $__i32_nz
-    i32.rem_s
-    call $hexDigit
-    call $__str_concat
-    array.set $arr_any
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    local.get $__out0
-    global.get $__s0
-    call $__arr_join_any
-    return
-  )
-  (func $wholeOf (param $v f64) (result i32)
-    (local $r i32)
-    (local $rest f64)
-    (local $bit i32)
-    (local $weight f64)
-    i32.const 0
-    local.set $r
-    local.get $v
-    local.set $rest
-    i32.const 1073741824
-    local.set $bit
-    f64.const 1073741824.0
-    local.set $weight
-    (block $__break
-      (loop $__continue
-    local.get $bit
-    i32.const 0
-    i32.gt_s
-        i32.eqz
-        br_if $__break
-    local.get $rest
-    local.get $weight
-    f64.ge
-    (if (result i32)
-      (then
-    local.get $r
-    local.get $bit
-    global.get $__s12
-    call $__i32_add_chk
-    local.set $r
-    local.get $rest
-    local.get $weight
-    f64.sub
-    local.set $rest
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $bit
-    i32.const 2
-    global.get $__s13
-    global.get $__s14
-    call $__i32_divs
-    local.set $bit
-    local.get $weight
-    f64.const 2.0
-    f64.div
-    local.set $weight
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $r
-    return
-  )
   ;; std/io/fs — the file system, cross-backend (decision 540).
   ;; 
   ;; Reference:
@@ -8943,282 +9810,38 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; the process reads it — a relative one against the working directory — on every target.
   ;; The error of every `io.fs` function (decision 540). `path` is the path the
   ;; caller wrote (for `copy`, the source; for `walk`, the root).
-  (func $FsError_message (param $self anyref) (result (ref null $str))
-    (local $path (ref null $str))
-    (local $offset i64)
-    (local $message (ref null $str))
-    (local $__case_0 anyref)
-    local.get $self
-    local.set $__case_0
-    local.get $__case_0
-    ref.test (ref null $var_FsError_NotFound)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_NotFound)
-    struct.get $var_FsError_NotFound $f0
-    local.set $path
-    global.get $__s15
-    local.get $path
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_PermissionDenied)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_PermissionDenied)
-    struct.get $var_FsError_PermissionDenied $f0
-    local.set $path
-    global.get $__s16
-    local.get $path
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_IsDirectory)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_IsDirectory)
-    struct.get $var_FsError_IsDirectory $f0
-    local.set $path
-    global.get $__s17
-    local.get $path
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_NotDirectory)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_NotDirectory)
-    struct.get $var_FsError_NotDirectory $f0
-    local.set $path
-    global.get $__s18
-    local.get $path
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_AlreadyExists)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_AlreadyExists)
-    struct.get $var_FsError_AlreadyExists $f0
-    local.set $path
-    global.get $__s19
-    local.get $path
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_InvalidUtf8)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_InvalidUtf8)
-    struct.get $var_FsError_InvalidUtf8 $f0
-    local.set $path
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_InvalidUtf8)
-    struct.get $var_FsError_InvalidUtf8 $f1
-    local.set $offset
-    global.get $__s20
-    local.get $path
-    call $__str_concat
-    global.get $__s21
-    call $__str_concat
-    local.get $offset
-    call $__std_number_i64ToString
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_Other)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_Other)
-    struct.get $var_FsError_Other $f0
-    local.set $path
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_Other)
-    struct.get $var_FsError_Other $f1
-    local.set $message
-    local.get $path
-    global.get $__s22
-    call $__str_concat
-    local.get $message
-    call $__str_concat
-      )
-      (else
-    ref.null $str
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-    return
-  )
   ;; Read the whole file as bytes.
   ;; Node: `readFileSync($0)` copied into a plain `Uint8Array`.
   ;; Erlang: `file:read_file/1`.
-  ;; rawReadBytes — .Wasm(body: readBytesWasm)
-  (func $rawReadBytes (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $readBytesWasm
-  )
   ;; Write `contents` to `path`, creating or truncating.
   ;; Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
-  ;; rawWriteBytes — .Wasm(body: writeBytesWasm)
-  (func $rawWriteBytes (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    local.get $path
-    local.get $contents
-    call $writeBytesWasm
-  )
   ;; Append `contents` to `path`, creating it when it is not there.
   ;; Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
-  ;; rawAppendText — .Wasm(body: appendTextWasm)
-  (func $rawAppendText (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    local.get $path
-    local.get $contents
-    call $appendTextWasm
-  )
   ;; The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
   ;; starts with, a sequence cut short, an overlong form, a surrogate, a code point past U+10FFFF),
   ;; or -1 when every byte is part of a valid sequence — the same offset on every target.
   ;; Node: a scan of the bytes. Erlang: `unicode:characters_to_binary/3`, whose `Good` prefix is the offset.
-  ;; utf8Offset — .Wasm(body: utf8OffsetWasm)
-  (func $utf8Offset (param $bytes (ref null $str)) (result i64)
-    local.get $bytes
-    call $utf8OffsetWasm
-  )
   ;; `line` without its line terminator: one trailing `\n`, and the `\r` before it.
   ;; Node: `subarray`. Erlang: `binary:part/3`.
-  ;; stripEol — .Wasm(body: stripEolWasm)
-  (func $stripEol (param $line (ref null $str)) (result (ref null $str))
-    local.get $line
-    call $stripEolWasm
-  )
   ;; The handle of the file at `path`, open for reading. A directory is `isdir` on both hosts
   ;; (Node opens one; the template refuses it). The handle is host-owned and opaque: a `{ fd,
   ;; mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
-  ;; rawOpen — .Wasm(body: openWasm)
-  (func $rawOpen (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $openWasm
-  )
   ;; The handle of the file at `path`, open for writing: created, or truncated.
-  ;; rawCreate — .Wasm(body: createWasm)
-  (func $rawCreate (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $createWasm
-  )
   ;; A handle over bytes held in memory — what an `Asset` opens as. The position is a field
   ;; on Node and a `counters` cell on Erlang.
-  ;; memHandle — .Wasm(body: memHandleWasm)
-  (func $memHandle (param $bytes (ref null $str)) (result anyref)
-    local.get $bytes
-    call $memHandleWasm
-  )
   ;; The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
-  ;; rawSize — .Wasm(body: sizeWasm)
-  (func $rawSize (param $handle anyref) (param $path (ref null $str)) (result (ref null $result))
-    local.get $handle
-    local.get $path
-    call $sizeWasm
-  )
   ;; Up to `n` bytes (n > 0) from the handle's position; empty at the end.
-  ;; rawRead — .Wasm(body: readWasm)
-  (func $rawRead (param $handle anyref) (param $n i32) (result (ref null $result))
-    local.get $handle
-    local.get $n
-    call $readWasm
-  )
   ;; Every byte from the handle's position to the end.
-  ;; rawReadAll — .Wasm(body: readAllWasm)
-  (func $rawReadAll (param $handle anyref) (result (ref null $result))
-    local.get $handle
-    call $readAllWasm
-  )
   ;; The next line, terminator included; empty at the end.
-  ;; rawReadLine — .Wasm(body: readLineWasm)
-  (func $rawReadLine (param $handle anyref) (result (ref null $result))
-    local.get $handle
-    call $readLineWasm
-  )
   ;; The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
   ;; whatever the position, which it leaves where it was. On Erlang `file:pread` leaves the
   ;; position undefined (OTP moves it), so the position is read first and restored.
-  ;; rawHash — .Wasm(body: hashWasm)
-  (func $rawHash (param $handle anyref) (result (ref null $result))
-    local.get $handle
-    call $hashWasm
-  )
   ;; Write `bytes` at the handle's position; answers how many.
-  ;; rawWrite — .Wasm(body: writeWasm)
-  (func $rawWrite (param $handle anyref) (param $bytes (ref null $str)) (result (ref null $result))
-    local.get $handle
-    local.get $bytes
-    call $writeWasm
-  )
   ;; Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
-  ;; rawClose — .Wasm(body: closeWasm)
-  (func $rawClose (param $handle anyref) (result (ref null $result))
-    local.get $handle
-    call $closeWasm
-  )
   ;; Write `contents` to `path`, creating or truncating. Reds with the
   ;; host's I/O error message.
   ;; Node: `require('fs').writeFileSync($0, $1)`.
   ;; Erlang: `file:write_file/2`.
-  ;; rawWriteText — .Wasm(body: writeTextWasm)
-  (func $rawWriteText (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    local.get $path
-    local.get $contents
-    call $writeTextWasm
-  )
   ;; Whether a path exists, of any kind: a regular file, a directory, a
   ;; character or block device (`/dev/null`), a FIFO or a socket. A symbolic
   ;; link is followed — one whose target is missing is `false`, the answer
@@ -9227,61 +9850,30 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; Erlang: `file:read_file_info/1` (a `stat`; `filelib:is_file/1`, which it
   ;; replaces, answers only regular files and directories, so `/dev/null`
   ;; was `false` on erlang and `true` on commonJS).
-  ;; exists — .Wasm(body: existsWasm)
-  (func $exists (export "exists") (param $path (ref null $str)) (result i32)
-    local.get $path
-    call $existsWasm
-  )
   ;; List the names of the directory entries at `path` (relative).
   ;; Node: `require('fs').readdirSync($0)`.
   ;; Erlang: `file:list_dir/1` returns `{ok, [string()]}`, in the directory's
   ;; order: sorted here by bytes (`lists:sort` on binaries), as `readdirSync` and
   ;; wasm's `listWasm` answer them, so every target lists one order (decision 992).
-  ;; rawList — .Wasm(body: listWasm)
-  (func $rawList (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $listWasm
-  )
   ;; Create directory at `path`. Use `mkdirRecursive` to create
   ;; intermediate parents.
   ;; Node: `require('fs').mkdirSync($0)`.
   ;; Erlang: `file:make_dir/1`.
-  ;; rawMkdir — .Wasm(body: mkdirWasm)
-  (func $rawMkdir (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $mkdirWasm
-  )
   ;; Create the directory at `path` and every missing directory above it. A
   ;; directory that is already there is `Ok` too; a path that exists as anything
   ;; else (a file) is an `Error`. What the snapshot library (`snap`) makes the
   ;; directory of a `.snap` with (decision 391).
   ;; Node: `require('fs').mkdirSync($0, { recursive: true })`.
   ;; Erlang: `filelib:ensure_path/1`.
-  ;; rawMkdirRecursive — .Wasm(body: mkdirRecursiveWasm)
-  (func $rawMkdirRecursive (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $mkdirRecursiveWasm
-  )
   ;; Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
   ;; both hosts (Node's `ERR_FS_EISDIR`; Erlang's `eperm` is read as `eisdir` after
   ;; a `read_link_info`, so the variant is the same); `removeTree` removes one.
   ;; Node: `require('fs').rmSync($0)`.
   ;; Erlang: `file:delete/1`.
-  ;; rawRm — .Wasm(body: rmWasm)
-  (func $rawRm (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $rmWasm
-  )
   ;; Copy file from `src` to `dest`. Reds when `src` is missing or
   ;; `dest` already exists (Node's default `copyFileSync` semantics).
   ;; Node: `require('fs').copyFileSync($0, $1)`.
   ;; Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
-  ;; rawCopy — .Wasm(body: copyWasm)
-  (func $rawCopy (param $src (ref null $str)) (param $dest (ref null $str)) (result (ref null $result))
-    local.get $src
-    local.get $dest
-    call $copyWasm
-  )
   ;; File metadata. Returns a `FileStat { size, mtime, isDir }` on
   ;; success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
   ;; `size` is in bytes.
@@ -9292,11 +9884,6 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; Erlang: `file:read_file_info/1` returns a `#file_info` record; the
   ;; template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
   ;; whole seconds × 1000. One value on every target: whole seconds (decision 499).
-  ;; rawStat — .Wasm(body: statWasm)
-  (func $rawStat (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $statWasm
-  )
   ;; ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
   ;; Every REGULAR FILE under `root`, recursively, as paths relative to `root`
   ;; with `/` separators, sorted — the same set on both targets (the two hosts
@@ -9317,11 +9904,6 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; path: `filelib:fold_files/5` answers full paths `filename:join/2` has
   ;; normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
   ;; as written cut two characters too many when the root ended in `/.`.
-  ;; rawWalk — .Wasm(body: walkWasm)
-  (func $rawWalk (param $root (ref null $str)) (result (ref null $result))
-    local.get $root
-    call $walkWasm
-  )
   ;; The entries under `root` matching the glob `pattern`, as paths relative to
   ;; `root` with `/` separators, sorted, each once. The pattern is read segment
   ;; by segment, by ONE rule on both targets (decision 177 — the narrower of what
@@ -9344,12 +9926,6 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; ONE directory is the host's — `fs.globSync(segment, { cwd })` (Node 22+),
   ;; `filelib:wildcard/2` — with the dot rule applied over its answer, since
   ;; `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
-  ;; rawGlob — .Wasm(body: globWasm)
-  (func $rawGlob (param $pattern (ref null $str)) (param $root (ref null $str)) (result (ref null $arr_any))
-    local.get $pattern
-    local.get $root
-    call $globWasm
-  )
   ;; Remove `path` and everything under it: a file, a link (the link, never its
   ;; target) or a directory tree. A path that is not there is `Ok` too — the
   ;; caller wanted it gone. What a test fixture is cleared with, and what the
@@ -9357,2152 +9933,38 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; front 97).
   ;; Node: `rmSync(path, { recursive: true, force: true })`.
   ;; Erlang: `file:del_dir_r/1`.
-  ;; rawRemoveTree — .Wasm(body: removeTreeWasm)
-  (func $rawRemoveTree (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $removeTreeWasm
-  )
   ;; Internal, test scaffolding: a fresh, unique, empty directory under the
   ;; host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
   ;; one of these and removes it with `removeTree`, so a run leaves nothing under
   ;; the host's tmpdir.
-  ;; scratchDir — .Wasm(body: scratchDirWasm)
-  (func $scratchDir (result (ref null $str))
-    call $scratchDirWasm
-  )
   ;; Internal, test scaffolding: the working directory (what a relative root is
   ;; read against) and a symbolic link `link` → `target`.
-  ;; workingDir — .Wasm(body: workingDirWasm)
-  (func $workingDir (result (ref null $str))
-    call $workingDirWasm
-  )
-  ;; linkTo — .Wasm(body: linkToWasm)
-  (func $linkTo (param $target (ref null $str)) (param $link (ref null $str))
-    local.get $target
-    local.get $link
-    call $linkToWasm
-  )
   ;; ── the typed error ──────────────────────────────────────────────────────────
   ;; The `FsError` of `path` a host's failure is (decision 486), read from its code: Node's `ENOENT: …`, erlang's `enoent`.
-  (func $fsError (param $path (ref null $str)) (param $e (ref null $rec_HostError)) (result anyref)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $u (ref null $str))
-    (local $__gc10 (ref null $str))
-    (local $__gc11 i32)
-    (local $__gc12 (ref null $str))
-    (local $__gc13 (ref null $str))
-    (local $__gc14 i32)
-    (local $__gc15 (ref null $str))
-    (local $__gc16 (ref null $str))
-    (local $__gc17 i32)
-    (local $__gc18 (ref null $str))
-    (local $__gc19 (ref null $str))
-    (local $__gc20 i32)
-    (local $__gc21 (ref null $str))
-    (local $__gc22 (ref null $str))
-    (local $__gc23 i32)
-    (local $__gc24 (ref null $str))
-    (local $__gc25 (ref null $str))
-    (local $__gc26 i32)
-    (local $__gc27 (ref null $str))
-    (local $__gc28 (ref null $str))
-    (local $__gc29 i32)
-    (local $__gc30 (ref null $str))
-    (local $__gc31 (ref null $str))
-    (local $__gc32 i32)
-    local.get $e
-    struct.get $rec_HostError $f0
-    local.set $__gc10
-    global.get $__heap_ptr
-    local.set $__gc11
-    local.get $__gc10
-    call $__gc_to_lin_str
-    call $__std_text_toUpper
-    call $__lin_to_gc_str
-    local.get $__gc11
-    global.set $__heap_ptr
-    local.set $u
-    local.get $u
-    global.get $__s23
-    local.set $__gc12
-    local.set $__gc13
-    global.get $__heap_ptr
-    local.set $__gc14
-    local.get $__gc13
-    call $__gc_to_lin_str
-    local.get $__gc12
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc14
-    global.set $__heap_ptr
-    (if (result anyref)
-      (then
-    local.get $path
-    call $__new_49
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $u
-    global.get $__s24
-    local.set $__gc15
-    local.set $__gc16
-    global.get $__heap_ptr
-    local.set $__gc17
-    local.get $__gc16
-    call $__gc_to_lin_str
-    local.get $__gc15
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc17
-    global.set $__heap_ptr
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $u
-    global.get $__s25
-    local.set $__gc18
-    local.set $__gc19
-    global.get $__heap_ptr
-    local.set $__gc20
-    local.get $__gc19
-    call $__gc_to_lin_str
-    local.get $__gc18
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc20
-    global.set $__heap_ptr
-      )
-    )
-    (if (result anyref)
-      (then
-    local.get $path
-    call $__new_53
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $u
-    global.get $__s26
-    local.set $__gc21
-    local.set $__gc22
-    global.get $__heap_ptr
-    local.set $__gc23
-    local.get $__gc22
-    call $__gc_to_lin_str
-    local.get $__gc21
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc23
-    global.set $__heap_ptr
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $u
-    global.get $__s27
-    local.set $__gc24
-    local.set $__gc25
-    global.get $__heap_ptr
-    local.set $__gc26
-    local.get $__gc25
-    call $__gc_to_lin_str
-    local.get $__gc24
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc26
-    global.set $__heap_ptr
-      )
-    )
-    (if (result anyref)
-      (then
-    local.get $path
-    call $__new_45
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $u
-    global.get $__s28
-    local.set $__gc27
-    local.set $__gc28
-    global.get $__heap_ptr
-    local.set $__gc29
-    local.get $__gc28
-    call $__gc_to_lin_str
-    local.get $__gc27
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc29
-    global.set $__heap_ptr
-    (if (result anyref)
-      (then
-    local.get $path
-    call $__new_47
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $u
-    global.get $__s29
-    local.set $__gc30
-    local.set $__gc31
-    global.get $__heap_ptr
-    local.set $__gc32
-    local.get $__gc31
-    call $__gc_to_lin_str
-    local.get $__gc30
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc32
-    global.set $__heap_ptr
-    (if (result anyref)
-      (then
-    local.get $path
-    call $__new_41
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $path
-    local.get $e
-    struct.get $rec_HostError $f0
-    call $__new_51
-    return
-  )
   ;; A host cell's answer, its failure read as an `FsError` of `path`.
-  (func $lift (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__6 anyref)
-    (local $e__7 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    local.set $v__6
-    i32.const 0
-    local.get $v__6
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__7
-    i32.const 1
-    local.get $path
-    local.get $e__7
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
   ;; `lift` for each answer type: the generic one is the wasm backend's to specialise, and a
   ;; `bytes` or a handle it does not (decision 992).
-  (func $liftBytes (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__8 (ref null $str))
-    (local $e__9 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $v__8
-    i32.const 0
-    local.get $v__8
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__9
-    i32.const 1
-    local.get $path
-    local.get $e__9
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftI32 (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $e__10 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $v
-    i32.const 0
-    local.get $v
-    struct.new $box_i32
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__10
-    i32.const 1
-    local.get $path
-    local.get $e__10
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftI64 (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__11 i64)
-    (local $e__12 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $v__11
-    i32.const 0
-    local.get $v__11
-    struct.new $box_i64
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__12
-    i32.const 1
-    local.get $path
-    local.get $e__12
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftString (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__13 (ref null $str))
-    (local $e__14 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $v__13
-    i32.const 0
-    local.get $v__13
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__14
-    i32.const 1
-    local.get $path
-    local.get $e__14
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftStrings (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__15 (ref null $arr_any))
-    (local $e__16 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $v__15
-    i32.const 0
-    local.get $v__15
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__16
-    i32.const 1
-    local.get $path
-    local.get $e__16
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftStat (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__17 (ref null $rec_FileStat))
-    (local $e__18 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_FileStat)
-    local.set $v__17
-    i32.const 0
-    local.get $v__17
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__18
-    i32.const 1
-    local.get $path
-    local.get $e__18
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftWalked (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__19 (ref null $rec_Walked))
-    (local $e__20 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_Walked)
-    local.set $v__19
-    i32.const 0
-    local.get $v__19
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__20
-    i32.const 1
-    local.get $path
-    local.get $e__20
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $liftHandle (param $path (ref null $str)) (param $r (ref null $result)) (result (ref null $result))
-    (local $v i32)
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $v__21 anyref)
-    (local $e__22 (ref null $rec_HostError))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    local.set $v__21
-    i32.const 0
-    local.get $v__21
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_HostError)
-    local.set $e__22
-    i32.const 1
-    local.get $path
-    local.get $e__22
-    call $fsError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
   ;; The text of `b`, or `InvalidUtf8` at the first invalid byte.
-  (func $decode (param $path (ref null $str)) (param $b (ref null $str)) (result (ref null $result))
-    (local $__mem0 i32)
-    (local $offset i64)
-    (local $__gc33 (ref null $result))
-    (local $__gc34 (ref null $str))
-    (local $__gc35 (ref null $str))
-    (local $__gc36 i32)
-    local.get $b
-    call $utf8Offset
-    local.set $offset
-    local.get $offset
-    i32.const 0
-    i64.extend_i32_s
-    i64.ge_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    local.get $path
-    local.get $offset
-    call $__new_43
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    local.get $b
-    local.set $__gc34
-    local.get $__gc34
-    local.set $__gc35
-    global.get $__heap_ptr
-    local.set $__gc36
-    local.get $__gc35
-    call $__gc_to_lin_str
-    call $__std_bytes_isUtf8
-    local.get $__gc36
-    global.set $__heap_ptr
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    local.get $__gc34
-    struct.new $result
-      )
-      (else
-    i32.const 1
-    global.get $__s30
-    struct.new $result
-      )
-    )
-    local.tee $__gc33
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    global.get $__s0
-      )
-      (else
-    local.get $__gc33
-    struct.get $result $payload
-    ref.cast (ref null $str)
-      )
-    )
-    struct.new $result
-    return
-  )
   ;; What `rawWalk` finds under a root: the regular files, and the links whose
   ;; target is missing, both as paths relative to the root, sorted.
   ;; Whether the handle is one over bytes held in memory (an `Asset`'s), which cannot be written.
-  ;; rawReadOnly — .Wasm(body: readOnlyWasm)
-  (func $rawReadOnly (param $handle anyref) (result i32)
-    local.get $handle
-    call $readOnlyWasm
-  )
   ;; ── whole-file shortcuts ─────────────────────────────────────────────────────
   ;; The file's bytes.
-  (func $readBytes (export "readBytes") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc37 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawReadBytes
-    call $liftBytes
-    local.set $__gc37
-    local.get $__gc37
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc37
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc37
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
   ;; The file as UTF-8 text. Bytes that are not UTF-8 are `InvalidUtf8` on every
   ;; target — never node's silent U+FFFD nor erlang's unchecked binary.
-  (func $readText (export "readText") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $b (ref null $str))
-    (local $s (ref null $str))
-    (local $__gc38 (ref null $result))
-    (local $__gc39 (ref null $result))
-    local.get $path
-    call $readBytes
-    local.set $__gc38
-    local.get $__gc38
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc38
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc38
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    local.get $path
-    local.get $b
-    call $decode
-    local.set $__gc39
-    local.get $__gc39
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc39
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc39
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $s
-    i32.const 0
-    local.get $s
-    struct.new $result
-    return
-  )
   ;; Write `contents` to `path`, creating or truncating.
-  (func $writeBytes (export "writeBytes") (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc40 (ref null $result))
-    local.get $path
-    local.get $path
-    local.get $contents
-    call $rawWriteBytes
-    call $liftI32
-    local.set $__gc40
-    local.get $__gc40
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc40
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc40
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $writeText (export "writeText") (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc41 (ref null $result))
-    local.get $path
-    local.get $path
-    local.get $contents
-    call $rawWriteText
-    call $liftI32
-    local.set $__gc41
-    local.get $__gc41
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc41
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc41
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; Append `contents`, creating the file when it is not there.
-  (func $appendText (export "appendText") (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc42 (ref null $result))
-    local.get $path
-    local.get $path
-    local.get $contents
-    call $rawAppendText
-    call $liftI32
-    local.set $__gc42
-    local.get $__gc42
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc42
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc42
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; ── metadata and directories ─────────────────────────────────────────────────
-  (func $stat (export "stat") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $s (ref null $rec_FileStat))
-    (local $__gc43 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawStat
-    call $liftStat
-    local.set $__gc43
-    local.get $__gc43
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc43
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc43
-    struct.get $result $payload
-    ref.cast (ref null $rec_FileStat)
-    local.set $s
-    i32.const 0
-    local.get $s
-    struct.new $result
-    return
-  )
-  (func $list (export "list") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $names (ref null $arr_any))
-    (local $__gc44 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawList
-    call $liftStrings
-    local.set $__gc44
-    local.get $__gc44
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc44
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc44
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $names
-    i32.const 0
-    local.get $names
-    struct.new $result
-    return
-  )
-  (func $mkdir (export "mkdir") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc45 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawMkdir
-    call $liftI32
-    local.set $__gc45
-    local.get $__gc45
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc45
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc45
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $mkdirRecursive (export "mkdirRecursive") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc46 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawMkdirRecursive
-    call $liftI32
-    local.set $__gc46
-    local.get $__gc46
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc46
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc46
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $rm (export "rm") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc47 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawRm
-    call $liftI32
-    local.set $__gc47
-    local.get $__gc47
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc47
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc47
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $removeTree (export "removeTree") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc48 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawRemoveTree
-    call $liftI32
-    local.set $__gc48
-    local.get $__gc48
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc48
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc48
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $copy (export "copy") (param $src (ref null $str)) (param $dest (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc49 (ref null $result))
-    local.get $src
-    local.get $src
-    local.get $dest
-    call $rawCopy
-    call $liftI32
-    local.set $__gc49
-    local.get $__gc49
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc49
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc49
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $walk (export "walk") (param $root (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $found (ref null $rec_Walked))
-    (local $first (ref null $str))
-    (local $__bp_nullish i32)
-    (local $__gc50 (ref null $result))
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__23 (ref null $str))
-    local.get $root
-    local.get $root
-    call $rawWalk
-    call $liftWalked
-    local.set $__gc50
-    local.get $__gc50
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc50
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc50
-    struct.get $result $payload
-    ref.cast (ref null $rec_Walked)
-    local.set $found
-    local.get $found
-    struct.get $rec_Walked $f1
-    array.len
-    i32.const 0
-    i32.gt_s
-    (if (result (ref null $result))
-      (then
-    local.get $found
-    struct.get $rec_Walked $f1
-    i32.const 0
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__23
-    local.get $__bp_nullish__23
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $first
-    i32.const 1
-    local.get $root
-    global.get $__s31
-    local.get $first
-    global.get $__s32
-    array.new_fixed $arr_any 3
-    global.get $__s0
-    call $__arr_join_any
-    call $__new_51
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    local.get $found
-    struct.get $rec_Walked $f0
-    struct.new $result
-    return
-  )
-  (func $glob (export "glob") (param $pattern (ref null $str)) (param $root (ref null $str)) (result (ref null $result))
-    i32.const 0
-    local.get $pattern
-    local.get $root
-    call $rawGlob
-    struct.new $result
-    return
-  )
   ;; The host's handle over embedded bytes: read like a file, never closed on disk.
-  ;; memoryHandle — .Wasm(body: memHandleWasm)
-  (func $memoryHandle (param $bytes (ref null $str)) (result anyref)
-    local.get $bytes
-    call $memHandleWasm
-  )
   ;; ── the handle ───────────────────────────────────────────────────────────────
   ;; An open file (decision 540 (3)). `location` is the path it was opened with and
   ;; `handle` the host's — opaque, never read by a program. Closed by the writer:
   ;; `val f = try fs.open(p); defer f.close();`.
-  (func $File_path (param $self (ref null $rec_File)) (result (ref null $str))
-    local.get $self
-    struct.get $rec_File $f0
-    return
-  )
-  (func $File_size (param $self (ref null $rec_File)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i64)
-    (local $__gc51 (ref null $result))
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    local.get $self
-    struct.get $rec_File $f0
-    call $rawSize
-    call $liftI64
-    local.set $__gc51
-    local.get $__gc51
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc51
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc51
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i64
-    struct.new $result
-    return
-  )
-  (func $File_read (param $self (ref null $rec_File)) (param $n i32) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc52 (ref null $result))
-    local.get $n
-    i32.const 0
-    i32.le_s
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    global.get $__s0
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    local.get $n
-    call $rawRead
-    call $liftBytes
-    local.set $__gc52
-    local.get $__gc52
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc52
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc52
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
-  (func $File_bytes (param $self (ref null $rec_File)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc53 (ref null $result))
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    call $rawReadAll
-    call $liftBytes
-    local.set $__gc53
-    local.get $__gc53
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc53
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc53
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
-  (func $File_text (param $self (ref null $rec_File)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $b (ref null $str))
-    (local $s (ref null $str))
-    (local $__gc54 (ref null $result))
-    (local $__gc55 (ref null $result))
-    local.get $self
-    call $File_bytes
-    local.set $__gc54
-    local.get $__gc54
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc54
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc54
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $b
-    call $decode
-    local.set $__gc55
-    local.get $__gc55
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc55
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc55
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $s
-    i32.const 0
-    local.get $s
-    struct.new $result
-    return
-  )
-  (func $File_chunks (param $self (ref null $rec_File)) (param $size i32) (result (ref null $gen))
-    (local $__fr (ref null $frame0))
-    struct.new_default $frame0 ;; the frame: the resume index, then every local
-    local.set $__fr
-    local.get $__fr
-    local.get $self
-    struct.set $frame0 $s0
-    local.get $__fr
-    local.get $size
-    struct.set $frame0 $s1
-    i32.const 0 ;; live
-    i32.const 5 ;; File_chunks__body
-    local.get $__fr
-    ref.null any
-    ref.null $gen
-    ref.null any ;; the environment
-    i32.const 0
-    struct.new $gen ;; runs nothing until its first next
-  )
-  (func $File_chunks__body (param $__gen (ref null $gen)) (result i32)
-    (local $self (ref null $rec_File))
-    (local $size i32)
-    (local $b (ref null $str))
-    (local $__frame (ref null $frame0))
-    (local $__seek i32)
-    (local $__state i32)
-    (local $__gc56 (ref null $result))
-    (local $__cnd0 i32)
-    local.get $__gen
-    struct.get $gen $frame
-    ref.cast (ref null $frame0)
-    local.set $__frame
-    local.get $__frame
-    struct.get $frame0 $s0
-    local.set $self
-    local.get $__frame
-    struct.get $frame0 $s1
-    local.set $size
-    local.get $__frame
-    struct.get $frame0 $s2
-    local.set $b
-    local.get $__frame
-    struct.get $frame0 $s3
-    local.set $__gc56
-    local.get $__frame
-    struct.get $frame0 $s4
-    local.set $__cnd0
-    local.get $__frame
-    struct.get $frame0 $resume ;; the resume index
-    local.tee $__state
-    i32.const 0
-    i32.ne
-    local.set $__seek
-    local.get $__seek
-    i32.eqz
-    local.get $__state
-    i32.const 1
-    i32.ge_u
-    local.get $__state
-    i32.const 1
-    i32.le_u
-    i32.and
-    i32.or
-    (if
-      (then
-    (block $__break
-      (loop $__continue
-    local.get $__seek
-    (if (result i32)
-      (then
-    i32.const 1 ;; re-entering: inside an iteration
-      )
-      (else
-    i32.const 1
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $self
-    local.get $size
-    call $File_read
-    local.set $__gc56
-    local.get $__gc56
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gen
-    local.get $__gc56
-    struct.set $gen $value ;; the Error, the last yitem
-    local.get $__gen
-    i32.const 1
-    struct.set $gen $state ;; ended after it
-    i32.const 1
-    return ;; an yitem
-      )
-    )
-    local.get $__gc56
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $__seek
-    (if (result i32)
-      (then
-    local.get $__cnd0 ;; the condition, read back
-      )
-      (else
-    local.get $b
-    array.len
-    i32.const 0
-    i32.eq
-    local.tee $__cnd0
-      )
-    )
-    (if (result (ref null $gen))
-      (then
-    br $__break
-      )
-      (else
-        ref.null $gen
-      )
-    )
-    drop
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    local.get $__state
-    i32.const 1
-    i32.ge_u
-    local.get $__state
-    i32.const 1
-    i32.le_u
-    i32.and
-    i32.or
-    (if
-      (then
-    (block $__yd1
-    local.get $__seek
-    (if
-      (then
-    local.get $__state
-    i32.const 1
-    i32.eq
-    (if
-      (then
-    i32.const 0
-    local.set $__seek
-      )
-    )
-    br $__yd1 ;; resumed after this yield, or seeking past it
-      )
-    )
-    local.get $__gen
-    i32.const 0
-    local.get $b
-    struct.new $result
-    struct.set $gen $value ;; the yitem
-    local.get $__frame
-    local.get $self
-    struct.set $frame0 $s0
-    local.get $__frame
-    local.get $size
-    struct.set $frame0 $s1
-    local.get $__frame
-    local.get $b
-    struct.set $frame0 $s2
-    local.get $__frame
-    local.get $__gc56
-    struct.set $frame0 $s3
-    local.get $__frame
-    local.get $__cnd0
-    struct.set $frame0 $s4
-    local.get $__frame
-    i32.const 1
-    struct.set $frame0 $resume ;; the resume index
-    i32.const 1
-    return ;; an yitem
-    )
-      )
-    )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-      )
-    )
-    i32.const 0 ;; the sequence ended
-  )
-  (func $File_lines (param $self (ref null $rec_File)) (result (ref null $gen))
-    (local $__fr (ref null $frame1))
-    struct.new_default $frame1 ;; the frame: the resume index, then every local
-    local.set $__fr
-    local.get $__fr
-    local.get $self
-    struct.set $frame1 $s0
-    i32.const 0 ;; live
-    i32.const 6 ;; File_lines__body
-    local.get $__fr
-    ref.null any
-    ref.null $gen
-    ref.null any ;; the environment
-    i32.const 0
-    struct.new $gen ;; runs nothing until its first next
-  )
-  (func $File_lines__body (param $__gen (ref null $gen)) (result i32)
-    (local $self (ref null $rec_File))
-    (local $__mem0 i32)
-    (local $consumed i32)
-    (local $raw (ref null $str))
-    (local $line (ref null $str))
-    (local $offset i64)
-    (local $width i32)
-    (local $__frame (ref null $frame1))
-    (local $__seek i32)
-    (local $__state i32)
-    (local $__gc57 (ref null $result))
-    (local $__cnd0 i32)
-    (local $__cnd1 i32)
-    (local $__conv0 i32)
-    (local $__gc58 (ref null $result))
-    (local $__gc59 (ref null $str))
-    (local $__gc60 (ref null $str))
-    (local $__gc61 i32)
-    local.get $__gen
-    struct.get $gen $frame
-    ref.cast (ref null $frame1)
-    local.set $__frame
-    local.get $__frame
-    struct.get $frame1 $s0
-    local.set $self
-    local.get $__frame
-    struct.get $frame1 $s1
-    local.set $__mem0
-    local.get $__frame
-    struct.get $frame1 $s2
-    local.set $consumed
-    local.get $__frame
-    struct.get $frame1 $s3
-    local.set $raw
-    local.get $__frame
-    struct.get $frame1 $s4
-    local.set $line
-    local.get $__frame
-    struct.get $frame1 $s5
-    local.set $offset
-    local.get $__frame
-    struct.get $frame1 $s6
-    local.set $width
-    local.get $__frame
-    struct.get $frame1 $s7
-    local.set $__gc57
-    local.get $__frame
-    struct.get $frame1 $s8
-    local.set $__cnd0
-    local.get $__frame
-    struct.get $frame1 $s9
-    local.set $__cnd1
-    local.get $__frame
-    struct.get $frame1 $s10
-    local.set $__conv0
-    local.get $__frame
-    struct.get $frame1 $s11
-    local.set $__gc58
-    local.get $__frame
-    struct.get $frame1 $s12
-    local.set $__gc59
-    local.get $__frame
-    struct.get $frame1 $s13
-    local.set $__gc60
-    local.get $__frame
-    struct.get $frame1 $s14
-    local.set $__gc61
-    local.get $__frame
-    struct.get $frame1 $resume ;; the resume index
-    local.tee $__state
-    i32.const 0
-    i32.ne
-    local.set $__seek
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    local.set $consumed
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    local.get $__state
-    i32.const 1
-    i32.ge_u
-    local.get $__state
-    i32.const 2
-    i32.le_u
-    i32.and
-    i32.or
-    (if
-      (then
-    (block $__break
-      (loop $__continue
-    local.get $__seek
-    (if (result i32)
-      (then
-    i32.const 1 ;; re-entering: inside an iteration
-      )
-      (else
-    i32.const 1
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    call $rawReadLine
-    call $liftBytes
-    local.set $__gc57
-    local.get $__gc57
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gen
-    local.get $__gc57
-    struct.set $gen $value ;; the Error, the last yitem
-    local.get $__gen
-    i32.const 1
-    struct.set $gen $state ;; ended after it
-    i32.const 1
-    return ;; an yitem
-      )
-    )
-    local.get $__gc57
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $raw
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $__seek
-    (if (result i32)
-      (then
-    local.get $__cnd0 ;; the condition, read back
-      )
-      (else
-    local.get $raw
-    array.len
-    i32.const 0
-    i32.eq
-    local.tee $__cnd0
-      )
-    )
-    (if (result (ref null $gen))
-      (then
-    br $__break
-      )
-      (else
-        ref.null $gen
-      )
-    )
-    drop
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $raw
-    call $stripEol
-    local.set $line
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $line
-    call $utf8Offset
-    local.set $offset
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    local.get $__state
-    i32.const 1
-    i32.ge_u
-    local.get $__state
-    i32.const 1
-    i32.le_u
-    i32.and
-    i32.or
-    (if
-      (then
-    local.get $__seek
-    (if (result i32)
-      (then
-    local.get $__cnd1 ;; the condition, read back
-      )
-      (else
-    local.get $offset
-    i32.const 0
-    i64.extend_i32_s
-    i64.ge_s
-    local.tee $__cnd1
-      )
-    )
-    (if (result (ref null $gen))
-      (then
-    (block $__yd1
-    local.get $__seek
-    (if
-      (then
-    local.get $__state
-    i32.const 1
-    i32.eq
-    (if
-      (then
-    i32.const 0
-    local.set $__seek
-      )
-    )
-    br $__yd1 ;; resumed after this yield, or seeking past it
-      )
-    )
-    local.get $__gen
-    i32.const 1
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $consumed
-    local.set $__conv0
-    local.get $__conv0
-    i64.extend_i32_s
-    local.get $offset
-    global.get $__s33
-    call $__i64_add_chk
-    call $__new_43
-    struct.new $result
-    struct.set $gen $value ;; the yitem
-    local.get $__frame
-    local.get $self
-    struct.set $frame1 $s0
-    local.get $__frame
-    local.get $__mem0
-    struct.set $frame1 $s1
-    local.get $__frame
-    local.get $consumed
-    struct.set $frame1 $s2
-    local.get $__frame
-    local.get $raw
-    struct.set $frame1 $s3
-    local.get $__frame
-    local.get $line
-    struct.set $frame1 $s4
-    local.get $__frame
-    local.get $offset
-    struct.set $frame1 $s5
-    local.get $__frame
-    local.get $width
-    struct.set $frame1 $s6
-    local.get $__frame
-    local.get $__gc57
-    struct.set $frame1 $s7
-    local.get $__frame
-    local.get $__cnd0
-    struct.set $frame1 $s8
-    local.get $__frame
-    local.get $__cnd1
-    struct.set $frame1 $s9
-    local.get $__frame
-    local.get $__conv0
-    struct.set $frame1 $s10
-    local.get $__frame
-    local.get $__gc58
-    struct.set $frame1 $s11
-    local.get $__frame
-    local.get $__gc59
-    struct.set $frame1 $s12
-    local.get $__frame
-    local.get $__gc60
-    struct.set $frame1 $s13
-    local.get $__frame
-    local.get $__gc61
-    struct.set $frame1 $s14
-    local.get $__frame
-    i32.const 1
-    struct.set $frame1 $resume ;; the resume index
-    i32.const 1
-    return ;; an yitem
-    )
-    i32.const 0 ;; the sequence ended
-    return
-      )
-      (else
-        ref.null $gen
-      )
-    )
-    drop
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $raw
-    array.len
-    local.set $width
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    (if
-      (then
-    local.get $consumed
-    local.get $width
-    global.get $__s34
-    call $__i32_add_chk
-    local.set $consumed
-      )
-    )
-    local.get $__seek
-    i32.eqz
-    local.get $__state
-    i32.const 2
-    i32.ge_u
-    local.get $__state
-    i32.const 2
-    i32.le_u
-    i32.and
-    i32.or
-    (if
-      (then
-    (block $__yd2
-    local.get $__seek
-    (if
-      (then
-    local.get $__state
-    i32.const 2
-    i32.eq
-    (if
-      (then
-    i32.const 0
-    local.set $__seek
-      )
-    )
-    br $__yd2 ;; resumed after this yield, or seeking past it
-      )
-    )
-    local.get $__gen
-    i32.const 0
-    local.get $line
-    local.set $__gc59
-    local.get $__gc59
-    local.set $__gc60
-    global.get $__heap_ptr
-    local.set $__gc61
-    local.get $__gc60
-    call $__gc_to_lin_str
-    call $__std_bytes_isUtf8
-    local.get $__gc61
-    global.set $__heap_ptr
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    local.get $__gc59
-    struct.new $result
-      )
-      (else
-    i32.const 1
-    global.get $__s30
-    struct.new $result
-      )
-    )
-    local.tee $__gc58
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    global.get $__s0
-      )
-      (else
-    local.get $__gc58
-    struct.get $result $payload
-    ref.cast (ref null $str)
-      )
-    )
-    struct.new $result
-    struct.set $gen $value ;; the yitem
-    local.get $__frame
-    local.get $self
-    struct.set $frame1 $s0
-    local.get $__frame
-    local.get $__mem0
-    struct.set $frame1 $s1
-    local.get $__frame
-    local.get $consumed
-    struct.set $frame1 $s2
-    local.get $__frame
-    local.get $raw
-    struct.set $frame1 $s3
-    local.get $__frame
-    local.get $line
-    struct.set $frame1 $s4
-    local.get $__frame
-    local.get $offset
-    struct.set $frame1 $s5
-    local.get $__frame
-    local.get $width
-    struct.set $frame1 $s6
-    local.get $__frame
-    local.get $__gc57
-    struct.set $frame1 $s7
-    local.get $__frame
-    local.get $__cnd0
-    struct.set $frame1 $s8
-    local.get $__frame
-    local.get $__cnd1
-    struct.set $frame1 $s9
-    local.get $__frame
-    local.get $__conv0
-    struct.set $frame1 $s10
-    local.get $__frame
-    local.get $__gc58
-    struct.set $frame1 $s11
-    local.get $__frame
-    local.get $__gc59
-    struct.set $frame1 $s12
-    local.get $__frame
-    local.get $__gc60
-    struct.set $frame1 $s13
-    local.get $__frame
-    local.get $__gc61
-    struct.set $frame1 $s14
-    local.get $__frame
-    i32.const 2
-    struct.set $frame1 $resume ;; the resume index
-    i32.const 1
-    return ;; an yitem
-    )
-      )
-    )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-      )
-    )
-    i32.const 0 ;; the sequence ended
-  )
-  (func $File_hash (param $self (ref null $rec_File)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $h (ref null $str))
-    (local $__gc62 (ref null $result))
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    call $rawHash
-    call $liftString
-    local.set $__gc62
-    local.get $__gc62
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc62
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc62
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $h
-    i32.const 0
-    local.get $h
-    struct.new $result
-    return
-  )
-  (func $File_write (param $self (ref null $rec_File)) (param $b (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $n i32)
-    (local $__gc63 (ref null $result))
-    local.get $self
-    struct.get $rec_File $f1
-    call $rawReadOnly
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    local.get $self
-    struct.get $rec_File $f0
-    global.get $__s35
-    call $__new_51
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $self
-    struct.get $rec_File $f0
-    local.get $self
-    struct.get $rec_File $f1
-    local.get $b
-    call $rawWrite
-    call $liftI32
-    local.set $__gc63
-    local.get $__gc63
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc63
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc63
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $File_close (param $self (ref null $rec_File))
-    (local $closed (ref null $result))
-    local.get $self
-    struct.get $rec_File $f1
-    call $rawClose
-    local.set $closed
-  )
   ;; Open the file at `path` for reading. A directory is `IsDirectory` on every target.
-  (func $open (export "open") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $h anyref)
-    (local $__gc64 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawOpen
-    call $liftHandle
-    local.set $__gc64
-    local.get $__gc64
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc64
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc64
-    struct.get $result $payload
-    local.set $h
-    i32.const 0
-    local.get $path
-    local.get $h
-    call $__new_37
-    struct.new $result
-    return
-  )
   ;; Open the file at `path` for writing: created, or truncated.
-  (func $create (export "create") (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $h anyref)
-    (local $__gc65 (ref null $result))
-    local.get $path
-    local.get $path
-    call $rawCreate
-    call $liftHandle
-    local.set $__gc65
-    local.get $__gc65
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc65
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc65
-    struct.get $result $payload
-    local.set $h
-    i32.const 0
-    local.get $path
-    local.get $h
-    call $__new_37
-    struct.new $result
-    return
-  )
   ;; An `Asset` (`@embed`, decisions 519, 538) as a `File`: the embedded bytes, read
   ;; like a file on disk — no `Result`, the build proved the file exists — and
   ;; closing it is a no-op.
-  (func $openAsset (export "openAsset") (param $asset (ref null $rec_Asset)) (result (ref null $rec_File))
-    (local $__mem0 i32)
-    local.get $asset
-    struct.get $rec_Asset $f0
-    local.get $asset
-    struct.get $rec_Asset $f1
-    call $memoryHandle
-    call $__new_37
-    return
-  )
   ;; ── the wasm bodies (decision 992) ───────────────────────────────────────────
   ;; `io.fs` on wasm answers what it answers on commonJS, erlang and beam: the same functions
   ;; over the file system of the process, the same paths (a relative one is read against the
@@ -11513,6121 +9975,66 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; `-(1 + code)`, `code` the ordinal of `wasi:filesystem`'s `error-code`, or as the `Error`
   ;; of a `Result<_, i32>` holding the code; `wasiError` writes it as Node's text
   ;; (`ENOENT: …`), which `fsError` reads as it reads every target's.
-  ;; wasiCwd — .Wasm(std: "fs.cwd")
-  (func $wasiCwd (result (ref null $str))
-    call $__std_fs_cwd
-  )
-  ;; wasiGetenv — .Wasm(std: "fs.getenv")
-  (func $wasiGetenv (param $name (ref null $str)) (result (ref null $str))
-    local.get $name
-    call $__std_fs_getenv
-  )
-  ;; wasiOpen — .Wasm(std: "fs.open")
-  (func $wasiOpen (param $path (ref null $str)) (param $mode i32) (result i32)
-    local.get $path
-    local.get $mode
-    call $__std_fs_open
-  )
-  ;; wasiOpenMem — .Wasm(std: "fs.openMem")
-  (func $wasiOpenMem (param $data (ref null $str)) (result i32)
-    local.get $data
-    call $__std_fs_openMem
-  )
-  ;; wasiClose — .Wasm(std: "fs.close")
-  (func $wasiClose (param $block i32)
-    local.get $block
-    call $__std_fs_close
-  )
-  ;; wasiIsMem — .Wasm(std: "fs.isMem")
-  (func $wasiIsMem (param $block i32) (result i32)
-    local.get $block
-    call $__std_fs_isMem
-  )
-  ;; wasiTell — .Wasm(std: "fs.tell")
-  (func $wasiTell (param $block i32) (result i64)
-    local.get $block
-    call $__std_fs_tell
-  )
-  ;; wasiSeek — .Wasm(std: "fs.seek")
-  (func $wasiSeek (param $block i32) (param $position i64)
-    local.get $block
-    local.get $position
-    call $__std_fs_seek
-  )
-  ;; wasiSize — .Wasm(std: "fs.size")
-  (func $wasiSize (param $block i32) (result (ref null $result))
-    local.get $block
-    call $__std_fs_size
-  )
-  ;; wasiSizeRaw — .Wasm(std: "fs.sizeRaw")
-  (func $wasiSizeRaw (param $block i32) (result i64)
-    local.get $block
-    call $__std_fs_sizeRaw
-  )
-  ;; wasiRead — .Wasm(std: "fs.read")
-  (func $wasiRead (param $block i32) (param $n i32) (result (ref null $result))
-    local.get $block
-    local.get $n
-    call $__std_fs_read
-  )
-  ;; wasiReadAll — .Wasm(std: "fs.readAll")
-  (func $wasiReadAll (param $block i32) (result (ref null $result))
-    local.get $block
-    call $__std_fs_readAll
-  )
-  ;; wasiReadLine — .Wasm(std: "fs.readLine")
-  (func $wasiReadLine (param $block i32) (result (ref null $result))
-    local.get $block
-    call $__std_fs_readLine
-  )
-  ;; wasiWrite — .Wasm(std: "fs.write")
-  (func $wasiWrite (param $block i32) (param $data (ref null $str)) (result i32)
-    local.get $block
-    local.get $data
-    call $__std_fs_write
-  )
-  ;; wasiStatKind — .Wasm(std: "fs.statKind")
-  (func $wasiStatKind (param $path (ref null $str)) (param $follow i32) (result i32)
-    local.get $path
-    local.get $follow
-    call $__std_fs_statKind
-  )
-  ;; wasiStatSize — .Wasm(std: "fs.statSize")
-  (func $wasiStatSize (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $__std_fs_statSize
-  )
-  ;; wasiStatMtime — .Wasm(std: "fs.statMtime")
-  (func $wasiStatMtime (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $__std_fs_statMtime
-  )
-  ;; wasiList — .Wasm(std: "fs.list")
-  (func $wasiList (param $path (ref null $str)) (result (ref null $result))
-    local.get $path
-    call $__std_fs_list
-  )
-  ;; wasiMkdir — .Wasm(std: "fs.mkdir")
-  (func $wasiMkdir (param $path (ref null $str)) (result i32)
-    local.get $path
-    call $__std_fs_mkdir
-  )
-  ;; wasiRmdir — .Wasm(std: "fs.rmdir")
-  (func $wasiRmdir (param $path (ref null $str)) (result i32)
-    local.get $path
-    call $__std_fs_rmdir
-  )
-  ;; wasiUnlink — .Wasm(std: "fs.unlink")
-  (func $wasiUnlink (param $path (ref null $str)) (result i32)
-    local.get $path
-    call $__std_fs_unlink
-  )
-  ;; wasiSymlink — .Wasm(std: "fs.symlink")
-  (func $wasiSymlink (param $target (ref null $str)) (param $link (ref null $str)) (result i32)
-    local.get $target
-    local.get $link
-    call $__std_fs_symlink
-  )
-  ;; wasiByteAt — .Wasm(std: "bytes.at")
-  (func $wasiByteAt (param $data (ref null $str)) (param $index i32) (result i32)
-    local.get $data
-    local.get $index
-    call $__std_bytes_at
-  )
-  ;; wasiSha256 — .Wasm(std: "hash.sha256Hex")
-  (func $wasiSha256 (param $data (ref null $str)) (result (ref null $str))
-    local.get $data
-    call $__std_hash_sha256Hex
-  )
   ;; The POSIX name of the host's error `code`, and its text.
-  (func $wasiName (param $code i32) (result (ref null $str))
-    (local $__mem0 i32)
-    (local $names (ref null $arr_any))
-    (local $__bp_nullish i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__24 (ref null $str))
-    global.get $__s24
-    global.get $__s36
-    global.get $__s37
-    global.get $__s38
-    global.get $__s39
-    global.get $__s40
-    global.get $__s41
-    global.get $__s29
-    global.get $__s42
-    global.get $__s43
-    global.get $__s44
-    global.get $__s45
-    global.get $__s46
-    global.get $__s47
-    global.get $__s26
-    global.get $__s48
-    global.get $__s49
-    global.get $__s50
-    global.get $__s51
-    global.get $__s52
-    global.get $__s23
-    global.get $__s53
-    global.get $__s54
-    global.get $__s55
-    global.get $__s28
-    global.get $__s56
-    global.get $__s57
-    global.get $__s58
-    global.get $__s59
-    global.get $__s60
-    global.get $__s61
-    global.get $__s25
-    global.get $__s62
-    global.get $__s63
-    global.get $__s64
-    global.get $__s65
-    global.get $__s66
-    array.new_fixed $arr_any 37
-    local.set $names
-    local.get $names
-    local.get $code
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__24
-    local.get $__bp_nullish__24
-      )
-      (else
-    global.get $__s47
-      )
-    )
-    return
-  )
-  (func $wasiText (param $code i32) (result (ref null $str))
-    (local $__mem0 i32)
-    (local $texts (ref null $arr_any))
-    (local $__bp_nullish i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__25 (ref null $str))
-    global.get $__s67
-    global.get $__s68
-    global.get $__s69
-    global.get $__s70
-    global.get $__s71
-    global.get $__s72
-    global.get $__s73
-    global.get $__s74
-    global.get $__s75
-    global.get $__s76
-    global.get $__s77
-    global.get $__s78
-    global.get $__s79
-    global.get $__s80
-    global.get $__s81
-    global.get $__s82
-    global.get $__s83
-    global.get $__s84
-    global.get $__s85
-    global.get $__s86
-    global.get $__s87
-    global.get $__s88
-    global.get $__s89
-    global.get $__s90
-    global.get $__s91
-    global.get $__s92
-    global.get $__s93
-    global.get $__s94
-    global.get $__s95
-    global.get $__s96
-    global.get $__s97
-    global.get $__s98
-    global.get $__s99
-    global.get $__s100
-    global.get $__s101
-    global.get $__s102
-    global.get $__s103
-    array.new_fixed $arr_any 37
-    local.set $texts
-    local.get $texts
-    local.get $code
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__25
-    local.get $__bp_nullish__25
-      )
-      (else
-    global.get $__s80
-      )
-    )
-    return
-  )
   ;; The `HostError` of the host's error `code`: `ENOENT: no such file or directory`.
-  (func $wasiError (param $code i32) (result (ref null $rec_HostError))
-    (local $__mem0 i32)
-    local.get $code
-    call $wasiName
-    global.get $__s22
-    call $__str_concat
-    local.get $code
-    call $wasiText
-    call $__str_concat
-    global.get $__s104
-    i32.const 0 ;; HostErrorName.Error
-    ref.null $str
-    call $__new_35
-    return
-  )
   ;; The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
-  (func $okBytes (param $r (ref null $result)) (result (ref null $result))
-    (local $b i32)
-    (local $code i32)
-    (local $__case_0 (ref null $result))
-    (local $b__26 (ref null $str))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b__26
-    i32.const 0
-    local.get $b__26
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $code
-    i32.const 1
-    local.get $code
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $okStrings (param $r (ref null $result)) (result (ref null $result))
-    (local $xs i32)
-    (local $code i32)
-    (local $__case_0 (ref null $result))
-    (local $xs__27 (ref null $arr_any))
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $xs__27
-    i32.const 0
-    local.get $xs__27
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $code
-    i32.const 1
-    local.get $code
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
-  (func $okSize (param $r (ref null $result)) (result (ref null $result))
-    (local $n i32)
-    (local $code i32)
-    (local $__case_0 (ref null $result))
-    (local $n__28 i64)
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $n__28
-    i32.const 0
-    local.get $n__28
-    struct.new $box_i64
-    struct.new $result
-    return
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $result))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $code
-    i32.const 1
-    local.get $code
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-    ref.null $result
-      )
-    )
-      )
-    )
-  )
   ;; `path` without the slashes it begins with: the host reads a path relative to the root it preopens.
-  (func $withoutRoot (param $path (ref null $str)) (result (ref null $str))
-    (local $p (ref null $str))
-    (local $__gc66 (ref null $str))
-    (local $__gc67 (ref null $str))
-    (local $__gc68 i32)
-    (local $__gc69 i32)
-    (local $__gc70 i32)
-    (local $__gc71 (ref null $str))
-    (local $__gc72 i32)
-    local.get $path
-    local.set $p
-    (block $__break
-      (loop $__continue
-    local.get $p
-    global.get $__s105
-    local.set $__gc66
-    local.set $__gc67
-    global.get $__heap_ptr
-    local.set $__gc68
-    local.get $__gc67
-    call $__gc_to_lin_str
-    local.get $__gc66
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc68
-    global.set $__heap_ptr
-        i32.eqz
-        br_if $__break
-    local.get $p
-    i32.const 1
-    i32.const 2147483647
-    local.set $__gc69
-    local.set $__gc70
-    local.set $__gc71
-    global.get $__heap_ptr
-    local.set $__gc72
-    local.get $__gc71
-    call $__gc_to_lin_str
-    local.get $__gc70
-    local.get $__gc69
-    call $__std_text_slice
-    call $__lin_to_gc_str
-    local.get $__gc72
-    global.set $__heap_ptr
-    local.set $p
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $p
-    return
-  )
   ;; `name` inside `dir`, `dir` empty being the root.
-  (func $joinPath (param $dir (ref null $str)) (param $name (ref null $str)) (result (ref null $str))
-    local.get $dir
-    global.get $__s0
-    call $__str_eq
-    (if (result (ref null $str))
-      (then
-    local.get $name
-    return
-      )
-      (else
-        ref.null $str
-      )
-    )
-    drop
-    local.get $dir
-    global.get $__s105
-    call $__str_concat
-    local.get $name
-    call $__str_concat
-    return
-  )
   ;; `path` as the host reads it: absolute, as it is; relative, from the working directory. The empty
   ;; path is no file (`ENOENT`), as it is on every target.
-  (func $resolve (param $path (ref null $str)) (result (ref null $result))
-    (local $cwd (ref null $str))
-    (local $__gc73 (ref null $str))
-    (local $__gc74 (ref null $str))
-    (local $__gc75 i32)
-    local.get $path
-    global.get $__s0
-    call $__str_eq
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 20
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $path
-    global.get $__s105
-    local.set $__gc73
-    local.set $__gc74
-    global.get $__heap_ptr
-    local.set $__gc75
-    local.get $__gc74
-    call $__gc_to_lin_str
-    local.get $__gc73
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc75
-    global.set $__heap_ptr
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    local.get $path
-    call $withoutRoot
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    call $wasiCwd
-    local.set $cwd
-    local.get $cwd
-    global.get $__s0
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $cwd
-    global.get $__s105
-    call $__str_eq
-      )
-    )
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    local.get $path
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    local.get $cwd
-    global.get $__s105
-    call $__str_concat
-    local.get $path
-    call $__str_concat
-    call $withoutRoot
-    struct.new $result
-    return
-  )
   ;; The file a handle holds: the handle block `rawOpen`, `rawCreate` and `memHandle` answered.
-  (func $blockOf (param $handle anyref) (result i32)
-    (local $block i32)
-    (local $b i32)
-    (local $handle__is29 i32)
-    i32.const 0
-    local.set $block
-    local.get $handle
-    i32.const -2147483648
-    i32.const 2147483647
-    call $__unk_int_in
-    (if (result i32)
-      (then
-    local.get $handle
-    call $__unk_as_i32
-    local.set $handle__is29
-    local.get $handle__is29
-    local.set $b
-    local.get $b
-    local.set $block
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $block
-    return
-  )
   ;; Whether `a` sorts before `b` by the bytes of their UTF-8 (string `<` is not a wasm GC operation).
-  (func $bytesBefore (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
-    (local $x (ref null $str))
-    (local $y (ref null $str))
-    (local $nx i32)
-    (local $ny i32)
-    (local $i i32)
-    (local $cx i32)
-    (local $cy i32)
-    local.get $a
-    local.set $x
-    local.get $b
-    local.set $y
-    local.get $x
-    array.len
-    local.set $nx
-    local.get $y
-    array.len
-    local.set $ny
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $nx
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $i
-    local.get $ny
-    i32.lt_s
-      )
-      (else
-    i32.const 0
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $x
-    local.get $i
-    call $wasiByteAt
-    local.set $cx
-    local.get $y
-    local.get $i
-    call $wasiByteAt
-    local.set $cy
-    local.get $cx
-    local.get $cy
-    i32.ne
-    (if (result i32)
-      (then
-    local.get $cx
-    local.get $cy
-    i32.lt_s
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $i
-    i32.const 1
-    global.get $__s106
-    call $__i32_add_chk
-    local.set $i
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $nx
-    local.get $ny
-    i32.lt_s
-    return
-  )
   ;; The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
-  (func $sortedStrings (param $xs (ref null $arr_any)) (result (ref null $arr_any))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $out (ref null $arr_any))
-    (local $i i32)
-    (local $x (ref null $str))
-    (local $__bp_nullish i32)
-    (local $j i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__30 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__31 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__32 (ref null $str))
-    array.new_fixed $arr_any 0
-    local.set $out
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $xs
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-        (block $__next
-    local.get $xs
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__30
-    local.get $__bp_nullish__30
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $x
-    local.get $i
-    i32.const 1
-    global.get $__s107
-    call $__i32_add_chk
-    local.set $i
-    i32.const 0
-    local.set $j
-    (block $__break
-      (loop $__continue
-    local.get $j
-    local.get $out
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $out
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__31
-    local.get $__bp_nullish__31
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.get $x
-    call $bytesBefore
-      )
-      (else
-    i32.const 0
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $j
-    i32.const 1
-    global.get $__s108
-    call $__i32_add_chk
-    local.set $j
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $j
-    local.get $out
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $out
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__32
-    local.get $__bp_nullish__32
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.get $x
-    call $__str_eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result (ref null $arr_any))
-      (then
-    br $__next
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $out
-    i32.const 0
-    local.get $j
-    call $__arr_slice_any
-    local.get $x
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.get $out
-    local.get $j
-    i32.const 2147483647
-    call $__arr_slice_any
-    call $__arr_concat_any
-    local.set $out
-        )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $out
-    return
-  )
-  (func $readBytesWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $p (ref null $str))
-    (local $h i32)
-    (local $r (ref null $result))
-    (local $b (ref null $str))
-    (local $__gc76 (ref null $result))
-    (local $__gc77 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc76
-    local.get $__gc76
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc76
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc76
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 0
-    call $wasiOpen
-    local.set $h
-    local.get $h
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s109
-    call $__i32_sub_chk
-    local.get $h
-    global.get $__s110
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    call $wasiReadAll
-    local.set $r
-    local.get $h
-    call $wasiClose
-    local.get $r
-    call $okBytes
-    local.set $__gc77
-    local.get $__gc77
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc77
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc77
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
-  (func $writeBytesWasm (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $h i32)
-    (local $n i32)
-    (local $__gc78 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc78
-    local.get $__gc78
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc78
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc78
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 1
-    call $wasiOpen
-    local.set $h
-    local.get $h
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s111
-    call $__i32_sub_chk
-    local.get $h
-    global.get $__s112
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    local.get $contents
-    call $wasiWrite
-    local.set $n
-    local.get $h
-    call $wasiClose
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s113
-    call $__i32_sub_chk
-    local.get $n
-    global.get $__s114
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $writeTextWasm (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i32)
-    (local $__gc79 (ref null $result))
-    local.get $path
-    local.get $contents
-    call $writeBytesWasm
-    local.set $__gc79
-    local.get $__gc79
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc79
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc79
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $appendTextWasm (param $path (ref null $str)) (param $contents (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $h i32)
-    (local $at i64)
-    (local $n i32)
-    (local $__gc80 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc80
-    local.get $__gc80
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc80
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc80
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 2
-    call $wasiOpen
-    local.set $h
-    local.get $h
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s115
-    call $__i32_sub_chk
-    local.get $h
-    global.get $__s116
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    call $wasiSizeRaw
-    local.set $at
-    local.get $at
-    i32.const 0
-    i64.extend_i32_s
-    i64.lt_s
-    (if (result (ref null $result))
-      (then
-    local.get $h
-    call $wasiClose
-    i32.const 1
-    i32.const 13
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    local.get $at
-    call $wasiSeek
-    local.get $h
-    local.get $contents
-    call $wasiWrite
-    local.set $n
-    local.get $h
-    call $wasiClose
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s117
-    call $__i32_sub_chk
-    local.get $n
-    global.get $__s118
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; The offset of the first byte that starts a sequence that is not UTF-8, `-1` when there is none.
-  (func $utf8OffsetWasm (param $data (ref null $str)) (result i64)
-    (local $n i32)
-    (local $i i32)
-    (local $c i32)
-    (local $k i32)
-    (local $lo i32)
-    (local $hi i32)
-    (local $d i32)
-    (local $j i32)
-    (local $e i32)
-    (local $__conv0 i32)
-    (local $__conv1 i32)
-    (local $__conv2 i32)
-    (local $__conv3 i32)
-    local.get $data
-    array.len
-    local.set $n
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $n
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-        (block $__next
-    local.get $data
-    local.get $i
-    call $wasiByteAt
-    local.set $c
-    local.get $c
-    i32.const 128
-    i32.lt_s
-    (if (result i64)
-      (then
-    local.get $i
-    i32.const 1
-    global.get $__s119
-    call $__i32_add_chk
-    local.set $i
-    br $__next
-      )
-      (else
-        i64.const 0
-      )
-    )
-    drop
-    i32.const 0
-    local.set $k
-    local.get $c
-    i32.const 194
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $c
-    i32.const 223
-    i32.le_s
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 1
-    local.set $k
-    i32.const 0
-      )
-      (else
-    local.get $c
-    i32.const 224
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $c
-    i32.const 239
-    i32.le_s
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 2
-    local.set $k
-    i32.const 0
-      )
-      (else
-    local.get $c
-    i32.const 240
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $c
-    i32.const 244
-    i32.le_s
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 3
-    local.set $k
-    i32.const 0
-      )
-      (else
-    local.get $i
-    local.set $__conv0
-    local.get $__conv0
-    i64.extend_i32_s
-    return
-      )
-    )
-      )
-    )
-      )
-    )
-    drop
-    local.get $i
-    local.get $k
-    global.get $__s120
-    call $__i32_add_chk
-    local.get $n
-    i32.ge_s
-    (if (result i64)
-      (then
-    local.get $i
-    local.set $__conv1
-    local.get $__conv1
-    i64.extend_i32_s
-    return
-      )
-      (else
-        i64.const 0
-      )
-    )
-    drop
-    i32.const 128
-    local.set $lo
-    i32.const 191
-    local.set $hi
-    local.get $c
-    i32.const 224
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 160
-    local.set $lo
-    i32.const 0
-      )
-      (else
-    local.get $c
-    i32.const 237
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 159
-    local.set $hi
-    i32.const 0
-      )
-      (else
-    local.get $c
-    i32.const 240
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 144
-    local.set $lo
-    i32.const 0
-      )
-      (else
-    local.get $c
-    i32.const 244
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 143
-    local.set $hi
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-    drop
-    local.get $data
-    local.get $i
-    i32.const 1
-    global.get $__s121
-    call $__i32_add_chk
-    call $wasiByteAt
-    local.set $d
-    local.get $d
-    local.get $lo
-    i32.lt_s
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $d
-    local.get $hi
-    i32.gt_s
-      )
-    )
-    (if (result i64)
-      (then
-    local.get $i
-    local.set $__conv2
-    local.get $__conv2
-    i64.extend_i32_s
-    return
-      )
-      (else
-        i64.const 0
-      )
-    )
-    drop
-    i32.const 2
-    local.set $j
-    (block $__break
-      (loop $__continue
-    local.get $j
-    local.get $k
-    i32.le_s
-        i32.eqz
-        br_if $__break
-    local.get $data
-    local.get $i
-    local.get $j
-    global.get $__s122
-    call $__i32_add_chk
-    call $wasiByteAt
-    local.set $e
-    local.get $e
-    i32.const 128
-    i32.lt_s
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $e
-    i32.const 191
-    i32.gt_s
-      )
-    )
-    (if (result i64)
-      (then
-    local.get $i
-    local.set $__conv3
-    local.get $__conv3
-    i64.extend_i32_s
-    return
-      )
-      (else
-        i64.const 0
-      )
-    )
-    drop
-    local.get $j
-    i32.const 1
-    global.get $__s123
-    call $__i32_add_chk
-    local.set $j
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $i
-    local.get $k
-    global.get $__s124
-    call $__i32_add_chk
-    i32.const 1
-    global.get $__s125
-    call $__i32_add_chk
-    local.set $i
-        )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    i32.const 1
-    global.get $__s126
-    call $__i32_sub_chk
-    i64.extend_i32_s
-    return
-  )
-  (func $stripEolWasm (param $line (ref null $str)) (result (ref null $str))
-    (local $n i32)
-    (local $__gc81 i32)
-    (local $__gc82 i32)
-    (local $__gc83 (ref null $str))
-    (local $__gc84 i32)
-    local.get $line
-    array.len
-    local.set $n
-    local.get $n
-    i32.const 0
-    i32.gt_s
-    (if (result i32)
-      (then
-    local.get $line
-    local.get $n
-    i32.const 1
-    global.get $__s127
-    call $__i32_sub_chk
-    call $wasiByteAt
-    i32.const 10
-    i32.eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $n
-    i32.const 1
-    global.get $__s128
-    call $__i32_sub_chk
-    local.set $n
-    local.get $n
-    i32.const 0
-    i32.gt_s
-    (if (result i32)
-      (then
-    local.get $line
-    local.get $n
-    i32.const 1
-    global.get $__s129
-    call $__i32_sub_chk
-    call $wasiByteAt
-    i32.const 13
-    i32.eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $n
-    i32.const 1
-    global.get $__s130
-    call $__i32_sub_chk
-    local.set $n
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $line
-    i32.const 0
-    local.get $n
-    local.set $__gc81
-    local.set $__gc82
-    local.set $__gc83
-    global.get $__heap_ptr
-    local.set $__gc84
-    local.get $__gc83
-    call $__gc_to_lin_str
-    local.get $__gc82
-    local.get $__gc81
-    call $__std_bytes_slice
-    call $__lin_to_gc_str
-    local.get $__gc84
-    global.set $__heap_ptr
-    return
-  )
-  (func $openWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $h i32)
-    (local $handle anyref)
-    (local $__gc85 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc85
-    local.get $__gc85
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc85
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc85
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 0
-    call $wasiOpen
-    local.set $h
-    local.get $h
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s131
-    call $__i32_sub_chk
-    local.get $h
-    global.get $__s132
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    struct.new $box_i32
-    local.set $handle
-    i32.const 0
-    local.get $handle
-    struct.new $result
-    return
-  )
-  (func $createWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $h i32)
-    (local $handle anyref)
-    (local $__gc86 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc86
-    local.get $__gc86
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc86
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc86
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 1
-    call $wasiOpen
-    local.set $h
-    local.get $h
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s133
-    call $__i32_sub_chk
-    local.get $h
-    global.get $__s134
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $h
-    struct.new $box_i32
-    local.set $handle
-    i32.const 0
-    local.get $handle
-    struct.new $result
-    return
-  )
-  (func $memHandleWasm (param $data (ref null $str)) (result anyref)
-    (local $handle anyref)
-    local.get $data
-    call $wasiOpenMem
-    struct.new $box_i32
-    local.set $handle
-    local.get $handle
-    return
-  )
-  (func $sizeWasm (param $handle anyref) (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $n i64)
-    (local $__gc87 (ref null $result))
-    local.get $handle
-    call $blockOf
-    call $wasiSize
-    call $okSize
-    local.set $__gc87
-    local.get $__gc87
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc87
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc87
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $n
-    i32.const 0
-    local.get $n
-    struct.new $box_i64
-    struct.new $result
-    return
-  )
-  (func $readWasm (param $handle anyref) (param $n i32) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc88 (ref null $result))
-    local.get $handle
-    call $blockOf
-    local.get $n
-    call $wasiRead
-    call $okBytes
-    local.set $__gc88
-    local.get $__gc88
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc88
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc88
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
-  (func $readAllWasm (param $handle anyref) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc89 (ref null $result))
-    local.get $handle
-    call $blockOf
-    call $wasiReadAll
-    call $okBytes
-    local.set $__gc89
-    local.get $__gc89
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc89
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc89
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
-  (func $readLineWasm (param $handle anyref) (result (ref null $result))
-    (local $_try0 i32)
-    (local $b (ref null $str))
-    (local $__gc90 (ref null $result))
-    local.get $handle
-    call $blockOf
-    call $wasiReadLine
-    call $okBytes
-    local.set $__gc90
-    local.get $__gc90
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc90
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc90
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    struct.new $result
-    return
-  )
   ;; The SHA-256 of the whole file, the position where it was.
-  (func $hashWasm (param $handle anyref) (result (ref null $result))
-    (local $_try0 i32)
-    (local $block i32)
-    (local $at i64)
-    (local $r (ref null $result))
-    (local $b (ref null $str))
-    (local $__gc91 (ref null $result))
-    local.get $handle
-    call $blockOf
-    local.set $block
-    local.get $block
-    call $wasiTell
-    local.set $at
-    local.get $block
-    i32.const 0
-    i64.extend_i32_s
-    call $wasiSeek
-    local.get $block
-    call $wasiReadAll
-    local.set $r
-    local.get $block
-    local.get $at
-    call $wasiSeek
-    local.get $r
-    call $okBytes
-    local.set $__gc91
-    local.get $__gc91
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc91
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc91
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $b
-    i32.const 0
-    local.get $b
-    call $wasiSha256
-    struct.new $result
-    return
-  )
-  (func $writeWasm (param $handle anyref) (param $data (ref null $str)) (result (ref null $result))
-    (local $n i32)
-    local.get $handle
-    call $blockOf
-    local.get $data
-    call $wasiWrite
-    local.set $n
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s135
-    call $__i32_sub_chk
-    local.get $n
-    global.get $__s136
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    local.get $n
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $closeWasm (param $handle anyref) (result (ref null $result))
-    local.get $handle
-    call $blockOf
-    call $wasiClose
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $readOnlyWasm (param $handle anyref) (result i32)
-    local.get $handle
-    call $blockOf
-    call $wasiIsMem
-    return
-  )
-  (func $existsWasm (param $path (ref null $str)) (result i32)
-    (local $p i32)
-    (local $__case_0 (ref null $result))
-    (local $p__33 (ref null $str))
-    local.get $path
-    call $resolve
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p__33
-    local.get $p__33
-    i32.const 1
-    call $wasiStatKind
-    i32.const 0
-    i32.ge_s
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result i32)
-      (then
-    i32.const 0
-      )
-      (else
-    i32.const 0
-      )
-    )
-      )
-    )
-    return
-  )
-  (func $listWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $p (ref null $str))
-    (local $names (ref null $arr_any))
-    (local $__gc92 (ref null $result))
-    (local $__gc93 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc92
-    local.get $__gc92
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc92
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc92
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    call $wasiList
-    call $okStrings
-    local.set $__gc93
-    local.get $__gc93
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc93
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc93
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $names
-    i32.const 0
-    local.get $names
-    call $sortedStrings
-    struct.new $result
-    return
-  )
-  (func $mkdirWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $r i32)
-    (local $__gc94 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc94
-    local.get $__gc94
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc94
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc94
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    call $wasiMkdir
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s137
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s138
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; The directory and every missing one above it. One that is there is `Ok`; a file in the way is
   ;; `EEXIST` when it is the directory asked for, `ENOTDIR` when it is above it.
-  (func $mkdirRecursiveWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $p (ref null $str))
-    (local $parts (ref null $arr_any))
-    (local $pieces (ref null $arr_any))
-    (local $i i32)
-    (local $piece (ref null $str))
-    (local $__bp_nullish i32)
-    (local $prefix (ref null $str))
-    (local $k i32)
-    (local $kind i32)
-    (local $made i32)
-    (local $__gc95 (ref null $result))
-    (local $__gc96 (ref null $str))
-    (local $__gc97 (ref null $str))
-    (local $__gc98 i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__34 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__35 (ref null $str))
-    local.get $path
-    call $resolve
-    local.set $__gc95
-    local.get $__gc95
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc95
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc95
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    array.new_fixed $arr_any 0
-    local.set $parts
-    local.get $p
-    global.get $__s105
-    local.set $__gc96
-    local.set $__gc97
-    global.get $__heap_ptr
-    local.set $__gc98
-    local.get $__gc97
-    call $__gc_to_lin_str
-    local.get $__gc96
-    call $__gc_to_lin_str
-    call $__std_text_split
-    call $__lin_to_gc_strs
-    local.get $__gc98
-    global.set $__heap_ptr
-    local.set $pieces
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $pieces
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $pieces
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__34
-    local.get $__bp_nullish__34
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $piece
-    local.get $i
-    i32.const 1
-    global.get $__s139
-    call $__i32_add_chk
-    local.set $i
-    local.get $piece
-    global.get $__s0
-    call $__str_eq
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $piece
-    global.get $__s5
-    call $__str_eq
-    i32.eqz
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $parts
-    local.get $piece
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $parts
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    global.get $__s0
-    local.set $prefix
-    i32.const 0
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $parts
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-        (block $__next
-    local.get $prefix
-    local.get $parts
-    local.get $k
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__35
-    local.get $__bp_nullish__35
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    call $joinPath
-    local.set $prefix
-    local.get $k
-    i32.const 1
-    global.get $__s140
-    call $__i32_add_chk
-    local.set $k
-    local.get $prefix
-    i32.const 1
-    call $wasiStatKind
-    local.set $kind
-    local.get $kind
-    i32.const 3
-    i32.eq
-    (if (result (ref null $result))
-      (then
-    br $__next
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $kind
-    i32.const 0
-    i32.ge_s
-    (if (result (ref null $result))
-      (then
-    local.get $k
-    local.get $parts
-    array.len
-    i32.eq
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 7
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 1
-    i32.const 24
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $prefix
-    call $wasiMkdir
-    local.set $made
-    local.get $made
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s141
-    call $__i32_sub_chk
-    local.get $made
-    global.get $__s142
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-        )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; The FILE at `path`: a directory is `EISDIR`, whatever it holds.
-  (func $rmWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $p (ref null $str))
-    (local $kind i32)
-    (local $r i32)
-    (local $__gc99 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc99
-    local.get $__gc99
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc99
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc99
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 0
-    call $wasiStatKind
-    local.set $kind
-    local.get $kind
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s143
-    call $__i32_sub_chk
-    local.get $kind
-    global.get $__s144
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $kind
-    i32.const 3
-    i32.eq
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 14
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $p
-    call $wasiUnlink
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s145
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s146
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $copyWasm (param $src (ref null $str)) (param $dest (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $contents (ref null $str))
-    (local $written i32)
-    (local $__gc100 (ref null $result))
-    (local $__gc101 (ref null $result))
-    local.get $src
-    call $readBytesWasm
-    local.set $__gc100
-    local.get $__gc100
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc100
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc100
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $contents
-    local.get $dest
-    local.get $contents
-    call $writeBytesWasm
-    local.set $__gc101
-    local.get $__gc101
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc101
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc101
-    struct.get $result $payload
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $written
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
-  (func $statWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $_try2 i32)
-    (local $__mem0 i32)
-    (local $p (ref null $str))
-    (local $kind i32)
-    (local $size i64)
-    (local $seconds i64)
-    (local $__gc102 (ref null $result))
-    (local $__gc103 (ref null $result))
-    (local $__gc104 (ref null $result))
-    local.get $path
-    call $resolve
-    local.set $__gc102
-    local.get $__gc102
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc102
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc102
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 1
-    call $wasiStatKind
-    local.set $kind
-    local.get $kind
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s147
-    call $__i32_sub_chk
-    local.get $kind
-    global.get $__s148
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $p
-    call $wasiStatSize
-    call $okSize
-    local.set $__gc103
-    local.get $__gc103
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc103
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc103
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $size
-    local.get $p
-    call $wasiStatMtime
-    call $okSize
-    local.set $__gc104
-    local.get $__gc104
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc104
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc104
-    struct.get $result $payload
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    local.set $seconds
-    i32.const 0
-    local.get $size
-    local.get $seconds
-    i32.const 1000
-    i64.extend_i32_s
-    global.get $__s149
-    call $__i64_mul_chk
-    local.get $kind
-    i32.const 3
-    i32.eq
-    call $__new_39
-    struct.new $result
-    return
-  )
   ;; The regular files under `root` and the links whose target is missing, as paths relative to it, in
   ;; directory order: a work list of directories, not a recursion (a recursive `try` is not lowered on wasm).
-  (func $walkWasm (param $root (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $__mem6 i32)
-    (local $__mem7 i32)
-    (local $__mem8 i32)
-    (local $p (ref null $str))
-    (local $kind i32)
-    (local $dirs (ref null $arr_any))
-    (local $rels (ref null $arr_any))
-    (local $files (ref null $arr_any))
-    (local $dangling (ref null $arr_any))
-    (local $next i32)
-    (local $dir (ref null $str))
-    (local $__bp_nullish i32)
-    (local $rel (ref null $str))
-    (local $names (ref null $arr_any))
-    (local $i i32)
-    (local $name (ref null $str))
-    (local $full (ref null $str))
-    (local $sub (ref null $str))
-    (local $entry i32)
-    (local $__gc105 (ref null $result))
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__36 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__37 (ref null $str))
-    (local $__gc106 (ref null $result))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__38 (ref null $str))
-    local.get $root
-    call $resolve
-    local.set $__gc105
-    local.get $__gc105
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc105
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc105
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 1
-    call $wasiStatKind
-    local.set $kind
-    local.get $kind
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s150
-    call $__i32_sub_chk
-    local.get $kind
-    global.get $__s151
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $kind
-    i32.const 3
-    i32.ne
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 24
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $p
-    array.new_fixed $arr_any 1
-    local.set $dirs
-    global.get $__s0
-    array.new_fixed $arr_any 1
-    local.set $rels
-    array.new_fixed $arr_any 0
-    local.set $files
-    array.new_fixed $arr_any 0
-    local.set $dangling
-    i32.const 0
-    local.set $next
-    (block $__break
-      (loop $__continue
-    local.get $next
-    local.get $dirs
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $dirs
-    local.get $next
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__36
-    local.get $__bp_nullish__36
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $dir
-    local.get $rels
-    local.get $next
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__37
-    local.get $__bp_nullish__37
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $rel
-    local.get $next
-    i32.const 1
-    global.get $__s152
-    call $__i32_add_chk
-    local.set $next
-    local.get $dir
-    call $wasiList
-    call $okStrings
-    local.set $__gc106
-    local.get $__gc106
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc106
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc106
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $names
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $names
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $names
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__38
-    local.get $__bp_nullish__38
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $name
-    local.get $i
-    i32.const 1
-    global.get $__s153
-    call $__i32_add_chk
-    local.set $i
-    local.get $dir
-    local.get $name
-    call $joinPath
-    local.set $full
-    local.get $rel
-    local.get $name
-    call $joinPath
-    local.set $sub
-    local.get $full
-    i32.const 1
-    call $wasiStatKind
-    local.set $entry
-    local.get $entry
-    i32.const 0
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $entry
-    i32.const 0
-    i32.const 21
-    global.get $__s154
-    call $__i32_sub_chk
-    i32.ne
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s155
-    call $__i32_sub_chk
-    local.get $entry
-    global.get $__s156
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $entry
-    i32.const 3
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $dirs
-    local.get $full
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $dirs
-    local.get $rels
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $rels
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $entry
-    i32.const 6
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $files
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $files
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $entry
-    i32.const 0
-    i32.const 21
-    global.get $__s157
-    call $__i32_sub_chk
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $dangling
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $dangling
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    local.get $files
-    call $sortedStrings
-    local.get $dangling
-    call $sortedStrings
-    call $__new_55
-    struct.new $result
-    return
-  )
   ;; Whether the segment holds a wildcard.
-  (func $isMagic (param $seg (ref null $str)) (result i32)
-    (local $__gc107 (ref null $str))
-    (local $__gc108 (ref null $str))
-    (local $__gc109 i32)
-    (local $__gc110 (ref null $str))
-    (local $__gc111 (ref null $str))
-    (local $__gc112 i32)
-    (local $__gc113 (ref null $str))
-    (local $__gc114 (ref null $str))
-    (local $__gc115 i32)
-    (local $__gc116 (ref null $str))
-    (local $__gc117 (ref null $str))
-    (local $__gc118 i32)
-    local.get $seg
-    global.get $__s158
-    local.set $__gc107
-    local.set $__gc108
-    global.get $__heap_ptr
-    local.set $__gc109
-    local.get $__gc108
-    call $__gc_to_lin_str
-    local.get $__gc107
-    call $__gc_to_lin_str
-    call $__std_text_contains
-    local.get $__gc109
-    global.set $__heap_ptr
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $seg
-    global.get $__s159
-    local.set $__gc110
-    local.set $__gc111
-    global.get $__heap_ptr
-    local.set $__gc112
-    local.get $__gc111
-    call $__gc_to_lin_str
-    local.get $__gc110
-    call $__gc_to_lin_str
-    call $__std_text_contains
-    local.get $__gc112
-    global.set $__heap_ptr
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $seg
-    global.get $__s160
-    local.set $__gc113
-    local.set $__gc114
-    global.get $__heap_ptr
-    local.set $__gc115
-    local.get $__gc114
-    call $__gc_to_lin_str
-    local.get $__gc113
-    call $__gc_to_lin_str
-    call $__std_text_contains
-    local.get $__gc115
-    global.set $__heap_ptr
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $seg
-    global.get $__s161
-    local.set $__gc116
-    local.set $__gc117
-    global.get $__heap_ptr
-    local.set $__gc118
-    local.get $__gc117
-    call $__gc_to_lin_str
-    local.get $__gc116
-    call $__gc_to_lin_str
-    call $__std_text_contains
-    local.get $__gc118
-    global.set $__heap_ptr
-      )
-    )
-    return
-  )
   ;; A segment with its `{a,b}` alternatives written out, nested ones too; one that is never closed is a name.
-  (func $expandBraces (param $seg (ref null $str)) (result (ref null $arr_any))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $cs (ref null $arr_any))
-    (local $open i32)
-    (local $i i32)
-    (local $depth i32)
-    (local $close i32)
-    (local $cuts (ref null $arr_i32))
-    (local $j i32)
-    (local $closed i32)
-    (local $c (ref null $str))
-    (local $__bp_nullish i32)
-    (local $head (ref null $str))
-    (local $tail (ref null $str))
-    (local $out (ref null $arr_any))
-    (local $start i32)
-    (local $k i32)
-    (local $stop i32)
-    (local $alt (ref null $str))
-    (local $__gc119 (ref null $str))
-    (local $__gc120 i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__39 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__40 (ref null $str))
-    (local $__opt2 anyref)
-    local.get $seg
-    local.set $__gc119
-    global.get $__heap_ptr
-    local.set $__gc120
-    local.get $__gc119
-    call $__gc_to_lin_str
-    call $__std_text_chars
-    call $__lin_to_gc_strs
-    local.get $__gc120
-    global.set $__heap_ptr
-    local.set $cs
-    i32.const 0
-    i32.const 1
-    global.get $__s162
-    call $__i32_sub_chk
-    local.set $open
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $cs
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $cs
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__39
-    local.get $__bp_nullish__39
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s161
-    call $__str_eq
-    (if (result (ref null $arr_any))
-      (then
-    local.get $i
-    local.set $open
-    br $__break
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $i
-    i32.const 1
-    global.get $__s163
-    call $__i32_add_chk
-    local.set $i
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $open
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $arr_any))
-      (then
-    local.get $seg
-    array.new_fixed $arr_any 1
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    i32.const 0
-    local.set $depth
-    i32.const 0
-    i32.const 1
-    global.get $__s164
-    call $__i32_sub_chk
-    local.set $close
-    array.new_fixed $arr_i32 0
-    local.set $cuts
-    local.get $open
-    local.set $j
-    i32.const 0
-    local.set $closed
-    (block $__break
-      (loop $__continue
-    local.get $j
-    local.get $cs
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $closed
-    i32.eqz
-      )
-      (else
-    i32.const 0
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $cs
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__40
-    local.get $__bp_nullish__40
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $c
-    local.get $c
-    global.get $__s161
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $depth
-    i32.const 1
-    global.get $__s165
-    call $__i32_add_chk
-    local.set $depth
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $c
-    global.get $__s166
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $depth
-    i32.const 1
-    global.get $__s167
-    call $__i32_sub_chk
-    local.set $depth
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $c
-    global.get $__s166
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $depth
-    i32.const 0
-    i32.eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $j
-    local.set $close
-    i32.const 1
-    local.set $closed
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $c
-    global.get $__s168
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $depth
-    i32.const 1
-    i32.eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $cuts
-    local.get $j
-    array.new_fixed $arr_i32 1
-    call $__arr_concat_i32
-    local.set $cuts
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $j
-    i32.const 1
-    global.get $__s169
-    call $__i32_add_chk
-    local.set $j
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $close
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $arr_any))
-      (then
-    local.get $seg
-    array.new_fixed $arr_any 1
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $cs
-    i32.const 0
-    local.get $open
-    call $__arr_slice_any
-    global.get $__s0
-    call $__arr_join_any
-    local.set $head
-    local.get $cs
-    local.get $close
-    i32.const 1
-    global.get $__s170
-    call $__i32_add_chk
-    i32.const 2147483647
-    call $__arr_slice_any
-    global.get $__s0
-    call $__arr_join_any
-    local.set $tail
-    array.new_fixed $arr_any 0
-    local.set $out
-    local.get $open
-    i32.const 1
-    global.get $__s171
-    call $__i32_add_chk
-    local.set $start
-    i32.const 0
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $cuts
-    array.len
-    i32.le_s
-        i32.eqz
-        br_if $__break
-    local.get $close
-    local.set $stop
-    local.get $k
-    local.get $cuts
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $cuts
-    local.get $k
-    call $__arr_at_opt_i32
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $__opt2
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    local.get $close
-      )
-    )
-    local.set $stop
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $cs
-    local.get $start
-    local.get $stop
-    call $__arr_slice_any
-    global.get $__s0
-    call $__arr_join_any
-    local.set $alt
-    local.get $out
-    local.get $head
-    local.get $alt
-    call $__str_concat
-    local.get $tail
-    call $__str_concat
-    call $expandBraces
-    call $__arr_concat_any
-    local.set $out
-    local.get $stop
-    i32.const 1
-    global.get $__s172
-    call $__i32_add_chk
-    local.set $start
-    local.get $k
-    i32.const 1
-    global.get $__s173
-    call $__i32_add_chk
-    local.set $k
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $out
-    return
-  )
   ;; The `]` that closes the class opened at `at`, `-1` when there is none (the `[` is then a name).
-  (func $classEnd (param $pat (ref null $arr_any)) (param $at i32) (result i32)
-    (local $j i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__opt3 (ref null $str))
-    local.get $at
-    i32.const 1
-    global.get $__s174
-    call $__i32_add_chk
-    local.set $j
-    local.get $j
-    local.get $pat
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s175
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $pat
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s176
-    call $__str_eq
-      )
-    )
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $j
-    i32.const 1
-    global.get $__s177
-    call $__i32_add_chk
-    local.set $j
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $j
-    local.get $pat
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s178
-    call $__str_eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $j
-    i32.const 1
-    global.get $__s179
-    call $__i32_add_chk
-    local.set $j
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    (block $__break
-      (loop $__continue
-    local.get $j
-    local.get $pat
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $pat
-    local.get $j
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt3
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt3
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s178
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $j
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $j
-    i32.const 1
-    global.get $__s180
-    call $__i32_add_chk
-    local.set $j
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    i32.const 1
-    global.get $__s181
-    call $__i32_sub_chk
-    return
-  )
   ;; Whether `ch` is in the class written between `first` and `stop` (`!` or `^` first negates it, `a-z` is a range).
-  (func $classHas (param $pat (ref null $arr_any)) (param $first i32) (param $stop i32) (param $ch (ref null $str)) (result i32)
-    (local $i i32)
-    (local $negate i32)
-    (local $found i32)
-    (local $lo (ref null $str))
-    (local $__bp_nullish i32)
-    (local $hi (ref null $str))
-    (local $c i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__41 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__42 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__43 (ref null $str))
-    (local $__opt3 (ref null $str))
-    (local $__bp_nullish__44 (ref null $str))
-    (local $__opt4 (ref null $str))
-    (local $__bp_nullish__45 (ref null $str))
-    local.get $first
-    local.set $i
-    i32.const 0
-    local.set $negate
-    local.get $i
-    local.get $stop
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__41
-    local.get $__bp_nullish__41
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s175
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $pat
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__42
-    local.get $__bp_nullish__42
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s176
-    call $__str_eq
-      )
-    )
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 1
-    local.set $negate
-    local.get $i
-    i32.const 1
-    global.get $__s182
-    call $__i32_add_chk
-    local.set $i
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    i32.const 0
-    local.set $found
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $stop
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $pat
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__43
-    local.get $__bp_nullish__43
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $lo
-    local.get $i
-    i32.const 2
-    global.get $__s183
-    call $__i32_add_chk
-    local.get $stop
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $i
-    i32.const 1
-    global.get $__s184
-    call $__i32_add_chk
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt3
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt3
-    local.set $__bp_nullish__44
-    local.get $__bp_nullish__44
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s185
-    call $__str_eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if
-      (then
-    local.get $pat
-    local.get $i
-    i32.const 2
-    global.get $__s186
-    call $__i32_add_chk
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt4
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt4
-    local.set $__bp_nullish__45
-    local.get $__bp_nullish__45
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $hi
-    local.get $ch
-    i32.const 0
-    call $__std_text_charCodeAt
-    local.set $c
-    local.get $lo
-    i32.const 0
-    call $__std_text_charCodeAt
-    local.get $c
-    i32.le_s
-    (if (result i32)
-      (then
-    local.get $c
-    local.get $hi
-    i32.const 0
-    call $__std_text_charCodeAt
-    i32.le_s
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    i32.const 1
-    local.set $found
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $i
-    i32.const 3
-    global.get $__s187
-    call $__i32_add_chk
-    local.set $i
-      )
-      (else
-    local.get $lo
-    local.get $ch
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 1
-    local.set $found
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $i
-    i32.const 1
-    global.get $__s188
-    call $__i32_add_chk
-    local.set $i
-      )
-    )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $found
-    local.get $negate
-    i32.ne
-    return
-  )
   ;; `name` against one pattern without braces: `*`, `?`, `[…]`.
-  (func $globMatch (param $pat (ref null $arr_any)) (param $begin i32) (param $name (ref null $arr_any)) (param $offset i32) (result i32)
-    (local $p i32)
-    (local $n i32)
-    (local $c (ref null $str))
-    (local $__bp_nullish i32)
-    (local $k i32)
-    (local $ch (ref null $str))
-    (local $end i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__46 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__47 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__48 (ref null $str))
-    local.get $begin
-    local.set $p
-    local.get $offset
-    local.set $n
-    (block $__break
-      (loop $__continue
-    local.get $p
-    local.get $pat
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $pat
-    local.get $p
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__46
-    local.get $__bp_nullish__46
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $c
-    local.get $c
-    global.get $__s158
-    call $__str_eq
-    (if (result i32)
-      (then
-    (block $__break
-      (loop $__continue
-    local.get $p
-    local.get $pat
-    array.len
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $p
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__47
-    local.get $__bp_nullish__47
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    global.get $__s158
-    call $__str_eq
-      )
-      (else
-    i32.const 0
-      )
-    )
-        i32.eqz
-        br_if $__break
-    local.get $p
-    i32.const 1
-    global.get $__s189
-    call $__i32_add_chk
-    local.set $p
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $p
-    local.get $pat
-    array.len
-    i32.eq
-    (if (result i32)
-      (then
-    i32.const 1
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $n
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $name
-    array.len
-    i32.le_s
-        i32.eqz
-        br_if $__break
-    local.get $pat
-    local.get $p
-    local.get $name
-    local.get $k
-    call $globMatch
-    (if (result i32)
-      (then
-    i32.const 1
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $k
-    i32.const 1
-    global.get $__s190
-    call $__i32_add_chk
-    local.set $k
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $n
-    local.get $name
-    array.len
-    i32.ge_s
-    (if (result i32)
-      (then
-    i32.const 0
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $name
-    local.get $n
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__48
-    local.get $__bp_nullish__48
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $ch
-    local.get $c
-    global.get $__s159
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $p
-    i32.const 1
-    global.get $__s191
-    call $__i32_add_chk
-    local.set $p
-    local.get $n
-    i32.const 1
-    global.get $__s192
-    call $__i32_add_chk
-    local.set $n
-    i32.const 0
-      )
-      (else
-    local.get $c
-    global.get $__s160
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $pat
-    local.get $p
-    call $classEnd
-    local.set $end
-    local.get $end
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-    local.get $ch
-    global.get $__s160
-    call $__str_eq
-    i32.eqz
-    (if (result i32)
-      (then
-    i32.const 0
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $p
-    i32.const 1
-    global.get $__s193
-    call $__i32_add_chk
-    local.set $p
-    local.get $n
-    i32.const 1
-    global.get $__s194
-    call $__i32_add_chk
-    local.set $n
-      )
-      (else
-    local.get $pat
-    local.get $p
-    i32.const 1
-    global.get $__s195
-    call $__i32_add_chk
-    local.get $end
-    local.get $ch
-    call $classHas
-    i32.eqz
-    (if (result i32)
-      (then
-    i32.const 0
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $end
-    i32.const 1
-    global.get $__s196
-    call $__i32_add_chk
-    local.set $p
-    local.get $n
-    i32.const 1
-    global.get $__s197
-    call $__i32_add_chk
-    local.set $n
-      )
-    )
-    i32.const 0
-      )
-      (else
-    local.get $c
-    local.get $ch
-    call $__str_eq
-    i32.eqz
-    (if (result i32)
-      (then
-    i32.const 0
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $p
-    i32.const 1
-    global.get $__s198
-    call $__i32_add_chk
-    local.set $p
-    local.get $n
-    i32.const 1
-    global.get $__s199
-    call $__i32_add_chk
-    local.set $n
-    i32.const 0
-      )
-    )
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $n
-    local.get $name
-    array.len
-    i32.eq
-    return
-  )
-  (func $segmentMatches (param $seg (ref null $str)) (param $name (ref null $str)) (result i32)
-    (local $alts (ref null $arr_any))
-    (local $chars (ref null $arr_any))
-    (local $i i32)
-    (local $__gc121 (ref null $str))
-    (local $__gc122 i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish (ref null $str))
-    (local $__gc123 (ref null $str))
-    (local $__gc124 i32)
-    local.get $seg
-    call $expandBraces
-    local.set $alts
-    local.get $name
-    local.set $__gc121
-    global.get $__heap_ptr
-    local.set $__gc122
-    local.get $__gc121
-    call $__gc_to_lin_str
-    call $__std_text_chars
-    call $__lin_to_gc_strs
-    local.get $__gc122
-    global.set $__heap_ptr
-    local.set $chars
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $alts
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $alts
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish
-    local.get $__bp_nullish
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $__gc123
-    global.get $__heap_ptr
-    local.set $__gc124
-    local.get $__gc123
-    call $__gc_to_lin_str
-    call $__std_text_chars
-    call $__lin_to_gc_strs
-    local.get $__gc124
-    global.set $__heap_ptr
-    i32.const 0
-    local.get $chars
-    i32.const 0
-    call $globMatch
-    (if (result i32)
-      (then
-    i32.const 1
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $i
-    i32.const 1
-    global.get $__s200
-    call $__i32_add_chk
-    local.set $i
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    return
-  )
   ;; The names in `dir` the segment matches; a dot name only when the segment itself begins with the dot.
-  (func $globNames (param $dir (ref null $str)) (param $seg (ref null $str)) (result (ref null $arr_any))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $listed (ref null $arr_any))
-    (local $xs i32)
-    (local $out (ref null $arr_any))
-    (local $i i32)
-    (local $name (ref null $str))
-    (local $__bp_nullish i32)
-    (local $__case_0 (ref null $result))
-    (local $xs__49 (ref null $arr_any))
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__50 (ref null $str))
-    (local $__gc125 (ref null $str))
-    (local $__gc126 (ref null $str))
-    (local $__gc127 i32)
-    (local $__gc128 (ref null $str))
-    (local $__gc129 (ref null $str))
-    (local $__gc130 i32)
-    local.get $dir
-    call $wasiList
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $arr_any))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $xs__49
-    local.get $xs__49
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $arr_any))
-      (then
-    array.new_fixed $arr_any 0
-      )
-      (else
-    ref.null $arr_any
-      )
-    )
-      )
-    )
-    local.set $listed
-    array.new_fixed $arr_any 0
-    local.set $out
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $listed
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-        (block $__next
-    local.get $listed
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__50
-    local.get $__bp_nullish__50
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $name
-    local.get $i
-    i32.const 1
-    global.get $__s201
-    call $__i32_add_chk
-    local.set $i
-    local.get $name
-    global.get $__s5
-    local.set $__gc125
-    local.set $__gc126
-    global.get $__heap_ptr
-    local.set $__gc127
-    local.get $__gc126
-    call $__gc_to_lin_str
-    local.get $__gc125
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc127
-    global.set $__heap_ptr
-    (if (result i32)
-      (then
-    local.get $seg
-    global.get $__s5
-    local.set $__gc128
-    local.set $__gc129
-    global.get $__heap_ptr
-    local.set $__gc130
-    local.get $__gc129
-    call $__gc_to_lin_str
-    local.get $__gc128
-    call $__gc_to_lin_str
-    call $__std_text_startsWith
-    local.get $__gc130
-    global.set $__heap_ptr
-    i32.eqz
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result (ref null $arr_any))
-      (then
-    br $__next
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $seg
-    global.get $__s158
-    call $__str_eq
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $seg
-    local.get $name
-    call $segmentMatches
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $out
-    local.get $name
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $out
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        )
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $out
-    return
-  )
   ;; The entries `segs` from `i` match under `dir` (`rel` its path from the root of the glob), added to `out`. A
   ;; wildcard continues into real directories only; a name goes through a link.
-  (func $globWalk (param $segs (ref null $arr_any)) (param $i i32) (param $dir (ref null $str)) (param $rel (ref null $str)) (param $out (ref null $arr_any)) (result (ref null $arr_any))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $acc (ref null $arr_any))
-    (local $seg (ref null $str))
-    (local $__bp_nullish i32)
-    (local $last i32)
-    (local $names (ref null $arr_any))
-    (local $k i32)
-    (local $name (ref null $str))
-    (local $full (ref null $str))
-    (local $sub (ref null $str))
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__51 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__52 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__53 (ref null $str))
-    local.get $out
-    local.set $acc
-    local.get $i
-    local.get $segs
-    array.len
-    i32.eq
-    (if (result (ref null $arr_any))
-      (then
-    local.get $rel
-    global.get $__s0
-    call $__str_eq
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $acc
-    local.get $rel
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $acc
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $segs
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__51
-    local.get $__bp_nullish__51
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $seg
-    local.get $i
-    local.get $segs
-    array.len
-    i32.const 1
-    global.get $__s202
-    call $__i32_sub_chk
-    i32.eq
-    local.set $last
-    local.get $seg
-    global.get $__s203
-    call $__str_eq
-    (if (result (ref null $arr_any))
-      (then
-    local.get $last
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $segs
-    local.get $i
-    i32.const 1
-    global.get $__s204
-    call $__i32_add_chk
-    local.get $dir
-    local.get $rel
-    local.get $acc
-    call $globWalk
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $dir
-    global.get $__s158
-    call $globNames
-    local.set $names
-    i32.const 0
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $names
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $names
-    local.get $k
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__52
-    local.get $__bp_nullish__52
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $name
-    local.get $k
-    i32.const 1
-    global.get $__s205
-    call $__i32_add_chk
-    local.set $k
-    local.get $dir
-    local.get $name
-    call $joinPath
-    local.set $full
-    local.get $rel
-    local.get $name
-    call $joinPath
-    local.set $sub
-    local.get $last
-    (if (result i32)
-      (then
-    local.get $acc
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $full
-    i32.const 0
-    call $wasiStatKind
-    i32.const 3
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $segs
-    local.get $i
-    local.get $full
-    local.get $sub
-    local.get $acc
-    call $globWalk
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $acc
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $seg
-    call $isMagic
-    i32.eqz
-    (if (result (ref null $arr_any))
-      (then
-    local.get $dir
-    local.get $seg
-    call $joinPath
-    local.set $full
-    local.get $rel
-    local.get $seg
-    call $joinPath
-    local.set $sub
-    local.get $last
-    (if (result i32)
-      (then
-    local.get $full
-    i32.const 0
-    call $wasiStatKind
-    i32.const 0
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $acc
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-      )
-      (else
-    local.get $full
-    i32.const 1
-    call $wasiStatKind
-    i32.const 3
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $segs
-    local.get $i
-    i32.const 1
-    global.get $__s206
-    call $__i32_add_chk
-    local.get $full
-    local.get $sub
-    local.get $acc
-    call $globWalk
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-      )
-    )
-    drop
-    local.get $acc
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $dir
-    local.get $seg
-    call $globNames
-    local.set $names
-    i32.const 0
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $names
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $names
-    local.get $k
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__53
-    local.get $__bp_nullish__53
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $name
-    local.get $k
-    i32.const 1
-    global.get $__s207
-    call $__i32_add_chk
-    local.set $k
-    local.get $dir
-    local.get $name
-    call $joinPath
-    local.set $full
-    local.get $rel
-    local.get $name
-    call $joinPath
-    local.set $sub
-    local.get $last
-    (if (result i32)
-      (then
-    local.get $acc
-    local.get $sub
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $acc
-    i32.const 0
-      )
-      (else
-    local.get $full
-    i32.const 0
-    call $wasiStatKind
-    i32.const 3
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $segs
-    local.get $i
-    i32.const 1
-    global.get $__s208
-    call $__i32_add_chk
-    local.get $full
-    local.get $sub
-    local.get $acc
-    call $globWalk
-    local.set $acc
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $acc
-    return
-  )
-  (func $globWasm (param $pattern (ref null $str)) (param $root (ref null $str)) (result (ref null $arr_any))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $resolved (ref null $result))
-    (local $base (ref null $str))
-    (local $segs (ref null $arr_any))
-    (local $pieces (ref null $arr_any))
-    (local $i i32)
-    (local $piece (ref null $str))
-    (local $__bp_nullish i32)
-    (local $found (ref null $arr_any))
-    (local $kept (ref null $arr_any))
-    (local $k i32)
-    (local $entry (ref null $str))
-    (local $__gc131 (ref null $result))
-    (local $__gc132 (ref null $str))
-    (local $__gc133 (ref null $str))
-    (local $__gc134 i32)
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__54 (ref null $str))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__55 (ref null $str))
-    (local $__gc135 (ref null $str))
-    (local $__gc136 (ref null $str))
-    (local $__gc137 i32)
-    local.get $root
-    call $resolve
-    local.set $resolved
-    local.get $resolved
-    struct.get $result $tag
-    i32.const 0
-    i32.ne
-    (if (result (ref null $arr_any))
-      (then
-    array.new_fixed $arr_any 0
-    return
-      )
-      (else
-        ref.null $arr_any
-      )
-    )
-    drop
-    local.get $resolved
-    local.tee $__gc131
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    global.get $__s0
-      )
-      (else
-    local.get $__gc131
-    struct.get $result $payload
-    ref.cast (ref null $str)
-      )
-    )
-    local.set $base
-    array.new_fixed $arr_any 0
-    local.set $segs
-    local.get $pattern
-    global.get $__s105
-    local.set $__gc132
-    local.set $__gc133
-    global.get $__heap_ptr
-    local.set $__gc134
-    local.get $__gc133
-    call $__gc_to_lin_str
-    local.get $__gc132
-    call $__gc_to_lin_str
-    call $__std_text_split
-    call $__lin_to_gc_strs
-    local.get $__gc134
-    global.set $__heap_ptr
-    local.set $pieces
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $pieces
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $pieces
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__54
-    local.get $__bp_nullish__54
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $piece
-    local.get $i
-    i32.const 1
-    global.get $__s209
-    call $__i32_add_chk
-    local.set $i
-    local.get $piece
-    global.get $__s0
-    call $__str_eq
-    i32.eqz
-    (if (result i32)
-      (then
-    local.get $piece
-    global.get $__s5
-    call $__str_eq
-    i32.eqz
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $segs
-    local.get $piece
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $segs
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $segs
-    i32.const 0
-    local.get $base
-    global.get $__s0
-    array.new_fixed $arr_any 0
-    call $globWalk
-    local.set $found
-    array.new_fixed $arr_any 0
-    local.set $kept
-    i32.const 0
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    local.get $found
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $found
-    local.get $k
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__55
-    local.get $__bp_nullish__55
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $entry
-    local.get $k
-    i32.const 1
-    global.get $__s210
-    call $__i32_add_chk
-    local.set $k
-    local.get $pattern
-    global.get $__s105
-    local.set $__gc135
-    local.set $__gc136
-    global.get $__heap_ptr
-    local.set $__gc137
-    local.get $__gc136
-    call $__gc_to_lin_str
-    local.get $__gc135
-    call $__gc_to_lin_str
-    call $__std_text_endsWith
-    local.get $__gc137
-    global.set $__heap_ptr
-    i32.eqz
-    (if (result i32)
-      (then
-    i32.const 1
-      )
-      (else
-    local.get $base
-    local.get $entry
-    call $joinPath
-    i32.const 0
-    call $wasiStatKind
-    i32.const 3
-    i32.eq
-      )
-    )
-    (if (result i32)
-      (then
-    local.get $kept
-    local.get $entry
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $kept
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $kept
-    call $sortedStrings
-    return
-  )
   ;; A path that is not there is `Ok`: the caller wanted it gone. A link is removed, never followed. The
   ;; directories are found first, then the files removed, then the directories from the deepest.
-  (func $removeTreeWasm (param $path (ref null $str)) (result (ref null $result))
-    (local $_try0 i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $p (ref null $str))
-    (local $top i32)
-    (local $r i32)
-    (local $dirs (ref null $arr_any))
-    (local $next i32)
-    (local $dir (ref null $str))
-    (local $__bp_nullish i32)
-    (local $names (ref null $arr_any))
-    (local $i i32)
-    (local $full (ref null $str))
-    (local $kind i32)
-    (local $k i32)
-    (local $__gc138 (ref null $result))
-    (local $__opt0 (ref null $str))
-    (local $__bp_nullish__56 (ref null $str))
-    (local $__gc139 (ref null $result))
-    (local $__opt1 (ref null $str))
-    (local $__bp_nullish__57 (ref null $str))
-    (local $__opt2 (ref null $str))
-    (local $__bp_nullish__58 (ref null $str))
-    local.get $path
-    call $resolve
-    local.set $__gc138
-    local.get $__gc138
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc138
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc138
-    struct.get $result $payload
-    ref.cast (ref null $str)
-    local.set $p
-    local.get $p
-    i32.const 0
-    call $wasiStatKind
-    local.set $top
-    local.get $top
-    i32.const 0
-    i32.const 21
-    global.get $__s211
-    call $__i32_sub_chk
-    i32.eq
-    (if (result (ref null $result))
-      (then
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $top
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s212
-    call $__i32_sub_chk
-    local.get $top
-    global.get $__s213
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $top
-    i32.const 3
-    i32.ne
-    (if (result (ref null $result))
-      (then
-    local.get $p
-    call $wasiUnlink
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s214
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s215
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $p
-    array.new_fixed $arr_any 1
-    local.set $dirs
-    i32.const 0
-    local.set $next
-    (block $__break
-      (loop $__continue
-    local.get $next
-    local.get $dirs
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $dirs
-    local.get $next
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt0
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt0
-    local.set $__bp_nullish__56
-    local.get $__bp_nullish__56
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    local.set $dir
-    local.get $next
-    i32.const 1
-    global.get $__s216
-    call $__i32_add_chk
-    local.set $next
-    local.get $dir
-    call $wasiList
-    call $okStrings
-    local.set $__gc139
-    local.get $__gc139
-    struct.get $result $tag
-    (if
-      (then
-    local.get $__gc139
-    return ;; propagate Error
-      )
-    )
-    local.get $__gc139
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-    local.set $names
-    i32.const 0
-    local.set $i
-    (block $__break
-      (loop $__continue
-    local.get $i
-    local.get $names
-    array.len
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $dir
-    local.get $names
-    local.get $i
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt1
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt1
-    local.set $__bp_nullish__57
-    local.get $__bp_nullish__57
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    call $joinPath
-    local.set $full
-    local.get $i
-    i32.const 1
-    global.get $__s217
-    call $__i32_add_chk
-    local.set $i
-    local.get $full
-    i32.const 0
-    call $wasiStatKind
-    local.set $kind
-    local.get $kind
-    i32.const 0
-    i32.lt_s
-    (if (result i32)
-      (then
-    local.get $kind
-    i32.const 0
-    i32.const 21
-    global.get $__s218
-    call $__i32_sub_chk
-    i32.ne
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s219
-    call $__i32_sub_chk
-    local.get $kind
-    global.get $__s220
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-    local.get $kind
-    i32.const 3
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $dirs
-    local.get $full
-    array.new_fixed $arr_any 1
-    call $__arr_concat_any
-    local.set $dirs
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $kind
-    i32.const 0
-    i32.ge_s
-    (if (result i32)
-      (then
-    local.get $kind
-    i32.const 3
-    i32.ne
-      )
-      (else
-    i32.const 0
-      )
-    )
-    (if (result (ref null $result))
-      (then
-    local.get $full
-    call $wasiUnlink
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s221
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s222
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $dirs
-    array.len
-    local.set $k
-    (block $__break
-      (loop $__continue
-    local.get $k
-    i32.const 0
-    i32.gt_s
-        i32.eqz
-        br_if $__break
-    local.get $k
-    i32.const 1
-    global.get $__s223
-    call $__i32_sub_chk
-    local.set $k
-    local.get $dirs
-    local.get $k
-    call $__arr_at_opt_any
-    ref.cast (ref null $str)
-    local.tee $__opt2
-    ref.is_null
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    local.get $__opt2
-    local.set $__bp_nullish__58
-    local.get $__bp_nullish__58
-      )
-      (else
-    global.get $__s0
-      )
-    )
-    call $wasiRmdir
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result (ref null $result))
-      (then
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    global.get $__s224
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s225
-    call $__i32_sub_chk
-    call $wasiError
-    struct.new $result
-    return
-      )
-      (else
-        ref.null $result
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    i32.const 0
-    i32.const 0
-    struct.new $box_i32
-    struct.new $result
-    return
-  )
   ;; A fresh, unique, empty directory under the host's temporary directory.
-  (func $scratchDirWasm (result (ref null $str))
-    (local $base (ref null $str))
-    (local $attempt i32)
-    (local $dir (ref null $str))
-    global.get $__s226
-    call $wasiGetenv
-    local.set $base
-    local.get $base
-    global.get $__s0
-    call $__str_eq
-    (if (result i32)
-      (then
-    global.get $__s227
-    local.set $base
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    i32.const 0
-    local.set $attempt
-    (block $__break
-      (loop $__continue
-    local.get $attempt
-    i32.const 100
-    i32.lt_s
-        i32.eqz
-        br_if $__break
-    local.get $base
-    global.get $__s228
-    call $__str_concat
-    i32.const 6
-    call $randomBytes
-    call $__str_concat
-    local.set $dir
-    local.get $dir
-    call $withoutRoot
-    call $wasiMkdir
-    i32.const 0
-    i32.eq
-    (if (result (ref null $str))
-      (then
-    local.get $dir
-    return
-      )
-      (else
-        ref.null $str
-      )
-    )
-    drop
-    local.get $attempt
-    i32.const 1
-    global.get $__s229
-    call $__i32_add_chk
-    local.set $attempt
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    global.get $__s230
-    call $__panic_fail
-    unreachable
-    local.get $base
-    return
-  )
-  (func $workingDirWasm (result (ref null $str))
-    (local $cwd (ref null $str))
-    call $wasiCwd
-    local.set $cwd
-    local.get $cwd
-    global.get $__s0
-    call $__str_eq
-    (if (result (ref null $str))
-      (then
-    global.get $__s105
-    return
-      )
-      (else
-        ref.null $str
-      )
-    )
-    drop
-    local.get $cwd
-    return
-  )
-  (func $linkToWasm (param $target (ref null $str)) (param $link (ref null $str))
-    (local $l (ref null $result))
-    (local $r i32)
-    (local $__gc140 (ref null $result))
-    local.get $link
-    call $resolve
-    local.set $l
-    local.get $l
-    struct.get $result $tag
-    i32.const 0
-    i32.ne
-    (if (result i32)
-      (then
-    global.get $__s231
-    call $__panic_fail
-    unreachable
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $target
-    local.get $l
-    local.tee $__gc140
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    global.get $__s0
-      )
-      (else
-    local.get $__gc140
-    struct.get $result $payload
-    ref.cast (ref null $str)
-      )
-    )
-    call $wasiSymlink
-    local.set $r
-    local.get $r
-    i32.const 0
-    i32.lt_s
-    (if (result i32)
-      (then
-    i32.const 0
-    i32.const 1
-    global.get $__s232
-    call $__i32_sub_chk
-    local.get $r
-    global.get $__s233
-    call $__i32_sub_chk
-    call $wasiError
-    struct.get $rec_HostError $f0
-    call $__panic_fail
-    unreachable
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    return
-  )
   ;; A host without `chmod` denies this user nothing: the permission tests have nothing to check there.
-  (func $denyAllWasm (param $path (ref null $str)) (result i32)
-    i32.const 0
-    return
-  )
-  (func $allowAllWasm (param $path (ref null $str))
-    return
-  )
   ;; ── tests ────────────────────────────────────────────────────────────────────
   ;; (Inline tests are smoke-grade — they require the host filesystem to be
   ;; writable at the host's `tmpdir()`. The lib-test harness runs each
   ;; inline test as a separate process; the temp filenames are seeded with
   ;; `time.nowMillis()` for cross-run uniqueness.)
   ;; Internal, test scaffolding: `stat(p)`, or a stat no file has.
-  (func $statOr (param $p (ref null $str)) (result (ref null $rec_FileStat))
-    (local $__mem0 i32)
-    (local $s i32)
-    (local $__case_0 (ref null $result))
-    (local $s__59 (ref null $rec_FileStat))
-    local.get $p
-    call $stat
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $rec_FileStat))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    ref.cast (ref null $rec_FileStat)
-    local.set $s__59
-    local.get $s__59
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $rec_FileStat))
-      (then
-    i32.const 0
-    i32.const 1
-    global.get $__s234
-    call $__i32_sub_chk
-    i64.extend_i32_s
-    i32.const 0
-    i32.const 1
-    global.get $__s235
-    call $__i32_sub_chk
-    i64.extend_i32_s
-    i32.const 0
-    call $__new_39
-      )
-      (else
-    ref.null $rec_FileStat
-      )
-    )
-      )
-    )
-    return
-  )
   ;; Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
   ;; `<dir>/app/blog/notes.md` — the fixture tree every walk/glob test reads.
-  (func $makeFixtureTree (param $dir (ref null $str)) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    local.get $dir
-    global.get $__s236
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $mkdir
-    drop
-    local.get $dir
-    global.get $__s237
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $mkdir
-    drop
-    local.get $dir
-    global.get $__s238
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s239
-    call $writeText
-    drop
-    local.get $dir
-    global.get $__s240
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s241
-    call $writeText
-    drop
-    local.get $dir
-    global.get $__s242
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s243
-    call $writeText
-    drop
-    i32.const 0
-  )
   ;; Internal, test scaffolding: what `walk` answers for the fixture tree when
   ;; its root is spelled `<scratch dir><suffix>` — every spelling of one root has
   ;; to answer the same three relative paths.
-  (func $walkFixture (param $suffix (ref null $str)) (result (ref null $str))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $dir (ref null $str))
-    (local $walked (ref null $arr_any))
-    (local $__gc141 (ref null $result))
-    call $scratchDir
-    local.set $dir
-    local.get $dir
-    call $makeFixtureTree
-    drop
-    local.get $dir
-    local.get $suffix
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $walk
-    local.tee $__gc141
-    struct.get $result $tag
-    (if (result (ref null $arr_any))
-      (then
-    global.get $__s244
-    array.new_fixed $arr_any 1
-      )
-      (else
-    local.get $__gc141
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-      )
-    )
-    local.set $walked
-    local.get $dir
-    call $removeTree
-    drop
-    local.get $walked
-    global.get $__s168
-    call $__arr_join_any
-    return
-  )
   ;; Internal, test scaffolding: the same, with the root spelled relative to the
   ;; working directory — `<prefix><path from the cwd to the fixture>`.
-  (func $walkFixtureFromCwd (param $prefix (ref null $str)) (result (ref null $str))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $dir (ref null $str))
-    (local $root (ref null $str))
-    (local $walked (ref null $arr_any))
-    (local $__gc142 (ref null $result))
-    call $scratchDir
-    local.set $dir
-    local.get $dir
-    call $makeFixtureTree
-    drop
-    local.get $prefix
-    call $workingDir
-    local.get $dir
-    call $relative
-    global.get $__s236
-    array.new_fixed $arr_any 3
-    global.get $__s0
-    call $__arr_join_any
-    local.set $root
-    local.get $root
-    call $walk
-    local.tee $__gc142
-    struct.get $result $tag
-    (if (result (ref null $arr_any))
-      (then
-    global.get $__s244
-    array.new_fixed $arr_any 1
-      )
-      (else
-    local.get $__gc142
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-      )
-    )
-    local.set $walked
-    local.get $dir
-    call $removeTree
-    drop
-    local.get $walked
-    global.get $__s168
-    call $__arr_join_any
-    return
-  )
   ;; Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
-  (func $walkRefusal (param $root (ref null $str)) (result (ref null $str))
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $e__60 anyref)
-    local.get $root
-    call $walk
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    global.get $__s0
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    local.set $e__60
-    local.get $e__60
-    call $describe
-      )
-      (else
-    ref.null $str
-      )
-    )
-      )
-    )
-    return
-  )
   ;; Internal, test scaffolding: an `FsError` as one line — the variant, the path
   ;; and the message where it holds one (a dangling link is `Other`, decision 178).
-  (func $describe (param $e anyref) (result (ref null $str))
-    (local $p (ref null $str))
-    (local $offset i64)
-    (local $message (ref null $str))
-    (local $__case_0 anyref)
-    local.get $e
-    local.set $__case_0
-    local.get $__case_0
-    ref.test (ref null $var_FsError_NotFound)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_NotFound)
-    struct.get $var_FsError_NotFound $f0
-    local.set $p
-    global.get $__s245
-    local.get $p
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_PermissionDenied)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_PermissionDenied)
-    struct.get $var_FsError_PermissionDenied $f0
-    local.set $p
-    global.get $__s246
-    local.get $p
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_IsDirectory)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_IsDirectory)
-    struct.get $var_FsError_IsDirectory $f0
-    local.set $p
-    global.get $__s247
-    local.get $p
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_NotDirectory)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_NotDirectory)
-    struct.get $var_FsError_NotDirectory $f0
-    local.set $p
-    global.get $__s248
-    local.get $p
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_AlreadyExists)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_AlreadyExists)
-    struct.get $var_FsError_AlreadyExists $f0
-    local.set $p
-    global.get $__s249
-    local.get $p
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_InvalidUtf8)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_InvalidUtf8)
-    struct.get $var_FsError_InvalidUtf8 $f0
-    local.set $p
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_InvalidUtf8)
-    struct.get $var_FsError_InvalidUtf8 $f1
-    local.set $offset
-    global.get $__s250
-    local.get $p
-    call $__str_concat
-    global.get $__s251
-    call $__str_concat
-    local.get $offset
-    call $__std_number_i64ToString
-    call $__str_concat
-      )
-      (else
-    local.get $__case_0
-    ref.test (ref null $var_FsError_Other)
-    local.get $__case_0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_Other)
-    struct.get $var_FsError_Other $f0
-    local.set $p
-    local.get $__case_0
-    ref.cast (ref null $var_FsError_Other)
-    struct.get $var_FsError_Other $f1
-    local.set $message
-    local.get $message
-      )
-      (else
-    ref.null $str
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-      )
-    )
-    return
-  )
   ;; Internal, test scaffolding: the fixture tree plus the names decision 177 is
   ;; about — a dot file and a dot directory, a link to a directory, a link to a
   ;; file and a dangling link, all under `<dir>/app`.
-  (func $makeGlobTree (param $dir (ref null $str)) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $__mem2 i32)
-    (local $__mem3 i32)
-    (local $__mem4 i32)
-    (local $__mem5 i32)
-    (local $__mem6 i32)
-    local.get $dir
-    call $makeFixtureTree
-    drop
-    local.get $dir
-    global.get $__s252
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $mkdir
-    drop
-    local.get $dir
-    global.get $__s253
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s254
-    call $writeText
-    drop
-    local.get $dir
-    global.get $__s255
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s256
-    call $writeText
-    drop
-    local.get $dir
-    global.get $__s257
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    global.get $__s258
-    call $writeText
-    drop
-    global.get $__s259
-    local.get $dir
-    global.get $__s260
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $linkTo
-    global.get $__s261
-    local.get $dir
-    global.get $__s262
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $linkTo
-    global.get $__s263
-    local.get $dir
-    global.get $__s264
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $linkTo
-    i32.const 0
-  )
   ;; Internal, test scaffolding: what `glob(pattern, <dir>/app)` answers over
   ;; `makeGlobTree`, joined by `,`.
-  (func $globbed (param $pattern (ref null $str)) (result (ref null $str))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $dir (ref null $str))
-    (local $found (ref null $arr_any))
-    (local $__gc143 (ref null $result))
-    call $scratchDir
-    local.set $dir
-    local.get $dir
-    call $makeGlobTree
-    drop
-    local.get $pattern
-    local.get $dir
-    global.get $__s236
-    array.new_fixed $arr_any 2
-    global.get $__s0
-    call $__arr_join_any
-    call $glob
-    local.tee $__gc143
-    struct.get $result $tag
-    (if (result (ref null $arr_any))
-      (then
-    global.get $__s244
-    array.new_fixed $arr_any 1
-      )
-      (else
-    local.get $__gc143
-    struct.get $result $payload
-    ref.cast (ref null $arr_any)
-      )
-    )
-    local.set $found
-    local.get $dir
-    call $removeTree
-    drop
-    local.get $found
-    global.get $__s168
-    call $__arr_join_any
-    return
-  )
   ;; ── FsError, readText and the handle ─────────────────────────────────────────
   ;; Internal, test scaffolding: the variant of an `Error`, `"ok"` for an `Ok`.
-  (func $variantOf (param $r (ref null $result)) (result (ref null $str))
-    (local $e i32)
-    (local $__case_0 (ref null $result))
-    (local $e__61 anyref)
-    local.get $r
-    local.set $__case_0
-    local.get $__case_0
-    struct.get $result $tag
-    i32.eqz
-    (if (result (ref null $str))
-      (then
-    global.get $__s265
-      )
-      (else
-    local.get $__case_0
-    struct.get $result $tag
-    (if (result (ref null $str))
-      (then
-    local.get $__case_0
-    struct.get $result $payload
-    local.set $e__61
-    local.get $e__61
-    call $describe
-      )
-      (else
-    ref.null $str
-      )
-    )
-      )
-    )
-    return
-  )
   ;; Internal, test scaffolding: the file a failed `open` falls back to.
-  (func $noFile (result (ref null $rec_File))
-    (local $__mem0 i32)
-    global.get $__s0
-    global.get $__s0
-    call $memHandle
-    call $__new_37
-    return
-  )
   ;; Internal, test scaffolding: take every permission from `path`; whether that
   ;; denies this user anything (root is denied nothing), and give them back.
-  ;; denyAll — .Wasm(body: denyAllWasm)
-  (func $denyAll (param $path (ref null $str)) (result i32)
-    local.get $path
-    call $denyAllWasm
-  )
-  ;; allowAll — .Wasm(body: allowAllWasm)
-  (func $allowAll (param $path (ref null $str))
-    local.get $path
-    call $allowAllWasm
-  )
   (func $__init_globals
-    global.get $__s105
+    global.get $__s6
     global.set $separator
-    global.get $__s266
+    global.get $__s7
     global.set $delimiter
-  )
-  (func $__gen_next (param $g (ref null $gen)) (result i32)
-    (local $r i32)
-    local.get $g
-    struct.get $gen $state
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $g
-    call $__gen_resume
-    local.tee $r
-    i32.eqz
-    (if
-      (then
-    local.get $g
-    i32.const 1
-    struct.set $gen $state ;; ended
-    local.get $g
-    ref.null struct
-    struct.set $gen $frame ;; its frame dropped
-      )
-    )
-    local.get $r
-  )
-  (func $__gen_resume (param $g (ref null $gen)) (result i32)
-    (local $k i32)
-    local.get $g
-    struct.get $gen $kind
-    local.set $k
-    local.get $k
-    i32.const 0
-    i32.eq
-    (if
-      (then
-    local.get $g
-    struct.get $gen $left
-    i32.const 0
-    i32.le_s
-    (if
-      (then
-    local.get $g
-    struct.get $gen $src
-    call $__gen_close ;; the count is reached: its source
-    i32.const 0
-    return
-      )
-    )
-    local.get $g
-    local.get $g
-    struct.get $gen $left
-    i32.const 1
-    i32.sub
-    struct.set $gen $left
-    local.get $g
-    struct.get $gen $src
-    call $__gen_next
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $g
-    local.get $g
-    struct.get $gen $src
-    struct.get $gen $value
-    struct.set $gen $value
-    i32.const 1
-    return
-      )
-    )
-    local.get $k
-    i32.const 1
-    i32.eq
-    (if
-      (then
-    (block $__break
-      (loop $__continue
-    local.get $g
-    struct.get $gen $left
-    i32.const 0
-    i32.le_s
-    br_if $__break
-    local.get $g
-    local.get $g
-    struct.get $gen $left
-    i32.const 1
-    i32.sub
-    struct.set $gen $left
-    local.get $g
-    struct.get $gen $src
-    call $__gen_next
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    br $__continue
-      )
-    )
-    local.get $g
-    struct.get $gen $src
-    call $__gen_next
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $g
-    local.get $g
-    struct.get $gen $src
-    struct.get $gen $value
-    struct.set $gen $value
-    i32.const 1
-    return
-      )
-    )
-    local.get $k
-    i32.const 5
-    i32.eq
-    (if
-      (then
-    local.get $g
-    call $File_chunks__body
-    return
-      )
-    )
-    local.get $k
-    i32.const 6
-    i32.eq
-    (if
-      (then
-    local.get $g
-    call $File_lines__body
-    return
-      )
-    )
-    unreachable
-  )
-  (func $__gen_close (param $g (ref null $gen))
-    local.get $g
-    ref.is_null
-    (if
-      (then
-    return
-      )
-    )
-    local.get $g
-    struct.get $gen $kind
-    i32.const 5
-    i32.lt_u
-    (if
-      (then
-    local.get $g
-    struct.get $gen $src
-    call $__gen_close ;; its source
-      )
-      (else
-      )
-    )
-    local.get $g
-    i32.const 1
-    struct.set $gen $state ;; ended
-    local.get $g
-    ref.null struct
-    struct.set $gen $frame ;; its frame dropped
   )
   (func $__arr_slice_any (param $xs (ref null $arr_any)) (param $a i32) (param $b i32) (result (ref null $arr_any))
     (local $len i32)
@@ -17853,152 +10260,6 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.copy $arr_any $arr_any
     local.get $r
   )
-  (func $__arr_concat_i32 (param $xs (ref null $arr_i32)) (param $ys (ref null $arr_i32)) (result (ref null $arr_i32))
-    (local $la i32)
-    (local $lb i32)
-    (local $r (ref null $arr_i32))
-    local.get $xs
-    array.len
-    local.set $la
-    local.get $ys
-    array.len
-    local.set $lb
-    local.get $la
-    local.get $lb
-    i32.add
-    array.new_default $arr_i32
-    local.set $r
-    local.get $r
-    i32.const 0
-    local.get $xs
-    i32.const 0
-    local.get $la
-    array.copy $arr_i32 $arr_i32
-    local.get $r
-    local.get $la
-    local.get $ys
-    i32.const 0
-    local.get $lb
-    array.copy $arr_i32 $arr_i32
-    local.get $r
-  )
-  (func $__unk_int_in (param $v anyref) (param $lo i32) (param $hi i32) (result i32)
-    (local $k i32)
-    (local $x f64)
-    local.get $v
-    ref.is_null
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_bool)
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_i32)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.tee $k
-    local.get $lo
-    i32.ge_s
-    local.get $k
-    local.get $hi
-    i32.le_s
-    i32.and
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_f64)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $v
-    ref.cast (ref null $box_f64)
-    struct.get $box_f64 $v
-    local.tee $x
-    f64.floor
-    local.get $x
-    f64.ne
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $x
-    local.get $lo
-    f64.convert_i32_s
-    f64.ge
-    local.get $x
-    local.get $hi
-    f64.convert_i32_s
-    f64.le
-    i32.and
-  )
-  (func $__unk_as_i32 (param $v anyref) (result i32)
-    local.get $v
-    ref.test (ref null $box_f64)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_f64)
-    struct.get $box_f64 $v
-    i32.trunc_f64_s
-    return
-      )
-    )
-    local.get $v
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-  )
-  (func $__arr_at_opt_i32 (param $xs (ref null $arr_i32)) (param $i i32) (result anyref)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-    local.get $i
-    local.get $xs
-    array.len
-    i32.add
-    local.set $i
-      )
-    )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    array.len
-    i32.ge_s
-    i32.or
-    (if (result anyref)
-      (then
-    ref.null any
-      )
-      (else
-    local.get $xs
-    local.get $i
-    array.get $arr_i32
-    struct.new $box_i32
-      )
-    )
-  )
   (func $__lin_to_gc_strs (param $p i32) (result (ref null $arr_any))
     (local $n i32)
     (local $i i32)
@@ -18037,20 +10298,6 @@ test "fs answers PermissionDenied for an OS permission error" {
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -18637,187 +10884,6 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $__panic_fail
     unreachable
   )
-  (func $__i32_divs (param $a i32) (param $b i32) (param $site (ref null $str)) (param $osite (ref null $str)) (result i32)
-    local.get $b
-    i32.eqz
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $a
-    i32.const -2147483648
-    i32.eq
-    local.get $b
-    i32.const -1
-    i32.eq
-    i32.and
-    (if
-      (then
-        local.get $osite
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $a
-    local.get $b
-    i32.div_s
-  )
-  (func $__i64_divs (param $a i64) (param $b i64) (param $site (ref null $str)) (param $osite (ref null $str)) (result i64)
-    local.get $b
-    i64.eqz
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $a
-    i64.const -9223372036854775808
-    i64.eq
-    local.get $b
-    i64.const -1
-    i64.eq
-    i32.and
-    (if
-      (then
-        local.get $osite
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $a
-    local.get $b
-    i64.div_s
-  )
-  (func $__i32_nz (param $b i32) (param $site (ref null $str)) (result i32)
-    local.get $b
-    i32.eqz
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $b
-  )
-  (func $__i64_nz (param $b i64) (param $site (ref null $str)) (result i64)
-    local.get $b
-    i64.eqz
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $b
-  )
-  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
-    local.get $p0
-    call $__abi___std_number_i64ToString
-    ref.cast (ref null $str)
-  )
-  (func $__std_fs_cwd (result (ref null $str))
-    call $__abi___std_fs_cwd
-    ref.cast (ref null $str)
-  )
-  (func $__std_fs_getenv (param $p0 (ref null $str)) (result (ref null $str))
-    local.get $p0
-    call $__abi___std_fs_getenv
-    ref.cast (ref null $str)
-  )
-  (func $__std_fs_open (param $p0 (ref null $str)) (param $p1 i32) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_fs_open
-  )
-  (func $__std_fs_openMem (param $p0 (ref null $str)) (result i32)
-    local.get $p0
-    call $__abi___std_fs_openMem
-  )
-  (func $__std_fs_size (param $p0 i32) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_size
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_read (param $p0 i32) (param $p1 i32) (result (ref null $result))
-    local.get $p0
-    local.get $p1
-    call $__abi___std_fs_read
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_readAll (param $p0 i32) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_readAll
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_readLine (param $p0 i32) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_readLine
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_write (param $p0 i32) (param $p1 (ref null $str)) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_fs_write
-  )
-  (func $__std_fs_statKind (param $p0 (ref null $str)) (param $p1 i32) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_fs_statKind
-  )
-  (func $__std_fs_statSize (param $p0 (ref null $str)) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_statSize
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_statMtime (param $p0 (ref null $str)) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_statMtime
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_list (param $p0 (ref null $str)) (result (ref null $result))
-    local.get $p0
-    call $__abi___std_fs_list
-    ref.cast (ref null $result)
-  )
-  (func $__std_fs_mkdir (param $p0 (ref null $str)) (result i32)
-    local.get $p0
-    call $__abi___std_fs_mkdir
-  )
-  (func $__std_fs_rmdir (param $p0 (ref null $str)) (result i32)
-    local.get $p0
-    call $__abi___std_fs_rmdir
-  )
-  (func $__std_fs_unlink (param $p0 (ref null $str)) (result i32)
-    local.get $p0
-    call $__abi___std_fs_unlink
-  )
-  (func $__std_fs_symlink (param $p0 (ref null $str)) (param $p1 (ref null $str)) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_fs_symlink
-  )
-  (func $__std_bytes_at (param $p0 (ref null $str)) (param $p1 i32) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_bytes_at
-  )
-  (func $__std_hash_sha256Hex (param $p0 (ref null $str)) (result (ref null $str))
-    local.get $p0
-    call $__abi___std_hash_sha256Hex
-    ref.cast (ref null $str)
-  )
-  (func $__std_text_charCodeAt (param $p0 (ref null $str)) (param $p1 i32) (result i32)
-    local.get $p0
-    local.get $p1
-    call $__abi___std_text_charCodeAt
-  )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "integer overflow: + on i32 at src/path.bp:114:52")
@@ -18830,528 +10896,10 @@ test "fs answers PermissionDenied for an OS permission error" {
   (global $__s4 (mut (ref null $str)) (ref.null $str))
   (data $__d5 ".")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "panic")
+  (data $__d6 "/")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "integer overflow: + on i32 at src/io/random.bp:358:15")
+  (data $__d7 ":")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "0123456789abcdef")
-  (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "integer division by zero: / on i32 at src/io/random.bp:368:40")
-  (global $__s9 (mut (ref null $str)) (ref.null $str))
-  (data $__d10 "integer overflow: / on i32 at src/io/random.bp:368:40")
-  (global $__s10 (mut (ref null $str)) (ref.null $str))
-  (data $__d11 "integer division by zero: % on i32 at src/io/random.bp:368:59")
-  (global $__s11 (mut (ref null $str)) (ref.null $str))
-  (data $__d12 "integer overflow: + on i32 at src/io/random.bp:403:19")
-  (global $__s12 (mut (ref null $str)) (ref.null $str))
-  (data $__d13 "integer division by zero: / on i32 at src/io/random.bp:406:19")
-  (global $__s13 (mut (ref null $str)) (ref.null $str))
-  (data $__d14 "integer overflow: / on i32 at src/io/random.bp:406:19")
-  (global $__s14 (mut (ref null $str)) (ref.null $str))
-  (data $__d15 "not found: ")
-  (global $__s15 (mut (ref null $str)) (ref.null $str))
-  (data $__d16 "permission denied: ")
-  (global $__s16 (mut (ref null $str)) (ref.null $str))
-  (data $__d17 "is a directory: ")
-  (global $__s17 (mut (ref null $str)) (ref.null $str))
-  (data $__d18 "not a directory: ")
-  (global $__s18 (mut (ref null $str)) (ref.null $str))
-  (data $__d19 "already exists: ")
-  (global $__s19 (mut (ref null $str)) (ref.null $str))
-  (data $__d20 "not UTF-8: ")
-  (global $__s20 (mut (ref null $str)) (ref.null $str))
-  (data $__d21 " at byte ")
-  (global $__s21 (mut (ref null $str)) (ref.null $str))
-  (data $__d22 ": ")
-  (global $__s22 (mut (ref null $str)) (ref.null $str))
-  (data $__d23 "ENOENT")
-  (global $__s23 (mut (ref null $str)) (ref.null $str))
-  (data $__d24 "EACCES")
-  (global $__s24 (mut (ref null $str)) (ref.null $str))
-  (data $__d25 "EPERM")
-  (global $__s25 (mut (ref null $str)) (ref.null $str))
-  (data $__d26 "EISDIR")
-  (global $__s26 (mut (ref null $str)) (ref.null $str))
-  (data $__d27 "PATH IS A DIRECTORY")
-  (global $__s27 (mut (ref null $str)) (ref.null $str))
-  (data $__d28 "ENOTDIR")
-  (global $__s28 (mut (ref null $str)) (ref.null $str))
-  (data $__d29 "EEXIST")
-  (global $__s29 (mut (ref null $str)) (ref.null $str))
-  (data $__d30 "bytes.toUtf8: not valid UTF-8")
-  (global $__s30 (mut (ref null $str)) (ref.null $str))
-  (data $__d31 "fs.walk: dangling link \"")
-  (global $__s31 (mut (ref null $str)) (ref.null $str))
-  (data $__d32 "\"")
-  (global $__s32 (mut (ref null $str)) (ref.null $str))
-  (data $__d33 "integer overflow: + on i64 at src/io/fs.bp:653:21")
-  (global $__s33 (mut (ref null $str)) (ref.null $str))
-  (data $__d34 "integer overflow: + on i32 at src/io/fs.bp:655:33")
-  (global $__s34 (mut (ref null $str)) (ref.null $str))
-  (data $__d35 "the file is open for reading")
-  (global $__s35 (mut (ref null $str)) (ref.null $str))
-  (data $__d36 "EAGAIN")
-  (global $__s36 (mut (ref null $str)) (ref.null $str))
-  (data $__d37 "EALREADY")
-  (global $__s37 (mut (ref null $str)) (ref.null $str))
-  (data $__d38 "EBADF")
-  (global $__s38 (mut (ref null $str)) (ref.null $str))
-  (data $__d39 "EBUSY")
-  (global $__s39 (mut (ref null $str)) (ref.null $str))
-  (data $__d40 "EDEADLK")
-  (global $__s40 (mut (ref null $str)) (ref.null $str))
-  (data $__d41 "EDQUOT")
-  (global $__s41 (mut (ref null $str)) (ref.null $str))
-  (data $__d42 "EFBIG")
-  (global $__s42 (mut (ref null $str)) (ref.null $str))
-  (data $__d43 "EILSEQ")
-  (global $__s43 (mut (ref null $str)) (ref.null $str))
-  (data $__d44 "EINPROGRESS")
-  (global $__s44 (mut (ref null $str)) (ref.null $str))
-  (data $__d45 "EINTR")
-  (global $__s45 (mut (ref null $str)) (ref.null $str))
-  (data $__d46 "EINVAL")
-  (global $__s46 (mut (ref null $str)) (ref.null $str))
-  (data $__d47 "EIO")
-  (global $__s47 (mut (ref null $str)) (ref.null $str))
-  (data $__d48 "ELOOP")
-  (global $__s48 (mut (ref null $str)) (ref.null $str))
-  (data $__d49 "EMLINK")
-  (global $__s49 (mut (ref null $str)) (ref.null $str))
-  (data $__d50 "EMSGSIZE")
-  (global $__s50 (mut (ref null $str)) (ref.null $str))
-  (data $__d51 "ENAMETOOLONG")
-  (global $__s51 (mut (ref null $str)) (ref.null $str))
-  (data $__d52 "ENODEV")
-  (global $__s52 (mut (ref null $str)) (ref.null $str))
-  (data $__d53 "ENOLCK")
-  (global $__s53 (mut (ref null $str)) (ref.null $str))
-  (data $__d54 "ENOMEM")
-  (global $__s54 (mut (ref null $str)) (ref.null $str))
-  (data $__d55 "ENOSPC")
-  (global $__s55 (mut (ref null $str)) (ref.null $str))
-  (data $__d56 "ENOTEMPTY")
-  (global $__s56 (mut (ref null $str)) (ref.null $str))
-  (data $__d57 "ENOTRECOVERABLE")
-  (global $__s57 (mut (ref null $str)) (ref.null $str))
-  (data $__d58 "ENOTSUP")
-  (global $__s58 (mut (ref null $str)) (ref.null $str))
-  (data $__d59 "ENOTTY")
-  (global $__s59 (mut (ref null $str)) (ref.null $str))
-  (data $__d60 "ENXIO")
-  (global $__s60 (mut (ref null $str)) (ref.null $str))
-  (data $__d61 "EOVERFLOW")
-  (global $__s61 (mut (ref null $str)) (ref.null $str))
-  (data $__d62 "EPIPE")
-  (global $__s62 (mut (ref null $str)) (ref.null $str))
-  (data $__d63 "EROFS")
-  (global $__s63 (mut (ref null $str)) (ref.null $str))
-  (data $__d64 "ESPIPE")
-  (global $__s64 (mut (ref null $str)) (ref.null $str))
-  (data $__d65 "ETXTBSY")
-  (global $__s65 (mut (ref null $str)) (ref.null $str))
-  (data $__d66 "EXDEV")
-  (global $__s66 (mut (ref null $str)) (ref.null $str))
-  (data $__d67 "permission denied")
-  (global $__s67 (mut (ref null $str)) (ref.null $str))
-  (data $__d68 "resource temporarily unavailable")
-  (global $__s68 (mut (ref null $str)) (ref.null $str))
-  (data $__d69 "connection already in progress")
-  (global $__s69 (mut (ref null $str)) (ref.null $str))
-  (data $__d70 "bad file descriptor")
-  (global $__s70 (mut (ref null $str)) (ref.null $str))
-  (data $__d71 "resource busy or locked")
-  (global $__s71 (mut (ref null $str)) (ref.null $str))
-  (data $__d72 "resource deadlock avoided")
-  (global $__s72 (mut (ref null $str)) (ref.null $str))
-  (data $__d73 "disk quota exceeded")
-  (global $__s73 (mut (ref null $str)) (ref.null $str))
-  (data $__d74 "file already exists")
-  (global $__s74 (mut (ref null $str)) (ref.null $str))
-  (data $__d75 "file too large")
-  (global $__s75 (mut (ref null $str)) (ref.null $str))
-  (data $__d76 "illegal byte sequence")
-  (global $__s76 (mut (ref null $str)) (ref.null $str))
-  (data $__d77 "operation in progress")
-  (global $__s77 (mut (ref null $str)) (ref.null $str))
-  (data $__d78 "interrupted system call")
-  (global $__s78 (mut (ref null $str)) (ref.null $str))
-  (data $__d79 "invalid argument")
-  (global $__s79 (mut (ref null $str)) (ref.null $str))
-  (data $__d80 "i/o error")
-  (global $__s80 (mut (ref null $str)) (ref.null $str))
-  (data $__d81 "illegal operation on a directory")
-  (global $__s81 (mut (ref null $str)) (ref.null $str))
-  (data $__d82 "too many symbolic links encountered")
-  (global $__s82 (mut (ref null $str)) (ref.null $str))
-  (data $__d83 "too many links")
-  (global $__s83 (mut (ref null $str)) (ref.null $str))
-  (data $__d84 "message too long")
-  (global $__s84 (mut (ref null $str)) (ref.null $str))
-  (data $__d85 "name too long")
-  (global $__s85 (mut (ref null $str)) (ref.null $str))
-  (data $__d86 "no such device")
-  (global $__s86 (mut (ref null $str)) (ref.null $str))
-  (data $__d87 "no such file or directory")
-  (global $__s87 (mut (ref null $str)) (ref.null $str))
-  (data $__d88 "no locks available")
-  (global $__s88 (mut (ref null $str)) (ref.null $str))
-  (data $__d89 "not enough memory")
-  (global $__s89 (mut (ref null $str)) (ref.null $str))
-  (data $__d90 "no space left on device")
-  (global $__s90 (mut (ref null $str)) (ref.null $str))
-  (data $__d91 "not a directory")
-  (global $__s91 (mut (ref null $str)) (ref.null $str))
-  (data $__d92 "directory not empty")
-  (global $__s92 (mut (ref null $str)) (ref.null $str))
-  (data $__d93 "state not recoverable")
-  (global $__s93 (mut (ref null $str)) (ref.null $str))
-  (data $__d94 "operation not supported")
-  (global $__s94 (mut (ref null $str)) (ref.null $str))
-  (data $__d95 "inappropriate ioctl for device")
-  (global $__s95 (mut (ref null $str)) (ref.null $str))
-  (data $__d96 "no such device or address")
-  (global $__s96 (mut (ref null $str)) (ref.null $str))
-  (data $__d97 "value too large for defined data type")
-  (global $__s97 (mut (ref null $str)) (ref.null $str))
-  (data $__d98 "operation not permitted")
-  (global $__s98 (mut (ref null $str)) (ref.null $str))
-  (data $__d99 "broken pipe")
-  (global $__s99 (mut (ref null $str)) (ref.null $str))
-  (data $__d100 "read-only file system")
-  (global $__s100 (mut (ref null $str)) (ref.null $str))
-  (data $__d101 "invalid seek")
-  (global $__s101 (mut (ref null $str)) (ref.null $str))
-  (data $__d102 "text file busy")
-  (global $__s102 (mut (ref null $str)) (ref.null $str))
-  (data $__d103 "cross-device link not permitted")
-  (global $__s103 (mut (ref null $str)) (ref.null $str))
-  (data $__d104 "host")
-  (global $__s104 (mut (ref null $str)) (ref.null $str))
-  (data $__d105 "/")
-  (global $__s105 (mut (ref null $str)) (ref.null $str))
-  (data $__d106 "integer overflow: + on i32 at src/io/fs.bp:988:15")
-  (global $__s106 (mut (ref null $str)) (ref.null $str))
-  (data $__d107 "integer overflow: + on i32 at src/io/fs.bp:999:15")
-  (global $__s107 (mut (ref null $str)) (ref.null $str))
-  (data $__d108 "integer overflow: + on i32 at src/io/fs.bp:1002:19")
-  (global $__s108 (mut (ref null $str)) (ref.null $str))
-  (data $__d109 "integer overflow: - on i32 at src/io/fs.bp:1013:32")
-  (global $__s109 (mut (ref null $str)) (ref.null $str))
-  (data $__d110 "integer overflow: - on i32 at src/io/fs.bp:1013:35")
-  (global $__s110 (mut (ref null $str)) (ref.null $str))
-  (data $__d111 "integer overflow: - on i32 at src/io/fs.bp:1023:32")
-  (global $__s111 (mut (ref null $str)) (ref.null $str))
-  (data $__d112 "integer overflow: - on i32 at src/io/fs.bp:1023:35")
-  (global $__s112 (mut (ref null $str)) (ref.null $str))
-  (data $__d113 "integer overflow: - on i32 at src/io/fs.bp:1026:32")
-  (global $__s113 (mut (ref null $str)) (ref.null $str))
-  (data $__d114 "integer overflow: - on i32 at src/io/fs.bp:1026:35")
-  (global $__s114 (mut (ref null $str)) (ref.null $str))
-  (data $__d115 "integer overflow: - on i32 at src/io/fs.bp:1038:32")
-  (global $__s115 (mut (ref null $str)) (ref.null $str))
-  (data $__d116 "integer overflow: - on i32 at src/io/fs.bp:1038:35")
-  (global $__s116 (mut (ref null $str)) (ref.null $str))
-  (data $__d117 "integer overflow: - on i32 at src/io/fs.bp:1047:32")
-  (global $__s117 (mut (ref null $str)) (ref.null $str))
-  (data $__d118 "integer overflow: - on i32 at src/io/fs.bp:1047:35")
-  (global $__s118 (mut (ref null $str)) (ref.null $str))
-  (data $__d119 "integer overflow: + on i32 at src/io/fs.bp:1058:19")
-  (global $__s119 (mut (ref null $str)) (ref.null $str))
-  (data $__d120 "integer overflow: + on i32 at src/io/fs.bp:1071:15")
-  (global $__s120 (mut (ref null $str)) (ref.null $str))
-  (data $__d121 "integer overflow: + on i32 at src/io/fs.bp:1083:36")
-  (global $__s121 (mut (ref null $str)) (ref.null $str))
-  (data $__d122 "integer overflow: + on i32 at src/io/fs.bp:1087:40")
-  (global $__s122 (mut (ref null $str)) (ref.null $str))
-  (data $__d123 "integer overflow: + on i32 at src/io/fs.bp:1089:19")
-  (global $__s123 (mut (ref null $str)) (ref.null $str))
-  (data $__d124 "integer overflow: + on i32 at src/io/fs.bp:1091:15")
-  (global $__s124 (mut (ref null $str)) (ref.null $str))
-  (data $__d125 "integer overflow: + on i32 at src/io/fs.bp:1091:19")
-  (global $__s125 (mut (ref null $str)) (ref.null $str))
-  (data $__d126 "integer overflow: - on i64 at src/io/fs.bp:1093:12")
-  (global $__s126 (mut (ref null $str)) (ref.null $str))
-  (data $__d127 "integer overflow: - on i32 at src/io/fs.bp:1098:37")
-  (global $__s127 (mut (ref null $str)) (ref.null $str))
-  (data $__d128 "integer overflow: - on i32 at src/io/fs.bp:1099:15")
-  (global $__s128 (mut (ref null $str)) (ref.null $str))
-  (data $__d129 "integer overflow: - on i32 at src/io/fs.bp:1100:41")
-  (global $__s129 (mut (ref null $str)) (ref.null $str))
-  (data $__d130 "integer overflow: - on i32 at src/io/fs.bp:1100:59")
-  (global $__s130 (mut (ref null $str)) (ref.null $str))
-  (data $__d131 "integer overflow: - on i32 at src/io/fs.bp:1108:32")
-  (global $__s131 (mut (ref null $str)) (ref.null $str))
-  (data $__d132 "integer overflow: - on i32 at src/io/fs.bp:1108:35")
-  (global $__s132 (mut (ref null $str)) (ref.null $str))
-  (data $__d133 "integer overflow: - on i32 at src/io/fs.bp:1116:32")
-  (global $__s133 (mut (ref null $str)) (ref.null $str))
-  (data $__d134 "integer overflow: - on i32 at src/io/fs.bp:1116:35")
-  (global $__s134 (mut (ref null $str)) (ref.null $str))
-  (data $__d135 "integer overflow: - on i32 at src/io/fs.bp:1159:32")
-  (global $__s135 (mut (ref null $str)) (ref.null $str))
-  (data $__d136 "integer overflow: - on i32 at src/io/fs.bp:1159:35")
-  (global $__s136 (mut (ref null $str)) (ref.null $str))
-  (data $__d137 "integer overflow: - on i32 at src/io/fs.bp:1188:32")
-  (global $__s137 (mut (ref null $str)) (ref.null $str))
-  (data $__d138 "integer overflow: - on i32 at src/io/fs.bp:1188:35")
-  (global $__s138 (mut (ref null $str)) (ref.null $str))
-  (data $__d139 "integer overflow: + on i32 at src/io/fs.bp:1201:15")
-  (global $__s139 (mut (ref null $str)) (ref.null $str))
-  (data $__d140 "integer overflow: + on i32 at src/io/fs.bp:1208:15")
-  (global $__s140 (mut (ref null $str)) (ref.null $str))
-  (data $__d141 "integer overflow: - on i32 at src/io/fs.bp:1216:39")
-  (global $__s141 (mut (ref null $str)) (ref.null $str))
-  (data $__d142 "integer overflow: - on i32 at src/io/fs.bp:1216:42")
-  (global $__s142 (mut (ref null $str)) (ref.null $str))
-  (data $__d143 "integer overflow: - on i32 at src/io/fs.bp:1225:35")
-  (global $__s143 (mut (ref null $str)) (ref.null $str))
-  (data $__d144 "integer overflow: - on i32 at src/io/fs.bp:1225:38")
-  (global $__s144 (mut (ref null $str)) (ref.null $str))
-  (data $__d145 "integer overflow: - on i32 at src/io/fs.bp:1228:32")
-  (global $__s145 (mut (ref null $str)) (ref.null $str))
-  (data $__d146 "integer overflow: - on i32 at src/io/fs.bp:1228:35")
-  (global $__s146 (mut (ref null $str)) (ref.null $str))
-  (data $__d147 "integer overflow: - on i32 at src/io/fs.bp:1241:35")
-  (global $__s147 (mut (ref null $str)) (ref.null $str))
-  (data $__d148 "integer overflow: - on i32 at src/io/fs.bp:1241:38")
-  (global $__s148 (mut (ref null $str)) (ref.null $str))
-  (data $__d149 "integer overflow: * on i64 at src/io/fs.bp:1244:48")
-  (global $__s149 (mut (ref null $str)) (ref.null $str))
-  (data $__d150 "integer overflow: - on i32 at src/io/fs.bp:1252:35")
-  (global $__s150 (mut (ref null $str)) (ref.null $str))
-  (data $__d151 "integer overflow: - on i32 at src/io/fs.bp:1252:38")
-  (global $__s151 (mut (ref null $str)) (ref.null $str))
-  (data $__d152 "integer overflow: + on i32 at src/io/fs.bp:1262:21")
-  (global $__s152 (mut (ref null $str)) (ref.null $str))
-  (data $__d153 "integer overflow: + on i32 at src/io/fs.bp:1267:19")
-  (global $__s153 (mut (ref null $str)) (ref.null $str))
-  (data $__d154 "integer overflow: - on i32 at src/io/fs.bp:1271:39")
-  (global $__s154 (mut (ref null $str)) (ref.null $str))
-  (data $__d155 "integer overflow: - on i32 at src/io/fs.bp:1271:60")
-  (global $__s155 (mut (ref null $str)) (ref.null $str))
-  (data $__d156 "integer overflow: - on i32 at src/io/fs.bp:1271:63")
-  (global $__s156 (mut (ref null $str)) (ref.null $str))
-  (data $__d157 "integer overflow: - on i32 at src/io/fs.bp:1277:26")
-  (global $__s157 (mut (ref null $str)) (ref.null $str))
-  (data $__d158 "*")
-  (global $__s158 (mut (ref null $str)) (ref.null $str))
-  (data $__d159 "?")
-  (global $__s159 (mut (ref null $str)) (ref.null $str))
-  (data $__d160 "[")
-  (global $__s160 (mut (ref null $str)) (ref.null $str))
-  (data $__d161 "{")
-  (global $__s161 (mut (ref null $str)) (ref.null $str))
-  (data $__d162 "integer overflow: - on i32 at src/io/fs.bp:1291:16")
-  (global $__s162 (mut (ref null $str)) (ref.null $str))
-  (data $__d163 "integer overflow: + on i32 at src/io/fs.bp:1298:15")
-  (global $__s163 (mut (ref null $str)) (ref.null $str))
-  (data $__d164 "integer overflow: - on i32 at src/io/fs.bp:1302:17")
-  (global $__s164 (mut (ref null $str)) (ref.null $str))
-  (data $__d165 "integer overflow: + on i32 at src/io/fs.bp:1310:37")
-  (global $__s165 (mut (ref null $str)) (ref.null $str))
-  (data $__d166 "}")
-  (global $__s166 (mut (ref null $str)) (ref.null $str))
-  (data $__d167 "integer overflow: - on i32 at src/io/fs.bp:1311:37")
-  (global $__s167 (mut (ref null $str)) (ref.null $str))
-  (data $__d168 ",")
-  (global $__s168 (mut (ref null $str)) (ref.null $str))
-  (data $__d169 "integer overflow: + on i32 at src/io/fs.bp:1317:15")
-  (global $__s169 (mut (ref null $str)) (ref.null $str))
-  (data $__d170 "integer overflow: + on i32 at src/io/fs.bp:1321:31")
-  (global $__s170 (mut (ref null $str)) (ref.null $str))
-  (data $__d171 "integer overflow: + on i32 at src/io/fs.bp:1323:22")
-  (global $__s171 (mut (ref null $str)) (ref.null $str))
-  (data $__d172 "integer overflow: + on i32 at src/io/fs.bp:1330:22")
-  (global $__s172 (mut (ref null $str)) (ref.null $str))
-  (data $__d173 "integer overflow: + on i32 at src/io/fs.bp:1331:15")
-  (global $__s173 (mut (ref null $str)) (ref.null $str))
-  (data $__d174 "integer overflow: + on i32 at src/io/fs.bp:1338:16")
-  (global $__s174 (mut (ref null $str)) (ref.null $str))
-  (data $__d175 "!")
-  (global $__s175 (mut (ref null $str)) (ref.null $str))
-  (data $__d176 "^")
-  (global $__s176 (mut (ref null $str)) (ref.null $str))
-  (data $__d177 "integer overflow: + on i32 at src/io/fs.bp:1339:89")
-  (global $__s177 (mut (ref null $str)) (ref.null $str))
-  (data $__d178 "]")
-  (global $__s178 (mut (ref null $str)) (ref.null $str))
-  (data $__d179 "integer overflow: + on i32 at src/io/fs.bp:1340:59")
-  (global $__s179 (mut (ref null $str)) (ref.null $str))
-  (data $__d180 "integer overflow: + on i32 at src/io/fs.bp:1343:15")
-  (global $__s180 (mut (ref null $str)) (ref.null $str))
-  (data $__d181 "integer overflow: - on i32 at src/io/fs.bp:1345:12")
-  (global $__s181 (mut (ref null $str)) (ref.null $str))
-  (data $__d182 "integer overflow: + on i32 at src/io/fs.bp:1354:15")
-  (global $__s182 (mut (ref null $str)) (ref.null $str))
-  (data $__d183 "integer overflow: + on i32 at src/io/fs.bp:1359:15")
-  (global $__s183 (mut (ref null $str)) (ref.null $str))
-  (data $__d184 "integer overflow: + on i32 at src/io/fs.bp:1359:39")
-  (global $__s184 (mut (ref null $str)) (ref.null $str))
-  (data $__d185 "-")
-  (global $__s185 (mut (ref null $str)) (ref.null $str))
-  (data $__d186 "integer overflow: + on i32 at src/io/fs.bp:1360:31")
-  (global $__s186 (mut (ref null $str)) (ref.null $str))
-  (data $__d187 "integer overflow: + on i32 at src/io/fs.bp:1365:19")
-  (global $__s187 (mut (ref null $str)) (ref.null $str))
-  (data $__d188 "integer overflow: + on i32 at src/io/fs.bp:1368:19")
-  (global $__s188 (mut (ref null $str)) (ref.null $str))
-  (data $__d189 "integer overflow: + on i32 at src/io/fs.bp:1382:23")
-  (global $__s189 (mut (ref null $str)) (ref.null $str))
-  (data $__d190 "integer overflow: + on i32 at src/io/fs.bp:1388:23")
-  (global $__s190 (mut (ref null $str)) (ref.null $str))
-  (data $__d191 "integer overflow: + on i32 at src/io/fs.bp:1395:19")
-  (global $__s191 (mut (ref null $str)) (ref.null $str))
-  (data $__d192 "integer overflow: + on i32 at src/io/fs.bp:1396:19")
-  (global $__s192 (mut (ref null $str)) (ref.null $str))
-  (data $__d193 "integer overflow: + on i32 at src/io/fs.bp:1401:23")
-  (global $__s193 (mut (ref null $str)) (ref.null $str))
-  (data $__d194 "integer overflow: + on i32 at src/io/fs.bp:1402:23")
-  (global $__s194 (mut (ref null $str)) (ref.null $str))
-  (data $__d195 "integer overflow: + on i32 at src/io/fs.bp:1404:38")
-  (global $__s195 (mut (ref null $str)) (ref.null $str))
-  (data $__d196 "integer overflow: + on i32 at src/io/fs.bp:1405:25")
-  (global $__s196 (mut (ref null $str)) (ref.null $str))
-  (data $__d197 "integer overflow: + on i32 at src/io/fs.bp:1406:23")
-  (global $__s197 (mut (ref null $str)) (ref.null $str))
-  (data $__d198 "integer overflow: + on i32 at src/io/fs.bp:1410:19")
-  (global $__s198 (mut (ref null $str)) (ref.null $str))
-  (data $__d199 "integer overflow: + on i32 at src/io/fs.bp:1411:19")
-  (global $__s199 (mut (ref null $str)) (ref.null $str))
-  (data $__d200 "integer overflow: + on i32 at src/io/fs.bp:1423:15")
-  (global $__s200 (mut (ref null $str)) (ref.null $str))
-  (data $__d201 "integer overflow: + on i32 at src/io/fs.bp:1438:15")
-  (global $__s201 (mut (ref null $str)) (ref.null $str))
-  (data $__d202 "integer overflow: - on i32 at src/io/fs.bp:1454:33")
-  (global $__s202 (mut (ref null $str)) (ref.null $str))
-  (data $__d203 "**")
-  (global $__s203 (mut (ref null $str)) (ref.null $str))
-  (data $__d204 "integer overflow: + on i32 at src/io/fs.bp:1456:43")
-  (global $__s204 (mut (ref null $str)) (ref.null $str))
-  (data $__d205 "integer overflow: + on i32 at src/io/fs.bp:1461:19")
-  (global $__s205 (mut (ref null $str)) (ref.null $str))
-  (data $__d206 "integer overflow: + on i32 at src/io/fs.bp:1475:36")
-  (global $__s206 (mut (ref null $str)) (ref.null $str))
-  (data $__d207 "integer overflow: + on i32 at src/io/fs.bp:1483:15")
-  (global $__s207 (mut (ref null $str)) (ref.null $str))
-  (data $__d208 "integer overflow: + on i32 at src/io/fs.bp:1489:36")
-  (global $__s208 (mut (ref null $str)) (ref.null $str))
-  (data $__d209 "integer overflow: + on i32 at src/io/fs.bp:1504:15")
-  (global $__s209 (mut (ref null $str)) (ref.null $str))
-  (data $__d210 "integer overflow: + on i32 at src/io/fs.bp:1512:15")
-  (global $__s210 (mut (ref null $str)) (ref.null $str))
-  (data $__d211 "integer overflow: - on i32 at src/io/fs.bp:1523:16")
-  (global $__s211 (mut (ref null $str)) (ref.null $str))
-  (data $__d212 "integer overflow: - on i32 at src/io/fs.bp:1524:34")
-  (global $__s212 (mut (ref null $str)) (ref.null $str))
-  (data $__d213 "integer overflow: - on i32 at src/io/fs.bp:1524:37")
-  (global $__s213 (mut (ref null $str)) (ref.null $str))
-  (data $__d214 "integer overflow: - on i32 at src/io/fs.bp:1527:36")
-  (global $__s214 (mut (ref null $str)) (ref.null $str))
-  (data $__d215 "integer overflow: - on i32 at src/io/fs.bp:1527:39")
-  (global $__s215 (mut (ref null $str)) (ref.null $str))
-  (data $__d216 "integer overflow: + on i32 at src/io/fs.bp:1534:21")
-  (global $__s216 (mut (ref null $str)) (ref.null $str))
-  (data $__d217 "integer overflow: + on i32 at src/io/fs.bp:1539:19")
-  (global $__s217 (mut (ref null $str)) (ref.null $str))
-  (data $__d218 "integer overflow: - on i32 at src/io/fs.bp:1541:37")
-  (global $__s218 (mut (ref null $str)) (ref.null $str))
-  (data $__d219 "integer overflow: - on i32 at src/io/fs.bp:1541:58")
-  (global $__s219 (mut (ref null $str)) (ref.null $str))
-  (data $__d220 "integer overflow: - on i32 at src/io/fs.bp:1541:61")
-  (global $__s220 (mut (ref null $str)) (ref.null $str))
-  (data $__d221 "integer overflow: - on i32 at src/io/fs.bp:1545:44")
-  (global $__s221 (mut (ref null $str)) (ref.null $str))
-  (data $__d222 "integer overflow: - on i32 at src/io/fs.bp:1545:47")
-  (global $__s222 (mut (ref null $str)) (ref.null $str))
-  (data $__d223 "integer overflow: - on i32 at src/io/fs.bp:1551:15")
-  (global $__s223 (mut (ref null $str)) (ref.null $str))
-  (data $__d224 "integer overflow: - on i32 at src/io/fs.bp:1553:36")
-  (global $__s224 (mut (ref null $str)) (ref.null $str))
-  (data $__d225 "integer overflow: - on i32 at src/io/fs.bp:1553:39")
-  (global $__s225 (mut (ref null $str)) (ref.null $str))
-  (data $__d226 "TMPDIR")
-  (global $__s226 (mut (ref null $str)) (ref.null $str))
-  (data $__d227 "/tmp")
-  (global $__s227 (mut (ref null $str)) (ref.null $str))
-  (data $__d228 "/bp-std-fs-")
-  (global $__s228 (mut (ref null $str)) (ref.null $str))
-  (data $__d229 "integer overflow: + on i32 at src/io/fs.bp:1566:27")
-  (global $__s229 (mut (ref null $str)) (ref.null $str))
-  (data $__d230 "io.fs: no scratch directory could be made")
-  (global $__s230 (mut (ref null $str)) (ref.null $str))
-  (data $__d231 "io.fs: no link path")
-  (global $__s231 (mut (ref null $str)) (ref.null $str))
-  (data $__d232 "integer overflow: - on i32 at src/io/fs.bp:1582:40")
-  (global $__s232 (mut (ref null $str)) (ref.null $str))
-  (data $__d233 "integer overflow: - on i32 at src/io/fs.bp:1582:43")
-  (global $__s233 (mut (ref null $str)) (ref.null $str))
-  (data $__d234 "integer overflow: - on i64 at src/io/fs.bp:1656:36")
-  (global $__s234 (mut (ref null $str)) (ref.null $str))
-  (data $__d235 "integer overflow: - on i64 at src/io/fs.bp:1656:48")
-  (global $__s235 (mut (ref null $str)) (ref.null $str))
-  (data $__d236 "/app")
-  (global $__s236 (mut (ref null $str)) (ref.null $str))
-  (data $__d237 "/app/blog")
-  (global $__s237 (mut (ref null $str)) (ref.null $str))
-  (data $__d238 "/app/page.bp")
-  (global $__s238 (mut (ref null $str)) (ref.null $str))
-  (data $__d239 "root page")
-  (global $__s239 (mut (ref null $str)) (ref.null $str))
-  (data $__d240 "/app/blog/page.bp")
-  (global $__s240 (mut (ref null $str)) (ref.null $str))
-  (data $__d241 "blog page")
-  (global $__s241 (mut (ref null $str)) (ref.null $str))
-  (data $__d242 "/app/blog/notes.md")
-  (global $__s242 (mut (ref null $str)) (ref.null $str))
-  (data $__d243 "notes")
-  (global $__s243 (mut (ref null $str)) (ref.null $str))
-  (data $__d244 "<error>")
-  (global $__s244 (mut (ref null $str)) (ref.null $str))
-  (data $__d245 "NotFound ")
-  (global $__s245 (mut (ref null $str)) (ref.null $str))
-  (data $__d246 "PermissionDenied ")
-  (global $__s246 (mut (ref null $str)) (ref.null $str))
-  (data $__d247 "IsDirectory ")
-  (global $__s247 (mut (ref null $str)) (ref.null $str))
-  (data $__d248 "NotDirectory ")
-  (global $__s248 (mut (ref null $str)) (ref.null $str))
-  (data $__d249 "AlreadyExists ")
-  (global $__s249 (mut (ref null $str)) (ref.null $str))
-  (data $__d250 "InvalidUtf8 ")
-  (global $__s250 (mut (ref null $str)) (ref.null $str))
-  (data $__d251 " ")
-  (global $__s251 (mut (ref null $str)) (ref.null $str))
-  (data $__d252 "/app/.cache")
-  (global $__s252 (mut (ref null $str)) (ref.null $str))
-  (data $__d253 "/app/.cache/page.bp")
-  (global $__s253 (mut (ref null $str)) (ref.null $str))
-  (data $__d254 "cached")
-  (global $__s254 (mut (ref null $str)) (ref.null $str))
-  (data $__d255 "/app/.hidden.bp")
-  (global $__s255 (mut (ref null $str)) (ref.null $str))
-  (data $__d256 "hidden")
-  (global $__s256 (mut (ref null $str)) (ref.null $str))
-  (data $__d257 "/app/blog/.draft.md")
-  (global $__s257 (mut (ref null $str)) (ref.null $str))
-  (data $__d258 "draft")
-  (global $__s258 (mut (ref null $str)) (ref.null $str))
-  (data $__d259 "blog")
-  (global $__s259 (mut (ref null $str)) (ref.null $str))
-  (data $__d260 "/app/linked")
-  (global $__s260 (mut (ref null $str)) (ref.null $str))
-  (data $__d261 "page.bp")
-  (global $__s261 (mut (ref null $str)) (ref.null $str))
-  (data $__d262 "/app/alias.bp")
-  (global $__s262 (mut (ref null $str)) (ref.null $str))
-  (data $__d263 "missing.bp")
-  (global $__s263 (mut (ref null $str)) (ref.null $str))
-  (data $__d264 "/app/gone.bp")
-  (global $__s264 (mut (ref null $str)) (ref.null $str))
-  (data $__d265 "ok")
-  (global $__s265 (mut (ref null $str)) (ref.null $str))
-  (data $__d266 ":")
-  (global $__s266 (mut (ref null $str)) (ref.null $str))
   (func $__init_strs
     i32.const 0
     i32.const 0
@@ -19378,1134 +10926,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_data $str $__d5
     global.set $__s5
     i32.const 0
-    i32.const 5
+    i32.const 1
     array.new_data $str $__d6
     global.set $__s6
     i32.const 0
-    i32.const 53
+    i32.const 1
     array.new_data $str $__d7
     global.set $__s7
-    i32.const 0
-    i32.const 16
-    array.new_data $str $__d8
-    global.set $__s8
-    i32.const 0
-    i32.const 61
-    array.new_data $str $__d9
-    global.set $__s9
-    i32.const 0
-    i32.const 53
-    array.new_data $str $__d10
-    global.set $__s10
-    i32.const 0
-    i32.const 61
-    array.new_data $str $__d11
-    global.set $__s11
-    i32.const 0
-    i32.const 53
-    array.new_data $str $__d12
-    global.set $__s12
-    i32.const 0
-    i32.const 61
-    array.new_data $str $__d13
-    global.set $__s13
-    i32.const 0
-    i32.const 53
-    array.new_data $str $__d14
-    global.set $__s14
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d15
-    global.set $__s15
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d16
-    global.set $__s16
-    i32.const 0
-    i32.const 16
-    array.new_data $str $__d17
-    global.set $__s17
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d18
-    global.set $__s18
-    i32.const 0
-    i32.const 16
-    array.new_data $str $__d19
-    global.set $__s19
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d20
-    global.set $__s20
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d21
-    global.set $__s21
-    i32.const 0
-    i32.const 2
-    array.new_data $str $__d22
-    global.set $__s22
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d23
-    global.set $__s23
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d24
-    global.set $__s24
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d25
-    global.set $__s25
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d26
-    global.set $__s26
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d27
-    global.set $__s27
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d28
-    global.set $__s28
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d29
-    global.set $__s29
-    i32.const 0
-    i32.const 29
-    array.new_data $str $__d30
-    global.set $__s30
-    i32.const 0
-    i32.const 24
-    array.new_data $str $__d31
-    global.set $__s31
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d32
-    global.set $__s32
-    i32.const 0
-    i32.const 49
-    array.new_data $str $__d33
-    global.set $__s33
-    i32.const 0
-    i32.const 49
-    array.new_data $str $__d34
-    global.set $__s34
-    i32.const 0
-    i32.const 28
-    array.new_data $str $__d35
-    global.set $__s35
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d36
-    global.set $__s36
-    i32.const 0
-    i32.const 8
-    array.new_data $str $__d37
-    global.set $__s37
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d38
-    global.set $__s38
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d39
-    global.set $__s39
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d40
-    global.set $__s40
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d41
-    global.set $__s41
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d42
-    global.set $__s42
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d43
-    global.set $__s43
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d44
-    global.set $__s44
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d45
-    global.set $__s45
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d46
-    global.set $__s46
-    i32.const 0
-    i32.const 3
-    array.new_data $str $__d47
-    global.set $__s47
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d48
-    global.set $__s48
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d49
-    global.set $__s49
-    i32.const 0
-    i32.const 8
-    array.new_data $str $__d50
-    global.set $__s50
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d51
-    global.set $__s51
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d52
-    global.set $__s52
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d53
-    global.set $__s53
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d54
-    global.set $__s54
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d55
-    global.set $__s55
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d56
-    global.set $__s56
-    i32.const 0
-    i32.const 15
-    array.new_data $str $__d57
-    global.set $__s57
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d58
-    global.set $__s58
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d59
-    global.set $__s59
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d60
-    global.set $__s60
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d61
-    global.set $__s61
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d62
-    global.set $__s62
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d63
-    global.set $__s63
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d64
-    global.set $__s64
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d65
-    global.set $__s65
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d66
-    global.set $__s66
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d67
-    global.set $__s67
-    i32.const 0
-    i32.const 32
-    array.new_data $str $__d68
-    global.set $__s68
-    i32.const 0
-    i32.const 30
-    array.new_data $str $__d69
-    global.set $__s69
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d70
-    global.set $__s70
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d71
-    global.set $__s71
-    i32.const 0
-    i32.const 25
-    array.new_data $str $__d72
-    global.set $__s72
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d73
-    global.set $__s73
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d74
-    global.set $__s74
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d75
-    global.set $__s75
-    i32.const 0
-    i32.const 21
-    array.new_data $str $__d76
-    global.set $__s76
-    i32.const 0
-    i32.const 21
-    array.new_data $str $__d77
-    global.set $__s77
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d78
-    global.set $__s78
-    i32.const 0
-    i32.const 16
-    array.new_data $str $__d79
-    global.set $__s79
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d80
-    global.set $__s80
-    i32.const 0
-    i32.const 32
-    array.new_data $str $__d81
-    global.set $__s81
-    i32.const 0
-    i32.const 35
-    array.new_data $str $__d82
-    global.set $__s82
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d83
-    global.set $__s83
-    i32.const 0
-    i32.const 16
-    array.new_data $str $__d84
-    global.set $__s84
-    i32.const 0
-    i32.const 13
-    array.new_data $str $__d85
-    global.set $__s85
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d86
-    global.set $__s86
-    i32.const 0
-    i32.const 25
-    array.new_data $str $__d87
-    global.set $__s87
-    i32.const 0
-    i32.const 18
-    array.new_data $str $__d88
-    global.set $__s88
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d89
-    global.set $__s89
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d90
-    global.set $__s90
-    i32.const 0
-    i32.const 15
-    array.new_data $str $__d91
-    global.set $__s91
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d92
-    global.set $__s92
-    i32.const 0
-    i32.const 21
-    array.new_data $str $__d93
-    global.set $__s93
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d94
-    global.set $__s94
-    i32.const 0
-    i32.const 30
-    array.new_data $str $__d95
-    global.set $__s95
-    i32.const 0
-    i32.const 25
-    array.new_data $str $__d96
-    global.set $__s96
-    i32.const 0
-    i32.const 37
-    array.new_data $str $__d97
-    global.set $__s97
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d98
-    global.set $__s98
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d99
-    global.set $__s99
-    i32.const 0
-    i32.const 21
-    array.new_data $str $__d100
-    global.set $__s100
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d101
-    global.set $__s101
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d102
-    global.set $__s102
-    i32.const 0
-    i32.const 31
-    array.new_data $str $__d103
-    global.set $__s103
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d104
-    global.set $__s104
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d105
-    global.set $__s105
-    i32.const 0
-    i32.const 49
-    array.new_data $str $__d106
-    global.set $__s106
-    i32.const 0
-    i32.const 49
-    array.new_data $str $__d107
-    global.set $__s107
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d108
-    global.set $__s108
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d109
-    global.set $__s109
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d110
-    global.set $__s110
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d111
-    global.set $__s111
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d112
-    global.set $__s112
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d113
-    global.set $__s113
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d114
-    global.set $__s114
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d115
-    global.set $__s115
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d116
-    global.set $__s116
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d117
-    global.set $__s117
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d118
-    global.set $__s118
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d119
-    global.set $__s119
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d120
-    global.set $__s120
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d121
-    global.set $__s121
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d122
-    global.set $__s122
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d123
-    global.set $__s123
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d124
-    global.set $__s124
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d125
-    global.set $__s125
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d126
-    global.set $__s126
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d127
-    global.set $__s127
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d128
-    global.set $__s128
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d129
-    global.set $__s129
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d130
-    global.set $__s130
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d131
-    global.set $__s131
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d132
-    global.set $__s132
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d133
-    global.set $__s133
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d134
-    global.set $__s134
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d135
-    global.set $__s135
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d136
-    global.set $__s136
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d137
-    global.set $__s137
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d138
-    global.set $__s138
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d139
-    global.set $__s139
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d140
-    global.set $__s140
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d141
-    global.set $__s141
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d142
-    global.set $__s142
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d143
-    global.set $__s143
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d144
-    global.set $__s144
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d145
-    global.set $__s145
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d146
-    global.set $__s146
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d147
-    global.set $__s147
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d148
-    global.set $__s148
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d149
-    global.set $__s149
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d150
-    global.set $__s150
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d151
-    global.set $__s151
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d152
-    global.set $__s152
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d153
-    global.set $__s153
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d154
-    global.set $__s154
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d155
-    global.set $__s155
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d156
-    global.set $__s156
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d157
-    global.set $__s157
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d158
-    global.set $__s158
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d159
-    global.set $__s159
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d160
-    global.set $__s160
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d161
-    global.set $__s161
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d162
-    global.set $__s162
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d163
-    global.set $__s163
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d164
-    global.set $__s164
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d165
-    global.set $__s165
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d166
-    global.set $__s166
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d167
-    global.set $__s167
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d168
-    global.set $__s168
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d169
-    global.set $__s169
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d170
-    global.set $__s170
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d171
-    global.set $__s171
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d172
-    global.set $__s172
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d173
-    global.set $__s173
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d174
-    global.set $__s174
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d175
-    global.set $__s175
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d176
-    global.set $__s176
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d177
-    global.set $__s177
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d178
-    global.set $__s178
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d179
-    global.set $__s179
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d180
-    global.set $__s180
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d181
-    global.set $__s181
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d182
-    global.set $__s182
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d183
-    global.set $__s183
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d184
-    global.set $__s184
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d185
-    global.set $__s185
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d186
-    global.set $__s186
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d187
-    global.set $__s187
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d188
-    global.set $__s188
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d189
-    global.set $__s189
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d190
-    global.set $__s190
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d191
-    global.set $__s191
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d192
-    global.set $__s192
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d193
-    global.set $__s193
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d194
-    global.set $__s194
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d195
-    global.set $__s195
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d196
-    global.set $__s196
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d197
-    global.set $__s197
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d198
-    global.set $__s198
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d199
-    global.set $__s199
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d200
-    global.set $__s200
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d201
-    global.set $__s201
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d202
-    global.set $__s202
-    i32.const 0
-    i32.const 2
-    array.new_data $str $__d203
-    global.set $__s203
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d204
-    global.set $__s204
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d205
-    global.set $__s205
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d206
-    global.set $__s206
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d207
-    global.set $__s207
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d208
-    global.set $__s208
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d209
-    global.set $__s209
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d210
-    global.set $__s210
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d211
-    global.set $__s211
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d212
-    global.set $__s212
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d213
-    global.set $__s213
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d214
-    global.set $__s214
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d215
-    global.set $__s215
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d216
-    global.set $__s216
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d217
-    global.set $__s217
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d218
-    global.set $__s218
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d219
-    global.set $__s219
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d220
-    global.set $__s220
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d221
-    global.set $__s221
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d222
-    global.set $__s222
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d223
-    global.set $__s223
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d224
-    global.set $__s224
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d225
-    global.set $__s225
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d226
-    global.set $__s226
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d227
-    global.set $__s227
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d228
-    global.set $__s228
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d229
-    global.set $__s229
-    i32.const 0
-    i32.const 41
-    array.new_data $str $__d230
-    global.set $__s230
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d231
-    global.set $__s231
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d232
-    global.set $__s232
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d233
-    global.set $__s233
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d234
-    global.set $__s234
-    i32.const 0
-    i32.const 50
-    array.new_data $str $__d235
-    global.set $__s235
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d236
-    global.set $__s236
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d237
-    global.set $__s237
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d238
-    global.set $__s238
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d239
-    global.set $__s239
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d240
-    global.set $__s240
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d241
-    global.set $__s241
-    i32.const 0
-    i32.const 18
-    array.new_data $str $__d242
-    global.set $__s242
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d243
-    global.set $__s243
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d244
-    global.set $__s244
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d245
-    global.set $__s245
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d246
-    global.set $__s246
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d247
-    global.set $__s247
-    i32.const 0
-    i32.const 13
-    array.new_data $str $__d248
-    global.set $__s248
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d249
-    global.set $__s249
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d250
-    global.set $__s250
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d251
-    global.set $__s251
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d252
-    global.set $__s252
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d253
-    global.set $__s253
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d254
-    global.set $__s254
-    i32.const 0
-    i32.const 15
-    array.new_data $str $__d255
-    global.set $__s255
-    i32.const 0
-    i32.const 6
-    array.new_data $str $__d256
-    global.set $__s256
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d257
-    global.set $__s257
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d258
-    global.set $__s258
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d259
-    global.set $__s259
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d260
-    global.set $__s260
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d261
-    global.set $__s261
-    i32.const 0
-    i32.const 13
-    array.new_data $str $__d262
-    global.set $__s262
-    i32.const 0
-    i32.const 10
-    array.new_data $str $__d263
-    global.set $__s263
-    i32.const 0
-    i32.const 12
-    array.new_data $str $__d264
-    global.set $__s264
-    i32.const 0
-    i32.const 2
-    array.new_data $str $__d265
-    global.set $__s265
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d266
-    global.set $__s266
     call $__init_globals
   )
-  (global $__ti_49 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_49 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotFound))
-    global.get $__ti_49
-    local.get $f0
-    struct.new $var_FsError_NotFound
-  )
-  (global $__ti_53 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_53 (param $f0 (ref null $str)) (result (ref null $var_FsError_PermissionDenied))
-    global.get $__ti_53
-    local.get $f0
-    struct.new $var_FsError_PermissionDenied
-  )
-  (global $__ti_45 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_45 (param $f0 (ref null $str)) (result (ref null $var_FsError_IsDirectory))
-    global.get $__ti_45
-    local.get $f0
-    struct.new $var_FsError_IsDirectory
-  )
-  (global $__ti_47 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_47 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotDirectory))
-    global.get $__ti_47
-    local.get $f0
-    struct.new $var_FsError_NotDirectory
-  )
-  (global $__ti_41 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_41 (param $f0 (ref null $str)) (result (ref null $var_FsError_AlreadyExists))
-    global.get $__ti_41
-    local.get $f0
-    struct.new $var_FsError_AlreadyExists
-  )
-  (global $__ti_51 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_51 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $var_FsError_Other))
-    global.get $__ti_51
-    local.get $f0
-    local.get $f1
-    struct.new $var_FsError_Other
-  )
-  (global $__ti_43 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_43 (param $f0 (ref null $str)) (param $f1 i64) (result (ref null $var_FsError_InvalidUtf8))
-    global.get $__ti_43
-    local.get $f0
-    local.get $f1
-    struct.new $var_FsError_InvalidUtf8
-  )
-  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_37 (param $f0 (ref null $str)) (param $f1 anyref) (result (ref null $rec_File))
-    global.get $__ti_37
-    local.get $f0
-    local.get $f1
-    struct.new $rec_File
-  )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_35 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (param $f2 i32) (param $f3 (ref null $str)) (result (ref null $rec_HostError))
-    global.get $__ti_35
-    local.get $f0
-    local.get $f1
-    local.get $f2
-    local.get $f3
-    struct.new $rec_HostError
-  )
-  (global $__ti_39 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_39 (param $f0 i64) (param $f1 i64) (param $f2 i32) (result (ref null $rec_FileStat))
-    global.get $__ti_39
-    local.get $f0
-    local.get $f1
-    local.get $f2
-    struct.new $rec_FileStat
-  )
-  (global $__ti_55 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (func $__new_55 (param $f0 (ref null $arr_any)) (param $f1 (ref null $arr_any)) (result (ref null $rec_Walked))
-    global.get $__ti_55
-    local.get $f0
-    local.get $f1
-    struct.new $rec_Walked
-  )
-  (@custom "botopink.needs" "gc\0afilesystem\0a")
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-unknown import: `bp_fs::open` has not been defined
 ```
 
 ----- SOURCE CODE -- std/probe.bp

@@ -48,7 +48,10 @@ import {io.terminal.print} from "std";
     (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
     (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (global $__cap (import "std@__rt" "__cap") (mut arrayref))
+  (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -102,69 +105,6 @@ import {io.terminal.print} from "std";
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
-    global.get $__cap
-    local.set $c
-    local.get $c
-    ref.is_null
-    i32.eqz
-    (if
-      (then
-        local.get $c
-        array.len
-        local.set $l
-        local.get $l
-        local.get $n
-        i32.add
-        array.new_default $str
-        local.set $q
-        local.get $q
-        i32.const 0
-        local.get $c
-        i32.const 0
-        local.get $l
-        array.copy $str $str
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $q
-            local.get $l
-            local.get $i
-            i32.add
-            local.get $p
-            local.get $i
-            i32.add
-            i32.load8_u
-            array.set $str
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $q
-        global.set $__cap
-        return
-      )
-    )
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -396,22 +336,31 @@ import {io.terminal.print} from "std";
     array.copy $str $str
     local.get $r
   )
-  (global $__cap (mut (ref null $str)) (ref.null $str))
   (func $__cap_begin (result (ref null $str))
     (local $o (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $o
     i32.const 0
     array.new_default $str
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.add
+    global.set $__cap_depth
     local.get $o
   )
   (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
     (local $s (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $s
     local.get $o
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.sub
+    global.set $__cap_depth
     local.get $s
   )
   (data $__d0 "nobody")

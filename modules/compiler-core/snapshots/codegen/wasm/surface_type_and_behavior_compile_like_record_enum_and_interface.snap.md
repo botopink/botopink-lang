@@ -76,6 +76,8 @@ import {io.terminal.print} from "std";
     (type $rec_Square (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)))))
     (type $brand_rec_Square (struct (field f32) (field i64) (field f32) (field i32) (field i64) (field i64) (field i32) (field i64) (field i32) (field f32) (field i64) (field f64) (field i64) (field i32) (field i64) (field i64) (field f32) (field f64) (field i64) (field i32) (field i32) (field i64) (field f64) (field f32) (field i32) (field f64) (field f64) (field f64) (field i32) (field f32) (field i32) (field i64)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
@@ -149,23 +151,156 @@ import {io.terminal.print} from "std";
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  (func $__eq_Square (param $a (ref null $rec_Square)) (param $b (ref null $rec_Square)) (result i32)
+    local.get $a
+    struct.get $rec_Square $f0
+    local.get $b
+    struct.get $rec_Square $f0
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Size (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.test (ref null $var_Size_Small)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $var_Size_Small)
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $var_Size_Large)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $var_Size_Large)
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    ref.cast (ref null $var_Size_Large)
+    struct.get $var_Size_Large $f0
+    local.get $b
+    ref.cast (ref null $var_Size_Large)
+    struct.get $var_Size_Large $f0
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+    return
+      )
+    )
+    i32.const 0
+  )
+  (func $__pr1 (param $v i32)
+    local.get $v
+    call $__print_i32_raw
+  )
+  (func $__pr0 (param $v (ref null $rec_Square))
+    global.get $__s2
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s4
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Square $f0
+    call $__pr1
+    global.get $__s5
+    call $__print_str_raw
+  )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Square)
+    call $__pr0
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Square)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Square)
+    local.get $b
+    ref.cast (ref null $rec_Square)
+    call $__eq_Square
+  )
+  (func $__pr2 (param $v (ref null $var_Size_Small))
+    global.get $__s7
+    call $__print_str_raw
+  )
+  (func $__tip2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Size_Small)
+    call $__pr2
+  )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Size_Small)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Size
+  )
+  (func $__pr3 (param $v (ref null $var_Size_Large))
+    global.get $__s9
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s10
+    call $__print_str_raw
+    local.get $v
+    struct.get $var_Size_Large $f0
+    call $__pr1
+    global.get $__s5
+    call $__print_str_raw
+  )
+  (func $__tip3 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Size_Large)
+    call $__pr3
+  )
+  (func $__tie3 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Size_Large)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Size
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -328,6 +463,47 @@ import {io.terminal.print} from "std";
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -604,6 +780,26 @@ import {io.terminal.print} from "std";
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "integer overflow: + on i32 at main.bp:23:36")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "Square")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "(")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "side: ")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 ")")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 "test@main.Square")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "Size.Small")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 "test@main.Size.Small")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "Size.Large")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "n: ")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "test@main.Size.Large")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -614,23 +810,94 @@ import {io.terminal.print} from "std";
     i32.const 43
     array.new_data $str $__d1
     global.set $__s1
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 16
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d7
+    global.set $__s7
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 3
+    array.new_data $str $__d10
+    global.set $__s10
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d11
+    global.set $__s11
+    call $__init_types
   )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_35 (param $f0 i32) (result (ref null $rec_Square))
     global.get $__ti_35
     local.get $f0
     struct.new $rec_Square
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 i32) (result (ref null $var_Size_Large))
     global.get $__ti_31
     local.get $f0
     struct.new $var_Size_Large
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (result (ref null $var_Size_Small))
     global.get $__ti_33
     struct.new $var_Size_Small
+  )
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1 $__tip2 $__tie2 $__tip3 $__tie3)
+  (func $__init_types
+    global.get $__s6
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_35
+    global.get $__ti_35
+    call $__ti_register
+    global.get $__s8
+    ref.func $__tip2
+    ref.func $__tie2
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
+    global.get $__s11
+    ref.func $__tip3
+    ref.func $__tie3
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

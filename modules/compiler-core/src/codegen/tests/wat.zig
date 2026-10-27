@@ -6178,3 +6178,34 @@ test "wat: decision 1021 (10) ---- a Result of a type-token-bound parameter, a r
         \\}
     , "8\nmade\n3\nm:a\nnone\ntrue\ntrue\n");
 }
+
+// Decision 1055 (2), (3) — cell `wasm_foreign_type_prints`, run through the
+// units' frame: `shapes` builds a record, a variant and a `Display` type and
+// exports the functions that answer them, which `main` imports; `main` prints,
+// compares, tests and displays them — alone, in an array, a tuple and an
+// `unknown` — each declared type's `$__tinfo` reaching its printer and its
+// equality through the core.
+test "wat: units ---- decision 1055 (2), (3): a foreign type prints, compares and displays (cell wasm_foreign_type_prints)" {
+    const a = std.testing.allocator;
+    const ru = @import("../wat/runtime_unit.zig");
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    const case = "decisions-taken/wasm_unit_per_module_linked-1021/cases/wasm_foreign_type_prints";
+    const srcs = try caseSources(ar, case, &.{ "shapes", "main" });
+    var outputs = try h.generate(a, srcs, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const pu = try programUnits(ar, &outputs, "main");
+    const main_text = (try ru.faceOfBytes(ar, pu.entry)).text;
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@shapes\" \"origin\" ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@shapes\" \"anything\" ") != null);
+    const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
+    const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
+    try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_foreign_type_prints"), out);
+}

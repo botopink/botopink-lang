@@ -465,6 +465,9 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
 
     // The core.
     var core: std.ArrayListUnmanaged(ast.Item) = .empty;
+    // Decision 1055 (2), (3), (5) — the prelude group: the core's capture,
+    // type registry and dispatch name its types.
+    try core.append(ar, .{ .types = &prelude.gc_prelude_defs });
     try core.append(ar, .{ .import = prelude.fd_write_import });
     try core.append(ar, .{ .import = prelude.random_get_import });
     try core.append(ar, .{ .memory = .{ .@"export" = memory_export, .min_pages = pages } });
@@ -488,6 +491,7 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
         sc.exports = try ar.dupe([]const u8, &.{f.name});
         try core.append(ar, .{ .func = sc });
     }
+    try core.appendSlice(ar, &prelude.core_gc_items);
     try core.appendSlice(ar, whole.data);
     var core_shared: usize = 0;
     for (nodes.items) |n| if (n.place) |p| if (std.mem.eql(u8, p, name)) {
@@ -1052,7 +1056,7 @@ pub fn faceOf(ar: std.mem.Allocator, m: ast.Module) FaceError!Face {
             if (mem.import) |im| try b.import(im.module, im.name, d);
             if (mem.@"export") |x| try b.@"export"(x, d);
         },
-        .global => |g| {
+        .global => |g| if (g.import != null or g.exports.len > 0) {
             const d = try globalDesc(ar, g.ty, g.mutable);
             if (g.import) |im| try b.import(im.module, im.name, d);
             for (g.exports) |x| try b.@"export"(x, d);

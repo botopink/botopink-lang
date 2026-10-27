@@ -214,7 +214,14 @@ fn frameParent(f: Frame) -> unknown {
     (type $rec_Rendered (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)) (field $f1 (mut (ref null $rec_RenderScope))))))
     (type $brand_rec_Rendered (struct (field f32) (field f32) (field f64) (field i64) (field i64) (field i32) (field i64) (field i64) (field i32) (field f64) (field i64) (field i64) (field i64) (field i32) (field i32) (field f64) (field f32) (field f32) (field f64) (field i32) (field f64) (field i32) (field f64) (field f32) (field f32) (field i64) (field i32) (field i64) (field i32) (field i64) (field f64) (field f32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__print_decl" (func $__print_decl (param anyref)))
+  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -430,23 +437,664 @@ fn frameParent(f: Frame) -> unknown {
     struct.get $rec_Frame $f2
     return
   )
+  (func $__unk_print_q (param $v anyref)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    global.get $__s5
+    call $__print_str_raw
+    return
+      )
+    )
+    local.get $v
+    call $__print_ebox
+    (if
+      (then
+    return
+      )
+    )
+    local.get $v
+    call $__print_arrs
+    (if
+      (then
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_bool)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_bool)
+    struct.get $box_bool $v
+    call $__print_bool_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_f64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+    call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i64)
+    struct.get $box_i64 $v
+    call $__print_i64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $str)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $str)
+    call $__print_quoted_raw
+    return
+      )
+    )
+    local.get $v
+    call $__print_tagged_raw
+  )
+  (func $__pr1 (param $v anyref)
+    local.get $v
+    call $__unk_print_q
+  )
+  (func $__pr0 (param $v (ref null $rec_Context))
+    global.get $__s2
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s4
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Context $f0
+    call $__pr1
+    global.get $__s6
+    call $__print_str_raw
+  )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Context)
+    call $__pr0
+  )
+  (func $__unk_is_num (param $v anyref) (result i32)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    local.get $v
+    ref.test (ref null $box_bool)
+    i32.eqz
+    i32.and
+    local.get $v
+    ref.test (ref null $box_f64)
+    i32.or
+  )
+  (func $__unk_as_f64 (param $v anyref) (result f64)
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    f64.convert_i32_s
+    return
+      )
+    )
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+  )
+  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    call $__unk_is_num
+    local.get $b
+    call $__unk_is_num
+    i32.and
+    (if
+      (then
+    local.get $a
+    call $__unk_as_f64
+    local.get $b
+    call $__unk_as_f64
+    f64.eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $str)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $str)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $str)
+    local.get $b
+    ref.cast (ref null $str)
+    call $__str_eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_bool)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $box_bool)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.get $b
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    i32.eq
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Context)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__pr2 (param $v (ref null $rec_RenderScope))
+    global.get $__s8
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s9
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_RenderScope $f0
+    call $__pr1
+    global.get $__s6
+    call $__print_str_raw
+  )
+  (func $__tip3 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_RenderScope)
+    call $__pr2
+  )
+  (func $__tie3 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_RenderScope)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__pr4 (param $v (ref null $str))
+    local.get $v
+    call $__print_quoted_raw
+  )
+  (func $__pr3 (param $v (ref null $rec_Frame))
+    global.get $__s11
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s12
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Frame $f0
+    call $__pr4
+    global.get $__s13
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Frame $f1
+    call $__pr1
+    global.get $__s14
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Frame $f2
+    call $__pr1
+    global.get $__s6
+    call $__print_str_raw
+  )
+  (func $__tip4 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Frame)
+    call $__pr3
+  )
+  (func $__tie4 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Frame)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__pr6 (param $v anyref)
+    local.get $v
+    call $__print_tagged_raw
+  )
+  (func $__pr5 (param $v (ref null $rec_Rendered))
+    global.get $__s16
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s17
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Rendered $f0
+    call $__pr1
+    global.get $__s18
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_Rendered $f1
+    call $__pr6
+    global.get $__s6
+    call $__print_str_raw
+  )
+  (func $__tip6 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Rendered)
+    call $__pr5
+  )
+  (func $__tie6 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Rendered)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__unk_eq_s1 (param $a (ref null $rec_Context)) (param $b (ref null $rec_Context)) (result i32)
+    local.get $a
+    struct.get $rec_Context $f0
+    local.get $b
+    struct.get $rec_Context $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s3 (param $a (ref null $rec_RenderScope)) (param $b (ref null $rec_RenderScope)) (result i32)
+    local.get $a
+    struct.get $rec_RenderScope $f0
+    local.get $b
+    struct.get $rec_RenderScope $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s4 (param $a (ref null $rec_Frame)) (param $b (ref null $rec_Frame)) (result i32)
+    local.get $a
+    struct.get $rec_Frame $f0
+    local.get $b
+    struct.get $rec_Frame $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    struct.get $rec_Frame $f1
+    local.get $b
+    struct.get $rec_Frame $f1
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    struct.get $rec_Frame $f2
+    local.get $b
+    struct.get $rec_Frame $f2
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s6 (param $a (ref null $rec_Rendered)) (param $b (ref null $rec_Rendered)) (result i32)
+    local.get $a
+    struct.get $rec_Rendered $f0
+    local.get $b
+    struct.get $rec_Rendered $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    struct.get $rec_Rendered $f1
+    local.get $b
+    struct.get $rec_Rendered $f1
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s9 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
+    local.get $a
+    struct.get $box_i64 $v
+    local.get $b
+    struct.get $box_i64 $v
+    i64.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Context)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Context)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Context)
+    local.get $b
+    ref.cast (ref null $rec_Context)
+    call $__unk_eq_s1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_RenderScope)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_RenderScope)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_RenderScope)
+    local.get $b
+    ref.cast (ref null $rec_RenderScope)
+    call $__unk_eq_s3
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Frame)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Frame)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Frame)
+    local.get $b
+    ref.cast (ref null $rec_Frame)
+    call $__unk_eq_s4
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Rendered)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Rendered)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Rendered)
+    local.get $b
+    ref.cast (ref null $rec_Rendered)
+    call $__unk_eq_s6
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $box_i64)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $box_i64)
+    local.get $b
+    ref.cast (ref null $box_i64)
+    call $__unk_eq_s9
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $__decl)
+    local.get $b
+    ref.test (ref null $__decl)
+    i32.and
+    (if
+      (then
+    local.get $a
+    local.get $b
+    call $__eq_decl
+    return
+      )
+    )
+    i32.const 0
+  )
+  (func $__print_tagged_raw (param $v anyref)
+    local.get $v
+    ref.test (ref null $rec_Context)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $rec_Context)
+    call $__pr0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $rec_RenderScope)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $rec_RenderScope)
+    call $__pr2
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $rec_Frame)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $rec_Frame)
+    call $__pr3
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $rec_Rendered)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $rec_Rendered)
+    call $__pr5
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $__decl)
+    (if
+      (then
+    local.get $v
+    call $__print_decl
+    return
+      )
+    )
+    unreachable
+  )
+  (func $__print_ebox (param $v anyref) (result i32)
+    i32.const 0
+  )
+  (func $__print_arrs (param $v anyref) (result i32)
+    i32.const 0
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -609,6 +1257,99 @@ fn frameParent(f: Frame) -> unknown {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
     (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
@@ -778,10 +1519,178 @@ fn frameParent(f: Frame) -> unknown {
     local.get $top
     global.set $__heap_ptr
   )
+  (func $__print_quoted_raw (param $s (ref null $str))
+    (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $s
+    array.len
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $i
+        array.get_u $str
+        local.set $ch
+        i32.const 0
+        local.set $e
+        local.get $ch
+        i32.const 34
+        i32.eq
+        local.get $ch
+        i32.const 92
+        i32.eq
+        i32.or
+        (if
+          (then
+            local.get $ch
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 10
+        i32.eq
+        (if
+          (then
+            i32.const 110
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 13
+        i32.eq
+        (if
+          (then
+            i32.const 114
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 9
+        i32.eq
+        (if
+          (then
+            i32.const 116
+            local.set $e
+          )
+        )
+        local.get $e
+        (if
+          (then
+            i32.const 8
+            i32.const 92
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+            i32.const 8
+            local.get $e
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+          (else
+            i32.const 8
+            local.get $ch
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
+  (func $__print_u64_raw (param $v i64)
+    local.get $v
+    call $__std_number_u64ToString
+    call $__print_str_raw
+  )
+  (func $__print_u64 (param $v i64)
+    local.get $v
+    call $__print_u64_raw
+    call $__print_nl
+  )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 "`use provide` / `use context` are lowered where they are written; this body never runs")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "`use inject` is lowered where it is written; this body never runs")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "Context")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "(")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "contextValue: ")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "null")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 ")")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "std@context.Context")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 "RenderScope")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "frames: ")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "std@context.RenderScope")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "Frame")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
+  (data $__d12 "key: ")
+  (global $__s12 (mut (ref null $str)) (ref.null $str))
+  (data $__d13 ", value: ")
+  (global $__s13 (mut (ref null $str)) (ref.null $str))
+  (data $__d14 ", parent: ")
+  (global $__s14 (mut (ref null $str)) (ref.null $str))
+  (data $__d15 "std@context.Frame")
+  (global $__s15 (mut (ref null $str)) (ref.null $str))
+  (data $__d16 "Rendered")
+  (global $__s16 (mut (ref null $str)) (ref.null $str))
+  (data $__d17 "value: ")
+  (global $__s17 (mut (ref null $str)) (ref.null $str))
+  (data $__d18 ", scope: ")
+  (global $__s18 (mut (ref null $str)) (ref.null $str))
+  (data $__d19 "std@context.Rendered")
+  (global $__s19 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -792,20 +1701,90 @@ fn frameParent(f: Frame) -> unknown {
     i32.const 65
     array.new_data $str $__d1
     global.set $__s1
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 14
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 4
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d7
+    global.set $__s7
+    i32.const 0
+    i32.const 11
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 23
+    array.new_data $str $__d10
+    global.set $__s10
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d11
+    global.set $__s11
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d12
+    global.set $__s12
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d13
+    global.set $__s13
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d14
+    global.set $__s14
+    i32.const 0
+    i32.const 17
+    array.new_data $str $__d15
+    global.set $__s15
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d16
+    global.set $__s16
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d17
+    global.set $__s17
+    i32.const 0
+    i32.const 9
+    array.new_data $str $__d18
+    global.set $__s18
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d19
+    global.set $__s19
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 anyref) (result (ref null $rec_Context))
     global.get $__ti_31
     local.get $f0
     struct.new $rec_Context
   )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_35 (param $f0 anyref) (result (ref null $rec_RenderScope))
     global.get $__ti_35
     local.get $f0
     struct.new $rec_RenderScope
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (param $f0 (ref null $str)) (param $f1 anyref) (param $f2 anyref) (result (ref null $rec_Frame))
     global.get $__ti_33
     local.get $f0
@@ -813,12 +1792,54 @@ fn frameParent(f: Frame) -> unknown {
     local.get $f2
     struct.new $rec_Frame
   )
-  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_37 (param $f0 anyref) (param $f1 (ref null $rec_RenderScope)) (result (ref null $rec_Rendered))
     global.get $__ti_37
     local.get $f0
     local.get $f1
     struct.new $rec_Rendered
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1 $__tip3 $__tie3 $__tip4 $__tie4 $__tip6 $__tie6)
+  (func $__init_types
+    global.get $__s7
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
+    global.get $__s10
+    ref.func $__tip3
+    ref.func $__tie3
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_35
+    global.get $__ti_35
+    call $__ti_register
+    global.get $__s15
+    ref.func $__tip4
+    ref.func $__tie4
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
+    global.get $__s19
+    ref.func $__tip6
+    ref.func $__tie6
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_37
+    global.get $__ti_37
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

@@ -1,0 +1,37 @@
+//// Unit A: a record, a variant, a type implementing `Display` and one `main` never names, built here.
+
+pub type Point(x: i32, y: i32)
+
+pub type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+}
+
+pub type Money(cents: i32) {
+    pub fn display(self: Self) -> string {
+        return "$" + self.cents.toString();
+    }
+}
+
+/// A type `main` never names: it reaches `main` only inside an `unknown`.
+pub type Secret(code: i32)
+
+pub fn origin() -> Point {
+    return Point(x: 0, y: 0);
+}
+
+pub fn unitCircle() -> Shape {
+    return Shape.Circle(r: 1);
+}
+
+pub fn price() -> Money {
+    return Money(cents: 250);
+}
+
+pub fn anything() -> unknown {
+    return Shape.Square(side: 3);
+}
+
+pub fn hidden() -> unknown {
+    return Secret(code: 9);
+}

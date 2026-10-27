@@ -49,7 +49,12 @@ import {io.terminal.print, compiler} from "std";
     (type $rec_SourceLocation (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str))) (field $f4 (mut (ref null $str))))))
     (type $brand_rec_SourceLocation (struct (field f64) (field f64) (field i64) (field i32) (field i32) (field i32) (field i32) (field f64) (field f32) (field i64) (field i32) (field i32) (field i64) (field i32) (field f64) (field f64) (field i64) (field f64) (field f64) (field f64) (field i64) (field f64) (field i64) (field i64) (field f32) (field i64) (field f64) (field i32) (field f32) (field f32) (field i64) (field f32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -86,23 +91,119 @@ import {io.terminal.print, compiler} from "std";
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  (func $__eq_SourceLocation (param $a (ref null $rec_SourceLocation)) (param $b (ref null $rec_SourceLocation)) (result i32)
+    local.get $a
+    struct.get $rec_SourceLocation $f0
+    local.get $b
+    struct.get $rec_SourceLocation $f0
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_SourceLocation $f1
+    local.get $b
+    struct.get $rec_SourceLocation $f1
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_SourceLocation $f2
+    local.get $b
+    struct.get $rec_SourceLocation $f2
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_SourceLocation $f3
+    local.get $b
+    struct.get $rec_SourceLocation $f3
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_SourceLocation $f4
+    local.get $b
+    struct.get $rec_SourceLocation $f4
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__pr1 (param $v (ref null $str))
+    local.get $v
+    call $__print_quoted_raw
+  )
+  (func $__pr2 (param $v i32)
+    local.get $v
+    call $__print_i32_raw
+  )
+  (func $__pr0 (param $v (ref null $rec_SourceLocation))
+    global.get $__s2
+    call $__print_str_raw
+    global.get $__s3
+    call $__print_str_raw
+    global.get $__s4
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_SourceLocation $f0
+    call $__pr1
+    global.get $__s5
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_SourceLocation $f1
+    call $__pr2
+    global.get $__s6
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_SourceLocation $f2
+    call $__pr2
+    global.get $__s7
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_SourceLocation $f3
+    call $__pr1
+    global.get $__s8
+    call $__print_str_raw
+    local.get $v
+    struct.get $rec_SourceLocation $f4
+    call $__pr1
+    global.get $__s9
+    call $__print_str_raw
+  )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_SourceLocation)
+    call $__pr0
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_SourceLocation)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_SourceLocation)
+    local.get $b
+    ref.cast (ref null $rec_SourceLocation)
+    call $__eq_SourceLocation
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -338,6 +439,27 @@ import {io.terminal.print, compiler} from "std";
       )
     )
   )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
   (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
     (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
     local.get $a
@@ -398,10 +520,160 @@ import {io.terminal.print, compiler} from "std";
     )
     i32.const 1
   )
+  (func $__print_quoted_raw (param $s (ref null $str))
+    (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $s
+    array.len
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $i
+        array.get_u $str
+        local.set $ch
+        i32.const 0
+        local.set $e
+        local.get $ch
+        i32.const 34
+        i32.eq
+        local.get $ch
+        i32.const 92
+        i32.eq
+        i32.or
+        (if
+          (then
+            local.get $ch
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 10
+        i32.eq
+        (if
+          (then
+            i32.const 110
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 13
+        i32.eq
+        (if
+          (then
+            i32.const 114
+            local.set $e
+          )
+        )
+        local.get $ch
+        i32.const 9
+        i32.eq
+        (if
+          (then
+            i32.const 116
+            local.set $e
+          )
+        )
+        local.get $e
+        (if
+          (then
+            i32.const 8
+            i32.const 92
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+            i32.const 8
+            local.get $e
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+          (else
+            i32.const 8
+            local.get $ch
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 34
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
+  (func $__print_u64_raw (param $v i64)
+    local.get $v
+    call $__std_number_u64ToString
+    call $__print_str_raw
+  )
+  (func $__print_u64 (param $v i64)
+    local.get $v
+    call $__print_u64_raw
+    call $__print_nl
+  )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "main.bp")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "SourceLocation")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "(")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "file: ")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 ", line: ")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 ", column: ")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 ", fnName: ")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 ", root: ")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 ")")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "test@main.SourceLocation")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
   (func $__init_strs
     i32.const 0
     i32.const 0
@@ -411,9 +683,45 @@ import {io.terminal.print, compiler} from "std";
     i32.const 7
     array.new_data $str $__d1
     global.set $__s1
+    i32.const 0
+    i32.const 14
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 6
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d7
+    global.set $__s7
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 24
+    array.new_data $str $__d10
+    global.set $__s10
+    call $__init_types
     call $__init_globals
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 (ref null $str)) (param $f1 i32) (param $f2 i32) (param $f3 (ref null $str)) (param $f4 (ref null $str)) (result (ref null $rec_SourceLocation))
     global.get $__ti_31
     local.get $f0
@@ -422,6 +730,19 @@ import {io.terminal.print, compiler} from "std";
     local.get $f3
     local.get $f4
     struct.new $rec_SourceLocation
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1)
+  (func $__init_types
+    global.get $__s10
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

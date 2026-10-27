@@ -67,6 +67,8 @@ import {io.terminal.print} from "std";
     (type $rec_Counter (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut (ref null $str))))))
     (type $brand_rec_Counter (struct (field f32) (field i32) (field f32) (field i64) (field i32) (field i32) (field f32) (field i64) (field i64) (field i64) (field i64) (field f64) (field i64) (field i32) (field f32) (field i32) (field i64) (field i32) (field i64) (field f32) (field f64) (field i64) (field i64) (field f64) (field i32) (field f32) (field i64) (field f64) (field i64) (field i32) (field i64) (field f32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
   (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
@@ -139,6 +141,27 @@ import {io.terminal.print} from "std";
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  (func $__eq_Counter (param $a (ref null $rec_Counter)) (param $b (ref null $rec_Counter)) (result i32)
+    local.get $a
+    struct.get $rec_Counter $f0
+    local.get $b
+    struct.get $rec_Counter $f0
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    struct.get $rec_Counter $f1
+    local.get $b
+    struct.get $rec_Counter $f1
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
   (func $__pr1 (param $v i32)
     local.get $v
     call $__print_i32_raw
@@ -165,23 +188,30 @@ import {io.terminal.print} from "std";
     global.get $__s9
     call $__print_str_raw
   )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Counter)
+    call $__pr0
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Counter)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Counter)
+    local.get $b
+    ref.cast (ref null $rec_Counter)
+    call $__eq_Counter
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -464,6 +494,66 @@ import {io.terminal.print} from "std";
     local.get $blen
     array.copy $str $str
     local.get $r
+  )
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $a
+        local.get $i
+        array.get_u $str
+        local.get $b
+        local.get $i
+        array.get_u $str
+        i32.ne
+        (if
+          (then
+            i32.const 0
+            return
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 1
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -888,6 +978,8 @@ import {io.terminal.print} from "std";
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 ")")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "test@main.Counter")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -930,13 +1022,30 @@ import {io.terminal.print} from "std";
     i32.const 1
     array.new_data $str $__d9
     global.set $__s9
+    i32.const 0
+    i32.const 17
+    array.new_data $str $__d10
+    global.set $__s10
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 i32) (param $f1 (ref null $str)) (result (ref null $rec_Counter))
     global.get $__ti_31
     local.get $f0
     local.get $f1
     struct.new $rec_Counter
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1)
+  (func $__init_types
+    global.get $__s10
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

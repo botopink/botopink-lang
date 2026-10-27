@@ -137,3 +137,20 @@ out [3, 4, 5]
 out 40
 out 50
 out 101
+== wasm_foreign_type_prints
+out Point(x: 0, y: 0)
+out true
+out false
+out Shape.Circle(r: 1)
+out true
+out true
+out $250
+out [Point(x: 0, y: 0), Point(x: 2, y: 3)]
+out #(Shape.Circle(r: 1), 7)
+out Shape.Square(side: 3)
+out true
+out true
+out $250
+out Secret(code: 9)
+out true
+out [Secret(code: 9), Shape.Square(side: 3)]

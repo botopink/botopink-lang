@@ -627,7 +627,12 @@ test "order case over Order" {
     (type $rec_Set (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Set (struct (field i32) (field f64) (field i32) (field i32) (field i32) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field f64) (field i32) (field i32) (field i32) (field i32) (field f64) (field i64) (field i32) (field f32) (field f64) (field f32) (field i64) (field f64) (field i32) (field i64) (field f64) (field i64) (field f64) (field i64) (field f64) (field f64)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (global $__cap (import "std@__rt" "__cap") (mut arrayref))
+  (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -2279,6 +2284,48 @@ test "order case over Order" {
     array.copy $arr_any $arr_any
     local.get $r
   )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Dict)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__tie10 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Set)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__tie11 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Queue)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
   (func $__unk_eq_tuple (param $a (ref null $tuple)) (param $b (ref null $tuple)) (result i32)
     (local $i i32)
     local.get $a
@@ -2545,74 +2592,24 @@ test "order case over Order" {
     return
       )
     )
+    local.get $a
+    ref.test (ref null $__decl)
+    local.get $b
+    ref.test (ref null $__decl)
+    i32.and
+    (if
+      (then
+    local.get $a
+    local.get $b
+    call $__eq_decl
+    return
+      )
+    )
     i32.const 0
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
-    global.get $__cap
-    local.set $c
-    local.get $c
-    ref.is_null
-    i32.eqz
-    (if
-      (then
-        local.get $c
-        array.len
-        local.set $l
-        local.get $l
-        local.get $n
-        i32.add
-        array.new_default $str
-        local.set $q
-        local.get $q
-        i32.const 0
-        local.get $c
-        i32.const 0
-        local.get $l
-        array.copy $str $str
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $q
-            local.get $l
-            local.get $i
-            i32.add
-            local.get $p
-            local.get $i
-            i32.add
-            i32.load8_u
-            array.set $str
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $q
-        global.set $__cap
-        return
-      )
-    )
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -3129,22 +3126,31 @@ test "order case over Order" {
     )
     local.get $r
   )
-  (global $__cap (mut (ref null $str)) (ref.null $str))
   (func $__cap_begin (result (ref null $str))
     (local $o (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $o
     i32.const 0
     array.new_default $str
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.add
+    global.set $__cap_depth
     local.get $o
   )
   (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
     (local $s (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $s
     local.get $o
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.sub
+    global.set $__cap_depth
     local.get $s
   )
   (func $__chk_fail (param $site (ref null $str))
@@ -3168,6 +3174,12 @@ test "order case over Order" {
   (global $__s6 (mut (ref null $str)) (ref.null $str))
   (data $__d7 "integer overflow: - on i32 at src/collections.bp:540:15")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
+  (data $__d8 "std@collections.Dict")
+  (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "std@collections.Set")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "std@collections.Queue")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -3202,24 +3214,67 @@ test "order case over Order" {
     i32.const 55
     array.new_data $str $__d7
     global.set $__s7
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d8
+    global.set $__s8
+    i32.const 0
+    i32.const 19
+    array.new_data $str $__d9
+    global.set $__s9
+    i32.const 0
+    i32.const 21
+    array.new_data $str $__d10
+    global.set $__s10
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
     global.get $__ti_31
     local.get $f0
     struct.new $rec_Dict
   )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_35 (param $f0 (ref null $arr_any)) (result (ref null $rec_Set))
     global.get $__ti_35
     local.get $f0
     struct.new $rec_Set
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (param $f0 (ref null $arr_any)) (result (ref null $rec_Queue))
     global.get $__ti_33
     local.get $f0
     struct.new $rec_Queue
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tie2 $__tie10 $__tie11)
+  (func $__init_types
+    global.get $__s8
+    ref.null func
+    ref.func $__tie2
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
+    global.get $__s9
+    ref.null func
+    ref.func $__tie10
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_35
+    global.get $__ti_35
+    call $__ti_register
+    global.get $__s10
+    ref.null func
+    ref.func $__tie11
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )
@@ -3282,7 +3337,12 @@ import {io.terminal.print} from "std";
     (type $rec_Dict (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Dict (struct (field i64) (field i32) (field f32) (field f32) (field f64) (field i32) (field f64) (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field i64) (field f64) (field f32) (field f64) (field i32) (field f64) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field i64) (field i64) (field i32) (field f32) (field i32)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (global $__cap (import "std@__rt" "__cap") (mut arrayref))
+  (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -4624,6 +4684,20 @@ import {io.terminal.print} from "std";
     array.copy $arr_any $arr_any
     local.get $r
   )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Dict)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
   (func $__unk_eq_tuple (param $a (ref null $tuple)) (param $b (ref null $tuple)) (result i32)
     (local $i i32)
     local.get $a
@@ -4818,74 +4892,24 @@ import {io.terminal.print} from "std";
     return
       )
     )
+    local.get $a
+    ref.test (ref null $__decl)
+    local.get $b
+    ref.test (ref null $__decl)
+    i32.and
+    (if
+      (then
+    local.get $a
+    local.get $b
+    call $__eq_decl
+    return
+      )
+    )
     i32.const 0
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
-    global.get $__cap
-    local.set $c
-    local.get $c
-    ref.is_null
-    i32.eqz
-    (if
-      (then
-        local.get $c
-        array.len
-        local.set $l
-        local.get $l
-        local.get $n
-        i32.add
-        array.new_default $str
-        local.set $q
-        local.get $q
-        i32.const 0
-        local.get $c
-        i32.const 0
-        local.get $l
-        array.copy $str $str
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $q
-            local.get $l
-            local.get $i
-            i32.add
-            local.get $p
-            local.get $i
-            i32.add
-            i32.load8_u
-            array.set $str
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $q
-        global.set $__cap
-        return
-      )
-    )
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -5402,22 +5426,31 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  (global $__cap (mut (ref null $str)) (ref.null $str))
   (func $__cap_begin (result (ref null $str))
     (local $o (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $o
     i32.const 0
     array.new_default $str
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.add
+    global.set $__cap_depth
     local.get $o
   )
   (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
     (local $s (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $s
     local.get $o
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.sub
+    global.set $__cap_depth
     local.get $s
   )
   (func $__chk_fail (param $site (ref null $str))
@@ -5443,6 +5476,8 @@ import {io.terminal.print} from "std";
   (global $__s7 (mut (ref null $str)) (ref.null $str))
   (data $__d8 "b")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
+  (data $__d9 "std@collections.Dict")
+  (global $__s9 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -5481,12 +5516,29 @@ import {io.terminal.print} from "std";
     i32.const 1
     array.new_data $str $__d8
     global.set $__s8
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d9
+    global.set $__s9
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
     global.get $__ti_31
     local.get $f0
     struct.new $rec_Dict
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tie2)
+  (func $__init_types
+    global.get $__s9
+    ref.null func
+    ref.func $__tie2
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

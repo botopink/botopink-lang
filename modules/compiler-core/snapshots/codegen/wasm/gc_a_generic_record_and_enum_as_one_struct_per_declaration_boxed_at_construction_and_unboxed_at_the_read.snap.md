@@ -84,6 +84,10 @@ import {io.terminal.print} from "std";
     (type $var_Maybe_Some (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)))))
     (type $brand_var_Maybe_Some (struct (field i64) (field i64) (field f32) (field f64) (field f32) (field i32) (field f64) (field i64) (field f64) (field i32) (field i32) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field i64) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field f32) (field f32) (field i32) (field f32) (field i64) (field f32) (field f32) (field i64)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__print_decl" (func $__print_decl (param anyref)))
+  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
   (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
@@ -303,8 +307,130 @@ import {io.terminal.print} from "std";
     global.get $__s5
     call $__print_str_raw
   )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Box)
+    call $__pr0
+  )
+  (func $__unk_is_num (param $v anyref) (result i32)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    local.get $v
+    ref.test (ref null $box_bool)
+    i32.eqz
+    i32.and
+    local.get $v
+    ref.test (ref null $box_f64)
+    i32.or
+  )
+  (func $__unk_as_f64 (param $v anyref) (result f64)
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    f64.convert_i32_s
+    return
+      )
+    )
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+  )
+  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    call $__unk_is_num
+    local.get $b
+    call $__unk_is_num
+    i32.and
+    (if
+      (then
+    local.get $a
+    call $__unk_as_f64
+    local.get $b
+    call $__unk_as_f64
+    f64.eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $str)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $str)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $str)
+    local.get $b
+    ref.cast (ref null $str)
+    call $__str_eq
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_bool)
+    local.get $a
+    ref.is_null
+    i32.eqz
+    i32.and
+    local.get $b
+    ref.test (ref null $box_bool)
+    i32.and
+    local.get $b
+    ref.is_null
+    i32.eqz
+    i32.and
+    (if
+      (then
+    local.get $a
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    local.get $b
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    i32.eq
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $rec_Box)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
   (func $__pr2 (param $v (ref null $var_Maybe_Some))
-    global.get $__s9
+    global.get $__s10
     call $__print_str_raw
     global.get $__s2
     call $__print_str_raw
@@ -316,9 +442,221 @@ import {io.terminal.print} from "std";
     global.get $__s5
     call $__print_str_raw
   )
+  (func $__tip2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Maybe_Some)
+    call $__pr2
+  )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Maybe_Some)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
   (func $__pr3 (param $v (ref null $var_Maybe_None))
-    global.get $__s10
+    global.get $__s12
     call $__print_str_raw
+  )
+  (func $__tip4 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Maybe_None)
+    call $__pr3
+  )
+  (func $__tie4 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Maybe_None)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__unk_eq_ref
+  )
+  (func $__unk_eq_s1 (param $a (ref null $rec_Box)) (param $b (ref null $rec_Box)) (result i32)
+    local.get $a
+    struct.get $rec_Box $f0
+    local.get $b
+    struct.get $rec_Box $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s2 (param $a (ref null $var_Maybe_Some)) (param $b (ref null $var_Maybe_Some)) (result i32)
+    local.get $a
+    struct.get $var_Maybe_Some $f0
+    local.get $b
+    struct.get $var_Maybe_Some $f0
+    call $__unk_eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s4 (param $a (ref null $var_Maybe_None)) (param $b (ref null $var_Maybe_None)) (result i32)
+    i32.const 1
+  )
+  (func $__unk_eq_s7 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
+    local.get $a
+    struct.get $box_i64 $v
+    local.get $b
+    struct.get $box_i64 $v
+    i64.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.or
+    (if
+      (then
+    local.get $a
+    ref.is_null
+    local.get $b
+    ref.is_null
+    i32.and
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null eq)
+    local.get $b
+    ref.cast (ref null eq)
+    ref.eq
+    (if
+      (then
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $rec_Box)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Box)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Box)
+    local.get $b
+    ref.cast (ref null $rec_Box)
+    call $__unk_eq_s1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $var_Maybe_Some)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $var_Maybe_Some)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $var_Maybe_Some)
+    local.get $b
+    ref.cast (ref null $var_Maybe_Some)
+    call $__unk_eq_s2
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $var_Maybe_None)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $var_Maybe_None)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $var_Maybe_None)
+    local.get $b
+    ref.cast (ref null $var_Maybe_None)
+    call $__unk_eq_s4
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $box_i64)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $box_i64)
+    local.get $b
+    ref.cast (ref null $box_i64)
+    call $__unk_eq_s7
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $__decl)
+    local.get $b
+    ref.test (ref null $__decl)
+    i32.and
+    (if
+      (then
+    local.get $a
+    local.get $b
+    call $__eq_decl
+    return
+      )
+    )
+    i32.const 0
   )
   (func $__print_tagged_raw (param $v anyref)
     local.get $v
@@ -351,6 +689,15 @@ import {io.terminal.print} from "std";
     return
       )
     )
+    local.get $v
+    ref.test (ref null $__decl)
+    (if
+      (then
+    local.get $v
+    call $__print_decl
+    return
+      )
+    )
     unreachable
   )
   (func $__print_ebox (param $v anyref) (result i32)
@@ -362,20 +709,6 @@ import {io.terminal.print} from "std";
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -631,6 +964,66 @@ import {io.terminal.print} from "std";
     call $__write_bytes
     local.get $top
     global.set $__heap_ptr
+  )
+  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
+    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
+    local.get $a
+    ref.is_null
+    local.set $an
+    local.get $b
+    ref.is_null
+    local.set $bn
+    local.get $an
+    local.get $bn
+    i32.or
+    (if
+      (then
+        local.get $an
+        local.get $bn
+        i32.and
+        return
+      )
+    )
+    local.get $a
+    array.len
+    local.set $n
+    local.get $n
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $a
+        local.get $i
+        array.get_u $str
+        local.get $b
+        local.get $i
+        array.get_u $str
+        i32.ne
+        (if
+          (then
+            i32.const 0
+            return
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 1
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -1053,10 +1446,16 @@ import {io.terminal.print} from "std";
   (global $__s7 (mut (ref null $str)) (ref.null $str))
   (data $__d8 "integer overflow: + on i32 at main.bp:31:20")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "Maybe.Some")
+  (data $__d9 "test@main.Box")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
-  (data $__d10 "Maybe.None")
+  (data $__d10 "Maybe.Some")
   (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "test@main.Maybe.Some")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
+  (data $__d12 "Maybe.None")
+  (global $__s12 (mut (ref null $str)) (ref.null $str))
+  (data $__d13 "test@main.Maybe.None")
+  (global $__s13 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -1096,30 +1495,73 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d8
     global.set $__s8
     i32.const 0
-    i32.const 10
+    i32.const 13
     array.new_data $str $__d9
     global.set $__s9
     i32.const 0
     i32.const 10
     array.new_data $str $__d10
     global.set $__s10
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d11
+    global.set $__s11
+    i32.const 0
+    i32.const 10
+    array.new_data $str $__d12
+    global.set $__s12
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d13
+    global.set $__s13
+    call $__init_types
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (param $f0 anyref) (result (ref null $rec_Box))
     global.get $__ti_31
     local.get $f0
     struct.new $rec_Box
   )
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_35 (param $f0 anyref) (result (ref null $var_Maybe_Some))
     global.get $__ti_35
     local.get $f0
     struct.new $var_Maybe_Some
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (result (ref null $var_Maybe_None))
     global.get $__ti_33
     struct.new $var_Maybe_None
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1 $__tip2 $__tie2 $__tip4 $__tie4)
+  (func $__init_types
+    global.get $__s9
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 0
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
+    global.get $__s11
+    ref.func $__tip2
+    ref.func $__tie2
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_35
+    global.get $__ti_35
+    call $__ti_register
+    global.get $__s13
+    ref.func $__tip4
+    ref.func $__tie4
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )

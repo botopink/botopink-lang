@@ -3148,3 +3148,160 @@ pub const gc_prelude_defs = [_]ast.TypeDef{
     sigDef(7),
     sigDef(8),
 };
+
+// ── the core's capture, type registry and dispatch (decision 1055 (2), (3), (5)) ──
+
+fn pi(comptime p: GcPrelude) u16 {
+    return @intFromEnum(p);
+}
+fn pget(comptime p: GcPrelude, comptime f: u32) Instr {
+    return .{ .struct_get = .{ .ty = pi(p), .field = f } };
+}
+fn pcast(comptime p: GcPrelude) Instr {
+    return .{ .ref_cast = gcPreludeRef(p) };
+}
+
+/// The core's capture (decisions 1028 (2), 1055 (5), 1063 (3), 1071 (2)): the
+/// string `$__write_bytes` appends to while it is open, null when none is; an
+/// `arrayref` so no unit's import names a concrete type (1037).
+pub const core_cap_global = ast.Global{ .name = "__cap", .exports = &.{"__cap"}, .ty = .arrayref, .mutable = true, .init = "" };
+/// How deep a unit's own capture (a `Display` hole, a `run()`'s) nests inside
+/// the core's: the core's capture mirrors a write to `fd_write` only at 0.
+pub const core_cap_depth_global = ast.Global{ .name = "__cap_depth", .exports = &.{"__cap_depth"}, .ty = .i32, .mutable = true, .init = "0" };
+/// Every unit's `$__tinfo`, in the order the units registered them (1055 (2)):
+/// `typeinfo`'s and debugging's, never print's.
+const core_types_global = ast.Global{ .name = "__types", .ty = gcPreludeRef(.arr_any), .mutable = true, .init = "" };
+const core_types_n_global = ast.Global{ .name = "__types_n", .ty = .i32, .mutable = true, .init = "0" };
+
+/// `$__write_bytes(p, n)` of the core: the bytes `[p, p + n)` appended to the
+/// open capture, and also written to `fd_write` when the core's own capture
+/// holds them (depth 0, under comptime the host's copy); with none open, to
+/// `fd_write` alone.
+const core_write_bytes = typedFunc("__write_bytes", &.{ p32("p"), p32("n") }, null, &.{ sref("c"), sref("q"), l32("l"), l32("i") }, &.{
+    .{ .global_get = "__cap" }, rcastStr,
+    set("c"),                   get("c"),
+    .ref_is_null,               op("eqz"),
+    when(&.{
+        get("c"),  str_len,                    set("l"),                         get("l"),
+        get("n"),  op("add"),                  str_new,                          set("q"),
+        get("q"),  c32(0),                     get("c"),                         c32(0),
+        get("l"),  str_copy,
+        loop(&.{
+            get("i"), get("n"), op("ge_u"), brk,
+            get("q"), get("l"), get("i"),   op("add"),
+            get("p"), get("i"), op("add"),  load8(0),
+            str_set,  get("i"), c32(1),     op("add"),
+            set("i"), again,
+        }),
+        get("q"),  .{ .global_set = "__cap" }, .{ .global_get = "__cap_depth" }, op("eqz"),
+        op("eqz"), when(&.{ret}),
+    }),
+    c32(0),                     get("p"),
+    store(0),                   c32(4),
+    get("n"),                   store(0),
+    c32(1),                     c32(0),
+    c32(1),                     c32(8),
+    call("fd_write"),           .drop,
+});
+const rcastStr: Instr = .{ .ref_cast = gc_str_ref };
+
+/// `__cap_begin()` — the core's capture opened, empty (comptime's evaluated
+/// unit's `__bp_init`, 1063 (3)).
+const core_cap_begin = typedFunc("__cap_begin", &.{}, null, &.{}, &.{
+    c32(0), str_new,                          .{ .global_set = "__cap" },
+    c32(0), .{ .global_set = "__cap_depth" },
+});
+
+/// `__cap_end()` — closes the core's capture: its text, the capture null
+/// again; later writes go to `fd_write` alone (1071 (2)).
+const core_cap_end = typedFunc("__cap_end", &.{}, .arrayref, &.{.{ .name = "s", .ty = .arrayref }}, &.{
+    .{ .global_get = "__cap" }, set("s"),
+    .{ .ref_null = .arrayref }, .{ .global_set = "__cap" },
+    get("s"),
+});
+
+/// `__ti_register(t)` — a unit's `$__tinfo` appended to the core's list.
+const core_ti_register = typedFunc("__ti_register", &.{.{ .name = "t", .ty = .structref }}, null, &.{ l32("n"), .{ .name = "a", .ty = gcPreludeRef(.arr_any) } }, &.{
+    .{ .global_get = "__types_n" },                                                                                                                 set("n"),
+    get("n"),                                                                                                                                       c32(1),
+    op("add"),                                                                                                                                      .{ .array_new_default = pi(.arr_any) },
+    set("a"),                                                                                                                                       .{ .global_get = "__types" },
+    .ref_is_null,                                                                                                                                   op("eqz"),
+    when(&.{ get("a"), c32(0), .{ .global_get = "__types" }, c32(0), get("n"), .{ .array_copy = .{ .dst = pi(.arr_any), .src = pi(.arr_any) } } }), get("a"),
+    get("n"),                                                                                                                                       get("t"),
+    .{ .array_set = pi(.arr_any) },                                                                                                                 get("a"),
+    .{ .global_set = "__types" },                                                                                                                   get("n"),
+    c32(1),                                                                                                                                         op("add"),
+    .{ .global_set = "__types_n" },
+});
+
+/// `__type_infos()` — the core's list of `$__tinfo`s.
+const core_type_infos = typedFunc("__type_infos", &.{}, .arrayref, &.{}, &.{.{ .global_get = "__types" }});
+
+/// `__print_decl(v)` — a declared type's value printed by its own `$__tinfo`'s
+/// `print` (1055 (3)): whatever unit declared it, no table, no key.
+const core_print_decl = typedFunc("__print_decl", &.{.{ .name = "v", .ty = .anyref }}, null, &.{}, &.{
+    get("v"), get("v"), pcast(.decl), pget(.decl, 0), pget(.tinfo, 1), pcast(.print_sig), .{ .call_ref = pi(.print_sig) },
+});
+
+/// `__eq_decl(a, b)` — `a == b` by `a`'s `$__tinfo`'s `eq` (`0` for a `b` of
+/// another type).
+const core_eq_decl = typedFunc("__eq_decl", &.{ .{ .name = "a", .ty = .anyref }, .{ .name = "b", .ty = .anyref } }, .i32, &.{}, &.{
+    get("a"), get("b"), get("a"), pcast(.decl), pget(.decl, 0), pget(.tinfo, 2), pcast(.eq_sig), .{ .call_ref = pi(.eq_sig) },
+});
+
+/// `__display_decl(v)` — `1` after writing `v`'s `Display` text through its
+/// `$__tinfo`'s `display`, `0` (nothing written) for a type with none.
+const core_display_decl = typedFunc("__display_decl", &.{.{ .name = "v", .ty = .anyref }}, .i32, &.{.{ .name = "f", .ty = .funcref }}, &.{
+    get("v"),          pcast(.decl),                    pget(.decl, 0),          pget(.tinfo, 3), set("f"),
+    get("f"),          .ref_is_null,                    when(&.{ c32(0), ret }), get("v"),        get("f"),
+    pcast(.print_sig), .{ .call_ref = pi(.print_sig) }, c32(1),
+});
+
+/// The core's GC items (decision 1055 (2), (3), (5)), each function exported
+/// under its name.
+pub const core_gc_items = blk: {
+    const fs = [_]ast.Func{ core_write_bytes, core_cap_begin, core_cap_end, core_ti_register, core_type_infos, core_print_decl, core_eq_decl, core_display_decl };
+    var out: [4 + fs.len]ast.Item = undefined;
+    out[0] = .{ .global = core_cap_global };
+    out[1] = .{ .global = core_cap_depth_global };
+    out[2] = .{ .global = core_types_global };
+    out[3] = .{ .global = core_types_n_global };
+    for (fs, 0..) |f, k| {
+        var e = f;
+        e.exports = &.{f.name};
+        out[4 + k] = .{ .func = e };
+    }
+    break :blk out;
+};
+
+/// The names the core's GC functions are exported under, with each one's
+/// boundary signature (abstract types only, 1037).
+pub const core_gc_exports = [_]struct { name: []const u8, type: ast.FuncType }{
+    .{ .name = "__write_bytes", .type = .{ .params = &.{ .i32, .i32 } } },
+    .{ .name = "__cap_begin", .type = .{} },
+    .{ .name = "__cap_end", .type = .{ .result = .arrayref } },
+    .{ .name = "__ti_register", .type = .{ .params = &.{.structref} } },
+    .{ .name = "__type_infos", .type = .{ .result = .arrayref } },
+    .{ .name = "__print_decl", .type = .{ .params = &.{.anyref} } },
+    .{ .name = "__eq_decl", .type = .{ .params = &.{ .anyref, .anyref }, .result = .i32 } },
+    .{ .name = "__display_decl", .type = .{ .params = &.{.anyref}, .result = .i32 } },
+};
+
+/// A unit's own capture over the core's (a `Display` hole, a `run()`'s):
+/// `__cap_begin` answers the capture it replaces and nests one deeper, so the
+/// core mirrors none of it; `__cap_end(o)` answers what was written and
+/// restores `o` (1071 (2): it stays inside the unit).
+const unit_cap_begin = typedFunc("__cap_begin", &.{}, gc_str_ref, &.{sref("o")}, &.{
+    .{ .global_get = "__cap" },       rcastStr, set("o"),
+    c32(0),                           str_new,  .{ .global_set = "__cap" },
+    .{ .global_get = "__cap_depth" }, c32(1),   op("add"),
+    .{ .global_set = "__cap_depth" }, get("o"),
+});
+const unit_cap_end = typedFunc("__cap_end", &.{pref("o")}, gc_str_ref, &.{sref("s")}, &.{
+    .{ .global_get = "__cap" }, rcastStr,                   set("s"),
+    get("o"),                   .{ .global_set = "__cap" }, .{ .global_get = "__cap_depth" },
+    c32(1),                     op("sub"),                  .{ .global_set = "__cap_depth" },
+    get("s"),
+});
+pub const unit_cap_items = [_]ast.Item{ .{ .func = unit_cap_begin }, .{ .func = unit_cap_end } };

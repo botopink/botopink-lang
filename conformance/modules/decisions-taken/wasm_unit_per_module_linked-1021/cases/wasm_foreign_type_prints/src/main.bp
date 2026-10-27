@@ -1,0 +1,28 @@
+//// Unit B: values of unit A's types printed, compared, tested with `is` and displayed (decision 1055 (2), (3)).
+
+import {io.terminal.print} from "std";
+mod shapes;
+import {shapes.Point, shapes.Shape, shapes.origin, shapes.unitCircle, shapes.price, shapes.anything, shapes.hidden};
+
+pub fn main() -> void {
+    val p = origin();
+    print(p);
+    print(p == Point(x: 0, y: 0));
+    print(p == Point(x: 1, y: 0));
+    val s = unitCircle();
+    print(s);
+    print(s is Shape.Circle);
+    print(s == Shape.Circle(r: 1));
+    print(price());
+    print([origin(), Point(x: 2, y: 3)]);
+    print(#(unitCircle(), 7));
+    val u: unknown = anything();
+    print(u);
+    print(u is Shape);
+    print(u == anything());
+    print("${price()}");
+    print(hidden());
+    print(hidden() == hidden());
+    val both: unknown[] = [hidden(), anything()];
+    print(both);
+}

@@ -59,7 +59,11 @@ import {io.terminal.print} from "std";
     (type $var_Opt_Some (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)))))
     (type $brand_var_Opt_Some (struct (field f64) (field f32) (field i64) (field f32) (field f64) (field f32) (field f64) (field f32) (field f64) (field i64) (field f64) (field i64) (field i32) (field f32) (field f32) (field i32) (field i32) (field f32) (field i32) (field i64) (field i64) (field i32) (field f64) (field f32) (field f32) (field i32) (field f32) (field f32) (field i64) (field i64) (field i64) (field i64)))
   )
+  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (global $__cap (import "std@__rt" "__cap") (mut arrayref))
+  (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -122,72 +126,110 @@ import {io.terminal.print} from "std";
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
-  ;; Scratch layout below the data section (which starts at 256):
-  ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    (local $c (ref null $str)) (local $q (ref null $str)) (local $l i32) (local $i i32)
-    global.get $__cap
-    local.set $c
-    local.get $c
-    ref.is_null
-    i32.eqz
+  (func $__eq_Opt (param $a anyref) (param $b anyref) (result i32)
+    local.get $a
+    ref.test (ref null $var_Opt_None)
     (if
       (then
-        local.get $c
-        array.len
-        local.set $l
-        local.get $l
-        local.get $n
-        i32.add
-        array.new_default $str
-        local.set $q
-        local.get $q
-        i32.const 0
-        local.get $c
-        i32.const 0
-        local.get $l
-        array.copy $str $str
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $q
-            local.get $l
-            local.get $i
-            i32.add
-            local.get $p
-            local.get $i
-            i32.add
-            i32.load8_u
-            array.set $str
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $q
-        global.set $__cap
-        return
+    local.get $b
+    ref.test (ref null $var_Opt_None)
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $var_Opt_Some)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $var_Opt_Some)
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    ref.cast (ref null $var_Opt_Some)
+    struct.get $var_Opt_Some $f0
+    local.get $b
+    ref.cast (ref null $var_Opt_Some)
+    struct.get $var_Opt_Some $f0
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+    return
       )
     )
     i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
   )
+  (func $__pr0 (param $v (ref null $var_Opt_None))
+    global.get $__s2
+    call $__print_str_raw
+  )
+  (func $__tip1 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Opt_None)
+    call $__pr0
+  )
+  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Opt_None)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Opt
+  )
+  (func $__pr2 (param $v i32)
+    local.get $v
+    call $__print_i32_raw
+  )
+  (func $__pr1 (param $v (ref null $var_Opt_Some))
+    global.get $__s4
+    call $__print_str_raw
+    global.get $__s5
+    call $__print_str_raw
+    global.get $__s1
+    call $__print_str_raw
+    local.get $v
+    struct.get $var_Opt_Some $f0
+    call $__pr2
+    global.get $__s6
+    call $__print_str_raw
+  )
+  (func $__tip2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $var_Opt_Some)
+    call $__pr1
+  )
+  (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
+    local.get $b
+    ref.test (ref null $var_Opt_Some)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    local.get $b
+    call $__eq_Opt
+  )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   64..128 i32 digits
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -419,28 +461,49 @@ import {io.terminal.print} from "std";
     array.copy $str $str
     local.get $r
   )
-  (global $__cap (mut (ref null $str)) (ref.null $str))
   (func $__cap_begin (result (ref null $str))
     (local $o (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $o
     i32.const 0
     array.new_default $str
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.add
+    global.set $__cap_depth
     local.get $o
   )
   (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
     (local $s (ref null $str))
     global.get $__cap
+    ref.cast (ref null $str)
     local.set $s
     local.get $o
     global.set $__cap
+    global.get $__cap_depth
+    i32.const 1
+    i32.sub
+    global.set $__cap_depth
     local.get $s
   )
   (data $__d0 "empty")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "value: ")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "Opt.None")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
+  (data $__d3 "test@main.Opt.None")
+  (global $__s3 (mut (ref null $str)) (ref.null $str))
+  (data $__d4 "Opt.Some")
+  (global $__s4 (mut (ref null $str)) (ref.null $str))
+  (data $__d5 "(")
+  (global $__s5 (mut (ref null $str)) (ref.null $str))
+  (data $__d6 ")")
+  (global $__s6 (mut (ref null $str)) (ref.null $str))
+  (data $__d7 "test@main.Opt.Some")
+  (global $__s7 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -451,17 +514,63 @@ import {io.terminal.print} from "std";
     i32.const 7
     array.new_data $str $__d1
     global.set $__s1
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d2
+    global.set $__s2
+    i32.const 0
+    i32.const 18
+    array.new_data $str $__d3
+    global.set $__s3
+    i32.const 0
+    i32.const 8
+    array.new_data $str $__d4
+    global.set $__s4
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d5
+    global.set $__s5
+    i32.const 0
+    i32.const 1
+    array.new_data $str $__d6
+    global.set $__s6
+    i32.const 0
+    i32.const 18
+    array.new_data $str $__d7
+    global.set $__s7
+    call $__init_types
   )
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_33 (param $f0 i32) (result (ref null $var_Opt_Some))
     global.get $__ti_33
     local.get $f0
     struct.new $var_Opt_Some
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (func $__new_31 (result (ref null $var_Opt_None))
     global.get $__ti_31
     struct.new $var_Opt_None
+  )
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (elem declare func $__tip1 $__tie1 $__tip2 $__tie2)
+  (func $__init_types
+    global.get $__s3
+    ref.func $__tip1
+    ref.func $__tie1
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_31
+    global.get $__ti_31
+    call $__ti_register
+    global.get $__s7
+    ref.func $__tip2
+    ref.func $__tie2
+    ref.null func
+    i32.const 1
+    struct.new $__tinfo
+    global.set $__ti_33
+    global.get $__ti_33
+    call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
 )
