@@ -65,6 +65,7 @@ generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
 Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
+A wasm snapshot's `WASM TEXT -- main.wat` header names the module and the form of the text (the module's wat); the real file a build writes is `<pkg>@<path>.wasm` (decision 1079 (1)).
 
 `externals.zig` also holds **`a refused module frees the type units it rendered`**:
 the erlang backend refuses a module (a node-only template) after a `type`'s own

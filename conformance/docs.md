@@ -6331,7 +6331,7 @@ it would need a per-type default it cannot synthesize.
 | `commonJS` | `.js`  | `node` ≥ 22                 |
 | `erlang`   | `.erl` | `escript` (OTP)             |
 | `beam`     | `.S`   | `erlc +from_asm` + `erl`    |
-| `wasm`     | `.wat` | `wasmtime`                  |
+| `wasm`     | `.wat` | embedded (no host runtime)  |
 
 Select the target with `--target`:
 

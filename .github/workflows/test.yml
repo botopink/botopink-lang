@@ -49,7 +49,7 @@
 # that decides a merge reads no botopink cache. Only Zig's own compile cache and
 # the toolchain downloads are cached (`.github/actions/ci-setup`), never anything
 # under `.botopinkbuild/` (decision 225). The toolchain — zig, the compiler's
-# Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and the sibling
+# Erlang/OTP release (decisions 227, 228), node 22 and the sibling
 # libraries the conformance stage tests (decision 996, `conformance/AGENTS.md`) —
 # is `.github/actions/ci-setup`'s, one text for every job.
 

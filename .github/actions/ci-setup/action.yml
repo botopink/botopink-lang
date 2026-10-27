@@ -1,10 +1,10 @@
 # The toolchain a scripts/gate.sh job runs on, shared by every job of test.yml
 # (one text, so the jobs install the same versions): zig, the compiler's
-# Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and, on request, the
+# Erlang/OTP release (decisions 227, 228), node 22 and, on request, the
 # sibling libraries the conformance stage's `libraries/<name>` jobs load and test (`conformance/run.sh`).
 #
 # Caches (decisions 225, 509 (5), 739, 754): only Zig's own compile cache (`.zig-cache` in the
-# checkout and `~/.cache/zig`) and the wasmtime download, keyed on the toolchain version and,
+# checkout and `~/.cache/zig`) and (when asked) the wasmtime CLI download, keyed on the toolchain version and,
 # for Zig's, on the job kind (`zig-cache-name`: every job saves under a key of its own, since one
 # shared key was won by the first job to finish and every other save failed with "Unable to reserve
 # cache"), on build.zig, build.zig.zon and every *.zig source. Nothing under `.botopinkbuild/`
@@ -22,6 +22,9 @@ inputs:
   zig-cache-name:
     description: The job kind the Zig cache is keyed on (one key per job, so no job's save is lost to another's)
     default: 'job'
+  wasmtime-cli:
+    description: Install the wasmtime CLI on PATH ("true" or "false"); only the job running pack's cell (decisions 1036, 1079)
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -79,21 +82,21 @@ runs:
         otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
         [ "$otp" = "$OTP" ] || { echo "Erlang/OTP is '$otp', not $OTP (decisions 227, 228)"; exit 1; }
 
-    # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG` (stdout of the
-    # generated `.wat` evaluated against wasmtime) into the snapshot itself.
-    # Without wasmtime on PATH the run log is empty and every wasm snapshot
-    # mismatches. A pinned release tarball, not the `wasmtime.dev/install.sh`
-    # installer (its version lookup is flaky on the GH runners); the install
-    # directory is cached on the version. v49.0.3 is the C API's version (decision 1021 (3)).
+    # The wasmtime CLI is opt-in (decision 1079): wasm runs in process on the embedded C API
+    # (decisions 1032, 1034), so only the job that runs `pack`'s cell (`wasm_pack_runs_standalone`,
+    # decision 1036) turns `wasmtime-cli` on. A pinned release tarball, not the
+    # `wasmtime.dev/install.sh` installer (its version lookup is flaky on the GH runners); the
+    # install directory is cached on the version. v49.0.3 is the C API's version (decision 1021 (3)).
     - name: Cache wasmtime
       id: wasmtime-cache
+      if: inputs.wasmtime-cli == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.wasmtime/bin
         key: wasmtime-v49.0.3-${{ runner.os }}-x86_64
 
     - name: Install wasmtime
-      if: steps.wasmtime-cache.outputs.cache-hit != 'true'
+      if: inputs.wasmtime-cli == 'true' && steps.wasmtime-cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         WASMTIME_VERSION: v49.0.3
@@ -107,6 +110,7 @@ runs:
         chmod +x "$HOME/.wasmtime/bin/wasmtime"
 
     - name: Put wasmtime on PATH
+      if: inputs.wasmtime-cli == 'true'
       shell: bash
       run: |
         echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"

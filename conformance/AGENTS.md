@@ -2083,10 +2083,10 @@ those their manifests declare (an excluded one answers `.Excluded`, decision 989
 four targets of the plan (`TEST_TARGETS` in `run.sh`: commonJS, erlang, wasm, beam); `--target` also
 takes a comma list (`wasm,beam`) — a subset in canonical order, a name twice or unknown refused —
 which is what the step gate (`scripts/AGENTS.md` § Step gate and full gate) passes for a change that
-reaches those backends only. A machine without `erlc`, `erl` or `wasmtime` fails the run before any
+reaches those backends only. A machine without `erlc` or `erl` fails the run before any
 job starts (`run.sh: the beam target needs erlc`); it never runs fewer targets and reports "all"
-(decision 67). The tool set is the gate's own — `node`, `erl`, `erlc`, `wasmtime` — and nothing
-else: the four-target run is green with `PATH=/usr/bin:/bin:~/.wasmtime/bin` and no other variable
+(decision 67). The tool set is the gate's own — `node`, `erl`, `erlc` — and nothing
+else (wasm is embedded): the four-target run is green with `PATH=/usr/bin:/bin` and no other variable
 but `HOME` and `LANG=C.UTF-8` (front `01-compiler/12-language-tests`). Under a locale that is not
 UTF-8 (`LANG=C`, or none) `modules/string/cases/string_split_empty_separator` is red on erlang and beam: `erl` writes
 `é` as the latin-1 byte `0xE9` where commonJS writes UTF-8 — a program's stdout that depends on the

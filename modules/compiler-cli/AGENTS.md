@@ -203,7 +203,7 @@ compiler-cli/
 │   ├── target_reuse.sh      ← each target's output folder and its key (decision 1008
 │   │                          (1), (4), (5); the proof of 1008's row), over `target_reuse/`
 │   │                          (an app and one dependency): on erlang, beam, commonJS and
-│   │                          — wasmtime on PATH — wasm, the second `run --target` rewrites no
+│   │                          wasm, the second `run --target` rewrites no
 │   │                          file of `--out` (inode and time) and answers the same, a changed
 │   │                          source emits again, `build --cold` rewrites, `run --cold` reuses;
 │   │                          wasmtime's cache is under `.botopinkbuild/cache/wasmtime/`,
@@ -275,7 +275,7 @@ compiler-cli/
 │   ├── unit_cache.sh        ← the unit cache (decision 1008 (2); the proof of its
 │   │                          piece), its fixture written inline: a workspace of
 │   │                          two members over one library, on erlang, beam,
-│   │                          commonJS and — wasmtime on PATH — wasm: the first
+│   │                          commonJS and wasm: the first
 │   │                          member's build writes `.botopinkbuild/cache/unit/
 │   │                          <target>/lib.bpu` under the root, the second's
 │   │                          writes no entry again (inode and time) and its

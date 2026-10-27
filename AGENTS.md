@@ -133,7 +133,7 @@ same stage runs when the libraries are in the plan. The stage needs host runtime
 | `commonJS` | `node` ≥ 22              | https://nodejs.org/en/download                   |
 | `erlang`   | `escript` (OTP)          | `apt-get install erlang` · `brew install erlang` |
 | `beam`     | `escript` + `erlc` (OTP) | same as erlang                                   |
-| `wasm`     | none — run in process (the embedded wasmtime C API, decisions 1032, 1034); the `wasmtime` CLI only for `conformance/run.sh`'s precheck and `tests/runtime_file.sh` until R3 | — |
+| `wasm`     | none — run in process (the embedded wasmtime C API, decisions 1032, 1034); the `wasmtime` CLI is not used (decision 1032 R3) | — |
 
 See [`conformance/AGENTS.md`](conformance/AGENTS.md) and [`scripts/AGENTS.md`](scripts/AGENTS.md).
 
@@ -343,7 +343,7 @@ git config core.hooksPath scripts/git-hooks
 The setting lives in the repository's shared config, and the relative path
 resolves against the committing checkout's root, so every worktree runs the
 hook its own tree tracks. It is enabled in the maintainer's botopink-lang
-clone. The gate needs `node` (with the `npx` it ships), `erl`/`erlc`/`escript` and `wasmtime` on `PATH`.
+clone. The gate needs `node` (with the `npx` it ships), and `erl`/`erlc`/`escript` on `PATH` (wasm needs no host runtime: it is embedded).
 Do not use `--no-verify`.
 
 ## Debugging tips & gotchas

@@ -185,7 +185,7 @@ pool_check_jobs "$jobs" run.sh
 # ── § beam ────────────────────────────────────────────────────────────────────
 # `botopink test --target beam` assembles every module of the run beside
 # itself and runs each test module's runner with `erl -pa`, and `botopink test
-# --target wasm` runs each test unit under wasmtime (decision 513), so `test/`
+# --target wasm` runs each test unit in process (embedded wasmtime C API, decisions 513, 1034), so `test/`
 # suites run on all four targets. The root package runs on each of them with
 # `botopink run --target <t>`, from its one `.bpr` set.
 #
@@ -232,11 +232,10 @@ case "$target" in
         [ "${#targets[@]}" -eq "${#asked[@]}" ] || { echo "run.sh: --target names a target twice (got '$target')" >&2; exit 2; }
         ;;
 esac
-# The tools of all four targets are needed whatever --target says: a run that
+# The tools of the host targets are needed whatever --target says (wasm needs none: it runs in process): a run that
 # lacks one fails rather than run fewer targets and say "all".
 command -v erlc >/dev/null || { echo "run.sh: the beam target needs erlc" >&2; exit 2; }
 command -v erl  >/dev/null || { echo "run.sh: the erlang and beam targets need erl" >&2; exit 2; }
-command -v wasmtime >/dev/null || { echo "run.sh: the wasm target needs wasmtime" >&2; exit 2; }
 [ -x "$compiler" ] || { echo "run.sh: compiler not found or not executable: $compiler" >&2; exit 2; }
 compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
 [ -n "$lib_root" ] || lib_root="$(cd "$(dirname "$compiler")/../.." && pwd)/libs"
