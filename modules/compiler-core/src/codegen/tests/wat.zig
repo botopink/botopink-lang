@@ -5218,3 +5218,31 @@ test "wat: decision 1021 (10) ---- a variant's i64 field prints by its own code 
         \\}
     , "Failure.Bad(path: \"a.txt\", offset: 4294967296)\nFailure.Other(code: 7)\nFailure.Bad(path: \"b\", offset: -3)\n");
 }
+
+test "wat: decision 1021 (10) ---- flatMap, pop, an empty inner array and a spread alone stay in the GC lowering" {
+    // Each sent `conformance/modules/array` to linear memory: `flatMap` and
+    // `pop` through std-wasm's linear `array.flatten` / `array.slice`, an
+    // empty array beside arrays and `[..xs]` with no type of their own.
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    print([[1, 2], [], [3]].flatten());
+        \\    print([1, 2].flatMap({ x -> [x, x * 10] }));
+        \\    print(["ab", "c"].flatMap({ s -> s.chars() }));
+        \\    val none: i32[][] = [];
+        \\    print(none.flatten());
+        \\    val empty: i32[] = [];
+        \\    val onlySpread = [..empty];
+        \\    print(onlySpread.length);
+        \\    var xs = [1, 2, 3];
+        \\    print(xs.pop());
+        \\    print(xs);
+        \\    var names = ["a", "b"];
+        \\    print(names.pop() ?? "none");
+        \\    print(names.pop() ?? "none");
+        \\    print(names.pop() ?? "none");
+        \\    print(names);
+        \\}
+    , "[1, 2, 3]\n[1, 10, 2, 20]\n[\"a\", \"b\", \"c\"]\n[]\n0\n3\n[1, 2]\nb\na\nnone\n[]\n");
+}

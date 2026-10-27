@@ -6627,7 +6627,7 @@ const Emitter = struct {
                 .arrayLit => |al| {
                     if (al.elems.len == 0) {
                         if (self.gc_want) |w| if (w.isArrRef()) return w;
-                        return null;
+                        return self.gcSpreadOnlyType(al);
                     }
                     // A union array (`[1, "a"]`): its elements' boxes.
                     if ((self.unionArrayLitTypeRef(al) catch null) != null) return .{ .ref = .{ .arr = .any } };
@@ -6713,9 +6713,22 @@ const Emitter = struct {
     /// array, otherwise the elements' one repr; null when they disagree.
     fn gcArrayLitElem(self: *Emitter, al: anytype) ?Repr {
         if (al.elems.len == 0) return null;
-        var r = self.wasmTypeOf(al.elems[0]);
+        // An empty array element (`[[1, 2], [], [3]]`) has no type of its
+        // own: it takes the array type its siblings give (`gcArrayLit`).
+        var first: ?Repr = null;
+        for (al.elems) |el| if (!isEmptyArrayLit(el)) {
+            first = self.wasmTypeOf(el);
+            break;
+        };
+        var r = first orelse return null;
         for (al.elems) |el| if (self.wasmTypeOf(el).isFloat()) return .f64;
-        for (al.elems[1..]) |el| if (!self.sameVal(r, self.wasmTypeOf(el))) return null;
+        for (al.elems) |el| {
+            if (isEmptyArrayLit(el)) {
+                if (!r.isArrRef()) return null;
+                continue;
+            }
+            if (!self.sameVal(r, self.wasmTypeOf(el))) return null;
+        }
         if (r == .bool) r = .i32;
         return r;
     }
@@ -6875,6 +6888,16 @@ const Emitter = struct {
         return name;
     }
 
+    /// `[..xs]` — an array literal of a spread alone — is the spread
+    /// value's array; null when that is no known array.
+    fn gcSpreadOnlyType(self: *Emitter, al: anytype) ?Repr {
+        const t = if (al.spreadExpr) |se| self.wasmTypeOf(se.*) else if (al.spread) |name| blk: {
+            if (name.len == 0) return null;
+            break :blk self.wasmTypeOf(.{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } });
+        } else return null;
+        return if (t.isArrRef()) t else null;
+    }
+
     /// `[a, b, c]` in a GC module: `array.new_fixed` of the elements' class.
     fn gcArrayLit(self: *Emitter, al: anytype) anyerror!void {
         const union_elems = self.expected_union_array or (try self.unionArrayLitTypeRef(al)) != null;
@@ -6890,7 +6913,7 @@ const Emitter = struct {
         var cls: Repr.Elem = undefined;
         var er: Repr = .i32;
         if (al.elems.len == 0) {
-            const w = self.gc_want orelse return self.gcFail("an empty array literal of no known type");
+            const w = self.gc_want orelse self.gcSpreadOnlyType(al) orelse return self.gcFail("an empty array literal of no known type");
             cls = if (w.isArrRef()) w.ref.arr else return self.gcFail("an empty array literal of no known type");
         } else {
             er = self.gcArrayLitElem(al) orelse blk: {
@@ -6905,6 +6928,9 @@ const Emitter = struct {
             cls = gcElemClassOf(er);
         }
         for (al.elems) |el| {
+            const prev_want = self.gc_want;
+            if (er.isArrRef() and isEmptyArrayLit(el)) self.gc_want = er;
+            defer self.gc_want = prev_want;
             try self.lowerCoerced(el, er);
             if (cls == .any) try self.gcBox(er);
         }
@@ -6977,6 +7003,40 @@ const Emitter = struct {
         }
         if (eq(u8, name, "first") and cc.args.len == 0) {
             try self.gcArrayAt(recv, null);
+            return true;
+        }
+        // `v.pop()` on a local or a module `var`: the last element as the
+        // optional `at(-1)` answers, and the name rebound to the elements
+        // before it (`lowerArrayPop`'s rule; any other receiver is refused
+        // there).
+        if (eq(u8, name, "pop") and cc.args.len == 0) {
+            const n0 = plainIdentName(recv) orelse return false;
+            const n = self.resolveName(n0);
+            const is_local = self.locals.contains(n);
+            if (!is_local and !self.globals.contains(n)) return false;
+            const ar = self.wasmTypeOf(recv);
+            if (!ar.isArrRef()) return false;
+            const cls = ar.ref.arr;
+            const get: Instr = if (is_local) .{ .local_get = n } else .{ .global_get = self.globalName(n) };
+            const set: Instr = if (is_local) .{ .local_set = n } else .{ .global_set = self.globalName(n) };
+            try self.emit(get);
+            try self.emit(try self.constInt(-1));
+            try self.emit(.{ .call = try self.gcArrAtOpt(cls) });
+            if (cls == .any) {
+                const er = self.gcElemRepr(recv) orelse return self.gcFail("an array of no known element type");
+                if (er.isRef()) {
+                    const vt = self.vtOf(er);
+                    if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
+                }
+            }
+            try self.emit(get);
+            try self.emit(zero);
+            try self.emit(get);
+            try self.emit(.array_len);
+            try self.emit(one);
+            try self.emit(opOf(.i32, "sub"));
+            try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
+            try self.emit(set);
             return true;
         }
         if (!(eq(u8, name, "length") or eq(u8, name, "isEmpty") or eq(u8, name, "toList"))) return false;
@@ -13167,6 +13227,16 @@ const Emitter = struct {
                             return .none;
                         }
                     };
+                    // `val none: i32[][] = []`: in a GC module an empty
+                    // array literal is the array its local is declared.
+                    const prev_want = self.gc_want;
+                    if (self.mode == .gc and isEmptyArrayLit(lb.value.*)) {
+                        const lt: ?Repr = if (lb.typeAnnotation) |ta| self.reprOf(ta) else self.locals.get(lb.name);
+                        if (lt) |t| if (t.isArrRef()) {
+                            self.gc_want = t;
+                        };
+                    }
+                    defer self.gc_want = prev_want;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxedInto(lb.typeAnnotation, lb.value.*)
                     else
@@ -18639,6 +18709,13 @@ const Emitter = struct {
             if (tail[0] != '[')
                 return self.refuseUnlessTemplate(self.call_loc, "`flatMap` on the wasm backend: its function answers no array, so there is nothing to flatten", .{});
             try self.lowerArrayHof(@intFromEnum(Hof.map), recv, lam, null);
+            // A GC module's `map` answers an `anyref` array of the arrays
+            // `f` answers: the module's own flatten over their class.
+            if (self.mode == .gc) {
+                if (tail.len < 2) return self.gcFail("a flatMap of no known element shape");
+                try self.emit(.{ .call = try self.gcArrFlatten(gcShapeClass(tail[1..])) });
+                return;
+            }
             try self.emitStdCall("array.flatten");
             return;
         }
