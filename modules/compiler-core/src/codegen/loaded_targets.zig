@@ -242,12 +242,15 @@ pub fn apply(arena: std.mem.Allocator, outputs: []const ComptimeOutput, config: 
         const path = info[0..bar];
         const included = holds(info[bar + 1 ..], target);
         if (try refusalOf(arena, outputs, pkg, config)) |why| {
-            const off_fn = findFn(ok.transformed, loadMod.loaded_main_off_fn) orelse continue;
             const lexeme = try std.mem.concat(arena, u8, &.{ loadMod.off_marker, if (included) "R" else "X", try @import("../comptime/block_eval.zig").stringLexeme(arena, why) });
-            var main_fn = (try throwing(arena, off_fn, lexeme)) orelse continue;
-            main_fn.name = loadMod.loaded_main_fn;
             var root_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
-            try root_decls.append(arena, .{ .@"fn" = main_fn });
+            // A package with no `main` has no `loaded_main_off_fn` (decision
+            // 1001 (4)): only its tests are put in place.
+            if (findFn(ok.transformed, loadMod.loaded_main_off_fn)) |off_fn| {
+                var main_fn = (try throwing(arena, off_fn, lexeme)) orelse continue;
+                main_fn.name = loadMod.loaded_main_fn;
+                try root_decls.append(arena, .{ .@"fn" = main_fn });
+            }
             // Decision 993 (3) — a tested package's `loaded_tests_fn` throws
             // the same text, read by `test_run_fn` as `run_fn` reads it.
             if (findFn(ok.transformed, loadMod.loaded_tests_off_fn)) |tests_off| {
@@ -255,6 +258,7 @@ pub fn apply(arena: std.mem.Allocator, outputs: []const ComptimeOutput, config: 
                 tests_fn.name = loadMod.loaded_tests_fn;
                 try root_decls.append(arena, .{ .@"fn" = tests_fn });
             }
+            if (root_decls.items.len == 0) continue;
             const decls = root_decls.items;
             var root = o;
             var rok = ok;

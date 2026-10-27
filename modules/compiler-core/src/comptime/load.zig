@@ -1308,12 +1308,10 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
     if (!isLoadedPackage(mod.package)) return program;
     const entry = (try testedEntry(arena, mod.package)) orelse return program;
     var is_root = false;
-    var has_loaded_main = false;
     for (program.decls) |d| switch (d) {
         .@"fn" => |fd| {
             if (std.mem.eql(u8, fd.name, tests_fn)) return program;
             if (std.mem.eql(u8, fd.name, loaded_info_fn)) is_root = true;
-            if (std.mem.eql(u8, fd.name, loaded_main_fn)) has_loaded_main = true;
         },
         else => {},
     };
@@ -1370,19 +1368,15 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
         else => @panic("Module.test: the lowered tests do not parse"),
     };
 
-    // A package with no `main` is tested too (993 (3)): its root keeps no
-    // `loaded_main_fn`, whose body calls the `main` it lacks (`packageModules`).
-    const drop_main = is_root and has_loaded_main and !entry.has_main;
     const suite = if (suite_imports.items.len == 0) ast.Program{ .decls = &.{} } else parseShifted(arena, try lasting(suite_imports.items), helper_first_line + 200, null) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => @panic("Module.test: the test suite's imports do not parse"),
     };
-    const decls = try arena.alloc(ast.DeclKind, suite.decls.len + program.decls.len + generated.decls.len - n_tests - @intFromBool(drop_main));
+    const decls = try arena.alloc(ast.DeclKind, suite.decls.len + program.decls.len + generated.decls.len - n_tests);
     @memcpy(decls[0..suite.decls.len], suite.decls);
     var k: usize = 0;
     var i: usize = suite.decls.len;
     for (program.decls) |d| {
-        if (drop_main and d == .@"fn" and std.mem.eql(u8, d.@"fn".name, loaded_main_fn)) continue;
         defer i += 1;
         decls[i] = switch (d) {
             .@"test" => |t| blk: {
@@ -1433,9 +1427,14 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
     const out = try arena.alloc(Module, entry.modules.len);
     for (entry.modules, 0..) |m, i| {
         var source = try arena.dupe(u8, m.source);
+        // Decision 1001 (4) — a package with no `main` gains neither
+        // `loaded_main_fn` nor `loaded_main_off_fn`: its `run()` is refused
+        // (`no_main`), its `` `test`() `` runs.
         if (m.root) source = try std.mem.concat(arena, u8, &.{
             source,
-            if (entry.main_async)
+            if (!entry.has_main)
+                ""
+            else if (entry.main_async)
                 // Decision 989 (2) — an `async` `main`, awaited.
                 (if (entry.main_result)
                     "\n\npub async fn " ++ loaded_main_fn ++ "() -> Async<Result<void, string>> {\n    case await main() {\n        Ok(_) -> return;\n        Error(e) -> throw \"${e}\";\n    }\n}\n"
@@ -1446,7 +1445,9 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
             else
                 "\n\npub fn " ++ loaded_main_fn ++ "() -> Result<void, string> {\n    main();\n    return;\n}\n",
             // Decision 989 (3) — read and rewritten at `emit`.
-            if (entry.main_async)
+            if (!entry.has_main)
+                ""
+            else if (entry.main_async)
                 "\npub async fn " ++ loaded_main_off_fn ++ "() -> Async<Result<void, string>> {\n    throw \"\";\n}\n"
             else
                 "\npub fn " ++ loaded_main_off_fn ++ "() -> Result<void, string> {\n    throw \"\";\n}\n",

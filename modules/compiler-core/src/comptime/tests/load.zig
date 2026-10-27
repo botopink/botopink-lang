@@ -768,7 +768,8 @@ test "decision 993 (3): a `test()` brings the package in with its tests lowered 
             .@"fn" => |f| {
                 if (std.mem.eql(u8, f.name, loadMod.test_case_prefix ++ "0")) case_fn = true;
                 if (std.mem.eql(u8, f.name, loadMod.loaded_tests_fn)) loaded_tests = true;
-                if (std.mem.eql(u8, f.name, loadMod.loaded_main_fn)) loaded_main = true;
+                // Decision 1001 (4): neither entry of a `main` it lacks.
+                if (std.mem.eql(u8, f.name, loadMod.loaded_main_fn) or std.mem.eql(u8, f.name, loadMod.loaded_main_off_fn)) loaded_main = true;
             },
             .@"test" => return error.TestBlockKept,
             else => {},
