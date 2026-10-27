@@ -24471,6 +24471,18 @@ const Emitter = struct {
                         const et = eagerTypeRef(ftr);
                         if (et == .optional and arrayElemOfTypeRef(eagerTypeRef(et.optional.*)) != null) return self.optInfoOfTypeRef(et);
                     };
+                    // A GC module reads the payload off the field's declared
+                    // type: an array, a tuple, a record or an optional one
+                    // (`?.` does not nest) is its own nullable reference, a
+                    // scalar its box. By the field's name alone an array or a
+                    // tuple field answered an optional of no known payload.
+                    if (self.mode == .gc) if (self.fieldTypeRefIn(rty, ia.member)) |ftr| {
+                        const et = eagerTypeRef(ftr);
+                        if (et == .optional) return self.optInfoOfTypeRef(et);
+                        const inner = self.arena().create(ast.TypeRef) catch return null;
+                        inner.* = et;
+                        if (self.optInfoOfTypeRef(.{ .optional = inner })) |oi| if (oi.boxed or self.gcOptPayload(oi) != null) return oi;
+                    };
                     const ft = self.fieldTypeIn(rty, ia.member);
                     if (ft == null or self.resolveRecordName(ft.?) != null) return .{ .boxed = false };
                     if (std.mem.eql(u8, ft.?, "string")) return .{ .boxed = false, .str = true };
@@ -30845,6 +30857,13 @@ const Emitter = struct {
         // An empty array literal answers the array the branch is asked for
         // (`o ?? []`, front 164 s2): in a GC module it has no type of its own.
         const empty_arr = self.mode == .gc and ty.isArrRef() and isEmptyArrayLit(last.expr);
+        // `null` answering a branch a GC module holds as a reference (the
+        // absent arm of `xs?.[k]`) is that reference's null: lowered as the
+        // word `0` it went in a box, which no read of the payload took.
+        if (self.mode == .gc and ty.isRef() and isNullLit(last.expr)) {
+            try self.emit(self.zeroOf(ty));
+            return .value;
+        }
         const prev_want = self.gc_want;
         if (empty_arr) self.gc_want = ty;
         defer self.gc_want = prev_want;

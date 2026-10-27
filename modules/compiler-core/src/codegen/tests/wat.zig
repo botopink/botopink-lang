@@ -4695,3 +4695,37 @@ test "wat: decision 1027 ---- declarations of one shape stay distinct types (the
         \\}
     , "person - - -\n- vec - -\n- - box -\n- - - maybe\na person\na vec\na box\nother\nfalse\ntrue\nPerson(name: \"Ana\", age: 30)\nVec(name: \"Ana\", age: 30)\n");
 }
+
+// ── decision 1021 (10), P2b: the conversions and the optionals a WasmGC module had no form for ──
+//
+// Each program is lowered as a WasmGC module (`(rec`) where it fell back to linear memory, its RUN
+// LOG the language's own answer.
+
+test "wat: gc ---- a ?. read of an array, a tuple or an optional array field, and the absent arm of ?.[k]" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Field(name: string)
+        \\
+        \\type Form(fields: ?Field[], tags: string[], range: #(i32, i32))
+        \\
+        \\fn make(k: i32) -> ?Form {
+        \\    if (k == 0) return null;
+        \\    return Form(fields: [Field(name: "email")], tags: ["a", "b"], range: #(1, 2));
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val f = make(1);
+        \\    val tags: string[] = f?.tags ?? [];
+        \\    print(tags.join(","));
+        \\    val none: string[] = make(0)?.tags ?? [];
+        \\    print(none.length);
+        \\    val r = f?.range ?? #(0, 0);
+        \\    print(r);
+        \\    print(f?.fields?.[0]?.name ?? "none");
+        \\    print(make(0)?.fields?.[0]?.name ?? "none");
+        \\    val empty: ?Form = Form(fields: null, tags: [], range: #(3, 4));
+        \\    print(empty?.fields?.[0]?.name ?? "none");
+        \\}
+    );
+}
