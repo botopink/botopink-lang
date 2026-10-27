@@ -2154,7 +2154,11 @@ Where no hint answers (a `val assert Circle(r) = s`, a payload's pattern), a
 bare name two enums declare — two linked modules' same-named `Shape`, mangled —
 is the GC gap `a bare variant name more than one enum declares` (decision 1058
 (4)): the first match tested the other enum's struct type and answered wrongly
-(wasm test `decision 1058 (4)`).
+(wasm test `decision 1058 (4)`). Likewise `x is E.V` in a GC module where a
+linked module's same-named `E` was mangled (`<module>/E`) is the gap `an is test
+of a variant path two same-named enums declare` (144 B-202): the path kept the
+bare `E`, the first module's, and `is` answered false for the importer's value
+(wasm test `B-202`).
 
 **A multi-subject `case a, n { … }`** lowers each subject once, into
 `<subject local>_<i>` (`multiSubjectLocal`); a `.multi` arm tests and binds

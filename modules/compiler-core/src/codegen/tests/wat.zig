@@ -5144,6 +5144,37 @@ test "wat: decision 1058 (4) ---- a bare variant pattern two modules' same-named
     }, "4\n-1\n5\n-1\n");
 }
 
+test "wat: decision 1058 (4) ---- an imported enum's variant two modules declare alike answers `is` for the module that built it (B-202)" {
+    try h.assertWasmRunLogModules(std.testing.allocator, &.{
+        .{ .path = "one", .source =
+        \\pub type Shape { Circle(r: i32), Square(side: i32) }
+        \\
+        \\pub fn square() -> Shape {
+        \\    return Shape.Square(side: 2);
+        \\}
+        },
+        .{ .path = "shapes", .source =
+        \\pub type Shape { Circle(r: i32), Square(side: i32) }
+        \\
+        \\pub fn unitCircle() -> Shape {
+        \\    return Shape.Circle(r: 1);
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {one.square, shapes.Shape, shapes.unitCircle};
+        \\
+        \\pub fn main() -> void {
+        \\    val s = unitCircle();
+        \\    print(s is Shape.Circle);
+        \\    print(s == Shape.Circle(r: 1));
+        \\    print(s);
+        \\    print(square());
+        \\}
+        },
+    }, "true\ntrue\nShape.Circle(r: 1)\nShape.Square(side: 2)\n");
+}
+
 test "wat: decision 1021 (10) ---- a method call on a value is never the module's free function of its name in the GC lowering" {
     // `xs?.[0]` is written `n.at(0)`, and `m.at(key)` on an `Index` dispatches
     // by value: both were typed by `fn at(c: bool) -> ?Point`, and the module

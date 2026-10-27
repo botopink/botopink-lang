@@ -8156,6 +8156,19 @@ const Emitter = struct {
 
     /// The GC types a value of `x is T` / a `case` arm naming `T` can be: a
     /// record's struct, a payload enum's variants, one variant by its path.
+    /// Whether a linked module's enum of the same name as `ename` was mangled
+    /// (`<module>/<ename>`, `link_mangled_types`): the bare name is then one of
+    /// two enums of the program.
+    fn enumNameMangledElsewhere(self: *Emitter, ename: []const u8) bool {
+        if (std.mem.indexOfScalar(u8, ename, '/') != null) return false;
+        var it = self.link_mangled_types.valueIterator();
+        while (it.next()) |m| {
+            const slash = std.mem.lastIndexOfScalar(u8, m.*, '/') orelse continue;
+            if (std.mem.eql(u8, m.*[slash + 1 ..], ename) and self.enums.contains(m.*)) return true;
+        }
+        return false;
+    }
+
     fn gcTypeTests(self: *Emitter, t: ast.TypeRef) anyerror![]const ValType {
         // Decision 810 (1) — a behavior: every implementing type's own.
         if (ast.behaviorTestIdentity(t)) |bn| {
@@ -8186,6 +8199,13 @@ const Emitter = struct {
         if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
             const vname = name[dot + 1 ..];
             const ename = name[0..dot];
+            // Decision 1058 (4), 144 B-202 — `E.V` where another module's
+            // same-named `E` was linked mangled (`<module>/E`): the bare `E`
+            // is the first module's, and the path was not renamed to the
+            // importer's, so `is` tested the other enum's struct type and
+            // answered false. A named gap.
+            if (ename.len > 0 and self.enums.contains(ename) and self.enumNameMangledElsewhere(ename))
+                return self.gcFail("an is test of a variant path two same-named enums declare");
             const en: []const u8 = if (ename.len > 0 and self.enums.contains(ename)) ename else blk: {
                 var found: ?[]const u8 = null;
                 var it = self.enums.iterator();
