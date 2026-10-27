@@ -26,18 +26,23 @@
 #   installed  one job per row that runs the installed binaries and reads no
 #              `.bpr` set (`test-cli`, `test-docs`); downloads `build`'s artifact
 #              and runs with `--prebuilt`, so nothing compiles the compiler again.
-#   sets       the `conformance-sets` stage once (decision 1006 (6) P4): the
-#              root package's `.bpr` sets, a bare `botopink build` in each member
-#              of `conformance/modules/` with `build`'s binaries; uploads
-#              `conformance/modules/.botopinkbuild/runtime/` as an artifact. The
-#              sets hold no absolute path (decision 1030 (3)), so they run on
-#              another runner's checkout.
+#   sets       the `conformance-sets` stage once (decisions 1006 (6) P4, 1077):
+#              every `.bpr` set the rows test — a bare `botopink build` in each
+#              member of `conformance/modules/` and of each library's program —
+#              with `build`'s binaries; uploads `modules/.botopinkbuild/runtime/`
+#              and `libraries/.sets/` as one artifact that lives this run only, the
+#              sets that did build even when one did not (the job is then red).
+#              The sets hold no absolute path (decisions 1030 (3), 1078), so they
+#              run on another runner's checkout.
 #   conformance one job per row that reads those sets (`gate.sh --list-rows
 #              --uses-sets`: `test-conformance` once per target, `--target <t>`,
 #              each row its own verdict); downloads `build`'s and `sets`'
 #              artifacts and runs with `--prebuilt --prebuilt-sets`: the row only
-#              runs `run --target <t>`, no comptime, and a member whose handed set
-#              it built again is a red (`prebuilt sets: N reused, M built again`).
+#              runs `run --target <t>`, no comptime; a member whose handed set it
+#              built again is a red (`prebuilt sets: N reused, M built again`), and
+#              one with no set is `FAIL <m> — set not built` while the others run.
+#              The rows run even when `sets` is red; an expired artifact fails the
+#              download naming it (a row is never re-run alone: re-run the workflow).
 #   pack       `wasm_pack_runs_standalone` (`modules/compiler-cli/tests/wasm_pack.sh`,
 #              decisions 1036, 1079 (2)) with `build`'s binaries: the one job given
 #              the pinned wasmtime CLI (ci-setup's `wasmtime-cli` input), so the packed
@@ -219,10 +224,15 @@ jobs:
       - name: scripts/gate.sh --cold --portable --prebuilt --stage conformance-sets
         shell: bash
         run: bash scripts/gate.sh --cold --portable --prebuilt --stage conformance-sets
+      # Decision 1077 (4): the sets that did build are handed on even when one did not.
       - name: Pack the sets
+        if: ${{ !cancelled() }}
         shell: bash
-        run: tar -czf conformance-sets.tgz -C conformance/modules .botopinkbuild/runtime
+        run: |
+          mkdir -p conformance/modules/.botopinkbuild/runtime conformance/libraries/.sets
+          tar -czf conformance-sets.tgz -C conformance modules/.botopinkbuild/runtime libraries/.sets
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: conformance-sets
           path: conformance-sets.tgz
@@ -232,6 +242,8 @@ jobs:
   conformance:
     name: ${{ matrix.row.target && format('{0} ({1})', matrix.row.stage, matrix.row.target) || matrix.row.stage }}
     needs: [stages, build, sets]
+    # The rows run when `sets` is red (a member that did not build is their `set not built` red).
+    if: ${{ !cancelled() && needs.stages.result == 'success' && needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -258,7 +270,7 @@ jobs:
         shell: bash
         run: |
           tar -xzf zig-out.tgz
-          tar -xzf conformance-sets.tgz -C conformance/modules
+          tar -xzf conformance-sets.tgz -C conformance
       - name: scripts/gate.sh --cold --portable --prebuilt --prebuilt-sets --stage ${{ matrix.row.stage }} ${{ matrix.row.target && format('--target {0}', matrix.row.target) || '' }}
         shell: bash
         env:

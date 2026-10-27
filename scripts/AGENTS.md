@@ -187,9 +187,11 @@ those the step also reaches); no `--stage` runs every stage as before. `--prebui
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
 `test-cli`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
-`--prebuilt-sets` says the root package's sets are already under `conformance/modules/.botopinkbuild/runtime/`
-(CI's `conformance` rows unpack the `sets` job's artifact there): `test-conformance` reads them
-(`run.sh --prebuilt-sets`, even under `--cold`) and a member whose set it built again is a red; a run
+`--prebuilt-sets` says the sets are already under `conformance/modules/.botopinkbuild/runtime/` and
+`conformance/libraries/.sets/` (CI's `conformance` rows unpack the `sets` job's one artifact there,
+decision 1077 (1)): `test-conformance` reads them (`run.sh --prebuilt-sets`, even under `--cold`); a member or
+library whose set it built again is a red, one with no set `FAIL <m> — set not built` (1077 (4)), and the
+sets missing altogether (the artifact lives one run, 1077 (2)) fail the stage naming the artifact; a run
 that runs `conformance-sets` itself passes it on its own. The sets hold no absolute path (decision 1030 (3);
 `modules/compiler-cli/tests/runtime_portable.sh`), so they run where they are unpacked.
 `--test-shards <N>` makes the `test` stage run `zig build test -Dtest-shards=<N>` (build.zig's default is the CPUs, at most 8); CI's unit job passes 8 on its 4-CPU runners, the suite mostly waiting on node / erl / wasmtime.

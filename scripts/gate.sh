@@ -29,9 +29,9 @@
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
 #                           contract, test tooling, wasm --invoke main
 #   8. (the libraries' stage, test-libs, joined stage 9: decision 996)
-#  8b. conformance-sets    the root package's `.bpr` sets built once (`conformance/run.sh
-#                           --build-only`: a bare `botopink build` in each member, decision
-#                           1006 (6) P4), before stage 9 starts; stage 9 then reads them
+#  8b. conformance-sets    every `.bpr` set stage 9 tests built once (`conformance/run.sh
+#                           --build-only`: a bare `botopink build` in each member and of each
+#                           library's program, decisions 1006 (6) P4, 1077 (1)), before stage 9 starts; stage 9 then reads them
 #                           (`--prebuilt-sets`), so the comptime of the suite is paid once.
 #                           CI runs it in a job of its own and hands
 #                           `conformance/modules/.botopinkbuild/runtime/` to each
@@ -151,7 +151,9 @@
 #             `conformance-sets` job's artifact): stage 9 reads them and holds each one to
 #             it — a member whose set it built again is a red (`conformance/run.sh
 #             --prebuilt-sets`, decision 1006 (6) P4). A run that also runs
-#             `conformance-sets` passes it by itself.
+#             `conformance-sets` passes it by itself. The sets missing (the artifact
+#             expired: it lives one run, decision 1077 (2)) fail the stage naming
+#             it; nothing is built again in their place.
 #
 #   --portable
 #             every `zig build` of the gate targets the baseline CPU
@@ -745,6 +747,11 @@ if [ "$run_sets" -eq 1 ]; then
 fi
 sets_args=()
 [ "$prebuilt_sets" -eq 1 ] && sets_args=(--prebuilt-sets)
+# Decision 1077 (2): handed sets that are not there are named, never built again here: the artifact
+# lives one run, and a row re-run after it expired fails.
+if [ "$prebuilt_sets" -eq 1 ] && [ "$run_sets" -eq 0 ] && [ "$run_lang" -eq 1 ] && [ ! -d conformance/modules/.botopinkbuild/runtime ]; then
+    fail "--prebuilt-sets: conformance/modules/.botopinkbuild/runtime/ is missing — the \`conformance-sets\` artifact of this run is not there (it lives one run, decision 1077 (2)): re-run the whole workflow, never one row alone"
+fi
 want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).

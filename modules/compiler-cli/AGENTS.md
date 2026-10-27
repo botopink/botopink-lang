@@ -248,6 +248,17 @@ compiler-cli/
 │   │                          --target` / `run --cold` there on the four targets reuse them (no
 │   │                          comptime, the `.bpr` the unpacked file) and answer as the first
 │   │                          checkout did — CI's artifact hand-off, simulated
+│   ├── by_name_set_moves.sh ← cell `by_name_set_moves` (decisions 1077 (3), 1078; a CLI
+│   │                          script per 1020: a program cannot move its own library),
+│   │                          its fixture inline: `greeter` loaded by name prints its
+│   │                          `root` at build and at run; the sets hold its directory as
+│   │                          its symbol (`bp-root:<64 hex>`, the key file mapping it to
+│   │                          `../libs/greeter`), never the path; moved with a copy of the
+│   │                          checkout they are reused on the four targets (`run` and `run
+│   │                          --cold`) and answer the new directory; the library moved
+│   │                          alone rebuilds and answers where it went; a text already
+│   │                          holding `bp-root:` refuses the set's write, naming the
+│   │                          module and the field
 │   ├── beam_reuse.sh        ← a `.beam` loaded as it is (decision 1007; the proof of its
 │   │                          row), over `beam_reuse/`: a second
 │   │                          `run` on erlang and beam compiles no module (every
@@ -364,6 +375,7 @@ bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and 
 bash modules/compiler-cli/tests/runtime_reuse.sh     # the .bpr set reused while fresh, rebuilt when stale (1006)
 bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alone while its target key matches (1008)
 bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030, 1039)
+bash modules/compiler-cli/tests/by_name_set_moves.sh # a by-name load's root symbolic in its set, the moved set answering the new directory (1077 (3), 1078)
 bash modules/compiler-cli/tests/runtime_portable.sh  # a workspace's .bpr sets run unchanged at another path, no absolute path in them (1006 (6) P4, 1030 (3))
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
 bash modules/compiler-cli/tests/import_alias_refused.sh  # no import alias: an unresolved source, `alias` an unknown key (1050, 1048)

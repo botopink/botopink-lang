@@ -212,7 +212,28 @@ pub fn loadsOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []con
     var out: std.ArrayListUnmanaged([]const u8) = .empty;
     var lines = std.mem.splitScalar(u8, held, '\n');
     _ = lines.first();
-    while (lines.next()) |l| if (l.len > 0) out.append(arena, l) catch return &.{};
+    while (lines.next()) |l| if (l.len > 0 and !std.mem.startsWith(u8, l, runtime_file.ROOT_MARK)) out.append(arena, l) catch return &.{};
+    return out.items;
+}
+
+/// One root line of a key file (decision 1078 (2)): the symbol the set holds
+/// in place of a by-name load's directory, and that directory relative to the
+/// loader's cache root — the reader's directory is the cache root it reads
+/// under joined with it.
+pub const RootLine = struct { symbol: []const u8, rel: []const u8 };
+
+/// The key file's root lines, `bp-root:<hex>\t<directory relative to the
+/// cache root>`; none when there is no key file.
+pub fn rootsOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8) []const RootLine {
+    const kp = keyPath(arena, dir, pkg) catch return &.{};
+    const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(1 << 20)) catch return &.{};
+    var out: std.ArrayListUnmanaged(RootLine) = .empty;
+    var lines = std.mem.splitScalar(u8, held, '\n');
+    _ = lines.first();
+    while (lines.next()) |l| if (std.mem.startsWith(u8, l, runtime_file.ROOT_MARK)) {
+        const tab = std.mem.indexOfScalar(u8, l, '\t') orelse continue;
+        out.append(arena, .{ .symbol = l[0..tab], .rel = l[tab + 1 ..] }) catch return &.{};
+    };
     return out.items;
 }
 
@@ -274,6 +295,7 @@ pub fn writeSet(
     readers: []const []const u8,
     written: ?*std.ArrayListUnmanaged(Written),
     keep: std.mem.Allocator,
+    paths: runtime_file.Paths,
 ) !void {
     for (outputs) |o| if (o.outcome != .ok) return;
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
@@ -316,7 +338,23 @@ pub fn writeSet(
             .deps = if (is_root) meta_of.deps else &.{},
             .wasm_host = if (is_root) meta_of.wasm_host else .wasi,
         };
-        const bytes = try runtime_file.write(gpa, st, meta, mods);
+        var found: ?runtime_file.Found = null;
+        var p = paths;
+        p.found = &found;
+        p.found_arena = arena;
+        const bytes = runtime_file.writeWith(gpa, st, meta, mods, p) catch |err| switch (err) {
+            // Decisions 1030 (3), 1077 (3): no machine's path in a set.
+            error.AbsolutePath => {
+                const f = found.?;
+                const msg = switch (f.why) {
+                    .absolute_path => try std.fmt.allocPrint(arena, "the .bpr set of `{s}` would hold the absolute path {s}: module `{s}`, field `{s}`, keeps it in \"{f}\" — a set holds no machine's path (decisions 1030 (3), 1077 (3), 1078 (3)); derive it at run time, or from `compiler.src().root`", .{ meta_of.root, f.dir, f.module, f.field, std.zig.fmtString(shorten(f.text)) }),
+                    .symbol_in_text => try std.fmt.allocPrint(arena, "the .bpr set of `{s}` cannot be written: module `{s}`, field `{s}`, already holds a root symbol (`bp-root:`) in \"{f}\" — the text is the set codec's to write (decision 1078 (3))", .{ meta_of.root, f.module, f.field, std.zig.fmtString(shorten(f.text)) }),
+                };
+                @import("./reporter.zig").errMsg(msg);
+                return error.AbsolutePath;
+            },
+            else => |e| return e,
+        };
         defer gpa.free(bytes);
         const path = try groupPath(arena, dir, g.key_ptr.*);
         // Whole or not at all (`analysis_store.write`): a build reading a
@@ -328,14 +366,20 @@ pub fn writeSet(
     if (key) |k| try writeKey(arena, io, dir, meta_of.root, k, loads);
 }
 
+/// At most 160 bytes of a refused string, for its message.
+fn shorten(text: []const u8) []const u8 {
+    return text[0..@min(text.len, 160)];
+}
+
 /// The analysed program of the set of `pkg` in `dir` — the root's file and
 /// each package file it names beside it, decoded into `arena`, in the
-/// program's order; null when a file is missing or does not read back.
-pub fn readProgram(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8) !?[]const bp.codegen.ComptimeOutput {
+/// program's order, each symbol of `subs` read back as its directory
+/// (decision 1077 (3)); null when a file is missing or does not read back.
+pub fn readProgram(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8, subs: []const runtime_file.Sub) !?[]const bp.codegen.ComptimeOutput {
     const st = bprStamp();
     const cwd = std.Io.Dir.cwd();
     const root_bytes = cwd.readFileAlloc(io, try rootPath(arena, dir, pkg), arena, .unlimited) catch return null;
-    const root_file = runtime_file.read(arena, root_bytes, st) catch |err| switch (err) {
+    const root_file = runtime_file.readWith(arena, root_bytes, st, subs) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return null,
     };
@@ -346,7 +390,7 @@ pub fn readProgram(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: [
     for (root_file.meta.program, outputs) |placed, *out| {
         const decoded = files.get(placed.group) orelse blk: {
             const bytes = cwd.readFileAlloc(io, try groupPath(arena, dir, placed.group), arena, .unlimited) catch return null;
-            const d = runtime_file.read(arena, bytes, st) catch |err| switch (err) {
+            const d = runtime_file.readWith(arena, bytes, st, subs) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => return null,
             };

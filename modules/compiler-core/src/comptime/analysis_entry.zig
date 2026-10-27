@@ -336,6 +336,11 @@ pub fn Encoder(comptime skips: []const Skip) type {
         /// The texts of the values written as strings (`entry_as_string`)
         /// that STRINGS holds, freed with the encoder.
         rendered: std.ArrayListUnmanaged([]u8) = .empty,
+        /// The field of the innermost struct being written, and for each
+        /// string of STRINGS the field that first wrote it (a `.bpr`'s
+        /// refusal names it, decision 1078 (3)).
+        cur_field: []const u8 = "",
+        string_fields: std.ArrayListUnmanaged([]const u8) = .empty,
 
         pub fn init(gpa: std.mem.Allocator) Self {
             return .{ .gpa = gpa };
@@ -347,6 +352,7 @@ pub fn Encoder(comptime skips: []const Skip) type {
             self.ptrs.deinit(self.gpa);
             for (self.rendered.items) |t| self.gpa.free(t);
             self.rendered.deinit(self.gpa);
+            self.string_fields.deinit(self.gpa);
         }
 
         /// The bytes written since the last call, handed to the caller
@@ -429,6 +435,9 @@ pub fn Encoder(comptime skips: []const Skip) type {
                         inline for (st.fields) |f| {
                             if (f.is_comptime) continue;
                             if (comptime skipped(skips, T, f.name)) continue;
+                            const outer = self.cur_field;
+                            self.cur_field = f.name;
+                            defer self.cur_field = outer;
                             try self.encode(f.type, &@field(value.*, f.name));
                         }
                     },
@@ -446,6 +455,7 @@ pub fn Encoder(comptime skips: []const Skip) type {
                 return;
             }
             const gop = try self.strings.getOrPut(self.gpa, s);
+            if (!gop.found_existing) try self.string_fields.append(self.gpa, self.cur_field);
             try writeUleb(self.gpa, &self.out, @as(u64, gop.index) + 1);
         }
 
@@ -757,7 +767,7 @@ pub fn Decoder(comptime skips: []const Skip) type {
     };
 }
 
-fn writeUleb(gpa: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), value: u64) EncodeError!void {
+pub fn writeUleb(gpa: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), value: u64) EncodeError!void {
     var v = value;
     while (true) {
         const b: u8 = @truncate(v & 0x7f);

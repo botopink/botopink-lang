@@ -157,7 +157,12 @@ const RuntimeSink = struct {
         const loads = try libs.relativeLoads(arena, self.io, self.pkg_dir, try bp.load.namedLoadsSince(arena, 0));
         const key = try libs.keyWithNamedLoads(arena, self.io, self.pkg_dir, self.base, loads);
         var written: std.ArrayListUnmanaged(Written) = .empty;
-        try runtime_cache.writeSet(self.gpa, self.io, self.dir, .{ .root = self.root, .deps = self.deps, .wasm_host = self.wasm_host }, key, loads, outputs, readers, &written, arena);
+        // Decisions 1077 (3), 1078: each by-name load's directory written as its symbol, the key file
+        // mapping it to the directory relative to the cache root; no machine's path left.
+        const roots = try libs.writeRoots(arena, self.io, runtime_cache.load_root orelse ".", try bp.load.namedLoadsSince(arena, 0));
+        const paths: runtime_file.Paths = .{ .subs = roots.subs, .machine = try libs.machineDirs(arena, self.io, self.pkg_dir, roots.subs) };
+        const lines = try std.mem.concat(arena, []const u8, &.{ loads, roots.lines });
+        try runtime_cache.writeSet(self.gpa, self.io, self.dir, .{ .root = self.root, .deps = self.deps, .wasm_host = self.wasm_host }, key, lines, outputs, readers, &written, arena, paths);
         self.key_written = key;
         if (!self.announce) return;
         for (written.items) |w| {
@@ -367,7 +372,7 @@ fn runBuild(
         // present, nothing is emitted or compiled; else emit from the set and
         // write the key last.
         const packages = try libs.packagesOf(arena, proj, dep_modules);
-        const tkey = targetKeyFor(proj, opts, t, rt_key.?);
+        const tkey = targetKeyFor(proj, opts, t, try withRoots(arena, io, proj, rt_dir, rt_key.?));
         // `--cold` (run or build) reads no target key: its first reach of the
         // package on this target emits (decision 1043 (4)).
         if (shared == null and !opts.rebuild and !opts.cold and targetReused(arena, io, proj, rt_dir, opts, t, tkey, packages)) return 0;
@@ -512,12 +517,33 @@ fn runBuild(
     }
     if (!erl_ok) return 1;
 
-    if (opts.target) |t| if (shared == null) if (runtime_sink.key_written) |k| runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, k));
+    if (opts.target) |t| if (shared == null) if (runtime_sink.key_written) |k| runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, try withRoots(arena, io, proj, rt_dir, k)));
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
 }
 
 /// The target key of this emit (decision 1008 (1), `runtime_cache.targetKey`).
+/// `key` with the directories the package's by-name loads resolve to now
+/// (decision 1077 (3)): the set holds them as symbols, but an emitted output
+/// holds them as text, so a moved library — or a moved checkout — emits again.
+/// `key` itself when the package loads nothing by name.
+fn withRoots(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, rt_dir: []const u8, key: runtime_cache.Key) !runtime_cache.Key {
+    const subs = try libs.readRoots(arena, io, analysis_store.root(proj), runtime_cache.rootsOf(arena, io, rt_dir, proj.name));
+    if (subs.len == 0) return key;
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-target-roots-1\x00");
+    h.update(&key);
+    for (subs) |sb| {
+        h.update(&.{0});
+        h.update(sb.symbol);
+        h.update(&.{0});
+        h.update(sb.dir);
+    }
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
 fn targetKeyFor(proj: config.ProjectConfig, opts: Options, target: config.Target, bpr_key: runtime_cache.Key) runtime_cache.Key {
     return runtime_cache.targetKey(.{
         .bpr_key = bpr_key,
@@ -638,7 +664,10 @@ pub fn runRuntime(
     if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return .{ .exit = 1 };
 
     const stamp = runtimeStamp();
-    const root_file = readRuntime(arena, io, file, stamp, null) orelse return .{ .exit = 1 };
+    // Decision 1077 (3): each by-name load's `root` the set keeps as a symbol is read back as the
+    // directory its name resolves to now (the key file's lines beside the root's file).
+    const subs = try libs.readRoots(arena, io, if (project) |p| analysis_store.root(p) else ".", runtime_cache.rootsOf(arena, io, std.fs.path.dirname(file) orelse ".", std.fs.path.stem(file)));
+    const root_file = readRuntime(arena, io, file, stamp, null, subs) orelse return .{ .exit = 1 };
     const meta = root_file.meta;
     if (meta.program.len == 0) {
         reporter.errCode(runtime_codes.not_a_program, try std.fmt.allocPrint(arena, "{s} is the .bpr of `{s}`, a package another one depends on; build the .bpr of the program's own package", .{ file, meta.group }));
@@ -657,7 +686,7 @@ pub fn runRuntime(
     for (meta.program, outputs) |placed, *out| {
         const decoded = files.get(placed.group) orelse blk: {
             const path = try runtimePath(arena, dir, placed.group);
-            const d = readRuntime(arena, io, path, stamp, file) orelse return .{ .exit = 1 };
+            const d = readRuntime(arena, io, path, stamp, file, subs) orelse return .{ .exit = 1 };
             try files.put(arena, placed.group, d);
             break :blk d;
         };
@@ -793,7 +822,7 @@ pub const runtime_codes = struct {
 
 /// The `.bpr` at `path`, decoded — else its refusal printed and null.
 /// `named_by` is the root's file when `path` is a package's it names.
-fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: runtime_file.Stamp, named_by: ?[]const u8) ?runtime_file.Decoded {
+fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: runtime_file.Stamp, named_by: ?[]const u8, subs: []const runtime_file.Sub) ?runtime_file.Decoded {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch |err| {
         const msg = if (named_by) |root|
             std.fmt.allocPrint(arena, "{s} is not there, and {s} needs it; run the build again", .{ path, root }) catch "a .bpr is missing"
@@ -802,7 +831,7 @@ fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: ru
         reporter.errCode(runtime_codes.missing, msg);
         return null;
     };
-    return runtime_file.read(arena, bytes, stamp) catch |err| {
+    return runtime_file.readWith(arena, bytes, stamp, subs) catch |err| {
         const msg = switch (err) {
             error.OtherCompiler => std.fmt.allocPrint(arena, "{s} was built by another compiler; run the build again", .{path}),
             error.NotRuntimeFile, error.Malformed => std.fmt.allocPrint(arena, "{s} is not a .bpr this compiler reads whole; run the build again", .{path}),

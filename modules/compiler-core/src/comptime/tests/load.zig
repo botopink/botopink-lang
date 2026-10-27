@@ -410,6 +410,17 @@ test "decision 792 (5): a loaded package is named from its path" {
     try std.testing.expectEqualStrings("bp_load____w__botopink_x2dlang___x2etasks__css", try loadMod.packageName(arena, "/w/botopink-lang/.tasks/css"));
 }
 
+test "decision 1078 (2): a load directory's root symbol is bp-root: and the SHA-256 of its tag and the directory" {
+    const loadMod = @import("../load.zig");
+    const a = loadMod.rootSymbol("../libs/greeter");
+    try std.testing.expect(std.mem.startsWith(u8, &a, "bp-root:"));
+    try std.testing.expectEqual(@as(usize, 8 + 64), a.len);
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash("botopink-load-root-1\x00../libs/greeter", &digest, .{});
+    try std.testing.expectEqualStrings(&std.fmt.bytesToHex(digest, .lower), a[8..]);
+    try std.testing.expect(!std.mem.eql(u8, &a, &loadMod.rootSymbol("../libs/other")));
+}
+
 test "decision 787: a read's path is known as written — a literal, or a `+` of literals a `comptime` parameter left" {
     const loadMod = @import("../load.zig");
     const ast = @import("../../ast.zig");

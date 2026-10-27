@@ -26,6 +26,7 @@ const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
 const reporter = @import("./reporter.zig");
+const runtime_file = bp.runtime_file;
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
@@ -523,6 +524,67 @@ pub fn keyWithNamedLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const 
     return try runtime_cache.withLoads(arena, base, keys.items);
 }
 
+// ── A by-name load's `root` in a set (decisions 1077 (3), 1078) ─────────────
+//
+// The directory a by-name load resolves to is a property of the run: a set
+// keeps it as its symbol (`bp.load.rootSymbol` of the directory relative to
+// the loader's cache root, `bp.load.rootLoadDir`),
+// written by the set codec in place of the directory in every string, and the
+// key file maps the symbol to the directory relative to the cache root
+// (`runtime_cache.rootsOf`): its reader joins the cache root it reads under
+// with it, so a set moved with its checkout answers the directory where it is.
+
+/// What a load directory's symbol hashes (decision 1078 (2),
+/// `bp.load.rootLoadDir`): `dir` relative to the cache root.
+fn rootInput(arena: std.mem.Allocator, io: std.Io, cache_root: []const u8, dir: []const u8) ![]const u8 {
+    return bp.load.rootLoadDir(arena, try absolute(arena, io, cache_root), try absolute(arena, io, dir));
+}
+
+/// The symbols of the load directories `dirs` (as the loader's reader roots
+/// them) for a set written under `cache_root`: each directory and its symbol
+/// for the writer, and the key-file line mapping the symbol to the directory
+/// relative to the cache root.
+pub const Roots = struct { subs: []const runtime_file.Sub, lines: []const []const u8 };
+
+pub fn writeRoots(arena: std.mem.Allocator, io: std.Io, cache_root: []const u8, dirs: []const []const u8) !Roots {
+    const root = try absolute(arena, io, cache_root);
+    var subs: std.ArrayListUnmanaged(runtime_file.Sub) = .empty;
+    var lines: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (dirs) |d| {
+        const abs = try absolute(arena, io, d);
+        const seen = for (subs.items) |sb| {
+            if (std.mem.eql(u8, sb.dir, abs)) break true;
+        } else false;
+        if (seen) continue;
+        const sym = try arena.dupe(u8, &bp.load.rootSymbol(try rootInput(arena, io, root, abs)));
+        try subs.append(arena, .{ .dir = abs, .symbol = sym });
+        try lines.append(arena, try std.fmt.allocPrint(arena, "{s}\t{s}", .{ sym, try relativeTo(arena, root, abs) }));
+    }
+    return .{ .subs = subs.items, .lines = lines.items };
+}
+
+/// The reader's `Sub`s of a set's key-file root lines under `cache_root`: each
+/// symbol and the cache root joined with its relative directory.
+pub fn readRoots(arena: std.mem.Allocator, io: std.Io, cache_root: []const u8, lines: []const runtime_cache.RootLine) ![]const runtime_file.Sub {
+    const root = try absolute(arena, io, cache_root);
+    const out = try arena.alloc(runtime_file.Sub, lines.len);
+    for (lines, out) |l, *o| o.* = .{ .symbol = l.symbol, .dir = try std.fs.path.resolve(arena, &.{ root, l.rel }) };
+    return out;
+}
+
+/// The directories of this machine no `.bpr` set may hold (decisions 1030 (3),
+/// 1077 (3)): the working directory, the loading build's cache root, the
+/// package's own (`pkg_dir`) and every load directory (`extra`) — the codec
+/// writes those as their symbols, so one left is refused.
+pub fn machineDirs(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, extra: []const runtime_file.Sub) ![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    try out.append(arena, try absolute(arena, io, "."));
+    try out.append(arena, try absolute(arena, io, pkg_dir));
+    if (runtime_cache.load_root) |lr| try out.append(arena, try absolute(arena, io, lr));
+    for (extra) |sb| try out.append(arena, sb.dir);
+    return out.items;
+}
+
 fn setFor(dir: []const u8) ?LoadedSet {
     while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
     defer loaded_mutex.unlock();
@@ -536,11 +598,13 @@ fn runtimeRead(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []cons
     if (runtime_cache.rebuild) return null;
     const load_root = runtime_cache.load_root orelse return null;
     const set = setFor(dir) orelse return null;
-    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(root, wasm_host));
+    const rel_root = try rootInput(arena, io, load_root, root);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(rel_root, wasm_host));
     const loads = runtime_cache.loadsOf(arena, io, set_dir, set.meta.root);
-    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, root, wasm_host), loads)) orelse return null;
+    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, rel_root, wasm_host), loads)) orelse return null;
     if (!runtime_cache.isFresh(arena, io, set_dir, set.meta.root, key, runtime_cache.bprStamp())) return null;
-    const program = (try runtime_cache.readProgram(arena, io, set_dir, set.meta.root)) orelse return null;
+    const subs = try readRoots(arena, io, load_root, runtime_cache.rootsOf(arena, io, set_dir, set.meta.root));
+    const program = (try runtime_cache.readProgram(arena, io, set_dir, set.meta.root, subs)) orelse return null;
     const pkg = try absolute(arena, io, set.pkg_dir);
     for (loads) |line| {
         const l = parseLoadLine(line);
@@ -563,13 +627,17 @@ fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, w
     var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(root, wasm_host));
+    const rel_root = try rootInput(arena, io, load_root, root);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(rel_root, wasm_host));
     const rel = try relativeLoads(arena, io, set.pkg_dir, loads);
-    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, root, wasm_host), rel);
+    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, rel_root, wasm_host), rel);
     var meta = set.meta;
     meta.wasm_host = wasm_host;
     var written: std.ArrayListUnmanaged(runtime_cache.Written) = .empty;
-    try runtime_cache.writeSet(std.heap.page_allocator, io, set_dir, meta, key, rel, outputs, readers, &written, arena);
+    const named = try std.mem.concat(arena, []const u8, &.{ &.{root}, loads });
+    const roots = try writeRoots(arena, io, load_root, named);
+    const lines = try std.mem.concat(arena, []const u8, &.{ rel, roots.lines });
+    try runtime_cache.writeSet(std.heap.page_allocator, io, set_dir, meta, key, lines, outputs, readers, &written, arena, .{ .subs = roots.subs, .machine = try machineDirs(arena, io, set.pkg_dir, roots.subs) });
     runtime_cache.pruneSet(arena, io, set_dir, written.items);
 }
 

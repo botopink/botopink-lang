@@ -686,7 +686,8 @@ pub fn build(b: *std.Build) void {
     // name reusing its `.bpr` set under the loader's cache root, whose key the
     // loader's covers (`load_reuse.sh`, decisions 1006 (6) P5, 1030), and a workspace's sets built in
     // one directory and run unchanged at another path, no absolute path in them (`runtime_portable.sh`,
-    // decisions 1006 (6) P4, 1030 (3)), and a workspace root's one
+    // decisions 1006 (6) P4, 1030 (3)), and a by-name load's root kept as its symbol and read back where
+    // the set and its library moved to (`by_name_set_moves.sh`, decisions 1077 (3), 1078), and a workspace root's one
     // output folder, each dependency written once per its key and two
     // packages of one name refused (`workspace_out.sh`, decision 1015 (4)), and
     // a dependency's units taken from the unit cache by a second package over it
@@ -696,7 +697,7 @@ pub fn build(b: *std.Build) void {
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "runtime_portable.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh", "comptime_reply_codecs.sh", "child_group_killed.sh", "wasm_runner.sh", "wasm_runtime_unit.sh", "wasm_std_unit_per_module.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "runtime_portable.sh", "by_name_set_moves.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh", "comptime_reply_codecs.sh", "child_group_killed.sh", "wasm_runner.sh", "wasm_runtime_unit.sh", "wasm_std_unit_per_module.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {
