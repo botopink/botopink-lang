@@ -170,7 +170,8 @@ compiler-cli/
 │   │                          bytes of `zig-out/lib/std-wasm/`), each compiled into
 │   │                          `.botopinkbuild/cache/wasmtime/`; a refused module
 │   │                          recorded in `refused.txt` and `--json`, not on stderr;
-│   │                          none from a fresh `.bpr`; `--cold` clears the folder;
+│   │                          the same folder from a fresh `.bpr`, no unit lowered
+│   │                          again (1079 (3)); `--cold` clears the folder;
 │   │                          a bare build writes no `out/`, its units in the unit
 │   │                          cache alone (1077 (5))
 │   ├── comptime_units/      ← its fixture: `app` (`main` with a decorator, `lib`, `gap`)

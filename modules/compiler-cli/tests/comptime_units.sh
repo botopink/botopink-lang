@@ -10,7 +10,8 @@
 #   • refusals recorded: `gap` is a `gap<TAB><the gap>` line of `refused.txt`, the build exits 0
 #     and nothing of the stage is on stderr; `build --json` reports it as a `comptime_refused` event;
 #   • every unit is compiled into `.botopinkbuild/cache/wasmtime/<sha256>.cwasm`;
-#   • a build from a fresh `.bpr` set evaluates nothing and writes no comptime unit;
+#   • a build from a fresh `.bpr` set evaluates nothing, lowers nothing and writes the same
+#     `out/wasm-comptime/` from the unit cache (decision 1079 (3));
 #   • `--cold` clears the folder and writes it again.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
@@ -63,10 +64,13 @@ n_files="$(find "$CT" -name '*.wasm' | wc -l)"
 n_cwasm="$(find "$APP/.botopinkbuild/cache/wasmtime" -name '*.cwasm' 2>/dev/null | wc -l)"
 (( n_cwasm >= n_files )) || fail "$n_files comptime units, $n_cwasm precompiled artifacts"
 
-# A build from the fresh `.bpr` set the first one left analyses nothing.
-rm -r "$CT"
-bp "$WORK/again.log" "$BP_BIN" build --target erlang --out "$WORK/out" || fail "the build from the .bpr set failed"
-[[ ! -e "$CT" ]] || fail "a build from a fresh .bpr set wrote out/wasm-comptime/"
+# A build from the fresh `.bpr` set the first one left analyses nothing, and writes the `out/` a
+# direct build writes (decision 1079 (3)): `wasm-comptime/` again, its units the unit cache's.
+n_cached="$(find "$APP/.botopinkbuild/cache/unit/comptime" -name '*.bpcu' | wc -l)"
+bp "$WORK/again.log" "$BP_BIN" build --target erlang --out "$WORK/out-bpr" || fail "the build from the .bpr set failed"
+grep -q 'Compiling' "$WORK/again.log" && fail "the build from a fresh .bpr set analysed: $(cat "$WORK/again.log")"
+diff -r "$CT" "$WORK/out-bpr/wasm-comptime" > /dev/null 2>&1 || fail "a build from a fresh .bpr set wrote another out/wasm-comptime/ than the direct build"
+(( "$(find "$APP/.botopinkbuild/cache/unit/comptime" -name '*.bpcu' | wc -l)" == n_cached )) || fail "a build from a fresh .bpr set lowered a comptime unit again"
 
 # `--cold` clears the folder: a stray file goes, the units come back.
 bp "$WORK/cold0.log" "$BP_BIN" build --target erlang --out "$WORK/out" --cold || fail "the cold build failed"

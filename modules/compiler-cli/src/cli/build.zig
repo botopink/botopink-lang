@@ -695,6 +695,19 @@ pub fn runRuntime(
         .wasm_entry_only = if (target == .wasm) wasmEntry(outputs, entry orelse opts.entry) else null,
         .unit_cache = if (runtime_keys != null) &units.iface else null,
     };
+    // Decisions 1077 (5), 1079 (3) — a build from a `.bpr` writes the `out/`
+    // a direct build writes, `wasm-comptime/` included: the `.comptime`
+    // stage over the set's analysis, its units read from the unit cache
+    // (lowered only on a miss), before the emit, which may rewrite a tree.
+    var comptime_sink: ComptimeSink = .{
+        .gpa = gpa,
+        .io = io,
+        .cfg = cfg,
+        .out_dir = opts.out_dir,
+        .wasmtime_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime"),
+        .unit_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "unit/comptime"),
+    };
+    try comptime_sink.call(outputs);
     var emitted = try bp.codegen.emit(gpa, outputs, cfg);
     defer {
         for (emitted.items) |*o| o.result.deinit(gpa);
@@ -1181,8 +1194,8 @@ fn writeRuntimeUnits(gpa: std.mem.Allocator, io: std.Io, out_dir: []const u8, bi
 }
 
 /// Decisions 1033, 1035 (1), (3), 1058 (2), (3) — the `.comptime` stage, run
-/// with every analysis (`AnalysedSinks`; a build from a fresh `.bpr` set
-/// analyses nothing and runs none): the comptime units
+/// with every analysis (`AnalysedSinks`) and over the set a build from a
+/// `.bpr` reads (`runRuntime`, which analyses nothing; 1079 (3)): the comptime units
 /// (`bp.codegen.comptimeUnits`), each module's taken from the unit cache
 /// `<cache root>/.botopinkbuild/cache/unit/comptime/` when its key matches,
 /// written into `<out>/wasm-comptime/` (`write`) when an `out/` is being
