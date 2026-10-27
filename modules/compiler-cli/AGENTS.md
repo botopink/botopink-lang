@@ -152,11 +152,13 @@ compiler-cli/
 │   │                          build print, an answer), `module_bpr_stale_rebuilt`
 │   │                          (`greeting.bp` the script edits)
 │   ├── load_reuse.sh        ← a library loaded by name reuses its `.bpr` set
-│   │                          (decision 1006 (6) P5), over `load_reuse/`: the
-│   │                          program's second load reuses the library's set (inode
-│   │                          pinned); a changed library makes the program stale and
-│   │                          its set written again; a bare `build` in the library
-│   │                          and the load share one set, byte for byte
+│   │                          (decisions 1006 (6) P5, 1030), over `load_reuse/`: the
+│   │                          set under the program's cache root, named by its key,
+│   │                          nothing in the library; the second load reuses it (inode
+│   │                          pinned); `root` at build and at run the load directory;
+│   │                          a changed library makes the program stale and its set
+│   │                          written under a new name; a bare `build` in the library
+│   │                          keeps its own set; another load directory, another set
 │   ├── load_reuse/          ← its fixture: `app` (loads `greeter` by name through
 │   │                          `BOTOPINK_LIB_ROOTS`), `libs/greeter` (the script edits
 │   │                          its `main.bp`)
@@ -247,7 +249,7 @@ bash modules/compiler-cli/tests/packages_list.sh     # packages --list over a th
 bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and from the intermediate, the same answer (798 (5))
 bash modules/compiler-cli/tests/runtime_reuse.sh     # the .bpr set reused while fresh, rebuilt when stale (1006)
 bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alone while its target key matches (1008)
-bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5)
+bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030)
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
 bash modules/compiler-cli/tests/workspace_out.sh     # a workspace root's one out/<t>/ folder, dependencies written once (1015 (4), 1023)
 ```

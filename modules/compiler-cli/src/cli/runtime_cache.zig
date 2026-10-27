@@ -102,16 +102,47 @@ pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []co
     try analysis_store.write(arena, io, kp, text.items);
 }
 
-// ── The packages loaded by name (decision 1006 (6) P5) ──────────────────────
+// ── The packages loaded by name (decisions 1006 (6) P5, 1030) ─────────────
 //
 // A `compiler.load(package: "<name>")` makes another package part of what
 // the analysis reads: its key covers that package's — the packages the last
-// analysis loaded by name are kept in the key file after the key (`loadsOf`),
-// and the key is the package's own (`keyOf`) combined with each one's
-// current key (`withLoads`), so a changed library makes its loader stale.
-// The loaded package's own set is the one a bare `build` in its directory
-// writes, under its own cache root (`libs.zig`'s `runtimeRead` /
-// `runtimeWrite`): either reuses the other's.
+// analysis loaded by name, nested loads included, are kept in the key file
+// after the key (`loadsOf`), and the key is the package's own (`keyOf`)
+// combined with each one's key (`withLoads`), so a changed library makes its
+// loader stale. The loaded package's own set lives under the LOADING build's
+// cache root (`load_root`, decision 1030 (1)), analysed with its load
+// directory as `root` (1003 (2)), which its key holds: one set per load
+// directory, its directory named by that key (`loadedIdent`, `loadedDir`),
+// so two sets of one library never share a file name (`libs.zig`'s
+// `runtimeRead` / `runtimeWrite`).
+
+/// The cache root of the build that runs (`analysis_store.root` of its
+/// package): where the sets of the packages it loads by name live. Null in a
+/// command that keeps none.
+pub var load_root: ?[]const u8 = null;
+
+/// The key of a loaded package's set before its loads: its own key, the
+/// directory it was loaded from, as its `root` reads it, and the wasm host the
+/// loading build analyses it for.
+pub fn loadedIdent(base: Key, root: []const u8, wasm_host: bp.ast.WasmHost) Key {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-runtime-loaded-1\x00");
+    h.update(&base);
+    h.update(&.{0});
+    h.update(root);
+    h.update(&.{0});
+    h.update(@tagName(wasm_host));
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// `<cache root>/.botopinkbuild/runtime/<pkg>@<ident>`: the set of `pkg`
+/// loaded by name, named by its key. `@` is in no package name.
+pub fn loadedDir(arena: std.mem.Allocator, cache_root: []const u8, pkg: []const u8, ident: Key) ![]const u8 {
+    const leaf = try std.fmt.allocPrint(arena, "{s}@{s}", .{ pkg, &ident });
+    return std.fs.path.join(arena, &.{ cache_root, DIR, leaf });
+}
 
 /// `build --cold` (`Options.rebuild`): a load reads no set either, and
 /// writes the one it analyses.

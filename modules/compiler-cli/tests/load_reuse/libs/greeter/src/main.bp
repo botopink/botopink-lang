@@ -1,8 +1,14 @@
-import {io.terminal.print} from "std";
+import {compiler, io.terminal.print} from "std";
 
-//// The library `load_reuse.sh` loads by name: its `.bpr` set is the one a bare `botopink build` here writes,
-//// reused by every load while fresh (decision 1006 (6) P5).
+//// The library `load_reuse.sh` loads by name: its `.bpr` set lives under the loading build's cache root, one per load
+//// directory, reused by every load from there while fresh (decisions 1006 (6) P5, 1030). It is analysed with its load
+//// directory as `root` (1003 (2)): the `root` its comptime reads at build is the one its program reads at run.
+
+comptime {
+    print("built root [" + compiler.src().root + "]");
+}
 
 pub fn main() -> void {
     print("hello");
+    print("root " + (comptime compiler.src()).root);
 }

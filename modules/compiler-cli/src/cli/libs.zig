@@ -396,18 +396,17 @@ pub fn installLoadResolver(env_map: EnvMap) void {
     bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName, .runtime_read = runtimeRead, .runtime_write = runtimeWrite };
 }
 
-// ── A by-name load's `.bpr` set (decision 1006 (6) P5) ──────────────────────
+// ── A by-name load's `.bpr` set (decisions 1006 (6) P5, 1030) ───────────────
 
-/// The `.bpr` set of a package a load resolved (`resolveLoaded`): the set a
-/// bare `botopink build` in its directory writes, under ITS cache root (its
-/// workspace's root, else its own directory — never the loader's).
+/// A package a load resolved (`resolveLoaded`), as its `.bpr` set keys it.
+/// The set itself lives under the LOADING build's cache root
+/// (`runtime_cache.load_root`), one per load directory (`runtime_cache.loadedDir`).
 const LoadedSet = struct {
     /// The package's directory, absolute.
     pkg_dir: []const u8,
-    /// `<its cache root>/.botopinkbuild/runtime/<pkg>`.
-    dir: []const u8,
     meta: runtime_cache.SetMeta,
-    /// Its own key (`runtime_cache.keyOf`), before the packages it loads.
+    /// Its own key (`runtime_cache.keyOf`), before its load directory and the
+    /// packages it loads.
     base: runtime_cache.Key,
 };
 
@@ -436,49 +435,58 @@ pub fn relativeLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, 
     return out.items;
 }
 
-/// `base` (the key of the package in `pkg_dir`) combined with the current
-/// key of each package it loads by name (`loads`, relative to it) — each one's
-/// own combined with its own loads, read from its key file; null when one of
-/// them is no package now, or the chain runs deeper than any program loads.
-pub fn keyWithNamedLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, base: runtime_cache.Key, loads: []const []const u8, depth: usize) !?runtime_cache.Key {
+/// `base` (the key of the package in `pkg_dir`) combined with the key of each
+/// package it loads by name (`loads`, relative to it — every package its
+/// analysis loaded by name, nested loads included, `bp.load.namedLoadsSince`);
+/// null when one of them is no package now.
+pub fn keyWithNamedLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, base: runtime_cache.Key, loads: []const []const u8) !?runtime_cache.Key {
     if (loads.len == 0) return base;
-    if (depth > 16) return null;
     var keys: std.ArrayListUnmanaged(runtime_cache.LoadKey) = .empty;
     for (loads) |rel| {
         const abs = try std.fs.path.resolve(arena, &.{ pkg_dir, rel });
         const sub = setOf(io, abs) orelse return null;
-        const k = (try keyWithNamedLoads(arena, io, sub.pkg_dir, sub.base, runtime_cache.loadsOf(arena, io, sub.dir, sub.meta.root), depth + 1)) orelse return null;
-        try keys.append(arena, .{ .rel = rel, .key = k });
+        try keys.append(arena, .{ .rel = rel, .key = sub.base });
     }
     return try runtime_cache.withLoads(arena, base, keys.items);
 }
 
-/// `Resolver.runtime_read`: the fresh set's program, else null.
-fn runtimeRead(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8) anyerror!?[]const bp.codegen.ComptimeOutput {
+fn setFor(dir: []const u8) ?LoadedSet {
+    while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer loaded_mutex.unlock();
+    return loaded_sets.get(dir);
+}
+
+/// `Resolver.runtime_read`: the fresh set's program, else null. A hit notes
+/// the loads its analysis made (`bp.load.noteNamedLoad`): the loader's key
+/// covers them though this compile does not run them again.
+fn runtimeRead(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8, root: []const u8, wasm_host: bp.ast.WasmHost) anyerror!?[]const bp.codegen.ComptimeOutput {
     if (runtime_cache.rebuild) return null;
-    const set = blk: {
-        while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
-        defer loaded_mutex.unlock();
-        break :blk loaded_sets.get(dir) orelse return null;
-    };
-    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, set.base, runtime_cache.loadsOf(arena, io, set.dir, set.meta.root), 0)) orelse return null;
-    if (!runtime_cache.isFresh(arena, io, set.dir, set.meta.root, key, runtime_cache.bprStamp())) return null;
-    return runtime_cache.readProgram(arena, io, set.dir, set.meta.root);
+    const load_root = runtime_cache.load_root orelse return null;
+    const set = setFor(dir) orelse return null;
+    const ident = runtime_cache.loadedIdent(set.base, root, wasm_host);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, ident);
+    const loads = runtime_cache.loadsOf(arena, io, set_dir, set.meta.root);
+    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, ident, loads)) orelse return null;
+    if (!runtime_cache.isFresh(arena, io, set_dir, set.meta.root, key, runtime_cache.bprStamp())) return null;
+    const program = (try runtime_cache.readProgram(arena, io, set_dir, set.meta.root)) orelse return null;
+    for (loads) |rel| try bp.load.noteNamedLoad(try std.fs.path.resolve(arena, &.{ set.pkg_dir, rel }));
+    return program;
 }
 
 /// `Resolver.runtime_write`: the set written from the load's analysis.
-fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void {
-    const set = blk: {
-        while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
-        defer loaded_mutex.unlock();
-        break :blk loaded_sets.get(dir) orelse return;
-    };
+fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, wasm_host: bp.ast.WasmHost, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void {
+    const load_root = runtime_cache.load_root orelse return;
+    const set = setFor(dir) orelse return;
     var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
+    const ident = runtime_cache.loadedIdent(set.base, root, wasm_host);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, ident);
     const rel = try relativeLoads(arena, io, set.pkg_dir, loads);
-    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, set.base, rel, 0);
-    try runtime_cache.writeSet(std.heap.page_allocator, io, set.dir, set.meta, key, rel, outputs, readers, null, arena);
+    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, ident, rel);
+    var meta = set.meta;
+    meta.wasm_host = wasm_host;
+    try runtime_cache.writeSet(std.heap.page_allocator, io, set_dir, meta, key, rel, outputs, readers, null, arena);
 }
 
 /// Decision 993 (2) — the directory of the package `name`, looked up as a
@@ -570,13 +578,13 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         error.OutOfMemory => return error.OutOfMemory,
         else => return refused.of(a, captured.written(), err),
     };
-    // The set of the package, keyed as a bare `build` in its directory keys
-    // it — `out/` is its default output, left out anyway.
+    // The package's own key, as a bare `build` in its directory keys it —
+    // `out/` is its default output, left out anyway; a load's set adds its
+    // load directory (decision 1030 (2)).
     const base = try runtime_cache.keyOf(keys_arena.allocator(), io, proj, &keys, &.{});
     const pk = try packagesOf(a, proj, modules);
     try loaded_sets.put(a, dir, .{
         .pkg_dir = proj.dir,
-        .dir = try std.fs.path.join(a, &.{ manifest.cacheRoot(proj.dir, proj.workspace), runtime_cache.DIR, proj.name }),
         .meta = .{ .root = proj.name, .deps = pk.deps, .wasm_host = proj.wasmHost() },
         .base = base,
     });
@@ -589,7 +597,7 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         // Every target held is no narrowing: the package declares none.
         if (held.len < ALL_TARGET_NAMES.len) targets = held;
     }
-    return .{ .ok = .{ .modules = modules, .targets = targets, .bare = .{ .targets = proj.manifest.targets, .wasm_host = proj.wasmHost() } } };
+    return .{ .ok = .{ .modules = modules, .targets = targets } };
 }
 
 /// The first `error…: <message>` line of `text` (a refusal as the CLI prints

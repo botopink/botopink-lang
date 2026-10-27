@@ -1,8 +1,8 @@
 import {compiler, compiler.RunFailure, io.terminal.print} from "std";
 
-//// Decision 1006 (6) P5 — a program that loads the library `greeter` by name (`compiler.load(package:)`, found
-//// through `BOTOPINK_LIB_ROOTS`) and runs it: the library's `.bpr` set is reused while fresh and its key is
-//// part of this package's (`modules/compiler-cli/tests/load_reuse.sh`).
+//// Decisions 1006 (6) P5, 1030 — a program that loads the library `greeter` by name (`compiler.load(package:)`,
+//// found through `BOTOPINK_LIB_ROOTS`) and runs it: the library's `.bpr` set, under this program's cache root, is
+//// reused while fresh and its key is part of this package's (`modules/compiler-cli/tests/load_reuse.sh`).
 
 fn show(answer: Result<string, RunFailure>) -> void {
     case answer {

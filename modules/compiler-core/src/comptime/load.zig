@@ -1707,17 +1707,19 @@ pub const Resolver = struct {
     /// as a `git` dependency of the package whose directory is `from` is
     /// (decision 483's tiers). Null: this resolver resolves no name.
     by_name: ?*const fn (ctx: ?*anyopaque, io: std.Io, name: []const u8, from: []const u8) anyerror!NameResolution = null,
-    /// Decision 1006 (6) P5 — the analysed modules of the `.bpr` set of the
-    /// package in `dir` (as `resolve` was handed it), in the program's order,
-    /// decoded into `arena`, when that set is fresh — the one a bare `botopink
-    /// build` there writes and reads, under the package's own cache root; null
-    /// when it is missing or stale. Asked only for a by-name load.
-    runtime_read: ?*const fn (ctx: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8) anyerror!?[]const ComptimeOutput = null,
-    /// Decision 1006 (6) P5 — write the `.bpr` set of the package in `dir` from
-    /// the analysis a by-name load ran (`outputs`, every one `.ok`), as a bare
-    /// `build` there writes it; `loads` are the directories the packages it
-    /// loaded by name live in (`namedLoadsSince`), which its key covers.
-    runtime_write: ?*const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8, outputs: []const ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void = null,
+    /// Decisions 1006 (6) P5, 1030 — the analysed modules of the `.bpr` set
+    /// of the package in `dir` (as `resolve` was handed it) loaded from `root`
+    /// (its load directory, `sourceRoot`) and analysed for `wasm_host` (the
+    /// loading build's), in the program's order, decoded into `arena`, when
+    /// that set is fresh; null when it is missing or stale. The set lives
+    /// under the loading build's cache root and is named by its key, which
+    /// holds `root` and `wasm_host`. Asked only for a by-name load.
+    runtime_read: ?*const fn (ctx: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8, root: []const u8, wasm_host: ast.WasmHost) anyerror!?[]const ComptimeOutput = null,
+    /// Decisions 1006 (6) P5, 1030 — write that set from the analysis a
+    /// by-name load ran (`outputs`, every one `.ok`); `loads` are the
+    /// directories the packages it loaded by name live in (`namedLoadsSince`),
+    /// which its key covers.
+    runtime_write: ?*const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, wasm_host: ast.WasmHost, outputs: []const ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void = null,
 };
 
 const ComptimeOutput = @import("../comptime.zig").ComptimeOutput;
@@ -1736,6 +1738,12 @@ fn noteNamed(dir: []const u8) !void {
     defer named_mutex.unlock();
     for (named_list.items) |d| if (std.mem.eql(u8, d, dir)) return;
     try named_list.append(std.heap.page_allocator, try std.heap.page_allocator.dupe(u8, dir));
+}
+
+/// Note `dir` as found by a by-name load: the CLI notes the loads a reused
+/// set's analysis made, which this compile does not run again.
+pub fn noteNamedLoad(dir: []const u8) !void {
+    return noteNamed(dir);
 }
 
 /// How many directories `namedLoadsSince` holds now: a mark to read the ones
@@ -1810,18 +1818,10 @@ pub const Resolution = union(enum) {
         /// manifest writes none (its workspace's, narrowed by its
         /// dependencies'); null when nothing narrows them.
         targets: ?[]const []const u8 = null,
-        /// Decision 1006 (6) P5 — the targets and the wasm host a bare
-        /// `botopink build` in the package's directory compiles its modules
-        /// with (its effective manifest's): the analysis a by-name load writes
-        /// as the package's `.bpr` set is that build's. Null when the resolver
-        /// keeps no set for the package.
-        bare: ?Bare = null,
     },
     /// The package's manifest or its dependencies refused, as `botopink
     /// build` there would refuse them: one `Diagnostic` at `botopink.json`.
     refused: Refusal,
-
-    pub const Bare = struct { targets: ?[]const []const u8 = null, wasm_host: ast.WasmHost = .wasi };
 
     /// A refusal's text and where in `botopink.json` it points (`line` and
     /// `column` 0 when nowhere).
@@ -1996,13 +1996,14 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     };
     var modules: std.ArrayListUnmanaged(Module) = .empty;
     var own_dependencies: []const Module = &.{};
-    // Decision 1006 (6) P5 — a package loaded by name is the one a bare
-    // `botopink build` in its directory builds: its `.bpr` set, under its own
-    // cache root, is read while fresh and written from this analysis
-    // otherwise. A reader that logs what it reads (a dependency's level B
-    // INPUTS, decision 519) must see every file: it compiles as before.
-    var bare: ?Resolution.Bare = null;
+    // Decisions 1006 (6) P5, 1030 — a package loaded by name keeps its
+    // `.bpr` set under the loading build's cache root, keyed with its load
+    // directory (its `root`, decision 1003 (2)): read while fresh, written
+    // from this analysis otherwise. A reader that logs what it reads (a
+    // dependency's level B INPUTS, decision 519) must see every file: it
+    // compiles as before, without a set.
     const set_dir: ?[]const u8 = if (req.by_name and pkg_files.log == null) try packageDir(scratch, pkg_files) else null;
+    var use_set = false;
     if (resolver) |r| {
         const dir = try packageDir(scratch, pkg_files);
         const resolution = r.resolve(r.ctx, req.io, dir) catch |err| switch (err) {
@@ -2014,7 +2015,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
                 try modules.appendSlice(scratch, ok.modules);
                 own_dependencies = ok.modules;
                 if (targets == null) targets = moduleMod.Targets.of(ok.targets);
-                if (set_dir != null and r.runtime_read != null and r.runtime_write != null) bare = ok.bare;
+                use_set = set_dir != null and r.runtime_read != null and r.runtime_write != null;
             },
             .refused => |why| {
                 try refusals.append(arena, .{ .code = codeOf(why.message), .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
@@ -2027,22 +2028,11 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         } else false;
         if (named) try modules.append(scratch, m);
     };
-    // The set's analysis reads the package as a bare build there does: its
-    // reader rooted at its directory (`root` `""`, decision 1003), its own
-    // manifest's targets and wasm host.
-    const set_files: ?PackageFiles = if (bare != null) blk: {
-        var f = pkg_files;
-        f.root = try packageDir(arena, pkg_files);
-        f.base = "";
-        f.dir = "";
-        f.log = null;
-        break :blk f;
-    } else null;
     for (own) |m| {
         var mm = m;
-        mm.targets = if (bare) |b| moduleMod.Targets.of(b.targets) else targets;
-        mm.wasm_host = if (bare) |b| b.wasm_host else wasm_host;
-        mm.files = set_files orelse pkg_files;
+        mm.targets = targets;
+        mm.wasm_host = wasm_host;
+        mm.files = pkg_files;
         try modules.append(scratch, mm);
     }
 
@@ -2051,7 +2041,8 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const saved = build_modules;
     defer build_modules = saved;
 
-    const reused: ?[]const ComptimeOutput = if (bare != null) resolver.?.runtime_read.?(resolver.?.ctx, req.io, scratch, set_dir.?) catch |err| switch (err) {
+    const set_root = try sourceRoot(scratch, pkg_files);
+    const reused: ?[]const ComptimeOutput = if (use_set) resolver.?.runtime_read.?(resolver.?.ctx, req.io, scratch, set_dir.?, set_root, wasm_host) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => null,
     } else null;
@@ -2061,13 +2052,13 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         const mark = namedMark();
         session_slot = try comptimeMod.compile(std.heap.page_allocator, modules.items, req.io, req.build_root);
         const session = &session_slot.?;
-        if (bare != null) {
+        if (use_set) {
             const all_ok = for (session.outputs.items) |o| {
                 if (o.outcome != .ok) break false;
             } else true;
             // A set is written whole or not at all; one that cannot be
             // written leaves the next load to analyse again.
-            if (all_ok) resolver.?.runtime_write.?(resolver.?.ctx, req.io, set_dir.?, session.outputs.items, session.readers, try namedLoadsSince(scratch, mark)) catch |err| switch (err) {
+            if (all_ok) resolver.?.runtime_write.?(resolver.?.ctx, req.io, set_dir.?, set_root, wasm_host, session.outputs.items, session.readers, try namedLoadsSince(scratch, mark)) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => {},
             };

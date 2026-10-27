@@ -151,7 +151,7 @@ const RuntimeSink = struct {
         defer arena_inst.deinit();
         const arena = arena_inst.allocator();
         const loads = try libs.relativeLoads(arena, self.io, self.pkg_dir, try bp.load.namedLoadsSince(arena, 0));
-        const key = try libs.keyWithNamedLoads(arena, self.io, self.pkg_dir, self.base, loads, 0);
+        const key = try libs.keyWithNamedLoads(arena, self.io, self.pkg_dir, self.base, loads);
         var written: std.ArrayListUnmanaged(Written) = .empty;
         try runtime_cache.writeSet(self.gpa, self.io, self.dir, .{ .root = self.root, .deps = self.deps, .wasm_host = self.wasm_host }, key, loads, outputs, readers, &written, arena);
         self.key_written = key;
@@ -343,9 +343,12 @@ fn runBuild(
     // The key covers the packages the last analysis loaded by name (1006
     // (6) P5): one whose current key cannot be computed makes the set stale.
     runtime_cache.rebuild = opts.rebuild;
+    // A package this build loads by name keeps its set under this build's
+    // cache root (decision 1030 (1)).
+    runtime_cache.load_root = analysis_store.root(proj);
     const rt_dir = opts.emit_runtime orelse try runtime_cache.dirFor(arena, proj);
     const rt_base = try runtime_cache.keyOf(arena, io, proj, &closure_keys, if (opts.emit_runtime) |d| &.{ opts.out_dir, d } else &.{opts.out_dir});
-    const rt_key = try libs.keyWithNamedLoads(arena, io, proj.dir, rt_base, runtime_cache.loadsOf(arena, io, rt_dir, proj.name), 0);
+    const rt_key = try libs.keyWithNamedLoads(arena, io, proj.dir, rt_base, runtime_cache.loadsOf(arena, io, rt_dir, proj.name));
     // A member's build into its workspace's one folder (decision 1015 (4)).
     const shared: ?workspace_out.Shared = if (opts.workspace_out != null) .{ .runtime = &closure_keys.runtime, .rebuild = opts.rebuild } else null;
     if (!opts.rebuild and opts.emit_resolved == null and rt_key != null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key.?, runtimeStamp())) {

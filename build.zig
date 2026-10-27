@@ -646,8 +646,8 @@ pub fn build(b: *std.Build) void {
     // rebuilds it), and a `.beam` loaded as it is while its source is
     // unchanged (`beam_reuse.sh`, decision 1007), and an output folder left
     // alone while its target key matches (`target_reuse.sh`, decision 1008), and a library loaded by
-    // name reusing its `.bpr` set, whose key the loader's covers
-    // (`load_reuse.sh`, decision 1006 (6) P5), and a workspace root's one
+    // name reusing its `.bpr` set under the loader's cache root, whose key the
+    // loader's covers (`load_reuse.sh`, decisions 1006 (6) P5, 1030), and a workspace root's one
     // output folder, each dependency written once per its key and two
     // packages of one name refused (`workspace_out.sh`, decision 1015 (4)). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
