@@ -10290,7 +10290,7 @@ fn captureExprArg(
             .loc = rawArg.getLoc(),
             .modulePath = env.modulePath,
             .srcFile = env.srcPathOf(env.modulePath),
-        .srcRoot = try loadMod.sourceRoot(env.arena, env.packageFiles),
+            .srcRoot = try loadMod.sourceRoot(env.arena, env.packageFiles),
             .scope = env.scopeSnapshot,
         };
     }
