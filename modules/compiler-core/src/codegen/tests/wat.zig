@@ -4729,3 +4729,84 @@ test "wat: gc ---- a ?. read of an array, a tuple or an optional array field, an
         \\}
     );
 }
+
+test "wat: gc ---- a behavior-typed value an implementer record or variant passes, dispatched by its own type, an ambient behavior and an array of them" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {io.terminal.print} from "std";
+        \\
+        \\behavior Greeter {
+        \\    fn greet(self: Self, punct: string) -> string;
+        \\}
+        \\
+        \\type Bob(name: string) implement Greeter {
+        \\    fn greet(self: Self, punct: string) -> string {
+        \\        return "hi " + self.name + punct;
+        \\    }
+        \\}
+        \\
+        \\type Ann(age: i32) implement Greeter {
+        \\    fn greet(self: Self, punct: string) -> string {
+        \\        return "ann " + self.age.toString() + punct;
+        \\    }
+        \\}
+        \\
+        \\type Pet implement Greeter {
+        \\    Dog(name: string),
+        \\    Cat(lives: i32),
+        \\
+        \\    fn greet(self: Self, punct: string) -> string {
+        \\        return case self {
+        \\            Dog(name) -> "woof " + name + punct;
+        \\            Cat(lives) -> "meow " + lives.toString() + punct;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\type Door(name: string) implement Closeable {
+        \\    fn close(self: Self) -> void {
+        \\        print("closed " + self.name);
+        \\    }
+        \\}
+        \\
+        \\type Registry(names: string[]) implement Index<string, i32> {
+        \\    pub fn at(self: Self, key: string) -> ?i32 {
+        \\        val found = self.names.indexOf(key);
+        \\        if (found < 0) return null;
+        \\        return found;
+        \\    }
+        \\}
+        \\
+        \\fn welcome(g: Greeter) -> string {
+        \\    return g.greet("!");
+        \\}
+        \\
+        \\fn make(old: bool) -> Greeter {
+        \\    if (old) return Ann(age: 70);
+        \\    return Bob(name: "b");
+        \\}
+        \\
+        \\fn shut(c: Closeable) -> void {
+        \\    c.close();
+        \\}
+        \\
+        \\fn lookup(m: Index<string, i32>, key: string) -> i32 {
+        \\    return m.at(key) ?? -1;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(welcome(Bob(name: "bob")));
+        \\    print(welcome(make(true)));
+        \\    print(welcome(make(false)));
+        \\    print(welcome(Pet.Dog(name: "rex")));
+        \\    print(welcome(Pet.Cat(lives: 9)));
+        \\    val all: Greeter[] = [Bob(name: "x"), Ann(age: 3), Pet.Cat(lives: 1)];
+        \\    for (all) { g ->
+        \\        print(g.greet("?"));
+        \\    }
+        \\    shut(Door(name: "front"));
+        \\    val r = Registry(names: ["ana", "bo"]);
+        \\    print(lookup(r, "bo"));
+        \\    print(lookup(r, "zz"));
+        \\}
+    );
+}

@@ -747,6 +747,15 @@ fn methodFnCell(m: ast.BehaviorMethod) ?[]const u8 {
     return hostFnBinding.fnName(i);
 }
 
+/// Decision 539 (6) — whether `name` is an ambient behavior of `primitives.bp`
+/// (`Display`, `Closeable`, …): a program names it as a type with no import,
+/// so no declaration of the module holds it.
+fn isAmbientBehaviorName(name: []const u8) bool {
+    const prog = preludeCache.builtins() orelse return false;
+    for (prog.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return comptimeMod.isAmbientBehavior(d.behavior);
+    return false;
+}
+
 /// `primitives.bp`'s `String.<method>`, or null.
 fn preludeStringMethod(method: []const u8) ?ast.BehaviorMethod {
     const prog = preludeCache.primitives() orelse return null;
@@ -5773,6 +5782,11 @@ const Emitter = struct {
                     return .{ .ref = .{ .enum_ = name } };
                 }
                 if (isGenericParamName(n, self.owner_tparams, self.fn_tparams)) return .{ .ref = .unknown };
+                // A behavior-typed value is any implementer's: the `anyref`
+                // of its own reference, which a method call dispatches on
+                // (`gcBehaviorDispatchFunc`). As the word it was in linear
+                // memory, an implementer passed to it was a conversion refused.
+                if (self.behavior_decls.contains(name) or isAmbientBehaviorName(name)) return .{ .ref = .unknown };
                 return null;
             },
             .array => |inner| return .{ .ref = .{ .arr = self.gcElemOf(inner.*) } },
@@ -5791,6 +5805,8 @@ const Emitter = struct {
                     if (!enumHasPayload(vs)) return null;
                     return .{ .ref = .{ .enum_ = gname } };
                 };
+                // `Index<string, i32>`: a behavior with its arguments.
+                if (!g.is_builtin and (self.behavior_decls.contains(gname) or isAmbientBehaviorName(gname))) return .{ .ref = .unknown };
                 return null;
             },
             .optional => |inner| {
@@ -6693,7 +6709,15 @@ const Emitter = struct {
             const w = self.gc_want orelse return self.gcFail("an empty array literal of no known type");
             cls = if (w.isArrRef()) w.ref.arr else return self.gcFail("an empty array literal of no known type");
         } else {
-            er = self.gcArrayLitElem(al) orelse return self.gcFail("an array literal of no element type");
+            er = self.gcArrayLitElem(al) orelse blk: {
+                // References of several types into an array of `anyref`s
+                // (`val all: Greeter[] = [Bob(…), Ann(…)]`, a behavior's
+                // implementers): each element as the reference it is.
+                const w = self.gc_want orelse return self.gcFail("an array literal of no element type");
+                if (!(w.isArrRef() and w.ref.arr == .any)) return self.gcFail("an array literal of no element type");
+                for (al.elems) |el| if (!self.wasmTypeOf(el).isRef()) return self.gcFail("an array literal of no element type");
+                break :blk .{ .ref = .unknown };
+            };
             cls = gcElemClassOf(er);
         }
         for (al.elems) |el| {
@@ -12185,7 +12209,7 @@ const Emitter = struct {
             if (self.enums.get(t)) |variants| if (!enumHasPayload(variants))
                 return self.refuse(self.call_loc, "the wasm backend cannot dispatch `.{s}` by value: `{s}` is an all-unit enum, whose values carry no header naming their type", .{ cc.callee, t });
             const isym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, cc.callee });
-            if (!self.sameSig(self.fn_sigs.get(isym).?, sig))
+            if (!self.sameDispatchSig(self.fn_sigs.get(isym).?, sig))
                 return self.refuse(self.call_loc, "the wasm backend cannot dispatch `.{s}` by value: `{s}` and `{s}` declare it with different wasm signatures", .{ cc.callee, impls[0], t });
         }
         const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "__bdispatch_{s}_{d}", .{ cc.callee, cc.args.len });
@@ -12194,10 +12218,69 @@ const Emitter = struct {
             .argc = cc.args.len,
             .sig = sig,
         });
-        try self.lowerCoerced(cc.receiver.?.*, .i32);
+        // A GC module holds a behavior-typed value as the `anyref` of its
+        // implementer's own reference (`gcReprOfType`).
+        try self.lowerCoerced(cc.receiver.?.*, if (self.mode == .gc) .{ .ref = .unknown } else .i32);
         try self.lowerCallArgs(cc.args, sig, 1);
         try self.emit(.{ .call = sym });
         return true;
+    }
+
+    /// Whether the dispatcher calls `a`'s method through `b`'s signature: the
+    /// same signature, the receiver aside in a GC module, where each
+    /// implementer's `self` is its own reference and the dispatcher casts to it.
+    fn sameDispatchSig(self: *Emitter, a: FnSig, b: FnSig) bool {
+        if (self.mode != .gc or a.params.len == 0 or b.params.len == 0) return self.sameSig(a, b);
+        var x = a;
+        var y = b;
+        x.params = a.params[1..];
+        y.params = b.params[1..];
+        return self.sameSig(x, y);
+    }
+
+    /// `behaviorDispatchFunc` in a GC module: `self` is the `anyref` of the
+    /// value, and each implementer's struct types (a record's, a payload
+    /// enum's variants') are tested by `ref.test`, the value cast to the
+    /// method's `self` and the method called.
+    fn gcBehaviorDispatchFunc(self: *Emitter, bd: BehaviorDispatch) !wat.Func {
+        const impls = try self.behaviorImplementers(bd.method, bd.argc);
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        try params.append(self.arena(), wat.Builder.param("self", .anyref));
+        var arg_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (0..bd.argc) |i| {
+            const n = try std.fmt.allocPrint(self.arena(), "a{d}", .{i});
+            try arg_names.append(self.arena(), n);
+            try params.append(self.arena(), wat.Builder.param(n, self.vtOf(bd.sig.params[i + 1])));
+        }
+        var c: Capture = .{};
+        self.open(&c);
+        for (impls) |t| {
+            const sym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, bd.method });
+            const sig = self.fn_sigs.get(sym).?;
+            if (!self.sameDispatchSig(sig, bd.sig)) continue;
+            const recv_vt = self.vtOf(sig.params[0]);
+            for (try self.gcTypeTests(.{ .named = t })) |vt| {
+                var hit: Capture = .{};
+                self.open(&hit);
+                try self.emit(.{ .local_get = "self" });
+                if (recv_vt != .anyref) try self.emit(.{ .ref_cast = recv_vt });
+                for (arg_names.items) |n| try self.emit(.{ .local_get = n });
+                try self.emit(.{ .call = sym });
+                try self.emit(.@"return");
+                const hit_seq = self.seal(&hit, .terminated);
+                try self.emit(.{ .local_get = "self" });
+                try self.emit(.{ .ref_test = vt });
+                try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, t);
+            }
+        }
+        try self.emitC(.@"unreachable", "no implementer of this behavior method built the value");
+        const body = self.seal(&c, .terminated);
+        return try self.builder().func(.{
+            .name = try std.fmt.allocPrint(self.arena(), "__bdispatch_{s}_{d}", .{ bd.method, bd.argc }),
+            .params = params.items,
+            .result = if (bd.sig.result) |r| self.vtOf(r) else null,
+            .body = body,
+        });
     }
 
     /// `$__bdispatch_<method>_<n>(self, a0, …)`: one header compare per
@@ -12209,6 +12292,7 @@ const Emitter = struct {
     /// lowering, as `$__display_of` is, because a descriptor exists only once
     /// a value of its type was built.
     fn behaviorDispatchFunc(self: *Emitter, bd: BehaviorDispatch) !wat.Func {
+        if (self.mode == .gc) return self.gcBehaviorDispatchFunc(bd);
         const impls = try self.behaviorImplementers(bd.method, bd.argc);
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         try params.append(self.arena(), wat.Builder.param("self", .i32));
@@ -29076,7 +29160,10 @@ const Emitter = struct {
             .@"return", .throw_, .@"break", .@"continue" => return self.lowerValue(e),
             else => {},
         };
-        const from = self.wasmTypeOf(e);
+        // An array literal whose elements share no type (`[Bob(…), Ann(…)]`
+        // into a `Greeter[]`) is built as the array asked for (`gcArrayLit`).
+        const from0 = self.wasmTypeOf(e);
+        const from = if (self.mode == .gc and want.isArrRef() and !from0.isRef() and isArrayLit(e)) want else from0;
         // Front 164 s2 — a GC module's `case` asked for as another kind than
         // the enclosing function's answer (`val kids: i32[] = case c { … }` in
         // a function answering a word): its arms are coerced to what is asked.
