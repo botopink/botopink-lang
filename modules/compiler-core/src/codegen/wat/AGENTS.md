@@ -2136,6 +2136,11 @@ Set for the WHOLE subject only — a payload's own pattern keeps the
 program-wide lookup. One flat table answered the first enum declaring the name
 (`modules/variant/run/src/cases/variant_leading_dot_two_enums_case`,
 `modules/enum/run/src/cases/enum_section_leaf_beside_variant`).
+Where no hint answers (a `val assert Circle(r) = s`, a payload's pattern), a
+bare name two enums declare — two linked modules' same-named `Shape`, mangled —
+is the GC gap `a bare variant name more than one enum declares` (decision 1058
+(4)): the first match tested the other enum's struct type and answered wrongly
+(wasm test `decision 1058 (4)`).
 
 **A multi-subject `case a, n { … }`** lowers each subject once, into
 `<subject local>_<i>` (`multiSubjectLocal`); a `.multi` arm tests and binds

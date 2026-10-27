@@ -12667,14 +12667,27 @@ const Emitter = struct {
                 }
             }
         }
+        var found: ?FoundVariant = null;
         var it = self.enums.iterator();
         while (it.next()) |entry| {
             for (entry.value_ptr.*, 0..) |v, i| {
-                if (std.mem.eql(u8, v.name, bare))
-                    return .{ .variants = entry.value_ptr.*, .tag = @intCast(i), .variant = v };
+                if (!std.mem.eql(u8, v.name, bare)) continue;
+                if (found == null) {
+                    found = .{ .variants = entry.value_ptr.*, .tag = @intCast(i), .variant = v };
+                    if (self.mode != .gc) return found;
+                } else {
+                    // Decision 1058 (4) — two enums of the program declare the
+                    // name (two loaded cases each declaring `Shape`, linked
+                    // mangled): in a GC module each variant is a struct type of
+                    // its enum, and the first match would test or build the
+                    // other enum's, a silent wrong answer. A named gap.
+                    self.gcGap("a bare variant name more than one enum declares");
+                    return found;
+                }
+                break;
             }
         }
-        return null;
+        return found;
     }
 
     /// Count the `$__mem` scratch pointers a function body needs: one per

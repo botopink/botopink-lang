@@ -5106,6 +5106,44 @@ test "wat: decision 1021 (10) ---- a record's constructor pattern names the modu
     }, "ana/30\nbia/40\n");
 }
 
+test "wat: decision 1058 (4) ---- a bare variant pattern two modules' same-named enums declare never tests the other enum's variant" {
+    // Each module's `Shape` is linked mangled; `Circle(r)` in a `val assert`
+    // searched every enum and the first `Circle` answered, so the GC lowering
+    // tested the other module's struct type and `radiusOf` answered `-1` for a
+    // circle. Guarded into a named gap until the subject's enum resolves it.
+    const shape =
+        \\pub type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\
+        \\pub fn circle(r: i32) -> Shape {
+        \\    return Shape.Circle(r);
+        \\}
+        \\
+        \\pub fn rect() -> Shape {
+        \\    return Shape.Rect(1, 1);
+        \\}
+        \\
+        \\pub fn radiusOf(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch return -1;
+        \\    return r;
+        \\}
+    ;
+    try h.assertWasmRunLogModules(std.testing.allocator, &.{
+        .{ .path = "one", .source = shape },
+        .{ .path = "two", .source = shape },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {one.circle as circleOne, one.rect as rectOne, one.radiusOf as radiusOne, two.circle as circleTwo, two.rect as rectTwo, two.radiusOf as radiusTwo};
+        \\
+        \\pub fn main() -> void {
+        \\    print(radiusOne(circleOne(4)));
+        \\    print(radiusOne(rectOne()));
+        \\    print(radiusTwo(circleTwo(5)));
+        \\    print(radiusTwo(rectTwo()));
+        \\}
+        },
+    }, "4\n-1\n5\n-1\n");
+}
+
 test "wat: decision 1021 (10) ---- a method call on a value is never the module's free function of its name in the GC lowering" {
     // `xs?.[0]` is written `n.at(0)`, and `m.at(key)` on an `Index` dispatches
     // by value: both were typed by `fn at(c: bool) -> ?Point`, and the module
