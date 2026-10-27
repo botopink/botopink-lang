@@ -64,14 +64,21 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     try out.appendSlice(alloc, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 });
 
     var sec: Bytes = .empty;
-    // type: the module's GC types first, one `rec` group (WasmGC, decision
-    // 544) — type `k` of the group is type index `k` —, then one function
-    // type per distinct signature.
-    try uleb(ar, &sec, e.types.items.len + @intFromBool(e.defs.len > 0));
-    if (e.defs.len > 0) {
+    // type: the module's GC types first, one `rec` group each (WasmGC,
+    // decisions 544, 1021 (9)) — the running index over the groups is the
+    // type index —, then one function type per distinct signature.
+    var n_groups: usize = 0;
+    {
+        var at: usize = 0;
+        while (at < e.defs.len) : (n_groups += 1) at = ast.groupEnd(e.defs, at);
+    }
+    try uleb(ar, &sec, e.types.items.len + n_groups);
+    var at: usize = 0;
+    while (at < e.defs.len) {
+        const end = ast.groupEnd(e.defs, at);
         try sec.append(ar, 0x4E);
-        try uleb(ar, &sec, e.defs.len);
-        for (e.defs) |d| {
+        try uleb(ar, &sec, end - at);
+        for (e.defs[at..end]) |d| {
             // `sub` / `sub final` and the supertype, when the type has one
             // or is open.
             if (!d.final or d.super != null) {
@@ -93,6 +100,7 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
                 },
             }
         }
+        at = end;
     }
     for (e.types.items) |t| {
         try sec.append(ar, 0x60);

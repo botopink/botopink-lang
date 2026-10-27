@@ -1883,13 +1883,17 @@ fn emitWatPass(
     // what the module reaches, so it would not meet the refusal; the module is
     // lowered in linear memory, which links everything, as it always did.
     if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
+    const before_splice = decls.items.len;
     try spliceNamedRecords(ar0, &decls, &owner, linked.len);
+    var spliced: std.StringHashMapUnmanaged(void) = .empty;
+    for (decls.items[before_splice..]) |d| if (d == .type_) try spliced.put(ar0, d.type_.name, {});
     // Decision 531 — a dependency's function the program never reaches is not
     // lowered and stops nothing, in either lowering.
     if (plan.mode == .gc or plan.reached_only) {
         const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
         try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency));
     }
+    if (plan.mode == .gc) try em.gcKeyTypes(decls.items, owner.items, linked, module_name, &spliced);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -2522,6 +2526,14 @@ const Emitter = struct {
     /// is `ValType.def(position + 1)`; its fields are built once the module is
     /// lowered (`gcBuildTypes`).
     gc_types: std.ArrayListUnmanaged(GcTy) = .empty,
+    /// Decision 1021 (9) — the declared name of each record and enum the
+    /// module lowers, `<pkg>@<path>.<Type>` (`gcKeyTypes`): what orders the
+    /// declared type groups (`gcBuildTypes`). A type with none (an anonymous
+    /// record) is the unit's own.
+    gc_type_keys: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// While `finishGc` renumbers the module into its canonical type groups:
+    /// the new index of each type of the lowering's numbering (`gcRemapIdx`).
+    gc_perm: ?[]const u16 = null,
     /// The environment type of the lifted lambda being emitted (`.gc`).
     gc_env_ty: u16 = 0,
     /// Front 164 s2 P4 — per state machine of a GC module, the value types
@@ -3351,6 +3363,7 @@ const Emitter = struct {
         self.record_field_types.deinit();
         self.gc_strs.deinit(self.alloc);
         self.gc_types.deinit(self.alloc);
+        self.gc_type_keys.deinit(self.alloc);
         self.gc_frames.deinit(self.alloc);
         self.gc_block_locals.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
@@ -5323,6 +5336,7 @@ const Emitter = struct {
     /// Type index `k` of a prelude GC form, resolved: a slot is the module's
     /// index of its type (declared on first use), any other index as it is.
     fn gcRemapIdx(self: *Emitter, k: u16) u16 {
+        if (self.gc_perm) |perm| return if (k < perm.len) perm[k] else k;
         if (k < prelude.gc_slot_base) return k;
         return self.gcTyIndex(gcSlotTy(@enumFromInt(k - prelude.gc_slot_base)));
     }
@@ -5416,6 +5430,18 @@ const Emitter = struct {
                 var g = gl;
                 g.ty = self.gcRemapVt(gl.ty);
                 return .{ .global = g };
+            },
+            .import => |im| {
+                var g = im;
+                const ps = try ar.alloc(ValType, im.type.params.len);
+                for (im.type.params, ps) |v, *o| o.* = self.gcRemapVt(v);
+                g.type = .{ .params = ps, .result = if (im.type.result) |r| self.gcRemapVt(r) else null };
+                return .{ .import = g };
+            },
+            .tag => |t| {
+                const ps = try ar.alloc(ValType, t.params.len);
+                for (t.params, ps) |v, *o| o.* = self.gcRemapVt(v);
+                return .{ .tag = .{ .name = t.name, .params = ps } };
             },
             else => return it,
         }
@@ -5553,6 +5579,9 @@ const Emitter = struct {
         }
         const defs = try self.gcBuildTypes();
         if (self.gc_gap != null) return error.GcFallback;
+        // Every type the lowering named, renumbered into its canonical group.
+        for (items.items) |*it| it.* = try self.gcRemapItem(it.*);
+        self.gc_perm = null;
         if (self.gc_str_used) try items.insert(ar, 0, .{ .types = defs });
         var diag: typecheck.Diag = .{};
         typecheck.checkModule(self.alloc, .{ .items = items.items }, isLinkedStdFunc, &diag) catch |err| switch (err) {
@@ -5686,10 +5715,341 @@ const Emitter = struct {
         }
     }
 
-    /// The type group of a `.gc` module: `$str`, then every type the lowering
-    /// asked for, each built from the declarations (a type's fields may ask
-    /// for more, so the list grows while it is walked).
+    /// Decision 1021 (9) — the declared name of every record and enum of the
+    /// module's declarations, `<pkg>@<path>.<Type>`: the package and the
+    /// package-relative path of the module that declares it, and the name it
+    /// was written with (not its link mangling). A record `spliceNamedRecords`
+    /// brought is std's (`std@builtin.<Type>`).
+    fn gcKeyTypes(
+        self: *Emitter,
+        decls: []const ast.DeclKind,
+        owner: []const usize,
+        linked: []const Linked,
+        module_name: []const u8,
+        spliced: *const std.StringHashMapUnmanaged(void),
+    ) !void {
+        const ar = self.arena();
+        for (decls, owner) |d, from| {
+            if (d != .type_) continue;
+            const name = d.type_.name;
+            const path = if (from < linked.len) linked[from].name else module_name;
+            const key = if (spliced.contains(name))
+                try std.fmt.allocPrint(ar, "std@builtin.{s}", .{name})
+            else blk: {
+                const id: crossModule.ModuleId = if (build_packages) |p| p.idOf(path) else (crossModule.Packages{}).idOf(path);
+                const rel = if (id.package_in_path and path.len > id.package.len + 1) path[id.package.len + 1 ..] else path;
+                const mangled = try std.fmt.allocPrint(ar, "{s}/", .{path});
+                const bare = if (std.mem.startsWith(u8, name, mangled)) name[mangled.len..] else name;
+                break :blk try std.fmt.allocPrint(ar, "{s}@{s}.{s}", .{ id.package, rel, bare });
+            };
+            try self.gc_type_keys.put(self.alloc, name, key);
+        }
+    }
+
+    /// Decision 1021 (9) (i) — the prelude group: the GC lowering's shared
+    /// vocabulary, emitted whole in every module that declares a GC type, at
+    /// these indices, so every unit agrees on each of them.
+    const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, closure, result, exn, task, waiter, hostn, gen, cell };
+
+    fn gcPreludeRef(p: GcPrelude) ValType {
+        return ValType.def(@intFromEnum(p));
+    }
+
+    const gc_prelude_defs = [_]wat.TypeDef{
+        prelude.gc_str_def,
+        .{ .name = "arr_i32", .kind = .{ .array = .{ .ty = .i32, .mutable = true } } },
+        .{ .name = "arr_f64", .kind = .{ .array = .{ .ty = .f64, .mutable = true } } },
+        // Open: `$tuple` is its subtype.
+        .{ .name = "arr_any", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .final = false },
+        .{ .name = "tuple", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .super = @intFromEnum(GcPrelude.arr_any) },
+        // Open: `$box_bool` and an enum's box are its subtypes.
+        .{ .name = "box_i32", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .final = false },
+        .{ .name = "box_i64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i64 }} } },
+        .{ .name = "box_f64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .f64 }} } },
+        .{ .name = "box_bool", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .super = @intFromEnum(GcPrelude.box_i32) },
+        .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "idx", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
+        .{ .name = "result", .kind = .{ .@"struct" = &.{ .{ .name = "tag", .ty = .i32, .mutable = true }, .{ .name = "payload", .ty = .anyref, .mutable = true } } } },
+        .{ .name = "exn", .kind = .{ .@"struct" = &.{ .{ .name = "msg", .ty = prelude.gc_str_ref }, .{ .name = "print", .ty = .i32 } } } },
+        .{ .name = "task", .kind = .{ .@"struct" = &.{
+            .{ .name = "state", .ty = .i32, .mutable = true },
+            .{ .name = "waiters", .ty = gcPreludeRef(.waiter), .mutable = true },
+            .{ .name = "value", .ty = .anyref, .mutable = true },
+            .{ .name = "frame", .ty = .structref, .mutable = true },
+            .{ .name = "kind", .ty = .i32 },
+            .{ .name = "next", .ty = gcPreludeRef(.task), .mutable = true },
+            .{ .name = "aux", .ty = .anyref, .mutable = true },
+            .{ .name = "left", .ty = .i32, .mutable = true },
+        } } },
+        .{ .name = "waiter", .kind = .{ .@"struct" = &.{
+            .{ .name = "next", .ty = gcPreludeRef(.waiter), .mutable = true },
+            .{ .name = "kind", .ty = .i32 },
+            .{ .name = "target", .ty = gcPreludeRef(.task) },
+            .{ .name = "slot", .ty = .i32 },
+        } } },
+        .{ .name = "hostn", .kind = .{ .@"struct" = &.{
+            .{ .name = "next", .ty = gcPreludeRef(.hostn), .mutable = true },
+            .{ .name = "h", .ty = .i32 },
+            .{ .name = "t", .ty = gcPreludeRef(.task) },
+        } } },
+        .{ .name = "gen", .kind = .{ .@"struct" = &.{
+            .{ .name = "state", .ty = .i32, .mutable = true },
+            .{ .name = "kind", .ty = .i32 },
+            .{ .name = "frame", .ty = .structref, .mutable = true },
+            .{ .name = "value", .ty = .anyref, .mutable = true },
+            .{ .name = "src", .ty = gcPreludeRef(.gen), .mutable = true },
+            .{ .name = "aux", .ty = .anyref, .mutable = true },
+            .{ .name = "left", .ty = .i32, .mutable = true },
+        } } },
+        .{ .name = "cell", .kind = .{ .@"struct" = &.{
+            .{ .name = "filled", .ty = .i32, .mutable = true },
+            .{ .name = "value", .ty = .anyref, .mutable = true },
+        } } },
+    };
+
+    comptime {
+        std.debug.assert(gc_prelude_defs.len == @typeInfo(GcPrelude).@"enum".fields.len);
+    }
+
+    /// The prelude index of a type of the lowering, null for a declared or a
+    /// private one.
+    fn gcPreludeSlot(t: GcTy) ?u16 {
+        const p: GcPrelude = switch (t) {
+            .arr => |e| switch (e) {
+                .i32 => .arr_i32,
+                .f64 => .arr_f64,
+                .any => .arr_any,
+            },
+            .tuple => .tuple,
+            .box => |b| switch (b) {
+                .i32 => .box_i32,
+                .i64 => .box_i64,
+                .f64 => .box_f64,
+                .bool => .box_bool,
+            },
+            .closure => .closure,
+            .result => .result,
+            .exn => .exn,
+            .task => .task,
+            .waiter => .waiter,
+            .hostn => .hostn,
+            .gen => .gen,
+            .heap_cell => .cell,
+            .record, .variant, .ebox, .env, .frame => return null,
+        };
+        return @intFromEnum(p);
+    }
+
+    /// Decision 1021 (9) — the type section of a `.gc` module, in groups whose
+    /// content depends only on declarations: (i) the prelude group
+    /// (`gc_prelude_defs`), whole; (ii) one group per strongly connected
+    /// component of the declared types (records and payload-enum variants, an
+    /// edge a field naming another), members ordered by their declared name
+    /// (`gc_type_keys`), the groups in that order with every group after the
+    /// ones it names, each closed by its brand (`gcBrandDef`); (iii) the module's private types (lambda environments,
+    /// state-machine frames, an enum's box, an anonymous record, and a
+    /// declared type naming one of them) in one group, in the lowering's
+    /// order. Sets `gc_perm`, the renumbering `finishGc` applies to the
+    /// module's code.
     fn gcBuildTypes(self: *Emitter) ![]const wat.TypeDef {
+        const ar = self.arena();
+        const old = try self.gcBuildDefs();
+        if (self.gc_gap != null) return old;
+        const n = old.len;
+        const n_pre: u16 = gc_prelude_defs.len;
+        const perm = try ar.alloc(u16, n);
+        const NONE = std.math.maxInt(u16);
+        @memset(perm, NONE);
+        perm[0] = @intFromEnum(GcPrelude.str);
+        // The declared name of each type of the lowering, null for a prelude
+        // or a private type.
+        const keys = try ar.alloc(?[]const u8, n);
+        @memset(keys, null);
+        for (self.gc_types.items, 1..) |t, k| {
+            if (gcPreludeSlot(t)) |slot| {
+                perm[k] = slot;
+                continue;
+            }
+            keys[k] = switch (t) {
+                .record => |rn| self.gc_type_keys.get(rn),
+                .variant => |v| if (self.gc_type_keys.get(v.en)) |ek| try std.fmt.allocPrint(ar, "{s}.{s}", .{ ek, v.name }) else null,
+                else => null,
+            };
+        }
+        // A declared type naming a private one is private too.
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (old, 0..) |d, k| if (keys[k] != null) {
+                for (try refsOf(ar, d)) |r| if (perm[r] == NONE and keys[r] == null) {
+                    keys[k] = null;
+                    changed = true;
+                    break;
+                };
+            };
+        }
+        // The strongly connected components of the declared types (Tarjan).
+        var scc: GcScc = .{ .ar = ar, .old = old, .keys = keys, .index = try ar.alloc(i32, n), .low = try ar.alloc(i32, n), .comp = try ar.alloc(i32, n) };
+        @memset(scc.index, -1);
+        @memset(scc.comp, -1);
+        for (0..n) |k| if (keys[k] != null and scc.index[k] < 0) try scc.visit(@intCast(k));
+        // Each component's members by name; the components placed once every
+        // component they name is, the least name first.
+        const comps = scc.comps.items;
+        for (comps) |c| std.mem.sort(u16, c, keys, keyLess);
+        const done = try ar.alloc(bool, comps.len);
+        @memset(done, false);
+        var next: u16 = n_pre;
+        var group_starts: std.ArrayListUnmanaged(u16) = .empty;
+        try group_starts.append(ar, 0);
+        var brands: std.ArrayListUnmanaged(struct { at: u16, def: wat.TypeDef }) = .empty;
+        var left = comps.len;
+        while (left > 0) : (left -= 1) {
+            var best: ?usize = null;
+            for (comps, 0..) |c, ci| {
+                if (done[ci]) continue;
+                if (!try compReady(ar, old, keys, scc.comp, done, c, ci)) continue;
+                if (best == null or std.mem.lessThan(u8, keys[c[0]].?, keys[comps[best.?][0]].?)) best = ci;
+            }
+            const ci = best orelse return self.gcFail("a cycle between declared type groups");
+            done[ci] = true;
+            try group_starts.append(ar, next);
+            for (comps[ci]) |m| {
+                perm[m] = next;
+                next += 1;
+            }
+            try brands.append(ar, .{ .at = next, .def = try gcBrandDef(ar, old, keys, comps[ci]) });
+            next += 1;
+        }
+        // (iii) The private types, in the lowering's order.
+        var opened_private = false;
+        for (0..n) |k| if (perm[k] == NONE) {
+            if (!opened_private) try group_starts.append(ar, next);
+            opened_private = true;
+            perm[k] = next;
+            next += 1;
+        };
+        self.gc_perm = perm;
+        const out = try ar.alloc(wat.TypeDef, next);
+        @memcpy(out[0..n_pre], &gc_prelude_defs);
+        for (old, 0..) |d, k| {
+            if (perm[k] < n_pre) continue;
+            var e = d;
+            e.super = if (d.super) |s| perm[s] else null;
+            e.kind = switch (d.kind) {
+                .@"struct" => |fs| blk: {
+                    const nf = try ar.alloc(wat.Field, fs.len);
+                    for (fs, nf) |f, *o| {
+                        o.* = f;
+                        o.ty = self.gcRemapVt(f.ty);
+                    }
+                    break :blk .{ .@"struct" = nf };
+                },
+                .array => |f| blk: {
+                    var g = f;
+                    g.ty = self.gcRemapVt(f.ty);
+                    break :blk .{ .array = g };
+                },
+            };
+            out[perm[k]] = e;
+        }
+        for (brands.items) |b| out[b.at] = b.def;
+        for (group_starts.items) |g| out[g].opens_group = true;
+        return out;
+    }
+
+    /// The last type of a declared group: a struct no code names, whose fields
+    /// spell a hash of the group's declared names (two bits a field, `i32` /
+    /// `i64` / `f32` / `f64`). Two groups are one type when they are written
+    /// alike, so without it two declarations of one shape (`Person(name,
+    /// age)` and `Vec(name, age)`, two variants of one payload) would be one
+    /// type, and `is` / a `case` could not tell them apart; with it, a
+    /// group's identity is its members' names, the same in every module.
+    fn gcBrandDef(ar: std.mem.Allocator, old: []const wat.TypeDef, keys: []const ?[]const u8, members: []const u16) !wat.TypeDef {
+        var h = std.hash.Wyhash.init(0);
+        for (members) |m| {
+            h.update(keys[m].?);
+            h.update("\n");
+        }
+        const bits = h.final();
+        const fs = try ar.alloc(wat.Field, 32);
+        for (fs, 0..) |*f, i| f.* = .{ .ty = switch (@as(u2, @truncate(bits >> @intCast(2 * i)))) {
+            0 => .i32,
+            1 => .i64,
+            2 => .f32,
+            3 => .f64,
+        } };
+        return .{ .name = try std.fmt.allocPrint(ar, "brand_{s}", .{old[members[0]].name}), .kind = .{ .@"struct" = fs } };
+    }
+
+    /// Whether every declared type component `c` (number `ci`) names, other
+    /// than itself, is placed.
+    fn compReady(ar: std.mem.Allocator, old: []const wat.TypeDef, keys: []const ?[]const u8, comp: []const i32, done: []const bool, c: []const u16, ci: usize) !bool {
+        for (c) |m| for (try refsOf(ar, old[m])) |x| {
+            if (keys[x] == null) continue;
+            const xc: usize = @intCast(comp[x]);
+            if (xc != ci and !done[xc]) return false;
+        };
+        return true;
+    }
+
+    fn keyLess(keys: []const ?[]const u8, a: u16, b: u16) bool {
+        return std.mem.lessThan(u8, keys[a].?, keys[b].?);
+    }
+
+    /// The module types a type definition names: its fields' and its supertype.
+    fn refsOf(ar: std.mem.Allocator, d: wat.TypeDef) ![]const u16 {
+        var out: std.ArrayListUnmanaged(u16) = .empty;
+        switch (d.kind) {
+            .@"struct" => |fs| for (fs) |f| if (f.ty.defIndex()) |k| try out.append(ar, k),
+            .array => |f| if (f.ty.defIndex()) |k| try out.append(ar, k),
+        }
+        if (d.super) |k| try out.append(ar, k);
+        return out.items;
+    }
+
+    /// Tarjan's strongly connected components over the declared types of the
+    /// lowering's numbering (`gcBuildTypes`).
+    const GcScc = struct {
+        ar: std.mem.Allocator,
+        old: []const wat.TypeDef,
+        keys: []const ?[]const u8,
+        index: []i32,
+        low: []i32,
+        comp: []i32,
+        counter: i32 = 0,
+        stack: std.ArrayListUnmanaged(u16) = .empty,
+        comps: std.ArrayListUnmanaged([]u16) = .empty,
+
+        fn visit(self: *GcScc, v: u16) !void {
+            self.index[v] = self.counter;
+            self.low[v] = self.counter;
+            self.counter += 1;
+            try self.stack.append(self.ar, v);
+            for (try refsOf(self.ar, self.old[v])) |w| {
+                if (self.keys[w] == null) continue;
+                if (self.index[w] < 0) {
+                    try self.visit(w);
+                    self.low[v] = @min(self.low[v], self.low[w]);
+                } else if (self.comp[w] < 0) self.low[v] = @min(self.low[v], self.index[w]);
+            }
+            if (self.low[v] != self.index[v]) return;
+            var members: std.ArrayListUnmanaged(u16) = .empty;
+            const ci: i32 = @intCast(self.comps.items.len);
+            while (true) {
+                const w = self.stack.pop().?;
+                self.comp[w] = ci;
+                try members.append(self.ar, w);
+                if (w == v) break;
+            }
+            try self.comps.append(self.ar, members.items);
+        }
+    };
+
+    /// Every type of a `.gc` module in the lowering's numbering: `$str`, then
+    /// every type the lowering asked for, each built from the declarations (a
+    /// type's fields may ask for more, so the list grows while it is walked).
+    /// `gcBuildTypes` renumbers them into their canonical groups.
+    fn gcBuildDefs(self: *Emitter) ![]const wat.TypeDef {
         const ar = self.arena();
         var defs: std.ArrayListUnmanaged(wat.TypeDef) = .empty;
         try defs.append(ar, prelude.gc_str_def);

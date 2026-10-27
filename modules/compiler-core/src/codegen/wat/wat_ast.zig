@@ -147,19 +147,24 @@ pub const Field = struct {
     mutable: bool = false,
 };
 
-/// `(type $name (struct …))` / `(type $name (array …))` — a type of the
-/// module's one `(rec …)` group (`Item.types`). Every type is final and
-/// declares no supertype; the group makes two types of the same structure
-/// two distinct types (`ref.test` tells them apart).
+/// `(type $name (struct …))` / `(type $name (array …))` — a type of one of
+/// the module's `(rec …)` groups (`Item.types`). A group makes two types of
+/// the same structure two distinct types (`ref.test` tells them apart); two
+/// modules whose groups are written alike share their types (decision 1021
+/// (9)).
 pub const TypeDef = struct {
     name: []const u8,
     kind: Kind,
     /// The type this one is a subtype of (`(sub $super …)`): an earlier
-    /// type of the group.
+    /// type.
     super: ?u16 = null,
     /// Whether no type may name this one its supertype; a type declared
     /// without `sub` is final.
     final: bool = true,
+    /// Whether this type opens a new `(rec …)` group; the module's first type
+    /// opens one whatever this says. A type names only types of its own group
+    /// or of an earlier one.
+    opens_group: bool = false,
 
     pub const Kind = union(enum) {
         @"struct": []const Field,
@@ -476,10 +481,11 @@ pub const DataSegment = struct {
 /// owns the layout of the module (imports, memory, start, data, globals, the
 /// lowered functions, the runtime helpers) and the emitter owns the text.
 pub const Item = union(enum) {
-    /// `(rec (type $a …) (type $b …) …)` — the module's GC types, one group
-    /// (decision 544); at most one per module, before any other item that
-    /// names one. `ValType.def(k)` and every GC instruction's type is an
-    /// index into it.
+    /// `(rec (type $a …) …) (rec …) …` — the module's GC types (decision
+    /// 544), in index order, split into `(rec …)` groups where a type
+    /// `opens_group` (decision 1021 (9)); at most one such item per module,
+    /// before any other item that names a type. `ValType.def(k)` and every GC
+    /// instruction's type is an index into it.
     types: []const TypeDef,
     import: Import,
     memory: Memory,
@@ -620,11 +626,13 @@ pub fn declaresCall(m: Module, name: []const u8) bool {
 pub fn validateModule(m: Module) Invalid!void {
     const defs = typesOf(m);
     for (defs, 0..) |d, i| {
+        // A type names only types of its own group or of an earlier one.
+        const end = groupEnd(defs, i);
         switch (d.kind) {
-            .@"struct" => |fields| for (fields) |f| try checkStorage(defs, f.ty),
-            .array => |f| try checkStorage(defs, f.ty),
+            .@"struct" => |fields| for (fields) |f| try checkStorage(defs[0..end], f.ty),
+            .array => |f| try checkStorage(defs[0..end], f.ty),
         }
-        // A supertype is an earlier type of the group, and not final.
+        // A supertype is an earlier type, and not final.
         if (d.super) |k| if (k >= i or defs[k].final) return error.UndefinedType;
     }
     for (m.items) |it| switch (it) {
@@ -648,7 +656,14 @@ pub fn validateModule(m: Module) Invalid!void {
     };
 }
 
-/// The module's GC types — its `(rec …)` group — or none.
+/// One past the last type of the `(rec …)` group type `i` belongs to.
+pub fn groupEnd(defs: []const TypeDef, i: usize) usize {
+    var k = i + 1;
+    while (k < defs.len and !defs[k].opens_group) k += 1;
+    return k;
+}
+
+/// The module's GC types — every type of its `(rec …)` groups — or none.
 pub fn typesOf(m: Module) []const TypeDef {
     for (m.items) |it| switch (it) {
         .types => |t| return t,

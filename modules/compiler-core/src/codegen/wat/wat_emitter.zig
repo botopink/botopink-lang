@@ -975,9 +975,19 @@ fn fieldType(w: *Writer, defs: Defs, f: ast.Field) Error!void {
 }
 
 /// `(rec (type $a (struct (field $x i32) …)) (type $s (array (mut i8))) …)`.
+/// The module's types, one `(rec …)` per group (decision 1021 (9)).
 fn recGroup(w: *Writer, types: []const ast.TypeDef) Error!void {
+    var at: usize = 0;
+    while (at < types.len) {
+        const end = ast.groupEnd(types, at);
+        try recGroupOf(w, types, at, end);
+        at = end;
+    }
+}
+
+fn recGroupOf(w: *Writer, types: []const ast.TypeDef, lo: usize, hi: usize) Error!void {
     try w.writeAll("  (rec\n");
-    for (types) |t| {
+    for (types[lo..hi]) |t| {
         try w.print("    (type ${f} ", .{id(t.name)});
         const sub = !t.final or t.super != null;
         if (sub) {

@@ -3300,6 +3300,120 @@ test "wat: decision 330 ---- recv?.m() over a record's or an all-unit enum's met
     , "0\n-1\n0\n-1\n");
 }
 
+/// The wasm binary of `src` (the module with the empty path), owned by the caller.
+fn wasmBinaryOfSource(allocator: Allocator, src: []const u8) ![]u8 {
+    var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        return allocator.dupe(u8, o.result.wasm orelse return error.ModuleDidNotCompile);
+    }
+    return error.ModuleDidNotCompile;
+}
+
+/// The bytes of each `rec` group of a wasm binary's type section, in order.
+fn recGroupsOf(allocator: Allocator, wasm: []const u8) ![]const []const u8 {
+    const R = struct {
+        b: []const u8,
+        at: usize,
+        fn byte(r: *@This()) u8 {
+            r.at += 1;
+            return r.b[r.at - 1];
+        }
+        fn leb(r: *@This()) u32 {
+            var v: u32 = 0;
+            var shift: u5 = 0;
+            while (true) {
+                const x = r.byte();
+                v |= @as(u32, x & 0x7f) << shift;
+                if (x & 0x80 == 0) return v;
+                shift +%= 7;
+            }
+        }
+        fn field(r: *@This()) void {
+            const t = r.byte();
+            if (t == 0x63 or t == 0x64) _ = r.leb();
+            _ = r.byte(); // mutability
+        }
+    };
+    var r: R = .{ .b = wasm, .at = 8 };
+    var groups: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer groups.deinit(allocator);
+    while (r.at < wasm.len) {
+        const id = r.byte();
+        const size = r.leb();
+        if (id != 1) {
+            r.at += size;
+            continue;
+        }
+        var n = r.leb();
+        while (n > 0) : (n -= 1) {
+            const start = r.at;
+            if (r.byte() != 0x4E) break;
+            var members = r.leb();
+            while (members > 0) : (members -= 1) {
+                var k = r.byte();
+                if (k == 0x50 or k == 0x4F) {
+                    var supers = r.leb();
+                    while (supers > 0) : (supers -= 1) _ = r.leb();
+                    k = r.byte();
+                }
+                if (k == 0x5F) {
+                    var fields = r.leb();
+                    while (fields > 0) : (fields -= 1) r.field();
+                } else r.field();
+            }
+            try groups.append(allocator, wasm[start..r.at]);
+        }
+        break;
+    }
+    return groups.toOwnedSlice(allocator);
+}
+
+// Decision 1021 (9) — a type's group and its place depend only on the
+// declarations: two modules naming one record, each lowering its types in an
+// order of its own (one asks for an array of floats and another record
+// first), carry the same prelude group and the same group for the record,
+// byte for byte; the second module's own record, which names it, comes after.
+test "wat: decision 1021 (9) ---- two modules naming one record carry byte-identical shared type groups" {
+    const alloc = std.testing.allocator;
+    const a = try wasmBinaryOfSource(alloc,
+        \\type Point(x: i32, label: string)
+        \\fn main() -> void {
+        \\    val p = Point(x: 1, label: "a");
+        \\    print(p.label);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    defer alloc.free(a);
+    const b = try wasmBinaryOfSource(alloc,
+        \\type Zed(p: Point, n: i32)
+        \\type Point(x: i32, label: string)
+        \\fn main() -> void {
+        \\    val xs = [1.5, 2.5];
+        \\    print(xs[1]);
+        \\    val z = Zed(p: Point(x: 3, label: "b"), n: 4);
+        \\    print(z.p.label);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    defer alloc.free(b);
+    const ga = try recGroupsOf(alloc, a);
+    defer alloc.free(ga);
+    const gb = try recGroupsOf(alloc, b);
+    defer alloc.free(gb);
+    // The prelude, `Point`'s group; and in the second, `Zed`'s.
+    try std.testing.expectEqual(@as(usize, 2), ga.len);
+    try std.testing.expectEqual(@as(usize, 3), gb.len);
+    try std.testing.expectEqualSlices(u8, ga[0], gb[0]);
+    try std.testing.expectEqualSlices(u8, ga[1], gb[1]);
+}
+
 /// The host features the wasm build of `src` (the module with the empty path)
 /// asks for — its binary's `botopink.needs` section (decision 518).
 fn wasmNeedsOfSource(allocator: Allocator, src: []const u8) !bpAst.WasmNeeds {
