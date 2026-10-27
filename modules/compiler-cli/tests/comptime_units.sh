@@ -2,9 +2,11 @@
 # Decisions 1033 (3), 1035 (1), (3), 1038 (4), 1058 (2), (3) — piece C1, the `.comptime` stage,
 # against the real CLI, over `comptime_units/app` (`main` declares a decorator and imports `lib`;
 # `gap` writes a `comptime` the WasmGC generator refuses today):
-#   • always written: `build --target erlang` writes `out/wasm-comptime/` — `app@main.wasm`,
+#   • written with an `out/`: `build --target erlang` writes `out/wasm-comptime/` — `app@main.wasm`,
 #     `app@lib.wasm`, the runtime core `std@__rt.wasm` and the std units they import, each std
 #     file the bytes `zig build std-wasm` writes (`out/wasm/`'s) — whatever the target;
+#   • a bare `build` writes no `out/` (decision 1077 (5)): its comptime units are in the unit
+#     cache `.botopinkbuild/cache/unit/comptime/` alone;
 #   • refusals recorded: `gap` is a `gap<TAB><the gap>` line of `refused.txt`, the build exits 0
 #     and nothing of the stage is on stderr; `build --json` reports it as a `comptime_refused` event;
 #   • every unit is compiled into `.botopinkbuild/cache/wasmtime/<sha256>.cwasm`;
@@ -76,6 +78,14 @@ bp "$WORK/cold.log" "$BP_BIN" build --target erlang --out "$WORK/out" --cold || 
 # The `--json` report names the refusal.
 bp "$WORK/json.log" "$BP_BIN" build --target erlang --out "$WORK/out-json" --cold --json || true
 grep -q '"event":"comptime_refused","module":"gap"' "$WORK/json.log" || fail "build --json reports no comptime_refused event for gap"
+
+# A bare build (decision 1077 (5)): no `out/`, the units in the unit cache.
+BARE="$WORK/bare"
+cp -R "$SCRIPT_DIR/comptime_units/app" "$BARE"
+( cd "$BARE" && "$BP_BIN" build ) > "$WORK/bare.log" 2>&1 || fail "the bare build failed: $(cat "$WORK/bare.log")"
+[[ ! -e "$BARE/out" ]] || fail "a bare build wrote out/"
+n_units="$(find "$BARE/.botopinkbuild/cache/unit/comptime" -name '*.bpcu' 2>/dev/null | wc -l)"
+(( n_units > 0 )) || fail "a bare build left no comptime unit in .botopinkbuild/cache/unit/comptime/"
 
 if (( failures > 0 )); then
   echo "comptime_units: $failures failure(s)" >&2

@@ -1349,7 +1349,7 @@ refusal of its own is refused naming the first gap it met (`first_gap`). **The c
 reaches (`comptime_units.keyOf`); a module whose key the driver's store holds (`Cache`, the bytes
 `stored` writes: the unit, or the refusal's text) is not emitted (`emit_only`) unless a module that
 imports it is, since an importer is lowered against its units' exports — an unchanged program
-lowers nothing. The CLI writes `out/wasm-comptime/<pkg>@<path>.wasm` beside the runtime core and
+lowers nothing. With an `out/` (never on a bare build, 1077 (5)) the CLI writes `out/wasm-comptime/<pkg>@<path>.wasm` beside the runtime core and
 the std units they import (`comptime_units.files`) — the bytes `out/wasm/` holds, so one precompiled
 artifact serves both (1035 (3)) — and compiles each file it wrote into
 `.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (1034 (8)). Until C4 a refusal is recorded, not

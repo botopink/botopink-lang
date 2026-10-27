@@ -449,7 +449,9 @@ fn runBuild(
         .gpa = gpa,
         .io = io,
         .cfg = cfg,
-        .out_dir = opts.out_dir,
+        // Decision 1077 (5): `out/wasm-comptime/` only when an `out/` is
+        // being written; a bare build keeps its units in the unit cache alone.
+        .out_dir = if (opts.target == null) null else opts.out_dir,
         .wasmtime_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime"),
         .unit_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "unit/comptime"),
     };
@@ -1182,14 +1184,16 @@ fn writeRuntimeUnits(gpa: std.mem.Allocator, io: std.Io, out_dir: []const u8, bi
 /// analyses nothing and runs none): the comptime units
 /// (`bp.codegen.comptimeUnits`), each module's taken from the unit cache
 /// `<cache root>/.botopinkbuild/cache/unit/comptime/` when its key matches,
-/// written into `<out>/wasm-comptime/` (`write`). Until C4 a module the
+/// written into `<out>/wasm-comptime/` (`write`) when an `out/` is being
+/// written — never on a bare build (decision 1077 (5)). Until C4 a module the
 /// lowering refuses is recorded, not failed: `refused.txt` and the `--json`
 /// report's `comptime_refused` events, nothing on stderr.
 const ComptimeSink = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     cfg: bp.codegen.Config,
-    out_dir: []const u8,
+    /// The build's `out/`; null on a bare build, which writes none (1077 (5)).
+    out_dir: ?[]const u8,
     /// The precompiled cache (decision 1034 (8)).
     wasmtime_dir: []const u8,
     /// The comptime units by key (decisions 1008 (2), 1058 (2)).
@@ -1240,7 +1244,14 @@ const ComptimeSink = struct {
         const cu = bp.codegen.wasmComptimeUnits;
         const ar = self.arena;
         const io = self.io;
-        const dir = try std.fs.path.join(ar, &.{ self.out_dir, cu.folder });
+        const out_dir = self.out_dir orelse {
+            // A bare build: the units are in the unit cache; only the
+            // `--json` report still names each refusal.
+            if (json_state) |j| for (outputs) |o| if (cu.refusalOf(o.result)) |gap|
+                jsonLine(j.arena, j.io, .{ .event = "comptime_refused", .module = o.name, .gap = gap });
+            return;
+        };
+        const dir = try std.fs.path.join(ar, &.{ out_dir, cu.folder });
         if (code_cache.cold) std.Io.Dir.cwd().deleteTree(io, dir) catch {};
         var units: std.ArrayListUnmanaged(cu.Unit) = .empty;
         var refused: std.ArrayListUnmanaged(u8) = .empty;
