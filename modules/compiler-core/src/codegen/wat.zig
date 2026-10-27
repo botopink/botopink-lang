@@ -908,6 +908,38 @@ fn linkRenames(
     };
 }
 
+/// 144 B-171 — the linked functions (`linkKey`) a linked module imports under
+/// an alias (a namespace call's `__bp_ns_shapes__mine`) while one of its own
+/// functions binds the declared name as a local or a parameter (`val mine =
+/// shapes.mine(…)`). `linkRenames` renames such an alias to the declared name,
+/// which the local then shadows: the function is mangled instead, as a second
+/// declaration of its name is.
+fn shadowedImportedFns(ar: std.mem.Allocator, linked: []const Linked, cross: ?*const CrossModule) !std.StringHashMapUnmanaged(void) {
+    var out: std.StringHashMapUnmanaged(void) = .empty;
+    const c = cross orelse return out;
+    for (linked) |l| {
+        var bound: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (l.program.decls) |d| if (d == .@"fn") {
+            for (d.@"fn".params) |p| try bound.append(ar, p.name);
+            try ast.collectDeclaredNames(ar, d.@"fn".body, &bound);
+        };
+        if (bound.items.len == 0) continue;
+        for (l.program.decls) |d| if (d == .use) for (d.use.imports) |imp| {
+            const al = imp.alias orelse continue;
+            const leaf = imp.leaf();
+            if (std.mem.eql(u8, al, leaf)) continue;
+            const hit = for (bound.items) |b| {
+                if (std.mem.eql(u8, b, leaf)) break true;
+            } else false;
+            if (!hit) continue;
+            const info = c.picked(leaf, try d.use.leafSource(imp, ar, false), null) orelse continue;
+            if (info.kind != .@"fn") continue;
+            try out.put(ar, try linkKey(ar, info.module, leaf), {});
+        };
+    }
+    return out;
+}
+
 /// `linkRenames` for the module-level `val`s: the module's own `val` whose
 /// declaration was mangled, and every import of one. Local name → mangled.
 fn linkValRenames(
@@ -993,7 +1025,10 @@ fn renameLinkedTypes(comptime T: type, arena: std.mem.Allocator, value: T, renam
         else => {},
     };
     if (T == ast.Pattern) switch (value) {
-        .ident => |n| return .{ .ident = try renameVariantPath(arena, n, renames) },
+        // A type pattern (`Person { p -> … }`, decision 810 (3)) is the type's
+        // bare name: the mangled type's when its module's `Person` was
+        // mangled (144 B-171) — the arm tested the other module's `Person`.
+        .ident => |n| return .{ .ident = renames.get(n) orelse try renameVariantPath(arena, n, renames) },
         .variant => |v| {
             var out = v;
             // A record's constructor pattern (`Person(n, a)`, no `.`) names
@@ -1085,6 +1120,15 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
         },
         .@"union" => |u| {
             if (u.tag_type == null) return value;
+            // 144 B-171 — a compiler-made alias read as a VALUE
+            // (`__bp_run(__bp_run__<pkg>)` in a linked module, the package
+            // `compiler.load` loads at depth two) means what its calls mean:
+            // a linked module's `use` items never reach `registerSymbols`, so
+            // the alias was unbound there. Only a `__bp_` name: no program's
+            // local spells one, so none is shadowed.
+            if (comptime @hasField(T, "ident") and @hasField(T, "dotIdent") and @hasField(T, "identAccess")) {
+                if (value == .ident and std.mem.startsWith(u8, value.ident, "__bp_")) if (renames.get(value.ident)) |m| return .{ .ident = m };
+            }
             switch (value) {
                 inline else => |payload, tag| return @unionInit(T, @tagName(tag), try renameLinkedCalls(@TypeOf(payload), arena, payload, renames)),
             }
@@ -1776,6 +1820,7 @@ fn emitWatPass(
     var own_names = std.StringHashMap(void).init(alloc);
     defer own_names.deinit();
     for (own_program.decls) |d| if (declName(d)) |n| try own_names.put(n, {});
+    const shadowed = try shadowedImportedFns(ar0, linked, cross);
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var owner: std.ArrayListUnmanaged(usize) = .empty;
     // A linked module's own `main` is dropped, unless a `use` names it
@@ -1803,7 +1848,8 @@ fn emitWatPass(
             else => {},
         }
         const n = declName(d) orelse continue;
-        if (is_linked_main or own_names.contains(n)) {
+        const shadowed_fn = d == .@"fn" and shadowed.contains(try linkKey(ar0, l.name, n));
+        if (is_linked_main or own_names.contains(n) or shadowed_fn) {
             // The std prelude's primitive behaviors (`String`, `Array`, …) are
             // materialised into every module that uses one of their default
             // methods, so two linked modules each carry the SAME declaration.
@@ -9746,14 +9792,21 @@ const Emitter = struct {
             const label = try std.fmt.allocPrint(ar, "{s}{s}: ", .{ if (i > 0) ", " else "", fname });
             if (!section_wrapper) try self.gcPutStr(label);
             const gen: ?[]const ast.GenericParam = if (variant == null) self.record_generics.get(rec) else self.enum_generics.get(rec);
-            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else if (variant == null) blk: {
+            // A record's or a variant's 64-bit field is an `i64` slot, printed
+            // as one (a variant's was printed by the `i32` printer: std's
+            // `FsError.InvalidUtf8(offset: i64)`, 144 B-171).
+            // A function-typed field (`count: ?fn(i32) -> i32`) is a
+            // `$closure` reference: printed as an `unknown` holding it prints
+            // (it was the `i32` printer over the reference, 144 B-171).
+            const fn_field = trefs[i] == .function or (trefs[i] == .optional and trefs[i].optional.* == .function);
+            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (isUnknownTypeRef(trefs[i]) or fn_field) try ar.dupe(u8, "U") else blk: {
                 const wide: ?u8 = switch (trefs[i]) {
                     .named => |n| i64CellCode(n),
                     else => null,
                 };
                 if (wide) |w| break :blk try ar.dupe(u8, &.{w});
                 break :blk try self.fieldShape(trefs[i]);
-            } else try self.fieldShape(trefs[i]);
+            };
             const px = try self.gcPrinter(fsh);
             try self.emit(get_v);
             try self.emit(.{ .struct_get = .{ .ty = tidx, .field = @intCast(i) } });
