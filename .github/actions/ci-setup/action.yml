@@ -5,7 +5,9 @@
 #
 # Caches (decisions 225, 509 (5), 739, 754): only Zig's own compile cache (`.zig-cache` in the
 # checkout and `~/.cache/zig`) and the wasmtime download, keyed on the toolchain version and,
-# for Zig's, on build.zig, build.zig.zon and every *.zig source. Nothing under `.botopinkbuild/`
+# for Zig's, on the job kind (`zig-cache-name`: every job saves under a key of its own, since one
+# shared key was won by the first job to finish and every other save failed with "Unable to reserve
+# cache"), on build.zig, build.zig.zon and every *.zig source. Nothing under `.botopinkbuild/`
 # and no botopink cache of $HOME / $XDG_CACHE_HOME is ever cached: `gate.sh --cold` deletes
 # every botopink cache it reads, and nothing here puts one back.
 name: ci-setup
@@ -17,6 +19,9 @@ inputs:
   zig-cache:
     description: Restore (and save) Zig's own compile cache ("true" or "false")
     default: 'false'
+  zig-cache-name:
+    description: The job kind the Zig cache is keyed on (one key per job, so no job's save is lost to another's)
+    default: 'job'
 runs:
   using: composite
   steps:
@@ -34,9 +39,9 @@ runs:
         path: |
           .zig-cache
           ~/.cache/zig
-        key: zig-0.16.0-${{ runner.os }}-${{ hashFiles('build.zig', 'build.zig.zon', '**/*.zig') }}
+        key: zig-0.16.0-${{ runner.os }}-${{ inputs.zig-cache-name }}-${{ hashFiles('build.zig', 'build.zig.zon', '**/*.zig') }}
         restore-keys: |
-          zig-0.16.0-${{ runner.os }}-
+          zig-0.16.0-${{ runner.os }}-${{ inputs.zig-cache-name }}-
 
     # The erlang and beam targets' tests run `erl` / `erlc` (the RUN LOGs, the
     # beam export audit, `botopink run|test --target erlang|beam`); compiling

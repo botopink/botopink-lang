@@ -101,6 +101,7 @@ jobs:
       - uses: ./.github/actions/ci-setup
         with:
           zig-cache: 'true'
+          zig-cache-name: build
       - name: scripts/gate.sh --cold --portable --stage build
         shell: bash
         run: bash scripts/gate.sh --cold --portable --stage build
@@ -132,6 +133,7 @@ jobs:
         with:
           libs: 'true'
           zig-cache: 'true'
+          zig-cache-name: ${{ matrix.row.stage }}
       - name: scripts/gate.sh --cold --stage ${{ matrix.row.stage }}
         shell: bash
         env:
@@ -157,6 +159,7 @@ jobs:
         with:
           libs: 'true'
           zig-cache: 'true'
+          zig-cache-name: ${{ matrix.row.stage }}${{ matrix.row.target && format('-{0}', matrix.row.target) || '' }}
       - uses: actions/download-artifact@v4
         with:
           name: zig-out
