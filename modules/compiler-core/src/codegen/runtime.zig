@@ -995,6 +995,14 @@ pub fn executeAborting(allocator: std.mem.Allocator, backend: AbortBackend, code
 /// then the binary emitter's answer, checked against the fixture the text
 /// recorded. The text runs only where no binary was produced.
 pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binary: ?[]const u8, module_name: []const u8, io: anytype) ![]u8 {
+    return executeWatIn(allocator, wat_code, wasm_binary, module_name, null, io);
+}
+
+/// `executeWat` with `wasmtime`'s compilation cache at `cache_dir`
+/// (`<cache root>/.botopinkbuild/cache/wasmtime`); null, `wasmNeeds.DEFAULT_CACHE_DIR`
+/// of the working directory. Decision 1008 (5): no cache outside `.botopinkbuild`,
+/// so `wasmtime` never reads or writes `~/.cache/wasmtime`.
+pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binary: ?[]const u8, module_name: []const u8, cache_dir: ?[]const u8, io: anytype) ![]u8 {
     const code = wasm_binary orelse wat_code;
     const ext = if (wasm_binary != null) "wasm" else "wat";
     var key: [64]u8 = undefined;
@@ -1021,11 +1029,21 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     var flag_buf: [wasmNeeds.max_args][]const u8 = undefined;
     const needs = if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code);
     const flags = wasmNeeds.wasmtimeArgs(needs, &flag_buf);
-    var argv_buf: [5 + wasmNeeds.max_args][]const u8 = undefined;
+    var cache_arena = std.heap.ArenaAllocator.init(allocator);
+    defer cache_arena.deinit();
+    const cache_args = try wasmNeeds.cacheArgs(cache_arena.allocator(), io, cache_dir orelse wasmNeeds.DEFAULT_CACHE_DIR, false);
+    var argv_buf: [7 + wasmNeeds.max_args][]const u8 = undefined;
     argv_buf[0] = "wasmtime";
     argv_buf[1] = "run";
-    for (flags, 0..) |f, i| argv_buf[2 + i] = f;
-    var argc = 2 + flags.len;
+    var argc: usize = 2;
+    for (cache_args) |f| {
+        argv_buf[argc] = f;
+        argc += 1;
+    }
+    for (flags) |f| {
+        argv_buf[argc] = f;
+        argc += 1;
+    }
     // Decision 992 — a program that reaches the file system is run in its scratch
     // directory, which is its working directory: preopened under its own path.
     const cwd_arg: ?[]const u8 = if (needs.contains(.filesystem) and std.fs.path.isAbsolute(tmp_dir)) try wasmNeeds.cwdDirArg(allocator, tmp_dir) else null;

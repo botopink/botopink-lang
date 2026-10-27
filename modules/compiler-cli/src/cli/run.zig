@@ -161,19 +161,8 @@ fn programArgvFor(
 /// reads no other cache. Empty when the directory cannot be made (wasmtime then
 /// keeps its own default).
 pub fn wasmtimeCacheArgs(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig) ![]const []const u8 {
-    const root = analysis_store.root(proj);
-    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const n = std.process.currentPath(io, &cwd_buf) catch return &.{};
-    const dir = try std.fs.path.resolve(arena, &.{ cwd_buf[0..n], try manifest.cacheDir(arena, root, "wasmtime") });
-    const store = try std.fs.path.join(arena, &.{ dir, "store" });
-    const cwd = std.Io.Dir.cwd();
-    if (code_cache.cold) cwd.deleteTree(io, store) catch {};
-    cwd.createDirPath(io, dir) catch return &.{};
-    const toml = try std.fs.path.join(arena, &.{ dir, "config.toml" });
-    const text = try std.fmt.allocPrint(arena, "[cache]\ndirectory = \"{s}\"\n", .{store});
-    const held = cwd.readFileAlloc(io, toml, arena, .limited(65536)) catch "";
-    if (!std.mem.eql(u8, held, text)) analysis_store.write(arena, io, toml, text) catch return &.{};
-    return arena.dupe([]const u8, &.{ "-C", try std.fmt.allocPrint(arena, "cache-config={s}", .{toml}) });
+    const dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime");
+    return bp.codegen.wasmNeeds.cacheArgs(arena, io, dir, code_cache.cold);
 }
 
 /// Decision 518 — the `wasmtime run` flags a `wasi` build's component text at

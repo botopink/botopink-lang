@@ -3408,7 +3408,7 @@ first three are now enforced by the model, not by discipline:
   so cross-module runs link; both write every module of the fixture, then compile
   them with ONE `erlc` call — `compileModules`, the VM starting once per fixture, not once per module — and a
   rejected batch is compiled again one file at a time so the RUN LOG's `COMPILE ERROR` text is the first
-  rejected file's, as when each module had its own call), `executeWat` (`wasmtime run <module>.wasm` — the binary; the `.wat` text only where no binary was produced — with the flags its `botopink.needs` section asks for, `wat/needs.zig`, decision 518).
+  rejected file's, as when each module had its own call), `executeWat` (`wasmtime run <module>.wasm` — the binary; the `.wat` text only where no binary was produced — with the flags its `botopink.needs` section asks for, `wat/needs.zig`, decision 518); and `-C cache-config=` over `wat/needs.zig`'s `cacheArgs`, wasmtime's compilation cache under `<cache root>/.botopinkbuild/cache/wasmtime/` — `executeWatIn(…, cache_dir, …)`, `Options.wasmtime_cache_dir`, null the working directory's own `.botopinkbuild` — never `~/.cache/wasmtime`, decision 1008 (5); `botopink run` / `test` use the same helper.
   The scratch file of an erlang/BEAM module is named by its module ATOM
   (`erlModuleAtom` → `crossModule.erlAtom` over `test_packages`, exactly as the codegen it runs, so `std/dict` is `std@dict.erl` and `main` is `test@main.erl`; `HARNESS_VERSION` was bumped with it, so no cached RUN LOG of the old spelling answers) and
   `-s <atom>` runs it; a second module of the program claiming an atom already

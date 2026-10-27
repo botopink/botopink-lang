@@ -17,6 +17,62 @@ const Needs = ast.WasmNeeds;
 /// The most flags `wasmtimeArgs` answers: two per need, `filesystem` four.
 pub const max_args = 2 * std.enums.values(Need).len + 2;
 
+/// Decision 1008 (5) — where `wasmtime`'s compilation cache lives when no cache
+/// root is known (a harness run in a scratch directory): the working
+/// directory's own `.botopinkbuild`, never `~/.cache/wasmtime`.
+pub const DEFAULT_CACHE_DIR = ".botopinkbuild/cache/wasmtime";
+
+/// Decision 1008 (5) — the `wasmtime run` flags that put its compilation cache
+/// in `dir` (`<cache root>/.botopinkbuild/cache/wasmtime`, relative to the
+/// working directory or absolute): `-C cache-config=<dir>/config.toml` over a
+/// config naming `<dir>/store`. `cold` deletes the store first. Empty when the
+/// directory cannot be made (wasmtime then keeps its own default). The one place
+/// the config's text is written: `botopink run` / `test` and the harness's
+/// `executeWat` all come here.
+pub fn cacheArgs(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cold: bool) std.mem.Allocator.Error![]const []const u8 {
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.process.currentPath(io, &cwd_buf) catch return &.{};
+    const abs = try std.fs.path.resolve(arena, &.{ cwd_buf[0..n], dir });
+    const store = try std.fs.path.join(arena, &.{ abs, "store" });
+    const cwd = std.Io.Dir.cwd();
+    if (cold) cwd.deleteTree(io, store) catch {};
+    cwd.createDirPath(io, abs) catch return &.{};
+    const toml = try std.fs.path.join(arena, &.{ abs, "config.toml" });
+    const text = try std.fmt.allocPrint(arena, "[cache]\ndirectory = \"{s}\"\n", .{store});
+    const held = cwd.readFileAlloc(io, toml, arena, .limited(65536)) catch "";
+    if (!std.mem.eql(u8, held, text)) {
+        // Staged and renamed: concurrent runs write the same bytes.
+        var rand: [8]u8 = undefined;
+        io.random(&rand);
+        const tmp = try std.fmt.allocPrint(arena, "{s}.{x}.tmp", .{ toml, std.mem.readInt(u64, &rand, .little) });
+        cwd.writeFile(io, .{ .sub_path = tmp, .data = text }) catch return &.{};
+        cwd.rename(tmp, cwd, toml, io) catch {
+            cwd.deleteFile(io, tmp) catch {};
+            return &.{};
+        };
+    }
+    return arena.dupe([]const u8, &.{ "-C", try std.fmt.allocPrint(arena, "cache-config={s}", .{toml}) });
+}
+
+test "cacheArgs names a config under the given directory and writes it" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    const test_scratch = @import("test_scratch");
+    test_scratch.remove(io, "cache-args");
+    defer test_scratch.remove(io, "cache-args");
+    const dir = test_scratch.path(io, "cache-args/.botopinkbuild/cache/wasmtime");
+    const args = try cacheArgs(arena, io, dir, false);
+    try std.testing.expectEqual(@as(usize, 2), args.len);
+    try std.testing.expectEqualStrings("-C", args[0]);
+    try std.testing.expect(std.mem.startsWith(u8, args[1], "cache-config=/"));
+    try std.testing.expect(std.mem.endsWith(u8, args[1], "/cache-args/.botopinkbuild/cache/wasmtime/config.toml"));
+    const toml = args[1]["cache-config=".len..];
+    const text = try std.Io.Dir.cwd().readFileAlloc(io, toml, arena, .limited(4096));
+    try std.testing.expect(std.mem.indexOf(u8, text, "/cache-args/.botopinkbuild/cache/wasmtime/store\"") != null);
+}
+
 /// `wasmtime run`'s flags for `needs`, in a fixed order: `-W exceptions=y`
 /// for `exceptions`, `-S http` for `http`, `-W gc=y` for `gc` (WasmGC, front
 /// 164 s2 — every program that emits GC types), and for `filesystem`

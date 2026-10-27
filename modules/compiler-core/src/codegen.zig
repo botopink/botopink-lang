@@ -47,6 +47,10 @@ pub const Options = struct {
     /// `--emit-resolved` prints the resolved program through (decision 798
     /// (2), `comptime/resolved_print.zig`).
     on_analysed: ?AnalysedHook = null,
+    /// `wasmtime`'s compilation cache directory for `execute` on wasm
+    /// (`<cache root>/.botopinkbuild/cache/wasmtime`); null, the working
+    /// directory's own `.botopinkbuild` (decision 1008 (5)).
+    wasmtime_cache_dir: ?[]const u8 = null,
 };
 
 /// A driver's look at the analysed modules (`Options.on_analysed`).
@@ -299,7 +303,7 @@ pub fn generateWith(
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },
-                .wasm => runtime.executeWat(allocator, output.result.js, output.result.wasm, output.name, io) catch |err| blk: {
+                .wasm => runtime.executeWatIn(allocator, output.result.js, output.result.wasm, output.name, options.wasmtime_cache_dir, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },

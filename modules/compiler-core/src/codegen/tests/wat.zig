@@ -4391,3 +4391,26 @@ test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and 
         \\import {io.terminal.print} from "std";
     );
 }
+
+// Decision 1008 (5) — the harness's `wasmtime run` keeps its compilation cache
+// under the cache directory it is given (`-C cache-config=`), never in
+// `~/.cache/wasmtime`: the config is written there before the spawn.
+test "wat: executeWatIn ---- wasmtime's cache config sits under the given directory" {
+    const runtime = @import("../runtime.zig");
+    const test_scratch = @import("test_scratch");
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var rand: [8]u8 = undefined;
+    io.random(&rand);
+    var name_buf: [32]u8 = undefined;
+    const name = try std.fmt.bufPrint(&name_buf, "cachedir{x}", .{std.mem.readInt(u64, &rand, .little)});
+    test_scratch.remove(io, "wasmtime-cache-dir");
+    defer test_scratch.remove(io, "wasmtime-cache-dir");
+    const dir = test_scratch.path(io, "wasmtime-cache-dir/.botopinkbuild/cache/wasmtime");
+    const out = try runtime.executeWatIn(a, "(module (func (export \"_start\")))", null, name, dir, io);
+    defer a.free(out);
+    const toml = try std.fmt.allocPrint(a, "{s}/config.toml", .{dir});
+    defer a.free(toml);
+    var f = try std.Io.Dir.cwd().openFile(io, toml, .{});
+    f.close(io);
+}
