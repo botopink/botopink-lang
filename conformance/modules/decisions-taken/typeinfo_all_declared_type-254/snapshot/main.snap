@@ -16,3 +16,6 @@ out 2
 out -1
 out true
 out false
+== is_fn_wrong_arity_fails
+out UTC
+abort

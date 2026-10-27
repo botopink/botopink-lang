@@ -7,3 +7,10 @@ out chained 40
 == task_method_refused
 refused error: 'map' is not declared in any behavior implemented for 'Async'
 at src/main.bp:14:21
+== task_failure_rejects
+out resolved 1
+out rejected negative
+== task_failure_rejects on erlang
+abort
+== task_failure_rejects on beam
+abort

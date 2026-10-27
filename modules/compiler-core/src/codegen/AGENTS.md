@@ -1345,7 +1345,7 @@ codegen/
   The old rule — skip a default whose `<name>/<arity>` is taken or claimed
   twice — was the flat namespace's and left `twice/1` undefined; only a
   comptime module (`untyped`, methods inline) keeps it.
-  `modules/behavior/run/src/cases/behavior_default_adopted_by_two_types`.
+  `modules/behavior/cases/behavior_default_adopted_by_two_types`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
@@ -2515,7 +2515,7 @@ codegen/
   An `async { }` block is a value tail too (decision 432): `{ n -> async {
   throw "e"; } }` dropped the task for `ok`, and its `await` read a success
   where the other targets read `Error("e")`
-  (`modules/decisions-taken/task_result_rejects_with_error-432/cells/task_async_block_in_lambda`).
+  (`modules/decisions-taken/task_result_rejects_with_error-432/cases/task_async_block_in_lambda`).
 - **Variant constructors** (`lowerTaggedTuple`): a labelled argument fills the
   slot of the field it names (`variantDeclOf`, the declared fields), as a record
   constructor's does — `Shape.Rect(height: 2, width: 5)` was built positionally

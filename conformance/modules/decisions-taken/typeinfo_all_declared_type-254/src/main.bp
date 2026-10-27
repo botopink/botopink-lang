@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("call_unknown_without_narrowing");
     runCase("typeinfo_all_value_unknown");
     runCase("is_fn_narrows_unknown");
+    runCase("is_fn_wrong_arity_fails");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

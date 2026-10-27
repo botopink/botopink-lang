@@ -1,0 +1,45 @@
+//// A type implementing a behavior imported from another module adopts the
+//// behavior's instance `default fn`s, and those of what it extends, as a type
+//// implementing a behavior of its own module does: `Sq(n: 3).twice()`, a
+//// default it writes itself wins (`Big.twice`), and a value typed by the
+//// behavior dispatches to the adopted method. On every target (144 B-19).
+
+pub mod shapes;
+import {shapes.Shape, shapes.Dot};
+import {io.terminal.print} from "std";
+
+type Sq(n: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.n * self.n;
+    }
+
+    fn label(self: Self) -> string {
+        return "sq";
+    }
+}
+
+type Big(n: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.n;
+    }
+
+    fn label(self: Self) -> string {
+        return "big";
+    }
+
+    fn twice(self: Self) -> i32 {
+        return 1000;
+    }
+}
+
+fn doubled(s: Shape) -> i32 {
+    return s.twice();
+}
+
+pub fn main() -> void {
+    print(Sq(n: 3).twice());
+    print(Sq(n: 3).shout());
+    print(Big(n: 3).twice());
+    print(doubled(Sq(n: 2)));
+    print(doubled(Dot(n: 5)));
+}

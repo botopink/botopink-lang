@@ -2,3 +2,9 @@ botopink-cell 2
 == std_unbound_host_module_imports
 out 2000
 out 60005
+== dependency_unbound_host_method_refused
+out 2
+out 42
+== dependency_unbound_host_method_refused on wasm
+refused error: `Counter.viaHost` reaches `host`, which has no implementation for the wasm backend
+at src/main.bp:13:13

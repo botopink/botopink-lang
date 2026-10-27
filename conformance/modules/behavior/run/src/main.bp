@@ -1,17 +1,5 @@
 mod cases;
 
 pub fn main() -> void {
-    cases.behavior_across_modules.runCase();
-    cases.behavior_array_of_implementers.runCase();
-    cases.behavior_declaration.runCase();
-    cases.behavior_default_adopted_across_modules.runCase();
-    cases.behavior_default_adopted_by_two_types.runCase();
-    cases.behavior_implemented_by_enum.runCase();
-    cases.behavior_method_by_receiver_type.runCase();
-    cases.behavior_method_dispatch_by_value.runCase();
-    cases.behavior_method_no_return_by_value.runCase();
-    cases.behavior_method_result_chained.runCase();
     cases.behavior_named_like_prelude_type.runCase();
-    cases.behavior_named_like_prelude_value.runCase();
-    cases.behavior_value_from_implementer.runCase();
 }

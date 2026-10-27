@@ -47,3 +47,11 @@ at src/main.bp:10:13
 == lambda_semicolon_not_a_value
 refused error: type mismatch: expected i32, got void
 at src/main.bp:8:31
+== await_in_case_block_arm
+out 20
+out 31
+out 41
+== block_await_reaches_function
+out 9
+out 3
+out 1

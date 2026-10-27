@@ -5,3 +5,15 @@ at src/main.bp:8:21
 == init_executor_value_refused
 refused error: init-executor-value: the executor answers nothing, and its last expression, written without `;`, is a `string`
 at src/main.bp:9:14
+== init_async_executor_in_async_body
+out before
+out plain ok [plain main
+out ]
+out later ok [later before
+out later after 42
+out ]
+out after
+== module_main_async_read_at_build
+out plain sync
+out later async
+out main

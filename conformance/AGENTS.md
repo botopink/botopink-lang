@@ -101,7 +101,7 @@ function of the leaf's name (wasm read the bare name, the local one, until front
 the alias to the owner's mangled declaration); `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_alias_static_call` covers the alias in
 expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
 `S.Custom(9)`) — which inference renames to the declared type for the backends.
-Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace`
+Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_std_folder_namespace`
 — the leaf `io.clock as clock` and `clock.nowMillis()` (`import {io}` is refused, decision 919: `modules/decisions-taken/folder_import_refused-919`), on
 commonJS, erlang and beam, refused on wasm by STD-001 (`snapshot/targets/wasm/`) as the leaf form is — and
 `modules/decisions-taken/collections_constructors_type_scoped-111/cases/import_std_type_through_module` — `collections.Dict.empty()`, `collections.Set.fromList`,
@@ -133,7 +133,7 @@ passed as an argument) and `modules/enum/cases/enum_implements_behavior` (an enu
 through a behavior-typed parameter). C-04's last call path adds `modules/associated/cases/associated_fn_default` (a
 behavior's associated fn filled and reordered by label, generic included) and
 `modules/associated/cases/associated_fn_missing_required`; decision 31 (`any` deleted) adds `modules/decisions-taken/any_type_absent-31/cases/any_type_removed`
-and `modules/decisions-taken/any_type_absent-31/cells/host_unknown_parameter` (`std/erlang`'s host vocabulary typed `unknown` takes an `i32`,
+and `modules/decisions-taken/any_type_absent-31/cases/host_unknown_parameter` (`std/erlang`'s host vocabulary typed `unknown` takes an `i32`,
 erlang and beam); C-21 adds `modules/decisions-taken/decorator_arguments_typed_comptime-280/cases/decorator_argument_kind` (the one decorator refusal that had no
 location), and the runner now requires every refusal cell's `main.snap` to carry its `<L:C>` line —
 every refusal is located.
@@ -331,7 +331,7 @@ Decisions 378 and 379 (a context is named by its value's type and declares its d
 `modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice_across_modules` (the second declaration in another module, refused in it naming
 the first), `modules/decisions-taken/context_named_by_value_type-379/cases/context_enum_default` (`comptime createContext(Mode.Light)` — the comptime lift wrote no
 enum value in a record's field, `comptime-value-not-liftable`), `modules/comptime/cases/comptime_enum_in_record` (the same lift
-in a record and a generic record), `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_default_imported` (an `inject` field's default declared in its
+in a record and a generic record), `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_default_imported` (an `inject` field's default declared in its
 type's own module) and `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_not_record_enum` (`inject-not-record` for an enum); the first two and the
 last two red on the parent, where std's `context` had no `createContext` or `inject`, `comptime_enum_in_record`
 red on the group's tip.
@@ -364,7 +364,7 @@ their number and with `null`) and `modules/decisions-taken/components_compose_by
 `await` in a component). A
 component called as a statement outside a body runs nothing now, so `modules/decisions-taken/body_marker_whole_return_type-553/cases/effect_chain`,
 `modules/decisions-taken/body_marker_whole_return_type-553/cases/effect_context_await`, `modules/use/cases/use_one_base`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_result_try_await` and
-`modules/decisions-taken/body_marker_whole_return_type-553/cases/component_hook_and_component` `await` it in `main`, and `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` reads
+`modules/decisions-taken/body_marker_whole_return_type-553/cases/component_hook_and_component` `await` it in `main`, and `modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_sync_plain_function` reads
 375's mark through `run`. Decision 389 (a component named as a value is a reached node; a value the checker
 cannot follow an edge with `callee: null`) adds `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_component_value` (`map(Card)`, a `val`, a
 record field, a lambda answering one) and `modules/decisions-taken/component_value_is_hooks_node-389/cells/decl_hooks_dynamic_call` (in the module `pages` that `main` imports, its meta a typed `Graph` record; a parameter, a method and a
@@ -376,7 +376,7 @@ each red on wasm on the parent binary and green on the four targets.
 Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cases/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
 `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async_imported` (an imported node's mark) on the four targets, and
-`modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` (commonJS only, `"targets"` — the host `pending` has only a Node binding:
+`modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_sync_plain_function` (commonJS only, `"targets"` — the host `pending` has only a Node binding:
 a call of a synchronous `Card` answers no `Promise`, one of the asynchronous `Post` does); each red on the
 parent binary.
 Decision 357 (the rules of hooks) adds `modules/decisions-taken/use_at_component_top_level-357/cases/use_in_if`, `modules/decisions-taken/use_at_component_top_level-357/cases/use_in_loop`, `modules/decisions-taken/use_at_component_top_level-357/cases/use_in_lambda`
@@ -838,7 +838,7 @@ ones answer `Declared<unknown>[]`, the ordinary mismatch at the binding) and
 `modules/decisions-taken/comptime_parameter_call_expanded-562/cases/typeinfo_all_behavior_call_outside_expansion` (`d.value.make()` in `main`, refused at the call); the
 `meta_catalogue_private_type`, `meta_typed_catalogue` and `meta_expr_read_elsewhere` cells catalogue their types
 through such a behavior instead of `member:`. A `behavior` named like a prelude declaration is the module's
-(§ behavior of `docs.md`): `modules/behavior/run/src/cases/behavior_named_like_prelude_value` (`behavior Component` and `behavior Any`, names
+(§ behavior of `docs.md`): `modules/behavior/cases/behavior_named_like_prelude_value` (`behavior Component` and `behavior Any`, names
 the prelude also binds as bare variants, in a decorator's `syntax decl: Component`, a parameter and an `implement` clause),
 `modules/behavior/run/src/cases/behavior_named_like_prelude_type` (`behavior Field` and `behavior Result`, names of prelude types) and
 `modules/import/cases/import_behavior_named_like_prelude` (the same imported from a sibling module). Decision 248
@@ -882,7 +882,7 @@ it `""` for a type), and
 The registration and list cells therefore read `name`, `module` and `meta` only. Front 130 adds
 the narrowing (decision 254): `modules/decisions-taken/typeinfo_all_declared_type-254/cases/is_fn_narrows_unknown` narrows an `unknown` with `is fn(<params>)
 -> T` and calls through it — a stored factory, a lambda, a top-level fn, a value of another arity,
-a string and a number — on all four targets; `modules/decisions-taken/typeinfo_all_declared_type-254/cells/is_fn_wrong_arity_fails` (`abort`) is a
+a string and a number — on all four targets; `modules/decisions-taken/typeinfo_all_declared_type-254/cases/is_fn_wrong_arity_fails` (`abort`) is a
 resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
 name and the expected type (the message is on stderr on every target, wasm's included, which writes it before the trap); and
 `modules/decisions-taken/typeinfo_all_declared_type-254/cases/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
@@ -922,7 +922,7 @@ module load — erlang and beam dropped the write), `modules/decisions-taken/neg
 `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_answer_is_optional` (`xs[k]` is `?T`; wasm's `?Color` compare and `??` binder),
 `modules/integer/cases/integer_literal_labelled_field` (a literal in a labelled `i64` field, every target),
 `modules/std/cells/std_unsupported_names_the_call` (STD-001 names the function called, at the call),
-`modules/behavior/run/src/cases/behavior_method_dispatch_by_value` (wasm dispatches a behavior-typed call),
+`modules/behavior/cases/behavior_method_dispatch_by_value` (wasm dispatches a behavior-typed call),
 `modules/string/cases/string_char_code_non_ascii` (wasm answered bytes), `modules/val/cases/val_assert_variant_pattern` (commonJS
 `ReferenceError`, beam `{unassigned, …}`) and `modules/is/cases/is_enum_variant` and
 `modules/renderer/cases/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
@@ -989,9 +989,9 @@ The importer snapshots of `lexer_error_in_imported_module`, `imported_declaratio
 (`b/b` and `main`), `bpp_decorator_last_line` and `bpp_diagnostics_located` moved with it — each
 claimed the cascade's `unbound variable`; the refused module's own snapshot is unchanged.
 The backend and runtime rows of `00` (`front/codegen-rows`) add a cell each, every one failing on the
-parent binary: `modules/task/cells/task_await_in_if_block` (an `if` block that `await`s without returning, inside a
+parent binary: `modules/task/cases/task_await_in_if_block` (an `if` block that `await`s without returning, inside a
 `@Async` body — commonJS lowered it into a plain arrow and the module did not load),
-`modules/task/cells/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Async<void>` body — wasm
+`modules/task/cases/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Async<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency/cells/dependency_files_order` (a dependency whose
 `files` lists every importer before what it imports, `import {a.base};` and `import {leaf.Leaf};`),
 `modules/external/cells/external_erlang_host_module_missing` (`"targets"` `erlang beam`: an `.Erlang` module that is
@@ -1019,12 +1019,12 @@ claiming its parameter, on all four targets — and `modules/default/cases/defau
 default that names a private function of its module does not travel, so omitting it from another
 module is the arity error, on every target (its snapshot).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
-cell each, every one failing on the parent binary: `modules/behavior/run/src/cases/behavior_method_by_receiver_type` and
+cell each, every one failing on the parent binary: `modules/behavior/cases/behavior_method_by_receiver_type` and
 `modules/behavior/cases/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
 declaring the same name — an implementer's, a host-built one, on an unannotated local; the
 host-built one's `"targets"` is `commonJS erlang beam`, wasm having no host vocabulary for it), `modules/behavior/cases/behavior_method_imported` (the
-same for an imported behavior; `snapshot/targets/wasm/`), `modules/behavior/run/src/cases/behavior_value_from_implementer` (an implementer
-converts to its behavior at an annotated `val` and a `var`), `modules/behavior/run/src/cases/behavior_across_modules` (an
+same for an imported behavior; `snapshot/targets/wasm/`), `modules/behavior/cases/behavior_value_from_implementer` (an implementer
+converts to its behavior at an annotated `val` and a `var`), `modules/behavior/cases/behavior_across_modules` (an
 imported behavior is the same type in its importer; an imported fn-type alias resolves its names in
 its own module), `modules/return/cases/return_nested_in_if_block` and `modules/return/cases/return_in_case_arm_statement` (a `return`
 at any depth of a statement ends the function), `modules/result/cases/result_method_throw` (a METHOD returning
@@ -1067,7 +1067,7 @@ single-target host call inherits no restriction — refused on commonJS and wasm
 its snapshot even though nothing calls it; the parent held this rule, and decision 146
 made wasm hold it — `modules/external/cells/external_wrapper_associated_default` is the same rule on a behavior's
 associated `default fn`, which wasm lowered only when a call reached it),
-`modules/behavior/run/src/cases/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `"targets"`
+`modules/behavior/cases/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `"targets"`
 `commonJS erlang beam`, wasm answers `a a b b`), `modules/import/cases/import_from_package_beside_same_name`
 (a project `pub fn attempt` beside another module's `import {match.attempt} from "pkg"`; wasm
 listed, the flat namespace), `modules/host/cells/host_array_slice_without_start` (commonJS's global `slice`
@@ -1117,9 +1117,9 @@ payloads and guards over the subjects (a bare name is refused, `modules/decision
 commonJS never bound a variant's payload), `modules/case/cases/case_or_pattern_alternatives` (an or-pattern
 over unit variants, numbers, strings, payload variants with a wildcard, a literal or a label and
 `..`, a guarded arm, tuples, a range and a block arm — beam tested a number alternative alone, so
-`C | D -> true` answered `false` and `A | B` raised `case_clause`), `modules/behavior/run/src/cases/behavior_implemented_by_enum` (an enum implementing a
+`C | D -> true` answered `false` and `A | B` raised `case_clause`), `modules/behavior/cases/behavior_implemented_by_enum` (an enum implementing a
 behavior, called through a value of the behavior — commonJS, erlang and beam),
-`modules/behavior/run/src/cases/behavior_method_result_chained` and `modules/behavior/cases/behavior_method_result_typed` (a behavior method's
+`modules/behavior/cases/behavior_method_result_chained` and `modules/behavior/cases/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
 wasm trapped), `modules/external/cases/external_template_escaped_quote` (a `\"` in an `.JavaScript` template is a
 quote of the JavaScript; `"targets"` without wasm), `modules/std/run/src/cases/std_path_relative` (a std module calling an
@@ -1390,10 +1390,10 @@ whose two exit statuses or stdouts differ fails naming both; a project cell whos
 state machine over the scheduler, one adapter list for both hosts) add `modules/decisions-taken/one_adapter_list_both_hosts-394/cases/wasm_host_async` (`delay`,
 `race`, `raceOf`, `spawnAll` declared with std's Node and BEAM bindings and the `wasi:` adapters —
 `raceOf` answers the first thunk to settle, `"b"` on every target and both hosts),
-`modules/decisions-taken/task_behaves_as_promise-392/cells/task_starts_when_made` (a task runs to its first `await` when made, settles once),
+`modules/decisions-taken/task_behaves_as_promise-392/cases/task_starts_when_made` (a task runs to its first `await` when made, settles once),
 `modules/decisions-taken/task_behaves_as_promise-392/cases/task_resumes_in_place` (loops, `if`, `try`, `try … catch`, a method, a generic fn and an
 `async { }` block suspending on a real timer), and two wasm refusals with `snapshot/targets/wasm/` —
-`modules/decisions-taken/task_behaves_as_promise-392/cells/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
+`modules/decisions-taken/task_behaves_as_promise-392/cases/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
 `modules/decisions-taken/host_adapter_answers_generic_task-393/cases/external_wasm_task_adapter_shape` (an adapter declared off its shape — refused on every
 target since 144 B-23 read every `.Wasm` binding in the checker, beside
 `modules/decisions-taken/external_wasm_binding_forms-238/cases/external_wasm_op_type_on_every_target` and
@@ -1467,7 +1467,7 @@ Each was run with the parent binary and fails there as its row describes.
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
   keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**
   (`l l 1 2 6 2`: the inner bindings overwrite the outer ones) — 05's row.
-- `modules/behavior/run/src/cases/behavior_default_adopted_by_two_types`: a behavior's `default fn` adopted by two types (one
+- `modules/behavior/cases/behavior_default_adopted_by_two_types`: a behavior's `default fn` adopted by two types (one
   declaring the other default itself), called typed, through a default and through a behavior-typed
   parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
   beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
@@ -1594,7 +1594,7 @@ Async eagerly, and inside one body the order is the same everywhere.
 | Group | Cells |
 |---|---|
 | Return and effect mode | `test/effect_return_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_return_layers` (three layers), `modules/decisions-taken/body_marker_whole_return_type-553/cases/effect_alias_passes_value`; `modules/decisions-taken/effect_return_wraps_each_layer-119/cases/effect_return_ambiguous_nesting`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/effect_wrapper_behind_alias` |
-| `@Async` and failure | `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_no_try`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_failure_rejects` (`"targets"` `commonJS`: the Promise rejects with the thrown value and resolves with the bare one), `modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_method_refused` (decision 523: `map`, `then`, `mapError` and `catch` are withdrawn from a task, a call is refused as an unknown member), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_compose_by_async_block` (every composition of a task is an `async { }` block, four targets), `modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_caught_by_js` (`"targets"` `commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/decisions-taken/body_marker_whole_return_type-553/cases/task_throw_without_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/task_try_await_without_result` |
+| `@Async` and failure | `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_no_try`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_failure_rejects` (`"targets"` `commonJS`: the Promise rejects with the thrown value and resolves with the bare one), `modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_rejects` (432 on every target: every way a failing task reaches an `await` reads `Error(e)`), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_method_refused` (decision 523: `map`, `then`, `mapError` and `catch` are withdrawn from a task, a call is refused as an unknown member), `modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_compose_by_async_block` (every composition of a task is an `async { }` block, four targets), `modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_caught_by_js` (`"targets"` `commonJS`: a JavaScript `try`/`catch` around a botopink task, and a dropped failing task is no unhandled rejection); `modules/decisions-taken/body_marker_whole_return_type-553/cases/task_throw_without_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/task_try_await_without_result` |
 | Chain and `use` | `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_hook_and_component`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_result_try_await`; `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_try_element`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/await_under_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/use_under_task`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/use_of_component` |
 | `async { }` | `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_all_of`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_value_type`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_return`; `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_use`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_conflicting_errors` |
 | Iterators | `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_fibonacci`, `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_result_item`, `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_result_items` (step E4), `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_factory`, `test/yield_step_next` and `modules/decisions-taken/body_marker_whole_return_type-553/cases/yield_step_next` (`.next()` by hand on an `@Iter` and, awaited, on a `@AsyncIter` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/decisions-taken/body_marker_whole_return_type-553/cases/iterator_throw_without_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/iter_await`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/iter_mixed_yield_return`, `modules/decisions-taken/effect_annotation_removed_refused-127/cases/iterator_error_param_removed` |
@@ -1986,12 +1986,12 @@ targets; and its refusals, each located: `modules/decisions-taken/brace_without_
 `modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_trailing_not_function` and `modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_argument_not_function`
 (`block-not-function`, "missing `->`?"), `modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_void_value_refused` (`block-void-value`),
 `modules/decisions-taken/brace_without_arrow_is_block-525/cases/comptime_block_break_value` (`block-break-value`) and `modules/decisions-taken/brace_without_arrow_is_block-525/cases/case_arm_no_value`
-(`case-arm-no-value`). `modules/decisions-taken/brace_without_arrow_is_block-525/cells/async_block_tail_value` and `modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_case` pin an
+(`case-arm-no-value`). `modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_value` and `modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_case` pin an
 `async { … }` block's tail as its task's value: the parent dropped it (commonJS printed `null`,
 erlang raised `case_clause` on a `case` at the end). The cells whose `comptime { …; break v; }` or
 value `case` arm ended in `;` are rewritten in the new spelling, their answers unchanged.
 Decision 541 adds `modules/decisions-taken/lambda_answers_last_expression-541/cases/case_arm_break_value_removed` (a `case` arm's `break <value>`, `block-break-value` at the `break`)
-and the cells of a block as a scope of the enclosing function: `modules/decisions-taken/lambda_answers_last_expression-541/cells/block_await_reaches_function` (an `await` in a block and
+and the cells of a block as a scope of the enclosing function: `modules/decisions-taken/lambda_answers_last_expression-541/cases/block_await_reaches_function` (an `await` in a block and
 in an arm's block), `modules/decisions-taken/lambda_answers_last_expression-541/cases/block_yield_reaches_generator` (a `yield` in a block, an arm and a value block),
 `modules/decisions-taken/lambda_answers_last_expression-541/cases/block_break_reaches_loop` (a bare `break` in a block and in an arm of a `while`) and
 `modules/decisions-taken/lambda_answers_last_expression-541/cases/block_ends_function_body_is_tail` (a block ending a function body is its tail); all four targets.
@@ -2019,7 +2019,7 @@ Decision 539 (6) (`Closeable` ambient, 144 B-96) adds `modules/decisions-taken/d
 as a parameter's type and an array's element type with no import, each call answered by the implementer, on all four
 targets — refused `unknown type` on the parent), `modules/decisions-taken/defer_runs_at_block_end-539/cases/ambient_behavior_implement_missing_method` (an inline
 `implement Closeable` with no `close`, refused at the type — accepted on the parent) and
-`modules/behavior/run/src/cases/behavior_method_no_return_by_value` (a method declared with no return dispatched by value as a function's last
+`modules/behavior/cases/behavior_method_no_return_by_value` (a method declared with no return dispatched by value as a function's last
 statement — wasm's module was refused at load on the parent).
 144 B-107 (every public behavior of `primitives.bp` no compiler rule reads is ambient) adds
 `modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter` (`Index<string, i32>` and `Slice<i32[]>` as parameters' types, each call answered
@@ -2139,7 +2139,7 @@ host cell a body of `std/io/fs` calls with no binding):
 - `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams` — `chunks(size)` and `lines()`: `\n` and `\r\n` stripped, an empty line, a last line
   with no terminator, an empty file, `lines` after `read`, and a line that is not UTF-8 ending the stream with
   `InvalidUtf8` at its offset in what the call read.
-- `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` — `@embed(…).open()` answers the same text, size, hash and lines as the
+- `modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file` — `@embed(…).open()` answers the same text, size, hash and lines as the
   copy on disk, through one function that takes a `File`; `modules/decisions-taken/asset_size_hash_open-538/cases/embed_open_without_fs_import` — the call
   with no `import {io.fs}` is `embed-open-needs-fs` (every target refuses alike).
 
@@ -2209,10 +2209,10 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/host/cells/host_template_binding_inside_while` | erlang beam | commonJS, wasm — `bump` |
 | `modules/decisions-taken/external_async_result_rejection_is_error-126/cells/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
-| `modules/decisions-taken/any_type_absent-31/cells/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
+| `modules/decisions-taken/any_type_absent-31/cases/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
 | `modules/decisions-taken/wasm_clock_fs_refused-241/cells/std_template_host_fns_across_modules`, `modules/import/cases/import_std_groups`, `modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
 | `modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` |
-| `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
+| `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_rfc3339_domain`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_civil_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_format_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts`, `modules/std/cells/std_generic_primitives`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
@@ -2222,9 +2222,9 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_crash` | commonJS | erlang, wasm, beam — `notText` |
 | `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
 | `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_asserts_throws_over_attempt` | commonJS erlang beam | wasm — `raiseBoom`, `std/testing/asserts.canonical` |
-| `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_default_fn_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_method_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
-| `modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
-| `modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
+| `modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_default_fn_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_method_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
+| `modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
+| `modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
 | `modules/manifest/cells/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `test/erlang_host_sidecar_in_a_test` (a project suite) | erlang beam (`"targets"`) | commonJS, wasm — `hello` |
 | `test/behavior_host_dispatch` (a project suite) | commonJS erlang beam (`"targets"`) | wasm — `makeGreeter` |
@@ -2521,7 +2521,7 @@ are gone.
   that form only). The commonJS/wasm diagnostic names the function called, at the call
   (`std/erlang.node`, at `erlang.node()`); a namespace import none of whose unsupported functions is called
   is refused at the import, naming the module and the functions it lacks
-  (`modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace/snapshot/targets/wasm/`).
+  (`modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_std_folder_namespace/snapshot/targets/wasm/`).
 - **65** (the formatter measures width) — **no cell here**, and none can be: the suite runs programs,
   and decision 65 is about the text `botopink format` writes. Its evidence lives in the formatter's
   own tests (`modules/compiler-core/src/format/`, C-12's rows). This suite meets it only as a
@@ -2611,7 +2611,7 @@ located at the call (it was accepted and answered `1.5`).
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `compiler.custom` and a module shipped via `files` (`modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency`, a local dependency needs no network);
-"no external target for the active backend" (`modules/external/cells/external_erlang_only`, a cell refused on
+"no external target for the active backend" (`modules/external/cases/external_erlang_only`, a cell refused on
 two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
 target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**
 the status through `abort`, so an aborting program is exactly what it can assert).

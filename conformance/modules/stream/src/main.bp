@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("stream_pages_count");
+    runCase("stream_body_lazy");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

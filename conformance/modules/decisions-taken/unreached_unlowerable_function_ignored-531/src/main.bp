@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("std_unbound_host_module_imports");
+    runCase("dependency_unbound_host_method_refused");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

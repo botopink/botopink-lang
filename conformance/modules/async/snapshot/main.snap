@@ -1,3 +1,7 @@
 botopink-cell 2
 == async_block_both
 out ana2
+== async_block_keeps_self
+out 11
+out 12
+out 15

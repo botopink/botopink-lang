@@ -1,0 +1,1 @@
+{ "name": "import_std_folder_namespace", "targets": ["commonJS", "erlang", "beam"] }

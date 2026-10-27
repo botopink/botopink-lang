@@ -15,3 +15,17 @@ out Ok(1) Error("not one: 2")
 out 42
 out 0 1 2 3
 out card hi
+== external_compiler_member
+out 42
+== print_from_io_terminal
+out one 2 true
+out Point(x: 1, y: 2) [3, 4]
+out aliased
+out
+out after the empty line
+== print_local_shadows_import
+out widths [0, 3]
+out done
+== type_info_comptime_run_time
+out City
+out true

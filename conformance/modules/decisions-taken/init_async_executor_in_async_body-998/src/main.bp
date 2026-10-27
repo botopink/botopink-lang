@@ -40,5 +40,7 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("init_async_executor_outside_async_refused");
     runCase("init_executor_value_refused");
+    runCase("init_async_executor_in_async_body");
+    runCase("module_main_async_read_at_build");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

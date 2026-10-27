@@ -52,5 +52,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("case_arm_no_value");
     runCase("comptime_block_break_value");
     runCase("async_block_tail_case");
+    runCase("async_block_tail_value");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

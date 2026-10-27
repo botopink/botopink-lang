@@ -5,8 +5,8 @@ body writes its statements, its `await`s that body's: one `runCase` over a sync 
 package's kind read at build with `Module.mainAsync()` (`init_async_executor_in_async_body`,
 `module_main_async_read_at_build`), on commonJS, erlang, beam and wasm.
 
-[cells/init_async_executor_in_async_body/src/main.bp](cells/init_async_executor_in_async_body/src/main.bp)
-[cells/module_main_async_read_at_build/src/main.bp](cells/module_main_async_read_at_build/src/main.bp)
+[cases/init_async_executor_in_async_body/src/main.bp](cases/init_async_executor_in_async_body/src/main.bp)
+[cases/module_main_async_read_at_build/src/main.bp](cases/module_main_async_read_at_build/src/main.bp)
 
 An `async` executor in a body that is not `async` is `init-async-executor-outside-async`, at the `async`
 (`init_async_executor_outside_async_refused`); an executor whose body ends in a value is `init-executor-value`, at

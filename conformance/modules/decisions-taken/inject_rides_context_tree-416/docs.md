@@ -5,7 +5,7 @@
 [cases/context_behavior_not_implemented/src/main.bp](cases/context_behavior_not_implemented/src/main.bp)
 [cases/inject_behavior/src/main.bp](cases/inject_behavior/src/main.bp)
 [cells/inject_behavior_keyed/src/main.bp](cells/inject_behavior_keyed/src/main.bp)
-[cells/inject_default_imported/src/main.bp](cells/inject_default_imported/src/main.bp)
+[cases/inject_default_imported/src/main.bp](cases/inject_default_imported/src/main.bp)
 [cases/inject_field_undeclared/src/main.bp](cases/inject_field_undeclared/src/main.bp)
 [cases/inject_not_record_enum/src/main.bp](cases/inject_not_record_enum/src/main.bp)
 [cells/inject_record/src/main.bp](cells/inject_record/src/main.bp)

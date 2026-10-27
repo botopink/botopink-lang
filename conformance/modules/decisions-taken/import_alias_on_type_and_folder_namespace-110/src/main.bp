@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("imported_type_alias_in_later_signature");
     runCase("import_alias_on_type");
     runCase("import_alias_static_call");
+    runCase("import_std_folder_namespace");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

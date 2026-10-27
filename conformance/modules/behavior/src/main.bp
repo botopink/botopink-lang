@@ -47,5 +47,17 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("behavior_host_value_wasm_refused");
     runCase("behavior_method_host_value");
     runCase("behavior_method_imported");
+    runCase("behavior_across_modules");
+    runCase("behavior_array_of_implementers");
+    runCase("behavior_declaration");
+    runCase("behavior_default_adopted_across_modules");
+    runCase("behavior_default_adopted_by_two_types");
+    runCase("behavior_implemented_by_enum");
+    runCase("behavior_method_by_receiver_type");
+    runCase("behavior_method_dispatch_by_value");
+    runCase("behavior_method_no_return_by_value");
+    runCase("behavior_method_result_chained");
+    runCase("behavior_named_like_prelude_value");
+    runCase("behavior_value_from_implementer");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -36,3 +36,62 @@ out response Server
 == behavior_method_imported on wasm
 refused error: `hostRequest` has no implementation for the wasm backend
 at src/main.bp:12:15
+== behavior_across_modules
+out /home out
+out at /about
+out /held
+== behavior_array_of_implementers
+out a1
+out bx
+out by
+out a2
+out a3,bz
+== behavior_declaration
+out ana
+== behavior_default_adopted_across_modules
+out 18
+out sq!
+out 1000
+out 8
+out 10
+== behavior_default_adopted_by_two_types
+out 18
+out area 18
+out 20
+out rect
+out 2
+out 14
+== behavior_implemented_by_enum
+out /
+out /p/a
+out /p/b 1
+out / 1
+out /
+out /p/c
+== behavior_method_by_receiver_type
+out m:k
+out /d/k
+out /var/x
+out mem:y
+out table rz
+== behavior_method_dispatch_by_value
+out at /about
+out /api/v2
+out 20
+out /home
+out [2, 6]
+== behavior_method_no_return_by_value
+out shut front
+== behavior_method_result_chained
+out 3
+out REX
+out 3
+out 4
+== behavior_named_like_prelude_value
+out <hi>
+out card hi
+== behavior_value_from_implementer
+out m:a
+out m:b
+out /d/c
+out m:d

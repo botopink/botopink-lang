@@ -1,0 +1,15 @@
+import {io.terminal.print} from "std";
+
+behavior Printable {
+    fn print(self: Self) -> void;
+}
+
+type Person(name: string) implement Printable {
+    fn print(self: Self) -> void {
+        print(self.name);
+    }
+}
+
+pub fn main() -> void {
+    Person(name: "ana").print(); // ana
+}

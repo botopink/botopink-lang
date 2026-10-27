@@ -6,3 +6,21 @@ at src/main.bp:7:7
 out 5
 out 3000000005
 out 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+== fs_asset_opens_as_file
+out on disk
+out 14
+out true
+out 6f6e65
+out line []
+out line [two]
+out line [three]
+out 0
+out embedded
+out 14
+out true
+out 6f6e65
+out line []
+out line [two]
+out line [three]
+out 0
+out true

@@ -8,4 +8,4 @@ both sides: `name()` the directory it sits in, `path()` the file relative to the
 In the cell `main` loads a file that compiles and one that does not, reading each answer with `case`: it prints the
 `Module`'s `name()` and `path()` on `Ok`, and the refused file's `r.module.path()` and `name()` inside `Refused`.
 
-[cells/compiler_load_answers_module/src/main.bp](cells/compiler_load_answers_module/src/main.bp)
+[cases/compiler_load_answers_module/src/main.bp](cases/compiler_load_answers_module/src/main.bp)

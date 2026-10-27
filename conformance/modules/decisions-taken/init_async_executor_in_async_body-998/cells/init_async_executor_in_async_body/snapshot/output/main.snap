@@ -1,8 +1,0 @@
-botopink-cell 1
-out before
-out plain ok [plain main
-out ]
-out later ok [later before
-out later after 42
-out ]
-out after

@@ -3,3 +3,34 @@ botopink-cell 2
 out Page: async, Header: sync, Comments: async, Card: sync
 out Ring: async, Link: async
 out Feed: async
+== component_default_fn_sync
+out false
+out true
+out false
+out true
+out false
+out badge x
+out 2 comments
+== component_default_fn_sync on erlang
+abort
+== component_default_fn_sync on beam
+abort
+== component_method_sync
+out false
+out true
+out false
+out menu a 2 comments
+out menu b
+== component_method_sync on erlang
+abort
+== component_method_sync on beam
+abort
+== component_sync_plain_function
+out false
+out true
+out card:a card:b 2 comments
+out card:direct
+== component_sync_plain_function on erlang
+abort
+== component_sync_plain_function on beam
+abort

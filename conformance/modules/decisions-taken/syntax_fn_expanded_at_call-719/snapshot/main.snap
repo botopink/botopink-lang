@@ -17,3 +17,9 @@ out sum: n + 4 = 7
 == syntax_fn_text_of_expression
 out ok: a == b
 out failed: a == c
+== syntax_fn_called_through_module
+out src/main.bp:14 <p>page</p>
+out true
+== syntax_fn_tree_library_type_chain
+out 20,40,60
+out 3

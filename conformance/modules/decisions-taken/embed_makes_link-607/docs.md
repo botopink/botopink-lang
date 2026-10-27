@@ -10,6 +10,6 @@ with `catch panic(…)`. The program prints `src/greeting.txt`, `hello from the 
 
 Cells that also bear on it: `modules/decisions-taken/embed_returns_asset-519/cases/embed_text_file`, `modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_path_absolute`,
 `modules/decisions-taken/embed_returns_asset-519/cases/embed_path_outside_package`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_file_missing`, `modules/decisions-taken/embed_returns_asset-519/cases/embed_path_not_known`,
-`modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file`.
+`modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file`.
 
 [draft/main.bp](draft/main.bp)

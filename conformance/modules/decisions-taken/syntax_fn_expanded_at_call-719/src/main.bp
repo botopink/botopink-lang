@@ -44,5 +44,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("syntax_fn_expanded_at_call");
     runCase("syntax_fn_run_time_return");
     runCase("syntax_fn_text_of_expression");
+    runCase("syntax_fn_called_through_module");
+    runCase("syntax_fn_tree_library_type_chain");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

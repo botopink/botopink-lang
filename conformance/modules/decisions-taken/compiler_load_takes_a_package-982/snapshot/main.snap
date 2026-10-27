@@ -8,3 +8,7 @@ at src/main.bp:7:41
 == loaded_targets_checked
 out node_only true
 out with_erlang refused std-unsupported-on-target at src/main.bp:4
+== package_answers_module
+out ok name=fine_package path=packages/fine
+out refused name=broken_package path=packages/broken
+out at src/main.bp:2

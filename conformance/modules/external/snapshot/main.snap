@@ -55,3 +55,10 @@ out [b]
 == external_template_quote_in_host_string
 out 2
 out 0
+== external_erlang_only
+out hi
+== external_erlang_only on commonJS
+abort
+== external_erlang_only on wasm
+refused error: `listToBinary` has no implementation for the wasm backend
+at src/main.bp:23:11

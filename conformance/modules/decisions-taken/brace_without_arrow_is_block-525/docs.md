@@ -1,7 +1,7 @@
 # Decision 525 — A `{` without `->` is a block, never a closure; `@block` is removed; a block used as a value answers its last expression written without `;` (409).
 
 [cases/async_block_tail_case/src/main.bp](cases/async_block_tail_case/src/main.bp)
-[cells/async_block_tail_value/src/main.bp](cells/async_block_tail_value/src/main.bp)
+[cases/async_block_tail_value/src/main.bp](cases/async_block_tail_value/src/main.bp)
 [cases/block_argument_not_function/src/main.bp](cases/block_argument_not_function/src/main.bp)
 [cases/block_builtin_removed/src/main.bp](cases/block_builtin_removed/src/main.bp)
 [cases/block_for_return_leaves_function/src/main.bp](cases/block_for_return_leaves_function/src/main.bp)

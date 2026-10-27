@@ -251,9 +251,9 @@ here so a later row that removes one knows what it is removing:
 | `buildExpr` `.try_` | a nested `try` in expression position: bind, propagate the error, unwrap `ok` | **yes** |
 | `buildExpr` `try … catch` | the same with a handler | **yes** |
 | `buildExpr` `val assert … catch` | bind `_match`, test the pattern, run the handler (decision 8 §9) | **yes** |
-| `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression; a branch that `await`s makes it `await (async () => { … })()` through `iife` (`AwaitScan`), because `await` does not parse in a plain arrow (`modules/task/cells/task_await_in_if_block`) | **yes** |
+| `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression; a branch that `await`s makes it `await (async () => { … })()` through `iife` (`AwaitScan`), because `await` does not parse in a plain arrow (`modules/task/cases/task_await_in_if_block`) | **yes** |
 | `buildGeneratorLoop` | `iter loop { … }` / `stream loop { … }` (and `iter for` / `iter while`, written as the prefixed `loop`) — a `function*` / `async function*` IIFE around `while (true)` invoked `.call(this)` (a generator cannot be an arrow, so the method's `this` (`self`) is handed in; `conformance/modules/loop/run/src/cases/loop_keeps_self`) (decisions 105, 125; every other loop is a statement) | **yes** |
-| `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm; an arm that `await`s makes it `await (async () => { … })()` (`AwaitScan`, `modules/task/cells/task_await_in_case_arm`) | **yes** |
+| `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm; an arm that `await`s makes it `await (async () => { … })()` (`AwaitScan`, `modules/task/cases/task_await_in_case_arm`) | **yes** |
 
 A block `{ … }` (decision 525; `@block` is removed) is a `case true { _ { … } }`
 (`ast.CollectionExpr.case.isBlock`) here: `buildCase` / `caseStmtWithReturns`
@@ -279,7 +279,7 @@ under `/** @throws {E} */` (`typescript.zig` `taskError`).
 | Site | Lowering |
 |---|---|
 | `fn f() -> @Async<@Result<T, E>>` (a top-level fn, a record's or an enum's method) | a plain `function` answering `__bp_task((async () => { …body… })())`: the body is built one level deeper, exactly as any `-> @Result` body (`{ ok }` / `{ error }` values, the `try` guards), and `__bp_task` turns its value into the task — resolved with `r.ok`, rejected with `r.error` (`failingTaskBody`) |
-| `async { … }` whose value is a `@Result` its body builds (`InstanceLowering.failing_task_block`) | `__bp_task((async () => { … })())` — an arrow, never a `function`: the block keeps the method's `this` (`self`; `conformance/modules/async/cells/async_block_keeps_self`) |
+| `async { … }` whose value is a `@Result` its body builds (`InstanceLowering.failing_task_block`) | `__bp_task((async () => { … })())` — an arrow, never a `function`: the block keeps the method's `this` (`self`; `conformance/modules/async/cases/async_block_keeps_self`) |
 | `await t`, `t: @Async<X>` with `X` a `@Result`, `unknown` or a type parameter, or `t` not typed as a task (a record's function field) (`InstanceLowering.task_await`) | `await __bp_await(t)` — a task `__bp_task` marked reads back as `{ ok: v }` / `{ error: e }`; any other value as it is |
 | `return t` of a whole `@Async<X>` wrapper, `X` as above (`InstanceLowering.task_return`) | `return __bp_await(t)` — the `async function` must not adopt the rejection |
 | a `result: true` `-> @Async<@Result<…, HostError>>` host binding | `__bp_host_result_task`, a `__bp_task` over the converted Promise (a flagless binding's Promise is the host's, decision 490) |

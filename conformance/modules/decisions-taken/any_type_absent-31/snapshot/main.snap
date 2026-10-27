@@ -2,3 +2,8 @@ botopink-cell 2
 == any_type_removed
 refused error: any-type-removed: there is no type `any`
 at src/main.bp:8:12
+== host_unknown_parameter
+out 8
+out 3
+== host_unknown_parameter on commonJS
+abort

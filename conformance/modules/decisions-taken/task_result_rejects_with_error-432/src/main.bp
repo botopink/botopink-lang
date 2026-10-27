@@ -39,5 +39,9 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("async_retry_policy");
+    runCase("task_async_block_in_lambda");
+    runCase("task_lambda_result_unannotated");
+    runCase("task_result_caught_by_js");
+    runCase("task_result_rejects");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

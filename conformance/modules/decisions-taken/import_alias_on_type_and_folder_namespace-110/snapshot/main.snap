@@ -10,3 +10,10 @@ out 1
 out 0
 out 2
 out 9
+== import_std_folder_namespace
+out true
+out 2000
+out true
+== import_std_folder_namespace on wasm
+refused error: std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
+at src/main.bp:14:19

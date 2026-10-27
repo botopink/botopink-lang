@@ -4,5 +4,5 @@
 [cases/syntax_fn_expression_param_given_template_text/src/main.bp](cases/syntax_fn_expression_param_given_template_text/src/main.bp)
 [cases/syntax_fn_string_param_needs_template_text/src/main.bp](cases/syntax_fn_string_param_needs_template_text/src/main.bp)
 [cases/syntax_fn_text_of_expression/src/main.bp](cases/syntax_fn_text_of_expression/src/main.bp)
-[cells/syntax_fn_called_through_module/src/main.bp](cells/syntax_fn_called_through_module/src/main.bp)
+[cases/syntax_fn_called_through_module/src/main.bp](cases/syntax_fn_called_through_module/src/main.bp)
 [cases/syntax_fn_run_time_return/src/main.bp](cases/syntax_fn_run_time_return/src/main.bp)

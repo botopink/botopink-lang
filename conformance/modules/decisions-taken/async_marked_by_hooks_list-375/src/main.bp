@@ -39,5 +39,8 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("decl_hooks_async");
+    runCase("component_default_fn_sync");
+    runCase("component_method_sync");
+    runCase("component_sync_plain_function");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

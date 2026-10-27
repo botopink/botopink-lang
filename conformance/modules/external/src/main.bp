@@ -53,5 +53,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("external_template_binding");
     runCase("external_template_escaped_quote");
     runCase("external_template_quote_in_host_string");
+    runCase("external_erlang_only");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

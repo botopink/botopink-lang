@@ -1976,11 +1976,11 @@ behavior's one declared type. A record recovered from the receiver expression
 is no longer used for a behavior call — `Array<Request>`'s elements were all
 read as the first literal's type. A lambda written against a declared function
 type also types a record parameter (`Lambda.param_rec`), so `out.tag` reads
-`Out`'s slot. `conformance/modules/behavior/run/src/cases/behavior_method_dispatch_by_value`.
+`Out`'s slot. `conformance/modules/behavior/cases/behavior_method_dispatch_by_value`.
 `exprTail` reads the same first implementer's signature for a call inference
 placed (`.by_value`, or a `.type_` naming no record or enum): a method declared
 with no return pushes nothing, so a function ending in `c.close()` takes no
-`(result i32)` it never fills (`conformance/modules/behavior/run/src/cases/behavior_method_no_return_by_value`).
+`(result i32)` it never fills (`conformance/modules/behavior/cases/behavior_method_no_return_by_value`).
 A `.by_value` method whose name a function of the module or its imports also
 holds (`r.find(1)` beside std `context`'s `find`, which the scope lowering links)
 dispatches by the value before the function is considered
@@ -2340,7 +2340,7 @@ answered, and each was a red wasm cell of `conformance`:
   of `Shape.label` had a type variable for a receiver and no lowering —
   `unresolved call: toString/0`, a trap in `Sq_label`. `Sq_twice -> i32` says
   it is an integer; the fallback answers only a primitive whose table has the
-  method (`modules/behavior/run/src/cases/behavior_default_adopted_by_two_types`, 02-erlang's cell).
+  method (`modules/behavior/cases/behavior_default_adopted_by_two_types`, 02-erlang's cell).
 - **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
   `methodsWithDefaults`): each one the type does not write is emitted as its own
   `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over

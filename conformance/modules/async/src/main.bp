@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("async_block_both");
+    runCase("async_block_keeps_self");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -9,3 +9,38 @@ out 14
 out 11
 out 18
 out 60
+== task_await_in_case_arm
+out 42
+out 5
+out 42
+out -1
+out 8
+out 0
+out 42
+out 42
+out -1
+out 43
+out 8
+== task_await_in_if_block
+out 1
+out 0
+out 111
+out 110
+out 9
+== task_lambda_method_to_string
+out ok 12
+out error negative -2
+== task_result_await
+out Hello, ana
+out Hello, guest
+out ana
+out error: no user 0
+== task_void_return_in_if_block
+out --
+out after
+out --
+out --
+out a, not b
+out end of deeper
+out --
+out not a

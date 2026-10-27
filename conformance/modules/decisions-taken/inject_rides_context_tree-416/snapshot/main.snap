@@ -17,3 +17,6 @@ out mem#1
 == inject_test_root_fake
 out smtp:x@y.z
 out fake:a@b.c
+== inject_default_imported
+out never
+out noon

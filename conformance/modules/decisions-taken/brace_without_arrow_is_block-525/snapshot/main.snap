@@ -54,3 +54,7 @@ at src/main.bp:10:5
 == async_block_tail_case
 out -1
 out 1940
+== async_block_tail_value
+out 0
+out 7
+out 10

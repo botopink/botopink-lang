@@ -10,3 +10,19 @@ out one!
 out many
 out 012-k
 out 6
+== generic_thunk_result_binds
+out attempt answered
+== task_await_after_call_refused_on_wasm
+out label x
+out x42
+== task_await_after_call_refused_on_wasm on wasm
+refused error: the wasm backend resumes an `await` by entering its statement again, and a call evaluated before it in that statement would run twice — bind the call's result to a `val` before the statement (decision 392)
+at src/main.bp:23:28
+== task_starts_when_made
+out started a
+out made
+out a! a!
+out block started
+out started b
+out block made
+out b!

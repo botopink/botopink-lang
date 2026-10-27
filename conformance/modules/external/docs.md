@@ -1,7 +1,7 @@
 # external
 
 [cells/external_erlang_host_module_missing/src/main.bp](cells/external_erlang_host_module_missing/src/main.bp)
-[cells/external_erlang_only/src/main.bp](cells/external_erlang_only/src/main.bp)
+[cases/external_erlang_only/src/main.bp](cases/external_erlang_only/src/main.bp)
 [cases/external_host_record/src/main.bp](cases/external_host_record/src/main.bp)
 [cases/external_lowercase_target/src/main.bp](cases/external_lowercase_target/src/main.bp)
 [cells/external_method_erlang_only/src/main.bp](cells/external_method_erlang_only/src/main.bp)

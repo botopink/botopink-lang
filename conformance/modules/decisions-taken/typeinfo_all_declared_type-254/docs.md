@@ -2,7 +2,7 @@
 
 [cases/call_unknown_without_narrowing/src/main.bp](cases/call_unknown_without_narrowing/src/main.bp)
 [cases/is_fn_narrows_unknown/src/main.bp](cases/is_fn_narrows_unknown/src/main.bp)
-[cells/is_fn_wrong_arity_fails/src/main.bp](cells/is_fn_wrong_arity_fails/src/main.bp)
+[cases/is_fn_wrong_arity_fails/src/main.bp](cases/is_fn_wrong_arity_fails/src/main.bp)
 [cells/typeinfo_all_registration/src/main.bp](cells/typeinfo_all_registration/src/main.bp)
 [cases/typeinfo_all_value_unknown/src/main.bp](cases/typeinfo_all_value_unknown/src/main.bp)
 

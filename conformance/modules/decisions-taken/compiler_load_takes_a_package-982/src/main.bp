@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("file_path_refused");
     runCase("no_main_refused");
     runCase("loaded_targets_checked");
+    runCase("package_answers_module");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

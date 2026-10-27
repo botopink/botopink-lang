@@ -66,14 +66,14 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/async_block_all_of | modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_all_of | 124 |  | t |
 | modules/async_block_both | modules/async/cases/async_block_both |  |  | c |
 | modules/async_block_conflicting_errors | modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_conflicting_errors | 124 |  | b |
-| modules/async_block_keeps_self | modules/async/cells/async_block_keeps_self |  |  | c |
+| modules/async_block_keeps_self | modules/async/cases/async_block_keeps_self |  |  | c |
 | modules/async_block_return | modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_return | 124 | 119 | b |
 | modules/async_block_tail_case | modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_case | 525 |  | b |
-| modules/async_block_tail_value | modules/decisions-taken/brace_without_arrow_is_block-525/cells/async_block_tail_value | 525 |  | b |
+| modules/async_block_tail_value | modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_value | 525 |  | b |
 | modules/async_block_use | modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_use | 124 |  | b |
 | modules/async_block_value_type | modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_value_type | 124 |  | b |
 | modules/async_retry_policy | modules/decisions-taken/task_result_rejects_with_error-432/cases/async_retry_policy | 432 | 319 | b |
-| modules/await_in_case_block_arm | modules/decisions-taken/lambda_answers_last_expression-541/cells/await_in_case_block_arm | 541 |  | b |
+| modules/await_in_case_block_arm | modules/decisions-taken/lambda_answers_last_expression-541/cases/await_in_case_block_arm | 541 |  | b |
 | modules/await_in_result_generator | modules/decisions-taken/body_marker_whole_return_type-553/cases/await_in_result_generator | 553 |  | b |
 | modules/await_postfix_binds_tighter | modules/decisions-taken/await_try_prefix_catch_infix-537/cells/await_postfix_binds_tighter | 537 |  | b |
 | modules/await_result_print | modules/await/cases/await_result_print |  |  | c |
@@ -112,29 +112,29 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/beam_memory_pt_write | modules/beam/cases/beam_memory_pt_write |  |  | c |
 | modules/beam_memory_unknown_argument | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_unknown_argument | 547 |  | b |
 | modules/beam_memory_unknown_member | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_unknown_member | 547 |  | b |
-| modules/behavior_across_modules | modules/behavior/run/src/cases/behavior_across_modules |  |  | c |
-| modules/behavior_array_of_implementers | modules/behavior/run/src/cases/behavior_array_of_implementers |  |  | c |
+| modules/behavior_across_modules | modules/behavior/cases/behavior_across_modules |  |  | c |
+| modules/behavior_array_of_implementers | modules/behavior/cases/behavior_array_of_implementers |  |  | c |
 | modules/behavior_associated_fn_imported | modules/behavior/cases/behavior_associated_fn_imported |  |  | c |
-| modules/behavior_declaration | modules/behavior/run/src/cases/behavior_declaration |  |  | c |
-| modules/behavior_default_adopted_across_modules | modules/behavior/run/src/cases/behavior_default_adopted_across_modules |  |  | c |
-| modules/behavior_default_adopted_by_two_types | modules/behavior/run/src/cases/behavior_default_adopted_by_two_types |  |  | c |
+| modules/behavior_declaration | modules/behavior/cases/behavior_declaration |  |  | c |
+| modules/behavior_default_adopted_across_modules | modules/behavior/cases/behavior_default_adopted_across_modules |  |  | c |
+| modules/behavior_default_adopted_by_two_types | modules/behavior/cases/behavior_default_adopted_by_two_types |  |  | c |
 | modules/behavior_default_awaits | modules/behavior/cases/behavior_default_awaits |  |  | c |
 | modules/behavior_default_fn_body_checked | modules/behavior/cases/behavior_default_fn_body_checked |  |  | c |
 | modules/behavior_from_host_declare | modules/behavior/cases/behavior_from_host_declare |  |  | c |
 | modules/behavior_host_value_wasm_refused | modules/behavior/cases/behavior_host_value_wasm_refused |  |  | c |
-| modules/behavior_implemented_by_enum | modules/behavior/run/src/cases/behavior_implemented_by_enum |  |  | c |
-| modules/behavior_method_by_receiver_type | modules/behavior/run/src/cases/behavior_method_by_receiver_type |  |  | c |
-| modules/behavior_method_dispatch_by_value | modules/behavior/run/src/cases/behavior_method_dispatch_by_value |  |  | c |
+| modules/behavior_implemented_by_enum | modules/behavior/cases/behavior_implemented_by_enum |  |  | c |
+| modules/behavior_method_by_receiver_type | modules/behavior/cases/behavior_method_by_receiver_type |  |  | c |
+| modules/behavior_method_dispatch_by_value | modules/behavior/cases/behavior_method_dispatch_by_value |  |  | c |
 | modules/behavior_method_host_value | modules/behavior/cases/behavior_method_host_value |  |  | c |
 | modules/behavior_method_imported | modules/behavior/cases/behavior_method_imported |  |  | c |
-| modules/behavior_method_no_return_by_value | modules/behavior/run/src/cases/behavior_method_no_return_by_value |  |  | c |
-| modules/behavior_method_result_chained | modules/behavior/run/src/cases/behavior_method_result_chained |  |  | c |
+| modules/behavior_method_no_return_by_value | modules/behavior/cases/behavior_method_no_return_by_value |  |  | c |
+| modules/behavior_method_result_chained | modules/behavior/cases/behavior_method_result_chained |  |  | c |
 | modules/behavior_method_result_dispatch | modules/decisions-taken/store_answers_result_store_error-304/cases/behavior_method_result_dispatch | 304 |  | b |
 | modules/behavior_method_result_typed | modules/behavior/cases/behavior_method_result_typed |  |  | c |
 | modules/behavior_named_like_prelude_type | modules/behavior/run/src/cases/behavior_named_like_prelude_type |  |  | c |
-| modules/behavior_named_like_prelude_value | modules/behavior/run/src/cases/behavior_named_like_prelude_value |  |  | c |
+| modules/behavior_named_like_prelude_value | modules/behavior/cases/behavior_named_like_prelude_value |  |  | c |
 | modules/behavior_parameter | modules/behavior/cases/behavior_parameter |  |  | c |
-| modules/behavior_value_from_implementer | modules/behavior/run/src/cases/behavior_value_from_implementer |  |  | c |
+| modules/behavior_value_from_implementer | modules/behavior/cases/behavior_value_from_implementer |  |  | c |
 | modules/bigint_across_modules | modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_across_modules | 332 |  | b |
 | modules/bigint_arithmetic | modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_arithmetic | 332 |  | b |
 | modules/bigint_comptime | modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_comptime | 332 |  | t |
@@ -152,7 +152,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/binding_shadows_parameter | modules/decisions-taken/binding_redeclared_refused-152/cases/binding_shadows_parameter | 152 |  | b |
 | modules/bitwise_operator_absent | modules/bitwise/cases/bitwise_operator_absent |  |  | c |
 | modules/block_argument_not_function | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_argument_not_function | 525 |  | b |
-| modules/block_await_reaches_function | modules/decisions-taken/lambda_answers_last_expression-541/cells/block_await_reaches_function | 541 |  | b |
+| modules/block_await_reaches_function | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_await_reaches_function | 541 |  | b |
 | modules/block_break_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_break_reaches_loop | 541 |  | b |
 | modules/block_builtin_removed | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_builtin_removed | 525 |  | b |
 | modules/block_continue_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_continue_reaches_loop | 541 |  | b |
@@ -300,18 +300,18 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/component_base_parameter | modules/decisions-taken/component_wrapper_and_contexts-354/cases/component_base_parameter | 354 |  | t |
 | modules/component_call_awaited | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_call_awaited | 553 |  | b |
 | modules/component_call_renders | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_call_renders | 553 |  | b |
-| modules/component_default_fn_sync | modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_default_fn_sync | 375 |  | b |
+| modules/component_default_fn_sync | modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_default_fn_sync | 375 |  | b |
 | modules/component_field_lambda_awaited | modules/component/cases/component_field_lambda_awaited |  |  | c |
 | modules/component_hook_and_component | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_hook_and_component | 553 | 388 | b |
 | modules/component_is_lambda | modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda | 388 |  | b |
 | modules/component_lambda_typed_param | modules/decisions-taken/component_lambda_runs-574/cases/component_lambda_typed_param | 574 |  | b |
 | modules/component_lambda_typed_val | modules/decisions-taken/component_lambda_runs-574/cells/component_lambda_typed_val | 574 |  | b |
 | modules/component_loop_await_accumulates | modules/component/cases/component_loop_await_accumulates |  |  | c |
-| modules/component_method_sync | modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_method_sync | 375 |  | b |
+| modules/component_method_sync | modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_method_sync | 375 |  | b |
 | modules/component_plain_return | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_plain_return | 553 |  | b |
 | modules/component_result_try_await | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_result_try_await | 553 | 121 | b |
 | modules/component_run_root | modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_run_root | 388 |  | b |
-| modules/component_sync_plain_function | modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function | 375 |  | b |
+| modules/component_sync_plain_function | modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_sync_plain_function | 375 |  | b |
 | modules/component_try_catch_then_awaits_host_task | modules/decisions-taken/components_compose_by_data-504/cases/component_try_catch_then_awaits_host_task | 504 | 121 | b |
 | modules/component_try_element | modules/decisions-taken/body_marker_whole_return_type-553/cases/component_try_element | 553 | 121 | b |
 | modules/component_try_in_body | modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_try_in_body | 388 | 121 | b |
@@ -674,9 +674,9 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/external_all_bodies | modules/decisions-taken/body_cell_botopink_body-610/cases/external_all_bodies | 610 |  | a |
 | modules/external_beam_removed | modules/decisions-taken/external_erlang_binds_beam-437/cases/external_beam_removed | 437 |  | b |
 | modules/external_body_not_a_fn | modules/decisions-taken/body_cell_botopink_body-610/cases/external_body_not_a_fn | 610 |  | a |
-| modules/external_compiler_member | modules/decisions-taken/prelude_is_primitives-606/run/src/cases/external_compiler_member | 606 |  | b |
+| modules/external_compiler_member | modules/decisions-taken/prelude_is_primitives-606/cases/external_compiler_member | 606 |  | b |
 | modules/external_erlang_host_module_missing | modules/external/cells/external_erlang_host_module_missing |  |  | c |
-| modules/external_erlang_only | modules/external/cells/external_erlang_only |  |  | c |
+| modules/external_erlang_only | modules/external/cases/external_erlang_only |  |  | c |
 | modules/external_erlang_prefixed_fn_refused | modules/decisions-taken/compiler_annotation_labelled_arguments-305/cases/external_erlang_prefixed_fn_refused | 305 |  | b |
 | modules/external_flag_bare_bool_refused | modules/decisions-taken/external_fields_written_by_label-621/cases/external_flag_bare_bool_refused | 621 |  | a |
 | modules/external_flag_bare_fn_refused | modules/decisions-taken/external_fields_written_by_label-621/cases/external_flag_bare_fn_refused | 621 |  | a |
@@ -795,7 +795,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/for_future_generator_without_await | modules/decisions-taken/body_marker_whole_return_type-553/cases/for_future_generator_without_await | 553 |  | b |
 | modules/for_over_condition | modules/for/cases/for_over_condition |  |  | c |
 | modules/format_annotation_trailing_comma | modules/decisions-taken/bare_variant_expression_refused-587/cases/format_annotation_trailing_comma | 587 |  | b |
-| modules/fs_asset_opens_as_file | modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file | 538 |  | b |
+| modules/fs_asset_opens_as_file | modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file | 538 |  | b |
 | modules/fs_error_message | modules/decisions-taken/fs_error_message_text-563/cases/fs_error_message | 563 |  | b |
 | modules/fs_error_variants | modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants | 711 |  | a |
 | modules/fs_file_defer_close | modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_defer_close | 540 | 539 | b |
@@ -837,7 +837,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/generic_record_nested_field_concat | modules/generic/cases/generic_record_nested_field_concat |  |  | c |
 | modules/generic_record_prints_its_arguments | modules/generic/cases/generic_record_prints_its_arguments |  |  | c |
 | modules/generic_string_equality | modules/generic/cases/generic_string_equality |  |  | c |
-| modules/generic_thunk_result_binds | modules/decisions-taken/task_behaves_as_promise-392/cells/generic_thunk_result_binds | 392 |  | b |
+| modules/generic_thunk_result_binds | modules/decisions-taken/task_behaves_as_promise-392/cases/generic_thunk_result_binds | 392 |  | b |
 | modules/generic_tuple_slot | modules/decisions-taken/wasm_tuple_gc_subtype-568/cases/generic_tuple_slot | 568 |  | b |
 | modules/generic_type_through_imported_function | modules/generic/cases/generic_type_through_imported_function |  |  | c |
 | modules/generic_value_widens_to_optional | modules/generic/cases/generic_value_widens_to_optional |  |  | c |
@@ -853,7 +853,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/host_node_task_result | modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/host_node_task_result | 490 | 489, 431, 126 | b |
 | modules/host_template_binary_patterns | modules/host/cells/host_template_binary_patterns |  |  | c |
 | modules/host_template_binding_inside_while | modules/host/cells/host_template_binding_inside_while |  |  | c |
-| modules/host_unknown_parameter | modules/decisions-taken/any_type_absent-31/cells/host_unknown_parameter | 31 |  | b |
+| modules/host_unknown_parameter | modules/decisions-taken/any_type_absent-31/cases/host_unknown_parameter | 31 |  | b |
 | modules/http_fetch_request | modules/decisions-taken/fetch_one_typed_surface-623/cases/http_fetch_request | 623 |  | a |
 | modules/http_fetch_url_removed | modules/decisions-taken/fetch_one_typed_surface-623/cases/http_fetch_url_removed | 623 |  | a |
 | modules/i32_value_never_widens | modules/i32/cases/i32_value_never_widens |  |  | c |
@@ -907,7 +907,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/import_same_name_twice_unaliased | modules/import/cases/import_same_name_twice_unaliased |  |  | c |
 | modules/import_same_type_name_two_packages_one_aliased | modules/decisions-taken/aliased_same_named_types-310/cases/import_same_type_name_two_packages_one_aliased | 310 |  | b |
 | modules/import_sibling_path_beside_std_name | modules/import/cases/import_sibling_path_beside_std_name |  |  | c |
-| modules/import_std_folder_namespace | modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace | 110 | 518, 107 | t |
+| modules/import_std_folder_namespace | modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_std_folder_namespace | 110 | 518, 107 | t |
 | modules/import_std_groups | modules/import/cases/import_std_groups |  |  | c |
 | modules/import_std_leaf_field_types | modules/import/cases/import_std_leaf_field_types |  |  | c |
 | modules/import_std_namespace_no_bare_variant | modules/decisions-taken/ok_error_not_constructors-208/cases/import_std_namespace_no_bare_variant | 208 |  | b |
@@ -962,7 +962,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/init_output_outside_decorator | modules/decisions-taken/compiler_init_executor-615/cases/init_output_outside_decorator | 615 |  | a |
 | modules/inject_behavior | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_behavior | 416 |  | b |
 | modules/inject_behavior_keyed | modules/decisions-taken/inject_rides_context_tree-416/cells/inject_behavior_keyed | 416 |  | b |
-| modules/inject_default_imported | modules/decisions-taken/inject_rides_context_tree-416/cells/inject_default_imported | 416 | 379 | b |
+| modules/inject_default_imported | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_default_imported | 416 | 379 | b |
 | modules/inject_field_undeclared | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_field_undeclared | 416 |  | b |
 | modules/inject_not_record_enum | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_not_record_enum | 416 |  | b |
 | modules/inject_record | modules/decisions-taken/inject_rides_context_tree-416/cells/inject_record | 416 |  | b |
@@ -1009,7 +1009,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/is_comptime_type_parameter | modules/decisions-taken/comptime_type_token_handed_on-757/cases/is_comptime_type_parameter | 757 | 667 | a |
 | modules/is_enum_variant | modules/is/cases/is_enum_variant |  |  | c |
 | modules/is_fn_narrows_unknown | modules/decisions-taken/typeinfo_all_declared_type-254/cases/is_fn_narrows_unknown | 254 |  | b |
-| modules/is_fn_wrong_arity_fails | modules/decisions-taken/typeinfo_all_declared_type-254/cells/is_fn_wrong_arity_fails | 254 |  | b |
+| modules/is_fn_wrong_arity_fails | modules/decisions-taken/typeinfo_all_declared_type-254/cases/is_fn_wrong_arity_fails | 254 |  | b |
 | modules/is_function_type | modules/is/cases/is_function_type |  |  | c |
 | modules/is_truth_table | modules/is/cases/is_truth_table |  |  | c |
 | modules/is_type_outside_value_or_type | modules/decisions-taken/comptime_param_value_or_type-297/cases/is_type_outside_value_or_type | 297 |  | b |
@@ -1227,8 +1227,8 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/primitive_type_name_taken_val | modules/primitive/cases/primitive_type_name_taken_val |  |  | c |
 | modules/print_bare_null | modules/print/cases/print_bare_null |  |  | c |
 | modules/print_formatter | modules/print/cases/print_formatter |  |  | c |
-| modules/print_from_io_terminal | modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_from_io_terminal | 606 |  | b |
-| modules/print_local_shadows_import | modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_local_shadows_import | 606 |  | t |
+| modules/print_from_io_terminal | modules/decisions-taken/prelude_is_primitives-606/cases/print_from_io_terminal | 606 |  | b |
+| modules/print_local_shadows_import | modules/decisions-taken/prelude_is_primitives-606/cases/print_local_shadows_import | 606 |  | t |
 | modules/print_nested | modules/print/cases/print_nested |  |  | c |
 | modules/print_result | modules/print/cases/print_result |  |  | c |
 | modules/print_value_text | modules/print/cases/print_value_text |  |  | c |
@@ -1388,7 +1388,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/std_unicode_on_every_target | modules/decisions-taken/unicode_normalize_in_botopink-333/cases/std_unicode_on_every_target | 333 | 262 | b |
 | modules/std_unsupported_names_the_call | modules/std/cells/std_unsupported_names_the_call |  |  | c |
 | modules/std_unsupported_refused_at_the_call | modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_unsupported_refused_at_the_call | 518 |  | b |
-| modules/stream_body_lazy | modules/stream/cells/stream_body_lazy |  |  | c |
+| modules/stream_body_lazy | modules/stream/cases/stream_body_lazy |  |  | c |
 | modules/stream_loop_no_failure | modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/stream_loop_no_failure | 125 | 553 | t |
 | modules/stream_pages | modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/stream_pages | 553 | 121 | b |
 | modules/stream_pages_count | modules/stream/cases/stream_pages_count |  |  | c |
@@ -1427,26 +1427,26 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/tail_recursive_sum | modules/tail/cases/tail_recursive_sum |  |  | c |
 | modules/tail_self_call | modules/tail/cases/tail_self_call |  |  | c |
 | modules/task_array_awaited_in_for | modules/task/cases/task_array_awaited_in_for |  |  | c |
-| modules/task_async_block_in_lambda | modules/decisions-taken/task_result_rejects_with_error-432/cells/task_async_block_in_lambda | 432 |  | b |
-| modules/task_await_after_call_refused_on_wasm | modules/decisions-taken/task_behaves_as_promise-392/cells/task_await_after_call_refused_on_wasm | 392 |  | b |
-| modules/task_await_in_case_arm | modules/task/cells/task_await_in_case_arm |  |  | c |
-| modules/task_await_in_if_block | modules/task/cells/task_await_in_if_block |  |  | c |
+| modules/task_async_block_in_lambda | modules/decisions-taken/task_result_rejects_with_error-432/cases/task_async_block_in_lambda | 432 |  | b |
+| modules/task_await_after_call_refused_on_wasm | modules/decisions-taken/task_behaves_as_promise-392/cases/task_await_after_call_refused_on_wasm | 392 |  | b |
+| modules/task_await_in_case_arm | modules/task/cases/task_await_in_case_arm |  |  | c |
+| modules/task_await_in_if_block | modules/task/cases/task_await_in_if_block |  |  | c |
 | modules/task_await_no_try | modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_no_try | 553 |  | b |
 | modules/task_await_result | modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_result | 553 | 121, 119 | b |
 | modules/task_compose_by_async_block | modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_compose_by_async_block | 523 | 375 | b |
-| modules/task_failure_rejects | modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_failure_rejects | 523 |  | a |
-| modules/task_lambda_method_to_string | modules/task/cells/task_lambda_method_to_string |  |  | c |
-| modules/task_lambda_result_unannotated | modules/decisions-taken/task_result_rejects_with_error-432/cells/task_lambda_result_unannotated | 432 |  | b |
+| modules/task_failure_rejects | modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_failure_rejects | 523 |  | a |
+| modules/task_lambda_method_to_string | modules/task/cases/task_lambda_method_to_string |  |  | c |
+| modules/task_lambda_result_unannotated | modules/decisions-taken/task_result_rejects_with_error-432/cases/task_lambda_result_unannotated | 432 |  | b |
 | modules/task_method_refused | modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_method_refused | 523 |  | b |
-| modules/task_result_await | modules/task/cells/task_result_await |  |  | c |
-| modules/task_result_caught_by_js | modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_caught_by_js | 432 |  | b |
-| modules/task_result_rejects | modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_rejects | 432 |  | b |
+| modules/task_result_await | modules/task/cases/task_result_await |  |  | c |
+| modules/task_result_caught_by_js | modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_caught_by_js | 432 |  | b |
+| modules/task_result_rejects | modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_rejects | 432 |  | b |
 | modules/task_resumes_in_place | modules/decisions-taken/task_behaves_as_promise-392/cases/task_resumes_in_place | 392 |  | b |
 | modules/task_return_layers | modules/decisions-taken/body_marker_whole_return_type-553/cells/task_return_layers | 553 | 119 | b |
-| modules/task_starts_when_made | modules/decisions-taken/task_behaves_as_promise-392/cells/task_starts_when_made | 392 |  | b |
+| modules/task_starts_when_made | modules/decisions-taken/task_behaves_as_promise-392/cases/task_starts_when_made | 392 |  | b |
 | modules/task_throw_without_result | modules/decisions-taken/body_marker_whole_return_type-553/cases/task_throw_without_result | 553 | 121 | b |
 | modules/task_try_await_without_result | modules/decisions-taken/body_marker_whole_return_type-553/cases/task_try_await_without_result | 553 | 121 | b |
-| modules/task_void_return_in_if_block | modules/task/cells/task_void_return_in_if_block |  |  | c |
+| modules/task_void_return_in_if_block | modules/task/cases/task_void_return_in_if_block |  |  | c |
 | modules/template_annotation | modules/decisions-taken/template_called_with_raw_text-577/cases/template_annotation | 577 | 311 | b |
 | modules/template_annotation_call_form | modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_annotation_call_form | 577 | 311 | b |
 | modules/template_annotation_called | modules/decisions-taken/bodyless_type_method_is_host_binding-311/cases/template_annotation_called | 311 |  | b |
@@ -1554,7 +1554,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/type_empty_record | modules/decisions-taken/empty_record_written_with_parens-138/cases/type_empty_record | 138 |  | b |
 | modules/type_identity_equality | modules/decisions-taken/equality_is_structural-210/cases/type_identity_equality | 210 |  | b |
 | modules/type_identity_print | modules/type/cases/type_identity_print |  |  | c |
-| modules/type_info_comptime_run_time | modules/decisions-taken/prelude_is_primitives-606/run/src/cases/type_info_comptime_run_time | 606 |  | b |
+| modules/type_info_comptime_run_time | modules/decisions-taken/prelude_is_primitives-606/cases/type_info_comptime_run_time | 606 |  | b |
 | modules/type_keys_outside_val | modules/decisions-taken/field_build_time_value-599/refused/src/cases/type_keys_outside_val | 599 |  | a |
 | modules/type_name_collision | modules/type/cases/type_name_collision |  |  | c |
 | modules/type_named_like_decl_kind | modules/type/cases/type_named_like_decl_kind |  |  | c |

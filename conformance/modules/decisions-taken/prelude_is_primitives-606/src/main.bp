@@ -42,5 +42,9 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("builtin_print_removed");
     runCase("prelude_name_with_sigil");
     runCase("prelude_name_bare");
+    runCase("external_compiler_member");
+    runCase("print_from_io_terminal");
+    runCase("print_local_shadows_import");
+    runCase("type_info_comptime_run_time");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

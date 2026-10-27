@@ -16,3 +16,5 @@ out made 2
 == component_return_needs_use
 refused error: type mismatch: expected View, got Component<View> — a body written `-> Component<View>` answers `View`, and a component call only makes its lambda: resolve it with `use` (decision 791)
 at src/main.bp:15:12
+== component_resolved_by_use_or_tree
+out page title:dark child:dark

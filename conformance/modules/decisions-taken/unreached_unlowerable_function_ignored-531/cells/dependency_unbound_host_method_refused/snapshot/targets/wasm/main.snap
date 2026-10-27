@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `Counter.viaHost` reaches `host`, which has no implementation for the wasm backend
-at src/main.bp:13:13

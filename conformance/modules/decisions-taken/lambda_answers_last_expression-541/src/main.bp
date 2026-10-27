@@ -50,5 +50,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("block_yield_reaches_generator");
     runCase("case_arm_break_value_removed");
     runCase("lambda_semicolon_not_a_value");
+    runCase("await_in_case_block_arm");
+    runCase("block_await_reaches_function");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,13 +1,1 @@
-pub mod behavior_across_modules;
-pub mod behavior_array_of_implementers;
-pub mod behavior_declaration;
-pub mod behavior_default_adopted_across_modules;
-pub mod behavior_default_adopted_by_two_types;
-pub mod behavior_implemented_by_enum;
-pub mod behavior_method_by_receiver_type;
-pub mod behavior_method_dispatch_by_value;
-pub mod behavior_method_no_return_by_value;
-pub mod behavior_method_result_chained;
 pub mod behavior_named_like_prelude_type;
-pub mod behavior_named_like_prelude_value;
-pub mod behavior_value_from_implementer;

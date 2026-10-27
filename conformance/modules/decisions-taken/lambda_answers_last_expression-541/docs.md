@@ -1,7 +1,7 @@
 # Decision 541 — What decision 525 leaves open about blocks
 
-[cells/await_in_case_block_arm/src/main.bp](cells/await_in_case_block_arm/src/main.bp)
-[cells/block_await_reaches_function/src/main.bp](cells/block_await_reaches_function/src/main.bp)
+[cases/await_in_case_block_arm/src/main.bp](cases/await_in_case_block_arm/src/main.bp)
+[cases/block_await_reaches_function/src/main.bp](cases/block_await_reaches_function/src/main.bp)
 [cases/block_break_reaches_loop/src/main.bp](cases/block_break_reaches_loop/src/main.bp)
 [cases/block_continue_reaches_loop/src/main.bp](cases/block_continue_reaches_loop/src/main.bp)
 [cases/block_ends_function_body_is_tail/src/main.bp](cases/block_ends_function_body_is_tail/src/main.bp)

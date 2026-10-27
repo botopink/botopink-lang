@@ -1,0 +1,61 @@
+//// Decision 432 — on commonJS a `Async<Result<T, E>>` rejects its Promise
+//// with `E` and resolves it with the bare `T` (no `{ ok }` / `{ error }`
+//// wrapper), so JavaScript that awaits a botopink task writes
+//// `try { await t } catch (e) { … }`. The callers here are host code: a
+//// function value called from JavaScript, a method's task, an `async { }`
+//// block's task and a task whose `try await` propagated, each awaited inside
+//// a JavaScript `try`. A failing task nobody awaits (`check(-9)`, dropped) is
+//// not an unhandled rejection: the program runs to its end.
+////
+//// `"targets"` is `commonJS`: the claim is about a JavaScript Promise;
+//// `task_result_rejects` makes the botopink half on every target.
+
+import {compiler, io.terminal.print} from "std";
+
+type Account(id: i32) {
+    async fn load(self: Self, n: i32) -> Async<Result<i32, string>> {
+        if (n < 0) throw "no account " + n.toString();
+        return self.id + n;
+    }
+}
+
+async fn check(n: i32) -> Async<Result<i32, string>> {
+    if (n < 0) throw "negative " + n.toString();
+    return n * 2;
+}
+
+async fn propagate(n: i32) -> Async<Result<i32, string>> {
+    val v = try await check(n);
+    return v + 1;
+}
+
+#[compiler.external(
+    .JavaScript("""(async (__f, __n) => { try { return 'resolved ' + (await __f(__n)); } catch (__e) { return 'caught ' + __e; } })($0, $1)"""),
+)]
+declare fn callFromJs(f: fn(n: i32) -> Async<Result<i32, string>>, n: i32) -> Async<string>;
+
+#[compiler.external(
+    .JavaScript("""(async (__t) => { try { return 'resolved ' + (await __t); } catch (__e) { return 'caught ' + __e; } })($0)"""),
+)]
+declare fn awaitFromJs(t: Async<Result<i32, string>>) -> Async<string>;
+
+async fn run() -> Async<void> {
+    val dropped = check(-9);
+    print(await callFromJs(check, 1));
+    print(await callFromJs(check, -1));
+    val acc = Account(id: 10);
+    print(await awaitFromJs(acc.load(5)));
+    print(await awaitFromJs(acc.load(-5)));
+    val blk: Async<Result<i32, string>> = async {
+        if (acc.id > 0) throw "block";
+        return 1;
+    };
+    print(await awaitFromJs(blk));
+    print(await awaitFromJs(propagate(2)));
+    print(await awaitFromJs(propagate(-2)));
+    print("end");
+}
+
+pub async fn main() -> Async<void> {
+    await run();
+}

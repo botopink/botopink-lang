@@ -1,0 +1,29 @@
+//// Decision 1003 — `compiler.source(value).root` is the directory the caller's package was
+//// loaded from, `""` in the top-level package: `where` writes its call's file and root into the
+//// run-time call it answers.
+
+import {compiler, code} from "std";
+import {io.terminal.print} from "std";
+
+/// The case runs loaded (decision 989): its root is its directory as the loader keeps it, relative
+/// to the top-level package (decision 1003 (2)) — `cases/syntax_fn_source_root` under its module run
+/// alone, longer under the root package —, so the record names the root's tail, never all of it.
+pub fn whereAt(file: string, root: string) -> bool {
+    val shown = if (root.endsWith("/cases/syntax_fn_source_root")
+        || root == "cases/syntax_fn_source_root")
+        ".../cases/syntax_fn_source_root"
+    else
+        root;
+    print(file + " in [" + shown + "]");
+    return true;
+}
+
+pub fn where(syntax value: unknown) -> anyvalue {
+    val at = compiler.source(value);
+    return code @`whereAt(${at.file}, ${at.root})`;
+}
+
+pub fn main() -> void {
+    val ok = where(1 + 2);
+    print(ok.toString());
+}

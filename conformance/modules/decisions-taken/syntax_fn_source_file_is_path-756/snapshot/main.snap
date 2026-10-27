@@ -2,3 +2,6 @@ botopink-cell 2
 == syntax_fn_source_file_is_path
 out src/main.bp:20
 out true
+== syntax_fn_source_root
+out src/main.bp in [.../cases/syntax_fn_source_root]
+out true

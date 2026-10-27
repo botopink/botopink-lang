@@ -1,7 +1,0 @@
-botopink-cell 1
-out true
-out name=fine
-out path=packages/fine
-out true
-out refused packages/broken
-out refused name=broken

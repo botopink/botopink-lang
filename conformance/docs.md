@@ -1285,7 +1285,7 @@ which names the answer in the path itself and needs no type around it:
 
 ### behavior
 
-<!-- example: modules/behavior/run/src/cases/behavior_declaration -->
+<!-- example: modules/behavior/cases/behavior_declaration -->
 
 A behavior is a type: a parameter, a return, a constructor field, an annotated
 `val` or a `var` typed by it takes any type that implements it, and a call on it
@@ -1298,7 +1298,7 @@ own module, and so is every name an imported type alias mentions.
 A method the behavior declares with no return answers nothing through the
 behavior as through the type, the last statement of a function included:
 
-<!-- example: modules/behavior/run/src/cases/behavior_method_no_return_by_value -->
+<!-- example: modules/behavior/cases/behavior_method_no_return_by_value -->
 
 A method's parameter typed by a behavior takes an implementer as a free
 function's does — through the instance and through the type alike
@@ -1326,7 +1326,7 @@ instance `default fn`s, and those of what it extends, as a type implementing a
 behavior of its own module does; a method of the same name the type writes
 wins:
 
-<!-- example: modules/behavior/run/src/cases/behavior_default_adopted_across_modules -->
+<!-- example: modules/behavior/cases/behavior_default_adopted_across_modules -->
 
 `Display`, `Closeable`, `Index<K, V>` and `Slice<V>` are **ambient** behaviors
 (decision 539 (6)): `primitives.bp` declares them, and a program names them with
@@ -1355,7 +1355,7 @@ reads in every type position — an annotation, a decorator's `syntax decl: …`
 `implement` clause — and the prelude's declaration is out of that module's
 scope.
 
-<!-- example: modules/behavior/run/src/cases/behavior_named_like_prelude_value -->
+<!-- example: modules/behavior/cases/behavior_named_like_prelude_value -->
 
 <!-- example: modules/behavior/run/src/cases/behavior_named_like_prelude_type -->
 
@@ -2362,7 +2362,7 @@ A block is a scope of the enclosing function, never a closure (decision 541): an
 or in a `case` arm's block waits for the enclosing task, a `yield` feeds the enclosing generator, and
 a bare `break` leaves the enclosing loop. A block that ends a function body is its tail:
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/block_await_reaches_function -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/block_await_reaches_function -->
 
 <!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/block_yield_reaches_generator -->
 
@@ -2917,9 +2917,9 @@ parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
 through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
-<!-- example: modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_method_sync -->
+<!-- example: modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_method_sync -->
 
-<!-- example: modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_default_fn_sync -->
+<!-- example: modules/decisions-taken/async_marked_by_hooks_list-375/cases/component_default_fn_sync -->
 
 **A type is a component** (decisions 804 (1), 593 (2)). A type implementing
 `Component<R>` is the `fn` component it reads as: its fields are the props
@@ -3035,7 +3035,7 @@ context per dependency, so a test's root swaps one.
 
 <!-- example: modules/decisions-taken/inject_rides_context_tree-416/cases/inject_not_record_enum -->
 
-<!-- example: modules/decisions-taken/inject_rides_context_tree-416/cells/inject_default_imported -->
+<!-- example: modules/decisions-taken/inject_rides_context_tree-416/cases/inject_default_imported -->
 
 <!-- example: modules/decisions-taken/inject_rides_context_tree-416/cases/context_behavior_not_implemented -->
 
@@ -3060,7 +3060,7 @@ the scope its children receive, `use context(ctx)` finds the identity of
 
 <!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_use_in_body -->
 
-<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cells/component_resolved_by_use_or_tree -->
+<!-- example: modules/decisions-taken/component_resolved_by_use_or_tree-791/cases/component_resolved_by_use_or_tree -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
@@ -3686,7 +3686,7 @@ the value is a `Result` — `Async<Result<T, E>>` is the task that fails with
 `E` — and `await` hands over that `Result`. To propagate the error, combine it
 with `try`:
 
-<!-- example: modules/task/cells/task_result_await -->
+<!-- example: modules/task/cases/task_result_await -->
 
 `await` and `try` are separate things — `await t` waits, `try r` propagates.
 With `t: Async<Result<U, E>>`:
@@ -3702,25 +3702,25 @@ a function or a method that throws, a task handed over whole, generic code
 awaiting an `Async<T>`, tasks started before either is awaited, an
 `async { }` block that throws:
 
-<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_rejects -->
+<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_rejects -->
 
 A generic function over a thunk answering a task — `work: fn() -> Async<Result<T,
 E>>`, std's `async.retry` — binds `T` and `E` from the thunk's answer, in its own
 module or another, and so does the generic it passes the thunk on to:
 
-<!-- example: modules/decisions-taken/task_behaves_as_promise-392/cells/generic_thunk_result_binds -->
+<!-- example: modules/decisions-taken/task_behaves_as_promise-392/cases/generic_thunk_result_binds -->
 
 An `await` may sit in an arm of a `case`, in a branch of an `if` or in a `case` nested in
 an arm, in a generic function as in a plain one: the task suspends there and resumes into
 the arm, with the same answer on every target:
 
-<!-- example: modules/task/cells/task_await_in_case_arm -->
+<!-- example: modules/task/cases/task_await_in_case_arm -->
 
 An `async { }` block that throws is that failing task wherever it sits — the
 body of a lambda, a lambda bound inside a function, a method, a lambda a
 method answers:
 
-<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_async_block_in_lambda -->
+<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cases/task_async_block_in_lambda -->
 
 A lambda answering an `async { }` block is typed where it is written, as any
 lambda is (decision 583): bound without an annotation (`val failing = { n ->
@@ -3728,9 +3728,9 @@ async { throw "inner"; } }`) it is refused `lambda-untyped`; a lambda a
 function or method returns takes its parameters from the declared `fn(n:
 i32) -> …`, so `n.toString()` in it resolves:
 
-<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_lambda_result_unannotated -->
+<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cases/task_lambda_result_unannotated -->
 
-<!-- example: modules/task/cells/task_lambda_method_to_string -->
+<!-- example: modules/task/cases/task_lambda_method_to_string -->
 
 **A `Async` has no methods** (decision 523). `map`, `then`, `mapError` and `catch` are
 withdrawn from `Async<T>` and from `Async<Result<T, E>>`, so a call to one is refused as
@@ -3756,7 +3756,7 @@ it waits for nothing, it creates the task.
 
 <!-- example: modules/async/cases/async_block_both -->
 
-<!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cells/async_block_tail_value -->
+<!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_value -->
 
 <!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cases/async_block_tail_case -->
 
@@ -3786,9 +3786,9 @@ that awaits a botopink task writes `try { await t } catch (e) { … }`, and the
 `.d.ts` declares `Promise<T>` under `/** @throws {E} */`. A failing task nobody
 awaits is not an unhandled rejection.
 
-<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_caught_by_js -->
+<!-- example: modules/decisions-taken/task_result_rejects_with_error-432/cases/task_result_caught_by_js -->
 
-<!-- example: modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_failure_rejects -->
+<!-- example: modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_failure_rejects -->
 
 On erlang and beam a `Async` is eager, `await` is the identity — a failing
 task's value is `{error, E}` — and `async { }` runs the block in place.
@@ -3967,12 +3967,12 @@ there (638):
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cases/syntax_fn_text_of_expression -->
 
-<!-- example: modules/decisions-taken/syntax_fn_source_file_is_path-756/cells/syntax_fn_source_root -->
+<!-- example: modules/decisions-taken/syntax_fn_source_file_is_path-756/cases/syntax_fn_source_root -->
 
 A call through the module's name — `snap.matches(render(page))` after `import {snap} from "snap"`, `probe.matches(…)`
 for a `mod probe` of the package — is expanded as the bare call is:
 
-<!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cells/syntax_fn_called_through_module -->
+<!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cases/syntax_fn_called_through_module -->
 
 Such a function returns any written type `T` — `void` included —, `anyvalue`
 (the built code, typed at the call) or `anytype` (a built type): its build
@@ -4261,8 +4261,8 @@ sources. In a body that runs when the program runs, `compiler` is written
 under `comptime` — `val name = comptime compiler.typeInfo(City).name;` — and the answer is
 computed at build.
 
-<!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/type_info_comptime_run_time -->
-<!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/external_compiler_member -->
+<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/type_info_comptime_run_time -->
+<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/external_compiler_member -->
 
 ### A top-level `comptime { … }`
 
@@ -4322,7 +4322,7 @@ that is not `async`, or in a `comptime { … }` inside such a body, nothing awai
 `init-async-executor-outside-async` at the `async`, the message naming the plain form. An executor whose body ends
 in a value, written without `;`, is refused `init-executor-value` at that value: no value is dropped.
 
-<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_async_executor_in_async_body -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/init_async_executor_in_async_body -->
 <!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/init_async_executor_outside_async_refused -->
 <!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/init_executor_value_refused -->
 
@@ -4353,7 +4353,7 @@ the refusals — the region's value is the `Module`, so the handler ends with on
 function's `Result`, `.isError()` asks, and `case` reads `Ok(m)` / `Error(r)`. There is no `compiler.snapshot`: comparing an answer is
 the program's own (`conformance/lib/`, decision 989).
 
-<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/package_answers_module -->
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/package_answers_module -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/file_path_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/no_main_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/loaded_targets_checked -->
@@ -4388,7 +4388,7 @@ expansion as at a block's, and `try comptime compiler.load(…) catch { r -> …
 one helper serves every case: `runCase(name)` loads `"cases/" + name`, and writes
 `compiler.init({ async -> run.ran(name, await loaded.run()); })` for an `async` `main`, the plain form otherwise.
 
-<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/module_main_async_read_at_build -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/module_main_async_read_at_build -->
 
 Decision 989 (4) — `buildOutput()`, on the `Ok` side and on a `Refused`'s `module`, is what the loaded
 package's build printed (a top-level `comptime { … }` block's `print`), in order, each line ending in
@@ -4402,7 +4402,7 @@ caller.
 
 <!-- example: modules/decisions-taken/module_run_answers_output-989/cases/module_build_output_and_from -->
 
-<!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
+<!-- example: modules/decisions-taken/compiler_load_answers_module-786/cases/compiler_load_answers_module -->
 
 A `Module` that compiled can be run (decisions 787, 792). `m.run()`, written in a `compiler.init`
 body, runs the loaded file's `main` when the program runs, at that point of the init body, and
@@ -5670,7 +5670,7 @@ holds, called or not.
 
 <!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_reached_refused -->
 
-<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cells/dependency_unbound_host_method_refused -->
+<!-- example: modules/decisions-taken/unreached_unlowerable_function_ignored-531/cases/dependency_unbound_host_method_refused -->
 
 wasm has no host of its own, so `.Wasm` does not name a host symbol
 or carry target text: it is **one cell from a closed vocabulary of four**
@@ -5851,7 +5851,7 @@ parameter and checked by **shape** at the annotation — the signature in the
 table, whatever `T` is — and the compiler makes the pending task the host's
 pollable backs:
 
-<!-- example: modules/decisions-taken/task_behaves_as_promise-392/cells/task_starts_when_made -->
+<!-- example: modules/decisions-taken/task_behaves_as_promise-392/cases/task_starts_when_made -->
 
 <!-- example: modules/decisions-taken/host_adapter_answers_generic_task-393/cases/external_wasm_task_adapter_shape -->
 
@@ -6000,8 +6000,8 @@ inside its scope and reads as the local; the import still binds `print` outside 
 `io/terminal` module is part of the build on every target.
 
 <!-- example: modules/terminal/cases/terminal_namespace_import_print -->
-<!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_from_io_terminal -->
-<!-- example: modules/decisions-taken/prelude_is_primitives-606/run/src/cases/print_local_shadows_import -->
+<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/print_from_io_terminal -->
+<!-- example: modules/decisions-taken/prelude_is_primitives-606/cases/print_local_shadows_import -->
 <!-- example: modules/decisions-taken/prelude_is_primitives-606/cells/panic_from_failure -->
 
 There is no `@name`: `@print(…)`, `@panic(…)`, `@todo(…)`, `@typeInfo(…)`, `@src()` and
@@ -6182,7 +6182,7 @@ and `logo.open()` answers `Result<File, FsError>`: reading is `File`'s — `read
 file. A `Link` is made by `compiler.embed` alone, so an `Asset` always holds a path
 the build checked.
 
-<!-- example: modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file -->
+<!-- example: modules/decisions-taken/asset_size_hash_open-538/cases/fs_asset_opens_as_file -->
 
 When the file is read is the `comptime` written at the read (decision 607 (3)): an
 `open()` and its reads inside a `comptime` block read at build, and the bytes are a

@@ -1,0 +1,43 @@
+//// An `async { }` block inside a method reads the method's `self` — the
+//// block, a lambda the method answers and an `async { }` nested in another
+//// all see the same receiver. On commonJS the block was a plain `function`
+//// and `this` was lost (`Cannot read properties of undefined`).
+
+import {io.terminal.print} from "std";
+
+type Worker(id: i32) {
+    fn start(self: Self) -> Async<i32> {
+        return async {
+            return self.id + 1;
+        };
+    }
+
+    fn nestedStart(self: Self) -> Async<i32> {
+        return async {
+            val inner = async {
+                return self.id + 2;
+            };
+            return await inner;
+        };
+    }
+
+    fn lazyStart(self: Self) -> fn(n: i32) -> Async<i32> {
+        return { n ->
+            async {
+                return self.id + n;
+            }
+        };
+    }
+}
+
+async fn run() -> Async<void> {
+    val w = Worker(id: 10);
+    print(await w.start());
+    print(await w.nestedStart());
+    val later = w.lazyStart();
+    print(await later(5));
+}
+
+pub async fn main() -> Async<void> {
+    await run();
+}

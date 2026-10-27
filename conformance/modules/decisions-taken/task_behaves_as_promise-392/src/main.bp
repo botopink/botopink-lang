@@ -39,5 +39,8 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("task_resumes_in_place");
+    runCase("generic_thunk_result_binds");
+    runCase("task_await_after_call_refused_on_wasm");
+    runCase("task_starts_when_made");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

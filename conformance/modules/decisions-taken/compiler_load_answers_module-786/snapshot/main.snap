@@ -3,3 +3,10 @@ botopink-cell 2
 out true
 out erlang
 out browser
+== compiler_load_answers_module
+out true
+out name=fine
+out path=packages/fine
+out true
+out refused packages/broken
+out refused name=broken
