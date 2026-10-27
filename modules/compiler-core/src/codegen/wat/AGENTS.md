@@ -1916,7 +1916,11 @@ advances:
     'R' <n> Name       <k> [ <n> field <shape…> ] * k     a record
     'V' <n> Enum.Var   <k> [ <n> field <shape…> ] * k     ONE variant
 
-A field's shape is the same self-delimiting code `$__print_shaped_raw` walks,
+A field's shape is the same self-delimiting code `$__print_shaped_raw` walks
+(a function-typed field — `fn(…)` or `?fn(…)` — is `F <arity>` / `?F <arity>`,
+`fnFieldShape`, written `fn/<arity>` without reading the closure, decision 1051;
+the same code in an array or a tuple shape, in the GC printers, and a top-level
+`print` of a function value writes the text directly in `lowerPrintArg`),
 and that function answers the address just past it, so the descriptor stores no
 length for it. A record's fields start at the pointer; a variant's start one
 slot in, because slot 0 holds the ordinal the `case` arms test. **One

@@ -107,7 +107,7 @@ std-wasm/
     ├── term.zig   ← the Erlang terms (decision 450): cells (each allocated with its layout, `cellLayout`), atoms (`atomRank`; outside every heap, their names copied), numbers, binaries, lists, tuples, funs (`applyFun` through `env.bp_call<N>`), exceptions (`pending`, class, reason, and where the last raise was — `rt_raised_at` / `rt_raised_at_term`, decision 451 (3)), type tests (`Kind`), term order and equality (`compare`: iterative, an explicit work list, never the runtime's stack — decision 471), maps, the operators, the binary builder; `rt_reset`
     ├── term_faces.zig ← each `exports` entry's comptime face over terms, `rt_std_<symbol>` (a comptime `@compileError` refuses an entry without one)
     ├── otp.zig    ← the OTP table (`table`: `module:name/arity` → its `rt_*` export, `Bif`), the term files (`files`), `isRuntimeExport`
-    └── otp/       ← the OTP functions and BIFs over terms: `erlang.zig` (BIFs, the process dictionary, `apply/2`), `lists.zig`, `maps.zig`, `string.zig`, `binary.zig`, `unicode.zig`, `math.zig`, `io_lib.zig` (`io_lib:format`, `io:format`, `rt_printed`, `rt_describe`), `json.zig` (`json:encode`), `etf.zig` (the ETF argument, `rt_etf_decode`)
+    └── otp/       ← the OTP functions and BIFs over terms: `erlang.zig` (BIFs, the process dictionary, `apply/2`, `fun_info(F, arity)` for `'__bp_show'/2`'s `fn/<arity>`, decision 1051), `lists.zig`, `maps.zig`, `string.zig`, `binary.zig`, `unicode.zig`, `math.zig`, `io_lib.zig` (`io_lib:format`, `io:format`, `rt_printed`, `rt_describe`), `json.zig` (`json:encode`), `etf.zig` (the ETF argument, `rt_etf_decode`)
 ```
 
 ## The functions (`root.exports`)

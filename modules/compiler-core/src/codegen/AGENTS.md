@@ -1974,7 +1974,15 @@ codegen/
   name). **A `@Result` — `{ok, P}` / `{error, P}` — prints `Ok(P)` /
   `Error(P)`** (144 B-53; `resultShowClause` on erlang, a branch of the
   tuple arm on beam, `result_branch` in commonJS's `__bp_show`, the `R`
-  shape on wasm), `P` shown nested (a string quoted). Everything else — a
+  shape on wasm), `P` shown nested (a string quoted). **A function value prints
+  `fn/<arity>`**, its declared arity, default parameters counted (decision 1051;
+  cell `function_value_prints`): an `is_function` clause before `~p` reading
+  `erlang:fun_info(V, arity)` on erlang (comptime too: std-wasm serves
+  `fun_info/2`) and beam; on commonJS `fn_branch` in `__bp_show` reads
+  `v.__bp_arity ?? v.length` — `buildFn` stamps `__bp_arity` only on a fn whose
+  JavaScript `length` differs (a rest parameter, a print-shape parameter), and a
+  template hole of a function type goes through `__bp_text` (`textHoleNeedsHelper`);
+  on wasm the `F <n>` shape (§ wat). Everything else — a
   host tuple, a plain atom, `true`/`false` — keeps the `~p` it had. Numeric formatting is
   `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):

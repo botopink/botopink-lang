@@ -45,18 +45,18 @@ fn red500() -> Token {
 {module, test@main@@Bp__Token__Color}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 34}.
+{labels, 35}.
 
-{function, '__bp_format', 1, 31}.
-  {label, 30}.
+{function, '__bp_format', 1, 32}.
+  {label, 31}.
     {line, [{location, "test@main@@Bp__Token__Color.erl", 1}]}.
     {func_info, {atom, test@main@@Bp__Token__Color}, {atom, '__bp_format'}, 1}.
-  {label, 31}.
+  {label, 32}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 2, {atom, test@main@@Bp__Token__Color__v__red}]}.
+    {test, is_tagged_tuple, {f, 33}, [{x, 0}, 2, {atom, test@main@@Bp__Token__Color__v__red}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -65,9 +65,9 @@ fn red500() -> Token {
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<".">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 33}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 34}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
-    {test, is_nonempty_list, {f, 33}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 34}, [{x, 2}]}.
     {get_list, {x, 2}, {x, 3}, {x, 4}}.
     {move, {x, 3}, {y, 1}}.
     {test_heap, 9, 0}.
@@ -77,12 +77,12 @@ fn red500() -> Token {
     {put_tuple2, {x, 0}, {list, [{atom, text}, {x, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 33}.
+  {label, 34}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, text}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 32}.
+  {label, 33}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Bp__Token__Color">>}, nil]}}.
     {deallocate, 2}.
@@ -171,13 +171,13 @@ fn red500() -> Token {
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, undefined}]}.
-    {test, is_eq_exact, {f, 24}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
-    {jump, {f, 25}}.
-  {label, 24}.
+    {jump, {f, 26}}.
+  {label, 25}.
     {test, is_eq_exact, {f, 21}, [{x, 0}, {atom, error}]}.
     {move, {literal, <<"Error(">>}, {y, 1}}.
-  {label, 25}.
+  {label, 26}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -212,17 +212,31 @@ fn red500() -> Token {
     {test, is_atom, {f, 22}, [{x, 0}]}.
     {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 24}, [{x, 0}, {atom, undefined}]}.
   {label, 21}.
     {move, {y, 0}, {x, 1}}.
     {call_last, 2, {f, 11}, 2}.
   {label, 22}.
     {move, {y, 0}, {x, 0}}.
+    {test, is_function, {f, 23}, [{x, 0}]}.
+    {move, {atom, arity}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, fun_info, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, erlang, integer_to_list, 1}}.
+    {test_heap, 4, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {put_list, {literal, <<"fn/">>}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 23}.
+    {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
-  {label, 23}.
+  {label, 24}.
     {move, {literal, <<"null">>}, {x, 0}}.
     {deallocate, 2}.
     return.
@@ -240,28 +254,28 @@ fn red500() -> Token {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 26}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 27}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 26}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 27}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 26}.
+  {label, 27}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 27}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 13}, 3}.
-  {label, 27}.
+  {label, 28}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -278,20 +292,20 @@ fn red500() -> Token {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 28}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 29}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 29}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 29}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 30}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 30}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 15}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -376,18 +390,18 @@ fn red500() -> Token {
 {module, test@main@@Token}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 34}.
+{labels, 35}.
 
-{function, '__bp_format', 1, 31}.
-  {label, 30}.
+{function, '__bp_format', 1, 32}.
+  {label, 31}.
     {line, [{location, "test@main@@Token.erl", 1}]}.
     {func_info, {atom, test@main@@Token}, {atom, '__bp_format'}, 1}.
-  {label, 31}.
+  {label, 32}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 2, {atom, test@main@@Token__v__color}]}.
+    {test, is_tagged_tuple, {f, 33}, [{x, 0}, 2, {atom, test@main@@Token__v__color}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -396,9 +410,9 @@ fn red500() -> Token {
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<".">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 33}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 34}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
-    {test, is_nonempty_list, {f, 33}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 34}, [{x, 2}]}.
     {get_list, {x, 2}, {x, 3}, {x, 4}}.
     {move, {x, 3}, {y, 1}}.
     {test_heap, 9, 0}.
@@ -408,12 +422,12 @@ fn red500() -> Token {
     {put_tuple2, {x, 0}, {list, [{atom, text}, {x, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 33}.
+  {label, 34}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, text}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 32}.
+  {label, 33}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Token">>}, nil]}}.
     {deallocate, 2}.
@@ -502,13 +516,13 @@ fn red500() -> Token {
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 19}, [{x, 0}, {atom, undefined}]}.
-    {test, is_eq_exact, {f, 24}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 25}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
-    {jump, {f, 25}}.
-  {label, 24}.
+    {jump, {f, 26}}.
+  {label, 25}.
     {test, is_eq_exact, {f, 21}, [{x, 0}, {atom, error}]}.
     {move, {literal, <<"Error(">>}, {y, 1}}.
-  {label, 25}.
+  {label, 26}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -543,17 +557,31 @@ fn red500() -> Token {
     {test, is_atom, {f, 22}, [{x, 0}]}.
     {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 24}, [{x, 0}, {atom, undefined}]}.
   {label, 21}.
     {move, {y, 0}, {x, 1}}.
     {call_last, 2, {f, 11}, 2}.
   {label, 22}.
     {move, {y, 0}, {x, 0}}.
+    {test, is_function, {f, 23}, [{x, 0}]}.
+    {move, {atom, arity}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, fun_info, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, erlang, integer_to_list, 1}}.
+    {test_heap, 4, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {put_list, {literal, <<"fn/">>}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 23}.
+    {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
-  {label, 23}.
+  {label, 24}.
     {move, {literal, <<"null">>}, {x, 0}}.
     {deallocate, 2}.
     return.
@@ -571,28 +599,28 @@ fn red500() -> Token {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 26}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 27}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 26}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 27}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 26}.
+  {label, 27}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 27}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 13}, 3}.
-  {label, 27}.
+  {label, 28}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -609,20 +637,20 @@ fn red500() -> Token {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 28}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 28}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 29}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 29}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 29}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 30}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 30}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 15}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.

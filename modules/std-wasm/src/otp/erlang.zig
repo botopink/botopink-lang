@@ -408,6 +408,12 @@ pub fn rt_erlang_is_map(t: T) callconv(.c) term.T {
 pub fn rt_erlang_is_function(t: T) callconv(.c) term.T {
     return term.boolAtom(term.tagOf(t) == .fun);
 }
+/// `fun_info(F, arity)` — `{arity, N}`: what `'__bp_show'/2` reads to print a
+/// function value `fn/<N>` (decision 1051). Any other item is `badarg`.
+pub fn rt_erlang_fun_info2(f: T, item: T) callconv(.c) term.T {
+    if (term.tagOf(f) != .fun or item != term.atomOf("arity")) return term.badarg();
+    return term.tuple(&.{ item, term.mkInt(term.as(term.Fun, f).arity) });
+}
 pub fn rt_erlang_is_boolean(t: T) callconv(.c) term.T {
     return term.boolAtom(t == term.a_true or t == term.a_false);
 }

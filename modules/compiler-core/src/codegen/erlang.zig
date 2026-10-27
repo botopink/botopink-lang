@@ -1536,6 +1536,7 @@ fn resultShowClause(comptime open: []const u8, comptime tag: []const u8) Ast.Cla
 ///     escapes (`\"`, `\\`, `\n`, `\r`, `\t`);
 ///   - a list is `[E1,E2]`, a tuple `#(E1,E2)` — no spaces;
 ///   - a `@Result` `{ok, P}` / `{error, P}` is `Ok(P)` / `Error(P)`, `P` shown nested;
+///   - a fun is `fn/<arity>`, its declared arity (decision 1051);
 ///   - a tuple tagged by an atom (an enum variant `{'Circle', R}`) and every other term (numbers, atoms, maps) keep `~p`: the
 ///     text of records, enums and maps is not decided by 1a. `true`, `false`
 ///     and `undefined` are values, not tags, so a tuple they open is a tuple.
@@ -1631,6 +1632,20 @@ const show_helper_form: Ast.Form = .{
                     valueIsNot("undefined"),
                 },
                 .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_tagged", .args = &.{ Ast.Expr.v("V"), Ast.Expr.v("V") } } } }}),
+                .layout = .inline_,
+            },
+            // A function value prints `fn/<arity>` (decision 1051): a fun's
+            // arity is its declared one, default parameters counted.
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{isA("function", "V")},
+                .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+                    .{ .string = "fn/" },
+                    .{ .call = .{ .module = "erlang", .name = "integer_to_list", .args = &.{.{ .call = .{ .module = "erlang", .name = "element", .args = &.{
+                        .{ .number = "2" },
+                        .{ .call = .{ .module = "erlang", .name = "fun_info", .args = &.{ Ast.Expr.v("V"), Ast.Expr.a("arity") } } },
+                    } } }} } },
+                } } }}),
                 .layout = .inline_,
             },
             .{

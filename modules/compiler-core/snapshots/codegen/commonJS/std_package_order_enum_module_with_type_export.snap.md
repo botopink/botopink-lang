@@ -617,6 +617,7 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if ((typeof v === "function")) return ("fn/" + (v.__bp_arity ?? v.length));
     if ((typeof v === "bigint")) {
         a.push(String(v));
         return "%s";
@@ -973,6 +974,7 @@ function shown(x, __bp_ty_T) {
     if (typeof x === "string") { return (("\"" + __bp_text(x, __bp_ty_T)) + "\""); }
     return ("" + __bp_text(x, __bp_ty_T));
 }
+shown.__bp_arity = 1;
 
 // ── `??` over `at`'s `?V` (decision 330: `?T` has no methods) ──
 
@@ -1325,6 +1327,7 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if ((typeof v === "function")) return ("fn/" + (v.__bp_arity ?? v.length));
     if ((typeof v === "bigint")) {
         a.push(String(v));
         return "%s";

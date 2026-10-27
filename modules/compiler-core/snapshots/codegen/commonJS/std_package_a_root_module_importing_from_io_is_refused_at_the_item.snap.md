@@ -1132,6 +1132,7 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if ((typeof v === "function")) return ("fn/" + (v.__bp_arity ?? v.length));
     if ((typeof v === "bigint")) {
         a.push(String(v));
         return "%s";
@@ -2448,6 +2449,7 @@ function shuffleBody(xs, __bp_ty_T) {
 }
     return out;
 }
+shuffleBody.__bp_arity = 1;
 
 function secureTokenBody(bytes) {
     return base64UrlOf(randomBytesOf(bytes));
@@ -4714,6 +4716,7 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if ((typeof v === "function")) return ("fn/" + (v.__bp_arity ?? v.length));
     if ((typeof v === "bigint")) {
         a.push(String(v));
         return "%s";

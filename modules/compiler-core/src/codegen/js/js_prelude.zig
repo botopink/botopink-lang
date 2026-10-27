@@ -1138,11 +1138,30 @@ const result_branch: ast.Stmt = .{ .if_ = .{
 /// `k[0]` — the one key of a `@Result` object.
 const k_first: ast.Expr = .{ .index = .{ .object = &keys_k, .index = &zero } };
 
+/// Decision 1051 — `if (typeof v === "function") return "fn/" + (v.__bp_arity ?? v.length);`:
+/// a function value prints `fn/<arity>`, its declared arity. The emitter stamps
+/// `__bp_arity` on a function whose JavaScript `length` is not that arity (a
+/// rest parameter, a print-shape parameter after its own); every other one
+/// keeps each declared parameter, default ones included, as a plain one.
+const fn_branch: ast.Stmt = .{ .if_ = .{
+    .cond = typeofIs(&v, "function"),
+    .then = &.{ .return_ = .{ .binary = .{
+        .op = "+",
+        .lhs = &.{ .quoted = "fn/" },
+        .rhs = &.{ .binary = .{
+            .op = "??",
+            .lhs = &.{ .member = .{ .object = &v, .name = "__bp_arity" } },
+            .rhs = &.{ .member = .{ .object = &v, .name = "length" } },
+        } },
+    } } },
+} };
+
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
 /// consume onto `a`: a string through `%s` (quoted when nested), an array or a
 /// tuple as its brackets around its elements' formats, JavaScript's `undefined`
-/// as `null` (decision 47 — absent has one spelling), anything else through
+/// as `null` (decision 47 — absent has one spelling), a function as `fn/<arity>`
+/// (decision 1051), anything else through
 /// `%O` — `util.inspect`, the text `console.log` gives it — so the helper needs
 /// no `require`.
 const show: ast.Stmt = .{
@@ -1155,6 +1174,7 @@ const show: ast.Stmt = .{
                     .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
                     .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
                 } },
+                fn_branch,
                 bigint_branch,
                 float_branch,
                 .{ .if_ = .{

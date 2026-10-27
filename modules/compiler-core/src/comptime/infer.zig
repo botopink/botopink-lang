@@ -14128,10 +14128,12 @@ fn noteTextHole(env: *Env, loc: ast.Loc, ty: *T.Type) !void {
 }
 
 /// Whether `ty` is written as text by the helper: a named type that is not a scalar
-/// (`string`, a number, `bool`) — a record, an enum, an array, a tuple, a generic type, or
+/// (`string`, a number, `bool`) — a record, an enum, an array, a tuple, a generic type, a function, or
 /// an optional of one. A type variable and anything the checker cannot name keep JavaScript's reading.
 fn textHoleNeedsHelper(ty: *T.Type) bool {
     const d = ty.deref();
+    // Decision 1051 — a function value is written `fn/<arity>`, not its source.
+    if (d.* == .func) return true;
     if (d.* != .named) return false;
     // An optional is written as its payload is: `null` is JavaScript's own text for it.
     if (std.mem.eql(u8, d.named.name, "optional") and d.named.args.len == 1) return textHoleNeedsHelper(d.named.args[0]);

@@ -5383,6 +5383,16 @@ const Emitter = struct {
         return self.primDescriptorAddr(try std.fmt.allocPrint(self.reg_arena.allocator(), "fn/{d}", .{arity}));
     }
 
+    /// Decision 1051 — the print shape of a value of function type `t` (or of
+    /// `?fn(…)`): `F <arity>`, which prints `fn/<arity>`; null for any other type.
+    fn fnFieldShape(ar: std.mem.Allocator, t: ast.TypeRef) !?[]const u8 {
+        return switch (t) {
+            .function => |f| try std.fmt.allocPrint(ar, "F{c}", .{@as(u8, @intCast(f.params.len))}),
+            .optional => |inner| if (inner.* == .function) try std.fmt.allocPrint(ar, "?F{c}", .{@as(u8, @intCast(inner.function.params.len))}) else null,
+            else => null,
+        };
+    }
+
     /// The arity of `e` when it is a function value: a lambda, a top-level fn
     /// named as a value, or a name or slot declared with a function type.
     fn fnValueArity(self: *Emitter, e: ast.Expr) ?usize {
@@ -5393,6 +5403,13 @@ const Emitter = struct {
                 if (!self.locals.contains(n) and !self.globals.contains(n)) {
                     if (self.fn_sigs.get(id.kind.ident)) |sig| return sig.params.len;
                 }
+            } else if (id.kind == .identAccess) {
+                // `Box.wrap` named without a call (144 B-10).
+                if (self.instance_lowerings.get(id.loc)) |il| if (il == .assoc_fn_value) {
+                    const af = il.assoc_fn_value;
+                    const sym = std.fmt.allocPrint(self.reg_arena.allocator(), "{s}_{s}", .{ af.type_name, af.method }) catch return null;
+                    if (self.fn_sigs.get(sym)) |sig| return sig.params.len;
+                };
             },
             else => {},
         }
@@ -9988,6 +10005,8 @@ const Emitter = struct {
                 while (j < sh[1]) : (j += 1) i += 1 + sh[i];
                 return i;
             },
+            // `F <n>` — a function value of arity `n` (decision 1051).
+            'F' => return 2,
             else => return 1,
         }
     }
@@ -10020,7 +10039,7 @@ const Emitter = struct {
                 self.gc_str_used = true;
                 return prelude.gc_str_ref;
             },
-            'T', 'U' => return .anyref,
+            'T', 'U', 'F' => return .anyref,
             '[' => return self.gcTy(.{ .arr = gcShapeClass(sh[1..]) }),
             '(' => return self.gcTy(.{ .arr = .any }),
             '?' => return if (gcShapeIsScalar(sh[1..])) .anyref else self.gcShapeVt(sh[1..]),
@@ -10131,6 +10150,9 @@ const Emitter = struct {
                 try self.emit(get_v);
                 try self.emit(.{ .call = "__print_tagged_raw" });
             },
+            // A function value prints `fn/<arity>` (decision 1051): the
+            // arity the shape carries, the closure not read.
+            'F' => try self.gcPutStr(try std.fmt.allocPrint(ar, "fn/{d}", .{sh[1]})),
             // A union's (or `unknown`'s) slot: printed by what it holds, a
             // string quoted.
             'U' => {
@@ -10337,10 +10359,10 @@ const Emitter = struct {
             // as one (a variant's was printed by the `i32` printer: std's
             // `FsError.InvalidUtf8(offset: i64)`, 144 B-171).
             // A function-typed field (`count: ?fn(i32) -> i32`) is a
-            // `$closure` reference: printed as an `unknown` holding it prints
-            // (it was the `i32` printer over the reference, 144 B-171).
-            const fn_field = trefs[i] == .function or (trefs[i] == .optional and trefs[i].optional.* == .function);
-            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (isUnknownTypeRef(trefs[i]) or fn_field) try ar.dupe(u8, "U") else blk: {
+            // `$closure` reference: printed `fn/<arity>` (decision 1051; it
+            // was the `i32` printer over the reference, 144 B-171).
+            const fn_shape = try fnFieldShape(ar, trefs[i]);
+            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (fn_shape) |fs| fs else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else blk: {
                 const wide: ?u8 = switch (trefs[i]) {
                     .named => |n| i64CellCode(n),
                     else => null,
@@ -14753,6 +14775,15 @@ const Emitter = struct {
         // went through the integer printer: it prints the word `null`.
         if (isNullLit(arg)) {
             if (self.mode == .gc) try self.gcPutStr("null") else try self.emit(self.builder().helper(.print_null));
+            if (last) try self.emit(self.builder().helper(.print_nl));
+            return;
+        }
+        // Decision 1051 — a function value prints `fn/<arity>`, its declared
+        // arity: the value is computed for its effects, then the text written.
+        if (self.fnValueArity(arg)) |n| {
+            try self.lowerValue(arg);
+            try self.emit(.drop);
+            try self.gcPutStr(try std.fmt.allocPrint(self.arena(), "fn/{d}", .{n}));
             if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
@@ -20205,6 +20236,8 @@ const Emitter = struct {
                         return "[U";
                     }
                     if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+                    // Decision 1051 — an array of function values.
+                    if (self.fnValueArity(al.elems[0])) |n| return try std.fmt.allocPrint(self.arena(), "[F{c}", .{@as(u8, @intCast(n))});
                     if (self.isTaggedValue(al.elems[0])) return "[T";
                     // A bool is an `i32` slot like an integer; only the shape
                     // tells the printer to write `true` (`[1, 0]` at exit 0).
@@ -20284,6 +20317,11 @@ const Emitter = struct {
                         try out.appendSlice(self.arena(), inner);
                         continue;
                     }
+                    // Decision 1051 — a function value prints `fn/<arity>`.
+                    if (try fnFieldShape(self.arena(), el)) |inner| {
+                        try out.appendSlice(self.arena(), inner);
+                        continue;
+                    }
                     // A 64-bit integer element's slot holds its cell.
                     if (el == .named) if (i64CellCode(el.named)) |c| {
                         try out.append(self.arena(), c);
@@ -20341,6 +20379,8 @@ const Emitter = struct {
     }
 
     fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
+        // Decision 1051 — a function value prints `fn/<arity>`.
+        if (try fnFieldShape(self.arena(), elem)) |sh| return try std.fmt.allocPrint(self.arena(), "[{s}", .{sh});
         // A union's (or `unknown`'s) slot is a box that names what it holds.
         if (isUnknownTypeRef(elem)) {
             if (self.mode != .gc) self.builder().helpers.require(.print_shaped_unknown);
@@ -20485,6 +20525,8 @@ const Emitter = struct {
             return self.refuse(e.getLoc(), "the wasm backend has no printed form for this optional inside a tuple or an array: its payload's type is not known here", .{});
         }
         if (try self.printShapeOf(e)) |shape| return shape;
+        // Decision 1051 — a function value prints `fn/<arity>`.
+        if (self.fnValueArity(e)) |n| return try std.fmt.allocPrint(self.arena(), "F{c}", .{@as(u8, @intCast(n))});
         // A value that carries its own declaration reads its text from the
         // header (13-module-identity half 3), so a tuple or an array holding
         // one names its type too.
@@ -26723,6 +26765,7 @@ const Emitter = struct {
     /// every field before this existed.
     fn fieldShape(self: *Emitter, t: ?ast.TypeRef) anyerror![]const u8 {
         const tref = t orelse return "i";
+        if (try fnFieldShape(self.arena(), tref)) |sh| return sh;
         // Decision 332 — a `?bigint` field is its block's address or `0`.
         if (tref == .optional and tref.optional.* == .named and std.mem.eql(u8, tref.optional.named, "bigint")) {
             self.builder().helpers.require(.bigint);

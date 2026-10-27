@@ -1443,7 +1443,7 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 } ++ putByte('"') ++ [_]Instr{call("__write_bytes")}));
 
 /// The text of `v` by the shape at `sh`, answering the address just past that
-/// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
+/// shape (semantics decision 1a). Shape codes: `F <n>` a function value of arity `n` — `fn/<n>` —, `i` an i32, `b` a bool, `f` an
 /// `f64` cell, `l` / `u` an `i64` / `u64` cell, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
 /// `?X` / `!X` a `?T` (`null`, or `X` over the slot / over its box's word),
 /// `(XY…)` a tuple — `#(e1, e2)` —, `R<ok><err>` a `@Result` — `Ok(x)` / `Error(y)` —, `n` a `bigint` (in a module that links
@@ -1510,6 +1510,12 @@ const print_shaped_raw_body = [_]Instr{
         })),
         get("go"),                               when(&(putByte(']') ++ [_]Instr{call("__write_bytes")})),
         get("p"),                                ret,
+    })),
+    // `F <n>` — a function value (decision 1051): `fn/<n>`, the arity the
+    // shape carries; the closure cell is not read.
+    get("c"),                                                                                                   c32('F'),                                                                                                   op("eq"),
+    when(&([_]Instr{get("go")} ++ [_]Instr{when(&(putText("fn/") ++ [_]Instr{ get("sh"), c32(1), op("add"), load8(0), call("__print_i32_raw") }))} ++ [_]Instr{
+        get("sh"), c32(2), op("add"), ret,
     })),
     // `E k [ <n> Enum.Variant ] * k` — an all-unit enum's value is its
     // ordinal, with no header to read, so the shape carries the names and

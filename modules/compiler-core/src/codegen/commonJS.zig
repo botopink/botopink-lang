@@ -3246,12 +3246,24 @@ const Emitter = struct {
         if (!shape.is_async and !shape.is_generator) {
             if (try self.selfTailLoop(f.name, params, body)) |looped| body = looped;
         }
-        const decl = js.Stmt{ .function = .{
+        const fn_decl = js.Stmt{ .function = .{
             .keyword = kw,
             .name = f.name,
             .params = params,
             .body = .{ .stmts = body },
         } };
+        // Decision 1051 — a function value prints `fn/<arity>`, its declared
+        // arity; where JavaScript's `length` answers another (a rest
+        // parameter, a print-shape parameter after its own), the function
+        // carries the declared one as `__bp_arity`.
+        const js_len = for (params, 0..) |p, i| {
+            if (p.rest or p.default != null) break i;
+        } else params.len;
+        const decl = if (js_len == f.params.len) fn_decl else try self.b.group(&.{ fn_decl, .{ .expr = try self.b.assign(
+            try self.b.member(.{ .ident = f.name }, "__bp_arity"),
+            "=",
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{f.params.len}) },
+        ) } });
         if (!f.isPub) return decl;
         return self.b.group(&.{ decl, .{ .expr = try self.b.assign(
             try self.b.member(.{ .name = "exports" }, f.name),

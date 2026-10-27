@@ -1,0 +1,55 @@
+//// A function value prints as `fn/<arity>`, its declared arity — a default
+//// parameter counted — and no name or platform text, on every target and in
+//// a `comptime` body (decision 1051): a top-level `fn`, a closure, an
+//// associated function named without a call, a function in a record field
+//// and in an array, and a function written into a template hole.
+
+import {io.terminal.print} from "std";
+
+pub type Handler(name: string, run: fn(i32, i32) -> i32)
+
+pub type Box(n: i32) {
+    fn wrap(n: i32) -> Box {
+        return Box(n: n + 1);
+    }
+}
+
+fn twice(x: i32) -> i32 {
+    return x * 2;
+}
+
+fn scaled(x: i32, by: i32 = 3) -> i32 {
+    return x * by;
+}
+
+fn sum(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn none() -> string {
+    return "none";
+}
+
+val atBuild = comptime {
+    val c = 2;
+    val add: fn(i32, i32) -> i32 = { a, b -> a + b + c };
+    print(twice, scaled, add, [twice, twice]);
+    1
+};
+
+pub fn main() -> void {
+    print(twice);
+    print(none);
+    print(scaled);
+    val k = 10;
+    val shift: fn(i32) -> i32 = { x -> x + k };
+    print(shift);
+    print(Box.wrap);
+    val h = Handler(name: "x", run: sum);
+    print(h);
+    val fs: (fn(i32) -> i32)[] = [twice, shift];
+    print(fs);
+    print(twice, scaled);
+    print("run = ${h.run}");
+    print(atBuild, scaled(2), shift(1), h.run(2, 3));
+}

@@ -10337,6 +10337,7 @@ const Emitter = struct {
     /// | `{ok, P}` / `{error, P}` | `Ok(` … `)` over `'__bp_show'(P, false)` |
     /// | a tuple whose first element is another atom (not `true`/`false`/`undefined`) | `~p` — a variant; §7's `Shape.Square(side: 4)` is `13-module-identity`'s F3 |
     /// | any other tuple | `[$#, $(, lists:join(<<", ">>, …), $)]` |
+    /// | a fun | `fn/<arity>` (decision 1051) |
     /// | anything else | `~p` — an integer, a float (which keeps its `.0`, §7 F5), an atom, a record's map (§7 F2, also 13's) |
     fn ensurePrintHelper(self: *Emitter) anyerror![]const u8 {
         if (self.print_helper_name) |n| return n;
@@ -10414,6 +10415,7 @@ const Emitter = struct {
         const not_tuple = self.allocLabel();
         const tagged = self.allocLabel();
         const generic = self.allocLabel();
+        const not_fn = self.allocLabel();
         const absent = self.allocLabel();
         const result_error = self.allocLabel();
         const result_show = self.allocLabel();
@@ -10521,7 +10523,24 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
         try beamEmitter.writeCall(w, .last, 2, .{ .local = tagged_l.entry }, 2);
 
+        // A function value prints `fn/<arity>` (decision 1051): the fun's
+        // arity is its declared one, default parameters counted.
         try beamEmitter.writeLabel(w, generic);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_function, not_fn, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(w, Op.atom("arity"), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "fun_info" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.int(2), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "integer_to_list" } }, 0);
+        try beamEmitter.writeTestHeap(w, 4, 1);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.str("fn/"), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
+
+        try beamEmitter.writeLabel(w, not_fn);
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTestHeap(w, 2, 1);
         try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));

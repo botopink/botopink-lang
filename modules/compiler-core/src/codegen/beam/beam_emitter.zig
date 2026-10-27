@@ -142,6 +142,9 @@ pub const TestOp = enum {
     /// `N` (the arity is a source operand, so tagged, unlike `test_arity`'s):
     /// decision 254's `x is fn(<N params>) -> T`.
     is_function2,
+    /// `{test, is_function, {f, F}, [Src]}` — any fun: `'__bp_show'/2`'s
+    /// `fn/<arity>` arm (decision 1051).
+    is_function,
 };
 
 /// The `gc_bif` selector. `add`/`sub`/… spell the quoted operator atoms.

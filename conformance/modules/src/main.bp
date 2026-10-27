@@ -227,6 +227,7 @@ comptime {
     runModule("decisions-taken/fs_walk_dangling_link_not_found-711");
     runModule("decisions-taken/function_return_type_written-622");
     runModule("decisions-taken/function_stage_propagated-376");
+    runModule("decisions-taken/function_value_prints-1051");
     runModule("decisions-taken/generic_fn_of_other_module_takes_shape-899");
     runModule("decisions-taken/generic_method_own_parameter_takes_shape-985");
     runModule("decisions-taken/generic_type_value_carries_shapes-900");

@@ -27,7 +27,7 @@ import {io.terminal.print} from "std";
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (data $__bp_seg0 "\0c\00\00\00R\03Ops\01\04stepi")
+  (data $__bp_seg0 "\0d\00\00\00R\03Ops\01\04stepF\01")
   (data $__bp_seg1 "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
   (data $__bp_seg2 "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
   (data $__bp_seg3 "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
@@ -141,21 +141,21 @@ import {io.terminal.print} from "std";
   (func $__lambda0 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 2
-    i32.const 11712
+    i32.const 11716
     call $__i32_mul_chk
     return
   )
   (func $__lambda1 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 100
-    i32.const 11760
+    i32.const 11764
     call $__i32_add_chk
     return
   )
   (func $__lambda2 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 1
-    i32.const 11808
+    i32.const 11812
     call $__i32_sub_chk
     return
   )
@@ -601,30 +601,30 @@ import {io.terminal.print} from "std";
     )
     i32.const 11696
     i32.const 0
-    i32.const 16
+    i32.const 17
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11712
+    i32.const 11716
     i32.const 0
     i32.const 46
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11760
+    i32.const 11764
     i32.const 0
     i32.const 47
     memory.init $__bp_seg2
     data.drop $__bp_seg2
-    i32.const 11808
+    i32.const 11812
     i32.const 0
     i32.const 47
     memory.init $__bp_seg3
     data.drop $__bp_seg3
     global.get $__heap_ptr
-    i32.const 11856
+    i32.const 11860
     i32.lt_u
     (if
       (then
-      i32.const 11856
+      i32.const 11860
       global.set $__heap_ptr
       )
     )
