@@ -66,7 +66,7 @@ test "comptime host: C1's out/wasm-comptime units link, init in order and reach 
     try std.testing.expectEqualStrings(ru.name, linked[0].name);
     try std.testing.expectEqualStrings("test@main", linked[linked.len - 1].name);
 
-    const answer = try host.evaluate(a, io, linked, "{}", .{});
+    const answer = try host.evaluate(a, io, linked, "test@main", "{}", .{});
     defer answer.deinit(a);
     // Every unit compiled, linked and initialised; the core's memory and
     // `__alloc` were found; the evaluation export is C2's.

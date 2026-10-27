@@ -90,6 +90,16 @@ pub const alloc_export = "__alloc";
 pub const memory_export = "memory";
 pub const panic_export = "__bp_panic";
 
+/// Decision 1059 (1) — the comptime crossing, the one contract C1's units
+/// and the comptime host (`comptime_host.zig`) share: the core exports
+/// `memory_export` and `alloc_export(len) -> ptr`, where the host writes the
+/// input JSON; the unit of the module whose body is evaluated — chosen by its
+/// module name, never by position — exports `comptime_eval_export(ptr, len)
+/// -> (ptr, len)`, the reply JSON in the same memory. The memory is a byte
+/// buffer for the crossing and std-wasm's leaves, never a value's
+/// representation (1056).
+pub const comptime_eval_export = "__bp_comptime_eval";
+
 /// The export prefix of a std unit's `.wat` leaf (its decoded functions are
 /// `std:`): a leaf and a decoded function may share a name (`text.length`).
 pub const leaf_prefix = "wat:";
