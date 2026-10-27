@@ -996,7 +996,9 @@ fn renameLinkedTypes(comptime T: type, arena: std.mem.Allocator, value: T, renam
         .ident => |n| return .{ .ident = try renameVariantPath(arena, n, renames) },
         .variant => |v| {
             var out = v;
-            out.name = try renameVariantPath(arena, v.name, renames);
+            // A record's constructor pattern (`Person(n, a)`, no `.`) names
+            // the type itself.
+            out.name = if (std.mem.indexOfScalar(u8, v.name, '.') == null) (renames.get(v.name) orelse v.name) else try renameVariantPath(arena, v.name, renames);
             out.payload = try renameLinkedTypes(@TypeOf(v.payload), arena, v.payload, renames);
             return .{ .variant = out };
         },
@@ -1496,6 +1498,11 @@ fn pruneUnreached(
     /// is a dependency's, whose functions the program reaches or not
     /// (decision 531).
     own_roots: bool,
+    /// The local names that mean a mangled function (`linkRenames`, every
+    /// module's): a name read as a VALUE (`__bp_run(__bp_run__<pkg>)`) is
+    /// no call `renameLinkedCalls` rewrites, so the name it means is reached
+    /// through this map.
+    renames: *const std.StringHashMapUnmanaged([]const u8),
 ) error{OutOfMemory}!void {
     const n = decls.items.len;
     const keep = try ar.alloc(bool, n);
@@ -1526,7 +1533,7 @@ fn pruneUnreached(
         while (queue.pop()) |i| try collectStrings(ast.DeclKind, decls.items[i], &seen, ar);
         var progressed = false;
         var it = seen.keyIterator();
-        while (it.next()) |k| if (by_name.get(k.*)) |idxs| for (idxs.items) |i| if (!keep[i]) {
+        while (it.next()) |k| for ([_]?[]const u8{ k.*, renames.get(k.*) }) |name| if (name) |nm| if (by_name.get(nm)) |idxs| for (idxs.items) |i| if (!keep[i]) {
             keep[i] = true;
             try queue.append(ar, i);
             progressed = true;
@@ -1889,6 +1896,7 @@ fn emitWatPass(
     // rewritten to the mangled name, in a copy of its declarations (the
     // module's own program is shared with its own emission); a linked
     // module's aliased imports are rewritten to the declared names.
+    var prune_renames: std.StringHashMapUnmanaged([]const u8) = .empty;
     if (em.link_mangled.count() > 0 or linked.len > 0) {
         var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
         for (maps, 0..) |*m, i| {
@@ -1896,6 +1904,8 @@ fn emitWatPass(
             const mod_name = if (i < linked.len) linked[i].name else module_name;
             const prog = if (i < linked.len) linked[i].program else own_program;
             try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, i < linked.len, m);
+            var it = m.iterator();
+            while (it.next()) |e| try prune_renames.put(ar0, e.key_ptr.*, e.value_ptr.*);
         }
         for (decls.items, owner.items) |*d, from| {
             if (maps[from].count() == 0) continue;
@@ -1949,7 +1959,7 @@ fn emitWatPass(
     // lowered and stops nothing, in either lowering.
     if (plan.mode == .gc or plan.reached_only) {
         const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
-        try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency));
+        try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency), &prune_renames);
     }
     if (plan.mode == .gc) try em.gcKeyTypes(decls.items, owner.items, linked, module_name, &spliced);
     const program: ast.Program = .{ .decls = decls.items };
@@ -4356,7 +4366,14 @@ const Emitter = struct {
                                 };
                             };
                             if (cc.receiver == null) if (self.genericRetRecord(cc)) |r| break :blk r;
-                            const key = self.assocSym(cc) orelse cc.callee;
+                            // A method call on a value (`n.at(0)`, the link
+                            // `xs?.[0]` is written as) is never the module's
+                            // free function of its name (`fn at(c: bool) ->
+                            // ?Point`): only an associated function or a
+                            // namespace's answers by its name.
+                            const assoc = self.assocSym(cc);
+                            if (cc.receiver != null and assoc == null and !self.isNamespaceReceiver(cc)) break :blk null;
+                            const key = assoc orelse cc.callee;
                             const tn = self.fn_return_types.get(key) orelse break :blk null;
                             break :blk self.resolveRecordName(tn);
                         },
@@ -16864,7 +16881,15 @@ const Emitter = struct {
         // A local named like a function is the function value it holds.
         if (cc.receiver == null and self.locals.contains(cc.callee)) return null;
         if (self.specializedCallee(cc) catch null) |sym| return sym;
-        if (self.fn_sigs.contains(cc.callee)) return cc.callee;
+        if (self.fn_sigs.get(cc.callee)) |sig| {
+            // A method call on a value (`m.at(k)` on an `Index<K, V>`) is the
+            // module's free function of its name only when that function
+            // takes the receiver first (`recv.m(a)` against `fn m(self, a)`)
+            // or the receiver is a namespace: `fn at(c: bool) -> ?Point`
+            // answered for `m.at(key)`.
+            if (cc.receiver != null and cc.calleeExpr == null and sig.params.len != cc.args.len + 1 and !self.isNamespaceReceiver(cc)) return null;
+            return cc.callee;
+        }
         return null;
     }
 
@@ -23259,6 +23284,9 @@ const Emitter = struct {
     /// function of the program (`fn_sigs`).
     fn isNamespaceReceiver(self: *Emitter, cc: anytype) bool {
         const rn = receiverName(cc) orelse return false;
+        // An optional operator's binder (decision 330) is a value, bound
+        // only once its `if` is lowered.
+        if (std.mem.startsWith(u8, rn, "__bp_opt_")) return false;
         if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn) or self.ext_by_name.contains(rn)) return false;
         return self.fn_sigs.contains(cc.callee);
     }

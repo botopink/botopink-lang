@@ -155,7 +155,14 @@ function a linked declaration brought that still touches linear memory (std's `D
 and that nothing reaches (`reach.zig`, no export) is a stub that traps (`finishGc`, `gc_linked_fns`); one of
 the module's own, or a reached one, sends the module to linear memory (P2b). The
 linear pass links everything, as it always did, unless the whole lowering refused the module: its retry
-lowers what is reached (`Plan.reached_only`, decision 531, below).
+lowers what is reached (`Plan.reached_only`, decision 531, below). A local name that means a mangled function
+(`linkRenames`) reaches it when it is read as a value too (`__bp_run(__bp_run__<pkg>)`, a self-checking module's
+second case): `pruneUnreached` follows the renames, which `renameLinkedCalls` applies only to calls. A record's
+constructor pattern (`val assert Person(n, a) = p`) is renamed with its mangled type (`renameLinkedTypes`). A method
+call on a value is never the module's free function of its name (`fn at(c: bool) -> ?Point` beside `xs?.[0]`, written
+`n.at(0)`, or `m.at(key)` on an `Index`): `calleeSymbol` takes the free function only when it takes the receiver first
+or the receiver is a namespace (`isNamespaceReceiver`, never an optional operator's `__bp_opt_` binder), and
+`recordTypeOfExpr` the same.
 Shapes that sent a module to linear memory and are lowered in GC form (164 s2): an `if` one of whose arms is
 an empty array literal takes the other arm's type (`ifValueType`; `emptyArrayArmOther` notes the local's array,
 in both lowerings); a `case` whose arms are literals of one type answers that type where the enclosing

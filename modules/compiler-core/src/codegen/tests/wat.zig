@@ -4948,3 +4948,101 @@ test "wat: decision 1021 (10) ---- a tuple parameter's destructuring binds each 
         \\}
     , "x\n42\nana=2.5\n");
 }
+
+test "wat: decision 1021 (10) ---- an aliased import of a function two modules declare, passed as a value, is the one it names in the GC lowering" {
+    // The second `label` is mangled per module; a name read as a value is no
+    // call `renameLinkedCalls` rewrites, so the GC pass's reach followed the
+    // alias to nothing and refused it (`… is not bound here`).
+    try h.assertWasmGcRunLogModules(std.testing.allocator, &.{
+        .{ .path = "one", .source =
+        \\pub fn label() -> string {
+        \\    return "one";
+        \\}
+        },
+        .{ .path = "two", .source =
+        \\pub fn label() -> string {
+        \\    return "two";
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {one.label as first, two.label as second};
+        \\
+        \\fn call(f: fn() -> string) -> string {
+        \\    return f();
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(call(first));
+        \\    print(call(second));
+        \\}
+        },
+    }, "one\ntwo\n");
+}
+
+test "wat: decision 1021 (10) ---- a record's constructor pattern names the module's own record when two modules declare it, in the GC lowering" {
+    const person =
+        \\pub type Person(name: string, age: i32)
+        \\
+        \\pub fn make(n: string, a: i32) -> Person {
+        \\    return Person(name: n, age: a);
+        \\}
+        \\
+        \\pub fn describe(p: Person) -> string {
+        \\    val assert Person(n, a) = p;
+        \\    return n + "/" + a.toString();
+        \\}
+    ;
+    try h.assertWasmGcRunLogModules(std.testing.allocator, &.{
+        .{ .path = "one", .source = person },
+        .{ .path = "two", .source = person },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {one.make as makeOne, one.describe as describeOne, two.make as makeTwo, two.describe as describeTwo};
+        \\
+        \\pub fn main() -> void {
+        \\    print(describeOne(makeOne("ana", 30)));
+        \\    print(describeTwo(makeTwo("bia", 40)));
+        \\}
+        },
+    }, "ana/30\nbia/40\n");
+}
+
+test "wat: decision 1021 (10) ---- a method call on a value is never the module's free function of its name in the GC lowering" {
+    // `xs?.[0]` is written `n.at(0)`, and `m.at(key)` on an `Index` dispatches
+    // by value: both were typed by `fn at(c: bool) -> ?Point`, and the module
+    // fell back to linear memory.
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub type Point(x: i32, y: i32)
+        \\
+        \\type Field(name: string)
+        \\
+        \\type Form(fields: ?Field[])
+        \\
+        \\type Registry(names: string[]) implement Index<string, i32> {
+        \\    pub fn at(self: Self, key: string) -> ?i32 {
+        \\        val found = self.names.indexOf(key);
+        \\        if (found < 0) return null;
+        \\        return found;
+        \\    }
+        \\}
+        \\
+        \\fn at(c: bool) -> ?Point {
+        \\    return if (c) Point(x: 1, y: 2) else null;
+        \\}
+        \\
+        \\fn lookup(m: Index<string, i32>, key: string) -> i32 {
+        \\    return m.at(key) ?? -1;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val f: ?Form = Form(fields: [Field(name: "email")]);
+        \\    print(f?.fields?.[0]?.name ?? "none");
+        \\    print(at(true)?.x ?? -1);
+        \\    print(lookup(Registry(names: ["a", "b"]), "b"));
+        \\    print(lookup(Registry(names: ["a"]), "z"));
+        \\}
+    , "email\n1\n1\n-1\n");
+}
