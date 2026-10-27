@@ -1,0 +1,5 @@
+import {io.env, io.terminal.print} from "std";
+
+test "suite: a test/ file's test reads its own name" {
+    print("name " + (env.read("BOTOPINK_TEST_NAME") ?? "none"));
+}

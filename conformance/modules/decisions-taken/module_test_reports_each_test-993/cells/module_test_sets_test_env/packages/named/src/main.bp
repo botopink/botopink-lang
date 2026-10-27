@@ -1,0 +1,16 @@
+import {io.env, io.fs, io.terminal.print} from "std";
+
+test "names: the first test reads its own name" {
+    print("name " + (env.read("BOTOPINK_TEST_NAME") ?? "none"));
+}
+
+test "names: the second test reads its own name" {
+    print("name " + (env.read("BOTOPINK_TEST_NAME") ?? "none"));
+}
+
+test "tmp: the call's scratch directory is absolute and exists" {
+    val dir = env.read("BOTOPINK_TEST_TMPDIR") ?? "";
+    assert dir.startsWith("/");
+    assert fs.exists(dir);
+    print(dir);
+}

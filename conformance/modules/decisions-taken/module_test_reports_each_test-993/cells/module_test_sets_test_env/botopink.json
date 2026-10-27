@@ -1,0 +1,1 @@
+{ "name": "module_test_sets_test_env", "targets": ["commonJS", "erlang", "beam"] }

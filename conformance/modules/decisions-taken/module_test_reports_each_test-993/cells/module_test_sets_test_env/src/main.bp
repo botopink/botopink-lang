@@ -1,0 +1,39 @@
+//// Decisions 772, 993 (3) — ``m.`test`()`` sets what `botopink test`'s runner sets: while a test's
+//// body runs, `BOTOPINK_TEST_NAME` holds that test's name; while the call runs,
+//// `BOTOPINK_TEST_TMPDIR` names an absolute scratch directory of its own, which exists then and is
+//// removed after. Outside the call neither is set.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.env, io.fs, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    var dir = "";
+    case answer {
+        Ok(report) {
+            for report.cases { c ->
+                val verdict = if (c.ok) "ok" else "FAIL";
+                if (c.name.startsWith("tmp:")) {
+                    dir = c.output.trim();
+                    print(verdict + " " + c.name + " " + c.message);
+                } else {
+                    print(verdict + " " + c.name + " [" + c.output.trim() + "] " + c.message);
+                }
+            }
+        }
+        Error(r) -> print("error " + r.message);
+    }
+    print("removed after the call " + (dir != "" && !fs.exists(dir)).toString());
+    print("name after the call " + (env.read("BOTOPINK_TEST_NAME") ?? "none"));
+    print("tmp after the call " + (env.read("BOTOPINK_TEST_TMPDIR") ?? "none"));
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/named");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

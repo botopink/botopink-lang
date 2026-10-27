@@ -747,6 +747,16 @@ pub const failure_alias = "__bp_run_failure";
 /// that open and close a run's capture: the lowering's calls, no program's.
 pub const capture_open = "captureOpen";
 pub const capture_close = "captureClose";
+/// Decisions 772, 993 (3) — the methods of std's `compiler.Module` without
+/// `pub` a lowered `` `test`() `` calls, as `botopink test`'s runner sets the
+/// same variables: `BOTOPINK_TEST_TMPDIR` names a scratch directory of the
+/// call's own while its tests run (`tmp_open` / `tmp_close`), and
+/// `BOTOPINK_TEST_NAME` the running test's name while its body runs
+/// (`name_open` / `name_close`); each close restores what its open replaced.
+pub const tmp_open = "testTmpOpen";
+pub const tmp_close = "testTmpClose";
+pub const name_open = "testNameOpen";
+pub const name_close = "testNameClose";
 /// What `runRewrite` runs while the loaded package is not yet in the program.
 const run_none_fn = "__bp_run_none";
 const run_async_none_fn = "__bp_run_async_none";
@@ -1125,6 +1135,8 @@ const test_case_fn = "__bp_test_case";
 const test_answer_fn = "__bp_test_answer";
 const test_failure_alias = "Bp__TestFailure";
 const test_cases_fn = "__bp_test_cases";
+const test_run_in_fn = "__bp_test_run_in";
+const test_run_async_in_fn = "__bp_test_run_async_in";
 const test_cases_async_fn = "__bp_test_cases_async";
 
 const test_imports_src = "import {compiler.TestReport as " ++ test_report_alias ++ ", compiler.TestCase as " ++ test_case_alias ++ ", failure.Failure as " ++ test_failure_alias ++ "} from \"std\";\n";
@@ -1142,10 +1154,25 @@ const test_answer_src =
 fn testRunSrc(comptime async_: bool) []const u8 {
     const entry = if (async_) test_entry_async else test_entry_sync;
     const cases_fn = if (async_) test_cases_async_fn else test_cases_fn;
+    const run_fn_name = if (async_) test_run_async_fn else test_run_fn;
+    const in_fn = if (async_) test_run_async_in_fn else test_run_in_fn;
+    const answer_type = "Result<" ++ test_report_alias ++ ", " ++ run_failure_alias ++ ">";
+    const reg_type = "fn() -> Result<" ++ entry ++ "[], string>";
+    // The call's scratch directory around its whole run, the package's
+    // bodies included, as `botopink test` names one for the run.
+    const outer = (if (async_) "async fn " ++ run_fn_name ++ "(reg: " ++ reg_type ++ ") -> Async<" ++ answer_type ++ "> {\n" else "fn " ++ run_fn_name ++ "(reg: " ++ reg_type ++ ") -> " ++ answer_type ++ " {\n") ++
+        "    val tmp = " ++ module_alias ++ "." ++ tmp_open ++ "();\n" ++
+        (if (async_) "    val answer = await " ++ in_fn ++ "(reg);\n" else "    val answer = " ++ in_fn ++ "(reg);\n") ++
+        "    " ++ module_alias ++ "." ++ tmp_close ++ "(tmp);\n" ++
+        "    case answer {\n" ++
+        "        Ok(report) -> return report;\n" ++
+        "        Error(failed) -> throw failed;\n" ++
+        "    }\n" ++
+        "}\n";
     const head = if (async_)
-        "async fn " ++ test_run_async_fn ++ "(reg: fn() -> Result<" ++ entry ++ "[], string>) -> Async<Result<" ++ test_report_alias ++ ", " ++ run_failure_alias ++ ">> {\n"
+        "async fn " ++ in_fn ++ "(reg: " ++ reg_type ++ ") -> Async<" ++ answer_type ++ "> {\n"
     else
-        "fn " ++ test_run_fn ++ "(reg: fn() -> Result<" ++ entry ++ "[], string>) -> Result<" ++ test_report_alias ++ ", " ++ run_failure_alias ++ "> {\n";
+        "fn " ++ in_fn ++ "(reg: " ++ reg_type ++ ") -> " ++ answer_type ++ " {\n";
     const ran_ok = if (async_)
         "            Ok(entries) -> return await " ++ cases_fn ++ "(entries);\n"
     else
@@ -1158,7 +1185,7 @@ fn testRunSrc(comptime async_: bool) []const u8 {
         "        val ran = await " ++ failure_alias ++ ".attemptTask(e._3);\n"
     else
         "        val ran = " ++ attempt_alias ++ "(e._3);\n";
-    return head ++
+    return outer ++ head ++
         "    val open = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
         "    val listed = " ++ attempt_alias ++ "(reg);\n" ++
         "    val output = " ++ module_alias ++ "." ++ capture_close ++ "(open);\n" ++
@@ -1174,7 +1201,9 @@ fn testRunSrc(comptime async_: bool) []const u8 {
         "    var cases: " ++ test_case_alias ++ "[] = [];\n" ++
         "    for entries { e ->\n" ++
         "        val caseOpen = " ++ module_alias ++ "." ++ capture_open ++ "();\n" ++
+        "        val named = " ++ module_alias ++ "." ++ name_open ++ "(e._0);\n" ++
         run_one ++
+        "        " ++ module_alias ++ "." ++ name_close ++ "(named);\n" ++
         "        val caseOutput = " ++ module_alias ++ "." ++ capture_close ++ "(caseOpen);\n" ++
         test_answer_src ++
         "    }\n" ++
