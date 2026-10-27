@@ -1,1 +1,1 @@
-{ "name": "component_lambda_runs-574" }
+{"name": "component_lambda_runs-574", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

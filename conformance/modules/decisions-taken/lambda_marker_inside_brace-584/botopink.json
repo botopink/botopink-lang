@@ -1,1 +1,1 @@
-{ "name": "lambda_marker_inside_brace-584" }
+{"name": "lambda_marker_inside_brace-584", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

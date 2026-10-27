@@ -1,0 +1,15 @@
+botopink-cell 2
+== context_val_alias
+refused error: context-not-declared: a module-level `Context<T>` declares `T`'s default, and only `createContext(value)` declares one — a `var`, or a `val` naming another context, would give one type two defaults (decisions 378, 379)
+at src/main.bp:13:17
+== getcontext_removed
+refused error: unknown-builtin: unknown builtin `@getContext` — a context is read through a context value with `use context(ctx)` (decisions 354, 722)
+at src/main.bp:9:19
+== context_declared_twice
+refused error: context-declared-twice: `Theme` already has its context declared — `themeContext` in main at 9:33; a type declares one default in the program (decision 379 (1))
+at src/main.bp:11:31
+== context_default
+out before
+out light
+out dark
+out light

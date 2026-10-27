@@ -1,1 +1,1 @@
-{ "name": "use_at_component_top_level-357" }
+{"name": "use_at_component_top_level-357", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "implement_signature_over_types-974" }
+{"name": "implement_signature_over_types-974", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,0 +1,12 @@
+botopink-cell 2
+== compiler_add_type_built
+out x 3
+== compiler_template_expr_return
+out HELLO!
+out 42
+out A\N "B" ${C} `!
+== anyvalue_outside_template
+refused error: anyvalue-outside-template: `anyvalue` — a value whose type is known once its code is built — is written only as a template's return
+at src/main.bp:7:12
+== template_answer_component
+out styled

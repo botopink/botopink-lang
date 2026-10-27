@@ -1,1 +1,1 @@
-{ "name": "components_compose_by_data-504" }
+{"name": "components_compose_by_data-504", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

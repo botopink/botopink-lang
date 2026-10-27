@@ -1,0 +1,10 @@
+botopink-cell 2
+== marker_fn_without_return_type
+refused error[marker-type-mismatch]: a body marker names its return type, and this function writes none
+at src/main.bp:11:1
+label write `-> Async<…>`
+== marker_lambda_brace_async
+out 9
+out 10
+out 112
+out no parameter

@@ -1,1 +1,1 @@
-{ "name": "unmarked_body_returns_whole_type-570" }
+{"name": "unmarked_body_returns_whole_type-570", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

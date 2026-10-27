@@ -1,1 +1,1 @@
-{ "name": "memo_computed_once_per_instance-771" }
+{"name": "memo_computed_once_per_instance-771", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

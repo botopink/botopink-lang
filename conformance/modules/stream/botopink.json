@@ -1,1 +1,1 @@
-{ "name": "stream" }
+{"name": "stream", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

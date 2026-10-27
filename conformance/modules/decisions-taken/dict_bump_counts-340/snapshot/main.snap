@@ -1,0 +1,8 @@
+botopink-cell 2
+== dict_bump
+out 2 null
+out 5 -4 2
+out 0
+== dict_bump_on_module_var
+out [2000, 2000]
+out 6000 15 null

@@ -1,0 +1,10 @@
+botopink-cell 2
+== ets_keyed_argument
+refused error: unknown argument `keyed` — `.Ets` takes none
+at src/main.bp:6:3
+== process_dict_member
+refused error: unknown member `ProcessDict` in `BeamMemory` — expected `Ets` or `PersistentTerm`
+at src/main.bp:5:3
+== beam_memory_ets
+out 5
+out 15

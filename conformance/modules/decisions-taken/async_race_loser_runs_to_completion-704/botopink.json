@@ -1,1 +1,1 @@
-{ "name": "async_race_loser_runs_to_completion-704" }
+{"name": "async_race_loser_runs_to_completion-704", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

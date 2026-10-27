@@ -1,1 +1,1 @@
-{ "name": "component_compose_entry-804" }
+{"name": "component_compose_entry-804", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

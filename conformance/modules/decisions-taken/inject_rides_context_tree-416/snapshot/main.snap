@@ -1,0 +1,16 @@
+botopink-cell 2
+== context_behavior_not_implemented
+refused error: context-behavior-not-implemented: `PlainText` does not implement `Repository` (decision 416 (2))
+at src/main.bp:13:37
+== inject_behavior
+refused error: inject-not-record: `inject(Repository)` builds a record from the contexts of its fields' types, and `Repository` is no record type (decision 416 (1))
+at src/main.bp:13:24
+== inject_field_undeclared
+refused error: context-not-declared: `Deps.clock`: `Clock` has no context declared — declare its default with `createContext(…)` (decision 416 (1))
+at src/main.bp:14:16
+== inject_not_record_enum
+refused error: inject-not-record: `inject(Mode)` builds a record from the contexts of its fields' types, and `Mode` is no record type (decision 416 (1))
+at src/main.bp:15:24
+== context_behavior_implemented_indirectly
+out cached-1
+out mem#1

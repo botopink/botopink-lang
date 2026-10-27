@@ -1,1 +1,1 @@
-{ "name": "dict_bump_counts-340" }
+{"name": "dict_bump_counts-340", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

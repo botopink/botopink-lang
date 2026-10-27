@@ -1,1 +1,1 @@
-{ "name": "component_resolved_by_use_or_tree-791" }
+{"name": "component_resolved_by_use_or_tree-791", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

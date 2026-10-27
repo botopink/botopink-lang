@@ -1,0 +1,22 @@
+botopink-cell 2
+== generator_loop_use
+refused error: use-not-top-level: `use` inside an `iter` / `stream` loop — a `use` is written at the top level of a `component` body and runs on every call (decision 357)
+at src/main.bp:18:17
+== use_after_early_return
+refused error: use-not-top-level: `use` after the statement on line 12, which may return early — this `use` would not run on every call (decision 357)
+at src/main.bp:15:13
+== use_after_return
+refused error: use-not-top-level: `use` after the statement on line 11, which may return early — this `use` would not run on every call (decision 357)
+at src/main.bp:12:13
+== use_in_if
+refused error: use-not-top-level: `use` inside an `if` / `else` — a `use` is written at the top level of a `component` body and runs on every call (decision 357)
+at src/main.bp:14:13
+== use_in_lambda
+refused error: use-not-top-level: `use` inside a lambda — a `use` is written at the top level of a `component` body and runs on every call (decision 357)
+at src/main.bp:13:17
+== use_in_loop
+refused error: use-not-top-level: `use` inside a loop — a `use` is written at the top level of a `component` body and runs on every call (decision 357)
+at src/main.bp:14:17
+== use_conditional_argument
+out dark!
+out light

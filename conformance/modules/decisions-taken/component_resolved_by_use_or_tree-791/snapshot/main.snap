@@ -1,0 +1,15 @@
+botopink-cell 2
+== await_component_at_root
+refused error: await-component: `await` takes an `Async<T>`, and this is a `Component<View>` — a component is resolved by `use c` inside a component body, or placed in the tree as a child `c` (decision 791 (4))
+at src/main.bp:15:13
+== await_component_in_body
+refused error: await-component: `await` takes an `Async<T>`, and this is a `Component<View>` — a component is resolved by `use c` inside a component body, or placed in the tree as a child `c` (decision 791 (4))
+at src/main.bp:15:13
+== behavior_value_unknown_field
+refused error: unknown field 'zzz' on 'Component<View>': the behavior `Component` declares `run`
+at src/main.bp:16:13
+== behavior_value_unknown_method
+refused error: unknown method 'zzz' on 'Async<string>': the behavior `Async` declares no members
+at src/main.bp:14:13
+== component_call_lambda_in_body
+out made 2
