@@ -972,6 +972,22 @@ fn blockOf(handle: unknown) -> i32 {
     return block;
 }
 
+// Whether `a` sorts before `b` by the bytes of their UTF-8 (string `<` is not a wasm GC operation).
+fn bytesBefore(a: string, b: string) -> bool {
+    val x = bytes.fromUtf8(a);
+    val y = bytes.fromUtf8(b);
+    val nx = x.length();
+    val ny = y.length();
+    var i = 0;
+    while (i < nx && i < ny) {
+        val cx = wasiByteAt(x, i);
+        val cy = wasiByteAt(y, i);
+        if (cx != cy) return cx < cy;
+        i = i + 1;
+    }
+    return nx < ny;
+}
+
 // The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
 fn sortedStrings(xs: array<string>) -> array<string> {
     var out: array<string> = [];
@@ -980,7 +996,7 @@ fn sortedStrings(xs: array<string>) -> array<string> {
         val x = xs.at(i) ?? "";
         i = i + 1;
         var j = 0;
-        while (j < out.length && (out.at(j) ?? "") < x) {
+        while (j < out.length && bytesBefore(out.at(j) ?? "", x)) {
             j = j + 1;
         }
         if (j < out.length && (out.at(j) ?? "") == x) continue;
@@ -1284,7 +1300,8 @@ fn expandBraces(seg: string) -> array<string> {
     var close = -1;
     var cuts: array<i32> = [];
     var j = open;
-    while (j < cs.length) {
+    var closed = false;
+    while (j < cs.length && !closed) {
         val c = cs.at(j) ?? "";
         if (c == "{") {
             depth = depth + 1;
@@ -1292,7 +1309,7 @@ fn expandBraces(seg: string) -> array<string> {
             depth = depth - 1;
             if (depth == 0) {
                 close = j;
-                break;
+                closed = true;
             }
         } else if (c == "," && depth == 1) {
             cuts = cuts.append([j]);
