@@ -84,19 +84,19 @@ runs:
     # Without wasmtime on PATH the run log is empty and every wasm snapshot
     # mismatches. A pinned release tarball, not the `wasmtime.dev/install.sh`
     # installer (its version lookup is flaky on the GH runners); the install
-    # directory is cached on the version.
+    # directory is cached on the version. v49.0.3 is the C API's version (decision 1021 (3)).
     - name: Cache wasmtime
       id: wasmtime-cache
       uses: actions/cache@v4
       with:
         path: ~/.wasmtime/bin
-        key: wasmtime-v45.0.1-${{ runner.os }}-x86_64
+        key: wasmtime-v49.0.3-${{ runner.os }}-x86_64
 
     - name: Install wasmtime
       if: steps.wasmtime-cache.outputs.cache-hit != 'true'
       shell: bash
       env:
-        WASMTIME_VERSION: v45.0.1
+        WASMTIME_VERSION: v49.0.3
       run: |
         set -euo pipefail
         url="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
