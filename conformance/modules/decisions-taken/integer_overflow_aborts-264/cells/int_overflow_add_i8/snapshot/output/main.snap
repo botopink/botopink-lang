@@ -1,5 +1,0 @@
-botopink-cell 1
-out 127
-out -128
-abort
-stderr integer overflow: + on i8 at src/main.bp:7:14

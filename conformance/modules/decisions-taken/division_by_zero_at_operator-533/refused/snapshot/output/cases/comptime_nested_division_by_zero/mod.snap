@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `6 / (3 - 3)` (division by zero)
-at src/cases/comptime_nested_division_by_zero/mod.bp:8:34
-from src/cases/comptime_nested_division_by_zero/mod.bp:8:19

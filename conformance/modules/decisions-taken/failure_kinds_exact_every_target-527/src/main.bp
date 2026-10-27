@@ -41,5 +41,8 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("assert_failure_is_panic");
     runCase("int_division_by_zero_is_panic");
     runCase("std_failure_attempt");
+    runCase("std_asserts_throws_over_attempt");
+    runCase("std_failure_attempt_crash");
+    runCase("std_failure_attempt_host");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

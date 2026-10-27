@@ -10,6 +10,6 @@ runtime with `RenderScope.root()`, where no provider exists, so its read is the 
 module `val` is the string constant `#e11d48/4`.
 
 Cells in this repository that also bear on it: `modules/decisions-taken/context_named_by_value_type-379/cases/context_default`,
-`modules/decisions-taken/context_read_by_value-722/cells/context_default_imported`.
+`modules/decisions-taken/context_read_by_value-722/cases/context_default_imported`.
 
 [draft/main.bp](draft/main.bp)

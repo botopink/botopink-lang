@@ -40,5 +40,12 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("marker_fn_without_return_type");
     runCase("marker_lambda_brace_async");
+    runCase("marker_lambda_brace_async_iter");
+    runCase("marker_lambda_brace_component");
+    runCase("marker_lambda_brace_iter");
+    runCase("marker_lambda_break_value_refused");
+    runCase("marker_lambda_continue_refused");
+    runCase("marker_lambda_function_body");
+    runCase("marker_words_before_brace");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

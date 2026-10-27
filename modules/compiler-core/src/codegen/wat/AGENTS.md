@@ -532,7 +532,7 @@ linked one — through `scope_carry.carry` before anything is registered:
   -> T`, `bpScopeRaw__value<n>(r) -> R`, `bpScopeRaw__run<n>(c, s) -> Rendered<R>` — so every
   reader (a field, a concatenation, a printer, a destructure) asks a declared return as of any
   function; the wrapper's `return` passes the word as it is (`Emitter.raw_return`), or loads the
-  cell of a declared float or `i64` (`modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_wide_number_through_scope`);
+  cell of a declared float or `i64` (`modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope`);
 - **`@Component<R>` is written `fn(unknown) -> unknown`** wherever a program writes it (a
   parameter, a field, an annotation): the value is the lambda's closure cell;
 - a call of std's `find` / `valueOf` outside a wrapper — the checker left the type unresolved — is

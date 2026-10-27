@@ -42,5 +42,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("contract_block_method_on_int");
     runCase("contract_default_fn_type_has_refused");
     runCase("contract_required_member_signature_differs");
+    runCase("contract_required_member_met_by_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

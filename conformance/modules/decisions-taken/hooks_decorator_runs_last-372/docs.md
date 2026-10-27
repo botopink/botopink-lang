@@ -1,6 +1,6 @@
 # Decision 372 — Provisional ("for now"; a second splice for a `.hooks` reader's outputs is weighed on a concrete case): a decorator that reads `.hooks` runs last in its module and only records meta or refuses.
 
-[cells/decl_hooks_reads_member/src/main.bp](cells/decl_hooks_reads_member/src/main.bp)
+[cases/decl_hooks_reads_member/src/main.bp](cases/decl_hooks_reads_member/src/main.bp)
 [cases/decorator_hooks_output/src/main.bp](cases/decorator_hooks_output/src/main.bp)
 [cases/decorator_hooks_output_member_fn/src/main.bp](cases/decorator_hooks_output_member_fn/src/main.bp)
 [cases/typeinfo_all_hooks_reader/src/main.bp](cases/typeinfo_all_hooks_reader/src/main.bp)

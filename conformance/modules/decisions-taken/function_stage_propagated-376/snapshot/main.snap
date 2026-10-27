@@ -1,0 +1,26 @@
+botopink-cell 2
+== stage_build_and_run
+refused error: build-and-run: `mixed` would run at build and when the program runs — `clock.nowMillis(…)`, a std function that runs only when the program runs here, and `campos(…)`, which runs only at build (`names`, a `comptime` parameter read at main:10:19) at 14:13
+at src/main.bp:15:22
+== stage_comptime_block_in_run
+out [title,body] (now)
+out [x,y,z]| ok
+== stage_imported
+out usaPad: Any
+out usaAgora: Run
+out usaLabel: Build
+out pad 2
+== stage_of_functions
+out padAll: Any
+out agora: Run
+out campos: Build
+out titulo: Any
+out cabecalho: Run
+out twice: Any
+out nomes: Build
+out raiz: Any
+out depois: Run
+out [a,b]
+out oi!
+out padding: 8px;padding: 8px;
+out 4.0

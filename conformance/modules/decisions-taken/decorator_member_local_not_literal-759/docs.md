@@ -11,4 +11,4 @@ without the second member it would print `[fresh]`.
 Cells that also bear on it: `modules/decisions-taken/no_declaration_files_compiler_value-575/cases/decorator_member_captures`.
 
 
-[cells/decorator_member_local_not_literal/src/main.bp](cells/decorator_member_local_not_literal/src/main.bp)
+[cases/decorator_member_local_not_literal/src/main.bp](cases/decorator_member_local_not_literal/src/main.bp)

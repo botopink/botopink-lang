@@ -43,5 +43,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("decorator_member_fn_untyped");
     runCase("decorator_member_not_fn");
     runCase("decorator_member_type");
+    runCase("decorator_member_fn_import");
+    runCase("meta_expr_field");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

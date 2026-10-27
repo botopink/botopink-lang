@@ -43,5 +43,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("prefixed_loop_nearest_scope");
     runCase("prefixed_loop_result_item");
     runCase("stream_loop_no_failure");
+    runCase("prefixed_loop_break_outer");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

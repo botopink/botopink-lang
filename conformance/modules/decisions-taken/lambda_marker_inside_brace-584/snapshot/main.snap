@@ -8,3 +8,32 @@ out 9
 out 10
 out 112
 out no parameter
+== marker_lambda_brace_async_iter
+out 2
+out 4
+out 9
+== marker_lambda_brace_component
+out badge
+out list >a >b
+== marker_lambda_brace_iter
+out 0
+out 1
+out 2
+out 22
+out a
+out b
+== marker_lambda_break_value_refused
+refused error: marker-lambda-break-value: a marked lambda's body is a function body — `break <value>` does not end it
+at src/main.bp:10:9
+== marker_lambda_continue_refused
+refused error: continue-outside-loop: `continue` outside a loop
+at src/main.bp:9:25
+== marker_lambda_function_body
+out 1
+out 2
+out 5
+out 99
+== marker_words_before_brace
+out 21
+out named!
+out 7

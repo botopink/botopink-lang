@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: decorator-writes-module-var: the decorator `counted` writes the module-level `var` `seen` — each decorator invocation is independent: its answer depends on the declaration it annotates alone (decision 343)
-at src/cases/decorator_writes_module_var/mod.bp:13:5

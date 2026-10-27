@@ -1,0 +1,13 @@
+botopink-cell 2
+== decorator_assoc_type_error_at_annotation
+refused error: unknown type 'Missing'
+at src/main.bp:12:3
+from src/main.bp:9:14
+== decorator_member_type_error_at_annotation
+refused error: unknown field 'nope' on type 'City'
+at src/main.bp:13:3
+from src/main.bp:8:14
+== decorator_output_error_one_per_annotation
+refused error: unknown field 'nope' on type 'Town'
+at src/main.bp:21:3
+from src/main.bp:9:18

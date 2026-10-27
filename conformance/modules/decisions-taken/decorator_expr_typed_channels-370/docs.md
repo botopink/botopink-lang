@@ -2,11 +2,11 @@
 
 [cases/decorator_expr_message_runtime/src/main.bp](cases/decorator_expr_message_runtime/src/main.bp)
 [cases/decorator_expr_rule_called/src/main.bp](cases/decorator_expr_rule_called/src/main.bp)
-[cells/decorator_member_fn_import/src/main.bp](cells/decorator_member_fn_import/src/main.bp)
+[cases/decorator_member_fn_import/src/main.bp](cases/decorator_member_fn_import/src/main.bp)
 [cases/decorator_member_fn_untyped/src/main.bp](cases/decorator_member_fn_untyped/src/main.bp)
 [cases/decorator_member_not_fn/src/main.bp](cases/decorator_member_not_fn/src/main.bp)
 [cases/decorator_member_type/src/main.bp](cases/decorator_member_type/src/main.bp)
-[cells/meta_expr_field/src/main.bp](cells/meta_expr_field/src/main.bp)
+[cases/meta_expr_field/src/main.bp](cases/meta_expr_field/src/main.bp)
 
 Proved also by [decorator_hooks_output_member_fn](../hooks_decorator_runs_last-372/cases/decorator_hooks_output_member_fn/src/main.bp)
 Proved also by [decorator_member_captures](../no_declaration_files_compiler_value-575/cases/decorator_member_captures/src/main.bp)

@@ -3,3 +3,6 @@ botopink-cell 2
 out ["second", "first", "later"]
 out ["second", "first", "later", "own"]
 out first second own
+== init_executor_calls_host_fn
+out home
+out home

@@ -39,5 +39,9 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("component_is_lambda");
+    runCase("context_optional_wide_number_through_scope");
+    runCase("context_wide_number_through_scope");
+    runCase("render_scope_construction");
+    runCase("render_scope_library");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

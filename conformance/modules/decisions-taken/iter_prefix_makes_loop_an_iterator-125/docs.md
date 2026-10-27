@@ -1,6 +1,6 @@
 # Decision 125 — `iter` and `stream` prefix a loop and make it an iterator or a stream
 
-[cells/prefixed_loop_break_outer/src/main.bp](cells/prefixed_loop_break_outer/src/main.bp)
+[cases/prefixed_loop_break_outer/src/main.bp](cases/prefixed_loop_break_outer/src/main.bp)
 [cases/prefixed_loop_break_value/src/main.bp](cases/prefixed_loop_break_value/src/main.bp)
 [cases/prefixed_loop_forms/src/main.bp](cases/prefixed_loop_forms/src/main.bp)
 [cases/prefixed_loop_nearest_scope/src/main.bp](cases/prefixed_loop_nearest_scope/src/main.bp)

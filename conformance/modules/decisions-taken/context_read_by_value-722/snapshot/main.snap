@@ -2,3 +2,6 @@ botopink-cell 2
 == context_read_by_type_refused
 refused error: context-read-by-type: `use context(Theme)` names a type — a context is read through a context value, `use context(<a context value>)`, matched to the provider by the context's type (decisions 722, 723)
 at src/main.bp:14:25
+== context_default_imported
+out light
+out dark

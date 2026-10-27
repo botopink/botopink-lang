@@ -13,3 +13,6 @@ refused error: unknown method 'zzz' on 'Async<string>': the behavior `Async` dec
 at src/main.bp:14:13
 == component_call_lambda_in_body
 out made 2
+== component_return_needs_use
+refused error: type mismatch: expected View, got Component<View> — a body written `-> Component<View>` answers `View`, and a component call only makes its lambda: resolve it with `use` (decision 791)
+at src/main.bp:15:12

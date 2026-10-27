@@ -1364,12 +1364,12 @@ else
 fi
 
 echo "==> a dependency's modules are one set under every command (decisions 514, 575 (1))"
-# conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency: its dependency's `shapes.bp`
+# conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency: its dependency's `shapes.bp`
 # declares `Rect`, which the cell's main builds. `check` and `test` keep
 # a dependency's modules as `build` does — one module set, one
 # level B entry — so `check` answers what `build` answers.
 DBP="$WORK/dbp-dependency"
-rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency" "$DBP"
+rm -rf "$DBP"; cp -R "$REPO_ROOT/conformance/modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency" "$DBP"
 rm -rf "$DBP/snapshot" "$DBP/docs.md"
 run "$DBP" check
 expect_code 0 "check of a consumer building a type its dependency declares"

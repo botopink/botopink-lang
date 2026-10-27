@@ -41,5 +41,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("import_group_modifier");
     runCase("import_name_collision");
     runCase("import_tree");
+    runCase("import_alias_fn_value_beside_local");
+    runCase("import_type_method_result");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

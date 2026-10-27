@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("lambda_arg_generic_param_method");
     runCase("lambda_param_typed_by_later_call");
     runCase("lambda_param_untyped_method_refused");
+    runCase("generic_result_any_shape");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

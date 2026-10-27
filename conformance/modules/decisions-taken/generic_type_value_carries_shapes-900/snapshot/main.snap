@@ -1,0 +1,6 @@
+botopink-cell 2
+== generic_type_value_carries_shapes
+out Dict("a": 2.0)
+out Dict("a": 2.0)
+out Dict("b": 3.0)
+out Dict("a": 2.0, "b": 1.5)

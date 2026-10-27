@@ -55,3 +55,128 @@ out 11
 out 2.5
 out 0
 out 0.5
+== i64_dict_key_across_safe_edge
+out below
+out above
+out above
+out 2
+out 2
+out true
+out false
+== i64_dict_key_across_safe_edge on wasm
+refused error: the wasm backend would narrow this `i64` value to an `i32` slot it does not fit
+at src/main.bp:14:33
+== i64_full_range
+out 9007199254740992
+out 9007199254740993
+out 9223372036854775807
+out -9223372036854775808
+out 4611686018427387903
+out 7
+out -9223372036854775807
+out -3074457345618258602
+out 9007199254740981
+out true
+out true
+out true
+out 9223372032559808512
+out 9007199254740995
+out top=9223372036854775807
+out 9223372036854775807
+abort
+stderr integer overflow: + on i64 at src/main.bp:12:14
+== i64_full_range on wasm
+out 9007199254740992
+out 9007199254740993
+out 9223372036854775807
+out -9223372036854775808
+out 4611686018427387903
+out 7
+out -9223372036854775807
+out -3074457345618258602
+out 9007199254740981
+out true
+out true
+out true
+out 9223372032559808512
+out 9007199254740995
+out top=9223372036854775807
+out 9223372036854775807
+abort
+== i64_number_methods_past_js_safe
+out false
+out true
+out true
+out true
+out 5
+out 9007199254740993
+out -9007199254740995
+out 9007199254740993
+out 9007199254740993
+out 9007199254740995
+out 9007199254740993
+out 9007199254740991
+out -9007199254740995
+out 7
+out false
+out true
+out 9007199254740993
+out 18446744073709551615
+out 9007199254740992
+== i64_number_methods_past_js_safe on wasm
+refused error: the wasm backend would narrow this `i64` value to an `i32` slot it does not fit
+at src/main.bp:21:11
+== int_overflow_add_u64_max
+out 18446744073709551615
+out 1
+out 18446744073709551615
+out 1000000000000000000
+out 3333333333333333333
+abort
+stderr integer overflow: + on u64 at src/main.bp:10:14
+== int_overflow_add_u64_max on wasm
+out 18446744073709551615
+out 1
+out 18446744073709551615
+out 1000000000000000000
+out 3333333333333333333
+abort
+== int_overflow_mul_i64
+out 9007199250546688
+abort
+stderr integer overflow: * on i64 at src/main.bp:9:14
+== int_overflow_mul_i64 on wasm
+out 9007199250546688
+abort
+== int_overflow_sub_i64_min
+out -9223372036854775808
+abort
+stderr integer overflow: - on i64 at src/main.bp:8:14
+== int_overflow_sub_i64_min on wasm
+out -9223372036854775808
+abort
+== integer_conversion_to_f64_inexact_aborts
+out true
+abort
+stderr toF64: 9007199254740993 has no exact f64
+== integer_conversion_to_i32_aborts
+out 2147483647
+abort
+stderr toI32: 2147483648 does not fit i32
+== integer_conversion_u64_to_i64_aborts
+out 9223372036854775807
+out 4294967295
+abort
+stderr toI64: 18446744073709551615 does not fit i64
+== std_io_i64_canonical
+out 5
+out false
+out true
+out true
+out 7730941129200000
+out 15461882258400000
+out true
+out 9007199254740991
+== std_io_i64_canonical on wasm
+refused error: std-unsupported-on-target: std/io/fs.stat reaches `rawStat`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
+at src/main.bp:16:13

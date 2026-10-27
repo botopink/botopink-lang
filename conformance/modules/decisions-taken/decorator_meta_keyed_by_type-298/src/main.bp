@@ -48,5 +48,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("meta_twice");
     runCase("meta_catalogue_private_type");
     runCase("meta_typed");
+    runCase("meta_typed_catalogue");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

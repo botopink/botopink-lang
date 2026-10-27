@@ -1,3 +1,14 @@
 botopink-cell 2
 == implement_body_marker_admitted
 out 2
+== implement_comptime_marker_added
+refused error: implement-signature-differs: `Box.scale` does not match the contract `Scaled` — contract: fn scale(self: Box, n: i32) -> i32 · written: fn scale(self: Box, comptime n: i32) -> i32
+at src/main.bp:12:8
+== implement_comptime_marker_dropped
+refused error: implement-signature-differs: `Box.scale` does not match the contract `Scaled` — contract: fn scale(self: Box, comptime n: i32) -> i32 · written: fn scale(self: Box, n: i32) -> i32
+at src/main.bp:12:8
+== implement_signature_spellings_met
+out [2, 3]
+out ["a", "b"]
+out 6
+out 20

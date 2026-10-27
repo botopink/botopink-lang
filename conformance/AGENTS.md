@@ -96,7 +96,7 @@ leaves in scope, on commonJS/erlang/wasm — and three refusal cells: `import_na
 second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
 `import_alias_on_type`, is now `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_alias_on_type` — decision 110 made `as` legal on a type
 and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
-`Dict as D` and runs on all four targets; `modules/decisions-taken/import_dotted_and_braced_paths_one_tree-107/cells/import_alias_fn_value_beside_local` an aliased import's function value beside a local
+`Dict as D` and runs on all four targets; `modules/decisions-taken/import_dotted_and_braced_paths_one_tree-107/cases/import_alias_fn_value_beside_local` an aliased import's function value beside a local
 function of the leaf's name (wasm read the bare name, the local one, until front 140's thread resolved
 the alias to the owner's mangled declaration); `modules/decisions-taken/import_alias_on_type_and_folder_namespace-110/cases/import_alias_static_call` covers the alias in
 expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
@@ -150,7 +150,7 @@ Decision 307 (a derived type, `01-checker` step 28) adds `modules/decisions-take
 `omit`, `partial`, `required` and `merge`, chained and nested, each constructed, read, passed as a
 parameter, told apart from its source by `is` and printed by its own name, on all four targets),
 `modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_decorated` (a decorator on the `val` sees a type whose fields keep the source's
-annotations, `partial`'s typed `?T`) and `modules/decisions-taken/derived_type_static_methods-307/cells/derived_type_imported` (an exported
+annotations, `partial`'s typed `?T`) and `modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_imported` (an exported
 `Type.merge` as a parameter type and a constructor, a module deriving from an imported record and
 from an imported derived type), with eleven `modules/derived/{run,refused}/src/cases/derived_type_*` and `modules/derived/cells/derived_type_*` cells — a string field, an
 unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
@@ -230,7 +230,7 @@ The cells those three Conformance steps proposed: `tag_annotation_emit` (`@emit`
 `template_method_behavior_method` (a method the receiver's type adopts from a behavior, its `default fn` included,
 and a behavior-typed receiver's method, win over a template method of the name — red on `feat` too, until the fix
 beside it).
-`modules/decisions-taken/derived_type_static_methods-307/cells/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
+`modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
 and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
 from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its
 own — the imported source is found by its module's key (the package plus the path, decisions 170
@@ -303,14 +303,14 @@ imported variadic `pub fn`, four targets) and six refusal cells: `variadic_not_l
 refused or accepted otherwise by the parent binary. Decision 354 (step 6, contexts — it replaced 269's
 `@getContext(T)`, whose `getcontext_without_use` refusal cell left) adds `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_read` (a provider
 reaches a component two renders below it; a `@Component` read with `use` reads its caller's map; a body
-does not see its own provide), `modules/decisions-taken/context_named_by_value_type-379/cells/context_nearest_wins` (the nearest provider wins, a sibling does not
+does not see its own provide), `modules/decisions-taken/context_named_by_value_type-379/cases/context_nearest_wins` (the nearest provider wins, a sibling does not
 see another's) and `modules/context_unbound` (`context-unbound` at run time, `abort` nonzero and the
 message on stderr) — erlang, beam and commonJS run them, the wasm backend refuses the `use` where it is
 written (`snapshot/targets/wasm/`, `language-gaps.md`); and the refusals `modules/decisions-taken/component_wrapper_and_contexts-354/cases/component_base_parameter`
 (`@Component<C, R>` at the base), `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_marker_removed`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/renderable_type_argument`,
 `modules/decisions-taken/context_named_by_value_type-379/cases/getcontext_removed`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_in_hook`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_after_render`,
 `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_hook_without_use`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_hook_as_value`, `modules/context_not_declared`,
-`modules/decisions-taken/context_named_by_value_type-379/cases/context_val_alias`, `modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_of_parameter`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/use_in_comptime_block`,
+`modules/decisions-taken/context_named_by_value_type-379/cases/context_val_alias`, `modules/decisions-taken/context_provide_made_in_body-723/cases/context_read_of_parameter`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/use_in_comptime_block`,
 `modules/decisions-taken/component_wrapper_and_contexts-354/cases/use_in_decorator_body` and `modules/decisions-taken/component_wrapper_and_contexts-354/cases/use_in_template_body` (`use-outside-render-tree`), each red on
 the parent binary. Decision 354 took the base out of the wrapper, so the cells `component_two_bases`,
 `use_two_bases`, `use_owner_mismatch` (decision 96's one base per body), `component_one_type_argument` and
@@ -324,12 +324,12 @@ naming the context, `abort` and the three `stderr` lines); erlang, beam and comm
 the first `use` (`snapshot/targets/wasm/`).
 Decisions 378 and 379 (a context is named by its value's type and declares its default; 144 B-17) removed
 `context_unbound`, `context_not_declared` and `context_sheet_unbound` (no read is unbound) and added
-`modules/decisions-taken/context_named_by_value_type-379/cases/context_default`, `modules/decisions-taken/context_read_by_value-722/cells/context_default_imported` and
+`modules/decisions-taken/context_named_by_value_type-379/cases/context_default`, `modules/decisions-taken/context_read_by_value-722/cases/context_default_imported` and
 `modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice`; decision 416 (dependency injection) added `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_record`,
 `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_behavior_keyed`, `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_test_root_fake`, `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_field_undeclared`,
 `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_behavior` and `modules/decisions-taken/inject_rides_context_tree-416/cases/context_behavior_not_implemented`. B-17's Conformance step adds
-`modules/decisions-taken/context_named_by_value_type-379/cells/context_declared_twice_across_modules` (the second declaration in another module, refused in it naming
-the first), `modules/decisions-taken/context_named_by_value_type-379/cells/context_enum_default` (`comptime createContext(Mode.Light)` — the comptime lift wrote no
+`modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice_across_modules` (the second declaration in another module, refused in it naming
+the first), `modules/decisions-taken/context_named_by_value_type-379/cases/context_enum_default` (`comptime createContext(Mode.Light)` — the comptime lift wrote no
 enum value in a record's field, `comptime-value-not-liftable`), `modules/comptime/cases/comptime_enum_in_record` (the same lift
 in a record and a generic record), `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_default_imported` (an `inject` field's default declared in its
 type's own module) and `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_not_record_enum` (`inject-not-record` for an enum); the first two and the
@@ -342,7 +342,7 @@ carries its default) and added `modules/decisions-taken/context_provide_made_in_
 context of its type), `modules/decisions-taken/context_provide_made_in_body-723/cases/context_provide_made_in_body` (`val c = comptime createContext(…)` then `use
 provide(c)`) and `modules/decisions-taken/context_read_by_value-722/cases/context_read_by_type_refused` (`context-read-by-type` at the argument), red on the parent.
 Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
-374's capture: the cell `context_host_thunk` left with it, and `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_library` holds the scope in
+374's capture: the cell `context_host_thunk` left with it, and `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_library` holds the scope in
 the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the
 scope its parent's `run` answered, hands a host a thunk `{ -> c.run(scope) }` at once and keeps one the
 host runs twice after the render. `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda` (a call runs nothing; `itens.map(Card)`
@@ -351,15 +351,15 @@ answers lambdas a tree's runner runs with `Lista`'s scope; generic code keeps th
 `RenderScope.root()`), `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_try_in_body` (a bare `try` in a `@Component<@Result<…>>` body),
 `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_alias_answers_value` (a function typed by an alias of `@Component` is no component body, 118:
 it answers the lambda another body made — `styled`'s `-> StyledView`) and
-`modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction` (`RenderScope(…)` refused, `render-scope-construction`) cover the rest;
+`modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_construction` (`RenderScope(…)` refused, `render-scope-construction`) cover the rest;
 all four targets run them (on wasm since decision 504: the scope's values typed by the checker's type the lowering
 carries; `decl_hooks_direct` and `render_scope_library` are narrowed to commonJS, erlang and beam, their hosts having
 no wasm binding), and `modules/decisions-taken/components_compose_by_data-504/cases/component_awaits_host_task` pins 504's rule (a component awaiting a host `delay` is a
 state machine, a sibling that awaits nothing stays direct; red on the parent, whose wasm refused every component),
 `modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task` the same through a bare `try` (the tail the lowering runs as an inner
-closure waits on the host too; wasm trapped) and `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_wide_number_through_scope` an `f64` and an `i64`
+closure waits on the host too; wasm trapped) and `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope` an `f64` and an `i64`
 provided and rendered through the scope (wasm refused them, no word holding one); B-25's Conformance step proposed
-two pins beside them, `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope` (a `?f64` and a `?i64` provided with
+two pins beside them, `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope` (a `?f64` and a `?i64` provided with
 their number and with `null`) and `modules/decisions-taken/components_compose_by_data-504/cases/component_try_catch_then_awaits_host_task` (a `try … catch` then a host
 `await` in a component). A
 component called as a statement outside a body runs nothing now, so `modules/decisions-taken/body_marker_whole_return_type-553/cases/effect_chain`,
@@ -398,7 +398,7 @@ each annotation's `decorator` with `serverOnly` and with itself: `#[srv]` under 
 from "web"` is `web`'s, the project's own `serverOnly` reached as `#[local.serverOnly]` is another
 declaration (`other`); four targets — and `modules/decisions-taken/compiler_same_compares_declaration_handles-666/cases/decorator_same_not_decorator` (`same("serverOnly")`, a
 type mismatch at the argument); the parent binary had no `same`. Decision 372 (a `.hooks` reader runs
-after the module's bodies) adds `modules/decisions-taken/hooks_decorator_runs_last-372/cells/decl_hooks_reads_member` — `#[graph]`'s `Page` calls
+after the module's bodies) adds `modules/decisions-taken/hooks_decorator_runs_last-372/cases/decl_hooks_reads_member` — `#[graph]`'s `Page` calls
 `Account(…).validate()`, which `#[check]` adds below it; four targets, red on the parent binary
 (`'validate' is not declared`) — and `modules/decisions-taken/hooks_decorator_runs_last-372/cases/decorator_hooks_output` (`decl.addMember` in a decorator
 reading `decl.hooks`, `decorator-hooks-output` at the call; accepted by the parent binary),
@@ -690,8 +690,8 @@ over a module of std's own),
 stream before any `seed` is refused at the `comptime` that reached it — a build has no entropy)
 beside `modules/decisions-taken/libraries_run_at_build_on_wasm-594/cases/comptime_random_seeded` (the seeded draws at comptime, std-wasm's Mulberry32, the
 same text on all four targets),
-`modules/decisions-taken/decorator_invocations_independent-343/refused/src/cases/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
-of the module; the parent binary said `unbound variable`) and `modules/decisions-taken/decorator_invocations_independent-343/refused/src/cases/typeinfo_all_duplicate_at_entry`
+`modules/decisions-taken/decorator_invocations_independent-343/cases/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
+of the module; the parent binary said `unbound variable`) and `modules/decisions-taken/decorator_invocations_independent-343/cases/typeinfo_all_duplicate_at_entry`
 (two commands of one name refused at the entry point's `@TypeInfo.all`, naming both). Step 8 adds
 `modules/decisions-taken/libraries_run_at_build_on_wasm-594/cases/comptime_std_host_function` (`comptime hash.contentHash(…)`, T19, four targets — the parent
 binary refused `.contentHash(…)`) and `modules/hole_imported_val_known_at_build` (a hole naming an
@@ -701,7 +701,7 @@ context is refused naming the `use`).
 `01-compiler/14` step 8 (decision 355) adds `modules/styled_holes_known_at_build` (a template of the
 cell's own reads each hole's `known` / `value`: a literal, a `val`, another expansion with no
 run-time hole and a `comptime` are written at build, a parameter and a call computed at render —
-four targets; the parent binary fails the body at `badkey known`), `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/comptime_reaches_package_template`
+four targets; the parent binary fails the body at `badkey known`), `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cases/comptime_reaches_package_template`
 (a `comptime` over a package template's expansion, whose built code calls the package's function
 under its alias, and a record of the package's type written back where the module does not import
 it — the parent binary aborted the compiler), `modules/comptime/cases/comptime_interpolation_in_called_fn` (`"${…}"` in
@@ -827,7 +827,7 @@ condition and written into the emitted call), all three on all four targets, and
 variable); `modules/decisions-taken/comptime_parameter_call_expanded-562/cases/comptime_expand_library_names` (a library's expanded function naming its private type, its private
 function and a std namespace the caller does not import, on all four targets) and
 `modules/decisions-taken/comptime_parameter_call_expanded-562/cases/comptime_expand_library_type_error` (a refusal of the emitted code located in the library, the call as its
-`from` line). `modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions` and `modules/decisions-taken/function_stage_propagated-376/cells/stage_imported` give their
+`from` line). `modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions` and `modules/decisions-taken/function_stage_propagated-376/cases/stage_imported` give their
 `Build` function a run-time parameter (an all-`comptime` one is expanded instead), and `stage_of_functions` lists
 one that is expanded, `Any`. Decision 564 (a decorator's `syntax decl: B` names the behavior its declarations
 implement) adds `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decorator_decl_behavior_not_implemented` (`#[module]` on a type that does not
@@ -1074,8 +1074,8 @@ listed, the flat namespace), `modules/host/cells/host_array_slice_without_start`
 patch reads a missing start as 0; `"targets"` `commonJS`), `modules/decorator/cases/decorator_calls_imported_function`
 and `modules/decorator/cases/decorator_imported_function_name_conflict` (a decorator carries a function its module
 imports, and two functions of one name reaching one decorator are refused where it is applied),
-and decision 112's three rows — `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/dsl_hygiene_private_helper`,
-`modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/dsl_hygiene_consumer_alias` and `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cells/dsl_hygiene_consumer_double`, each printing `40`
+and decision 112's three rows — `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cases/dsl_hygiene_private_helper`,
+`modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cases/dsl_hygiene_consumer_alias` and `modules/decisions-taken/dsl_names_resolve_in_author_scope-112/cases/dsl_hygiene_consumer_double`, each printing `40`
 (the third's wasm line is the flat namespace's).
 The checker rows of `front/checker-rows-2` add a cell each, every one failing on the parent binary except where noted:
 `modules/builtin/cases/builtin_noreturn_any_position` (`@todo()` / `@panic(…)` are `noreturn`, the bottom type — a
@@ -1183,7 +1183,7 @@ Decision 370 (2) (`01-checker` step 35 box 3) — a decorator hands its paramete
 program through a typed member, `decl.addMember(name, fn(self: T) -> R { … })` — adds, on the four
 targets, `modules/decisions-taken/decorator_expr_typed_channels-370/cases/decorator_expr_rule_called` (`rule` is `passwordsMatch`, called by `validate` at run
 time), `modules/decisions-taken/decorator_expr_typed_channels-370/cases/decorator_expr_message_runtime` (`message` is `t("signup.mismatch")`, evaluated at run
-time each time the member reaches it, never at build), `modules/decisions-taken/decorator_expr_typed_channels-370/cells/decorator_member_fn_import` (a member
+time each time the member reaches it, never at build), `modules/decisions-taken/decorator_expr_typed_channels-370/cases/decorator_member_fn_import` (a member
 of a decorator in another module, reading only its parameters and locals) and
 `modules/decisions-taken/member_names_resolve_where_written-384/cases/decorator_member_fn_imported_name` (one naming a type and a private helper of the
 decorator's module — decision 384: each resolves there, the user's own same-named helper is not
@@ -1228,7 +1228,7 @@ Decision 716 (144 B-137) makes the `syntax decl` parameter's declared type the c
 `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decl_behavior_member_typed`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/member_decl_as_code`; the `init_executor_handle_*` cells write
 `syntax decl: fn() -> string` (or the behavior `Service`), and `_mistyped` / `_on_type_as_value` are refused at the
 annotation by the contract. Decision 759 names the refusal of a body local whose value is no literal, read in a member or an executor,
-`decorator-member-local-not-literal` (`modules/decisions-taken/decorator_member_local_not_literal-759/cells/decorator_member_local_not_literal`); the wrapper's `decorator-member-captures`
+`decorator-member-local-not-literal` (`modules/decisions-taken/decorator_member_local_not_literal-759/cases/decorator_member_local_not_literal`); the wrapper's `decorator-member-captures`
 goes with the wrapper (B-139).
 
 Decision 408 (144 B-21, `01-checker` step 37) made the typed function expression legal in every
@@ -1270,7 +1270,7 @@ Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type 
 targets, `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two
 `decl.addMeta(Index(…))` read `metaAll(Index)`, every field shape written back — string, array,
 float, `bool`, variant, optional —, `null` / `[]` for a type nothing recorded),
-`modules/decisions-taken/decorator_meta_keyed_by_type-298/cells/meta_typed_catalogue` (`d.meta(Entity)` / `d.metaAll(Index)` on `@TypeInfo.all` entries,
+`modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_typed_catalogue` (`d.meta(Entity)` / `d.metaAll(Index)` on `@TypeInfo.all` entries,
 here and in a function of another module the entries are handed to),
 `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_catalogue_private_type` (`typeinfo-all-private` for a private meta record) and
 `modules/decisions-taken/meta_expr_names_resolve_where_written-385/cells/meta_expr_read_elsewhere` (decision 385: `main` reads `signup`'s `Check` and `Note`, by
@@ -1279,7 +1279,7 @@ same-named functions not captured; it was `typeinfo-meta-expr-elsewhere` on the 
 refusals `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_twice`, `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_not_record`, `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_field_type`,
 `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_several`, `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_read_not_type`, `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_add_outside_decorator`,
 `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_read_at_build` and `modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_catalogue_generic` (question `130-s8-d`). Decision 370
-(1) adds `modules/decisions-taken/decorator_expr_typed_channels-370/cells/meta_expr_field` (`decl.addMeta(Check(message: message, rule: rule))`, `Check`'s
+(1) adds `modules/decisions-taken/decorator_expr_typed_channels-370/cases/meta_expr_field` (`decl.addMeta(Check(message: message, rule: rule))`, `Check`'s
 fields `syntax x: T`: the reader calls `rule` and evaluates `message` — `t("signup.mismatch")` — at run
 time, never at build) with `modules/decisions-taken/expr_decl_removed_compiler_templates-576/cases/meta_expr_field_literal` and
 `modules/decisions-taken/expr_decl_removed_compiler_templates-576/cases/meta_expr_param_plain_field` (`decorator-meta-expr-arg`). Each red on the parent binary.
@@ -1599,7 +1599,7 @@ Async eagerly, and inside one body the order is the same everywhere.
 | `async { }` | `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_all_of`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_value_type`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cells/async_block_return`; `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_use`, `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/async_block_conflicting_errors` |
 | Iterators | `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_fibonacci`, `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_result_item`, `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_result_items` (step E4), `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/iterator_factory`, `test/yield_step_next` and `modules/decisions-taken/body_marker_whole_return_type-553/cases/yield_step_next` (`.next()` by hand on an `@Iter` and, awaited, on a `@AsyncIter` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `modules/decisions-taken/body_marker_whole_return_type-553/cases/iterator_throw_without_result`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/iter_await`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/iter_mixed_yield_return`, `modules/decisions-taken/effect_annotation_removed_refused-127/cases/iterator_error_param_removed` |
 | Streams | `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/stream_pages` (a simulated http failing mid-way), `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/stream_loop_no_failure`; `modules/decisions-taken/body_marker_whole_return_type-553/cases/for_await_without_task` |
-| Prefixed loops | `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_forms`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_result_item`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_break_value`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_nearest_scope`, `test/contextual_words`; `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cells/prefixed_loop_break_outer` |
+| Prefixed loops | `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_forms`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_result_item`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_break_value`, `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_nearest_scope`, `test/contextual_words`; `modules/decisions-taken/iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_break_outer` |
 | Host (decisions 126, 431, 490) | `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/host_node_task_result` (`"targets"` `commonJS`; `result: true`, a rejection is `Error(HostError(…))`), `modules/decisions-taken/external_async_result_rejection_is_error-126/cells/host_erlang_task_result` (`"targets"` `erlang beam`), `modules/decisions-taken/binding_result_true_maps_host_errors-490/cases/external_result_host_error` (`result: true` on a sync and a `@Async` binding, every way the host fails — an `Error`, another thrown value, an erlang `{error, R}` — `Error(HostError(…))` with the same `name` on every target; wasm binds each by `fn:`), `modules/decisions-taken/host_error_fields-489/cells/external_result_erlang_exit` (`"targets"` `erlang beam`: `error`, `throw` and `exit` named `Error`, `Throw`, `Exit`), `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/external_result_host_method` (`"targets"` `commonJS erlang beam`: a host method, sync and `@Async`, answers the same); the checker's refusals of the flag (decisions 487, 488, 491) — `modules/decisions-taken/external_fields_written_by_label-621/cases/external_flag_bare_bool_refused`, `modules/decisions-taken/binding_result_true_maps_host_errors-490/cases/external_result_return`, `modules/decisions-taken/binding_result_true_maps_host_errors-490/cases/external_result_task_plain_value`, `modules/decisions-taken/host_error_by_module_identity-488/cases/external_result_own_host_error`, `modules/decisions-taken/binding_result_true_maps_host_errors-490/cases/external_result_not_bool`, `modules/decisions-taken/result_refused_on_op_fn-491/cases/external_result_on_fn_cell`, `modules/decisions-taken/result_refused_on_op_fn-491/cases/external_result_on_wasm_op_cell` — and the accepted shapes `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/external_result_return_accepted`; std's types `modules/decisions-taken/failure_kinds-492/cases/std_failure_types` |
 | The E3.9 hint (a `@Result` used as its `U`, one hint per source) | `modules/decisions-taken/body_marker_whole_return_type-553/cases/result_hint_await` (`try await t`), `modules/decisions-taken/body_marker_whole_return_type-553/cases/result_hint_for_item` (`try r`), `modules/decisions-taken/async_block_is_closed_task_expression-124/cases/result_hint_inferred_async` (the `await` hint plus the `try` that made the block's value a `@Result`) and `modules/decisions-taken/body_marker_whole_return_type-553/cases/result_hint_inferred_iter` (the `for`-item hint plus the `throw` that made the `iter` items `@Result`s); the two `for` cells carry no location line — the mismatch is reported at the file |
 | Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `modules/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `modules/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `modules/decisions-taken/component_wrapper_and_contexts-354/cases/component_base_parameter` (`@Component<C, R>`, decision 354), `modules/decisions-taken/body_marker_whole_return_type-553/cases/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `modules/decisions-taken/effect_annotation_removed_refused-127/cases/loop_condition_parenthesised`, `modules/decisions-taken/effect_annotation_removed_refused-127/cases/loop_await_removed`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_plain_return` |
@@ -1633,7 +1633,7 @@ the libraries' job (`libraries/<name>`, decision 996), and this suite must not n
 scope since C-16 (front 12 step 4.2): a second project inside the cell, named by the manifest's
 object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the workspaces landing
 `aa80e30b` — an array `"dependencies"` is refused since then), resolves from disk relative to the
-project, and the runner does nothing special for it. `modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency` is the one
+project, and the runner does nothing special for it. `modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency` is the one
 cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
 (`pub default fn shapesdsl<T>(syntax e: string) -> T`, the handler attaching its tree with `compiler.custom(ast)`) and `shapes.bp`
 (a record declared in a module listed in `files`); the program does `import shapesdsl, {area, Rect}
@@ -1645,9 +1645,9 @@ object form when the workspaces manifest (`aa80e30b`) started refusing the array
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
 The `embed_*` cells (decision 519, 144 B-12) carry the files their program embeds beside their
-`botopink.json` (`assets/…`; a loaded package reads them from its own directory): `modules/decisions-taken/embed_returns_asset-519/cells/embed_text_file` and `modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file` (an `Asset`'s path, size,
+`botopink.json` (`assets/…`; a loaded package reads them from its own directory): `modules/decisions-taken/embed_returns_asset-519/cases/embed_text_file` and `modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file` (an `Asset`'s path, size,
 SHA-256 and bytes on the four targets, a file with a zero byte and bytes past 0x7f included),
-`modules/decisions-taken/embed_returns_asset-519/cells/embed_through_comptime_param` (a local dependency and the project each hold an
+`modules/decisions-taken/embed_returns_asset-519/cases/embed_through_comptime_param` (a local dependency and the project each hold an
 `assets/note.txt`: the path a `comptime` parameter passes is read in the caller's package, the
 library's own `@embed` in the library's), and the refusals `embed_path_absolute`,
 `embed_path_outside_package`, `embed_file_missing`, `embed_path_not_known` and `embed_text_not_utf8`.
@@ -1878,10 +1878,10 @@ float goes into a generic slot in its box in a GC module).
 
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
 eight abort cells, each `abort` plus `stderr` naming `integer overflow: <op> on <type> at
-src/main.bp:<L:C>` on commonJS, erlang and beam: `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i32`, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/int_overflow_mul_i64`
+src/main.bp:<L:C>` on commonJS, erlang and beam: `modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_add_i32`, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/int_overflow_mul_i64`
 (past `2^63 − 1`; commonJS reaches the bound through `BigInt`, decision 319),
-`modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_negate_i32`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_plus_assign`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_division_min_by_minus_one`,
-`modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_sub_u32`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i8` and `modules/int/cases/int_division_by_zero` (commonJS's
+`modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_negate_i32`, `modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_plus_assign`, `modules/decisions-taken/integer_overflow_aborts-264/cases/int_division_min_by_minus_one`,
+`modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_sub_u32`, `modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_add_i8` and `modules/int/cases/int_division_by_zero` (commonJS's
 `integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
 `modules/decisions-taken/integer_overflow_aborts-264/cases/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
 traps with no text, so its half is `abort` alone; `u32` and the narrower types check their own range
@@ -1912,31 +1912,31 @@ pins them meanwhile, all but the NBSP `trim` keeps on wasm.
 
 `04-js` steps 9 and 10 (decision 319: `i64` / `u64` hold their full range on commonJS too, a number
 below 2^53 and a `BigInt` beyond; decision 320: a string index counts codepoints there) add
-`modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_full_range` (past 2^53 both ways, `2^63 − 1`, `−2^63`, `/` `%` unary `-` `+=` and `==` across
-the edge, then a sum past the top that aborts), `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/int_overflow_sub_i64_min`,
-`modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/int_overflow_add_u64_max` (the `u64` top, `%` and `/` past 2^53, a sum past the top; red on wasm,
-which prints the top as `-1` and traps on `18446744073709551614ul + 1ul`), `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_dict_key_across_safe_edge`
+`modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_full_range` (past 2^53 both ways, `2^63 − 1`, `−2^63`, `/` `%` unary `-` `+=` and `==` across
+the edge, then a sum past the top that aborts), `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/int_overflow_sub_i64_min`,
+`modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/int_overflow_add_u64_max` (the `u64` top, `%` and `/` past 2^53, a sum past the top; red on wasm,
+which prints the top as `-1` and traps on `18446744073709551614ul + 1ul`), `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_dict_key_across_safe_edge`
 (a `Dict` and a `Set` keyed across 2^53; wasm refuses the `i64` element, `snapshot/targets/wasm/`) and
 `modules/decisions-taken/string_index_counts_codepoints-320/cases/string_codepoint_slice_and_code` (a negative `slice` bound, `s[-2]`, `s[4..]` and `charCodeAt`
 over `"a👍bX👍c"`); `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/wide_literal_past_js_safe_integer` lost its `snapshot/targets/commonJS/` departure and answers
 on the four targets.
 
-`02/97` step 13 (decision 319, std's half) adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_number_methods_past_js_safe` — `min`, `max`,
+`02/97` step 13 (decision 319, std's half) adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_number_methods_past_js_safe` — `min`, `max`,
 `clamp`, `abs`, `isEven`, `isOdd` on `i64` and `u64` values past 2^53 (commonJS threw
 `big.isEven is not a function`: the methods were patched on `Number.prototype` alone) —,
 `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/string_parse_int_i64_range` (`parseInt` reads −2^63 … 2^63 − 1 and refuses one past either end;
 the parent refused past ±(2^53 − 1)), `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversions_exact` (`toI32`, `toI64`, `toU32`,
-`toU64`, `toF64` at the bounds and past 2^53) and two aborts, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_to_i32_aborts`
-and `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_to_f64_inexact_aborts` (`abort` plus a `stderr` line per target naming the
+`toU64`, `toF64` at the bounds and past 2^53) and two aborts, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_to_i32_aborts`
+and `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_to_f64_inexact_aborts` (`abort` plus a `stderr` line per target naming the
 value). They answer on commonJS, erlang and beam, and `string_parse_int_i64_range` on wasm too (144
 B-22: std-wasm's `text` and `number` cells behind `primitives.bp`'s host helpers), and the three
 conversion cells on wasm too since 144 B-22 (`lowerIntConversion`: the range test on the receiver's
-carrier, the abort text built from its digits); B-22 adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_u64_to_i64_aborts`
+carrier, the abort text built from its digits); B-22 adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_u64_to_i64_aborts`
 (a `u64` past `i64`'s top read unsigned in the abort) and `modules/decisions-taken/task_result_rejects_with_error-432/cases/async_retry_policy`
 (`async.retry(policy, { -> … })` answering `Ok` and the last `Error`, its pause converted by `toI32()`),
 both red on wasm on the parent. wasm refuses `i64_number_methods_past_js_safe` by `snapshot/targets/wasm/` — its
 integer methods are `i32`'s — a `05-wasm` row.
-Its `io` half adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
+Its `io` half adds `modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
 form reads `statSync` with `bigint: true` and answers the canonical form) and `clock.hours` /
 `clock.add` past 2^53 (`clock`'s `wide` is std's `toI64()` now, no host cell), printed as the same
 digits on commonJS, erlang and beam; wasm refuses `io/fs` by `snapshot/targets/wasm/`. Its `recent` helper
@@ -2213,15 +2213,15 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decisions-taken/wasm_clock_fs_refused-241/cells/std_template_host_fns_across_modules`, `modules/import/cases/import_std_groups`, `modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
 | `modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` |
 | `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
-| `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_rfc3339_domain`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_civil_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_format_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts`, `modules/std/cells/std_generic_primitives`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
+| `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_rfc3339_domain`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_civil_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_format_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts`, `modules/std/cells/std_generic_primitives`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
-| `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
-| `modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
+| `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |
+| `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_host` | commonJS erlang beam | wasm — `raiseError` |
 | `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_host` | commonJS erlang beam | wasm — `explode` |
 | `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_panic` | every target | none |
 | `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_crash` | commonJS | erlang, wasm, beam — `notText` |
-| `modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
-| `modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_asserts_throws_over_attempt` | commonJS erlang beam | wasm — `raiseBoom`, `std/testing/asserts.canonical` |
+| `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash` | commonJS erlang beam | wasm — `shapeNamed` |
+| `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_asserts_throws_over_attempt` | commonJS erlang beam | wasm — `raiseBoom`, `std/testing/asserts.canonical` |
 | `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_default_fn_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_method_sync`, `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` | commonJS | erlang, wasm, beam — `pending` |
 | `modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_failure_rejects` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/decisions-taken/task_result_rejects_with_error-432/cells/task_result_caught_by_js` | commonJS | erlang, wasm, beam — `callFromJs` |
@@ -2610,7 +2610,7 @@ located at the call (it was accepted and answered `1.5`).
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
-list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `compiler.custom` and a module shipped via `files` (`modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency`, a local dependency needs no network);
+list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `compiler.custom` and a module shipped via `files` (`modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency`, a local dependency needs no network);
 "no external target for the active backend" (`modules/external/cells/external_erlang_only`, a cell refused on
 two targets through a `snapshot/targets/<t>/` departure each — `botopink run --target <t>` is not
 target-independent, which is what a refusal snapshot lacked); `@panic` / `@todo` (a cell compares stdout **and**
@@ -2642,10 +2642,10 @@ ends `(src/shapes.bp)`, the label the failed module's own refusal is printed at 
 dependency's module is labelled by its module path, `(a/client.bp)` and `(b/b.bp)` in `imported_declaration_error_location`.
 Group 431 (144 B-07)'s Conformance step adds `modules/decisions-taken/failure_kinds-492/cases/std_failure_attempt_abort_kinds` — `@todo` and `x!` over `null` under
 `attempt` are `panic` (492), on the four targets — and
-`modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_asserts_throws_over_attempt` — `testing.asserts`' `throws` / `throwsWith` generic over the body (493),
+`modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_asserts_throws_over_attempt` — `testing.asserts`' `throws` / `throwsWith` generic over the body (493),
 a host raise's message without its erlang class (527 (4)); narrowed to commonJS, erlang and beam.
-Decision 546 adds `modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
-erlang and beam, where a raise of a binding outside std is `host` (`modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_host`); the cell is
+Decision 546 adds `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash` — a `case` no arm matches under `attempt` answers `crash` on
+erlang and beam, where a raise of a binding outside std is `host` (`modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_host`); the cell is
 narrowed to erlang and beam, commonJS and wasm lacking the host binding it calls. 144 B-90 widens it to commonJS (a
 Node form of the binding answers `null`, which the emitted `case` raises on reading its tag: `crash`, the engine's
 message in `snapshot/targets/commonJS/`) and adds the commonJS half of 546: a binding declared outside std without
@@ -2671,7 +2671,7 @@ lines, innermost first, after `at` and `label`; the CLI's former `cell_snap.zig`
 `decorator_helper_raise_located` (`from src/main.bp:13:13`, `from src/main.bp:17:3`), the three `*_unseeded` cells (the `comptime` or the annotation that ran the build is
 the last frame).
 Decision 533 (every division and remainder by zero at build reads `(division by zero)`, located at the operator)
-adds `modules/decisions-taken/division_by_zero_at_operator-533/refused/src/cases/comptime_remainder_by_zero`, `comptime_nested_division_by_zero` and
+adds `modules/decisions-taken/division_by_zero_at_operator-533/cases/comptime_remainder_by_zero`, `comptime_nested_division_by_zero` and
 `comptime_division_by_zero_in_helper`, and moves `comptime_float_division_by_zero`,
 `comptime_integer_division_by_zero` and `hole_any_call_raises` from the expression's first token to the operator
 (`hole_any_call_raises` gains the cause too).

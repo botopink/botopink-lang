@@ -52,5 +52,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("derived_type_primitive");
     runCase("derived_type_unknown_field");
     runCase("derived_type_var");
+    runCase("derived_type_imported");
+    runCase("derived_type_two_packages");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

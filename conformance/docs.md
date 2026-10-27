@@ -44,7 +44,7 @@ A `test/` suite that narrows its targets is a project suite the same way — its
 A cell's `{ "path": "deps/<lib>" }` dependency is relative to the cell's own directory, as a
 project's is to its own; every cell found is reported, a cell that cannot run as a red naming it:
 
-<!-- example: modules/decisions-taken/dependency_modules_kept_by_build-515/cells/local_dependency -->
+<!-- example: modules/decisions-taken/dependency_modules_kept_by_build-515/cases/local_dependency -->
 
 A module that checks itself (decision 989; the modules convert with 990 piece 6) is one package whose `src/main.bp` loads each
 `cases/<case>` with `compiler.load`, runs it and compares the records of its answer with its section of the one
@@ -645,11 +645,11 @@ body; a short GET is the record with its defaults, never a second signature. A f
 `HttpError` — `NotAllowedOnHost`, `Network(message)` or `Timeout` — matched by variant, and an HTTP error
 status (404, 500) is an `Ok` response with its `status`.
 
-<!-- example: modules/decisions-taken/fetch_one_typed_surface-623/cells/http_fetch_request -->
+<!-- example: modules/decisions-taken/fetch_one_typed_surface-623/cases/http_fetch_request -->
 
 `fetch(url)` with a `string` is gone: the call is a type mismatch against `Request`.
 
-<!-- example: modules/decisions-taken/fetch_one_typed_surface-623/cells/http_fetch_url_removed -->
+<!-- example: modules/decisions-taken/fetch_one_typed_surface-623/cases/http_fetch_url_removed -->
 
 `io.http` has a host binding on commonJS and erlang; the `wasi:http` binding of wasm is not
 written yet (a build for wasm refuses a program that calls `fetch`, naming the host cell that has no binding).
@@ -1389,11 +1389,11 @@ contract's `comptime n: i32` is not met by `n: i32`, nor the reverse. A body
 marker (`component`, `async`, `iter`) is not: `fn value(self: Self) ->
 Async<i32>` is met by `async fn value`.
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_comptime_marker_dropped -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cases/implement_comptime_marker_dropped -->
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_comptime_marker_added -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cases/implement_comptime_marker_added -->
 
-<!-- example: modules/decisions-taken/implement_signature_over_types-974/cells/implement_signature_spellings_met -->
+<!-- example: modules/decisions-taken/implement_signature_over_types-974/cases/implement_signature_spellings_met -->
 
 <!-- example: modules/decisions-taken/implement_signature_over_types-974/cases/implement_body_marker_admitted -->
 
@@ -1407,7 +1407,7 @@ block's contract only when it is `pub` or the block is written in the type's
 module; else the block is refused, `method-not-pub`, naming the type, the method
 and the module (decision 886):
 
-<!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cells/contract_required_member_met_by_type -->
+<!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cases/contract_required_member_met_by_type -->
 
 <!-- example: modules/decisions-taken/contract_required_member_met_by_type-872/cases/contract_required_member_signature_differs -->
 
@@ -2018,9 +2018,9 @@ refusal, naming `7 / 0`:
 A remainder by zero, a division by zero inside a larger expression and one in a function the `comptime`
 calls are the same refusal, at the `%` or the `/` that divides:
 
-<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/refused/src/cases/comptime_remainder_by_zero -->
-<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/refused/src/cases/comptime_nested_division_by_zero -->
-<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/refused/src/cases/comptime_division_by_zero_in_helper -->
+<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/cases/comptime_remainder_by_zero -->
+<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/cases/comptime_nested_division_by_zero -->
+<!-- example: modules/decisions-taken/division_by_zero_at_operator-533/cases/comptime_division_by_zero_in_helper -->
 
 At run time a float division by zero prints the float's word on commonJS and
 wasm, and erlang and beam abort with the integer division's `panic`, `panic: division by zero: / on f64 at
@@ -2156,11 +2156,11 @@ every target (commonJS names it `integer division by zero`). A `%` never leaves 
 No flag turns the check off (decision 67); wrapping arithmetic, where an
 algorithm wants it, is written with an explicit operation.
 
-<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_full_range -->
+<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_full_range -->
 
 <!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/wide_literal_past_js_safe_integer -->
 
-<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_dict_key_across_safe_edge -->
+<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_dict_key_across_safe_edge -->
 
 Crossing between integer types, and to `f64`, is written and exact:
 `toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()` answer the value when
@@ -2171,11 +2171,11 @@ its size.
 
 <!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversions_exact -->
 
-<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_u64_to_i64_aborts -->
+<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_u64_to_i64_aborts -->
 
-<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_to_i32_aborts -->
+<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_to_i32_aborts -->
 
-<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/integer_conversion_to_f64_inexact_aborts -->
+<!-- example: modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/integer_conversion_to_f64_inexact_aborts -->
 
 `bigint` is an integer of any size (decision 332): `+`, `-`, `*`, `/`, `%`, a
 unary `-`, `+=`, the comparisons and `==` over two `bigint`s answer exactly and
@@ -2972,9 +2972,9 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_default -->
 
-<!-- example: modules/decisions-taken/context_named_by_value_type-379/cells/context_nearest_wins -->
+<!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_nearest_wins -->
 
-<!-- example: modules/decisions-taken/context_read_by_value-722/cells/context_default_imported -->
+<!-- example: modules/decisions-taken/context_read_by_value-722/cases/context_default_imported -->
 
 <!-- example: modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_by_value -->
 
@@ -2982,13 +2982,13 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_read_by_value-722/cases/context_read_by_type_refused -->
 
-<!-- example: modules/decisions-taken/context_provide_made_in_body-723/cells/context_read_of_parameter -->
+<!-- example: modules/decisions-taken/context_provide_made_in_body-723/cases/context_read_of_parameter -->
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice -->
 
-<!-- example: modules/decisions-taken/context_named_by_value_type-379/cells/context_declared_twice_across_modules -->
+<!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice_across_modules -->
 
-<!-- example: modules/decisions-taken/context_named_by_value_type-379/cells/context_enum_default -->
+<!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_enum_default -->
 
 <!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cases/context_provide_made_at_run_time -->
 
@@ -3084,15 +3084,15 @@ its number or `null`. The comptime runtimes do not run this lowering: a
 `comptime` that reaches a `use` is refused (`language-gaps.md` row
 354-comptime).
 
-<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_wide_number_through_scope -->
+<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope -->
 
-<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope -->
+<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope -->
 
 <!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda -->
 
 <!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_run_root -->
 
-<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_library -->
+<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_library -->
 
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cases/comptime_reaches_use -->
 
@@ -3414,25 +3414,25 @@ goes, the trailing form included — `apply(5) { async x -> … }`:
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_async -->
 <!-- example: modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_iter -->
 <!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_brace_async -->
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_iter -->
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_async_iter -->
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_brace_component -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_brace_iter -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_brace_async_iter -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_brace_component -->
 
 `{ async`, `{ iter`, `{ component` always open a lambda, and before a brace
 the words are names: `async { … }` is always the block (decision 523) and
 `iter loop { … }` the loop (125), whatever the body starts with, and a function
 named `iter` or `component` takes a trailing lambda as any function does:
 
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_words_before_brace -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_words_before_brace -->
 
 A marked lambda's body is a function body, as an `iter fn`'s: a `return`
 leaves it — `return;` ends an iteration, `return v` is the iterator's `R`
 (553 (2)) — a `continue` at its top level is `continue-outside-loop`, and
 `break <value>` is `marker-lambda-break-value`:
 
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_function_body -->
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_continue_refused -->
-<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cells/marker_lambda_break_value_refused -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_function_body -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_continue_refused -->
+<!-- example: modules/decisions-taken/lambda_marker_inside_brace-584/cases/marker_lambda_break_value_refused -->
 
 With no function type to agree with it is
 `marker-lambda-without-expected-type`, with another wrapper than its own
@@ -3640,8 +3640,8 @@ declared outside std without `result: true` — a library's or the program's —
 raise `host` (546): std's bindings are audited one by one (495), so a raise of one that
 the audit did not list is a `crash`, as is any raise nothing marked:
 
-<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_host -->
-<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_crash -->
+<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_host -->
+<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash -->
 
 `try e catch f` handles the `Error` of its operand's `Result` on the spot (431), and only
 that: a host raise or a `panic` inside the operand is not an `Error`, it leaves the
@@ -3676,7 +3676,7 @@ under `attempt`, generic over what the body answers (decision 493): each is
 `Failure`'s message does not contain `needle` — a host raise's message is the
 host's text, the erlang reason by `~tp` without its class.
 
-<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_asserts_throws_over_attempt -->
+<!-- example: modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_asserts_throws_over_attempt -->
 
 ### Tasks
 
@@ -3936,7 +3936,7 @@ A `comptime` whose evaluation raises is refused at the call that raised
 `panic` in a function the `comptime` called — not at the `comptime`
 expression, which the hint names as the frame that ran it:
 
-<!-- example: modules/decisions-taken/decorator_invocations_independent-343/refused/src/cases/typeinfo_all_duplicate_at_entry -->
+<!-- example: modules/decisions-taken/decorator_invocations_independent-343/cases/typeinfo_all_duplicate_at_entry -->
 
 <!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/refused/src/cases/comptime_random_float_unseeded -->
 
@@ -4655,11 +4655,11 @@ at the annotation on the declaration that added it (decision 567), the
 decorator's `compiler.addMember` / `compiler.addType` call its `called from` line; one
 error per failing annotation:
 
-<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/refused/src/cases/decorator_member_type_error_at_annotation -->
+<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/cases/decorator_member_type_error_at_annotation -->
 
-<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/refused/src/cases/decorator_assoc_type_error_at_annotation -->
+<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/cases/decorator_assoc_type_error_at_annotation -->
 
-<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/refused/src/cases/decorator_output_error_one_per_annotation -->
+<!-- example: modules/decisions-taken/decorator_member_error_at_annotation-567/cases/decorator_output_error_one_per_annotation -->
 
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function and a module-level `val` have none
@@ -4853,7 +4853,7 @@ is evaluated at build and spliced as its answer (decision 642; cell
 
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/member_decl_as_code -->
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decorator_member_captures_handle -->
-<!-- example: modules/decisions-taken/decorator_member_local_not_literal-759/cells/decorator_member_local_not_literal -->
+<!-- example: modules/decisions-taken/decorator_member_local_not_literal-759/cases/decorator_member_local_not_literal -->
 
 Every parameter is typed (`decorator-member-fn-untyped`),
 the member is written at the call (`decorator-member-not-fn`), and a `self` is
@@ -4915,7 +4915,7 @@ manifests give, which for two packages of one dependant is the order its
 and declarations in source order. Every dependency's executors run before
 the program's own.
 
-<!-- example: modules/decisions-taken/declared_dependency_modules_join_program-660/cells/dependency_init_without_import -->
+<!-- example: modules/decisions-taken/declared_dependency_modules_join_program-660/cases/dependency_init_without_import -->
 
 <!-- example: modules/decisions-taken/dependency_target_missing_refused-676/cells/init_order_packages -->
 
@@ -5128,13 +5128,13 @@ first. A `comptime` in a body is computed at build into a constant and gives the
 function nothing, so `val names = comptime campos("title,body");` beside a
 clock read is a `Run` function.
 
-<!-- example: modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions -->
+<!-- example: modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions -->
 
-<!-- example: modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run -->
+<!-- example: modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run -->
 
-<!-- example: modules/decisions-taken/function_stage_propagated-376/cells/stage_imported -->
+<!-- example: modules/decisions-taken/function_stage_propagated-376/cases/stage_imported -->
 
-<!-- example: modules/decisions-taken/function_stage_propagated-376/cells/stage_comptime_block_in_run -->
+<!-- example: modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run -->
 
 **A function expanded at its call site** (decision 562). A function whose
 every parameter is `comptime` and whose body reads a `comptime` parameter's value has no
@@ -6057,7 +6057,7 @@ integer operator's abort as `panic`'s —, so what the program printed before it
 is its whole stdout, on every target:
 
 <!-- example: modules/panic/cases/panic_library_message -->
-<!-- example: modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i32 -->
+<!-- example: modules/decisions-taken/integer_overflow_aborts-264/cases/int_overflow_add_i32 -->
 
 What an uncaught abort writes is the `Failure` an `attempt` would have answered
 (decisions 535, 527), one line, `<kind>: <message>`, on every target: `panic: <message>` for
@@ -6168,7 +6168,7 @@ messages and the `snap` library's paths are computed from the caller's `comptime
 
 ### `Asset`
 
-<!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_text_file -->
+<!-- example: modules/decisions-taken/embed_returns_asset-519/cases/embed_text_file -->
 
 `compiler.embed(path)` makes the link and nothing else (decision 607): it resolves
 `path` relative to the `botopink.json` of the package that writes it, records the
@@ -6196,7 +6196,7 @@ is deployed with the program. A failure at build is a located build error.
 The path is relative to the `botopink.json` of the package that writes it; a
 path passed on through a `comptime` parameter is read in the caller's package:
 
-<!-- example: modules/decisions-taken/embed_returns_asset-519/cells/embed_through_comptime_param -->
+<!-- example: modules/decisions-taken/embed_returns_asset-519/cases/embed_through_comptime_param -->
 
 An absolute path is `error[embed-path-absolute]` and a path with a `..` segment
 `error[embed-path-outside-package]`, at the argument; a path that names no file

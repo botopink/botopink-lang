@@ -7,4 +7,4 @@ type parameter, at a call of the exact arity; the answer depends on the signatur
 so a cached dependant stays sound (509 (2)). The `.d.ts`, the `T` values and the other targets are unchanged.
 
 [cases/generic_fn_of_other_module_takes_shape/src/main.bp](cases/generic_fn_of_other_module_takes_shape/src/main.bp)
-[cells/generic_fn_of_dependency_takes_shape/src/main.bp](cells/generic_fn_of_dependency_takes_shape/src/main.bp)
+[cases/generic_fn_of_dependency_takes_shape/src/main.bp](cases/generic_fn_of_dependency_takes_shape/src/main.bp)

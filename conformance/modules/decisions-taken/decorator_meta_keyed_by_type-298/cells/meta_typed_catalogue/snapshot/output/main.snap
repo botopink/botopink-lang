@@ -1,4 +1,0 @@
-botopink-cell 1
-out City cities 2
-out Person people 0
-out City(name,state) Person()

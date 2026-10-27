@@ -8,3 +8,12 @@ at src/main.bp:8:17
 == lambda_param_untyped_method_refused
 refused error: lambda-untyped: nothing types this lambda — write fn(n: T) -> R { … } or type the val
 at src/main.bp:8:20
+== generic_result_any_shape
+out 4
+out box
+out s
+out 9
+out 7
+out box
+out true
+out 1.5

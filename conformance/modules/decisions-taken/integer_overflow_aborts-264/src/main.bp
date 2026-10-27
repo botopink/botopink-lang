@@ -39,5 +39,11 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("int_arith_at_bounds");
+    runCase("int_division_min_by_minus_one");
+    runCase("int_overflow_add_i32");
+    runCase("int_overflow_add_i8");
+    runCase("int_overflow_negate_i32");
+    runCase("int_overflow_plus_assign");
+    runCase("int_overflow_sub_u32");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,3 +1,0 @@
-pub mod decorator_assoc_type_error_at_annotation;
-pub mod decorator_member_type_error_at_annotation;
-pub mod decorator_output_error_one_per_annotation;

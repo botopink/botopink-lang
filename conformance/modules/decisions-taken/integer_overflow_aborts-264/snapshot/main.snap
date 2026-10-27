@@ -11,3 +11,49 @@ out 0
 out 9007199254740991
 out -9007199254740991
 out 2147483647
+== int_division_min_by_minus_one
+out -2147483648
+out -1073741824
+abort
+stderr integer overflow: / on i32 at src/main.bp:8:14
+== int_overflow_add_i32
+out 2147483647
+out -2147483648
+abort
+stderr integer overflow: + on i32 at src/main.bp:9:14
+== int_overflow_add_i32 on wasm
+out 2147483647
+out -2147483648
+abort
+== int_overflow_add_i8
+out 127
+out -128
+abort
+stderr integer overflow: + on i8 at src/main.bp:7:14
+== int_overflow_add_i8 on wasm
+out 127
+out -128
+abort
+== int_overflow_negate_i32
+out -2147483648
+out 2147483647
+abort
+stderr integer overflow: - on i32 at src/main.bp:7:12
+== int_overflow_negate_i32 on wasm
+out -2147483648
+out 2147483647
+abort
+== int_overflow_plus_assign
+out 2147483647
+abort
+stderr integer overflow: += on i32 at src/main.bp:10:5
+== int_overflow_plus_assign on wasm
+out 2147483647
+abort
+== int_overflow_sub_u32
+out 0
+abort
+stderr integer overflow: - on u32 at src/main.bp:7:14
+== int_overflow_sub_u32 on wasm
+out 0
+abort

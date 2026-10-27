@@ -8,6 +8,6 @@ The second time nothing contains it. The program has printed `before`, ends ther
 
 The program prints `crash` and `before`, then aborts.
 
-Cells in this repository that bear on it: `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_crash`, `modules/decisions-taken/failure_kinds_exact_every_target-527/cells/std_failure_attempt_crash`.
+Cells in this repository that bear on it: `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_crash`, `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash`.
 
 [draft/main.bp](draft/main.bp)

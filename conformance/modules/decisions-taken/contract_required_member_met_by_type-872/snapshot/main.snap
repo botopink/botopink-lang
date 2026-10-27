@@ -14,3 +14,6 @@ at src/main.bp:13:11
 == contract_required_member_signature_differs
 refused error: implement-signature-differs: `string.slice` does not match the contract `Shout` — contract: fn slice(self: string, start: i32) -> string · written: fn slice(self: string, start: i32, end: ?i32) -> string
 at src/main.bp:16:13
+== contract_required_member_met_by_type
+out a+b!
+out #a

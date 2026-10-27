@@ -1,0 +1,14 @@
+botopink-cell 2
+== comptime_division_by_zero_in_helper
+refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `a / b` (division by zero)
+at src/main.bp:8:14
+from src/main.bp:12:28
+from src/main.bp:12:19
+== comptime_nested_division_by_zero
+refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `6 / (3 - 3)` (division by zero)
+at src/main.bp:8:34
+from src/main.bp:8:19
+== comptime_remainder_by_zero
+refused error: comptime-badarith: an error occurred when evaluating an arithmetic expression — `7 % 0` (division by zero)
+at src/main.bp:8:30
+from src/main.bp:8:19

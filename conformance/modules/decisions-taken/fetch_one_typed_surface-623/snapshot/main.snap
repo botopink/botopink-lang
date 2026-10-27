@@ -1,0 +1,14 @@
+botopink-cell 2
+== http_fetch_request
+out GET https://example.com/a
+out 0
+out true
+out POST https://example.com/b
+out 1
+out true
+out NotAllowedOnHost
+out Network refused
+out Timeout
+== http_fetch_url_removed
+refused error: type mismatch: expected Request, got string
+at src/main.bp:7:37

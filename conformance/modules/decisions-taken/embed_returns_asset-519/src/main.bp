@@ -43,5 +43,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("embed_path_not_known");
     runCase("embed_path_outside_package");
     runCase("embed_text_not_utf8");
+    runCase("embed_text_file");
+    runCase("embed_through_comptime_param");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

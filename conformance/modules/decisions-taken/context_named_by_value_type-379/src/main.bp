@@ -42,5 +42,8 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("getcontext_removed");
     runCase("context_declared_twice");
     runCase("context_default");
+    runCase("context_declared_twice_across_modules");
+    runCase("context_enum_default");
+    runCase("context_nearest_wins");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

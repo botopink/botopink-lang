@@ -1,0 +1,9 @@
+botopink-cell 2
+== decorator_writes_module_var
+refused error: decorator-writes-module-var: the decorator `counted` writes the module-level `var` `seen` — each decorator invocation is independent: its answer depends on the declaration it annotates alone (decision 343)
+at src/main.bp:13:5
+== typeinfo_all_duplicate_at_entry
+refused error: the comptime block raised: {error,{panic,<<"two commands named `deploy`: ship and release">>}}
+at src/main.bp:31:21
+from src/main.bp:49:26
+from src/main.bp:49:17

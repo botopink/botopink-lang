@@ -14,3 +14,15 @@ at src/main.bp:7:20
 == embed_text_not_utf8
 refused error: embed-text-not-utf8: `text()` reads bytes that are not UTF-8
 at src/main.bp:9:13
+== embed_text_file
+out assets/greeting.txt
+out 13
+out 13
+out 1b8e39fff6da5b14d92776bd7a567d3950baeb5cdb1bb046a3f4cb7d54d8b6b4
+out héllo, embed
+out true
+out 12
+== embed_through_comptime_param
+out the application's note
+out the library's note
+out assets/note.txt

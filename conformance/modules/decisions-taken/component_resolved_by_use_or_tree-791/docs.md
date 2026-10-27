@@ -6,5 +6,5 @@
 [cases/behavior_value_unknown_method/src/main.bp](cases/behavior_value_unknown_method/src/main.bp)
 [cases/component_call_lambda_in_body/src/main.bp](cases/component_call_lambda_in_body/src/main.bp)
 [cells/component_resolved_by_use_or_tree/src/main.bp](cells/component_resolved_by_use_or_tree/src/main.bp)
-[cells/component_return_needs_use/src/main.bp](cells/component_return_needs_use/src/main.bp)
+[cases/component_return_needs_use/src/main.bp](cases/component_return_needs_use/src/main.bp)
 [cells/component_use_in_body/src/main.bp](cells/component_use_in_body/src/main.bp)

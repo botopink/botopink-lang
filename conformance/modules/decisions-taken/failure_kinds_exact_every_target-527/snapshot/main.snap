@@ -13,3 +13,21 @@ out after
 out Error panic: the body exploded
 out Ok 42
 out after
+== std_asserts_throws_over_attempt
+out Ok
+out asserts.throws: body did not raise
+out Ok
+out Ok
+out asserts.throwsWith: message does not contain needle
+out Ok
+out asserts.throwsWith: message does not contain needle
+out asserts.throwsWith: body did not raise
+== std_failure_attempt_crash
+out Error crash
+out after
+== std_failure_attempt_host
+out Error host: boom
+out Error host: refused
+out Error host: gone
+out Error host: {bad_input,7}
+out after

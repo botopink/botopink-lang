@@ -11,3 +11,13 @@ out circle
 out 7
 out 1
 out -1
+== import_alias_fn_value_beside_local
+out 100
+out 2
+out 200
+out 300
+out 4
+== import_type_method_result
+out corner
+out 7
+out no name

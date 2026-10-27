@@ -19,3 +19,13 @@ at src/main.bp:14:36
 == decorator_member_type
 refused error: decorator-member-type: `#[trimmed]`'s member `trimmedLength` takes `self` as `string`, and the member joins `Signup`
 at src/main.bp:13:19
+== decorator_member_fn_import
+out ok
+out range out of order
+== meta_expr_field
+out 0
+out 0
+out 2
+out [signup.mismatch]
+out the handle is taken
+out 2

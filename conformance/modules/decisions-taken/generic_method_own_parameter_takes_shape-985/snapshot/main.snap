@@ -1,0 +1,5 @@
+botopink-cell 2
+== generic_method_own_parameter_takes_shape
+out Dict("a": 2.0, "b": 2.0)
+out 4.0
+out Dict("z": 2.0)

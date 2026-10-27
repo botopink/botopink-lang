@@ -2,6 +2,6 @@
 
 The example declares the host function `triple` with `#[compiler.external(…)]` and `#[compiler.stage(.Any)]`, `stage` a member of `compiler`. Being `Any`, `triple` may be called inside a `comptime`. Its `.Wasm(body: tripleBody)` form answers at build, so `atBuild` is the constant `42` and the run-time call gives `42` too. Nothing in the program writes `Build` or `Run`. `label` is `Build` because it reads a `comptime` parameter, and `main` is `Run` because it prints. Writing `#[compiler.stage(.Build)]` or `#[compiler.stage(.Run)]` would be refused by `compiler.stage` at the argument. The program prints `42`, `42` and `[any]`.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/function_stage_propagated-376/cells/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_of_functions`, `modules/decisions-taken/function_stage_propagated-376/cells/stage_build_and_run`.
+Cells in this repository that also bear on it: `modules/decisions-taken/function_stage_propagated-376/cases/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`.
 
 [draft/main.bp](draft/main.bp)

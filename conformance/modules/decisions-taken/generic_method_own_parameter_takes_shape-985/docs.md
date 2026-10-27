@@ -6,4 +6,4 @@ an `f64` prints `4.0`. On commonJS the call hands the method the print shape of 
 arguments, as it does a generic function (899); the dict the method answers carries the shape of `W` (`__bp_s.$W`), so
 `print` never guesses a shape from a value. erlang, beam and wasm are unchanged.
 
-[cells/generic_method_own_parameter_takes_shape/src/main.bp](cells/generic_method_own_parameter_takes_shape/src/main.bp)
+[cases/generic_method_own_parameter_takes_shape/src/main.bp](cases/generic_method_own_parameter_takes_shape/src/main.bp)

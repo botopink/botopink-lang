@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("decorator_hooks_output");
     runCase("decorator_hooks_output_member_fn");
     runCase("typeinfo_all_hooks_reader");
+    runCase("decl_hooks_reads_member");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

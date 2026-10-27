@@ -38,3 +38,7 @@ out name 1 unique
 out state 2 shared
 out no other
 out 0
+== meta_typed_catalogue
+out City cities 2
+out Person people 0
+out City(name,state) Person()

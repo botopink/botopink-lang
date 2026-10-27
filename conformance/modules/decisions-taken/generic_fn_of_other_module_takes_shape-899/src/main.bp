@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("generic_fn_of_other_module_takes_shape");
+    runCase("generic_fn_of_dependency_takes_shape");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

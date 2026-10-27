@@ -343,7 +343,7 @@ several statements (`_acc.push(v); continue;`) stays on the line.
 and wasm, in a **hybrid canonical form**: a value within ±(2^53 − 1) is a JS
 `number`, one beyond it a `BigInt`, and never the other way round (`5` is never
 `5n`). So `===` (and `==`, `__bp_eq`'s `Object.is`), `<`, a `Map` key and a
-`Dict` / `Set` of std (`modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/i64_dict_key_across_safe_edge`) need no conversion,
+`Dict` / `Set` of std (`modules/decisions-taken/i64_is_64_bit_everywhere-319/cases/i64_dict_key_across_safe_edge`) need no conversion,
 and `i8` … `u32` stay plain numbers.
 
 | Producer | What it writes |

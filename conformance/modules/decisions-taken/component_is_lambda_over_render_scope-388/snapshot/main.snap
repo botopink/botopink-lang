@@ -5,3 +5,14 @@ out lista made 2
 out ran a
 out ran b
 out lista #a #b
+== context_optional_wide_number_through_scope
+out 2.5 9000000001
+out no rate no total
+== context_wide_number_through_scope
+out 2.5 9000000001
+== render_scope_construction
+refused error: render-scope-construction: a `RenderScope` is made only by `RenderScope.root()` — every other scope is the one a component's `run` answered (decision 388)
+at src/main.bp:8:13
+== render_scope_library
+out root:light page(light) a:dark b:dark
+out b:dark b:dark

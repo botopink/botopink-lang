@@ -7,4 +7,4 @@ each type argument, written by the generic constructor from the shapes its call 
 that answers a new value of the type; `display` reads them off the value, so neither the run-time `Display` dispatch
 of `print` nor a call in another module needs to know the static type. erlang, beam and wasm are unchanged.
 
-[cells/generic_type_value_carries_shapes/src/main.bp](cells/generic_type_value_carries_shapes/src/main.bp)
+[cases/generic_type_value_carries_shapes/src/main.bp](cases/generic_type_value_carries_shapes/src/main.bp)

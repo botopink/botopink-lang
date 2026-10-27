@@ -4,6 +4,6 @@ The example declares `Link` in [draft/links.bp](draft/links.bp), with `rel` defa
 
 The program prints `noopener`, `noopener` and `/x`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/derived_type_static_methods-307/cells/derived_type_imported`, `modules/decisions-taken/derived_type_static_methods-307/cells/derived_type_two_packages`, `modules/default/cases/default_argument_across_modules`.
+Cells in this repository that bear on it: `modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_imported`, `modules/decisions-taken/derived_type_static_methods-307/cases/derived_type_two_packages`, `modules/default/cases/default_argument_across_modules`.
 
 [draft/main.bp](draft/main.bp)

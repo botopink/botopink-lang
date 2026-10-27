@@ -3,3 +3,6 @@ botopink-cell 2
 out light
 out dark
 out light
+== context_read_of_parameter
+refused error: context-not-declared: `use context(…)` reads a context value the module declares or imports, and this argument names none (decisions 722, 723)
+at src/main.bp:13:24

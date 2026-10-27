@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("context_read_by_type_refused");
+    runCase("context_default_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }
