@@ -24,3 +24,16 @@ out build inner built
 out inner src/main.bp
 out inner 10
 out inner root []
+== module_run_body_at_run
+out before run
+out counted init
+out counted main
+out after run
+out main
+== module_run_twice
+out once main
+out once main
+out main
+== run_on_module_alias
+out fine main
+out main
