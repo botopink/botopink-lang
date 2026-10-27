@@ -49,6 +49,7 @@ const Frame = @import("error.zig").Frame;
 const compilerSurface = @import("../parser/compiler_surface.zig");
 const comptime_blocks = @import("../parser/comptime_blocks.zig");
 const memberFn = @import("member_fn.zig");
+const loadMod = @import("load.zig");
 
 const InferError = infer.InferError;
 
@@ -168,6 +169,45 @@ const InitWalk = struct {
             }
             if (!c.is_builtin and c.calleeExpr == null) self.callees.append(self.arena, c) catch {};
         };
+        if (N == ast.ImportDecl or N == ast.TypeRef or N == ast.Pattern or N == ast.Loc) return;
+        switch (@typeInfo(N)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (!f.is_comptime) self.walk(f.type, @field(v, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (v) {
+                inline else => |payload| self.walk(@TypeOf(payload), payload),
+            },
+            .optional => |o| if (v) |inner| self.walk(o.child, inner),
+            .pointer => |pi| switch (pi.size) {
+                .one => if (@typeInfo(pi.child) != .@"fn" and @typeInfo(pi.child) != .@"opaque") self.walk(pi.child, v.*),
+                .slice => if (pi.child != u8) for (v) |e| self.walk(pi.child, e),
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Decision 998 (1) — notes each `m.run()` / `` m.`test`() `` an
+/// executor's body holds (`Env.initHereRuns`), the body written out of the
+/// executor into the body the call stands in. A lambda inside is not walked:
+/// `run()` written there is refused where it stands, as in any executor.
+const RunMark = struct {
+    env: *Env,
+    failed: bool = false,
+
+    fn walk(self: *RunMark, comptime N: type, v: N) void {
+        if (N == ast.Expr) if (v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            if (c.receiver != null and !c.is_builtin and c.args.len == 0 and
+                (std.mem.eql(u8, c.callee, "run") or std.mem.eql(u8, c.callee, loadMod.test_method)))
+            {
+                self.env.initHereRuns.put(self.env.arena, v.call.loc, {}) catch {
+                    self.failed = true;
+                };
+            }
+        };
+        if (N == ast.Expr) if (v == .function) return;
         if (N == ast.ImportDecl or N == ast.TypeRef or N == ast.Pattern or N == ast.Loc) return;
         switch (@typeInfo(N)) {
             .@"struct" => |st| inline for (st.fields) |f| {
@@ -696,7 +736,6 @@ const Expander = struct {
             }
             if (self.build_mode) if (try self.expandAtBuild(e.call, out)) return .normal;
         }
-        std.debug.print("DBG stmt tag={s} build_mode={}\n", .{ @tagName(st.expr), self.build_mode });
         if (try self.handledReturn(st, out)) |flow| return flow;
         switch (e.*) {
             .literal => |l| if (l.kind == .comment) return .normal,
@@ -781,6 +820,9 @@ const Expander = struct {
             };
             try self.emit(&one, &inner);
         }
+        var runs: RunMark = .{ .env = self.env };
+        runs.walk([]const ast.Stmt, inner.items);
+        if (runs.failed) return error.OutOfMemory;
         if (!declares(inner.items)) {
             try out.appendSlice(self.env.arena, inner.items);
             return;
@@ -805,8 +847,6 @@ const Expander = struct {
             name = lb.name;
             e = lb.value;
         }
-        std.debug.print("DBG value tag={s} {s}\n", .{ @tagName(e.*), if (e.* == .branch) @tagName(e.branch.kind) else "" });
-        if (e.* == .branch and e.branch.kind == .tryCatch) std.debug.print("DBG tc region={} handlerblk={} expr={s}\n", .{ e.branch.kind.tryCatch.region, blockBodyOf(e.branch.kind.tryCatch.handler.*) != null, @tagName(e.branch.kind.tryCatch.expr.*) });
         if (e.* != .branch or e.branch.kind != .tryCatch) return null;
         const tc = e.branch.kind.tryCatch;
         if (tc.region) return null;
@@ -815,11 +855,13 @@ const Expander = struct {
         const last = handler[handler.len - 1].expr;
         if (last != .jump or last.jump.kind != .@"return" or last.jump.kind.@"return" != null) return null;
         if (self.runRead(tc.expr) != null) return null;
-        std.debug.print("DBG handled\n", .{});
-        var v = try self.evalBuild(tc.expr);
-        std.debug.print("DBG v={s}\n", .{try exprText(self.env.arena, v.*)});
-        while (v.* == .collection and v.collection.kind == .grouped) v = v.collection.kind.grouped;
         const side: enum { ok, err }, const payload = blk: {
+            if (try self.loadAtBuild(tc.expr)) |answered| {
+                if (answered.refused) |refused| break :blk .{ .err, refused };
+                break :blk .{ .ok, answered.module };
+            }
+            var v = try self.evalBuild(tc.expr);
+            while (v.* == .collection and v.collection.kind == .grouped) v = v.collection.kind.grouped;
             if (v.* == .call and v.call.kind == .call) {
                 const cc = v.call.kind.call;
                 if (cc.receiver == null and !cc.is_builtin and cc.args.len == 1) {
@@ -843,6 +885,55 @@ const Expander = struct {
                 return if (flow == .normal) .ret else flow;
             },
         }
+    }
+
+    const LoadAnswer = struct { module: *const ast.Expr, refused: ?*const ast.Expr };
+
+    /// Decision 998 (6) — `compiler.load(path)` read in the body, its path
+    /// folded here (`"cases/" + name`, `name` a `comptime` parameter) and
+    /// answered at build as anywhere else (`infer.zig` `inferLoadBuiltin`):
+    /// the `Module` written as `__bp_load_module(…)` — what an executor
+    /// captures (`load.recordSource`) — and, refused, the `Refused` record
+    /// over it. Null when `e` is no such call.
+    fn loadAtBuild(self: *Expander, e: *const ast.Expr) InferError!?LoadAnswer {
+        var c = e;
+        while (true) switch (c.*) {
+            .collection => |col| if (col.kind == .grouped) {
+                c = col.kind.grouped;
+            } else break,
+            .comptime_ => |ct| if (ct.kind == .comptimeExpr) {
+                c = ct.kind.comptimeExpr;
+            } else break,
+            else => break,
+        };
+        if (c.* != .call or c.call.kind != .call) return null;
+        const cc = c.call.kind.call;
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, compilerSurface.load_builtin)) return null;
+        var cp: Copier = .{ .x = self, .exp = try self.callerFresh(), .body = true, .eval = true };
+        const copied = try cp.copy(ast.Expr, c.*);
+        _ = try infer.inferExprTyped(self.env, copied);
+        const rw = self.env.srcRewrites.get(copied.getLoc()) orelse return null;
+        var r = rw;
+        while (r.* == .collection and r.collection.kind == .grouped) r = r.collection.kind.grouped;
+        if (r.* != .call or r.call.kind != .call) return null;
+        const answer = r.call.kind.call;
+        if (!std.mem.eql(u8, answer.callee, loadMod.helper_fn) or answer.args.len != 2) return null;
+        const module = answer.args[0].value;
+        const ds = answer.args[1].value;
+        const empty = ds.* == .collection and ds.collection.kind == .arrayLit and ds.collection.kind.arrayLit.elems.len == 0;
+        if (empty) return .{ .module = module, .refused = null };
+        const args = try self.env.arena.alloc(ast.CallArg, 2);
+        args[0] = .{ .label = "module", .value = module };
+        args[1] = .{ .label = "diagnostics", .value = ds };
+        const refused = try self.env.arena.create(ast.Expr);
+        refused.* = .{ .call = .{ .loc = copied.getLoc(), .kind = .{ .call = .{
+            .receiver = null,
+            .callee = loadMod.refused_alias,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+        return .{ .module = module, .refused = refused };
     }
 
     /// Decision 808 (4) — a line of a build-mode expansion, run at build as
@@ -1018,6 +1109,7 @@ const Expander = struct {
         const s = try self.env.arena.create(ast.Expr);
         s.* = try cp.copy(ast.Expr, e.*);
         if (isData(s.*)) return s;
+        if (moduleGetter(s)) |v| return v;
         const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
         const node: ast.Expr = .{ .comptime_ = .{ .loc = loc, .kind = .{ .comptimeExpr = s } } };
         _ = try infer.inferExprTyped(self.env, node);
@@ -1091,6 +1183,9 @@ const Expander = struct {
                     for (cc.trailing) |tl| for (tl.body) |*s| if (try self.runReadOrErr(&s.expr)) |rr| return rr;
                     if (cc.is_builtin) {
                         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name)) return null;
+                        // Decision 998 (6) — `compiler.load(path)` is answered at
+                        // build, its path folded here (`"cases/" + name`).
+                        if (std.mem.eql(u8, cc.callee, compilerSurface.load_builtin)) return null;
                         return .{ .loc = e.getLoc(), .text = try exprText(self.env.arena, e.*) };
                     }
                     // A method of build data (a string, an array, a record) is
@@ -1428,6 +1523,32 @@ fn fieldOf(r: *const ast.Expr, member: []const u8) ?*const ast.Expr {
     const call = v.call.kind.call;
     if (call.is_builtin or call.callee.len == 0 or !std.ascii.isUpper(call.callee[0])) return null;
     for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, member)) return a.value;
+    return null;
+}
+
+/// Decision 998 (4) — a getter of a `Module` known at build
+/// (`loaded.mainAsync()`, `loaded` bound to `__bp_load_module(…)`): the
+/// field the constructor writes, under any `comptime` and parentheses.
+fn moduleGetter(e: *const ast.Expr) ?*const ast.Expr {
+    var v = e;
+    while (true) switch (v.*) {
+        .collection => |col| if (col.kind == .grouped) {
+            v = col.kind.grouped;
+        } else break,
+        .comptime_ => |ct| if (ct.kind == .comptimeExpr) {
+            v = ct.kind.comptimeExpr;
+        } else break,
+        else => break,
+    };
+    if (v.* != .call or v.call.kind != .call) return null;
+    const cc = v.call.kind.call;
+    if (cc.args.len != 0 or cc.trailing.len != 0 or cc.is_builtin) return null;
+    var r = cc.receiver orelse return null;
+    while (r.* == .collection and r.collection.kind == .grouped) r = r.collection.kind.grouped;
+    if (r.* != .call or r.call.kind != .call) return null;
+    const ctor = r.call.kind.call;
+    if (ctor.receiver != null or ctor.is_builtin or !std.mem.eql(u8, ctor.callee, loadMod.module_fn)) return null;
+    for (ctor.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, cc.callee)) return a.value;
     return null;
 }
 

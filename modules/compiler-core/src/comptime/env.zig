@@ -1101,6 +1101,11 @@ pub const Env = struct {
     /// handle's `compile`): `Module.run()` is written there, or in the
     /// executor's function (`__bp_executor_<k>`), and nowhere else.
     initArgDepth: u32 = 0,
+    /// Decision 998 (1) — the `run()` / `` `test`() `` calls an expansion
+    /// wrote out of an executor's body into the body it stands in
+    /// (`expand_call.zig` `initHere`): admitted as if written in the
+    /// executor, by the call's location.
+    initHereRuns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 364 — the parameters of the function whose body is being
     /// inferred: a `comptime x: @Expr<T>` among them (`Param.exprWrapped`) is
     /// read `x.value`, never `.value` of a type, and answers no other method

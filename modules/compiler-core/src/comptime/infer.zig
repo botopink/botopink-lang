@@ -2169,6 +2169,7 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         };
     }
     if (env.closedLocals.get(name)) |owner| {
+        if (std.mem.eql(u8, name, "loaded")) std.debug.dumpCurrentStackTrace(.{});
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
         return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
     }
@@ -13782,7 +13783,7 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         ).withLoc(loc);
         return error.TypeError;
     }
-    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0 and !env.initHereRuns.contains(loc)) {
         env.lastError = TypeError.custom(
             diagnostics.run_outside_init ++ ": `run()` is called outside a `compiler.init` body",
             "A loaded file's `main` runs when the program runs, at the point of an init body that calls `run()` (decisions 787, 792 (7)): write `compiler.init({ -> try m.run() catch { f -> … }; })` in the body that runs at build, never in a function it calls.",
@@ -13844,7 +13845,7 @@ fn inferModuleTest(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr
         ).withLoc(loc);
         return error.TypeError;
     }
-    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0 and !env.initHereRuns.contains(loc)) {
         env.lastError = TypeError.custom(
             diagnostics.run_outside_init ++ ": `test()` is called outside a `compiler.init` body",
             "A loaded package's tests run when the program runs, at the point of an init body that calls ``m.`test`()`` (decisions 787, 993 (3)): write it in a `compiler.init` body of the body that runs at build.",
