@@ -5,7 +5,9 @@
 //! `snapshot/output/main.snap` holding a `refused` record — the former
 //! `tests/language/reject/` cells), and every single-file case of a module's
 //! `refused/` package (decision 779: `src/cases/<case>/mod.bp` alone, its
-//! `snapshot/output/cases/<case>/mod.snap` refused), through the same `comptime.compile` the CLI
+//! `snapshot/output/cases/<case>/mod.snap` refused), and every single-file
+//! case of a self-checking module (decision 989: `cases/<case>/src/main.bp`
+//! alone, its `== <case>` section of `snapshot/main.snap` refused), through the same `comptime.compile` the CLI
 //! runs, and requires each type error to carry a `loc`. An unlocated error renders as a message with no ` --> file:L:C`
 //! line and no source excerpt: the reader is told what is wrong and not
 //! where. The checker's own unit tests hold the same line from the other side
@@ -70,6 +72,56 @@ fn refusedCases(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []c
     }
 }
 
+/// The single-file refused cases of a self-checking module (decision 989):
+/// each `== <case>` section of `<module>/snapshot/main.snap` (every target's,
+/// no ` on <t>`) holding a `refused` record, whose `cases/<case>/src/` holds
+/// `main.bp` alone — appended to `out` as `<module>/cases/<case>` and its source.
+/// The module's leftover full cells (`<module>/cells/<case>/`) are read as cells.
+fn refusedModuleCases(gpa: std.mem.Allocator, io: std.Io, cells: std.Io.Dir, name: []const u8, out: *std.ArrayList([2][]u8)) !void {
+    var module = cells.openDir(io, name, .{}) catch return;
+    defer module.close(io);
+    if (module.openDir(io, "cells", .{ .iterate = true })) |cd| {
+        var cells_of = cd;
+        defer cells_of.close(io);
+        var it = cells_of.iterate();
+        while (try it.next(io)) |e| {
+            if (e.kind != .directory) continue;
+            if (try refusedSingleFile(gpa, io, cells_of, e.name)) |src|
+                try out.append(gpa, .{ try std.fmt.allocPrint(gpa, "{s}/cells/{s}", .{ name, e.name }), src });
+        }
+    } else |_| {}
+    const snap = module.readFileAlloc(io, "snapshot/main.snap", gpa, .limited(16 * 1024 * 1024)) catch return;
+    defer gpa.free(snap);
+    var section: ?[]const u8 = null;
+    var taken: ?[]const u8 = null;
+    var lines = std.mem.splitScalar(u8, snap, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "== ")) {
+            const head = line[3..];
+            section = if (std.mem.indexOf(u8, head, " on ") == null) head else null;
+            continue;
+        }
+        const case = section orelse continue;
+        if (!std.mem.startsWith(u8, line, "refused ")) continue;
+        if (taken) |t| if (std.mem.eql(u8, t, case)) continue;
+        taken = case;
+        const src_rel = try std.fmt.allocPrint(gpa, "cases/{s}/src", .{case});
+        defer gpa.free(src_rel);
+        var src = module.openDir(io, src_rel, .{ .iterate = true }) catch continue;
+        defer src.close(io);
+        var it = src.iterate();
+        var count: usize = 0;
+        var alone = true;
+        while (try it.next(io)) |e| {
+            count += 1;
+            if (e.kind != .file or !std.mem.eql(u8, e.name, "main.bp")) alone = false;
+        }
+        if (!alone or count != 1) continue;
+        const text = try src.readFileAlloc(io, "main.bp", gpa, .unlimited);
+        try out.append(gpa, .{ try std.fmt.allocPrint(gpa, "{s}/cases/{s}", .{ name, case }), text });
+    }
+}
+
 /// Every cell under `dir` as a path relative to it: a directory holding a
 /// `botopink.json` (a module keeps its cells under `<module>/cells/`, its packages
 /// at `<module>/run/` and `<module>/refused/`; a decision's `draft/` is no cell).
@@ -125,7 +177,10 @@ test "C-21: every type error a reject cell raises carries a location" {
     for (names.items) |name| {
         if (try refusedSingleFile(gpa, io, dir, name)) |src| {
             try sources.append(gpa, .{ try gpa.dupe(u8, name), src });
-        } else try refusedCases(gpa, io, dir, name, &sources);
+        } else {
+            try refusedCases(gpa, io, dir, name, &sources);
+            try refusedModuleCases(gpa, io, dir, name, &sources);
+        }
     }
     for (sources.items) |s| {
         const name = s[0];
