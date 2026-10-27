@@ -1776,6 +1776,102 @@ pub fn namedLoadsSince(arena: std.mem.Allocator, mark: usize) ![]const []const u
     return out;
 }
 
+// ── A by-name load's root, symbolically (decisions 1077 (3), 1078) ────────
+//
+// A by-name load outside the loading package's tree is analysed with its load
+// directory as `root` (1003 (2)), a property of the run (1039 (3)): its
+// `.bpr` set keeps it as a symbol, `bp-root:<64 hex>`, the sha256 of
+// `"botopink-load-root-1\0"` and the load directory relative to the loading
+// build's cache root (`rootLoadDir`; a load with no cache root hashes its
+// absolute directory). The set's string codec symbolizes on write and puts the
+// resolved directory back on read (machine 2's writer and runner, 1078 (1));
+// the key file maps each symbol to its relative directory. During the build
+// the registry below answers the real directory of each symbol this process
+// met (`registerRoot`, filled where `compileFile` reads a by-name package from
+// its directory): a build-time read beside the library uses it transiently.
+
+/// What a root symbol starts with.
+pub const root_symbol_prefix = "bp-root:";
+
+/// A root symbol: `bp-root:` and 64 lowercase hex digits.
+pub const RootSymbol = [root_symbol_prefix.len + 64]u8;
+
+/// The symbol of `load_dir`: the load directory relative to the loading
+/// build's cache root (`/`-separated, as `rootLoadDir` writes it), or its
+/// absolute path for a load with no cache root. The same text gives the same
+/// symbol on every machine and in every checkout.
+pub fn rootSymbol(load_dir: []const u8) RootSymbol {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-load-root-1\x00");
+    h.update(load_dir);
+    var out: RootSymbol = undefined;
+    @memcpy(out[0..root_symbol_prefix.len], root_symbol_prefix);
+    const hex = std.fmt.bytesToHex(h.finalResult(), .lower);
+    @memcpy(out[root_symbol_prefix.len..], &hex);
+    return out;
+}
+
+/// The text `rootSymbol` hashes for the package directory `dir` (absolute)
+/// loaded by a build whose cache root is `cache_root` (absolute): `dir`
+/// relative to it, `/`-separated (`.` when they are one); `dir` itself when
+/// there is no cache root. In `arena`.
+pub fn rootLoadDir(arena: std.mem.Allocator, cache_root: ?[]const u8, dir: []const u8) ![]const u8 {
+    const cr = cache_root orelse return arena.dupe(u8, dir);
+    if (std.mem.eql(u8, cr, dir)) return arena.dupe(u8, ".");
+    const rel = try std.fs.path.relative(arena, "/", null, cr, dir);
+    std.mem.replaceScalar(u8, rel, '\\', '/');
+    return rel;
+}
+
+/// One root this process met: its symbol, the text it hashes (the key file's
+/// relative directory, or the absolute path) and the directory it resolved to.
+pub const RootEntry = struct { symbol: RootSymbol, load_dir: []const u8, real: []const u8 };
+
+var roots_mutex: std.atomic.Mutex = .unlocked;
+var roots_list: std.ArrayListUnmanaged(RootEntry) = .empty;
+
+/// Notes that `load_dir` (`rootLoadDir`'s text) resolved to `real` in this
+/// process and answers its symbol; a later note of the same symbol replaces
+/// the directory (a name resolving elsewhere, 1039 (3)). Lives as long as the
+/// process.
+pub fn registerRoot(load_dir: []const u8, real: []const u8) !RootSymbol {
+    const sym = rootSymbol(load_dir);
+    while (!roots_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer roots_mutex.unlock();
+    const a = std.heap.page_allocator;
+    for (roots_list.items) |*e| if (std.mem.eql(u8, &e.symbol, &sym)) {
+        if (!std.mem.eql(u8, e.real, real)) e.real = try a.dupe(u8, real);
+        return sym;
+    };
+    try roots_list.append(a, .{ .symbol = sym, .load_dir = try a.dupe(u8, load_dir), .real = try a.dupe(u8, real) });
+    return sym;
+}
+
+/// The root `symbol` (with its `bp-root:` prefix) names in this process, or
+/// null when none registered it. The entry's texts live as long as the process.
+pub fn rootOfSymbol(symbol: []const u8) ?RootEntry {
+    while (!roots_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer roots_mutex.unlock();
+    for (roots_list.items) |e| if (std.mem.eql(u8, &e.symbol, symbol)) return e;
+    return null;
+}
+
+/// The root whose resolved directory is `real` in this process, or null —
+/// the writer's way from the absolute path a string holds to its symbol.
+pub fn rootOfDir(real: []const u8) ?RootEntry {
+    while (!roots_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer roots_mutex.unlock();
+    for (roots_list.items) |e| if (std.mem.eql(u8, e.real, real)) return e;
+    return null;
+}
+
+/// Every root this process registered, in order, copied into `arena`.
+pub fn rootEntries(arena: std.mem.Allocator) ![]const RootEntry {
+    while (!roots_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer roots_mutex.unlock();
+    return arena.dupe(RootEntry, roots_list.items);
+}
+
 /// A `Resolver.by_name` answer.
 pub const NameResolution = union(enum) {
     /// The package's directory as the resolver found it (`dir`), and the same
@@ -1964,6 +2060,10 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     // `src/main.bp`; a file, or a directory short of either, is none.
     if (req.at == null and exists(scratch, req.files, req.path)) return .{ .not_a_package = .{ .why = .file } };
     const pkg_files = if (req.at) |dir| blk: {
+        // Decision 1078 (2) — `req.path` is the load's portable name: its
+        // directory relative to the loading build's cache root, or `dir`
+        // itself with none (`NameResolution.found.shown`).
+        if (req.by_name) _ = try registerRoot(req.path, dir);
         var f = req.files;
         f.root = try arena.dupe(u8, dir);
         f.base = f.root;
@@ -2526,4 +2626,53 @@ test "a rendered parse refusal reads back as its code, message, place and label"
     try std.testing.expectEqual(@as(usize, 7), d.line);
     try std.testing.expectEqual(@as(usize, 9), d.column);
     try std.testing.expectEqualStrings("use _ { n -> … } to bind the matched value", d.label.?);
+}
+
+test "a root symbol hashes the load directory relative to the cache root: one symbol in two checkouts" {
+    const a = std.testing.allocator;
+    const r1 = try rootLoadDir(a, "/home/x/meta/app", "/home/x/meta/libs/greeter");
+    defer a.free(r1);
+    const r2 = try rootLoadDir(a, "/srv/ci/w/app", "/srv/ci/w/libs/greeter");
+    defer a.free(r2);
+    try std.testing.expectEqualStrings("../libs/greeter", r1);
+    try std.testing.expectEqualStrings(r1, r2);
+    try std.testing.expectEqualSlices(u8, &rootSymbol(r1), &rootSymbol(r2));
+    const s = rootSymbol(r1);
+    try std.testing.expect(std.mem.startsWith(u8, &s, root_symbol_prefix));
+    for (s[root_symbol_prefix.len..]) |c| try std.testing.expect(std.ascii.isDigit(c) or (c >= 'a' and c <= 'f'));
+    const same = try rootLoadDir(a, "/w/app", "/w/app");
+    defer a.free(same);
+    try std.testing.expectEqualStrings(".", same);
+}
+
+test "a root symbol with no cache root hashes the absolute directory: two checkouts differ" {
+    const a = std.testing.allocator;
+    const o1 = try rootLoadDir(a, null, "/home/x/meta/libs/greeter");
+    defer a.free(o1);
+    const o2 = try rootLoadDir(a, null, "/srv/ci/w/libs/greeter");
+    defer a.free(o2);
+    try std.testing.expectEqualStrings("/home/x/meta/libs/greeter", o1);
+    try std.testing.expect(!std.mem.eql(u8, &rootSymbol(o1), &rootSymbol(o2)));
+    const rel = try rootLoadDir(a, "/home/x/meta/app", "/home/x/meta/libs/greeter");
+    defer a.free(rel);
+    try std.testing.expect(!std.mem.eql(u8, &rootSymbol(o1), &rootSymbol(rel)));
+}
+
+test "the root registry answers a symbol's directory and a directory's symbol; a new resolution replaces it" {
+    const sym = try registerRoot("../libs/registry_probe", "/w/libs/registry_probe");
+    try std.testing.expectEqualSlices(u8, &rootSymbol("../libs/registry_probe"), &sym);
+    const e = rootOfSymbol(&sym).?;
+    try std.testing.expectEqualStrings("../libs/registry_probe", e.load_dir);
+    try std.testing.expectEqualStrings("/w/libs/registry_probe", e.real);
+    try std.testing.expectEqualSlices(u8, &sym, &rootOfDir("/w/libs/registry_probe").?.symbol);
+    _ = try registerRoot("../libs/registry_probe", "/v/libs/registry_probe");
+    try std.testing.expectEqualStrings("/v/libs/registry_probe", rootOfSymbol(&sym).?.real);
+    try std.testing.expect(rootOfSymbol("bp-root:0000") == null);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const all = try rootEntries(arena_state.allocator());
+    const found = for (all) |x| {
+        if (std.mem.eql(u8, &x.symbol, &sym)) break true;
+    } else false;
+    try std.testing.expect(found);
 }
