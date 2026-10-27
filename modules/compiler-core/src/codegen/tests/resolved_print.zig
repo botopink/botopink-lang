@@ -45,7 +45,7 @@ const cells = [_][]const u8{
     "comptime/cases/comptime_fn_name_shadowed_by_local",
     "comptime/cases/comptime_value_or_type_param",
     "generic/cases/generic_method_map",
-    "decisions-taken/commonjs_generic_body_receives_type_shape-673/cells/commonjs_generic_body_receives_type_shape",
+    "decisions-taken/commonjs_generic_body_receives_type_shape-673/cases/commonjs_generic_body_receives_type_shape",
     // A folded context, printed `createContext(v)` (decision 835 (1)).
     "decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda",
 };

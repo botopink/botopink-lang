@@ -13,6 +13,7 @@ const Parser = @import("../parser.zig").Parser;
 const js = @import("./js/js_ast.zig");
 const tsEmitter = @import("./js/ts_emitter.zig");
 const crossModule = @import("./crossModule.zig");
+const prelude = @import("std_prelude");
 const hostMethods = @import("./hostMethods.zig");
 
 /// A `pub` declaration that is a TYPE and nothing else — a `behavior` (an
@@ -125,6 +126,7 @@ const Builder = struct {
         var named: std.StringHashMapUnmanaged(void) = .empty;
         for (decls.items) |d| try self.scanDecl(d, &bound, &named);
         try self.reflectionCandidates(&candidates, &named);
+        try self.externalCandidates(&candidates, &named);
         try self.splicedCandidates(&candidates, &named);
         var added = false;
         var pass_start: usize = decls.items.len;
@@ -240,17 +242,25 @@ const Builder = struct {
     /// behaviors of that source join with them (`Decorator`, the type of an
     /// annotation's `decorator`), since a record names one in turn.
     fn reflectionCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
-        var it = named.keyIterator();
-        const wanted = while (it.next()) |k| {
-            if (std.mem.startsWith(u8, k.*, decl_reflection_prefix)) break true;
-        } else false;
-        if (!wanted) return;
         var lx = Lexer.init(comptimeMod.decl_reflection_src);
         const tokens = try lx.scanAll(self.b.arena);
         var p = Parser.init(tokens);
         const prog = try p.parse(self.b.arena);
+        // Any record or enum of that source a declaration names joins — the
+        // `__Decl__…` handles, and the compiler module's own (`__Span`,
+        // `__Source`, `__DeclKind`, `TypeInfo<T>`, … in std's `compiler.d.ts`).
+        const wanted = for (prog.decls) |d| switch (d) {
+            .type_ => |t| if (named.contains(t.name)) break true,
+            else => {},
+        } else false;
+        if (!wanted) return;
         for (prog.decls) |d| switch (d) {
-            .type_ => |t| if (std.mem.startsWith(u8, t.name, decl_reflection_prefix)) try candidates.append(self.b.arena, d),
+            // Private here: the module declares it without exporting it.
+            .type_ => |t| {
+                var pt = t;
+                pt.isPub = false;
+                try candidates.append(self.b.arena, .{ .type_ = pt });
+            },
             // A behavior the records name (`Decorator`, decision 268: an
             // annotation's `decorator`, decision 277) is no binding of the
             // module either: it joins private, declared only when named.
@@ -269,6 +279,27 @@ const Builder = struct {
     /// package that never reads `@TypeInfo.all`): its program holds no splice and
     /// the `.d.ts` named a type nothing declared. Their sources join the
     /// candidates, declared (private) only when a declaration names one.
+    /// Decision 575 (6) — std's `external.bp` prelude (`Implementation`, the
+    /// enums its cells take) is no declaration of a module either: a signature
+    /// that names one (`implement(source: Implementation)` in std's
+    /// `compiler.d.ts`) has it declared, private, as the reflection records are.
+    fn externalCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
+        var lx = Lexer.init(prelude.external);
+        const tokens = try lx.scanAll(self.b.arena);
+        var p = Parser.init(tokens);
+        const prog = try p.parse(self.b.arena);
+        const wanted = for (prog.decls) |d| switch (d) {
+            .type_ => |t| if (named.contains(t.name)) break true,
+            else => {},
+        } else false;
+        if (!wanted) return;
+        for (prog.decls) |d| if (d == .type_) {
+            var pt = d.type_;
+            pt.isPub = false;
+            try candidates.append(self.b.arena, .{ .type_ = pt });
+        };
+    }
+
     fn splicedCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
         var wanted = false;
         for (comptimeMod.spliced_record_names) |n| {
@@ -898,6 +929,9 @@ const Builder = struct {
         // The compiler-known markup child list is an array at run time (the
         // coercion is type-level only, `comptime/env.zig`).
         if (std.mem.eql(u8, name, "Children")) return "any[]";
+        // The answer of a template or a `syntax` function: any value, as
+        // `unknown` is (decision 716).
+        if (std.mem.eql(u8, name, "anyvalue")) return "unknown";
         return null;
     }
 
