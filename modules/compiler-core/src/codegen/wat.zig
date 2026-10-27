@@ -394,6 +394,9 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // Decision 1008 (3) — `run` executes the entry's component
+                // alone, which links what it reaches: no other is emitted.
+                if (config.wasm_entry_only) |entry_name| if (!std.mem.eql(u8, ct.name, entry_name)) continue;
                 // 144 B-60 S4 — a dependency module whose level B entry
                 // holds its unit is not emitted again. Its unit links only
                 // its own dependencies (its closure, decision 509 (2)); a

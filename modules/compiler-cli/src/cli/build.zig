@@ -521,6 +521,9 @@ pub fn runRuntime(
         .packages = .{ .root = meta.root, .deps = meta.deps },
         .wasm_host = meta.wasm_host,
         .wasm_artifact = true,
+        // Decision 1008 (3) — `run` executes the entry's component alone:
+        // only it is emitted on wasm; `build` (no entry) emits every unit.
+        .wasm_entry_only = if (target == .wasm) entry else null,
     };
     var emitted = try bp.codegen.emit(gpa, outputs, cfg);
     defer {

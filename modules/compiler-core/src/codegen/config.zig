@@ -53,6 +53,11 @@ pub const Config = struct {
     /// (`botopink build` / `run`); the snapshot harness records the module
     /// the backend lowers, so it leaves it off.
     wasm_artifact: bool = false,
+    /// Decision 1008 (3) — wasm emits only this module, the program's entry:
+    /// its component links every body it reaches, so no other module's
+    /// component is ever run. Set by `run` over a `.bpr`; `build` (null)
+    /// emits every unit.
+    wasm_entry_only: ?[]const u8 = null,
 
     /// The code cache's level B (144 B-60): where the comptime pass reads a
     /// dependency's analysis from and hands the entries it analysed to — the
