@@ -129,22 +129,26 @@ compiler-cli/
 │   │                          `--emit-resolved` with no directory (last, before
 │   │                          another flag, `=` empty) refused, nothing written
 │   ├── build_modes/         ← its fixture: `app`
-│   ├── runtime_reuse.sh     ← the package's `.bpr` set (decision 1006 (2)–(4)), over
-│   │                          the cells of `conformance/modules/decisions-taken/
-│   │                          module_bpr_reused_across_targets-1006/cells/`: a bare
+│   ├── runtime_reuse.sh     ← the package's `.bpr` set (decision 1006 (2)–(4), 1006-b;
+│   │                          the proof of 1006's row), over `runtime_reuse/`: a bare
 │   │                          `build` writes `<pkg>.bpr` and `<pkg>.key` under
 │   │                          `.botopinkbuild/runtime/<pkg>/` and no `out/`, and a
 │   │                          second one reuses it; a run on another target reuses
 │   │                          it — no build phase printed, the `.bpr` the same file
 │   │                          (inode pinned) —; `build --cold` rebuilds, `run --cold`
 │   │                          reuses; a changed source rebuilds on each target
-│   ├── beam_reuse.sh        ← a `.beam` loaded as it is (decision 1007), over the cells
-│   │                          of `conformance/modules/decisions-taken/
-│   │                          beam_reused_when_source_unchanged-1007/cells/`: a second
+│   ├── runtime_reuse/       ← its fixture: `module_bpr_reused_across_targets` (a
+│   │                          build print, an answer), `module_bpr_stale_rebuilt`
+│   │                          (`greeting.bp` the script edits)
+│   ├── beam_reuse.sh        ← a `.beam` loaded as it is (decision 1007; the proof of its
+│   │                          row), over `beam_reuse/`: a second
 │   │                          `run` on erlang and beam compiles no module (every
 │   │                          `.beam` the same inode, its `.beam.rec` beside it), `run
 │   │                          --cold` neither, `build --cold` every one; an edited
 │   │                          module's `.beam` alone written again
+│   ├── beam_reuse/          ← its fixture: `beam_reused_when_source_unchanged`,
+│   │                          `beam_recompiled_when_source_changes` (`greeting.bp`
+│   │                          the script edits, `shapes.bp` untouched)
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —

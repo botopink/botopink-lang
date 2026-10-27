@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Decision 1006 (2)–(4) — a package's `.bpr` set, built once and reused while
-# its key is fresh, over the cells of `conformance/modules/decisions-taken/
-# module_bpr_reused_across_targets-1006/cells/` (a cell answers one run; reuse
-# is a property of two runs, so this script runs them):
+# its key is fresh, over its fixture `runtime_reuse/` (the proof of decision
+# 1006's ledger row: reuse is a property of two runs, which no cell expresses):
 #   • a bare `build` writes `<cache root>/.botopinkbuild/runtime/<pkg>/` — the
 #     `<pkg>.bpr` and its `<pkg>.key` — and no `out/`; a second bare `build`
 #     reuses it (no build phase printed, the `.bpr` the same file);
@@ -24,7 +23,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-CELLS="$REPO_ROOT/conformance/modules/decisions-taken/module_bpr_reused_across_targets-1006/cells"
+CELLS="$SCRIPT_DIR/runtime_reuse"
 
 if [[ -z "${BOTOPINK_SKIP_BUILD:-}" && -z "${BOTOPINK_BIN:-}" ]]; then
   echo "==> building botopink CLI"

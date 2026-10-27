@@ -26,6 +26,9 @@ conformance/
 ├── AGENTS.md                ← you are here
 ├── docs.md                  ← the language reference (decisions 461, 462): its index, the text no one cell owns, the manifest schema; every example a `<!-- example: … -->` line naming a cell or a suite
 ├── run.sh                   ← the runner: `zig build test-conformance`, the gate's stage 9
+├── self-test/library_check/repository/ ← the library check's fixture for `run.sh --self-test` (decision 1004, its
+│                              ledger proof): `good` answers, `hard` fails its program's build, `hangs` never ends,
+│                              `broken`'s manifest is refused
 ├── lib/                     ← the shared library of the self-checking modules (decision 989): the sectioned `snapshot/main.snap`, the comparison, the `.new`; a path dependency of every module — see lib/README.md
 ├── modules/botopink.json    ← the root package (decisions 989, 990 (6)): a package, not a workspace — its `main` loads
 │                              every self-checking module; its dependency `conformance-lib` (`../lib`) is the one the

@@ -387,7 +387,7 @@ FAKE
     # fails its program's build, `hangs` never ends, `broken`'s manifest is refused (`not-a-package`) — each its
     # own process, so each is red alone and `good` answers; a disabled.txt line on a pair that passes, one
     # on a target that runs, and one on a pair that fails.
-    local lsuite="$st/lib-suite" fixture="$here/modules/decisions-taken/library_check_one_process_per_package-1004/cells/library_check_one_process_per_package/repository"
+    local lsuite="$st/lib-suite" fixture="$here/self-test/library_check/repository"
     mkdir -p "$lsuite/libraries"
     cp "$here/libraries/botopink.json" "$lsuite/libraries/botopink.json"
     cp -R "$fixture" "$lsuite/repository"

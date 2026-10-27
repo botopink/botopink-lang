@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Decision 1007 — on erlang and beam a module's `.beam` is loaded as it is while
-# its emitted source is unchanged, over the cells of `conformance/modules/
-# decisions-taken/beam_reused_when_source_unchanged-1007/cells/` (a cell answers
-# one run; reuse is a property of two runs, so this script runs them):
+# its emitted source is unchanged, over its fixture `beam_reuse/` (the proof of
+# decision 1007's ledger row: reuse is a property of two runs, which no cell
+# expresses):
 #   • `beam_reused_when_source_unchanged`: on erlang and on beam, a second
 #     `run --target <t>` compiles no module — every `.beam` in `out/erl/` /
 #     `out/beam/` the same file (its inode, pinned by a link of its own) — and
@@ -19,7 +19,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-CELLS="$REPO_ROOT/conformance/modules/decisions-taken/beam_reused_when_source_unchanged-1007/cells"
+CELLS="$SCRIPT_DIR/beam_reuse"
 
 if [[ -z "${BOTOPINK_SKIP_BUILD:-}" && -z "${BOTOPINK_BIN:-}" ]]; then
   echo "==> building botopink CLI"

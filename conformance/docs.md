@@ -6317,10 +6317,7 @@ and emit in one comptime pass. The key is a hash of the compiler's source stamp 
 file of the package but `.botopinkbuild/`, `out/`, hidden entries, `node_modules`, every `*.new` file and the
 command's own output directories inside it (`--out`, `--emit-runtime`), its effective manifest and each dependency's
 key (decision 1006-b); no file time is read. `build --cold` ignores the key and rebuilds; `run --cold` reuses a fresh set
-and reads no code cache (decision 1006).
-
-<!-- example: modules/decisions-taken/module_bpr_reused_across_targets-1006/cells/module_bpr_reused_across_targets -->
-<!-- example: modules/decisions-taken/module_bpr_reused_across_targets-1006/cells/module_bpr_stale_rebuilt -->
+and reads no code cache (decision 1006; proven by the CLI's `modules/compiler-cli/tests/runtime_reuse.sh`).
 
 On `erlang` and `beam` a module's `.beam` in the target's folder (`out/erl/`, `out/beam/`) is loaded as it is while
 its emitted source is unchanged, the package's own modules included: beside each `.beam` a record holds the hash of
@@ -6328,10 +6325,7 @@ the `.erl` / `.S` it was compiled from, the compiler's source stamp and the OTP 
 erlang|beam` compiles only the modules whose record is missing or differs — never by a file time. The build's OTP check
 writes the own modules' `.beam` there, so a run after a build compiles nothing it already checked; a dependency's
 `.beam` still comes from the code cache. `build --cold` compiles every module again; `run --cold` reuses a `.beam`
-whose record matches (decision 1007).
-
-<!-- example: modules/decisions-taken/beam_reused_when_source_unchanged-1007/cells/beam_reused_when_source_unchanged -->
-<!-- example: modules/decisions-taken/beam_reused_when_source_unchanged-1007/cells/beam_recompiled_when_source_changes -->
+whose record matches (decision 1007; proven by `modules/compiler-cli/tests/beam_reuse.sh`).
 
 `botopink clean` deletes `out/` and `.botopinkbuild/` whole: the comptime
 scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
