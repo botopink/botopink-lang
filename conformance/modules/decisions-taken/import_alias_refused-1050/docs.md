@@ -1,4 +1,4 @@
-# Decision 1050 — import aliases do not exist: an import from `"@/lib.db"` is an unresolved import source, as `check` and `build` answer, and `compiler.load` answers the same `Diagnostic`.
+# Decision 1050 — Import aliases do not exist: an import names a real module path, and nothing rewrites a source before the compiler reads it; answers 1049-a (c); amends 1048, 1049 (4).
 
 `import {readPost} from "@/lib.db"` names no package: `from` names std, a bundled package or a dependency
 declared in `botopink.json`, and there is no alias key (decision 1048 refuses it as an unknown manifest key,
