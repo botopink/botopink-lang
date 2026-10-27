@@ -5198,3 +5198,23 @@ test "wat: units ---- a wasi entry with the units on imports them, names them in
     try std.testing.expectEqual(@as(i32, 0), out.status);
     try std.testing.expectEqualStrings("hello, world\n[\"a\", \"b\"]\n", out.stdout orelse "");
 }
+
+test "wat: decision 1021 (10) ---- a variant's i64 field prints by its own code in the GC lowering" {
+    // The variant printer read every `i64` field through the `i32` printer
+    // (`FsError.InvalidUtf8(offset: i64)`), a type error that sent every
+    // module printing a `Display` value through std's `io.fs` to linear memory.
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Failure {
+        \\    Bad(path: string, offset: i64),
+        \\    Other(code: i32),
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val all: Failure[] = [Failure.Bad(path: "a.txt", offset: 4294967296), Failure.Other(code: 7)];
+        \\    for (all) { f -> print(f); }
+        \\    print(Failure.Bad(path: "b", offset: -3));
+        \\}
+    , "Failure.Bad(path: \"a.txt\", offset: 4294967296)\nFailure.Other(code: 7)\nFailure.Bad(path: \"b\", offset: -3)\n");
+}

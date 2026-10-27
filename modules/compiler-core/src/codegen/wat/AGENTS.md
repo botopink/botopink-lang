@@ -162,7 +162,8 @@ constructor pattern (`val assert Person(n, a) = p`) is renamed with its mangled 
 call on a value is never the module's free function of its name (`fn at(c: bool) -> ?Point` beside `xs?.[0]`, written
 `n.at(0)`, or `m.at(key)` on an `Index`): `calleeSymbol` takes the free function only when it takes the receiver first
 or the receiver is a namespace (`isNamespaceReceiver`, never an optional operator's `__bp_opt_` binder), and
-`recordTypeOfExpr` the same.
+`recordTypeOfExpr` the same. A variant's `i64` / `u64` field prints by its own code, as a record's does (`gcDeclPrinter`;
+std's `FsError.InvalidUtf8(offset: i64)` sent every module whose printers reach it to linear memory).
 Shapes that sent a module to linear memory and are lowered in GC form (164 s2): an `if` one of whose arms is
 an empty array literal takes the other arm's type (`ifValueType`; `emptyArrayArmOther` notes the local's array,
 in both lowerings); a `case` whose arms are literals of one type answers that type where the enclosing
