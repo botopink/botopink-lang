@@ -169,7 +169,9 @@ std's `FsError.InvalidUtf8(offset: i64)` sent every module whose printers reach 
 `map`'s `anyref` array with the module's own `$__arr_flatten_<class>`; `v.pop()` on a local or a module `var` is
 `$__arr_at_opt_<class>(v, -1)` and `v` rebound to `$__arr_slice_<class>(v, 0, len - 1)`; an empty array beside
 arrays (`[[1, 2], [], [3]]`) takes its siblings' type (`gcArrayLitElem`), `val x: T[][] = []` its annotation's,
-and `[..xs]` the spread's (`gcSpreadOnlyType`).
+and `[..xs]` the spread's (`gcSpreadOnlyType`). A method on a type imported under an alias (decision 310) is its linked declaration's:
+inference names the alias (`APolicy`), so `recordMethodSym` falls back to the receiver's record (`recordTypeOfExpr`)
+before any free function of the method's name is taken by its arity.
 Shapes that sent a module to linear memory and are lowered in GC form (164 s2): an `if` one of whose arms is
 an empty array literal takes the other arm's type (`ifValueType`; `emptyArrayArmOther` notes the local's array,
 in both lowerings); a `case` whose arms are literals of one type answers that type where the enclosing

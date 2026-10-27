@@ -25575,8 +25575,16 @@ const Emitter = struct {
             },
             .prim, .field_of, .sequence_next, .division, .assoc_fn_value, .task_await, .task_return, .failing_task_block, .union_value, .text_value => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
-        const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
-        const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
+        var rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
+        var sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
+        // Decision 310 — inference names the type by the alias it was
+        // imported under (`APolicy`), which declares no method here: the
+        // receiver's record is the linked declaration the alias names (its
+        // mangled name when two modules declare it).
+        if (!self.fn_sigs.contains(sym) and !self.records.contains(rec0)) if (self.recordTypeOfExpr(cc.receiver.?.*)) |r| {
+            rec = self.ownerAmongTwins(r, cc.receiver.?.*);
+            sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
+        };
         if (!self.fn_sigs.contains(sym)) return null;
         if (self.generic_methods.contains(sym)) {
             const generic = self.reg_arena.allocator().dupe(u8, sym) catch return null;

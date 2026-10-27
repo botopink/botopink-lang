@@ -5465,3 +5465,48 @@ test "wat: units ---- a module's test entry is the unit <pkg>@<module>.test" {
     const out = try runUnitsFrame(a, ar, bin, program.items);
     try std.testing.expect(std.mem.indexOf(u8, out, "1 passed, 0 failed") != null);
 }
+
+test "wat: decision 1021 (10) ---- a method on a type imported under an alias is its declaration's beside a free function of its name, in the GC lowering" {
+    // Inference names the type `APolicy`, which declares no method here: the
+    // call fell to `k`'s private `describe(e: Fault)` by its arity, a
+    // conversion refused (`Policy -> Fault`), and the module left GC.
+    try h.assertWasmGcRunLogModules(std.testing.allocator, &.{
+        .{ .path = "a/p", .source =
+        \\pub type Policy(ms: i32) {
+        \\    pub fn describe(self: Self) -> string {
+        \\        return "a:" + self.ms.toString();
+        \\    }
+        \\}
+        },
+        .{ .path = "b/p", .source =
+        \\pub type Policy(name: string) {
+        \\    pub fn describe(self: Self) -> string {
+        \\        return "b:" + self.name;
+        \\    }
+        \\}
+        },
+        .{ .path = "k", .source =
+        \\pub type Fault(code: i32)
+        \\
+        \\pub fn other() -> string {
+        \\    return describe(Fault(code: 4));
+        \\}
+        \\
+        \\fn describe(e: Fault) -> string {
+        \\    return "fault " + e.code.toString();
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {a.p.Policy as APolicy, b.p.Policy as BPolicy, k.other};
+        \\
+        \\pub fn main() -> void {
+        \\    val x = APolicy(ms: 5);
+        \\    val y: BPolicy = BPolicy(name: "n");
+        \\    print(x.describe());
+        \\    print(y.describe());
+        \\    print(other());
+        \\}
+        },
+    }, "a:5\nb:n\nfault 4\n");
+}
