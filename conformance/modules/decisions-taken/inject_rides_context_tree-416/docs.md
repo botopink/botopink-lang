@@ -9,4 +9,4 @@
 [cases/inject_field_undeclared/src/main.bp](cases/inject_field_undeclared/src/main.bp)
 [cases/inject_not_record_enum/src/main.bp](cases/inject_not_record_enum/src/main.bp)
 [cells/inject_record/src/main.bp](cells/inject_record/src/main.bp)
-[cells/inject_test_root_fake/src/main.bp](cells/inject_test_root_fake/src/main.bp)
+[cases/inject_test_root_fake/src/main.bp](cases/inject_test_root_fake/src/main.bp)

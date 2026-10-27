@@ -27,3 +27,23 @@ out [3, 6]
 out 7
 out 8
 out 8
+== block_break_reaches_loop
+out 3
+out 3
+== block_ends_function_body_is_tail
+out 42
+out hello!
+out hello.
+== block_yield_reaches_generator
+out 0
+out 1
+out 2
+out 3
+out 5
+out 6
+== case_arm_break_value_removed
+refused error: block-break-value: a block's value is its last expression — `break <value>` does not give it
+at src/main.bp:10:13
+== lambda_semicolon_not_a_value
+refused error: type mismatch: expected i32, got void
+at src/main.bp:8:31

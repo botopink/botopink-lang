@@ -1,6 +1,6 @@
 # Decision 330 — `?T` is read with TypeScript's operators and has no methods; `result` goes; a type declared in a type is its associated type.
 
-[cells/assoc_type_declared_in_body/src/main.bp](cells/assoc_type_declared_in_body/src/main.bp)
+[cases/assoc_type_declared_in_body/src/main.bp](cases/assoc_type_declared_in_body/src/main.bp)
 [cases/assoc_type_named_like_member/src/main.bp](cases/assoc_type_named_like_member/src/main.bp)
 [cases/bang_never_null/src/main.bp](cases/bang_never_null/src/main.bp)
 [cases/nullish_beside_logical/src/main.bp](cases/nullish_beside_logical/src/main.bp)
@@ -8,8 +8,8 @@
 [cases/nullish_never_null/src/main.bp](cases/nullish_never_null/src/main.bp)
 [cases/nullish_optional_call_default/src/main.bp](cases/nullish_optional_call_default/src/main.bp)
 [cases/optional_array_at_record/src/main.bp](cases/optional_array_at_record/src/main.bp)
-[cells/optional_bang_aborts/src/main.bp](cells/optional_bang_aborts/src/main.bp)
-[cells/optional_bang_in_lambda/src/main.bp](cells/optional_bang_in_lambda/src/main.bp)
+[cases/optional_bang_aborts/src/main.bp](cases/optional_bang_aborts/src/main.bp)
+[cases/optional_bang_in_lambda/src/main.bp](cases/optional_bang_in_lambda/src/main.bp)
 [cases/optional_call_operator/src/main.bp](cases/optional_call_operator/src/main.bp)
 [cases/optional_call_plain_answers/src/main.bp](cases/optional_call_plain_answers/src/main.bp)
 [cases/optional_chain_field_after_call/src/main.bp](cases/optional_chain_field_after_call/src/main.bp)
@@ -17,7 +17,7 @@
 [cases/optional_chain_record_fields/src/main.bp](cases/optional_chain_record_fields/src/main.bp)
 [cases/optional_enum_method_absent_receiver/src/main.bp](cases/optional_enum_method_absent_receiver/src/main.bp)
 [cases/optional_enum_method_call/src/main.bp](cases/optional_enum_method_call/src/main.bp)
-[cells/optional_enum_method_imported/src/main.bp](cells/optional_enum_method_imported/src/main.bp)
+[cases/optional_enum_method_imported/src/main.bp](cases/optional_enum_method_imported/src/main.bp)
 [cases/optional_index_record_field/src/main.bp](cases/optional_index_record_field/src/main.bp)
 [cases/optional_float_function_value/src/main.bp](cases/optional_float_function_value/src/main.bp)
 [cases/optional_has_no_methods/src/main.bp](cases/optional_has_no_methods/src/main.bp)

@@ -1955,7 +1955,7 @@ same (`byValueRetTypeRef`, read first by `typeRefOf`): the dispatcher calls
 `<Type>_<method>`, so `m.at(k) ?? -1` on an `Index<string, i32>` reads `Registry.at`'s
 `?i32` as the box it is — it read the box's address. And a `slice` dispatched by value
 (`answeredByValue`) is not the string slice the untyped fallback `isStrSlice` takes,
-in `lowerExpr` and `isStringExpr` alike (`conformance/modules/decisions-taken/negative_index_counts_from_end-139/cells/ambient_index_parameter`).
+in `lowerExpr` and `isStringExpr` alike (`conformance/modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter`).
 
 **A `@Result`'s `map` / `flatMap`** inline their closure (`lowerResultOptionOp`).
 A function named as a value (`r.flatMap(half)`, a local holding one) is the

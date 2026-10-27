@@ -41,5 +41,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("ets_keyed_argument");
     runCase("process_dict_member");
     runCase("beam_memory_ets");
+    runCase("beam_memory_ets_bump_non_integer");
+    runCase("beam_memory_unknown_argument");
+    runCase("beam_memory_unknown_member");
+    runCase("module_val_holds_task");
+    runCase("module_var_written_by_processes");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

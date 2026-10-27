@@ -14,3 +14,6 @@ at src/main.bp:15:24
 == context_behavior_implemented_indirectly
 out cached-1
 out mem#1
+== inject_test_root_fake
+out smtp:x@y.z
+out fake:a@b.c

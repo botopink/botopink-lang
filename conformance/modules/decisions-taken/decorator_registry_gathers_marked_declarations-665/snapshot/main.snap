@@ -2,3 +2,17 @@ botopink-cell 2
 == typeinfo_all_template_value
 refused error: typeinfo-all-template-value: a template body reads the catalogue at build, where a declaration of the program is no value
 at src/main.bp:13:30
+== template_catalogue_private
+refused error: typeinfo-all-private: `brand` of `skin` carries `#[theme]` and is not `pub`, so the catalogue cannot reach it
+at src/main.bp:10:11
+== template_catalogue_two_themes
+refused error: looks: two #[theme] declarations: main.house, skin.brand
+at src/main.bp:16:17
+== typeinfo_all_default_outside_root
+refused error: typeinfo-all-default-outside-root: `boot` leaves out `modules`, whose default `@TypeInfo.all` answers for the whole program — a call that leaves it out is written only in the package's root (src/main.bp)
+at src/setup.bp:7:5
+refused error: import-of-failed-module: `start` comes from `setup`, which failed to check — its own errors are reported there (src/setup.bp)
+at src/main.bp:7:9
+== typeinfo_all_imported_package_default
+refused error: typeinfo-all-imported: `cat/cat` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it — `import cat` binds its default function
+at src/main.bp:6:8

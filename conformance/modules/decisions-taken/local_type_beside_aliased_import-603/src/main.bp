@@ -40,5 +40,6 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("decorator_member_type_same_name");
     runCase("import_alias_beside_local_type");
+    runCase("annotation_argument_enum_identity");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

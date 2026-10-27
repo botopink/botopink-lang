@@ -8,6 +8,6 @@ runs (`module_run_twice_body`), on commonJS, erlang, beam and wasm. Whatever a `
 at its declaration on each run: an `Ets` var, a keyed `Ets` var and a `PersistentTerm` var, whose initialiser runs at
 each run (`module_run_twice_beam_memory`, on erlang and beam).
 
-[cells/module_run_contains_body_failure/src/main.bp](cells/module_run_contains_body_failure/src/main.bp)
-[cells/module_run_twice_body/src/main.bp](cells/module_run_twice_body/src/main.bp)
-[cells/module_run_twice_beam_memory/src/main.bp](cells/module_run_twice_beam_memory/src/main.bp)
+[cases/module_run_contains_body_failure/src/main.bp](cases/module_run_contains_body_failure/src/main.bp)
+[cases/module_run_twice_body/src/main.bp](cases/module_run_twice_body/src/main.bp)
+[cases/module_run_twice_beam_memory/src/main.bp](cases/module_run_twice_beam_memory/src/main.bp)

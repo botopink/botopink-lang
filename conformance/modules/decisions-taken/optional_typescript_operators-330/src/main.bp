@@ -68,5 +68,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("optional_chain_record_fields");
     runCase("optional_enum_method_absent_receiver");
     runCase("optional_index_record_field");
+    runCase("assoc_type_declared_in_body");
+    runCase("optional_bang_aborts");
+    runCase("optional_bang_in_lambda");
+    runCase("optional_chain_lambda_param");
+    runCase("optional_enum_method_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

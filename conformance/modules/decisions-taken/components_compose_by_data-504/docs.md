@@ -4,4 +4,4 @@
 [cases/component_try_catch_then_awaits_host_task/src/main.bp](cases/component_try_catch_then_awaits_host_task/src/main.bp)
 [cases/component_try_then_awaits_host_task/src/main.bp](cases/component_try_then_awaits_host_task/src/main.bp)
 
-Proved also by [context_optional_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope/src/main.bp)
+Proved also by [context_optional_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope/src/main.bp)

@@ -200,3 +200,28 @@ out email
 out no message
 out no field
 out tag
+== assoc_type_declared_in_body
+out 3
+out 9
+out square
+out boxed
+out Shape.Point(x: 1, y: 2)
+== optional_bang_aborts
+out found
+abort
+stderr value is null — find("b")! at src/main.bp:13:11
+== optional_bang_in_lambda
+out 2
+out 5
+out found
+abort
+stderr value is null — find(k)! at src/main.bp:16:44
+== optional_chain_lambda_param
+out a
+out none
+out none
+out x
+== optional_enum_method_imported
+out a
+out 42
+out none

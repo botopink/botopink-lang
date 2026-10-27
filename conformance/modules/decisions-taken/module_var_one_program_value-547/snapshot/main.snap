@@ -8,3 +8,17 @@ at src/main.bp:5:3
 == beam_memory_ets
 out 5
 out 15
+== beam_memory_ets_bump_non_integer
+out 1.5
+== beam_memory_unknown_argument
+refused error: unknown argument `keyd` — `.Ets` takes none
+at src/main.bp:6:3
+== beam_memory_unknown_member
+refused error: unknown member `Etz` in `BeamMemory` — expected `Ets` or `PersistentTerm`
+at src/main.bp:8:3
+== module_val_holds_task
+out 7
+== module_var_written_by_processes
+out 5
+out 500
+out 5

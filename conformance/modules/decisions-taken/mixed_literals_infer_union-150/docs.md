@@ -3,5 +3,5 @@
 [cases/array_literal_numeric_join/src/main.bp](cases/array_literal_numeric_join/src/main.bp)
 [cases/array_literal_union/src/main.bp](cases/array_literal_union/src/main.bp)
 [cases/array_literal_union_elements/src/main.bp](cases/array_literal_union_elements/src/main.bp)
-[cells/array_literal_union_misuse/src/main.bp](cells/array_literal_union_misuse/src/main.bp)
+[cases/array_literal_union_misuse/src/main.bp](cases/array_literal_union_misuse/src/main.bp)
 [cases/case_if_union_value_shapes/src/main.bp](cases/case_if_union_value_shapes/src/main.bp)

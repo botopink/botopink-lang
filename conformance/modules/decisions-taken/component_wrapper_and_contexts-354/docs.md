@@ -15,8 +15,8 @@
 [cases/use_in_decorator_body/src/main.bp](cases/use_in_decorator_body/src/main.bp)
 [cases/use_in_template_body/src/main.bp](cases/use_in_template_body/src/main.bp)
 
-Proved also by [context_nearest_wins](../context_named_by_value_type-379/cells/context_nearest_wins/src/main.bp)
-Proved also by [context_optional_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cells/context_optional_wide_number_through_scope/src/main.bp)
-Proved also by [context_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cells/context_wide_number_through_scope/src/main.bp)
+Proved also by [context_nearest_wins](../context_named_by_value_type-379/cases/context_nearest_wins/src/main.bp)
+Proved also by [context_optional_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope/src/main.bp)
+Proved also by [context_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope/src/main.bp)
 Proved also by [decl_hooks_context](../context_named_by_value_type-379/cells/decl_hooks_context/src/main.bp)
 Proved also by [getcontext_removed](../context_named_by_value_type-379/cases/getcontext_removed/src/main.bp)

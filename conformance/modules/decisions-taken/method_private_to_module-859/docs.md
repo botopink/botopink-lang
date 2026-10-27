@@ -6,5 +6,5 @@ A method written without `pub` is called anywhere in its type's module and from 
 declares `implement` for stands from anywhere, with or without `pub`, called on the type's value or through
 the behavior (`method_through_behavior`).
 
-[cells/method_through_behavior/src/main.bp](cells/method_through_behavior/src/main.bp)
+[cases/method_through_behavior/src/main.bp](cases/method_through_behavior/src/main.bp)
 [cases/method_private_to_module/src/main.bp](cases/method_private_to_module/src/main.bp)

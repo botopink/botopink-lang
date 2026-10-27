@@ -8,3 +8,21 @@ at src/main.bp:10:13
 == namespace_not_a_value_called
 refused error: namespace-not-a-value: `shapes` is the namespace of the module `geo.shapes`, which declares no `pub default` — it is not a value
 at src/main.bp:9:11
+== import_namespace_callable_default
+out [hi]
+out <hi>
+out [bound]
+out [a],[b]
+out ***badge
+== import_package_namespace
+out hi!
+out direct!
+out bound
+== import_package_namespace_braces
+out hi!
+out direct!
+out bound
+== mod_namespace_callable_default
+out 8
+out 10
+out 12

@@ -2,3 +2,12 @@ botopink-cell 2
 == load_by_package_name_unknown
 refused error: load-package-unknown: `compiler.load(package: "no_such_library")` names no library — none is declared under `no_such_library` (`botopink packages --list` lists them)
 at src/main.bp:7:50
+== load_library_entry_root
+out lib_root ran [root part
+out ]
+out load-not-a-package at src/main.bp:4
+out load-not-a-package: `compiler.load("missing_entry")` names a package with no `lib/root.bp`
+== load_resolves_own_dependencies
+out app ran [hello app from greet
+out ]
+out node_member ok

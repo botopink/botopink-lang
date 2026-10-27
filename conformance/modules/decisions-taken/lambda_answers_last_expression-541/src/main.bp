@@ -45,5 +45,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("case_arm_return_in_yielding_arm");
     runCase("init_executor_discarded_value");
     runCase("lambda_last_statement_semicolon");
+    runCase("block_break_reaches_loop");
+    runCase("block_ends_function_body_is_tail");
+    runCase("block_yield_reaches_generator");
+    runCase("case_arm_break_value_removed");
+    runCase("lambda_semicolon_not_a_value");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

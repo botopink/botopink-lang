@@ -11,11 +11,11 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/ambient_behavior_implement_missing_method | modules/decisions-taken/defer_runs_at_block_end-539/cases/ambient_behavior_implement_missing_method | 539 |  | b |
 | modules/ambient_behavior_parameter | modules/decisions-taken/defer_runs_at_block_end-539/cases/ambient_behavior_parameter | 539 |  | b |
 | modules/ambient_index_implement_missing_method | modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_implement_missing_method | 139 |  | t |
-| modules/ambient_index_parameter | modules/decisions-taken/negative_index_counts_from_end-139/cells/ambient_index_parameter | 139 |  | t |
+| modules/ambient_index_parameter | modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter | 139 |  | t |
 | modules/annotation_argument_dot_variant | modules/annotation/cases/annotation_argument_dot_variant |  |  | c |
 | modules/annotation_argument_dot_variant_payload | modules/annotation/cases/annotation_argument_dot_variant_payload |  |  | c |
 | modules/annotation_argument_dot_variant_same_name | modules/annotation/cases/annotation_argument_dot_variant_same_name |  |  | c |
-| modules/annotation_argument_enum_identity | modules/decisions-taken/local_type_beside_aliased_import-603/cells/annotation_argument_enum_identity | 603 | 310 | b |
+| modules/annotation_argument_enum_identity | modules/decisions-taken/local_type_beside_aliased_import-603/cases/annotation_argument_enum_identity | 603 | 310 | b |
 | modules/annotation_dotted_missing_in_import | modules/annotation/cases/annotation_dotted_missing_in_import |  |  | c |
 | modules/annotation_dotted_through_import | modules/annotation/cases/annotation_dotted_through_import |  |  | c |
 | modules/annotation_dotted_through_mod | modules/annotation/cases/annotation_dotted_through_mod |  |  | c |
@@ -35,7 +35,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/array_literal_numeric_join | modules/decisions-taken/mixed_literals_infer_union-150/cases/array_literal_numeric_join | 150 | 247 | t |
 | modules/array_literal_union | modules/decisions-taken/mixed_literals_infer_union-150/cases/array_literal_union | 150 |  | b |
 | modules/array_literal_union_elements | modules/decisions-taken/mixed_literals_infer_union-150/cases/array_literal_union_elements | 150 |  | b |
-| modules/array_literal_union_misuse | modules/decisions-taken/mixed_literals_infer_union-150/cells/array_literal_union_misuse | 150 |  | b |
+| modules/array_literal_union_misuse | modules/decisions-taken/mixed_literals_infer_union-150/cases/array_literal_union_misuse | 150 |  | b |
 | modules/array_map_component_imported | modules/array/cases/array_map_component_imported |  |  | c |
 | modules/array_pop_rebinds_var | modules/array/cases/array_pop_rebinds_var |  |  | c |
 | modules/array_pop_removes | modules/array/cases/array_pop_removes |  |  | c |
@@ -50,7 +50,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/assert_is_pattern | modules/decisions-taken/pattern_as_binding_refused-11/cases/assert_is_pattern | 11 |  | b |
 | modules/assert_message_aborts | modules/assert/cases/assert_message_aborts |  |  | c |
 | modules/assert_statement | modules/assert/cases/assert_statement |  |  | c |
-| modules/assoc_type_declared_in_body | modules/decisions-taken/optional_typescript_operators-330/cells/assoc_type_declared_in_body | 330 |  | b |
+| modules/assoc_type_declared_in_body | modules/decisions-taken/optional_typescript_operators-330/cases/assoc_type_declared_in_body | 330 |  | b |
 | modules/assoc_type_named_by_owner_in_diagnostic | modules/assoc/cases/assoc_type_named_by_owner_in_diagnostic |  |  | c |
 | modules/assoc_type_named_like_member | modules/decisions-taken/optional_typescript_operators-330/cases/assoc_type_named_like_member | 330 |  | b |
 | modules/associated_fn_as_value | modules/associated/cases/associated_fn_as_value |  |  | c |
@@ -92,7 +92,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/bare_print_call | modules/decisions-taken/prelude_is_primitives-606/cases/bare_print_call | 606 |  | b |
 | modules/beam_memory_annotations | modules/beam/cases/beam_memory_annotations |  |  | c |
 | modules/beam_memory_ets | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_ets | 547 |  | b |
-| modules/beam_memory_ets_bump_non_integer | modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_ets_bump_non_integer | 547 |  | b |
+| modules/beam_memory_ets_bump_non_integer | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_ets_bump_non_integer | 547 |  | b |
 | modules/beam_memory_ets_initialiser | modules/beam/cells/beam_memory_ets_initialiser |  |  | c |
 | modules/beam_memory_ets_keyed | modules/decisions-taken/beam_memory_dict_literal_seeds-168/cells/beam_memory_ets_keyed | 168 | 174 | t |
 | modules/beam_memory_ets_keyed_bump | modules/decisions-taken/dict_bump_counts-340/cells/beam_memory_ets_keyed_bump | 340 |  | b |
@@ -110,8 +110,8 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/beam_memory_persistent_term | modules/beam/cases/beam_memory_persistent_term |  |  | c |
 | modules/beam_memory_process_dict | modules/decisions-taken/beam_memory_refused_off_beam-167/cells/beam_memory_process_dict | 167 |  | b |
 | modules/beam_memory_pt_write | modules/beam/cases/beam_memory_pt_write |  |  | c |
-| modules/beam_memory_unknown_argument | modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_unknown_argument | 547 |  | b |
-| modules/beam_memory_unknown_member | modules/decisions-taken/module_var_one_program_value-547/cells/beam_memory_unknown_member | 547 |  | b |
+| modules/beam_memory_unknown_argument | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_unknown_argument | 547 |  | b |
+| modules/beam_memory_unknown_member | modules/decisions-taken/module_var_one_program_value-547/cases/beam_memory_unknown_member | 547 |  | b |
 | modules/behavior_across_modules | modules/behavior/run/src/cases/behavior_across_modules |  |  | c |
 | modules/behavior_array_of_implementers | modules/behavior/run/src/cases/behavior_array_of_implementers |  |  | c |
 | modules/behavior_associated_fn_imported | modules/behavior/cases/behavior_associated_fn_imported |  |  | c |
@@ -153,10 +153,10 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/bitwise_operator_absent | modules/bitwise/cases/bitwise_operator_absent |  |  | c |
 | modules/block_argument_not_function | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_argument_not_function | 525 |  | b |
 | modules/block_await_reaches_function | modules/decisions-taken/lambda_answers_last_expression-541/cells/block_await_reaches_function | 541 |  | b |
-| modules/block_break_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cells/block_break_reaches_loop | 541 |  | b |
+| modules/block_break_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_break_reaches_loop | 541 |  | b |
 | modules/block_builtin_removed | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_builtin_removed | 525 |  | b |
 | modules/block_continue_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_continue_reaches_loop | 541 |  | b |
-| modules/block_ends_function_body_is_tail | modules/decisions-taken/lambda_answers_last_expression-541/cells/block_ends_function_body_is_tail | 541 |  | b |
+| modules/block_ends_function_body_is_tail | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_ends_function_body_is_tail | 541 |  | b |
 | modules/block_for_return_leaves_function | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_for_return_leaves_function | 525 |  | b |
 | modules/block_jump_label_continue_nested_shapes | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_jump_label_continue_nested_shapes | 541 |  | b |
 | modules/block_jump_label_continue_reaches_loop | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_jump_label_continue_reaches_loop | 541 |  | b |
@@ -169,7 +169,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/block_trailing_not_function | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_trailing_not_function | 525 |  | b |
 | modules/block_value_reassigns_enclosing_var | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_value_reassigns_enclosing_var | 525 |  | b |
 | modules/block_void_value_refused | modules/decisions-taken/brace_without_arrow_is_block-525/cases/block_void_value_refused | 525 |  | b |
-| modules/block_yield_reaches_generator | modules/decisions-taken/lambda_answers_last_expression-541/cells/block_yield_reaches_generator | 541 |  | b |
+| modules/block_yield_reaches_generator | modules/decisions-taken/lambda_answers_last_expression-541/cases/block_yield_reaches_generator | 541 |  | b |
 | modules/bodyless_fn_no_return_type | modules/bodyless/cases/bodyless_fn_no_return_type |  |  | c |
 | modules/bodyless_method_without_binding | modules/bodyless/cases/bodyless_method_without_binding |  |  | c |
 | modules/bool_field_print | modules/bool/cases/bool_field_print |  |  | c |
@@ -225,7 +225,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/case_arity_without_rest | modules/case/cases/case_arity_without_rest |  |  | c |
 | modules/case_arm_binder_reuses_name | modules/decisions-taken/shadowing_in_inner_blocks_refused-205/cases/case_arm_binder_reuses_name | 205 |  | b |
 | modules/case_arm_block_comment | modules/case/cases/case_arm_block_comment |  |  | c |
-| modules/case_arm_break_value_removed | modules/decisions-taken/lambda_answers_last_expression-541/cells/case_arm_break_value_removed | 541 |  | b |
+| modules/case_arm_break_value_removed | modules/decisions-taken/lambda_answers_last_expression-541/cases/case_arm_break_value_removed | 541 |  | b |
 | modules/case_arm_ending_in_for | modules/case/cases/case_arm_ending_in_for |  |  | c |
 | modules/case_arm_lambda_value | modules/case/cases/case_arm_lambda_value |  |  | c |
 | modules/case_arm_name_is_also_a_type | modules/case/cases/case_arm_name_is_also_a_type |  |  | c |
@@ -525,7 +525,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/decorator_same | modules/decisions-taken/compiler_same_compares_declaration_handles-666/cases/decorator_same | 666 |  | a |
 | modules/decorator_same_not_decorator | modules/decisions-taken/compiler_same_compares_declaration_handles-666/cases/decorator_same_not_decorator | 666 |  | b |
 | modules/decorator_same_refuses_mark | modules/decorator/cases/decorator_same_refuses_mark |  |  | c |
-| modules/decorator_through_namespace | modules/decisions-taken/namespaced_decorator_runs-386/cells/decorator_through_namespace | 386 |  | b |
+| modules/decorator_through_namespace | modules/decisions-taken/namespaced_decorator_runs-386/cases/decorator_through_namespace | 386 |  | b |
 | modules/decorator_type_argument | modules/decisions-taken/decorator_arguments_typed_comptime-280/cases/decorator_type_argument | 280 |  | b |
 | modules/decorator_type_argument_string | modules/decisions-taken/identifier_never_passed_as_string-281/cases/decorator_type_argument_string | 281 | 280 | b |
 | modules/decorator_type_argument_unknown | modules/decisions-taken/decorator_arguments_typed_comptime-280/cases/decorator_type_argument_unknown | 280 |  | b |
@@ -889,14 +889,14 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/import_module_path_in_braces | modules/decisions-taken/own_module_import_without_from-206/cases/import_module_path_in_braces | 206 |  | b |
 | modules/import_module_paths | modules/import/cases/import_module_paths |  |  | c |
 | modules/import_name_collision | modules/decisions-taken/import_dotted_and_braced_paths_one_tree-107/cases/import_name_collision | 107 |  | b |
-| modules/import_namespace_callable_default | modules/decisions-taken/module_import_binds_namespace-582/cells/import_namespace_callable_default | 582 |  | b |
+| modules/import_namespace_callable_default | modules/decisions-taken/module_import_binds_namespace-582/cases/import_namespace_callable_default | 582 |  | b |
 | modules/import_nested_module_namespace | modules/import/cases/import_nested_module_namespace |  |  | c |
 | modules/import_of_failed_module | modules/import/cases/import_of_failed_module |  |  | c |
 | modules/import_own_module_over_dependency_path | modules/import/cases/import_own_module_over_dependency_path |  |  | c |
 | modules/import_own_module_with_from | modules/decisions-taken/own_module_import_without_from-206/cells/import_own_module_with_from | 206 |  | b |
 | modules/import_own_package_with_from | modules/decisions-taken/package_imports_itself_by_path-309/cells/import_own_package_with_from | 309 |  | b |
-| modules/import_package_namespace | modules/decisions-taken/module_import_binds_namespace-582/cells/import_package_namespace | 582 |  | b |
-| modules/import_package_namespace_braces | modules/decisions-taken/module_import_binds_namespace-582/cells/import_package_namespace_braces | 582 |  | b |
+| modules/import_package_namespace | modules/decisions-taken/module_import_binds_namespace-582/cases/import_package_namespace | 582 |  | b |
+| modules/import_package_namespace_braces | modules/decisions-taken/module_import_binds_namespace-582/cases/import_package_namespace_braces | 582 |  | b |
 | modules/import_record_beside_std_record_of_same_name | modules/import/cases/import_record_beside_std_record_of_same_name |  |  | c |
 | modules/import_same_enum_name_from_two_packages | modules/import/cases/import_same_enum_name_from_two_packages |  |  | c |
 | modules/import_same_fn_name_by_module | modules/import/cases/import_same_fn_name_by_module |  |  | c |
@@ -966,7 +966,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/inject_field_undeclared | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_field_undeclared | 416 |  | b |
 | modules/inject_not_record_enum | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_not_record_enum | 416 |  | b |
 | modules/inject_record | modules/decisions-taken/inject_rides_context_tree-416/cells/inject_record | 416 |  | b |
-| modules/inject_test_root_fake | modules/decisions-taken/inject_rides_context_tree-416/cells/inject_test_root_fake | 416 |  | b |
+| modules/inject_test_root_fake | modules/decisions-taken/inject_rides_context_tree-416/cases/inject_test_root_fake | 416 |  | b |
 | modules/inline_param_type | modules/decisions-taken/inline_parameter_record_type-207/cases/inline_param_type | 207 |  | b |
 | modules/inline_parameter_type | modules/inline/cases/inline_parameter_type |  |  | c |
 | modules/inline_type_across_modules | modules/decisions-taken/inline_parameter_record_type-207/cases/inline_type_across_modules | 207 |  | b |
@@ -1044,7 +1044,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/lambda_param_untyped_method_refused | modules/decisions-taken/lambda_types_from_context-328/cases/lambda_param_untyped_method_refused | 328 |  | b |
 | modules/lambda_rebinds_case_binders | modules/lambda/cases/lambda_rebinds_case_binders |  |  | c |
 | modules/lambda_result_return_try | modules/decisions-taken/lambda_return_is_expected_type-147/cases/lambda_result_return_try | 147 |  | b |
-| modules/lambda_semicolon_not_a_value | modules/decisions-taken/lambda_answers_last_expression-541/cells/lambda_semicolon_not_a_value | 541 |  | b |
+| modules/lambda_semicolon_not_a_value | modules/decisions-taken/lambda_answers_last_expression-541/cases/lambda_semicolon_not_a_value | 541 |  | b |
 | modules/lambda_tail_iter_loop | modules/lambda/cases/lambda_tail_iter_loop |  |  | c |
 | modules/lexer_error_in_imported_module | modules/lexer/cases/lexer_error_in_imported_module |  |  | c |
 | modules/linked_fn_name_collision | modules/linked/cases/linked_fn_name_collision |  |  | c |
@@ -1091,7 +1091,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/meta_expr_field | modules/decisions-taken/decorator_expr_typed_channels-370/cases/meta_expr_field | 370 |  | b |
 | modules/meta_expr_field_literal | modules/decisions-taken/expr_decl_removed_compiler_templates-576/cases/meta_expr_field_literal | 576 | 370 | b |
 | modules/meta_expr_param_plain_field | modules/decisions-taken/expr_decl_removed_compiler_templates-576/cases/meta_expr_param_plain_field | 576 | 370 | b |
-| modules/meta_expr_read_elsewhere | modules/decisions-taken/meta_expr_names_resolve_where_written-385/cells/meta_expr_read_elsewhere | 385 |  | b |
+| modules/meta_expr_read_elsewhere | modules/decisions-taken/meta_expr_names_resolve_where_written-385/cases/meta_expr_read_elsewhere | 385 |  | b |
 | modules/meta_expr_rule | modules/meta/cases/meta_expr_rule |  |  | c |
 | modules/meta_field_tuple_and_field_key | modules/decisions-taken/field_has_runtime_form-631/cases/meta_field_tuple_and_field_key | 631 |  | a |
 | modules/meta_field_type | modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_field_type | 298 |  | b |
@@ -1119,7 +1119,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/method_tail_value | modules/decisions-taken/fn_tail_value-409/cases/method_tail_value | 409 |  | b |
 | modules/missing_required_argument | modules/missing/cases/missing_required_argument |  |  | c |
 | modules/mod_binds_namespace | modules/decisions-taken/shorthand_import_refused-337/cells/mod_binds_namespace | 337 |  | b |
-| modules/mod_namespace_callable_default | modules/decisions-taken/module_import_binds_namespace-582/cells/mod_namespace_callable_default | 582 | 337 | b |
+| modules/mod_namespace_callable_default | modules/decisions-taken/module_import_binds_namespace-582/cases/mod_namespace_callable_default | 582 | 337 | b |
 | modules/mod_namespace_cascade | modules/decisions-taken/shorthand_import_refused-337/cases/mod_namespace_cascade | 337 |  | b |
 | modules/mod_namespace_reexport | modules/mod/cases/mod_namespace_reexport |  |  | c |
 | modules/mod_reexport_by_val | modules/decisions-taken/shorthand_import_refused-337/cases/mod_reexport_by_val | 337 |  | b |
@@ -1169,8 +1169,8 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/numeric_suffix_positions | modules/decisions-taken/numeric_literal_suffixes-247/cases/numeric_suffix_positions | 247 |  | b |
 | modules/option_expect_removed | modules/option/cases/option_expect_removed |  |  | c |
 | modules/option_unwrap_or | modules/option/cases/option_unwrap_or |  |  | c |
-| modules/optional_bang_aborts | modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_aborts | 330 |  | b |
-| modules/optional_bang_in_lambda | modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_in_lambda | 330 |  | b |
+| modules/optional_bang_aborts | modules/decisions-taken/optional_typescript_operators-330/cases/optional_bang_aborts | 330 |  | b |
+| modules/optional_bang_in_lambda | modules/decisions-taken/optional_typescript_operators-330/cases/optional_bang_in_lambda | 330 |  | b |
 | modules/optional_call_operator | modules/decisions-taken/optional_typescript_operators-330/cases/optional_call_operator | 330 |  | b |
 | modules/optional_call_plain_answers | modules/decisions-taken/optional_typescript_operators-330/cases/optional_call_plain_answers | 330 |  | b |
 | modules/optional_case_null_binder | modules/optional/cases/optional_case_null_binder |  |  | c |
@@ -1181,7 +1181,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/optional_chain_string_text | modules/decisions-taken/commonjs_text_matches_std_wasm-521/cases/optional_chain_string_text | 521 |  | b |
 | modules/optional_enum_method_absent_receiver | modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_absent_receiver | 330 |  | b |
 | modules/optional_enum_method_call | modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_call | 330 |  | b |
-| modules/optional_enum_method_imported | modules/decisions-taken/optional_typescript_operators-330/cells/optional_enum_method_imported | 330 |  | b |
+| modules/optional_enum_method_imported | modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_imported | 330 |  | b |
 | modules/optional_enum_method_sibling | modules/optional/cases/optional_enum_method_sibling |  |  | c |
 | modules/optional_enum_method_unimported | modules/optional/cells/optional_enum_method_unimported |  |  | c |
 | modules/optional_float_function_value | modules/decisions-taken/optional_typescript_operators-330/cases/optional_float_function_value | 330 |  | b |
@@ -1466,8 +1466,8 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/template_call_in_built_code | modules/decisions-taken/template_called_with_raw_text-577/cases/template_call_in_built_code | 577 |  | b |
 | modules/template_call_typed_by_expansion | modules/decisions-taken/template_call_type_is_built_code-426/cases/template_call_typed_by_expansion | 426 |  | b |
 | modules/template_catalogue_no_theme | modules/decisions-taken/theme_always_declared-358/cells/template_catalogue_no_theme | 358 |  | t |
-| modules/template_catalogue_private | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/template_catalogue_private | 665 |  | b |
-| modules/template_catalogue_two_themes | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/template_catalogue_two_themes | 665 |  | b |
+| modules/template_catalogue_private | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cases/template_catalogue_private | 665 |  | b |
+| modules/template_catalogue_two_themes | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cases/template_catalogue_two_themes | 665 |  | b |
 | modules/template_default_arg_two_expansions | modules/template/cases/template_default_arg_two_expansions |  |  | c |
 | modules/template_destructuring_init | modules/decisions-taken/template_call_expands_any_expression-425/cases/template_destructuring_init | 425 |  | b |
 | modules/template_fail_at_column_on_open_line | modules/template/cases/template_fail_at_column_on_open_line |  |  | c |
@@ -1520,7 +1520,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/transitive_package_import | modules/decisions-taken/only_direct_dependency_importable-242/cells/transitive_package_import | 242 |  | b |
 | modules/try_await_prefix_operators | modules/decisions-taken/await_try_prefix_catch_infix-537/cells/try_await_prefix_operators | 537 |  | b |
 | modules/try_catch_handler_mismatch | modules/try/cases/try_catch_handler_mismatch |  |  | c |
-| modules/try_catch_host_raise_propagates | modules/decisions-taken/result_is_checked_error-431/cells/try_catch_host_raise_propagates | 431 |  | b |
+| modules/try_catch_host_raise_propagates | modules/decisions-taken/result_is_checked_error-431/cases/try_catch_host_raise_propagates | 431 |  | b |
 | modules/try_catch_null_and_noreturn_narrowing | modules/try/cases/try_catch_null_and_noreturn_narrowing |  |  | c |
 | modules/try_in_for_writing_var | modules/try/cases/try_in_for_writing_var |  |  | c |
 | modules/try_in_generator | modules/decisions-taken/body_marker_whole_return_type-553/cases/try_in_generator | 553 |  | b |
@@ -1572,13 +1572,13 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/typeinfo_all_behavior_typed | modules/typeinfo/cases/typeinfo_all_behavior_typed |  |  | t |
 | modules/typeinfo_all_decorator_argument | modules/decisions-taken/compiler_same_compares_declaration_handles-666/cases/typeinfo_all_decorator_argument | 666 |  | b |
 | modules/typeinfo_all_default_at_caller | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller | 665 |  | a |
-| modules/typeinfo_all_default_outside_root | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_outside_root | 665 |  | a |
+| modules/typeinfo_all_default_outside_root | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cases/typeinfo_all_default_outside_root | 665 |  | a |
 | modules/typeinfo_all_default_override | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_override | 665 |  | a |
 | modules/typeinfo_all_dependency_declarations | modules/decisions-taken/decorator_four_output_places-216/cells/typeinfo_all_dependency_declarations | 216 |  | b |
 | modules/typeinfo_all_duplicate_at_entry | modules/decisions-taken/decorator_invocations_independent-343/cases/typeinfo_all_duplicate_at_entry | 343 |  | b |
 | modules/typeinfo_all_hooks_reader | modules/decisions-taken/hooks_decorator_runs_last-372/cases/typeinfo_all_hooks_reader | 372 |  | b |
 | modules/typeinfo_all_imported | modules/decisions-taken/decorator_four_output_places-216/cases/typeinfo_all_imported | 216 |  | b |
-| modules/typeinfo_all_imported_package_default | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_imported_package_default | 665 |  | b |
+| modules/typeinfo_all_imported_package_default | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cases/typeinfo_all_imported_package_default | 665 |  | b |
 | modules/typeinfo_all_list | modules/decisions-taken/typeinfo_all_with_list-235/cases/typeinfo_all_list | 235 | 256, 254 | t |
 | modules/typeinfo_all_list_twice | modules/decisions-taken/typeinfo_all_with_list-235/cases/typeinfo_all_list_twice | 235 |  | b |
 | modules/typeinfo_all_lowercase | modules/decisions-taken/one_typeinfo_reflection_builtin-248/cases/typeinfo_all_lowercase | 248 |  | b |

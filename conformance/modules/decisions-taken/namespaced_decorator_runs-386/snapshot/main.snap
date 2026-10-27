@@ -1,0 +1,7 @@
+botopink-cell 2
+== decorator_through_namespace
+out tagged Tagged
+out markers.serverOnly
+out
+out tagged NotMarked
+out tmn

@@ -13,7 +13,7 @@ the program to the three targets that have a host to raise. wasm never imitates 
 
 Cells in this repository that also bear on it: `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_host`,
 `modules/decisions-taken/failure_kinds_exact_every_target-527/cases/std_failure_attempt_crash`,
-`modules/decisions-taken/result_is_checked_error-431/cells/try_catch_host_raise_propagates`,
+`modules/decisions-taken/result_is_checked_error-431/cases/try_catch_host_raise_propagates`,
 `modules/assert/cases/assert_message_aborts`.
 
 [draft/main.bp](draft/main.bp)

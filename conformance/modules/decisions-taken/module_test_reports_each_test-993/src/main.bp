@@ -39,5 +39,7 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("load_by_package_name_unknown");
+    runCase("load_library_entry_root");
+    runCase("load_resolves_own_dependencies");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

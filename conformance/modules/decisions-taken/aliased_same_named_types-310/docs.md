@@ -7,4 +7,4 @@
 [cases/import_two_types_one_name_reached_indirectly/src/main.bp](cases/import_two_types_one_name_reached_indirectly/src/main.bp)
 [cases/import_two_types_one_name_unaliased/src/main.bp](cases/import_two_types_one_name_unaliased/src/main.bp)
 
-Proved also by [annotation_argument_enum_identity](../local_type_beside_aliased_import-603/cells/annotation_argument_enum_identity/src/main.bp)
+Proved also by [annotation_argument_enum_identity](../local_type_beside_aliased_import-603/cases/annotation_argument_enum_identity/src/main.bp)

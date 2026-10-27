@@ -1,0 +1,31 @@
+botopink-cell 2
+== module_run_contains_body_failure
+out == boom
+out abort in body
+out end boom
+out == err
+out err main
+out failed bad answer
+out end err
+out == fine
+out fine main
+out end fine
+out main
+== module_run_twice_beam_memory
+out [pt]
+out 1
+out 0
+out 101
+out [pt]
+out 1
+out 0
+out 101
+out main
+== module_run_twice_body
+out [corpo]
+out [init]
+out 1
+out [corpo]
+out [init]
+out 1
+out main

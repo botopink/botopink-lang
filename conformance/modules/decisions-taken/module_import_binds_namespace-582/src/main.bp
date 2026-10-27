@@ -41,5 +41,9 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("declaration_named_like_module");
     runCase("namespace_not_a_value");
     runCase("namespace_not_a_value_called");
+    runCase("import_namespace_callable_default");
+    runCase("import_package_namespace");
+    runCase("import_package_namespace_braces");
+    runCase("mod_namespace_callable_default");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

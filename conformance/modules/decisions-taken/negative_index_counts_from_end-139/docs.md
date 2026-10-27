@@ -1,7 +1,7 @@
 # Decision 139 — A negative index counts from the end, on every backend
 
 [cases/ambient_index_implement_missing_method/src/main.bp](cases/ambient_index_implement_missing_method/src/main.bp)
-[cells/ambient_index_parameter/src/main.bp](cells/ambient_index_parameter/src/main.bp)
+[cases/ambient_index_parameter/src/main.bp](cases/ambient_index_parameter/src/main.bp)
 [cases/generic_index_answers_optional/src/main.bp](cases/generic_index_answers_optional/src/main.bp)
 [cases/generic_index_optional_return/src/main.bp](cases/generic_index_optional_return/src/main.bp)
 [cases/index_answer_is_optional/src/main.bp](cases/index_answer_is_optional/src/main.bp)

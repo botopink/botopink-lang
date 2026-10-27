@@ -42,5 +42,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("array_literal_union");
     runCase("array_literal_union_elements");
     runCase("case_if_union_value_shapes");
+    runCase("array_literal_union_misuse");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

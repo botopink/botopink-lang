@@ -14,12 +14,12 @@ the captured `Module` in the init body runs `main` (`run_on_module_alias`); a re
 is `run-module-untraced`. A package a loaded package loads is a program of its own too: its name, its build's output,
 its `mainAsync()` and its constructors' defaults answer as they do one level up (`load_at_depth_two`).
 
-[cells/module_run_body_at_run/src/main.bp](cells/module_run_body_at_run/src/main.bp)
-[cells/module_run_twice/src/main.bp](cells/module_run_twice/src/main.bp)
+[cases/module_run_body_at_run/src/main.bp](cases/module_run_body_at_run/src/main.bp)
+[cases/module_run_twice/src/main.bp](cases/module_run_twice/src/main.bp)
 [cases/run_in_called_function/src/main.bp](cases/run_in_called_function/src/main.bp)
 [cases/run_module_refused/src/main.bp](cases/run_module_refused/src/main.bp)
 [cases/module_construction/src/main.bp](cases/module_construction/src/main.bp)
-[cells/run_on_module_alias/src/main.bp](cells/run_on_module_alias/src/main.bp)
+[cases/run_on_module_alias/src/main.bp](cases/run_on_module_alias/src/main.bp)
 [cases/sibling_declares_tok/src/main.bp](cases/sibling_declares_tok/src/main.bp)
 [cases/sibling_decorator_named_all/src/main.bp](cases/sibling_decorator_named_all/src/main.bp)
 [cases/sibling_exports_all/src/main.bp](cases/sibling_exports_all/src/main.bp)

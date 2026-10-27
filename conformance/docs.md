@@ -269,7 +269,7 @@ A namespace's function is called through it inside a `comptime` block too: `comp
 
 <!-- example: modules/comptime/cases/comptime_module_qualified_call -->
 
-<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cells/import_namespace_callable_default -->
+<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cases/import_namespace_callable_default -->
 
 The namespace of a module that declares no default is not a value: called, passed
 or bound, it is `namespace-not-a-value`, located at the use:
@@ -291,8 +291,8 @@ reached through it, the namespace called as that module's default. `import x fro
 "p";` is `import {x} from "p"`, and `import x, {a} from "p";` is `import {x, a} from
 "p"`.
 
-<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cells/import_package_namespace -->
-<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cells/import_package_namespace_braces -->
+<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cases/import_package_namespace -->
+<!-- example: modules/decisions-taken/module_import_binds_namespace-582/cases/import_package_namespace_braces -->
 
 The shorthand is refused at the item, and the refusal writes the import as it
 is spelled instead: the path of the one module of the package that declares the
@@ -875,7 +875,7 @@ under it — so it is atomic as an `Ets` one's is and no write is lost; the lock
 released however the writer ends, a writer that dies included (decision 903). A plain
 `x = v` is one `put`, no lock. The cost is the writer's to weigh:
 
-<!-- example: modules/decisions-taken/persistent_term_var_write_atomic-903/cells/persistent_term_var_write_atomic -->
+<!-- example: modules/decisions-taken/persistent_term_var_write_atomic-903/cases/persistent_term_var_write_atomic -->
 
 `PersistentTerm` is
 the mode for a routes table, a scanned-component list, configuration read at
@@ -1197,7 +1197,7 @@ std's prelude writes every member of a primitive `pub` — `pub fn`, `pub declar
 `pub val length: i32;` — and a member a decorator adds with `decl.addMember` is `pub`
 (decision 887). The `.d.ts` declares a type's `pub` methods only.
 
-<!-- example: modules/decisions-taken/method_private_to_module-859/cells/method_through_behavior -->
+<!-- example: modules/decisions-taken/method_private_to_module-859/cases/method_through_behavior -->
 <!-- example: modules/decisions-taken/method_private_to_module-859/cases/method_private_to_module -->
 <!-- example: modules/decisions-taken/added_member_is_pub-887/cases/added_member_is_pub -->
 
@@ -1344,7 +1344,7 @@ the name it declares or imports.
 
 <!-- example: modules/decisions-taken/defer_runs_at_block_end-539/cases/ambient_behavior_implement_missing_method -->
 
-<!-- example: modules/decisions-taken/negative_index_counts_from_end-139/cells/ambient_index_parameter -->
+<!-- example: modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_parameter -->
 
 <!-- example: modules/decisions-taken/negative_index_counts_from_end-139/cases/ambient_index_implement_missing_method -->
 
@@ -2119,9 +2119,9 @@ when everything before it is absent:
 `x!` over `null` aborts after what was printed before it, naming the expression
 and where it is written — inside a lambda too, when the lambda runs:
 
-<!-- example: modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_aborts -->
+<!-- example: modules/decisions-taken/optional_typescript_operators-330/cases/optional_bang_aborts -->
 
-<!-- example: modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_in_lambda -->
+<!-- example: modules/decisions-taken/optional_typescript_operators-330/cases/optional_bang_in_lambda -->
 
 ### Numbers
 
@@ -2310,7 +2310,7 @@ a `;`-terminated last expression, as above.)
 
 <!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/lambda_last_statement_semicolon -->
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/lambda_semicolon_not_a_value -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/lambda_semicolon_not_a_value -->
 
 The pipe operator `|>` is left-associative.
 
@@ -2356,7 +2356,7 @@ value; `break <value>` gives a block no value — in `comptime { … }` and in a
 
 <!-- example: modules/decisions-taken/brace_without_arrow_is_block-525/cases/comptime_block_break_value -->
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/case_arm_break_value_removed -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/case_arm_break_value_removed -->
 
 A block is a scope of the enclosing function, never a closure (decision 541): an `await` in a block
 or in a `case` arm's block waits for the enclosing task, a `yield` feeds the enclosing generator, and
@@ -2364,11 +2364,11 @@ a bare `break` leaves the enclosing loop. A block that ends a function body is i
 
 <!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/block_await_reaches_function -->
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/block_yield_reaches_generator -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/block_yield_reaches_generator -->
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/block_break_reaches_loop -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/block_break_reaches_loop -->
 
-<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cells/block_ends_function_body_is_tail -->
+<!-- example: modules/decisions-taken/lambda_answers_last_expression-541/cases/block_ends_function_body_is_tail -->
 
 A labelled `break :outer` in a block or in a `case` arm's block leaves the loop it names, from however
 many loops in, and a bare `return` in a `case` arm that yields ends the enclosing generator, so
@@ -3027,7 +3027,7 @@ context per dependency, so a test's root swaps one.
 
 <!-- example: modules/decisions-taken/inject_rides_context_tree-416/cells/inject_behavior_keyed -->
 
-<!-- example: modules/decisions-taken/inject_rides_context_tree-416/cells/inject_test_root_fake -->
+<!-- example: modules/decisions-taken/inject_rides_context_tree-416/cases/inject_test_root_fake -->
 
 <!-- example: modules/decisions-taken/inject_rides_context_tree-416/cases/inject_field_undeclared -->
 
@@ -3648,7 +3648,7 @@ that: a host raise or a `panic` inside the operand is not an `Error`, it leaves 
 `try … catch` and only `attempt` contains it. A `result: true` binding answers its
 failure as an `Error`, so that one reaches the `catch`:
 
-<!-- example: modules/decisions-taken/result_is_checked_error-431/cells/try_catch_host_raise_propagates -->
+<!-- example: modules/decisions-taken/result_is_checked_error-431/cases/try_catch_host_raise_propagates -->
 
 On wasm `attempt` runs the thunk under wasm exception
 handling (decision 518): a program reaching it raises its aborts as an
@@ -4357,8 +4357,8 @@ the program's own (`conformance/lib/`, decision 989).
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/file_path_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/no_main_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/loaded_targets_checked -->
-<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_library_entry_root -->
-<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_resolves_own_dependencies -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cases/load_library_entry_root -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cases/load_resolves_own_dependencies -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cases/load_by_package_name_unknown -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cases/compiler_load_answers_diagnostics -->
@@ -4419,13 +4419,13 @@ never at program start with the program's own; `run()` called twice runs `main` 
 package.
 
 <!-- example: modules/decisions-taken/compiler_load_module_run-787/cases/compiler_load_module_run -->
-<!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_body_at_run -->
-<!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_twice -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cases/module_run_body_at_run -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cases/module_run_twice -->
 
 `run()` answers `Result<string, RunFailure>`: `.Abort` when the loaded package crashes — in its body, its executors or
 its `main` —, `.Failed` when its `main` returns `Error(e)`; nothing it runs propagates, so the next `run()` runs.
 
-<!-- example: modules/decisions-taken/module_run_failure_contained-806/cells/module_run_contains_body_failure -->
+<!-- example: modules/decisions-taken/module_run_failure_contained-806/cases/module_run_contains_body_failure -->
 
 What the loaded package prints is its answer, not the program's output (decision 989 (1)): `Ok` holds the text its
 body and its `main` wrote to standard output, byte for byte, its last line break included, and `RunFailure.output`
@@ -4450,7 +4450,7 @@ Each `run()` starts clean: the loaded package's `val`s, `var`s, body and `compil
 its `main`, so no run-time state passes from one run to the next. What the build folded (`val total = comptime
 contar();`) is computed once and never again by a `run()`.
 
-<!-- example: modules/decisions-taken/module_run_failure_contained-806/cells/module_run_twice_body -->
+<!-- example: modules/decisions-taken/module_run_failure_contained-806/cases/module_run_twice_body -->
 
 `run()` written anywhere but directly in a `compiler.init` body — in the body that runs at build
 outside its init, in a function the init body calls, in a body that runs when the program runs — is
@@ -4495,7 +4495,7 @@ reaching a file beside its source joins `root + "/" + file`.
 receiver the build traces to no `compiler.load` of the body — a parameter, a `var`, a computed value — is
 `run-module-untraced`, at the call.
 
-<!-- example: modules/decisions-taken/module_run_answers-792/cells/run_on_module_alias -->
+<!-- example: modules/decisions-taken/module_run_answers-792/cases/run_on_module_alias -->
 
 The path follows `@embed`'s rules: relative to the caller's `botopink.json`, no
 absolute path, no `..` segment. An absolute path is `load-path-absolute`, a `..`
@@ -4715,7 +4715,7 @@ A decorator is reached by its name, an alias or a namespace (decision 386):
 imported by name does, and `markers.serverOnly` names a declaration handle
 (`compiler.same(a.decorator, markers.serverOnly)`).
 
-<!-- example: modules/decisions-taken/namespaced_decorator_runs-386/cells/decorator_through_namespace -->
+<!-- example: modules/decisions-taken/namespaced_decorator_runs-386/cases/decorator_through_namespace -->
 
 A body declared in the annotated module that raises is refused at the call that
 raised (decisions 451 (3), 532) — the innermost call the raise leaves, in the
@@ -4814,7 +4814,7 @@ the body hands to `compiler.init` passes `Manual` to the program at run time,
 though the annotating module, or another package, declares a `Lifecycle` of
 its own.
 
-<!-- example: modules/decisions-taken/local_type_beside_aliased_import-603/cells/annotation_argument_enum_identity -->
+<!-- example: modules/decisions-taken/local_type_beside_aliased_import-603/cases/annotation_argument_enum_identity -->
 
 A function or a type argument is checked at the argument and never run at
 build (decision 364 (3)). An optional function-typed `comptime` argument is

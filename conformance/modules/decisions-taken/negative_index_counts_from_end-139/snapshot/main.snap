@@ -68,3 +68,7 @@ at src/main.bp:10:12
 out 4
 out b
 out 9
+== ambient_index_parameter
+out 1
+out -1
+out [7, 8]

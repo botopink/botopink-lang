@@ -234,6 +234,7 @@ comptime {
     runModule("decisions-taken/implement_signature_over_types-974");
     runModule("decisions-taken/import_alias_on_type_and_folder_namespace-110");
     runModule("decisions-taken/import_dotted_and_braced_paths_one_tree-107");
+    runModule("decisions-taken/inject_rides_context_tree-416");
     runModule("decisions-taken/inline_parameter_record_type-207");
     runModule("decisions-taken/integer_overflow_aborts-264");
     runModule("decisions-taken/is_only_an_operator-322");
@@ -246,15 +247,22 @@ comptime {
     runModule("decisions-taken/lambda_typed_by_position-583");
     runModule("decisions-taken/lambda_types_from_context-328");
     runModule("decisions-taken/libraries_run_at_build_on_wasm-594");
+    runModule("decisions-taken/local_type_beside_aliased_import-603");
     runModule("decisions-taken/math_same_bits_every_target-263");
+    runModule("decisions-taken/meta_expr_names_resolve_where_written-385");
     runModule("decisions-taken/method_private_to_module-859");
+    runModule("decisions-taken/mixed_literals_infer_union-150");
     runModule("decisions-taken/module_comptime_block-788");
     runModule("decisions-taken/module_comptime_block_rules-793");
     runModule("decisions-taken/module_import_binds_namespace-582");
     runModule("decisions-taken/module_run_answers-792");
+    runModule("decisions-taken/module_run_failure_contained-806");
+    runModule("decisions-taken/module_test_reports_each_test-993");
     runModule("decisions-taken/module_var_holds_async_refused-905");
+    runModule("decisions-taken/module_var_one_program_value-547");
     runModule("decisions-taken/multi_subject_bare_name_refused-602");
     runModule("decisions-taken/namespace_type_without_fields-329");
+    runModule("decisions-taken/namespaced_decorator_runs-386");
     runModule("decisions-taken/negative_index_counts_from_end-139");
     runModule("decisions-taken/no_declaration_files_compiler_value-575");
     runModule("decisions-taken/non_exhaustive_code-858");
@@ -267,6 +275,7 @@ comptime {
     runModule("decisions-taken/package_imports_itself_by_path-309");
     runModule("decisions-taken/parser_refuses_stringify-239");
     runModule("decisions-taken/pattern_as_binding_refused-11");
+    runModule("decisions-taken/persistent_term_var_write_atomic-903");
     runModule("decisions-taken/prelude_has_no_pair_or_function-738");
     runModule("decisions-taken/primitive_member_by_contract-799");
     runModule("decisions-taken/primitive_type_body_and_names-873");
@@ -284,6 +293,7 @@ comptime {
     runModule("decisions-taken/refusal_snap_claims_label-485");
     runModule("decisions-taken/reported_surface_forms_all_parse-28");
     runModule("decisions-taken/result_declared_in_primitives-609");
+    runModule("decisions-taken/result_is_checked_error-431");
     runModule("decisions-taken/result_refused_on_op_fn-491");
     runModule("decisions-taken/seeded_random_std_wasm-451");
     runModule("decisions-taken/shadowing_in_inner_blocks_refused-205");

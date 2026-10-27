@@ -528,7 +528,7 @@ records no instance lowering of its own, so `inferOptionalOperator` copies the
 `loc.col + optional_synthetic_col`) to the written call's loc; beam reads that
 loc and, without it, called the variant's atom as a module for an imported enum
 (`undef` `'std@json@@Json__v__str':str/1`). A primitive's lowering is not
-copied (`?.` over it stays the guard). `modules/decisions-taken/optional_typescript_operators-330/cells/optional_enum_method_imported`.
+copied (`?.` over it stays the guard). `modules/decisions-taken/optional_typescript_operators-330/cases/optional_enum_method_imported`.
 
 Holed templates: each `${…}` part is exposed to the body as a
 `__bp_hole_<param>_<i>` placeholder; `substituteHoles` splices the caller's hole
@@ -875,7 +875,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   A namespace import of a module (`import {markers} from "web"`) registers each
   of the module's decorators under `<ns>.<name>` (decision 386), as a std
   module's are under `<handle>.<name>` (`registerStdDecorators`): `#[markers.tag]`
-  runs `tag` (`modules/decisions-taken/namespaced_decorator_runs-386/cells/decorator_through_namespace`).
+  runs `tag` (`modules/decisions-taken/namespaced_decorator_runs-386/cases/decorator_through_namespace`).
 
 ## The template annotation `` #[f @`…`] `` (decisions 311, 577, `01-checker` step 29)
 
@@ -1240,7 +1240,7 @@ value)` stands beside it until the library sites migrate (130 step 8).
   name its arguments wrote bound where the annotation wrote them
   (`written_names.renameArgs` with a `Binder`): a private rule reached, a
   same-named function of the reader never captured
-  (`modules/decisions-taken/meta_expr_names_resolve_where_written-385/cells/meta_expr_read_elsewhere`). **Decision 395** — in a member a
+  (`modules/decisions-taken/meta_expr_names_resolve_where_written-385/cases/meta_expr_read_elsewhere`). **Decision 395** — in a member a
   decorator hands on, `@typeInfo(T)` of the decorator's type parameter is
   typed as the read alone (`typedMetaReadOfTypeParam`: `C<…>[]` / `?C<…>`,
   answered nowhere); the rendered member reads `@typeInfo(<the type>)` and is
@@ -1379,7 +1379,7 @@ analysed module's through a hidden import (`contextDefaultRef`,
 `withImportSourcesNamed`) — or keeps its own, else refuses the field at the
 `inject`; `context_lower.injectRecord` writes
 `R(f: find(scope, key, <fallback>), …)`. Cells `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_record`,
-`modules/decisions-taken/inject_rides_context_tree-416/cells/inject_behavior_keyed`, `modules/decisions-taken/inject_rides_context_tree-416/cells/inject_test_root_fake`,
+`modules/decisions-taken/inject_rides_context_tree-416/cells/inject_behavior_keyed`, `modules/decisions-taken/inject_rides_context_tree-416/cases/inject_test_root_fake`,
 `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/inject_field_undeclared`, `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/inject_behavior`,
 `modules/decisions-taken/inject_rides_context_tree-416/refused/src/cases/context_behavior_not_implemented`.
 

@@ -39,5 +39,9 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("typeinfo_all_template_value");
+    runCase("template_catalogue_private");
+    runCase("template_catalogue_two_themes");
+    runCase("typeinfo_all_default_outside_root");
+    runCase("typeinfo_all_imported_package_default");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

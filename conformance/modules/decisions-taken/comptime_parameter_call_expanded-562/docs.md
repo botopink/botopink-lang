@@ -9,5 +9,5 @@
 [cases/comptime_expand_runtime_argument/src/main.bp](cases/comptime_expand_runtime_argument/src/main.bp)
 [cases/typeinfo_all_behavior_call_outside_expansion/src/main.bp](cases/typeinfo_all_behavior_call_outside_expansion/src/main.bp)
 
-Proved also by [stage_build_and_run](../function_stage_propagated-376/cells/stage_build_and_run/src/main.bp)
-Proved also by [stage_of_functions](../function_stage_propagated-376/cells/stage_of_functions/src/main.bp)
+Proved also by [stage_build_and_run](../function_stage_propagated-376/cases/stage_build_and_run/src/main.bp)
+Proved also by [stage_of_functions](../function_stage_propagated-376/cases/stage_of_functions/src/main.bp)

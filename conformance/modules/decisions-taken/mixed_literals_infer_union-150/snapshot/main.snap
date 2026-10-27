@@ -53,3 +53,6 @@ out number 15
 out text fifteen
 out number 10
 out text m
+== array_literal_union_misuse
+refused error: cannot do arithmetic on a `i32 | string` — not every member of the union answers it (the array element at 9:18 made it one: the literal's elements disagree)
+at src/main.bp:10:29

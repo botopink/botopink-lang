@@ -13,3 +13,10 @@ out main:1
 out shapes:2
 out main
 out shapes
+== annotation_argument_enum_identity
+out manual is manual
+out eager is not manual
+out first manual
+out third eager
+out local slow
+out other slow
