@@ -132,10 +132,8 @@ if (cd "$WORK/app" && "$BP_BIN" build --target wasm >/dev/null 2>"$WORK/build-wa
   laid="$(cd "$WORK/app/out" && ls -A)"
   [[ "$laid" == wasm ]] || fail "wasm: out/ holds '$(tr '\n' ' ' <<<"$laid")', not exactly wasm/"
   [[ -n "$(find "$WORK/app/out/wasm" -maxdepth 1 -name '*.wat' | head -1)" ]] || fail "wasm: no .wat in out/wasm/"
-  if command -v wasmtime >/dev/null 2>&1; then
-    answer="$(cd "$WORK/app" && "$BP_BIN" run --target wasm 2>/dev/null | grep -v '^\s*$' | grep -v 'Compil' || true)"
-    [[ "$answer" == "$want_answer" ]] || fail "wasm: the program answered '$answer', not '$want_answer'"
-  fi
+  answer="$(cd "$WORK/app" && "$BP_BIN" run --target wasm 2>/dev/null | grep -v '^\s*$' | grep -v 'Compil' || true)"
+  [[ "$answer" == "$want_answer" ]] || fail "wasm: the program answered '$answer', not '$want_answer'"
 else
   fail "wasm: build failed"; sed 's/^/      /' "$WORK/build-wasm.log" >&2
 fi

@@ -168,16 +168,22 @@ pub fn main(init: std.process.Init) void {
 /// The exit status of a build the user interrupted: 128 + SIGINT.
 const SIGINT_EXIT: u8 = 130;
 
-/// Set by the SIGINT handler when it interrupted a running comptime body.
+/// Set by the SIGINT handler when it interrupted a running comptime body or
+/// wasm program.
 var sigint_interrupted: std.atomic.Value(bool) = .init(false);
 
 /// Decision 878 — Ctrl-C while a comptime body runs interrupts that body
 /// (`persistent_wat.interrupt()`): the build ends as `comptime-interrupted`,
-/// located at the body, exit 130. With no body running, or on a second
-/// Ctrl-C, the default action ends the process as before.
+/// located at the body, exit 130. A wasm program running in process (`run`,
+/// `test`) is interrupted the same way (`wasmRunner.interrupt()`, decision
+/// 1034 (2)), exit 130. With nothing running, or on a second Ctrl-C, the
+/// default action ends the process as before.
 fn onSigint(sig: std.posix.SIG) callconv(.c) void {
-    if (bp.comptime_runtime.running() and !sigint_interrupted.swap(true, .acq_rel)) {
-        bp.comptime_runtime.interrupt();
+    const comptime_body = bp.comptime_runtime.running();
+    const program = bp.codegen.wasmRunner.running();
+    if ((comptime_body or program) and !sigint_interrupted.swap(true, .acq_rel)) {
+        if (comptime_body) bp.comptime_runtime.interrupt();
+        if (program) bp.codegen.wasmRunner.interrupt();
         return;
     }
     const dfl: std.posix.Sigaction = .{

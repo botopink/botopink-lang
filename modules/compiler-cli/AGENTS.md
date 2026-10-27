@@ -26,10 +26,6 @@ compiler-cli/
 │   │                          of `local_dependency`, a type its dependency
 │   │                          declares — decisions 514, 575 (1))
 │   │                          against the real binary
-│   ├── backend_exec.sh      ← the wasm core module's `--invoke main` (a `wasi`
-│   │                          build's core module run on its own); `zig build
-│   │                          test-backends`
-│   ├── backend_exec/        ← the numeric fixture (`main() -> i32` answering 55)
 │   ├── closure_invariant.sh ← decision 509 (2)'s invariant (144 B-60): the library
 │   │                          `shelf` built under `plain` and under `crowded`
 │   │                          (a second dependency, its own module and std
@@ -265,7 +261,6 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
 zig build test-cli      # every script, in order, against the installed CLI
-zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in test-cli)
 
@@ -274,7 +269,6 @@ zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in tes
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
 bash modules/compiler-cli/tests/code_cache.sh        # the code cache and workspace inheritance
-bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 bash modules/compiler-cli/tests/closure_invariant.sh # a library's output under two consumers (509 (2))
 bash modules/compiler-cli/tests/level_b.sh           # level B: cold, writing and reading builds the same bytes
 bash modules/compiler-cli/tests/analysis_equivalence.sh # level B over rakun, rakun-bpp and rakun-stylesheet cells
@@ -294,8 +288,8 @@ bash modules/compiler-cli/tests/unit_cache.sh        # a dependency's units take
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime
 > fails the script. **What a program answers is not here**: the language half
 > these scripts held moved to conformance cells in 144 B-29 step H, each run on
-> the four targets by the conformance suite — `backend_exec.sh`'s numeric
-> program (`conformance/modules/tail/run/src/cases/tail_recursive_sum`: `55` everywhere, beam
+> the four targets by the conformance suite — the numeric
+> program of the former `backend_exec.sh` (`conformance/modules/tail/run/src/cases/tail_recursive_sum`: `55` everywhere, beam
 > included, which the script had left out), its records / enum / `case` /
 > lambda program (`record_enum_case_lambda`, wasm included) and the `mod` /
 > `pub mod` package (`modules`, the former `examples/modules`, on all four);
@@ -304,8 +298,10 @@ bash modules/compiler-cli/tests/unit_cache.sh        # a dependency's units take
 > `test_tooling.sh`'s `assert cond, "msg"` and `try` (`assert_message_aborts`,
 > `conformance/test/assert_and_try.bp`). The scripts keep the CLI's contract:
 > `cli_contract.sh`, `test_tooling.sh`'s report (`--filter`, the totals, the FAIL
-> line's message and `src/main.bp:<line>`, the `*.snap.new` list),
-> and `backend_exec.sh`'s `wasm --invoke main`.
+> line's message and `src/main.bp:<line>`, the `*.snap.new` list). The former
+> `backend_exec.sh`'s `wasmtime --invoke main` check is the compiler-core test
+> `wat: runner ---- a core module's main export invoked answers 55` (decision
+> 1034 (1): the runner invokes the core export).
 > The `std` suite on erlang is covered by the conformance stage's `libraries/std` job, not a script.
 
 ## External libs (generic loader)
@@ -744,7 +740,7 @@ assembled once with `erlc +from_asm`, each test unit's runner run with
 `erl -noshell -pa <dir> -eval "'<atom>':main(init:get_plain_arguments()),
 halt()." -extra [filter]` — the same envelope, the same group-leader capture)
 and `wasm` on the `wasi` host (each test unit, a `.wat` component linking the
-whole program, run with `wasmtime run` and the flags its `botopink.needs` section asks for — `-W exceptions=y`, `-S http`, none when it names no need (decision 518, `run.wasmtimeFlags`); the filter is not read, and a
+whole program, run in process by `run.runWasi` — the runner of decisions 1032 (3), 1034, given the host services its `botopink.needs` section names (`http`, `filesystem`) and the runners' environment, stdout captured under `--json` and streamed and kept otherwise; the filter is not read, and a
 failing `assert` traps, ending the module's run inside that test's fence — it
 is reported as a module whose runner printed no summary). A `browser` host is
 refused.

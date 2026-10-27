@@ -58,8 +58,7 @@ zig build test          # compiler-core + language-server + compiler-cli + manif
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
-zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, the wasm core module's --invoke main)
-zig build test-backends # the wasm core module's --invoke main (modules/compiler-cli/tests/backend_exec.sh)
+zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, the caches and reuse of every target)
 zig build test-closure-invariant # one library built under two consumers, its files compared byte for byte on every target (modules/compiler-cli/tests/closure_invariant.sh, decision 509 (2)); alone — `test-cli` runs it too
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
@@ -134,7 +133,7 @@ same stage runs when the libraries are in the plan. The stage needs host runtime
 | `commonJS` | `node` ≥ 22              | https://nodejs.org/en/download                   |
 | `erlang`   | `escript` (OTP)          | `apt-get install erlang` · `brew install erlang` |
 | `beam`     | `escript` + `erlc` (OTP) | same as erlang                                   |
-| `wasm`     | `wasmtime`               | `curl https://wasmtime.dev/install.sh \| bash`   |
+| `wasm`     | none — run in process (the embedded wasmtime C API, decisions 1032, 1034); the `wasmtime` CLI only for `conformance/run.sh`'s precheck and `tests/runtime_file.sh` until R3 | — |
 
 See [`conformance/AGENTS.md`](conformance/AGENTS.md) and [`scripts/AGENTS.md`](scripts/AGENTS.md).
 
@@ -280,7 +279,7 @@ gate's time goes):
 4. `zig build test` (compiler-core, language-server, and CLI unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
-7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
+7. `zig build test-cli` (the CLI contract, test tooling, the caches and reuse of every target);
 8. (the libraries' stage joined stage 9 — decision 996);
 9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with a bare `botopink build` into its `.bpr` set and run on each target with `botopink run --target <t>`, which reuses the set (decision 1006 P3) — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` —, every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, and every package `botopink packages --list` prints tested in process, one program per package per target, its own process on the pool (`libraries/<name>`, decisions 993, 995, 996, 1004; the pairs that did not run before are `conformance/disabled.txt`'s, shrink-only), after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
@@ -385,7 +384,7 @@ Do not use `--no-verify`.
   `executeBeamAsm` go through `runWithTimeout` (120 s); a timeout yields an empty
   RUN LOG. Every `erl` / `erlc` / `escript` among them first passes the OTP
   release check (`src/otp.zig`, decision 228): on another release the executor
-  fails with `error.OtpReleaseRefused`, it does not record an empty RUN LOG. `executeWat` runs `wasmtime` on the module's binary (`GenerateResult.wasm`).
+  fails with `error.OtpReleaseRefused`, it does not record an empty RUN LOG. `executeWat` runs the module's binary (`GenerateResult.wasm`) in process through the runner (`codegen/wat/runner.zig`, decisions 1032, 1034).
 - **Erlang/BEAM early exit.** Both skip `erlc`/`erl` when the generated code has
   no `_botopink_main` or no I/O (`io:format`). If a test unexpectedly spawns erl,
   check for `_botopink_main` or `@print` in the output.

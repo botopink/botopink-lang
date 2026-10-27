@@ -69,6 +69,15 @@ pub fn run(
     const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = out_dir, .cold = opts.cold, .entry = opts.module, .workspace_out = opts.workspace_out }, env_map);
     if (build_exit != 0) return build_exit;
 
+    // A `wasi` build runs in this process (decisions 1032 (3), 1034).
+    if (target == .wasm and proj.wasmHost() != .browser) {
+        if (try refuseWithoutMain(arena, io, proj, opts.module)) return 1;
+        const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
+        const entry_path = try build_cmd.artifactPath(arena, out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
+        const ran = try runWasi(arena, io, proj, entry_path, opts.extra_args, .{});
+        return ran.code;
+    }
+
     const argv = try programArgv(arena, io, proj, target, out_dir, opts.module) orelse return 1;
     var full = std.ArrayListUnmanaged([]const u8).empty;
     try full.appendSlice(arena, argv);
@@ -82,7 +91,8 @@ pub fn run(
 /// `target`, entry `module` — after the step erlang and BEAM need first
 /// (every emitted `.erl` / `.S` compiled into `out_dir`). Null when that step
 /// failed; its refusal is printed. `botopink run` appends the program's own
-/// arguments and spawns it with inherited stdio.
+/// arguments and spawns it with inherited stdio. A `wasi` wasm build has no
+/// command line: it runs in process (`runWasi`).
 pub fn programArgv(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -133,20 +143,16 @@ fn programArgvFor(
     }
 
     var argv = std.ArrayListUnmanaged([]const u8).empty;
-    // A `wasi` build is a WASI preview 2 component (decision 334): `wasmtime
-    // run` handed only the host features the program's `botopink.needs`
-    // section names (decision 518: `-W exceptions=y`, `-S http`) — none, no
-    // flag. A `browser` build is `node <module>.mjs`, its loader (node runs
-    // exceptions by default).
+    // A `browser` build is `node <module>.mjs`, its loader (node runs
+    // exceptions by default); a `wasi` one runs in process (`runWasi`).
     switch (target) {
         // An uncaught abort writes the `Failure` an `attempt` would answer
         // (decision 535); on commonJS the program's own entry installs the
         // handler (decision 870), so node runs it bare.
         .commonJS => try argv.append(arena, "node"),
-        .wasm => if (browser) try argv.append(arena, "node") else {
-            try argv.appendSlice(arena, &.{ "wasmtime", "run" });
-            try argv.appendSlice(arena, try wasmtimeCacheArgs(arena, io, proj));
-            try argv.appendSlice(arena, try wasmtimeFlags(arena, io, entry_path));
+        .wasm => {
+            std.debug.assert(browser);
+            try argv.append(arena, "node");
         },
         .erlang, .beam => unreachable, // handled above
     }
@@ -154,37 +160,68 @@ fn programArgvFor(
     return argv.items;
 }
 
-/// Decision 1008 (5) — the `wasmtime run` flags that put its compilation cache
-/// under `<cache root>/.botopinkbuild/cache/wasmtime/` (`store/`, with the
-/// config file beside it) instead of `~/.cache/wasmtime`: `-C cache-config=<toml>`
-/// over a config naming the directory. `--cold` deletes the store first, as it
-/// reads no other cache. Empty when the directory cannot be made (wasmtime then
-/// keeps its own default).
-pub fn wasmtimeCacheArgs(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig) ![]const []const u8 {
-    const dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime");
-    return bp.codegen.wasmNeeds.cacheArgs(arena, io, dir, code_cache.cold);
-}
+// ── the wasi runner ───────────────────────────────────────────────────────────
 
-/// Decision 518 — the `wasmtime run` flags a `wasi` build's component text at
-/// `path` asks for by its `botopink.needs` section (`-W exceptions=y`,
-/// `-S http`, `--dir` for the file system); none when it names no need or
-/// cannot be read (the run then reports the missing file itself).
-pub fn wasmtimeFlags(arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]const []const u8 {
-    const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch return &.{};
+/// How `runWasi` hands the program its streams and environment.
+pub const WasiRun = struct {
+    stdout: bp.codegen.wasmRunner.Stdio = .inherit,
+    /// The environment; null, the host process's own.
+    env: ?*const std.process.Environ.Map = null,
+};
+
+pub const WasiRan = struct {
+    /// The process's exit status: the program's, 130 when Ctrl+C ended it
+    /// (decision 878).
+    code: u8,
+    /// The captured stdout, when `WasiRun.stdout` captures.
+    stdout: []const u8 = "",
+};
+
+/// Run the `wasi` component at `path` (a build's `.wat` text) in this process
+/// (decisions 1032 (3), 1034): compiled through
+/// `<cache root>/.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (`--cold`
+/// reads none and writes what it compiled), handed the host services its
+/// `botopink.needs` section names (decision 1034 (7): `http` → `wasi:http`
+/// and the network; `filesystem` → the root and the working directory,
+/// decision 992), argv `<path> <args…>`, stdin and stderr inherited. A trap
+/// prints its `wasm trap: …` line on stderr and exits 1 (1034 (3)). Shared by
+/// `run` and `test` (`test_cmd.zig`).
+pub fn runWasi(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, path: []const u8, args: []const []const u8, how: WasiRun) !WasiRan {
+    const runner = bp.codegen.wasmRunner;
+    const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch {
+        reporter.errMsg(try std.fmt.allocPrint(arena, "no wasm artifact at {s} — nothing to run", .{path}));
+        return .{ .code = 1 };
+    };
+    const cache_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime");
+    var failure: ?[]u8 = null;
+    const code = (try runner.load(arena, io, cache_dir, text, bp.codegen.wasmEngine.kindOf(text), code_cache.cold, &failure)) orelse {
+        reporter.errMsg(failure.?);
+        return .{ .code = 1 };
+    };
+    defer code.deinit();
+
     const needs = bp.codegen.wasmNeeds.needsOfText(text);
-    var buf: [bp.codegen.wasmNeeds.max_args][]const u8 = undefined;
-    const flags = bp.codegen.wasmNeeds.wasmtimeArgs(needs, &buf);
-    if (!needs.contains(.filesystem)) return arena.dupe([]const u8, flags);
-    // Decision 992 — a program that reaches the file system has the one a process
-    // of the user has: the root (in `flags`) and the working directory, under its
-    // own absolute path, as the host sees them.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const n = std.process.currentPath(io, &cwd_buf) catch return arena.dupe([]const u8, flags);
-    const out = try arena.alloc([]const u8, flags.len + 2);
-    @memcpy(out[0..flags.len], flags);
-    out[flags.len] = "--dir";
-    out[flags.len + 1] = try bp.codegen.wasmNeeds.cwdDirArg(arena, cwd_buf[0..n]);
-    return out;
+    const cwd: ?[]const u8 = if (std.process.currentPath(io, &cwd_buf)) |n| cwd_buf[0..n] else |_| null;
+    const argv = try arena.alloc([]const u8, args.len + 1);
+    argv[0] = path;
+    @memcpy(argv[1..], args);
+    var env: runner.Env = .inherit;
+    if (how.env) |m| {
+        const list = try arena.alloc(runner.EnvVar, m.count());
+        for (m.keys(), m.values(), 0..) |k, v, i| list[i] = .{ .name = k, .value = v };
+        env = .{ .list = list };
+    }
+    const opts: runner.Options = .{ .stdout = how.stdout, .stdin_inherit = true, .argv = argv, .env = env, .needs = needs, .cwd = cwd };
+    const ran = switch (code) {
+        .component => |c| try runner.run(arena, c, &.{}, opts),
+        .module => |m| try runner.runCore(arena, m, opts),
+    };
+    if (ran.end == .interrupted) return .{ .code = 130, .stdout = ran.stdout orelse "" };
+    if (ran.trap) |t| if (t.len > 0) {
+        std.Io.File.stderr().writeStreamingAll(io, try std.fmt.allocPrint(arena, "{s}\n", .{t})) catch {};
+    };
+    return .{ .code = @intCast(std.math.clamp(ran.status, 0, 255)), .stdout = ran.stdout orelse "" };
 }
 
 // ── no `fn main` ──────────────────────────────────────────────────────────────

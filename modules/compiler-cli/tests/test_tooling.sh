@@ -278,7 +278,7 @@ BP
 for t in commonJS erlang beam wasm; do
   case "$t" in
     erlang|beam) command -v escript >/dev/null 2>&1 || { echo "  (skipped $t: no escript)"; continue; } ;;
-    wasm) command -v wasmtime >/dev/null 2>&1 || { echo "  (skipped $t: no wasmtime)"; continue; } ;;
+    # wasm runs in process (decisions 1032, 1034): no host tool to look for.
   esac
   set +e
   out="$( cd "$UNITWORK/app" && "$BP_BIN" test --target "$t" 2>&1 )"

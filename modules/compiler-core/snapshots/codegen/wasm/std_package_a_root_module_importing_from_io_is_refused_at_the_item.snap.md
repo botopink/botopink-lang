@@ -20359,13 +20359,8 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 ----- RUN LOG -----
 ```logs
-Error: failed to process preload `std@io@fs` at `std@io@fs.wasm`
-
-Caused by:
-    unknown import: `bp_fs::open` has not been defined
-
 RUNTIME TRAP (wasmtime):
-
+unknown import: `bp_fs::open` has not been defined
 ```
 
 ----- SOURCE CODE -- std/probe.bp

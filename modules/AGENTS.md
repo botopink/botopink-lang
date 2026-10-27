@@ -78,7 +78,6 @@ zig build test -Dtest-filter=<substr>
 zig build test -Dtest-shards=<n>   # compiler-core split across n processes (default: CPUs, at most 8; 1 = one process)
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)
 zig build test-vscode      # VS Code extension unit tests (needs node/npm)
-zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
 zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp and every
                            # modules/*/.botopinkbuild/test-scratch root older than 1 day
 zig build compiler-web     # compiler-core for the browser → zig-out/web/ (fixed wasm32-wasi target)

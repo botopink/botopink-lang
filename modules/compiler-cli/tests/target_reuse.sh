@@ -2,8 +2,8 @@
 # Decision 1008 (1), (4), (5) — each target's output folder carries a key, and a
 # matching one means `run --target <t>` only executes (the proof of the ledger
 # row: reuse is a property of two runs, which no cell expresses), over its
-# fixture `target_reuse/` (a package and one dependency), on erlang, beam and
-# commonJS, and on wasm when wasmtime is on PATH:
+# fixture `target_reuse/` (a package and one dependency), on erlang, beam,
+# commonJS and wasm:
 #   • the second `run --target <t>` rewrites no file of the output folder (every
 #     file's inode and modification time the same) and answers the same;
 #   • a changed source file makes the next run emit again, and it answers the
@@ -11,9 +11,11 @@
 #   • `build --cold --target <t>` rewrites the output folder;
 #   • `run --cold --target <t>` reuses a fresh `.bpr` but reads no target key: its first reach emits
 #     again and answers the same (decision 1043 (4));
-#   • on wasm the compilation cache of wasmtime is
-#     `.botopinkbuild/cache/wasmtime/` and nothing goes under `$HOME/.cache`
-#     (HOME is a temporary directory); `--cold` deletes it.
+#   • on wasm the program runs in process and its compiled code is
+#     `.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (decisions 1008 (5), 1034
+#     (5), (8)): a run with nothing changed compiles nothing (no `.cwasm`
+#     rewritten), nothing goes under `$HOME/.cache` (HOME is a temporary
+#     directory), and `--cold` reads none and writes it again.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -58,8 +60,7 @@ mkdir -p "$C"
 cp -R "$FIXTURE/app" "$FIXTURE/lib" "$C/"
 APP="$C/app"
 
-targets=(erlang beam commonJS)
-if command -v wasmtime > /dev/null 2>&1; then targets+=(wasm); else echo "  (wasmtime is not on PATH: wasm is skipped)"; fi
+targets=(erlang beam commonJS wasm)
 
 for target in "${targets[@]}"; do
   OUT="o-$target"
@@ -110,19 +111,23 @@ for target in "${targets[@]}"; do
   sed -i 's/label("changed")/label("answer")/' "$APP/src/main.bp"
 done
 
-# wasmtime's compilation cache is the build folder's (decision 1008 (5)).
-if command -v wasmtime > /dev/null 2>&1; then
-  WT="$APP/.botopinkbuild/cache/wasmtime"
-  [[ -d "$WT/store" ]] && [[ -n "$(find "$WT/store" -type f -print -quit)" ]] || fail "wasm: no wasmtime cache entry under .botopinkbuild/cache/wasmtime/store"
-  [[ ! -e "$WORK/home/.cache/wasmtime" ]] || fail "wasm: wasmtime wrote its cache under \$HOME/.cache"
-  if [[ -d "$WORK/home/.cache" ]] && [[ -n "$(find "$WORK/home/.cache" -type f -print -quit)" ]]; then
-    fail "wasm: something was written under \$HOME/.cache"
-  fi
-  # `--cold` deletes it with the rest.
-  mkdir -p "$WT/store" && : > "$WT/store/marker"
-  bp "$APP" run --cold --target wasm --out o-wasm || { fail "wasm: run --cold failed"; show "$WORK/err"; }
-  [[ ! -e "$WT/store/marker" ]] || fail "wasm: run --cold left the old wasmtime cache"
+# The compiled code is the build folder's (decisions 1008 (5), 1034 (8)).
+WT="$APP/.botopinkbuild/cache/wasmtime"
+[[ -n "$(find "$WT" -maxdepth 1 -name '*.cwasm' -print -quit 2>/dev/null)" ]] || fail "wasm: no .cwasm under .botopinkbuild/cache/wasmtime"
+[[ ! -e "$WORK/home/.cache/wasmtime" ]] || fail "wasm: wasmtime wrote its cache under \$HOME/.cache"
+if [[ -d "$WORK/home/.cache" ]] && [[ -n "$(find "$WORK/home/.cache" -type f -print -quit)" ]]; then
+  fail "wasm: something was written under \$HOME/.cache"
 fi
+# A run with nothing changed compiles nothing (1034 (5)).
+listing "$WT" > "$WORK/cw-before"
+bp "$APP" run --target wasm --out o-wasm || { fail "wasm: the warm run failed"; show "$WORK/err"; }
+listing "$WT" > "$WORK/cw-after"
+cmp -s "$WORK/cw-before" "$WORK/cw-after" || { fail "wasm: a run with nothing changed rewrote a .cwasm"; diff "$WORK/cw-before" "$WORK/cw-after" | sed 's/^/      /' >&2 || true; }
+# `--cold` reads none and writes what it compiled.
+bp "$APP" run --cold --target wasm --out o-wasm || { fail "wasm: run --cold failed"; show "$WORK/err"; }
+says "wasm: run --cold" "answer 42"
+listing "$WT" > "$WORK/cw-after"
+if cmp -s "$WORK/cw-before" "$WORK/cw-after"; then fail "wasm: run --cold rewrote no .cwasm"; fi
 
 if (( failures > 0 )); then
   echo "target_reuse.sh: $failures failure(s)" >&2

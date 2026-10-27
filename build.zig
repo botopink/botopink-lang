@@ -640,23 +640,12 @@ pub fn build(b: *std.Build) void {
     const test_docs_step = b.step("test-docs", "Check that every example of the language reference names a conformance cell");
     test_docs_step.dependOn(&test_docs_run.step);
 
-    // `zig build test-backends` — the wasm core module's `--invoke main`
-    // contract (`backend_exec.sh`): a `wasi` build is a component whose core
-    // module runs on its own under `wasmtime --invoke main`. What programs answer
-    // on every backend is the conformance suite's (`test-conformance`). NOT wired
-    // into `zig build test` (needs wasmtime on PATH). BOTOPINK_SKIP_BUILD=1
-    // avoids nesting a `zig build` — the CLI is installed by the dependency below.
-    const test_backends_run = cliScript(b, prebuilt, "backend_exec.sh");
-    const test_backends_step = b.step("test-backends", "Run the wasm core module's --invoke main contract");
-    test_backends_step.dependOn(&test_backends_run.step);
-
     // `zig build test-cli` — every end-to-end CLI script under
     // `modules/compiler-cli/tests/`, each against the installed binary
     // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
     // `botopink test` behaviours (`test_tooling.sh`), the code cache of the
     // dependencies' compiled modules and the workspace a cell inherits from
-    // (`code_cache.sh`, decisions 509, 512), the wasm core module's
-    // `--invoke main` (`backend_exec.sh`, also `test-backends`), and decision
+    // (`code_cache.sh`, decisions 509, 512), and decision
     // 509 (2)'s closure invariant (`closure_invariant.sh`, also
     // `test-closure-invariant`), and the code cache's level B over its fixture
     // (`level_b.sh`, 144 B-60: cold, writing and reading builds the same
@@ -684,7 +673,7 @@ pub fn build(b: *std.Build) void {
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

@@ -35,6 +35,10 @@ pub const unitCache = @import("./codegen/unit_cache.zig");
 pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
 pub const wasmNeeds = @import("./codegen/wat/needs.zig");
 pub const wasmRuntimeUnit = @import("./codegen/wat/runtime_unit.zig");
+/// The embedded wasmtime engine and its `.cwasm` cache, and the in-process
+/// runner over it (decisions 1032, 1034); native builds only.
+pub const wasmEngine = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/engine.zig");
+pub const wasmRunner = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/runner.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {

@@ -98,9 +98,9 @@ fn classifyEnd(tool: []const u8, term: std.process.Child.Term, stdout: []const u
 
 /// Default runtime execution timeout — 2 minutes.
 /// Generous enough for cold erlc/erl (~2s worst case), short enough that
-/// a hung suite doesn't waste CI minutes. `std.process.run`'s built-in
-/// `timeout` field enforces the deadline via the Io abstractions, no
-/// separate watchdog thread needed.
+/// a hung suite doesn't waste CI minutes. A spawn's is `std.process.run`'s
+/// built-in `timeout`; an in-process wasm run's is the runner's epoch
+/// deadline (`executeWatIn`, decision 1034 (2)).
 const RUNTIME_TIMEOUT_NS: i96 = 120 * std.time.ns_per_s;
 
 /// How a spawn ended — the piece of information the captured output cannot
@@ -206,25 +206,14 @@ fn compileFailureLog(allocator: std.mem.Allocator, tool: []const u8, diagnostics
 }
 
 /// RUN LOG text for a wasm module that trapped: what it printed before the
-/// trap, then a marker line the snapshot review can grep for, then the trap
-/// itself — the `wasm trap: …` line wasmtime reports. A trap must never read
-/// like a program that ran and printed nothing, which is what an empty log
-/// would say.
-///
-/// `combined` is stdout followed directly by stderr (`executeWat`). wasmtime's stderr
-/// is an error chain (`Error: failed to run main module …`, `Caused by:`, the
-/// wasm backtrace with code offsets, the trap); only the trap line is kept,
-/// because the backtrace offsets change with every lowering. When no
-/// `wasm trap:` line is present (a non-trap failure), the last line of the
-/// chain is kept instead.
-fn runtimeTrapLog(allocator: std.mem.Allocator, tool: []const u8, combined: []const u8) ![]u8 {
-    const err_marker = "Error: failed to run main module";
-    const split = if (std.mem.startsWith(u8, combined, err_marker))
-        0
-    else if (std.mem.indexOf(u8, combined, "\n" ++ err_marker)) |i| i + 1 else combined.len;
-    const printed = combined[0..split];
-    const chain = combined[split..];
-
+/// trap (its stdout, then its stderr), then a marker line the snapshot review
+/// can grep for, then the trap itself — the runner's `wasm trap: …` line, or
+/// the last line of another failure (`runner.trapLine`), empty for a non-zero
+/// exit with no trap. A trap must never read like a program that ran and
+/// printed nothing, which is what an empty log would say. The marker keeps the
+/// tool's name of the `wasmtime` CLI era, so every RUN LOG stays byte-identical
+/// under the in-process runner (decision 1034 (3)).
+fn runtimeTrapLog(allocator: std.mem.Allocator, tool: []const u8, printed: []const u8, trap: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     errdefer out.deinit(allocator);
     if (printed.len > 0) {
@@ -234,24 +223,7 @@ fn runtimeTrapLog(allocator: std.mem.Allocator, tool: []const u8, combined: []co
     try out.appendSlice(allocator, "RUNTIME TRAP (");
     try out.appendSlice(allocator, tool);
     try out.appendSlice(allocator, "):\n");
-
-    var last: []const u8 = "";
-    var trap: ?[]const u8 = null;
-    var lines = std.mem.splitScalar(u8, chain, '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, &std.ascii.whitespace);
-        if (line.len == 0) continue;
-        if (std.mem.indexOf(u8, line, "wasm trap:")) |i| {
-            trap = line[i..];
-        }
-        // `2: <cause>` — the error chain numbers its causes.
-        const colon = std.mem.indexOfScalar(u8, line, ':') orelse 0;
-        const numbered = colon > 0 and for (line[0..colon]) |c| {
-            if (!std.ascii.isDigit(c)) break false;
-        } else true;
-        last = if (numbered) std.mem.trimStart(u8, line[colon + 1 ..], " ") else line;
-    }
-    try out.appendSlice(allocator, trap orelse last);
+    try out.appendSlice(allocator, trap);
     try out.append(allocator, '\n');
     return out.toOwnedSlice(allocator);
 }
@@ -978,18 +950,19 @@ pub fn executeAborting(allocator: std.mem.Allocator, backend: AbortBackend, code
     return ran.output;
 }
 
-/// Execute WebAssembly text: write `<module>.wat` and `wasmtime run` it, which
-/// invokes the `_start` export the wasm backend emits for a module with
-/// `fn main` (a module without one instantiates, runs its start function if
-/// any, and exits 0).
+/// Execute a wasm module in process (`wat/runner.zig`, decisions 1032, 1034):
+/// the core module (WASI preview 1) is compiled through the `.cwasm` cache
+/// and its `_start` called — the export the wasm backend emits for a module
+/// with `fn main` (a module without one instantiates and ends, status 0).
 ///
-/// Returns the module's output on a 0 exit, and on a trap what it printed
-/// followed by `RUNTIME TRAP (wasmtime):` and the trap message
-/// (`runtimeTrapLog`). A missing `wasmtime` behaves like a missing `erl`: an
-/// empty RUN LOG, never cached. There is no early bail on modules that print
-/// nothing — a module that prints nothing can still trap, and that is what the
-/// log must show — and no aux modules: the wasm backend links imports into the
-/// module statically.
+/// Returns the module's output (stdout, then stderr) on a 0 exit, and on a
+/// trap or another exit what it printed followed by `RUNTIME TRAP
+/// (wasmtime):` and the trap's line (`runtimeTrapLog`). A run that hit the
+/// time limit (`RUNTIME_TIMEOUT_NS`, the runner's epoch deadline) is not a
+/// trap: an empty RUN LOG, never cached. There is no early bail on modules
+/// that print nothing — a module that prints nothing can still trap, and that
+/// is what the log must show. A module importing the runtime core runs with
+/// the core and the std units it reaches defined first (`runner.runCoreWith`).
 ///
 /// `wasm_binary`, when given, is the same module in the binary format
 /// (`wat/wasm_binary_emitter.zig`), and it is what runs: every wasm RUN LOG is
@@ -999,130 +972,120 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     return executeWatIn(allocator, wat_code, wasm_binary, module_name, null, io);
 }
 
-/// `executeWat` with `wasmtime`'s compilation cache at `cache_dir`
+/// Decisions 1021 (2), 1026 (3) — the units a wasm module binary imports, in
+/// the order they are defined before it: the runtime core, then the std units it reaches in dependency order; none
+/// for a module that imports no runtime. Allocated in `arena`.
+pub fn wasmPreloads(arena: std.mem.Allocator, binary: []const u8) ![]const AuxFile {
+    if (!runtimeUnit.importsRuntime(binary)) return &.{};
+    var preload: std.ArrayListUnmanaged(AuxFile) = .empty;
+    const r = try runtimeUnit.get();
+    const im = try runtimeUnit.importsOf(arena, binary);
+    // The core's bytes are fixed (decision 1032): the module grows the
+    // memory past its own data.
+    try preload.append(arena, .{ .name = runtimeUnit.name, .code = r.core_bytes });
+    for (try r.closure(arena, im.units)) |u| try preload.append(arena, .{ .name = u.name, .code = u.bytes });
+    return preload.items;
+}
+
+/// Give back a preloaded unit `executeWatIn` loaded (`runner.load` answers a
+/// handle of its own).
+fn runtimeUnitRelease(u: @import("./wat/runner.zig").Unit) void {
+    @import("./wat/engine.zig").c.wasmtime_module_delete(u.module);
+}
+
+/// `executeWat` with the compiled-code cache at `cache_dir`
 /// (`<cache root>/.botopinkbuild/cache/wasmtime`); null, `wasmNeeds.DEFAULT_CACHE_DIR`
-/// of the working directory. Decision 1008 (5): no cache outside `.botopinkbuild`,
-/// so `wasmtime` never reads or writes `~/.cache/wasmtime`.
+/// of the working directory. Decision 1008 (5): no cache outside `.botopinkbuild`.
 pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binary: ?[]const u8, module_name: []const u8, cache_dir: ?[]const u8, io: anytype) ![]u8 {
+    if (comptime @import("builtin").cpu.arch.isWasm()) return allocator.dupe(u8, "");
+    const runner = @import("./wat/runner.zig");
     const code = wasm_binary orelse wat_code;
-    const ext = if (wasm_binary != null) "wasm" else "wat";
     // Decisions 1021 (2), 1026 (3) — a module importing the runtime core runs
     // with the core instantiated first, then the std units it reaches in
-    // dependency order (`wasmtime run --preload std@__rt=std@__rt.wasm
-    // --preload std@string=std@string.wasm …`).
+    // dependency order (what `wasmtime run --preload std@__rt=… --preload
+    // std@string=… …` did), each defined under its name in the linker.
     var units_arena = std.heap.ArenaAllocator.init(allocator);
     defer units_arena.deinit();
     const uar = units_arena.allocator();
-    var preload: std.ArrayListUnmanaged(AuxFile) = .empty;
-    if (wasm_binary) |b| if (runtimeUnit.importsRuntime(b)) {
-        const r = try runtimeUnit.get();
-        const im = try runtimeUnit.importsOf(uar, b);
-        // The core's bytes are fixed (decision 1032): the module grows the
-        // memory past its own data.
-        try preload.append(uar, .{ .name = runtimeUnit.name, .code = r.core_bytes });
-        for (try r.closure(uar, im.units)) |u| try preload.append(uar, .{ .name = u.name, .code = u.bytes });
-    };
+    const preload: []const AuxFile = if (wasm_binary) |b| try wasmPreloads(uar, b) else &.{};
+    // The tag names the runner too: an entry the `wasmtime` CLI recorded is
+    // not taken for the in-process runner's answer.
     var key: [64]u8 = undefined;
-    cacheKey(&key, ext, module_name, code, preload.items);
+    cacheKey(&key, if (wasm_binary != null) "wasm-inproc" else "wat-inproc", module_name, code, preload);
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
-    var dir_buf: [96]u8 = undefined;
-    const tmp_dir = try makeScratchDir(io, &dir_buf);
-    defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
+    var failure: ?[]u8 = null;
+    const compiled = (try runner.load(allocator, io, cache_dir orelse wasmNeeds.DEFAULT_CACHE_DIR, code, .module, false, &failure)) orelse {
+        defer allocator.free(failure.?);
+        const log = try runtimeTrapLog(allocator, "wasmtime", "", runner.trapLine(failure.?));
+        cacheWrite(io, allocator, &key, log);
+        return log;
+    };
+    defer compiled.deinit();
 
-    // wasm keeps the mirrored `out/<module path>` layout, and a `.wat` carries
-    // no module atom at all, so the scratch file stays named by the basename.
-    const basename = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ crossModule.moduleBasename(if (module_name.len > 0) module_name else "main"), ext });
-    defer allocator.free(basename);
-    const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
-    defer allocator.free(path);
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = code });
-    for (preload.items) |u| {
-        const u_path = try std.fmt.allocPrint(uar, "{s}/{s}.wasm", .{ tmp_dir, u.name });
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = u_path, .data = u.code });
-    }
-
-    // stdout and stderr are concatenated as written, with no separator: a
-    // module's stderr (an `assert` message) and wasmtime's error chain both
-    // end their own lines.
-    // Decision 518 — the host is handed only the features the module's
-    // `botopink.needs` section names (`-W exceptions=y` …); none, no flag.
-    var flag_buf: [wasmNeeds.max_args][]const u8 = undefined;
+    // Decision 518 — the host is handed only the services the module's
+    // `botopink.needs` section names. Decision 992 — a program that reaches
+    // the file system has the root, its scratch directory as its working
+    // directory (under its own absolute path), and the host's `TMPDIR`.
     var needs = if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code);
     // The runtime's needs too (decision 1021 (2)): the program is all of it.
-    for (preload.items) |u| needs.setUnion(wasmNeeds.needsOf(u.code));
-    const flags = wasmNeeds.wasmtimeArgs(needs, &flag_buf);
-    var cache_arena = std.heap.ArenaAllocator.init(allocator);
-    defer cache_arena.deinit();
-    const cache_args = try wasmNeeds.cacheArgs(cache_arena.allocator(), io, cache_dir orelse wasmNeeds.DEFAULT_CACHE_DIR, false);
-    var argv_list: std.ArrayListUnmanaged([]const u8) = .empty;
-    try argv_list.resize(uar, 7 + wasmNeeds.max_args + 2 * preload.items.len);
-    const argv_buf = argv_list.items;
-    argv_buf[0] = "wasmtime";
-    argv_buf[1] = "run";
-    var argc: usize = 2;
-    for (cache_args) |f| {
-        argv_buf[argc] = f;
-        argc += 1;
+    for (preload) |u| needs.setUnion(wasmNeeds.needsOf(u.code));
+    const units = try uar.alloc(runner.Unit, preload.len);
+    var loaded_units: usize = 0;
+    defer for (units[0..loaded_units]) |u| runtimeUnitRelease(u);
+    for (preload, 0..) |u, i| {
+        const m = (try runner.load(allocator, io, cache_dir orelse wasmNeeds.DEFAULT_CACHE_DIR, u.code, .module, false, &failure)) orelse {
+            defer allocator.free(failure.?);
+            const log = try runtimeTrapLog(allocator, "wasmtime", "", runner.trapLine(failure.?));
+            cacheWrite(io, allocator, &key, log);
+            return log;
+        };
+        units[i] = .{ .name = u.name, .module = m.module };
+        loaded_units += 1;
     }
-    for (flags) |f| {
-        argv_buf[argc] = f;
-        argc += 1;
+    var dir_buf: [96]u8 = undefined;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var scratch: ?[]const u8 = null;
+    defer if (scratch) |d| std.Io.Dir.cwd().deleteTree(io, d) catch {};
+    var cwd: ?[]const u8 = null;
+    var env_buf: [1]runner.EnvVar = undefined;
+    var env: runner.Env = .none;
+    if (needs.contains(.filesystem)) {
+        scratch = try makeScratchDir(io, &dir_buf);
+        if (std.Io.Dir.cwd().realPathFile(io, scratch.?, &cwd_buf)) |n| cwd = cwd_buf[0..n] else |_| {}
+        if (std.c.getenv("TMPDIR")) |t| {
+            env_buf[0] = .{ .name = "TMPDIR", .value = std.mem.span(t) };
+            env = .{ .list = env_buf[0..1] };
+        }
     }
-    // Decision 992 — a program that reaches the file system is run in its scratch
-    // directory, which is its working directory: preopened under its own path.
-    const cwd_arg: ?[]const u8 = if (needs.contains(.filesystem) and std.fs.path.isAbsolute(tmp_dir)) try wasmNeeds.cwdDirArg(allocator, tmp_dir) else null;
-    defer if (cwd_arg) |a| allocator.free(a);
-    if (cwd_arg) |a| {
-        argv_buf[argc] = "--dir";
-        argv_buf[argc + 1] = a;
-        argc += 2;
-    }
-    for (preload.items) |u| {
-        argv_buf[argc] = "--preload";
-        argv_buf[argc + 1] = try std.fmt.allocPrint(uar, "{s}={s}.wasm", .{ u.name, u.name });
-        argc += 2;
-    }
-    argv_buf[argc] = basename;
-    argc += 1;
-    const result = std.process.run(allocator, io, .{
-        .argv = argv_buf[0..argc],
-        .cwd = .{ .path = tmp_dir },
-        .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = RUNTIME_TIMEOUT_NS }, .clock = .real } },
-    }) catch return allocator.dupe(u8, "");
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-    const combined = try std.mem.concat(allocator, u8, &.{ result.stdout, result.stderr });
-    // A `wasmtime` that did not end by its own exit is not a trap: nothing
-    // to record, nothing to cache.
-    if (classifyEnd("wasmtime", result.term, result.stdout, result.stderr) == .interrupted) {
-        allocator.free(combined);
-        return allocator.dupe(u8, "");
-    }
-    if (isProcessSuccess(result.term)) {
+
+    const ran = try runner.runCoreWith(allocator, compiled.module, units, .{
+        .stdout = .capture,
+        .stderr = .capture,
+        .argv = &.{crossModule.moduleBasename(if (module_name.len > 0) module_name else "main")},
+        .env = env,
+        .needs = needs,
+        .cwd = cwd,
+        .timeout_ns = @intCast(RUNTIME_TIMEOUT_NS),
+    });
+    defer ran.deinit(allocator);
+    // A run that did not end by its own exit is not a trap: nothing to
+    // record, nothing to cache.
+    if (ran.end != .exited) return allocator.dupe(u8, "");
+    const combined = try std.mem.concat(allocator, u8, &.{ ran.stdout.?, ran.stderr.? });
+    if (ran.status == 0) {
         cacheWrite(io, allocator, &key, combined);
         return combined;
     }
     defer allocator.free(combined);
-    const log = try runtimeTrapLog(allocator, "wasmtime", combined);
+    const log = try runtimeTrapLog(allocator, "wasmtime", combined, ran.trap orelse "");
     cacheWrite(io, allocator, &key, log);
     return log;
 }
 
-test "runtimeTrapLog keeps the printed text and the trap, drops the backtrace" {
+test "runtimeTrapLog keeps the printed text and the trap" {
     const alloc = std.testing.allocator;
-    const combined =
-        \\hello
-        \\Error: failed to run main module `main.wat`
-        \\
-        \\Caused by:
-        \\    0: failed to invoke command default
-        \\    1: error while executing at wasm backtrace:
-        \\           0:   0x2a - <unknown>!main
-        \\    2: wasm trap: wasm `unreachable` instruction executed
-        \\
-    ;
-    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    const log = try runtimeTrapLog(alloc, "wasmtime", "hello\n", "wasm trap: wasm `unreachable` instruction executed");
     defer alloc.free(log);
     try std.testing.expectEqualStrings(
         "hello\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n",
@@ -1132,15 +1095,7 @@ test "runtimeTrapLog keeps the printed text and the trap, drops the backtrace" {
 
 test "runtimeTrapLog on a module that printed nothing" {
     const alloc = std.testing.allocator;
-    const combined =
-        \\Error: failed to run main module `main.wat`
-        \\
-        \\Caused by:
-        \\    0: failed to invoke command default
-        \\    1: wasm trap: out of bounds memory access
-        \\
-    ;
-    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    const log = try runtimeTrapLog(alloc, "wasmtime", "", "wasm trap: out of bounds memory access");
     defer alloc.free(log);
     try std.testing.expectEqualStrings(
         "RUNTIME TRAP (wasmtime):\nwasm trap: out of bounds memory access\n",

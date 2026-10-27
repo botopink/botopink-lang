@@ -3410,7 +3410,7 @@ first three are now enforced by the model, not by discipline:
   so cross-module runs link; both write every module of the fixture, then compile
   them with ONE `erlc` call — `compileModules`, the VM starting once per fixture, not once per module — and a
   rejected batch is compiled again one file at a time so the RUN LOG's `COMPILE ERROR` text is the first
-  rejected file's, as when each module had its own call), `executeWat` (`wasmtime run <module>.wasm` — the binary; the `.wat` text only where no binary was produced — with the flags its `botopink.needs` section asks for, `wat/needs.zig`, decision 518); and `-C cache-config=` over `wat/needs.zig`'s `cacheArgs`, wasmtime's compilation cache under `<cache root>/.botopinkbuild/cache/wasmtime/` — `executeWatIn(…, cache_dir, …)`, `Options.wasmtime_cache_dir`, null the working directory's own `.botopinkbuild` — never `~/.cache/wasmtime`, decision 1008 (5); `botopink run` / `test` use the same helper.
+  rejected file's, as when each module had its own call), `executeWat` (the module in process through `wat/runner.zig` — the binary; the `.wat` text only where no binary was produced — given the host services its `botopink.needs` section names, decisions 518, 1034 (7), stdout and stderr captured, the time limit the runner's epoch deadline); its compiled code under `<cache root>/.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (`runner.load`) — `executeWatIn(…, cache_dir, …)`, `Options.wasmtime_cache_dir`, null the working directory's own `.botopinkbuild` — never `~/.cache/wasmtime`, decision 1008 (5); `botopink run` / `test` use the same runner.
   The scratch file of an erlang/BEAM module is named by its module ATOM
   (`erlModuleAtom` → `crossModule.erlAtom` over `test_packages`, exactly as the codegen it runs, so `std/dict` is `std@dict.erl` and `main` is `test@main.erl`; `HARNESS_VERSION` was bumped with it, so no cached RUN LOG of the old spelling answers) and
   `-s <atom>` runs it; a second module of the program claiming an atom already
@@ -3432,20 +3432,22 @@ first three are now enforced by the model, not by discipline:
 - **`executeWat` — the decision (1.0.4-beta's wasm front, step 3; `05-wasm` owns it now): it executes.** It was turned
   on once a trap became a visible block and W1 had closed, so reaching
   `unreachable` means the program aborted rather than the backend giving up. It
-  runs `wasmtime run` in a scratch dir (the `_start` export) on the module's
+  runs the module in process (`wat/runner.zig`, decisions 1032, 1034; the `_start` export) on its
   **binary** (`GenerateResult.wasm`, `wat/wasm_binary_emitter.zig`, front 18) —
   so every wasm RUN LOG checks the binary emitter against the recorded fixture —
   and on the `.wat` text only where no binary was produced; the cache key is the
   bytes run,
   through the content-keyed cache, with no aux leg (imports are linked into the
   module statically) and **no** early bail on modules that print nothing (a
-  silent module can still trap, and the trap must show). A missing `wasmtime`
-  is an empty, uncached log. `HARNESS_VERSION` was bumped with it. Every wasm
+  silent module can still trap, and the trap must show). A run past the time
+  limit is an empty, uncached log. The cache key's tag (`wasm-inproc`) names the
+  in-process runner, so no entry the `wasmtime` CLI recorded is reused. Every wasm
   RUN LOG was re-recorded against a direct `wasmtime run` of the module and
   compared with commonJS/erlang; the known-wrong ones are pinned with a comment
   in their test.
 - **A wasm trap is a visible block** (`runtimeTrapLog`): what the module
-  printed, then `RUNTIME TRAP (wasmtime):` and the `wasm trap: …` line — never
+  printed, then `RUNTIME TRAP (wasmtime):` (the CLI era's name, kept so every
+  RUN LOG stays byte-identical, 1034 (3)) and the `wasm trap: …` line — never
   an empty log, and never the backtrace (its code offsets move with every
   lowering). Same shape as `COMPILE ERROR (<tool>):`.
 - **Exit status, never output length** (`runCaptured` → `RunStatus`): a

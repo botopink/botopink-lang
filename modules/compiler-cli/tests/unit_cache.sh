@@ -2,8 +2,8 @@
 # Decision 1008 (2) — a dependency's units per target (the proof of the row's
 # unit cache: reuse is a property of two packages' builds, which no cell
 # expresses), its fixture written inline: a workspace of two members, `one`
-# and `two`, over one library `lib`, on erlang, beam and commonJS, and on wasm
-# when wasmtime is on PATH:
+# and `two`, over one library `lib`, on erlang, beam, commonJS and wasm (run
+# in process, decisions 1032, 1034):
 #   • the first member's build writes the library's entry
 #     `.botopinkbuild/cache/unit/<target>/lib.bpu` under the workspace root;
 #   • the second member's build emits none of the library's units: no entry
@@ -96,8 +96,7 @@ pub fn main() -> void {
 EOF
 done
 
-targets=(erlang beam commonJS)
-if command -v wasmtime > /dev/null 2>&1; then targets+=(wasm); else echo "  (wasmtime is not on PATH: wasm is skipped)"; fi
+targets=(erlang beam commonJS wasm)
 
 for target in "${targets[@]}"; do
   echo "==> $target"

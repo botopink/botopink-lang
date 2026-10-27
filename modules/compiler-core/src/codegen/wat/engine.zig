@@ -89,6 +89,22 @@ pub const Kind = enum {
     }
 };
 
+/// What `bytes` holds: a component when the binary's layer is 1 (version
+/// `0d 00 01 00`) or the text opens with `(component`, else a core module.
+pub fn kindOf(bytes: []const u8) Kind {
+    if (std.mem.startsWith(u8, bytes, "\x00asm"))
+        return if (bytes.len >= 8 and bytes[6] == 1) .component else .module;
+    const text = std.mem.trimStart(u8, bytes, &std.ascii.whitespace);
+    return if (std.mem.startsWith(u8, text, "(component")) .component else .module;
+}
+
+test "kindOf: binary layer and text head" {
+    try std.testing.expectEqual(Kind.module, kindOf("\x00asm\x01\x00\x00\x00"));
+    try std.testing.expectEqual(Kind.component, kindOf("\x00asm\x0d\x00\x01\x00"));
+    try std.testing.expectEqual(Kind.component, kindOf("\n(component\n)"));
+    try std.testing.expectEqual(Kind.module, kindOf("(module)"));
+}
+
 /// Compiled code of either kind. Owns it: `deinit`.
 pub const Compiled = union(Kind) {
     module: *c.wasmtime_module_t,

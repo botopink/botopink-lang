@@ -4400,10 +4400,10 @@ test "wat: gc ---- an iterator fn collecting its yields, and a Result's map and 
     );
 }
 
-// Decision 1008 (5) — the harness's `wasmtime run` keeps its compilation cache
-// under the cache directory it is given (`-C cache-config=`), never in
-// `~/.cache/wasmtime`: the config is written there before the spawn.
-test "wat: executeWatIn ---- wasmtime's cache config sits under the given directory" {
+// Decision 1008 (5), 1034 (8) — the harness's in-process run keeps its
+// compiled code under the cache directory it is given, as
+// `<sha256>.cwasm`, never in `~/.cache/wasmtime`.
+test "wat: executeWatIn ---- the compiled module sits under the given directory" {
     const runtime = @import("../runtime.zig");
     const test_scratch = @import("test_scratch");
     const a = std.testing.allocator;
@@ -4415,12 +4415,67 @@ test "wat: executeWatIn ---- wasmtime's cache config sits under the given direct
     test_scratch.remove(io, "wasmtime-cache-dir");
     defer test_scratch.remove(io, "wasmtime-cache-dir");
     const dir = test_scratch.path(io, "wasmtime-cache-dir/.botopinkbuild/cache/wasmtime");
-    const out = try runtime.executeWatIn(a, "(module (func (export \"_start\")))", null, name, dir, io);
+    // The name in the text: bytes no other test loaded in this process.
+    const text = try std.fmt.allocPrint(a, "(module (func (export \"_start\")) (func ${s}))", .{name});
+    defer a.free(text);
+    const out = try runtime.executeWatIn(a, text, null, name, dir, io);
     defer a.free(out);
-    const toml = try std.fmt.allocPrint(a, "{s}/config.toml", .{dir});
-    defer a.free(toml);
-    var f = try std.Io.Dir.cwd().openFile(io, toml, .{});
-    f.close(io);
+    try std.testing.expectEqualStrings("", out);
+    var d = try std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true });
+    defer d.close(io);
+    var n: usize = 0;
+    var it = d.iterate();
+    while (try it.next(io)) |e| if (std.mem.endsWith(u8, e.name, ".cwasm")) {
+        n += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 1), n);
+}
+
+// 1034 (1) — the check `backend_exec.sh` made with `wasmtime --invoke main`:
+// a wasm build's core module runs on its own and its `main` export answers
+// what `main` returns — 55 for `sumTo(10, 0)` — now through the runner.
+test "wat: runner ---- a core module's main export invoked answers 55" {
+    const runner = @import("../wat/runner.zig");
+    const a = std.testing.allocator;
+    var outputs = try h.generate(a, &.{.{ .path = "", .source =
+        \\fn sumTo(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) return acc;
+        \\    return sumTo(n - 1, acc + n);
+        \\}
+        \\
+        \\pub fn main() -> i32 {
+        \\    return sumTo(10, 0);
+        \\}
+    }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const bytes = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o.result.wasm orelse return error.ModuleDidNotCompile;
+    } else return error.ModuleDidNotCompile;
+    var failure: ?[]u8 = null;
+    const m = (try runner.load(a, std.testing.io, null, bytes, .module, false, &failure)) orelse {
+        std.debug.print("\n{s}\n", .{failure.?});
+        a.free(failure.?);
+        return error.ModuleDidNotCompile;
+    };
+    defer m.deinit();
+    // The runtime core and the std units it imports, defined first.
+    var ar = std.heap.ArenaAllocator.init(a);
+    defer ar.deinit();
+    const pre = try @import("../runtime.zig").wasmPreloads(ar.allocator(), bytes);
+    var units: std.ArrayListUnmanaged(runner.Unit) = .empty;
+    defer units.deinit(a);
+    defer for (units.items) |u| @import("../wat/engine.zig").c.wasmtime_module_delete(u.module);
+    for (pre) |u| {
+        const um = (try runner.load(a, std.testing.io, null, u.code, .module, false, &failure)) orelse return error.ModuleDidNotCompile;
+        try units.append(a, .{ .name = u.name, .module = um.module });
+    }
+    const got = try runner.invokeCore(a, m.module, units.items, "main", .{ .stdout = .capture, .stderr = .capture });
+    defer got.outcome.deinit(a);
+    if (got.outcome.trap) |t| std.debug.print("\ntrap: {s}\n", .{t});
+    try std.testing.expectEqual(@as(?i64, 55), got.value);
 }
 
 // Decision 1021 (10) — the GC lowering's gaps fixed in the lowering itself:
@@ -5137,7 +5192,7 @@ test "wat: units ---- a wasi entry with the units on imports them, names them in
         try held.append(a, pc);
         u.* = .{ .name = try std.fmt.allocPrint(ar, "unit-{d}", .{k}), .module = pc.code.module };
     }
-    const out = try runner.run(a, comp.code.component, units, .{ .capture_stdout = true });
+    const out = try runner.run(a, comp.code.component, units, .{ .stdout = .capture });
     defer out.deinit(a);
     if (out.trap) |t| std.debug.print("\n=== trap: {s}\n", .{t});
     try std.testing.expectEqual(@as(i32, 0), out.status);

@@ -331,7 +331,7 @@ pub fn run(
         build_cmd.reportUnsupportedTarget(proj.target);
         return 1;
     };
-    // wasm: a test unit is a WASI component run by `wasmtime` (decision 513);
+    // wasm: a test unit is a WASI component run in process (decisions 513, 1032);
     // the `browser` host has no runner of its own.
     if (target == .wasm and proj.wasmHost() == .browser) {
         reporter.errMsg("`botopink test` on wasm runs the `wasi` host only — this project's \"wasm\" host is `browser`");
@@ -478,7 +478,7 @@ pub fn run(
         .commonJS => "node",
         .erlang => "escript",
         .beam => "erl",
-        .wasm => "wasmtime",
+        .wasm => "", // in process (`run_cmd.runWasi`)
     };
 
     for (outputs.items) |o| {
@@ -641,6 +641,55 @@ pub fn run(
 
         const sub_path = try testUnitPath(arena, test_out, target, o.name, unit);
 
+        // wasm: the test unit, a WASI preview 2 component, runs in this
+        // process (decisions 1032 (3), 1034), handed the host services its
+        // `botopink.needs` section names and the runners' environment, as
+        // `run` runs a program; stdout captured under `--json`, else streamed
+        // through and kept for its summary line.
+        if (target == .wasm) {
+            const args: []const []const u8 = if (opts.filter) |f| &.{f} else &.{};
+            if (!opts.json) {
+                modules_ran += 1;
+                reporter.stdout(io, try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name}));
+            }
+            const ran = try run_cmd.runWasi(arena, io, proj, sub_path, args, .{ .stdout = if (opts.json) .capture else .tee, .env = child_env });
+            if (ran.code == 130) return 130;
+            const code = ran.code;
+            if (opts.json) {
+                const counts = emitJsonl(arena, io, o.name, ran.stdout) catch |err| {
+                    const msg = try std.fmt.allocPrint(arena, "failed to format JSONL for '{s}': {s}", .{ o.name, @errorName(err) });
+                    reporter.errMsg(msg);
+                    return 1;
+                };
+                json_passed_total += counts.passed;
+                json_failed_total += counts.failed;
+                if (parseModuleSummary(ran.stdout) == null) try no_summary.append(arena, o.name);
+                if (code != 0) exit_code = code;
+                if (!hasRunnerSummary(ran.stdout)) {
+                    json_failed_total += 1;
+                    var rec = std.ArrayListUnmanaged(u8).empty;
+                    try rec.appendSlice(arena, "{\"event\":\"module_crashed\",\"module\":");
+                    try writeJsonString(arena, &rec, o.name);
+                    try rec.appendSlice(arena, ",\"exit\":");
+                    try appendDecimal(arena, &rec, if (code == 0) 1 else code);
+                    try rec.appendSlice(arena, "}\n");
+                    std.Io.File.stdout().writeStreamingAll(io, rec.items) catch {};
+                    if (code == 0) exit_code = 1;
+                }
+                continue;
+            }
+            if (parseModuleSummary(ran.stdout)) |c| {
+                text_passed_total += c.passed;
+                text_failed_total += c.failed;
+            } else try no_summary.append(arena, o.name);
+            if (code != 0) {
+                exit_code = code;
+                modules_nonzero += 1;
+                reporter.stdout(io, try std.fmt.allocPrint(arena, "----- {s} EXITED WITH STATUS {d} -----\n", .{ o.name, code }));
+            }
+            continue;
+        }
+
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
         try argv.append(arena, runner);
@@ -649,13 +698,6 @@ pub fn run(
             // filter as the command line `-extra` leaves it.
             const atom = std.fs.path.stem(sub_path);
             try argv.appendSlice(arena, &.{ "-noshell", "-pa", test_out, "-eval", try std.fmt.allocPrint(arena, "'{s}':main(init:get_plain_arguments()), halt().", .{atom}), "-extra" });
-        } else if (target == .wasm) {
-            // A WASI preview 2 component, handed the host features its
-            // `botopink.needs` section names, as `run` does (decision 518).
-            try argv.append(arena, "run");
-            try argv.appendSlice(arena, try run_cmd.wasmtimeCacheArgs(arena, io, proj));
-            try argv.appendSlice(arena, try run_cmd.wasmtimeFlags(arena, io, sub_path));
-            try argv.append(arena, sub_path);
         } else try argv.append(arena, sub_path);
         if (opts.filter) |f| try argv.append(arena, f);
 
