@@ -61,7 +61,10 @@
 #                      reused M` per target (decision 1043): the package runs that wrote
 #                      a file under their runtime or output directory after a stamp
 #                      and those that wrote none; a `--cold` run that reuses on its first
-#                      reach is a red. The list is held to the tree: a module on
+#                      reach is a red. `reused M` counts reuse within one invocation
+#                      (a by-name set reached by a second target, decision 1046): a
+#                      warm `reused 0` is no regression, the output and each library's
+#                      directory being this run's own. The list is held to the tree: a module on
 #                      disk without its line, a line without its module, and a
 #                      directory still in the old cell shape (`run/`, `refused/`,
 #                      `cells/` with no `snapshot/main.snap`) are reds of their own; a
@@ -888,6 +891,7 @@ lib_one() { # <name> <target> <out file>
         detail="not-a-package (botopink packages --list: ${dirs% }) — never loaded"
     else
         dir="$LIB_RUN/$slug"
+        rm -rf "$dir" # the whole directory, `.botopinkbuild/runtime/<pkg>/` included: a first reach is built (decision 1046)
         mkdir -p "$dir/src"
         cp "$here/libraries/botopink.json" "$dir/botopink.json"
         printf '%s' "$LIB_PROGRAM_TEMPLATE" | sed "s/@PACKAGE@/$name/g" >"$dir/src/main.bp"

@@ -81,6 +81,12 @@ for target in "${targets[@]}"; do
   listing "$APP/$OUT" > "$WORK/after"
   if cmp -s "$WORK/before" "$WORK/after"; then fail "$target: run --cold rewrote nothing (it read the target key)"; fi
   [[ -s "$APP/.botopinkbuild/runtime/app/app.$target.key" ]] || fail "$target: no target key after run --cold"
+  # The key is still written at the end of a cold run (1046): a warm run after it only executes.
+  listing "$APP/$OUT" > "$WORK/before"
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the run after run --cold failed"; show "$WORK/err"; continue; }
+  says "$target: the run after run --cold (reuses)" "answer 42"
+  listing "$APP/$OUT" > "$WORK/after"
+  cmp -s "$WORK/before" "$WORK/after" || fail "$target: the run after run --cold rewrote a file of $OUT (the cold run left no key)"
 
   # `build --cold` rewrites everything.
   bp "$APP" build --cold --target "$target" --out "$OUT" || { fail "$target: build --cold failed"; show "$WORK/err"; continue; }
