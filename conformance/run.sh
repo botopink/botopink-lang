@@ -117,9 +117,10 @@ while [ $# -gt 0 ]; do
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
-# `--cold` handed on to every `botopink build` / `test` (decision 509 (5)).
-cold_flag=()
-[ "$cold" -eq 0 ] || cold_flag=(--cold)
+# `--cold` handed on to every `botopink build` / `test` / `run` (decision 509 (5)). A scalar, not an array:
+# `export` carries no array into the exported job functions (decision 1006 P0), and the flag has no space.
+cold_flag=""
+[ "$cold" -eq 0 ] || cold_flag="--cold"
 runner="$here/$(basename "${BASH_SOURCE[0]}")"
 # The suite is read from `$here`; `--suite` points it at another tree.
 whole_suite=0
@@ -337,6 +338,9 @@ case "$FAKE_SHAPE" in
     fewer)   ok a; ok b; echo '{"event":"summary","passed":2,"failed":0}'; exit 0 ;;
     exit1)   ok a; ok b; ok c; echo '{"event":"summary","passed":3,"failed":0}'; exit 1 ;;
     clean)   ok a; ok b; ok c; echo '{"event":"summary","passed":3,"failed":0}'; exit 0 ;;
+    argv)    printf '%s %s\n' "$1" "$*" >>"$FAKE_ARGV"
+             if [ "$1" = run ]; then echo 'library: 1 cases — 1 passed, 0 failed'; exit 0; fi
+             ok a; ok b; ok c; echo '{"event":"summary","passed":3,"failed":0}'; exit 0 ;;
 esac
 FAKE
     chmod +x "$fake"
@@ -351,6 +355,22 @@ FAKE
             [ $code -eq 1 ] || { echo "self-test: the stub run '$shape' exited $code, expected 1 (an abnormal end passed)" >&2; missing=1; }
             grep -qE '\[commonJS\] test/trap_mid.bp' "$st/fake-$shape.txt" \
                 || { echo "self-test: the stub run '$shape' did not name the suite and the target:" >&2; sed 's/^/    /' "$st/fake-$shape.txt" >&2; missing=1; }
+        fi
+    done
+    # Decision 1006 P0: `--cold` reaches the exported jobs. The stub records each argv; run.sh given `--cold`
+    # hands it to every `botopink` a job spawns, and without it hands none.
+    local cflag argv
+    for cflag in "" "--cold"; do
+        argv="$st/argv${cflag:+-cold}.txt"
+        : >"$argv"
+        FAKE_SHAPE=argv FAKE_ARGV="$argv" bash "$runner" --suite "$fsuite" --target commonJS --compiler "$fake" --lib-root "$lib_root" \
+            --jobs 1 $cflag >"$st/argv-run.txt" 2>&1
+        if [ ! -s "$argv" ]; then
+            echo "self-test: the stub compiler was never run by a job (--cold check)" >&2; missing=1
+        elif [ -n "$cflag" ] && grep -qvF -- ' --cold' "$argv"; then
+            echo "self-test: run.sh --cold did not hand --cold to every job:" >&2; sed 's/^/    /' "$argv" >&2; missing=1
+        elif [ -z "$cflag" ] && grep -qF -- '--cold' "$argv"; then
+            echo "self-test: run.sh without --cold handed --cold to a job:" >&2; sed 's/^/    /' "$argv" >&2; missing=1
         fi
     done
     # The libraries (§ the libraries, decision 1004 (7)): a checkout of four packages — `good` answers, `hard`
@@ -395,7 +415,7 @@ WANT
         sed 's/^/    /' "$st/lib-report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996; --cold reaches a job only when given (decision 1006 P0)"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -446,7 +466,7 @@ project() { # <dir>
 # or one `fail` line for <path> when nothing ran.
 test_project() { # <dir> <path> <target> <out>
     local dir="$1" path="$2" t="$3" out="$4" code
-    (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.json" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json $cold_flag >"$dir/o.json" 2>"$dir/e.txt")
     code=$?
     json_tests <"$dir/o.json" >"$dir/tests.tsv"
     if [ ! -s "$dir/tests.tsv" ]; then
@@ -557,7 +577,7 @@ build_root() {
     local dir="$work/root" code
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    (cd "$here/modules" && with_timeout 7200 "$compiler" build --emit-runtime "$dir/rt" --out "$dir/out" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+    (cd "$here/modules" && with_timeout 7200 "$compiler" build --emit-runtime "$dir/rt" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
     if [ $code -eq 0 ] && [ -f "$dir/rt/conformance.bpr" ]; then
         root_bpr="$dir/rt/conformance.bpr"
@@ -741,7 +761,7 @@ lib_one() { # <name> <target> <out file>
         mkdir -p "$dir/src"
         cp "$here/libraries/botopink.json" "$dir/botopink.json"
         printf '%s' "$LIB_PROGRAM_TEMPLATE" | sed "s/@PACKAGE@/$name/g" >"$dir/src/main.bp"
-        (unset BOTOPINK_LIB_ROOTS; cd "$dir" && with_timeout "$LIB_TIMEOUT" "$compiler" run --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        (unset BOTOPINK_LIB_ROOTS; cd "$dir" && with_timeout "$LIB_TIMEOUT" "$compiler" run --target "$t" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
         code=$?
         strip <"$dir/o.txt" >"$dir/out.txt"
         local summary
@@ -858,13 +878,13 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     # A suite with sources is built; one that is only test files (decision 536's narrowed single files)
     # has nothing to build. A host binding its test files carry shows when the tests are compiled for the target.
     if [ -n "$(find "$dir/src" -name '*.bp' 2>/dev/null | head -n 1)" ]; then
-        (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
         code=$?
     else
         : >"$dir/o.txt"; : >"$dir/e.txt"
     fi
     if [ $code -eq 0 ]; then
-        (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
         code=$?
     fi
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
@@ -878,7 +898,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     fi
 }
 export -f run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
-export here work compiler lib_root LIB_PROGRAM_TEMPLATE
+export here work compiler lib_root LIB_PROGRAM_TEMPLATE cold_flag
 export LIB_TIMEOUT="$lib_timeout"
 
 if [ $self_test -eq 1 ]; then
