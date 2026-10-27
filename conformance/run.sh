@@ -53,7 +53,9 @@
 #                      result per module. The list is held to the tree: a module on
 #                      disk without its line, a line without its module, and a
 #                      directory still in the old cell shape (`run/`, `refused/`,
-#                      `cells/` with no `snapshot/main.snap`) are reds of their own.
+#                      `cells/` with no `snapshot/main.snap`) are reds of their own; a
+#                      front-166 draft (`docs.md` and `draft/` alone) is no module
+#                      until promoted (decision 1002 (a)).
 #   test/<name>.bp     `test "…" { … assert … }` blocks: `botopink test --target
 #                      <t> --json` in a scratch project; every test must pass
 #   test/<name>/       a whole project with a `test/` tree: `botopink test
@@ -262,6 +264,10 @@ BP
     printf 'pub async fn main() -> Async<Result<void, string>> {\n    throw "1 red";\n}\n' >"$suite/modules/red/src/main.bp"
     cp "$suite/modules/green/src/main.bp" "$suite/modules/unlisted/src/main.bp"
     mkdir -p "$suite/modules/oldshape/run/src"
+    # A front-166 draft (decision 1002 (a)): no module, never reported.
+    mkdir -p "$suite/modules/decisions-taken/drafted-1/draft"
+    printf 'A draft.\n' >"$suite/modules/decisions-taken/drafted-1/docs.md"
+    printf 'pub fn main() -> void {}\n' >"$suite/modules/decisions-taken/drafted-1/draft/main.bp"
 
     bash "$runner" --suite "$suite" --target all --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" \
         >"$st/raw.txt" 2>&1
@@ -291,9 +297,9 @@ conformance: 12 passed, 14 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green module
     # passed: no line may name them.
-    if grep -qE 'test/backed|modules/green|comment_is_no_narrowing' "$st/report.txt"; then
+    if grep -qE 'test/backed|modules/green|comment_is_no_narrowing|drafted-1' "$st/report.txt"; then
         echo "self-test: a narrowing that stands on a host binding, or a green module, was reported:" >&2
-        grep -E 'test/backed|modules/green' "$st/report.txt" >&2
+        grep -E 'test/backed|modules/green|drafted-1' "$st/report.txt" >&2
         missing=1
     fi
     # An abnormal end of `botopink test --json` is a red naming the suite and the target, whatever
@@ -431,13 +437,30 @@ root_refusal=""  # why the root package did not build
 # The modules of the tree: every directory of `modules/` (and of
 # `modules/decisions-taken/`) but the root's own `src/` and the build's dot
 # directories, one `<path>` per line, sorted. A module is in decision 989's shape
-# when it holds `botopink.json`, `src/main.bp` and `snapshot/main.snap`.
+# when it holds `botopink.json`, `src/main.bp` and `snapshot/main.snap`. A front-166
+# draft — a directory holding `docs.md` and `draft/` and nothing else, no promoted
+# program — is no module until it is promoted (decision 1002 (a)); `decision-cells.ts
+# check` keeps its shape.
 module_dirs() {
     (cd "$here/modules" && for d in */ decisions-taken/*/; do
         d="${d%/}"
         case "$d" in src|decisions-taken|'*'|'decisions-taken/*') continue ;; esac
-        [ -d "$d" ] && printf '%s\n' "$d"
+        [ -d "$d" ] || continue
+        draft_only "$d" && continue
+        printf '%s\n' "$d"
     done) | LC_ALL=C sort
+}
+draft_only() { # <dir, relative to modules/>: `docs.md` and `draft/` alone
+    local e has_draft=0
+    for e in "$1"/*; do
+        [ -e "$e" ] || continue
+        case "${e##*/}" in
+            docs.md) ;;
+            draft) [ -d "$e" ] && has_draft=1 || return 1 ;;
+            *) return 1 ;;
+        esac
+    done
+    [ "$has_draft" -eq 1 ]
 }
 in_shape() { # <module path, relative to modules/>
     [ -f "$here/modules/$1/botopink.json" ] && [ -f "$here/modules/$1/src/main.bp" ] && [ -f "$here/modules/$1/snapshot/main.snap" ]
