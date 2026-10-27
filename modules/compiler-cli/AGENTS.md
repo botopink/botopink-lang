@@ -167,7 +167,7 @@ compiler-cli/
 │   │                          using `io.fs` adds `std@io@fs` and what it imports,
 │   │                          each before `$main` and after its imports; both
 │   │                          answer as on erlang
-│   ├── wasm_std_unit_per_module/ ← its fixtures: `hello`, `files`
+│   ├── wasm_std_unit_per_module/ ← its fixtures: `hello`, `files` (also the browser column: `compiler-web/tests/smoke.js` composes them in the page, 1069 (5))
 │   ├── build_modes_same_answer.sh ← cell `build_modes_same_answer` as a CLI case
 │   │                          (decision 798 (5); the suite builds a package one
 │   │                          way): `build_modes/app` (a decorator's member and

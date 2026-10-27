@@ -1384,14 +1384,16 @@ pub fn importsRuntime(bytes: []const u8) bool {
     return false;
 }
 
+/// A LEB128 unsigned at `i.*`, read in 64 bits whatever the host's `usize`
+/// (the browser build is wasm32); null past the bytes or beyond `usize`.
 fn uleb(b: []const u8, i: *usize) ?usize {
-    var v: usize = 0;
+    var v: u64 = 0;
     var shift: u6 = 0;
     while (i.* < b.len) {
         const x = b[i.*];
         i.* += 1;
-        v |= @as(usize, x & 0x7f) << shift;
-        if (x & 0x80 == 0) return v;
+        v |= @as(u64, x & 0x7f) << shift;
+        if (x & 0x80 == 0) return std.math.cast(usize, v);
         shift +|= 7;
         if (shift >= 63) return null;
     }

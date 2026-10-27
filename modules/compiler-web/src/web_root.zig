@@ -17,7 +17,9 @@
 //!   bp_output_ptr() / bp_output_len()             the JSON of the last `bp_compile`
 //!
 //! The output is one JSON object: `{ "target", "modules": [ { "name", "code",
-//! "typedef", "units": [ { "atom", "code" } ], "wasm", "comptimeTrace", "diagnostic" } ] }`,
+//! "typedef", "units": [ { "atom", "code" } ], "wasm", "comptimeTrace", "diagnostic" } ],
+//! "runtime": [ { "name", "wasm" } ] }`, `runtime` being the core and the std units the
+//! program reaches, in dependency order (base64; empty off the `wasm` target),
 //! where `wasm` is the base64 of the binary module on the `wasm` target (null
 //! on the others) — the bytes the page instantiates, rendered from the same
 //! model as `code`, the `.wat` text —
@@ -160,11 +162,45 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
         try w.endObject();
     }
     try w.endArray();
+    try w.objectField("runtime");
+    try writeRuntime(arena, &w, outputs.items);
     try w.endObject();
 
     if (output.len > 0) gpa.free(output);
     output = try aw.toOwnedSlice();
     return if (failed) 1 else 0;
+}
+
+/// Decisions 1021 (2), 1026, 1069 (5): the runtime core `std@__rt` and the std
+/// units the program's modules reach, in dependency order — what the CLI writes
+/// beside a `wasi` program (`writeRuntimeUnits`), and what the page composes
+/// before the program's own module (`glue.js` `programUnits`). `[]` when no
+/// module imports the runtime (every target but `wasm`).
+fn writeRuntime(arena: std.mem.Allocator, w: *std.json.Stringify, outputs: []const bp.codegen.ModuleOutput) !void {
+    const ru = bp.codegen.wasmRuntimeUnit;
+    var roots: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (outputs) |o| {
+        const bin = o.result.wasm orelse continue;
+        if (o.result.failed() or !ru.importsRuntime(bin)) continue;
+        try roots.appendSlice(arena, (try ru.importsOf(arena, bin)).units);
+    }
+    try w.beginArray();
+    if (roots.items.len > 0) {
+        const rt = try ru.get();
+        try writeUnit(arena, w, ru.name, rt.core_bytes);
+        for (try rt.closure(arena, roots.items)) |u| try writeUnit(arena, w, u.name, u.bytes);
+    }
+    try w.endArray();
+}
+
+fn writeUnit(arena: std.mem.Allocator, w: *std.json.Stringify, name: []const u8, bytes: []const u8) !void {
+    const enc = std.base64.standard.Encoder;
+    try w.beginObject();
+    try w.objectField("name");
+    try w.write(name);
+    try w.objectField("wasm");
+    try w.write(enc.encode(try arena.alloc(u8, enc.calcSize(bytes.len)), bytes));
+    try w.endObject();
 }
 
 /// The text the CLI prints for a module without an artifact

@@ -11,7 +11,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { Compiler, run, wasmBytes } = require(path.join(__dirname, "..", "glue.js"));
+const { Compiler, run, programUnits, wasmBytes } = require(path.join(__dirname, "..", "glue.js"));
 
 const wasmPath = process.argv[2];
 if (!wasmPath) {
@@ -126,7 +126,10 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   compiler.addSource("main", RUNNABLE);
   const w = compiler.compile("wasm");
   assert(w.status === 0 && typeof w.modules[0].wasm === "string", "wasm: the binary module is answered beside the text");
-  const ran = run(wasmBytes(w.modules[0].wasm));
+  // Decision 1069 (5): the page composes the runtime core, the std units the
+  // program reaches and its own module, in order, through one linking path.
+  assert(Array.isArray(w.runtime) && w.runtime.length > 0 && w.runtime[0].name === "std@__rt", "wasm: the runtime core is answered beside the program, first");
+  const ran = run(programUnits(w, "main"));
   assert(ran.trap === null && ran.stdout === "hello, web\n", `wasm: the binary runs and prints the program's output (got ${JSON.stringify(ran)})`);
   const js = compiler.compile("commonJS");
   assert(js.modules[0].wasm === null, "commonJS: no binary module");
@@ -160,6 +163,41 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
     assert(ct.modules[0].code.includes("BROWSER"), `${target}: the expansion is in the generated code`);
   }
 
+  // Decision 1026's cell `wasm_std_unit_per_module` in the browser column
+  // (1069 (5)): the CLI test's own projects (`modules/compiler-cli/tests/
+  // wasm_std_unit_per_module/`) compiled in the page and composed by `run`.
+  const cell = path.join(__dirname, "..", "..", "compiler-cli", "tests", "wasm_std_unit_per_module");
+  const cellProgram = (name) => {
+    compiler.reset();
+    compiler.setPackage(JSON.parse(fs.readFileSync(path.join(cell, name, "botopink.json"), "utf8")).name);
+    compiler.addSource("main", fs.readFileSync(path.join(cell, name, "src", "main.bp"), "utf8"));
+    const out = compiler.compile("wasm");
+    assert(out.status === 0, `wasm_std_unit_per_module/${name}: compiles in the page (${out.modules[0].diagnostic || ""})`);
+    return out;
+  };
+  // `hello` composes the runtime core alone and answers what the CLI's run answers.
+  const hello = cellProgram("hello");
+  assert(hello.runtime.map((u) => u.name).join(" ") === "std@__rt", `wasm_std_unit_per_module/hello: the page composes std@__rt and no std unit (got ${hello.runtime.map((u) => u.name).join(" ")})`);
+  const helloRan = run(programUnits(hello, "main"));
+  assert(helloRan.trap === null && helloRan.stdout === "hello, world\n", `wasm_std_unit_per_module/hello: runs in the page (got ${JSON.stringify(helloRan)})`);
+  // `files` reaches `std@io@fs`: each std unit composed after the units it
+  // imports, the core first; the page serves no file system (334 (1)), so its
+  // `bp_fs` imports are refused by name before a byte runs.
+  const files = cellProgram("files");
+  const names = files.runtime.map((u) => u.name);
+  assert(names[0] === "std@__rt" && names.includes("std@io@fs"), `wasm_std_unit_per_module/files: the page composes std@__rt first and std@io@fs (got ${names.join(" ")})`);
+  for (const [i, u] of files.runtime.entries()) {
+    const deps = new Set(WebAssembly.Module.imports(new WebAssembly.Module(wasmBytes(u.wasm))).map((imp) => imp.module).filter((m) => m.startsWith("std@")));
+    for (const d of deps) assert(names.indexOf(d) >= 0 && names.indexOf(d) < i, `wasm_std_unit_per_module/files: ${u.name} is composed after ${d}, which it imports`);
+  }
+  let refusedFs = null;
+  try {
+    run(programUnits(files, "main"));
+  } catch (err) {
+    refusedFs = err.message;
+  }
+  assert(refusedFs !== null && /imports bp_fs\.[a-z_]+, which the page does not serve/.test(refusedFs), `wasm_std_unit_per_module/files: the page refuses the file system by name (${refusedFs})`);
+
   let threw = false;
   try {
     compiler.compile("typescript");
@@ -189,7 +227,7 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   const r = replies[1];
   assert(r.ok === true && r.status === 0 && r.result.modules[0].code.includes("(module"), "the Worker answers `compile` with the generated text");
   assert(typeof r.ms === "number" && r.ms >= 0, "the Worker reports the compile time");
-  await scope.onmessage({ data: { id: 4, op: "run", wasm: w.modules[0].wasm } });
+  await scope.onmessage({ data: { id: 4, op: "run", wasm: w.modules[0].wasm, runtime: w.runtime } });
   assert(replies[2].ok === true && replies[2].run.trap === null && replies[2].run.stdout === "hello, web\n", "the Worker answers `run` with the program's output");
   await scope.onmessage({ data: { id: 3, op: "compile", target: "nope", sources: [] } });
   assert(replies[3].ok === false && /unknown target/.test(replies[3].error), "a failed request comes back as `ok: false` with the error");

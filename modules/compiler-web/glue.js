@@ -15,16 +15,19 @@
 //      `addSource(path, source)`, `compile(target)` → the JSON object
 //      `web_root.zig` documents, `reset()`; `stdout`/`stderr` hold what the
 //      compiler printed during the last `compile`;
-//   3. `run(bytes)`: instantiate a program the `wasm` target produced (the
-//      module's `wasm` field, base64 — `wasmBytes` decodes it) and call its
-//      `_start`; the program's one import, `fd_write`, is served into
-//      captured text, any other import is refused by name. Answers
-//      `{ stdout, stderr, trap }` — `trap` is the engine's message or null;
+//   3. `run(units)`: compose a program the `wasm` target produced — the
+//      runtime core, the std units it reaches and its own module
+//      (`programUnits(result)`), linked in order as the comptime host links
+//      (`linkUnits`) — call each `__bp_init`, then `_start`; `fd_write` is
+//      served into captured text and `random_get` from the page's crypto, any
+//      other import is refused by name. Answers `{ stdout, stderr, trap }` —
+//      `trap` is the engine's message or null;
 //   4. when loaded as a Worker script (`new Worker("glue.js")`), a message
 //      protocol: `{ id, op: "load", wasm }` → `{ id, ok }`, then
 //      `{ id, op: "compile", sources: [{ path, source }], target, package }` →
 //      `{ id, ok, status, result, stdout, stderr, ms }`, and
-//      `{ id, op: "run", wasm }` (base64) → `{ id, ok, run, ms }`. The page
+//      `{ id, op: "run", wasm, runtime }` (the entry module's base64 and the
+//      compile's `runtime`) → `{ id, ok, run, ms }`. The page
 //      keeps the compiler off the main thread, where synchronous
 //      instantiation of the target program's wasm output is not size-limited.
 //
@@ -118,23 +121,65 @@
     return require("crypto").webcrypto;
   }
 
+  // ── the one linking path (decision 1069 (4), (5)) ──────────────────────────
+
+  /// Link `units` (`[{ name, bytes }]`, in dependency order) on the page's
+  /// engine: every unit compiled first, then each instantiated in order, its
+  /// imports given by `resolve(imp, unit, memoryOf)` — `{ value }`, `{ unit:
+  /// true }` (the export of the earlier unit `imp.module` names) or `{ refuse:
+  /// text }`; `memoryOf()` is the importing unit's exported `memory`. Answers
+  /// `{ instances, ordered }`, or `{ refused, reason }` (a unit the engine
+  /// refused, a link refused, `refused` naming the unit), or `{ thrown }` (a
+  /// start function trapped). The comptime host (`run_units`, `run_module`) and
+  /// the page's `run` all link through it.
+  function linkUnits(units, resolve) {
+    const modules = [];
+    for (const u of units) {
+      try {
+        modules.push(new WebAssembly.Module(u.bytes));
+      } catch (err) {
+        return { refused: `unit ${u.name}: ${err.message}`, reason: err.message };
+      }
+    }
+    const instances = new Map();
+    const ordered = [];
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      const imports = {};
+      let instance = null;
+      const memoryOf = () => (instance && instance.exports.memory instanceof WebAssembly.Memory ? instance.exports.memory : null);
+      for (const imp of WebAssembly.Module.imports(modules[i])) {
+        const r = resolve(imp, u, memoryOf, instances);
+        if (r.refuse !== undefined) return { refused: r.refuse, reason: r.refuse };
+        const value = r.unit ? instances.get(imp.module).exports[imp.name] : r.value;
+        (imports[imp.module] = imports[imp.module] || {})[imp.name] = value;
+      }
+      try {
+        instance = new WebAssembly.Instance(modules[i], imports);
+      } catch (err) {
+        if (err instanceof WebAssembly.LinkError) return { refused: `unit ${u.name}: ${err.message}`, reason: err.message };
+        return { thrown: err };
+      }
+      instances.set(u.name, instance);
+      ordered.push(instance);
+    }
+    return { instances, ordered };
+  }
+
   // ── the comptime engine ────────────────────────────────────────────────────
 
   /// Run one comptime evaluation the compiler lowered and linked (front 18,
-  /// the wat runtime): the bytes are a whole module importing nothing; the
-  /// export sequence is `persistent_wat.zig`'s. Status 0 is the reply, 1 a
-  /// runtime error (`Class:Reason`, or the engine's trap), 2 a module the
-  /// engine refused.
+  /// the wat runtime): one unit importing nothing, linked as `run_units` links
+  /// (1069 (4)); the export sequence is `persistent_wat.zig`'s. Status 0 is
+  /// the reply, 1 a runtime error (`Class:Reason`, or the engine's trap), 2 a
+  /// module the engine refused.
   function runComptime(bytes, arg) {
     const encoder = new TextEncoder();
-    let module;
+    const linked = linkUnits([{ name: "comptime", bytes }], (imp) => ({ refuse: `it imports ${imp.module}.${imp.name}` }));
+    if (linked.refused !== undefined) return { status: 2, bytes: encoder.encode(`the page's engine refused the module: ${linked.reason}`) };
     try {
-      module = new WebAssembly.Module(bytes);
-    } catch (err) {
-      return { status: 2, bytes: encoder.encode(`the page's engine refused the module: ${err.message}`) };
-    }
-    try {
-      const e = new WebAssembly.Instance(module, {}).exports;
+      if (linked.thrown) throw linked.thrown;
+      const e = linked.ordered[0].exports;
       e.bp_init();
       const p = e.rt_alloc(arg.length);
       new Uint8Array(e.memory.buffer, p, arg.length).set(arg);
@@ -303,16 +348,6 @@
     if (refused) return answer(2, refused);
     const { units, input, crossing } = plan;
 
-    const modules = [];
-    for (const u of units) {
-      try {
-        modules.push(new WebAssembly.Module(u.bytes));
-      } catch (err) {
-        return answer(2, `unit ${u.name}: ${err.message}`);
-      }
-    }
-
-    const instances = new Map();
     let pending = null; // a host trap the engine may rewrap
     const raise = (imp) => {
       pending = new HostTrap(imp.text, `${imp.module}.${imp.name}`);
@@ -328,44 +363,29 @@
       }
     };
 
-    const ordered = [];
-    for (let i = 0; i < units.length; i++) {
-      const u = units[i];
-      const imports = {};
-      let instance = null;
-      const memoryOf = () => (instance && instance.exports.memory instanceof WebAssembly.Memory ? instance.exports.memory : null);
-      for (const imp of u.imports) {
-        let value;
-        switch (imp.action) {
-          case ACTION.unit:
-            value = instances.get(imp.module).exports[imp.name];
-            break;
-          case ACTION.print:
-            value = fdWrite(memoryOf, printed, () => raise(imp));
-            break;
-          case ACTION.yield:
-            value = () => 0;
-            break;
-          case ACTION.trap:
-            value = () => raise(imp);
-            break;
-          default:
-            return answer(2, imp.text);
-        }
-        (imports[imp.module] = imports[imp.module] || {})[imp.name] = value;
+    // Each import as the compiler sorted it (`comptime_page.zig` `Action`).
+    const actions = units.map((u) => new Map(u.imports.map((imp) => [`${imp.module}\0${imp.name}`, imp])));
+    const sink = (_fd, bytes) => printed.push(bytes);
+    const linked = linkUnits(units, (wanted, u, memoryOf) => {
+      const imp = actions[units.indexOf(u)].get(`${wanted.module}\0${wanted.name}`);
+      if (!imp) return { refuse: `unit ${u.name} imports ${wanted.module}.${wanted.name}, which the plan does not name` };
+      switch (imp.action) {
+        case ACTION.unit:
+          return { unit: true };
+        case ACTION.print:
+          return { value: fdWrite(memoryOf, sink, () => raise(imp)) };
+        case ACTION.yield:
+          return { value: () => 0 };
+        case ACTION.trap:
+          return { value: () => raise(imp) };
+        default:
+          return { refuse: imp.text };
       }
-      pending = null;
-      try {
-        instance = new WebAssembly.Instance(modules[i], imports);
-      } catch (err) {
-        // A link the engine refuses is a compile refusal; a trap in a start
-        // function is raised.
-        if (err instanceof WebAssembly.LinkError) return answer(2, `unit ${u.name}: ${err.message}`);
-        return answer(1, fault(err));
-      }
-      instances.set(u.name, instance);
-      ordered.push(instance);
-    }
+    });
+    if (linked.refused !== undefined) return answer(2, linked.refused);
+    // A trap in a start function is raised.
+    if (linked.thrown) return answer(1, fault(linked.thrown));
+    const { instances, ordered } = linked;
 
     for (const inst of ordered) {
       if (typeof inst.exports.__bp_init !== "function") continue;
@@ -410,9 +430,9 @@
   }
 
   /// `fd_write(fd, iovs, iovs_len, nwritten) -> errno` over the importing
-  /// unit's exported `memory`: fd 1 and 2 append to `printed`; any other fd
-  /// is a file, and `refuse` traps.
-  function fdWrite(memoryOf, printed, refuse) {
+  /// unit's exported `memory`: what fd 1 and 2 receive goes to `sink(fd,
+  /// bytes)`; any other fd is `refuse()`'s.
+  function fdWrite(memoryOf, sink, refuse) {
     return (fd, iovs, count, nwritten) => {
       if (fd !== 1 && fd !== 2) return refuse();
       const memory = memoryOf();
@@ -426,7 +446,7 @@
         const p = dv.getUint32(at, true);
         const n = dv.getUint32(at + 4, true);
         if (p + n > size) return ERRNO_FAULT;
-        printed.push(new Uint8Array(memory.buffer, p, n).slice());
+        sink(fd, new Uint8Array(memory.buffer, p, n).slice());
         total += n;
       }
       if ((nwritten >>> 0) + 4 > size) return ERRNO_FAULT;
@@ -609,30 +629,68 @@
     return new Uint8Array(Buffer.from(b64, "base64"));
   }
 
-  /// Instantiate a program the `wasm` target produced and run its `_start`.
-  /// A program imports `wasi_snapshot_preview1.fd_write` at most; anything
-  /// else is refused by name before a byte runs.
-  function run(bytes) {
-    const module = new WebAssembly.Module(bytes);
-    const state = { memory: null, stdout: "", stderr: "" };
-    const served = wasiServed(state);
-    const imports = {};
-    for (const imp of WebAssembly.Module.imports(module)) {
-      if (imp.module !== WASI_MODULE || imp.name !== "fd_write") {
-        throw new Error(`the program imports ${imp.module}.${imp.name}, which the page does not serve`);
+  /// The units of a compile's program, in the order the page composes them
+  /// (decisions 1026, 1069 (5)): the runtime core and the std units it
+  /// reaches (`result.runtime`), then the entry module's own (`entry`, else
+  /// the first module with a binary). Today the entry's binary holds the whole
+  /// program (R2's `Config.wasm_units` is off); once it is on, each module is a
+  /// unit of its own and the entry's `botopink.units` names their order.
+  function programUnits(result, entry) {
+    const units = (result.runtime || []).map((u) => ({ name: u.name, bytes: wasmBytes(u.wasm) }));
+    const main = result.modules.find((m) => m.name === entry && m.wasm) || result.modules.find((m) => m.wasm);
+    if (!main) throw new Error("the compile answered no binary module to run");
+    units.push({ name: main.name, bytes: wasmBytes(main.wasm) });
+    return units;
+  }
+
+  /// Run a program the `wasm` target produced (decision 1069 (5)): `units`
+  /// (`programUnits`; one binary alone is one unit) linked in order through
+  /// the page's one linking path, served what a browser offers (decision 334
+  /// (1)) — `fd_write` on 1 / 2 into captured text and `random_get` from the
+  /// page's crypto; any other import is refused by name before a byte runs —,
+  /// every unit's `__bp_init` called in order, then the last unit's `_start`.
+  /// Core modules only, never the WASI p2 component. Answers `{ stdout,
+  /// stderr, trap }` — `trap` is the engine's message or null.
+  function run(units) {
+    if (!Array.isArray(units)) units = [{ name: "main", bytes: units }];
+    const out = { 1: [], 2: [] };
+    const sink = (fd, bytes) => out[fd].push(bytes);
+    const served = (imp, memoryOf) => {
+      if (imp.module !== WASI_MODULE) return null;
+      if (imp.name === "fd_write") return fdWrite(memoryOf, sink, () => ERRNO_BADF);
+      if (imp.name === "random_get") {
+        return (ptr, len) => {
+          const memory = memoryOf();
+          if (!memory) return ERRNO_FAULT;
+          const buf = new Uint8Array(memory.buffer, ptr >>> 0, len >>> 0);
+          for (let i = 0; i < buf.length; i += 65536) randomSource().getRandomValues(buf.subarray(i, Math.min(buf.length, i + 65536)));
+          return ERRNO_SUCCESS;
+        };
       }
-      imports[WASI_MODULE] = { fd_write: served.fd_write };
-    }
+      return null;
+    };
     let trap = null;
-    try {
-      const instance = new WebAssembly.Instance(module, imports);
-      state.memory = instance.exports.memory;
-      if (typeof instance.exports._start === "function") instance.exports._start();
-    } catch (err) {
+    const take = (err) => {
       if (!(err instanceof WebAssembly.RuntimeError)) throw err;
       trap = err.message;
+    };
+    const linked = linkUnits(units, (imp, _u, memoryOf, instances) => {
+      if (instances.has(imp.module)) return { unit: true };
+      const f = imp.kind === "function" ? served(imp, memoryOf) : null;
+      if (f) return { value: f };
+      return { refuse: `the program imports ${imp.module}.${imp.name}, which the page does not serve` };
+    });
+    if (linked.refused !== undefined) throw new Error(linked.refused);
+    try {
+      if (linked.thrown) throw linked.thrown;
+      for (const inst of linked.ordered) if (typeof inst.exports.__bp_init === "function") inst.exports.__bp_init();
+      const main = linked.ordered[linked.ordered.length - 1];
+      if (typeof main.exports._start === "function") main.exports._start();
+    } catch (err) {
+      take(err);
     }
-    return { stdout: state.stdout, stderr: state.stderr, trap };
+    const decoder = new TextDecoder();
+    return { stdout: decoder.decode(concat(out[1])), stderr: decoder.decode(concat(out[2])), trap };
   }
 
   // ── the Worker protocol ────────────────────────────────────────────────────
@@ -656,7 +714,7 @@
           scope.postMessage({ id: msg.id, ok: true, status: result.status, result, stdout: compiler.stdout, stderr: compiler.stderr, ms });
         } else if (msg.op === "run") {
           const t0 = nowMs();
-          const result = run(wasmBytes(msg.wasm));
+          const result = run(programUnits({ runtime: msg.runtime, modules: [{ name: "main", wasm: msg.wasm }] }, "main"));
           scope.postMessage({ id: msg.id, ok: true, run: result, ms: nowMs() - t0 });
         } else {
           throw new Error(`unknown op ${msg.op}`);
@@ -667,5 +725,5 @@
     };
   }
 
-  return { Compiler, importsFor, run, wasmBytes, serveWorker, hostServed, readPlan, runComptimeUnits };
+  return { Compiler, importsFor, run, programUnits, wasmBytes, serveWorker, hostServed, readPlan, runComptimeUnits, linkUnits };
 });

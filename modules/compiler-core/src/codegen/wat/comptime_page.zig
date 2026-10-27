@@ -20,7 +20,9 @@
 //! reply for one unit, byte for byte, but for the engine's own trap words
 //! (`glue.js` maps V8's to the names the native host gives wasmtime's trap
 //! codes). The page reads frames through V8's stack-trace API; another engine
-//! gives none.
+//! gives none — degraded, never refused (1069 (3)). The page links these units
+//! through the one path its own `run()` and the term runtime's `run_module`
+//! link through (`glue.js` `linkUnits`, 1069 (4), (5)).
 //!
 //! **The call**: `bp_host.run_units(plan_ptr, plan_len) -> status` (0 the
 //! reply, 1 raised — `{"message","import","frames":[{"module","function"}]}`

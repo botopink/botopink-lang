@@ -1,5 +1,7 @@
-//! Decision 1035 C3b (1038 (2), 1059, 1063): the web comptime host answers as
-//! the native one, byte for byte. Each case runs C3a's hand-written core
+//! Decision 1035 C3b (1038 (2), 1059, 1063, 1069 (3)): the web comptime host
+//! answers as the native one, byte for byte — on V8 (node), whose stack-trace
+//! API gives the page its frames; another engine gives none (degraded, never
+//! refused), so the equivalence is V8's. Each case runs C3a's hand-written core
 //! units — `comptime_host_named_traps`' fixtures among them — and C1's real
 //! `out/wasm-comptime/` units through the native host (`wat/comptime_host.zig`)
 //! and through the page's: `wat/comptime_page.zig` `plan`, then
@@ -96,7 +98,7 @@ fn both(io: std.Io, comptime case: []const u8, units: []const host.Unit, module:
     return pr;
 }
 
-test "page comptime host: units linked, __bp_init in order, the JSON crosses, print captured; fresh per evaluation; chosen by name" {
+test "page comptime host on V8: units linked, __bp_init in order, the JSON crosses, print captured; fresh per evaluation; chosen by name" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/roundtrip");
@@ -114,7 +116,7 @@ test "page comptime host: units linked, __bp_init in order, the JSON crosses, pr
     a.free(try both(io, "roundtrip/absent", &units, "app@absent", "1"));
 }
 
-test "page comptime host: comptime_host_named_traps' fixtures answer as the native host's, frames included" {
+test "page comptime host on V8: comptime_host_named_traps' fixtures answer as the native host's, frames included" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/services");
@@ -128,7 +130,7 @@ test "page comptime host: comptime_host_named_traps' fixtures answer as the nati
     }
 }
 
-test "page comptime host: an import nothing serves is refused, naming it, as natively" {
+test "page comptime host on V8: an import nothing serves is refused, naming it, as natively" {
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/unserved");
     defer test_scratch.remove(io, "codegen/comptime_page_host/unserved");
@@ -136,7 +138,7 @@ test "page comptime host: an import nothing serves is refused, naming it, as nat
     std.testing.allocator.free(try both(io, "unserved", &units, ru.name, ""));
 }
 
-test "page comptime host: engine traps read as the native host's" {
+test "page comptime host on V8: engine traps read as the native host's" {
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/traps");
     defer test_scratch.remove(io, "codegen/comptime_page_host/traps");
@@ -177,7 +179,7 @@ const gc_exn_wat =
     \\    (i32.const 100) (i32.const 1)))
 ;
 
-test "page comptime host: GC and exceptions run on the page's engine" {
+test "page comptime host on V8: GC and exceptions run on the page's engine" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/gc");
@@ -188,7 +190,7 @@ test "page comptime host: GC and exceptions run on the page's engine" {
     try std.testing.expectEqualStrings("reply\n7\nprinted: \n", r);
 }
 
-test "page comptime host: a unit the engine refuses is a compile refusal naming it" {
+test "page comptime host on V8: a unit the engine refuses is a compile refusal naming it" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/refused");
@@ -199,7 +201,7 @@ test "page comptime host: a unit the engine refuses is a compile refusal naming 
     try std.testing.expect(std.mem.startsWith(u8, p[0].outcome.compile_error, "unit " ++ ru.name ++ ": "));
 }
 
-test "page comptime host: C1's out/wasm-comptime units link, init in order and reach the crossing" {
+test "page comptime host on V8: C1's out/wasm-comptime units link, init in order and reach the crossing" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     test_scratch.remove(io, "codegen/comptime_page_host/c1");
