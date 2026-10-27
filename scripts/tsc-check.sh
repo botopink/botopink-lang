@@ -35,7 +35,7 @@
 #
 # Usage: scripts/tsc-check.sh             (from anywhere in the checkout; needs `zig build`)
 #        scripts/tsc-check.sh <dir>…      (check those projects only)
-#        scripts/tsc-check.sh --jobs <n> […]   (`node --check` processes at once;
+#        scripts/tsc-check.sh --jobs <n> […]   (projects checked at once, each a build, one `tsc` and its `node --check`;
 #                                         default one per CPU — the gate passes its share, gate.sh § job budget)
 set -euo pipefail
 
@@ -109,20 +109,25 @@ else
     done
 fi
 
-# `node --check` on each file, in parallel; prints every file it refuses.
+# `node --check` on each file of one project; prints every file it refuses. The projects
+# run in parallel (below), so one project's files go through one process at a time.
 node_check() { # <out dir> <file>…
-    local dir="$1"
+    local dir="$1" f
     shift
-    (cd "$dir" && printf '%s\0' "$@" | xargs -0 -P "$jobs" -n 8 sh -c '
-        for f in "$@"; do node --check "$f" 2>&1 || echo "node --check refused $f"; done
-    ' sh)
+    (cd "$dir" && for f in "$@"; do node --check "$f" 2>&1 || echo "node --check refused $f"; done)
 }
 
 [ -n "$jobs" ] || jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
-status=0
-checked=0
-modules=0
-for p in "${projects[@]}"; do
+
+# One project, start to verdict. It writes its diagnostics to `$results/<n>.err`, `0` (ok) or `1`
+# (red) to `<n>.status` and its module count to `<n>.mods`, and always exits 0 — the parent
+# prints the files in project order, so the log reads as a serial run's.
+check_project() { # <n> <project>
+    local n="$1" p="$2" out src log res f ok files js
+    local err="$results/$n.err"
+    : >"$err"
+    echo 1 >"$results/$n.status"
+    echo 0 >"$results/$n.mods"
     out="$scratch/$(printf '%s' "$p" | tr '/' '_')"
     src="$p"
     if [ ! -d "$p/src" ] && [ -d "$p/test" ] && ! grep -q '"src"' "$p/botopink.json"; then
@@ -134,40 +139,61 @@ for p in "${projects[@]}"; do
         cp -R "$p/test" "$src/src"
     fi
     if ! log="$(cd "$src" && "$bin" build --target commonJS --typescript --out "$out" 2>&1)"; then
-        printf '%s\n' "$log" | tail -5 >&2
-        printf '  ✗ %s (does not build on commonJS)\n' "$p" >&2
-        status=1
-        continue
+        { printf '%s\n' "$log" | tail -5; printf '  ✗ %s (does not build on commonJS)\n' "$p"; } >>"$err"
+        return 0
     fi
     files=()
     while IFS= read -r f; do files+=("$f"); done < <(cd "$out" && find . -name '*.d.ts' -size +0 | sort)
     if [ "${#files[@]}" -eq 0 ]; then
-        printf '  ✗ %s (the build emitted no .d.ts)\n' "$p" >&2
-        status=1
-        continue
+        printf '  ✗ %s (the build emitted no .d.ts)\n' "$p" >>"$err"
+        return 0
     fi
     js=()
     while IFS= read -r f; do js+=("$f"); done < <(cd "$out" && find . -name '*.js' | sort)
     if [ "${#js[@]}" -eq 0 ]; then
-        printf '  ✗ %s (the build emitted no .js)\n' "$p" >&2
-        status=1
-        continue
+        printf '  ✗ %s (the build emitted no .js)\n' "$p" >>"$err"
+        return 0
     fi
     ok=1
     if ! res="$(cd "$out" && "$tsc" --noEmit --strict --lib es2022 --module commonjs "${files[@]}" 2>&1)"; then
-        printf '%s\n' "$res" | sed "s|^|  $p: |" >&2
+        printf '%s\n' "$res" | sed "s|^|  $p: |" >>"$err"
         ok=0
     fi
     res="$(node_check "$out" "${js[@]}")"
     if [ -n "$res" ]; then
-        printf '%s\n' "$res" | sed "s|^|  $p: |" >&2
+        printf '%s\n' "$res" | sed "s|^|  $p: |" >>"$err"
         ok=0
     fi
     if [ "$ok" -eq 1 ]; then
-        checked=$((checked + 1))
-        modules=$((modules + ${#js[@]}))
+        echo 0 >"$results/$n.status"
+        echo "${#js[@]}" >"$results/$n.mods"
     else
-        printf '  ✗ %s\n' "$p" >&2
+        printf '  ✗ %s\n' "$p" >>"$err"
+    fi
+    return 0
+}
+
+# The projects run `$jobs` at a time (the share the gate hands this stage); each keeps its own
+# output files, printed below in project order.
+results="$scratch/results"
+mkdir -p "$results"
+export bin tsc scratch results
+export -f check_project node_check excludes_commonjs refused_on_commonjs
+n=0
+for p in "${projects[@]}"; do
+    n=$((n + 1))
+    printf '%s\0%s\0' "$n" "$p"
+done | xargs -0 -n 2 -P "$jobs" bash -c 'check_project "$1" "$2"' _
+
+status=0
+checked=0
+modules=0
+for i in $(seq 1 "${#projects[@]}"); do
+    cat "$results/$i.err" >&2
+    if [ "$(cat "$results/$i.status")" -eq 0 ]; then
+        checked=$((checked + 1))
+        modules=$((modules + $(cat "$results/$i.mods")))
+    else
         status=1
     fi
 done

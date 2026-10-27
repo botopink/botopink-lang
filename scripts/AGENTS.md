@@ -202,14 +202,17 @@ own, checked by their own gates), query's consumer cell
 manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
-per project, (a `conformance/test/<project>/` that holds `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/` is that `test/`) and `node --check` over each build's `.js` files (in parallel, one
-`node` per file) — the run cells execute their module under node, this reaches
+per project, (a `conformance/test/<project>/` that holds `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/` is that `test/`) and `node --check` over each build's `.js` files (one `node` at a time inside a project) — the run cells execute their module under node, this reaches
 the modules nothing runs: the libraries' and the example's. A cell is left out
 only structurally — its commonJS answer refuses a module (a `refused` record in
 `snapshot/targets/commonJS/`, or in `snapshot/output/` with no commonJS departure
 of its own) or its manifest's `"targets"` list has no `commonJS` — and a project that does not
 build, or emits no `.d.ts` or no `.js`, is red; no `node` on `PATH` is a
-refusal. `tsc` is
+refusal. The projects run `--jobs <N>` at a time (`xargs -P`; default one per CPU, the gate hands
+its share): each writes its diagnostics, verdict and module count to its own file under a scratch
+directory, and the parent prints them in project order, so the log, the verdicts and the exit
+status are a serial run's; a dependency's `.d.ts` is checked whole by every project that reaches it
+(decision 1011 (3): no per-hash skip). `tsc` is
 `npx -p typescript@<TS_VERSION>` (pinned in the script, so the verdict is a
 function of the tree); no `npx` on `PATH` is a refusal, never a skip (decision
 67). A planted typedef defect (`array<number>` for a `pub val` of an array)
@@ -442,7 +445,7 @@ the largest whose estimated peak fits `MemAvailable` minus a 3 GiB reserve and t
 144 B-129 — the old `MemAvailable / 768 MiB` bound let ~10 `test-libs` jobs of 1–3.5 GiB run beside test-web's 7 GiB wasm
 compile, and the hook alone took a 31 GB machine to 0–1 GB available), and passes each stage its share through the flag it
 already had: `test-conformance` 80 % (`-- --jobs N`; the libraries' stage is part of it since decision 996, so its per-job figure is a library's, 3700 MiB),
-`tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`
+`tsc-check.sh` 10 % (`--jobs N`, the projects checked at once; the whole total when it is the one pool stage) and `test-web` `-j`
 10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 12 / 1 / 1 on 16 CPUs.
 `modules/compiler-cli/tests/cli_contract.sh` holds the shares, the `--jobs` refusals and
 `lib/gate-mode.sh`'s answers (§ Step gate and full gate) to their contract. `test-docs` had 5 % until 144
