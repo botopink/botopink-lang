@@ -50,6 +50,10 @@ name: test
 on:
   push:
     branches: [main, feat]
+    # A push changing only the generated ledger (the maintainer's commit after each decision) runs nothing; a push
+    # touching any other file runs every row (the maintainer, 2026-10-27). The meta's hook-integrity.yml still
+    # checks the ledger on the pointer bump (check 6).
+    paths-ignore: [decisions-taken.md]
 
 # Every commit pushed to feat runs to the end (decision 528): with two machines pushing, one group per ref left
 # no run finished; a group per commit queues past the concurrent-job limit and cancels none.
