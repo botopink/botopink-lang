@@ -112,20 +112,15 @@ const ResolvedSink = struct {
     }
 };
 
-/// The compiler a `.bpr` is written and read by (decision 805 (2)): the hash
-/// of the sources this binary is built from, which covers the analysis's
-/// types the file's encoding follows.
+/// The compiler a `.bpr` is written and read by (decision 805 (2),
+/// `runtime_cache.stamp`).
 pub fn runtimeStamp() runtime_file.Stamp {
-    var out: runtime_file.Stamp = undefined;
-    std.crypto.hash.sha2.Sha256.hash("botopink .bpr\x00" ++ build_stamp.source_hash, &out, .{});
-    return out;
+    return runtime_cache.bprStamp();
 }
 
-/// `--emit-runtime`'s hook: one `<dir>/<group>.bpr` per package of the
-/// analysed program (decision 805 (1)) — a dependency's, a loaded file's, each
-/// embedded std module's, then the root package's, which alone names the
-/// program (`runtime_file.Meta.program`). A program one of whose modules did
-/// not analyse writes none: its diagnostic is the build's.
+/// `--emit-runtime`'s hook: the analysed program's `.bpr` set
+/// (`runtime_cache.writeSet`, decision 805 (1)). A program one of whose
+/// modules did not analyse writes none: its diagnostic is the build's.
 const RuntimeSink = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -136,11 +131,18 @@ const RuntimeSink = struct {
     /// `--emit-runtime`: each file written named on stderr (decision 798 (3));
     /// the cache root's set is written silently.
     announce: bool,
-    /// The root's key (decision 1006 (3)), written once the set is whole.
-    key: runtime_cache.Key,
+    /// The package's own key (decision 1006 (3)); the key written combines it
+    /// with the packages the analysis loaded by name (1006 (6) P5,
+    /// `libs.keyWithNamedLoads`), once the set is whole.
+    base: runtime_cache.Key,
+    /// The package's directory: the loads are kept relative to it.
+    pkg_dir: []const u8,
     /// `--json`: the `.bpr` paths written, root's flagged, for the `runtime` events.
     written: ?*std.ArrayListUnmanaged(Written) = null,
     keep: std.mem.Allocator = undefined,
+    /// The key the set was written under (null: none written), which the
+    /// target key hashes (decision 1008 (1)).
+    key_written: ?runtime_cache.Key = null,
 
     fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8) anyerror!void {
         const self: *RuntimeSink = @ptrCast(@alignCast(ctx));
@@ -148,59 +150,20 @@ const RuntimeSink = struct {
         var arena_inst = std.heap.ArenaAllocator.init(self.gpa);
         defer arena_inst.deinit();
         const arena = arena_inst.allocator();
-
-        // The groups in the order their first module comes, each its modules.
-        var groups: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(bp.codegen.ComptimeOutput)) = .empty;
-        const program = try arena.alloc(runtime_file.Placed, outputs.len);
-        for (outputs, program) |o, *p| {
-            // A module reading `@TypeInfo.all` answers for the whole program
-            // (805 (1)): the root's file holds it, whatever its package.
-            const reads = for (readers) |r| {
-                if (std.mem.eql(u8, r, o.name)) break true;
-            } else false;
-            const g = if (reads) self.root else runtime_file.groupOf(o.name, self.root, self.deps);
-            const slot = try groups.getOrPut(arena, g);
-            if (!slot.found_existing) slot.value_ptr.* = .empty;
-            try slot.value_ptr.append(arena, o);
-            p.* = .{ .group = g, .module = o.name };
+        const loads = try libs.relativeLoads(arena, self.io, self.pkg_dir, try bp.load.namedLoadsSince(arena, 0));
+        const key = try libs.keyWithNamedLoads(arena, self.io, self.pkg_dir, self.base, loads, 0);
+        var written: std.ArrayListUnmanaged(Written) = .empty;
+        try runtime_cache.writeSet(self.gpa, self.io, self.dir, .{ .root = self.root, .deps = self.deps, .wasm_host = self.wasm_host }, key, loads, outputs, readers, &written, arena);
+        self.key_written = key;
+        if (!self.announce) return;
+        for (written.items) |w| {
+            reporter.print("  wrote {s}\n", .{w.path});
+            if (self.written) |list| try list.append(self.keep, .{ .path = try self.keep.dupe(u8, w.path), .root = w.root });
         }
-        std.Io.Dir.cwd().createDirPath(self.io, self.dir) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-        const stamp = runtimeStamp();
-        // A set written in part is never fresh: its key goes first.
-        runtime_cache.removeKey(arena, self.io, self.dir, self.root);
-        var it = groups.iterator();
-        while (it.next()) |g| {
-            const mods = g.value_ptr.items;
-            const names = try arena.alloc([]const u8, mods.len);
-            for (mods, names) |m, *n| n.* = m.name;
-            const is_root = std.mem.eql(u8, g.key_ptr.*, self.root);
-            const meta: runtime_file.Meta = .{
-                .group = g.key_ptr.*,
-                .modules = names,
-                .program = if (is_root) program else &.{},
-                .root = if (is_root) self.root else "",
-                .deps = if (is_root) self.deps else &.{},
-                .wasm_host = if (is_root) self.wasm_host else .wasi,
-            };
-            const bytes = try runtime_file.write(self.gpa, stamp, meta, mods);
-            defer self.gpa.free(bytes);
-            const path = try runtimePath(arena, self.dir, g.key_ptr.*);
-            // Whole or not at all (`analysis_store.write`): a build reading a
-            // dependency's `.bpr` another build is writing reads the old file
-            // or the new one, never a part.
-            try analysis_store.write(arena, self.io, path, bytes);
-            if (!self.announce) continue;
-            reporter.print("  wrote {s}\n", .{path});
-            if (self.written) |w| try w.append(self.keep, .{ .path = try self.keep.dupe(u8, path), .root = is_root });
-        }
-        try runtime_cache.writeKey(arena, self.io, self.dir, self.root, self.key);
     }
 };
 
-const Written = struct { path: []const u8, root: bool };
+const Written = runtime_cache.Written;
 
 // ── --json (decision 798 (6)) ────────────────────────────────────────────────
 
@@ -377,17 +340,21 @@ fn runBuild(
     // from, with no comptime; else this build writes it, and its key, from
     // the same comptime pass that emits. `--cold` on `build` ignores the key;
     // `--emit-resolved` needs the analysis.
+    // The key covers the packages the last analysis loaded by name (1006
+    // (6) P5): one whose current key cannot be computed makes the set stale.
+    runtime_cache.rebuild = opts.rebuild;
     const rt_dir = opts.emit_runtime orelse try runtime_cache.dirFor(arena, proj);
-    const rt_key = try runtime_cache.keyOf(arena, io, proj, &closure_keys, if (opts.emit_runtime) |d| &.{ opts.out_dir, d } else &.{opts.out_dir});
+    const rt_base = try runtime_cache.keyOf(arena, io, proj, &closure_keys, if (opts.emit_runtime) |d| &.{ opts.out_dir, d } else &.{opts.out_dir});
+    const rt_key = try libs.keyWithNamedLoads(arena, io, proj.dir, rt_base, runtime_cache.loadsOf(arena, io, rt_dir, proj.name), 0);
     // A member's build into its workspace's one folder (decision 1015 (4)).
     const shared: ?workspace_out.Shared = if (opts.workspace_out != null) .{ .runtime = &closure_keys.runtime, .rebuild = opts.rebuild } else null;
-    if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
+    if (!opts.rebuild and opts.emit_resolved == null and rt_key != null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key.?, runtimeStamp())) {
         const t = opts.target orelse return 0;
         // Decision 1008 (1): the emit's own key matching and its entry artifact
         // present, nothing is emitted or compiled; else emit from the set and
         // write the key last.
         const packages = try libs.packagesOf(arena, proj, dep_modules);
-        const tkey = targetKeyFor(proj, opts, t, rt_key);
+        const tkey = targetKeyFor(proj, opts, t, rt_key.?);
         if (shared == null and !opts.rebuild and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) return 0;
         if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
@@ -444,7 +411,7 @@ fn runBuild(
         bp.comptime_pipeline.keep_resolved = true;
         sinks.resolved = &sink;
     }
-    runtime_sink = .{ .gpa = gpa, .io = io, .dir = rt_dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host, .announce = opts.emit_runtime != null, .key = rt_key };
+    runtime_sink = .{ .gpa = gpa, .io = io, .dir = rt_dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host, .announce = opts.emit_runtime != null, .base = rt_base, .pkg_dir = proj.dir };
     if (json_state) |j| if (opts.emit_runtime != null) {
         runtime_sink.written = &j.written;
         runtime_sink.keep = j.arena;
@@ -506,7 +473,7 @@ fn runBuild(
     }
     if (!erl_ok) return 1;
 
-    if (opts.target) |t| if (shared == null) runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, rt_key));
+    if (opts.target) |t| if (shared == null) if (runtime_sink.key_written) |k| runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, k));
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
 }

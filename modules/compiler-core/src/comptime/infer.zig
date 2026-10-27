@@ -13398,6 +13398,7 @@ const LoadAnswered = struct { path: []const u8, ds: []const loadMod.Diagnostic }
 fn answerLoad(env: *Env, ref: LoadRef, argLoc: ast.Loc) InferError!LoadAnswered {
     var path: []const u8 = undefined;
     var at: ?[]const u8 = null;
+    var by_name = false;
     var shown: []const u8 = undefined;
     switch (ref) {
         .path => |p| {
@@ -13440,6 +13441,7 @@ fn answerLoad(env: *Env, ref: LoadRef, argLoc: ast.Loc) InferError!LoadAnswered 
                 .found => |f| {
                     path = f.path;
                     at = f.at;
+                    by_name = true;
                 },
                 .no_resolver => {
                     env.lastError = TypeError.custom(
@@ -13478,6 +13480,7 @@ fn answerLoad(env: *Env, ref: LoadRef, argLoc: ast.Loc) InferError!LoadAnswered 
         .io = if (env.templateEval) |ctx| ctx.io else files.io,
         .build_root = if (env.templateEval) |ctx| ctx.build_root else null,
         .at = at,
+        .by_name = by_name,
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {

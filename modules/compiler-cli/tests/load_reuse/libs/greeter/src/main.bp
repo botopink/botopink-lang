@@ -1,0 +1,8 @@
+import {io.terminal.print} from "std";
+
+//// The library `load_reuse.sh` loads by name: its `.bpr` set is the one a bare `botopink build` here writes,
+//// reused by every load while fresh (decision 1006 (6) P5).
+
+pub fn main() -> void {
+    print("hello");
+}

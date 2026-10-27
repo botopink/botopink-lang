@@ -72,11 +72,13 @@ pub fn insidePackage(arena: std.mem.Allocator, pkg_dir: []const u8, dir: []const
     return abs[root.len + 1 ..];
 }
 
-/// Whether the `.bpr` set of `pkg` in `dir` is fresh for `key` under `stamp`.
+/// Whether the `.bpr` set of `pkg` in `dir` is fresh for `key` under `stamp`:
+/// the key file's first line is `key`.
 pub fn isFresh(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8, key: Key, stamp: runtime_file.Stamp) bool {
     const kp = keyPath(arena, dir, pkg) catch return false;
-    const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(4096)) catch return false;
-    if (!std.mem.eql(u8, std.mem.trimEnd(u8, held, "\n"), &key)) return false;
+    const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(1 << 20)) catch return false;
+    var lines = std.mem.splitScalar(u8, held, '\n');
+    if (!std.mem.eql(u8, lines.first(), &key)) return false;
     const rp = rootPath(arena, dir, pkg) catch return false;
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, rp, arena, .unlimited) catch return false;
     return runtime_file.opensWith(bytes, stamp);
@@ -89,10 +91,195 @@ pub fn removeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []c
     std.Io.Dir.cwd().deleteFile(io, kp) catch {};
 }
 
-/// Writes the key file once the set is written whole.
-pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8, key: Key) !void {
+/// Writes the key file once the set is written whole: the key, then each
+/// directory of a package the analysis loaded by name (`loadsOf`), one per
+/// line, relative to the package.
+pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8, key: Key, loads: []const []const u8) !void {
     const kp = try keyPath(arena, dir, pkg);
-    try analysis_store.write(arena, io, kp, try std.fmt.allocPrint(arena, "{s}\n", .{&key}));
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.print(arena, "{s}\n", .{&key});
+    for (loads) |l| try text.print(arena, "{s}\n", .{l});
+    try analysis_store.write(arena, io, kp, text.items);
+}
+
+// ── The packages loaded by name (decision 1006 (6) P5) ──────────────────────
+//
+// A `compiler.load(package: "<name>")` makes another package part of what
+// the analysis reads: its key covers that package's — the packages the last
+// analysis loaded by name are kept in the key file after the key (`loadsOf`),
+// and the key is the package's own (`keyOf`) combined with each one's
+// current key (`withLoads`), so a changed library makes its loader stale.
+// The loaded package's own set is the one a bare `build` in its directory
+// writes, under its own cache root (`libs.zig`'s `runtimeRead` /
+// `runtimeWrite`): either reuses the other's.
+
+/// `build --cold` (`Options.rebuild`): a load reads no set either, and
+/// writes the one it analyses.
+pub var rebuild: bool = false;
+
+/// The compiler a `.bpr` is written and read by (decision 805 (2)): the hash
+/// of the sources this binary is built from, which covers the analysis's
+/// types the file's encoding follows.
+pub fn bprStamp() runtime_file.Stamp {
+    var out: runtime_file.Stamp = undefined;
+    std.crypto.hash.sha2.Sha256.hash("botopink .bpr\x00" ++ @import("build_stamp").source_hash, &out, .{});
+    return out;
+}
+
+/// The directories the last analysis of `pkg` loaded by name, relative to
+/// the package — the key file's lines after the key; none when there is no
+/// key file.
+pub fn loadsOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8) []const []const u8 {
+    const kp = keyPath(arena, dir, pkg) catch return &.{};
+    const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(1 << 20)) catch return &.{};
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    var lines = std.mem.splitScalar(u8, held, '\n');
+    _ = lines.first();
+    while (lines.next()) |l| if (l.len > 0) out.append(arena, l) catch return &.{};
+    return out.items;
+}
+
+/// One package loaded by name: its directory relative to the loader and its
+/// current key.
+pub const LoadKey = struct { rel: []const u8, key: Key };
+
+/// `base` with the keys of the packages loaded by name: `base` itself when
+/// there is none, so a package that loads nothing by name keys as before.
+pub fn withLoads(arena: std.mem.Allocator, base: Key, loads: []const LoadKey) !Key {
+    if (loads.len == 0) return base;
+    const sorted = try arena.dupe(LoadKey, loads);
+    std.mem.sort(LoadKey, sorted, {}, struct {
+        fn lt(_: void, a: LoadKey, b: LoadKey) bool {
+            return std.mem.lessThan(u8, a.rel, b.rel);
+        }
+    }.lt);
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-runtime-loads-1\x00");
+    h.update(&base);
+    for (sorted) |l| {
+        h.update(&.{0});
+        h.update(l.rel);
+        h.update(&.{0});
+        h.update(&l.key);
+    }
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// A `.bpr` path written by `writeSet`, the root's flagged.
+pub const Written = struct { path: []const u8, root: bool };
+
+/// `<dir>/<group>.bpr` (`std/io` → `<dir>/std/io.bpr`).
+pub fn groupPath(arena: std.mem.Allocator, dir: []const u8, group: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ std.mem.trimEnd(u8, dir, "/"), group, runtime_file.EXT });
+}
+
+/// What a set is of: the root package, the dependency packages the module
+/// table names, the wasm host of the program.
+pub const SetMeta = struct { root: []const u8, deps: []const []const u8, wasm_host: bp.ast.WasmHost };
+
+/// One `<dir>/<group>.bpr` per package of the analysed program (decision 805
+/// (1)) — a dependency's, a loaded file's, each embedded std module's, then
+/// the root package's, which alone names the program (`Meta.program`) —, the
+/// key file removed first and written last (`key` null: none, the set is
+/// never fresh). A program one of whose modules did not analyse writes
+/// nothing. Each path written is appended to `written` (in `keep`).
+pub fn writeSet(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    meta_of: SetMeta,
+    key: ?Key,
+    loads: []const []const u8,
+    outputs: []const bp.codegen.ComptimeOutput,
+    readers: []const []const u8,
+    written: ?*std.ArrayListUnmanaged(Written),
+    keep: std.mem.Allocator,
+) !void {
+    for (outputs) |o| if (o.outcome != .ok) return;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    // The groups in the order their first module comes, each its modules.
+    var groups: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(bp.codegen.ComptimeOutput)) = .empty;
+    const program = try arena.alloc(runtime_file.Placed, outputs.len);
+    for (outputs, program) |o, *p| {
+        // A module reading `@TypeInfo.all` answers for the whole program
+        // (805 (1)): the root's file holds it, whatever its package.
+        const reads = for (readers) |r| {
+            if (std.mem.eql(u8, r, o.name)) break true;
+        } else false;
+        const g = if (reads) meta_of.root else runtime_file.groupOf(o.name, meta_of.root, meta_of.deps);
+        const slot = try groups.getOrPut(arena, g);
+        if (!slot.found_existing) slot.value_ptr.* = .empty;
+        try slot.value_ptr.append(arena, o);
+        p.* = .{ .group = g, .module = o.name };
+    }
+    std.Io.Dir.cwd().createDirPath(io, dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+    const st = bprStamp();
+    // A set written in part is never fresh: its key goes first.
+    removeKey(arena, io, dir, meta_of.root);
+    var it = groups.iterator();
+    while (it.next()) |g| {
+        const mods = g.value_ptr.items;
+        const names = try arena.alloc([]const u8, mods.len);
+        for (mods, names) |m, *n| n.* = m.name;
+        const is_root = std.mem.eql(u8, g.key_ptr.*, meta_of.root);
+        const meta: runtime_file.Meta = .{
+            .group = g.key_ptr.*,
+            .modules = names,
+            .program = if (is_root) program else &.{},
+            .root = if (is_root) meta_of.root else "",
+            .deps = if (is_root) meta_of.deps else &.{},
+            .wasm_host = if (is_root) meta_of.wasm_host else .wasi,
+        };
+        const bytes = try runtime_file.write(gpa, st, meta, mods);
+        defer gpa.free(bytes);
+        const path = try groupPath(arena, dir, g.key_ptr.*);
+        // Whole or not at all (`analysis_store.write`): a build reading a
+        // dependency's `.bpr` another build is writing reads the old file
+        // or the new one, never a part.
+        try analysis_store.write(arena, io, path, bytes);
+        if (written) |w| try w.append(keep, .{ .path = try keep.dupe(u8, path), .root = is_root });
+    }
+    if (key) |k| try writeKey(arena, io, dir, meta_of.root, k, loads);
+}
+
+/// The analysed program of the set of `pkg` in `dir` — the root's file and
+/// each package file it names beside it, decoded into `arena`, in the
+/// program's order; null when a file is missing or does not read back.
+pub fn readProgram(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8) !?[]const bp.codegen.ComptimeOutput {
+    const st = bprStamp();
+    const cwd = std.Io.Dir.cwd();
+    const root_bytes = cwd.readFileAlloc(io, try rootPath(arena, dir, pkg), arena, .unlimited) catch return null;
+    const root_file = runtime_file.read(arena, root_bytes, st) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    if (root_file.meta.program.len == 0) return null;
+    var files: std.StringHashMapUnmanaged(runtime_file.Decoded) = .empty;
+    try files.put(arena, root_file.meta.group, root_file);
+    const outputs = try arena.alloc(bp.codegen.ComptimeOutput, root_file.meta.program.len);
+    for (root_file.meta.program, outputs) |placed, *out| {
+        const decoded = files.get(placed.group) orelse blk: {
+            const bytes = cwd.readFileAlloc(io, try groupPath(arena, dir, placed.group), arena, .unlimited) catch return null;
+            const d = runtime_file.read(arena, bytes, st) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return null,
+            };
+            try files.put(arena, placed.group, d);
+            break :blk d;
+        };
+        out.* = for (decoded.outputs) |o| {
+            if (std.mem.eql(u8, o.name, placed.module)) break o;
+        } else return null;
+    }
+    return outputs;
 }
 
 /// `<dir>/<target>.key`: the target key beside the `.bpr`'s (decision 1008 (1)).
@@ -246,4 +433,38 @@ test "runtimeKey: by content; out/, hidden entries, node_modules, *.new and the 
     try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{dep}, "s1", &.{"build/o"}))));
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ base, "src/main.bp" }), .data = "pub fn main() -> void { }\n" });
     try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1", &.{"build/o"}))));
+}
+
+test "withLoads: no load keeps the key; the loads' order does not count; a loaded package's key moves it" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const base: Key = @splat('b');
+    try testing.expectEqualSlices(u8, &base, &(try withLoads(a, base, &.{})));
+    const x: LoadKey = .{ .rel = "../libs/x", .key = @splat('x') };
+    const y: LoadKey = .{ .rel = "../libs/y", .key = @splat('y') };
+    const xy = try withLoads(a, base, &.{ x, y });
+    try testing.expect(!std.mem.eql(u8, &base, &xy));
+    try testing.expectEqualSlices(u8, &xy, &(try withLoads(a, base, &.{ y, x })));
+    const x2: LoadKey = .{ .rel = "../libs/x", .key = @splat('z') };
+    try testing.expect(!std.mem.eql(u8, &xy, &(try withLoads(a, base, &.{ x2, y }))));
+}
+
+test "writeKey / loadsOf / isFresh: the loads follow the key; the key alone decides" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    test_scratch.remove(io, "runtime-loads");
+    defer test_scratch.remove(io, "runtime-loads");
+    const dir = test_scratch.path(io, "runtime-loads/set");
+    const key: Key = @splat('k');
+    try writeKey(a, io, dir, "app", key, &.{ "../libs/greeter", "vendor/x" });
+    const loads = loadsOf(a, io, dir, "app");
+    try testing.expectEqual(@as(usize, 2), loads.len);
+    try testing.expectEqualStrings("../libs/greeter", loads[0]);
+    try testing.expectEqualStrings("vendor/x", loads[1]);
+    try testing.expectEqual(@as(usize, 0), loadsOf(a, io, dir, "other").len);
+    // No root `.bpr` beside it: never fresh, whatever the key.
+    try testing.expect(!isFresh(a, io, dir, "app", key, bprStamp()));
 }

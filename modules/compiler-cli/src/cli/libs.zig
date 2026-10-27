@@ -34,6 +34,7 @@ const bpp = @import("./bpp.zig");
 const bpp_unfold = @import("./bpp_unfold.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
+const runtime_cache = @import("./runtime_cache.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -306,6 +307,10 @@ pub const ClosureKeys = struct {
     runtime: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
     /// Whether to fill `runtime` (`build` and `run` only).
     want_runtime: bool = false,
+    /// Only `runtime` (a `compiler.load`ed package's `.bpr` key, decision
+    /// 1006 (6) P5): no level B key, no read log, no build-target refusal —
+    /// the load resolves the package as it did without keys.
+    runtime_only: bool = false,
 };
 
 /// `loadDependencies`, filling `keys` (when given) with every package's
@@ -388,7 +393,92 @@ var load_env: EnvMap = null;
 /// once, before its first compile.
 pub fn installLoadResolver(env_map: EnvMap) void {
     load_env = env_map;
-    bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName };
+    bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName, .runtime_read = runtimeRead, .runtime_write = runtimeWrite };
+}
+
+// ── A by-name load's `.bpr` set (decision 1006 (6) P5) ──────────────────────
+
+/// The `.bpr` set of a package a load resolved (`resolveLoaded`): the set a
+/// bare `botopink build` in its directory writes, under ITS cache root (its
+/// workspace's root, else its own directory — never the loader's).
+const LoadedSet = struct {
+    /// The package's directory, absolute.
+    pkg_dir: []const u8,
+    /// `<its cache root>/.botopinkbuild/runtime/<pkg>`.
+    dir: []const u8,
+    meta: runtime_cache.SetMeta,
+    /// Its own key (`runtime_cache.keyOf`), before the packages it loads.
+    base: runtime_cache.Key,
+};
+
+/// By the directory `resolveLoaded` was handed. Under `loaded_mutex`.
+var loaded_sets: std.StringHashMapUnmanaged(LoadedSet) = .empty;
+
+fn setOf(io: std.Io, dir: []const u8) ?LoadedSet {
+    _ = resolveLoaded(null, io, dir) catch return null;
+    while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer loaded_mutex.unlock();
+    return loaded_sets.get(dir);
+}
+
+/// The directories `loads` (as the loader's reader roots them) relative to
+/// the package in `pkg_dir`, in `arena`.
+pub fn relativeLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, loads: []const []const u8) ![]const []const u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = buf[0..try std.process.currentPath(io, &buf)];
+    const from = try std.fs.path.resolve(arena, &.{ cwd, pkg_dir });
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (loads) |l| {
+        const abs = try std.fs.path.resolve(arena, &.{ cwd, l });
+        if (std.mem.eql(u8, abs, from)) continue;
+        try out.append(arena, try std.fs.path.relative(arena, cwd, null, from, abs));
+    }
+    return out.items;
+}
+
+/// `base` (the key of the package in `pkg_dir`) combined with the current
+/// key of each package it loads by name (`loads`, relative to it) — each one's
+/// own combined with its own loads, read from its key file; null when one of
+/// them is no package now, or the chain runs deeper than any program loads.
+pub fn keyWithNamedLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, base: runtime_cache.Key, loads: []const []const u8, depth: usize) !?runtime_cache.Key {
+    if (loads.len == 0) return base;
+    if (depth > 16) return null;
+    var keys: std.ArrayListUnmanaged(runtime_cache.LoadKey) = .empty;
+    for (loads) |rel| {
+        const abs = try std.fs.path.resolve(arena, &.{ pkg_dir, rel });
+        const sub = setOf(io, abs) orelse return null;
+        const k = (try keyWithNamedLoads(arena, io, sub.pkg_dir, sub.base, runtime_cache.loadsOf(arena, io, sub.dir, sub.meta.root), depth + 1)) orelse return null;
+        try keys.append(arena, .{ .rel = rel, .key = k });
+    }
+    return try runtime_cache.withLoads(arena, base, keys.items);
+}
+
+/// `Resolver.runtime_read`: the fresh set's program, else null.
+fn runtimeRead(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8) anyerror!?[]const bp.codegen.ComptimeOutput {
+    if (runtime_cache.rebuild) return null;
+    const set = blk: {
+        while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+        defer loaded_mutex.unlock();
+        break :blk loaded_sets.get(dir) orelse return null;
+    };
+    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, set.base, runtime_cache.loadsOf(arena, io, set.dir, set.meta.root), 0)) orelse return null;
+    if (!runtime_cache.isFresh(arena, io, set.dir, set.meta.root, key, runtime_cache.bprStamp())) return null;
+    return runtime_cache.readProgram(arena, io, set.dir, set.meta.root);
+}
+
+/// `Resolver.runtime_write`: the set written from the load's analysis.
+fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void {
+    const set = blk: {
+        while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+        defer loaded_mutex.unlock();
+        break :blk loaded_sets.get(dir) orelse return;
+    };
+    var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const rel = try relativeLoads(arena, io, set.pkg_dir, loads);
+    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, set.base, rel, 0);
+    try runtime_cache.writeSet(std.heap.page_allocator, io, set.dir, set.meta, key, rel, outputs, readers, null, arena);
 }
 
 /// Decision 993 (2) — the directory of the package `name`, looked up as a
@@ -471,11 +561,25 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         else => return refused.of(a, captured.written(), err),
     };
     // The modules live as long as the process (`a` is never freed), so they
-    // may join the program a `run()` compiles.
-    const modules = loadDependenciesIn(a, io, proj, load_env, null, try std.fs.path.join(a, &.{ proj.dir, proj.srcDir() })) catch |err| switch (err) {
+    // may join the program a `run()` compiles. The `.bpr` keys of its closure
+    // are computed on the way (decision 1006 (6) P5).
+    var keys_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer keys_arena.deinit();
+    var keys: ClosureKeys = .{ .arena = keys_arena.allocator(), .target = .{ .target = .commonJS }, .want_runtime = true, .runtime_only = true };
+    const modules = loadDependenciesIn(a, io, proj, load_env, &keys, try std.fs.path.join(a, &.{ proj.dir, proj.srcDir() })) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return refused.of(a, captured.written(), err),
     };
+    // The set of the package, keyed as a bare `build` in its directory keys
+    // it — `out/` is its default output, left out anyway.
+    const base = try runtime_cache.keyOf(keys_arena.allocator(), io, proj, &keys, &.{});
+    const pk = try packagesOf(a, proj, modules);
+    try loaded_sets.put(a, dir, .{
+        .pkg_dir = proj.dir,
+        .dir = try std.fs.path.join(a, &.{ manifest.cacheRoot(proj.dir, proj.workspace), runtime_cache.DIR, proj.name }),
+        .meta = .{ .root = proj.name, .deps = pk.deps, .wasm_host = proj.wasmHost() },
+        .base = base,
+    });
     var targets: ?[]const []const u8 = null;
     if (proj.manifest.targets == null or proj.manifest.targets_inherited) {
         const held = heldTargets(a, io, a, proj, load_env) catch |err| switch (err) {
@@ -485,7 +589,7 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         // Every target held is no narrowing: the package declares none.
         if (held.len < ALL_TARGET_NAMES.len) targets = held;
     }
-    return .{ .ok = .{ .modules = modules, .targets = targets } };
+    return .{ .ok = .{ .modules = modules, .targets = targets, .bare = .{ .targets = proj.manifest.targets, .wasm_host = proj.wasmHost() } } };
 }
 
 /// The first `error…: <message>` line of `text` (a refusal as the CLI prints
@@ -622,7 +726,7 @@ fn loadClosure(
     try closure.orderByLevel();
     try closure.computeHeld();
     try closure.refuseMissingTargets(project, deps);
-    if (keys) |k| try closure.refuseBuildTarget(project, deps, k.target.target.toString());
+    if (keys) |k| if (!k.runtime_only) try closure.refuseBuildTarget(project, deps, k.target.target.toString());
     try refuseNameTwice(arena, io, project, project_dir, workspace, closure.order.items);
     // One OTP release across the closure (decision 228): every package that
     // pins `"otp"` pins the project's — or the first pin's — release.
@@ -638,7 +742,7 @@ fn loadClosure(
         error.OutOfMemory => return error.OutOfMemory,
     };
     for (closure.order.items) |pkg| {
-        const log: ?*bp.ReadLog = if (keys) |k| blk: {
+        const log: ?*bp.ReadLog = if (keys) |k| if (k.runtime_only) null else blk: {
             const l = try k.arena.create(bp.ReadLog);
             l.* = .{ .arena = k.arena };
             try k.logs.put(k.arena, try k.arena.dupe(u8, pkg.name), l);
@@ -655,11 +759,13 @@ fn loadClosure(
     // dependencies have their keys when its own is computed (Merkle). std is
     // no package of the closure: its bytes are inside the compiler key.
     if (keys) |k| for (closure.order.items) |pkg| {
-        var dep_keys: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
-        for (pkg.manifest.dependencies) |d| if (k.keys.get(d.name)) |dk| try dep_keys.append(arena, .{ .name = d.name, .key = dk });
-        const inputs = if (k.cache_root) |r| try analysis_store.readInputs(arena, io, r, k.target, pkg.name) else &.{};
-        const key = try code_cache.closureKeyReading(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target, code_cache.compilerKey(k.target.target), inputs);
-        try k.keys.put(k.arena, try k.arena.dupe(u8, pkg.name), key);
+        if (!k.runtime_only) {
+            var dep_keys: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
+            for (pkg.manifest.dependencies) |d| if (k.keys.get(d.name)) |dk| try dep_keys.append(arena, .{ .name = d.name, .key = dk });
+            const inputs = if (k.cache_root) |r| try analysis_store.readInputs(arena, io, r, k.target, pkg.name) else &.{};
+            const key = try code_cache.closureKeyReading(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target, code_cache.compilerKey(k.target.target), inputs);
+            try k.keys.put(k.arena, try k.arena.dupe(u8, pkg.name), key);
+        }
         if (!k.want_runtime) continue;
         var rt_deps: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
         for (pkg.manifest.dependencies) |d| if (k.runtime.get(d.name)) |dk| try rt_deps.append(arena, .{ .name = d.name, .key = dk });

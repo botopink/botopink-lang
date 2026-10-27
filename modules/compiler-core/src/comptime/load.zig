@@ -1638,6 +1638,9 @@ pub const Request = struct {
     /// there instead of from `path` under `files`; `path` is then only the
     /// name the load is kept under.
     at: ?[]const u8 = null,
+    /// Decision 1006 (6) P5 — a `compiler.load(package: …)`: the package's
+    /// `.bpr` set is reused while fresh and written otherwise.
+    by_name: bool = false,
 };
 
 pub const Answer = union(enum) {
@@ -1704,7 +1707,56 @@ pub const Resolver = struct {
     /// as a `git` dependency of the package whose directory is `from` is
     /// (decision 483's tiers). Null: this resolver resolves no name.
     by_name: ?*const fn (ctx: ?*anyopaque, io: std.Io, name: []const u8, from: []const u8) anyerror!NameResolution = null,
+    /// Decision 1006 (6) P5 — the analysed modules of the `.bpr` set of the
+    /// package in `dir` (as `resolve` was handed it), in the program's order,
+    /// decoded into `arena`, when that set is fresh — the one a bare `botopink
+    /// build` there writes and reads, under the package's own cache root; null
+    /// when it is missing or stale. Asked only for a by-name load.
+    runtime_read: ?*const fn (ctx: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8) anyerror!?[]const ComptimeOutput = null,
+    /// Decision 1006 (6) P5 — write the `.bpr` set of the package in `dir` from
+    /// the analysis a by-name load ran (`outputs`, every one `.ok`), as a bare
+    /// `build` there writes it; `loads` are the directories the packages it
+    /// loaded by name live in (`namedLoadsSince`), which its key covers.
+    runtime_write: ?*const fn (ctx: ?*anyopaque, io: std.Io, dir: []const u8, outputs: []const ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void = null,
 };
+
+const ComptimeOutput = @import("../comptime.zig").ComptimeOutput;
+
+// ── The packages loaded by name (decision 1006 (6) P5) ──────────────────────
+
+/// Every directory a `compiler.load(package:)` of this process found, in the
+/// order the loads ran, each once — what a `.bpr` set's key covers besides
+/// the package's own files (the CLI's `runtime_cache.zig`). Lives as long as
+/// the process.
+var named_mutex: std.atomic.Mutex = .unlocked;
+var named_list: std.ArrayListUnmanaged([]const u8) = .empty;
+
+fn noteNamed(dir: []const u8) !void {
+    while (!named_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer named_mutex.unlock();
+    for (named_list.items) |d| if (std.mem.eql(u8, d, dir)) return;
+    try named_list.append(std.heap.page_allocator, try std.heap.page_allocator.dupe(u8, dir));
+}
+
+/// How many directories `namedLoadsSince` holds now: a mark to read the ones
+/// a compile adds.
+pub fn namedMark() usize {
+    while (!named_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer named_mutex.unlock();
+    return named_list.items.len;
+}
+
+/// The directories a `compiler.load(package:)` found since `mark`, copied
+/// into `arena`: each as the loader's reader roots it (absolute for one
+/// outside the top-level package's tree).
+pub fn namedLoadsSince(arena: std.mem.Allocator, mark: usize) ![]const []const u8 {
+    while (!named_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer named_mutex.unlock();
+    const from = @min(mark, named_list.items.len);
+    const out = try arena.alloc([]const u8, named_list.items.len - from);
+    for (named_list.items[from..], out) |d, *o| o.* = try arena.dupe(u8, d);
+    return out;
+}
 
 /// A `Resolver.by_name` answer.
 pub const NameResolution = union(enum) {
@@ -1758,10 +1810,18 @@ pub const Resolution = union(enum) {
         /// manifest writes none (its workspace's, narrowed by its
         /// dependencies'); null when nothing narrows them.
         targets: ?[]const []const u8 = null,
+        /// Decision 1006 (6) P5 — the targets and the wasm host a bare
+        /// `botopink build` in the package's directory compiles its modules
+        /// with (its effective manifest's): the analysis a by-name load writes
+        /// as the package's `.bpr` set is that build's. Null when the resolver
+        /// keeps no set for the package.
+        bare: ?Bare = null,
     },
     /// The package's manifest or its dependencies refused, as `botopink
     /// build` there would refuse them: one `Diagnostic` at `botopink.json`.
     refused: Refusal,
+
+    pub const Bare = struct { targets: ?[]const []const u8 = null, wasm_host: ast.WasmHost = .wasi };
 
     /// A refusal's text and where in `botopink.json` it points (`line` and
     /// `column` 0 when nowhere).
@@ -1870,6 +1930,10 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const comptimeMod = @import("../comptime.zig");
     if (!comptimeMod.stdlibTemplateReady()) return .std_initialising;
     const key = try keyOf(arena, req.files, req.path);
+    // Decision 1006 (6) P5 — every package a load finds by name is noted,
+    // even one this compile already holds: the key of the set being built
+    // covers it.
+    if (req.by_name) try noteNamed(req.at orelse try packageDir(arena, try req.files.under(arena, req.path)));
     for (loading.items) |p| if (std.mem.eql(u8, p, key)) return .cycle;
     // One compile per file per top-level compile (decision 787): every read
     // of it, and the compile again with the packages `run` reaches, read the
@@ -1932,6 +1996,13 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     };
     var modules: std.ArrayListUnmanaged(Module) = .empty;
     var own_dependencies: []const Module = &.{};
+    // Decision 1006 (6) P5 — a package loaded by name is the one a bare
+    // `botopink build` in its directory builds: its `.bpr` set, under its own
+    // cache root, is read while fresh and written from this analysis
+    // otherwise. A reader that logs what it reads (a dependency's level B
+    // INPUTS, decision 519) must see every file: it compiles as before.
+    var bare: ?Resolution.Bare = null;
+    const set_dir: ?[]const u8 = if (req.by_name and pkg_files.log == null) try packageDir(scratch, pkg_files) else null;
     if (resolver) |r| {
         const dir = try packageDir(scratch, pkg_files);
         const resolution = r.resolve(r.ctx, req.io, dir) catch |err| switch (err) {
@@ -1943,6 +2014,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
                 try modules.appendSlice(scratch, ok.modules);
                 own_dependencies = ok.modules;
                 if (targets == null) targets = moduleMod.Targets.of(ok.targets);
+                if (set_dir != null and r.runtime_read != null and r.runtime_write != null) bare = ok.bare;
             },
             .refused => |why| {
                 try refusals.append(arena, .{ .code = codeOf(why.message), .message = try arena.dupe(u8, why.message), .file = "botopink.json", .line = why.line, .column = why.column });
@@ -1955,11 +2027,22 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         } else false;
         if (named) try modules.append(scratch, m);
     };
+    // The set's analysis reads the package as a bare build there does: its
+    // reader rooted at its directory (`root` `""`, decision 1003), its own
+    // manifest's targets and wasm host.
+    const set_files: ?PackageFiles = if (bare != null) blk: {
+        var f = pkg_files;
+        f.root = try packageDir(arena, pkg_files);
+        f.base = "";
+        f.dir = "";
+        f.log = null;
+        break :blk f;
+    } else null;
     for (own) |m| {
         var mm = m;
-        mm.targets = targets;
-        mm.wasm_host = wasm_host;
-        mm.files = pkg_files;
+        mm.targets = if (bare) |b| moduleMod.Targets.of(b.targets) else targets;
+        mm.wasm_host = if (bare) |b| b.wasm_host else wasm_host;
+        mm.files = set_files orelse pkg_files;
         try modules.append(scratch, mm);
     }
 
@@ -1968,9 +2051,30 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const saved = build_modules;
     defer build_modules = saved;
 
-    var session = try comptimeMod.compile(std.heap.page_allocator, modules.items, req.io, req.build_root);
-    defer session.deinit(std.heap.page_allocator);
-    for (session.outputs.items) |o| {
+    const reused: ?[]const ComptimeOutput = if (bare != null) resolver.?.runtime_read.?(resolver.?.ctx, req.io, scratch, set_dir.?) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => null,
+    } else null;
+    var session_slot: ?comptimeMod.ComptimeSession = null;
+    defer if (session_slot) |*s| s.deinit(std.heap.page_allocator);
+    const outputs: []const ComptimeOutput = reused orelse blk: {
+        const mark = namedMark();
+        session_slot = try comptimeMod.compile(std.heap.page_allocator, modules.items, req.io, req.build_root);
+        const session = &session_slot.?;
+        if (bare != null) {
+            const all_ok = for (session.outputs.items) |o| {
+                if (o.outcome != .ok) break false;
+            } else true;
+            // A set is written whole or not at all; one that cannot be
+            // written leaves the next load to analyse again.
+            if (all_ok) resolver.?.runtime_write.?(resolver.?.ctx, req.io, set_dir.?, session.outputs.items, session.readers, try namedLoadsSince(scratch, mark)) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => {},
+            };
+        }
+        break :blk session.outputs.items;
+    };
+    for (outputs) |o| {
         // A dependency's refusal is no refusal of the loaded file: it is the
         // caller's, reported where the caller is built (781 (5)).
         const ownModule = for (own) |m| {
@@ -1997,7 +2101,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         lookups[n_lookups] = wasm_host.lookupName();
         n_lookups += 1;
     }
-    for (lookups[0..n_lookups]) |lookup| for (session.outputs.items) |o| {
+    for (lookups[0..n_lookups]) |lookup| for (outputs) |o| {
         const ownModule = for (own) |m| {
             if (std.mem.eql(u8, if (m.path.len > 0) m.path else "main", o.name)) break true;
         } else false;
@@ -2014,7 +2118,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     // Decisions 904, 989 (4) — what the package's own modules printed at
     // build, a refused module's before its refusal.
     var printed: std.ArrayListUnmanaged(u8) = .empty;
-    for (session.outputs.items) |o| {
+    for (outputs) |o| {
         const ownModule = for (own) |m| {
             if (std.mem.eql(u8, if (m.path.len > 0) m.path else "main", o.name)) break true;
         } else false;
