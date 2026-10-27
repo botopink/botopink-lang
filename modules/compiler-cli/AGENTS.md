@@ -149,6 +149,16 @@ compiler-cli/
 │   ├── beam_reuse/          ← its fixture: `beam_reused_when_source_unchanged`,
 │   │                          `beam_recompiled_when_source_changes` (`greeting.bp`
 │   │                          the script edits, `shapes.bp` untouched)
+│   ├── workspace_out.sh     ← a workspace root's one output folder (decision 1015 (4)),
+│   │                          its fixture written inline: two members over one
+│   │                          library, on erlang and beam — a member handed
+│   │                          `--workspace-out` writes lib's and std's files and their
+│   │                          `.<pkg>.key`, the second member none of them (inodes
+│   │                          pinned); the root's `build --target` lays one `out/`
+│   │                          folder (no member's `out/`, no subfolder), its `run
+│   │                          --target` answers both members; a stale key and
+│   │                          `--cold` rewrite; two members' `json` at two
+│   │                          directories refused, naming both, nothing written
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —
@@ -216,6 +226,7 @@ bash modules/compiler-cli/tests/packages_list.sh     # packages --list over a th
 bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and from the intermediate, the same answer (798 (5))
 bash modules/compiler-cli/tests/runtime_reuse.sh     # the .bpr set reused while fresh, rebuilt when stale (1006)
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
+bash modules/compiler-cli/tests/workspace_out.sh     # a workspace root's one out/ folder, dependencies written once (1015 (4))
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime

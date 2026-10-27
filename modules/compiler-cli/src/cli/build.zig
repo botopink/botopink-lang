@@ -16,6 +16,7 @@ const manifest = @import("manifest");
 const runtime_file = bp.runtime_file;
 const runtime_cache = @import("./runtime_cache.zig");
 const beam_record = @import("./beam_record.zig");
+const workspace_out = @import("./workspace_out.zig");
 
 const Module = bp.Module;
 
@@ -60,6 +61,11 @@ pub const Options = struct {
     /// `--cache-root <dir>`: the root the code cache's levels A and B file
     /// under, instead of the project's or its workspace's.
     cache_root: ?[]const u8 = null,
+    /// `--workspace-out <dir>`: the member's build into its workspace's one
+    /// output folder (decision 1015 (4), `workspace_out.zig`) — `<dir>` is the
+    /// output directory, the member's own files written in place and each
+    /// dependency's once per its key. Handed by the workspace root's command.
+    workspace_out: ?[]const u8 = null,
 };
 
 /// The hooks a build runs over its analysed session
@@ -254,10 +260,17 @@ fn runtimePath(arena: std.mem.Allocator, dir: []const u8, group: []const u8) ![]
 pub fn run(
     gpa: std.mem.Allocator,
     io: std.Io,
-    opts: Options,
+    opts_in: Options,
     env_map: libs.EnvMap,
 ) !u8 {
-    if (opts.cache_root) |r| code_cache.root_override = r;
+    if (opts_in.cache_root) |r| code_cache.root_override = r;
+    var opts = opts_in;
+    if (opts.workspace_out) |dir| opts.out_dir = dir;
+    // At a workspace root, `build --target <t>` lays the workspace's one
+    // folder, each member in its own process (decision 1015 (4)).
+    if (opts.target) |t| if (opts.workspace_out == null and opts.runtime_input == null) {
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root }, env_map)) |code| return code;
+    };
     if (!opts.json) return runBuild(gpa, io, opts, env_map);
 
     // `--json`: the build runs as without it (stderr unchanged, tee'd into
@@ -310,7 +323,7 @@ fn runBuild(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cold) code_cache.cold = true;
-    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null, null)).exit;
+    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null, null, null)).exit;
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
@@ -366,10 +379,12 @@ fn runBuild(
     // `--emit-resolved` needs the analysis.
     const rt_dir = opts.emit_runtime orelse try runtime_cache.dirFor(arena, proj);
     const rt_key = try runtime_cache.keyOf(arena, io, proj, &closure_keys, if (opts.emit_runtime) |d| &.{ opts.out_dir, d } else &.{opts.out_dir});
+    // A member's build into its workspace's one folder (decision 1015 (4)).
+    const shared: ?workspace_out.Shared = if (opts.workspace_out != null) .{ .runtime = &closure_keys.runtime, .rebuild = opts.rebuild } else null;
     if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
         if (opts.target == null) return 0;
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
-        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj)).exit;
+        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared)).exit;
     }
 
     // The code cache's level B (144 B-60): a dependency whose analysis entry
@@ -456,7 +471,7 @@ fn runBuild(
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
-    writeOutputs(gpa, io, outputs.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map) catch |err| switch (err) {
+    writeOutputs(gpa, io, arena, outputs.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared, cfg.typeDefLanguage != null) catch |err| switch (err) {
         // A sidecar the build cannot ship: the located refusal is already
         // printed by the shipper, and the build ends here with exit 1.
         error.SidecarRefused => return 1,
@@ -560,6 +575,8 @@ pub fn runRuntime(
     /// manifest read: its directory is the working one, its code cache and
     /// `"typings"` its own. Null for a `.bpr` named on the command line.
     project: ?config.ProjectConfig,
+    /// `--workspace-out`'s keys (`workspace_out.Shared`); null otherwise.
+    shared: ?workspace_out.Shared,
 ) !RuntimeBuild {
     const target = opts.target orelse {
         reporter.errCode(runtime_codes.target_required, "a .bpr has no manifest; write --target <commonJS|erlang|beam|wasm>");
@@ -620,7 +637,7 @@ pub fn runRuntime(
         emitted.deinit(gpa);
     }
     const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items, false);
-    writeOutputs(gpa, io, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map) catch |err| switch (err) {
+    writeOutputs(gpa, io, arena, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared, cfg.typeDefLanguage != null) catch |err| switch (err) {
         error.SidecarRefused => return .{ .exit = 1 },
         else => return err,
     };
@@ -977,15 +994,34 @@ fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, packages: bp.codegen.c
 
 // ── Output writer ─────────────────────────────────────────────────────────────
 
+/// One module's files: written in place, or through the shared folder's
+/// writer when the build has one (`workspace_out.Once`).
+const FileWriter = struct {
+    io: std.Io,
+    once: ?*workspace_out.Once,
+    pkg: ?[]const u8,
+
+    fn write(self: FileWriter, path: []const u8, bytes: []const u8) !void {
+        if (self.once) |w| return w.write(self.pkg, path, bytes);
+        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = bytes });
+    }
+};
+
 fn writeOutputs(
     gpa: std.mem.Allocator,
     io: std.Io,
+    arena: std.mem.Allocator,
     outputs: []const bp.codegen.ModuleOutput,
     out_dir: []const u8,
     target: config.Target,
     packages: bp.codegen.crossModule.Packages,
     wasm_host: bp.ast.WasmHost,
     env_map: libs.EnvMap,
+    /// `--workspace-out` (decision 1015 (4)): each dependency's files
+    /// written once per its key (`workspace_out.Once`); null writes every file.
+    shared: ?workspace_out.Shared,
+    /// Whether this build writes `.d.ts` files — part of a dependency's key.
+    typings: bool,
 ) !void {
     // Ensure output directory exists.
     std.Io.Dir.cwd().createDirPath(io, out_dir) catch |err| switch (err) {
@@ -994,10 +1030,23 @@ fn writeOutputs(
     };
 
     const ext = artifactExt(target);
+    const folder = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, targetSubdir(target) });
+    var once: ?workspace_out.Once = if (shared) |sh|
+        try workspace_out.Once.begin(arena, io, sh, folder, packages.deps, target.toString(), @tagName(wasm_host), typings)
+    else
+        null;
 
     for (outputs) |o| {
+        // The dependency the module is of (null: the member's own), and the
+        // writer of its files: in place, or once per the package's key.
+        const pkg = libs.sidecarPackage(packages, o.name);
         // A validation error carries no artifact.
-        if (o.result.failed()) continue;
+        if (o.result.failed()) {
+            if (once) |*w| try w.markFailed(pkg);
+            continue;
+        }
+        if (once) |*w| if (w.skips(pkg)) continue;
+        var file: FileWriter = .{ .io = io, .once = if (once) |*w| w else null, .pkg = pkg };
         // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS `out/<pkg>@<path>.js`,
         // flat (decision 1015). wasm: `out/<module path><ext>`, so
         // subdirectories may have to be created.
@@ -1012,7 +1061,7 @@ fn writeOutputs(
             };
         }
 
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+        try file.write(sub_path, o.result.js);
 
         // Decision 334: a `browser` build is the module's binary and the
         // loader that instantiates it with a browser's imports (node runs it
@@ -1021,12 +1070,12 @@ fn writeOutputs(
             const bin = o.result.wasm orelse return error.MissingWasmBinary;
             const wasm_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".wasm");
             defer gpa.free(wasm_path);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = wasm_path, .data = bin });
+            try file.write(wasm_path, bin);
             const loader_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".mjs");
             defer gpa.free(loader_path);
             const loader = try bp.codegen.wasmBrowserLoader.render(gpa, std.fs.path.basename(wasm_path));
             defer gpa.free(loader);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = loader_path, .data = loader });
+            try file.write(loader_path, loader);
         }
 
         // Policy 3 (`13-module-identity`): every `type` of the module is a
@@ -1035,16 +1084,17 @@ fn writeOutputs(
         for (o.result.units) |u| {
             const unit_path = try std.fmt.allocPrint(gpa, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), u.atom, ext });
             defer gpa.free(unit_path);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+            try file.write(unit_path, u.code);
         }
 
         // Optional TypeScript typedef.
         if (o.result.typedef) |td| {
             const dts_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".d.ts");
             defer gpa.free(dts_path);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dts_path, .data = td });
+            try file.write(dts_path, td);
         }
     }
+    if (once) |*w| try w.finish();
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every
     // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — each flat beside the

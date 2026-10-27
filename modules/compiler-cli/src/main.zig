@@ -84,6 +84,10 @@ const HELP =
     \\  --emit-runtime <dir>         The .bpr set's directory instead: each package's resolved tree to <dir>/<package>.bpr
     \\                               and the key to <dir>/<package>.key, to build any target from later
     \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
+    \\  --workspace-out <dir>        A member's build into its workspace's one folder <dir>: its own files in place, each
+    \\                               dependency's once per its key (the workspace root's `build --target` hands it)
+    \\At a workspace root, `build --target <t>` builds every member, each in its own process, into one --out folder
+    \\holding each member and each dependency once; two packages of one name at two directories are refused
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target (default: the manifest's); the .bpr set is
@@ -92,7 +96,9 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache; write what is compiled; a fresh .bpr set is reused
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
+    \\  --workspace-out <dir>        A member's run from its workspace's one folder <dir> (the workspace root's `run --target` hands it)
     \\  --                           Pass remaining args to the program
+    \\At a workspace root, `run --target <t>` builds and runs every member, each in its own process, over one --out folder
     \\
     \\Options for `test`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
@@ -432,6 +438,8 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             opts.emit_resolved = try dirValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--emit-runtime")) {
             opts.emit_runtime = try dirValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--workspace-out")) {
+            opts.workspace_out = try dirValue(args, &i, flag, diag);
         } else if (isRuntimeFile(args[i]) and opts.runtime_input == null) {
             opts.runtime_input = args[i];
         } else return reject(args[i], diag);
@@ -485,6 +493,8 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
         } else if (std.mem.eql(u8, flag.name, "--cache-root")) {
             opts.cache_root = try dirValue(args, &i, flag, diag);
             // No `.bpr` path (decision 1009): `run` finds its package's own set.
+        } else if (std.mem.eql(u8, flag.name, "--workspace-out")) {
+            opts.workspace_out = try dirValue(args, &i, flag, diag);
         } else return reject(a, diag);
     }
     opts.extra_args = try extra.toOwnedSlice(arena);
@@ -600,6 +610,7 @@ test {
     _ = @import("./cli/resolver.zig");
     _ = @import("./cli/run.zig");
     _ = @import("./cli/runtime_cache.zig");
+    _ = @import("./cli/workspace_out.zig");
     _ = @import("./cli/scanner.zig");
     _ = @import("./cli/sources.zig");
     _ = @import("./cli/test_cmd.zig");

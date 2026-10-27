@@ -9,6 +9,7 @@ const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const code_cache = @import("./code_cache.zig");
 const beam_record = @import("./beam_record.zig");
+const workspace_out = @import("./workspace_out.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,9 @@ pub const Options = struct {
     cold: bool = false,
     /// `--cache-root <dir>`: the cache root of levels A and B (as `build`'s).
     cache_root: ?[]const u8 = null,
+    /// `--workspace-out <dir>`: the member's run from its workspace's one
+    /// output folder (decision 1015 (4), `build.Options.workspace_out`).
+    workspace_out: ?[]const u8 = null,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -37,6 +41,12 @@ pub fn run(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cache_root) |r| code_cache.root_override = r;
+    // At a workspace root, `run --target <t>` builds and runs each member in
+    // its own process, over the workspace's one folder (decision 1015 (4)).
+    if (opts.target) |t| if (opts.workspace_out == null) {
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .run, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root }, env_map)) |code| return code;
+    };
+    const out_dir = opts.workspace_out orelse opts.out_dir;
 
     // Load config to determine target.
     const proj = config.load(arena, io) catch |err| {
@@ -54,10 +64,10 @@ pub fn run(
     };
 
     // Build first, into the same directory the entry point is read from.
-    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir, .cold = opts.cold, .entry = opts.module }, env_map);
+    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = out_dir, .cold = opts.cold, .entry = opts.module, .workspace_out = opts.workspace_out }, env_map);
     if (build_exit != 0) return build_exit;
 
-    const argv = try programArgv(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
+    const argv = try programArgv(arena, io, proj, target, out_dir, opts.module) orelse return 1;
     var full = std.ArrayListUnmanaged([]const u8).empty;
     try full.appendSlice(arena, argv);
     for (opts.extra_args) |arg| try full.append(arena, arg);

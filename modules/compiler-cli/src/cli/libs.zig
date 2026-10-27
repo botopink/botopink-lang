@@ -561,6 +561,34 @@ pub fn heldTargets(
     return closure.heldBy(proj.manifest);
 }
 
+/// One package of a project's closure: its import name and its directory,
+/// absolute and link-free (`linkFreeDir`).
+pub const NamedDir = struct { name: []const u8, dir: []const u8 };
+
+/// The packages of the project's dependency closure (std, the bundled
+/// package, is none of them), each once, resolved as a build resolves them —
+/// what a workspace's one output folder holds besides its members
+/// (decision 1015 (4), `workspace_out.refuseShared`). Refuses as the closure
+/// refuses, printing its located diagnostic. Owned by `arena`.
+pub fn closurePackages(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    proj: config.ProjectConfig,
+    env_map: EnvMap,
+) ![]const NamedDir {
+    if (proj.dependencies.len == 0) return &.{};
+    var closure: DepClosure = .{ .arena = arena, .io = io, .tiers = &.{} };
+    const roots = try resolveLibRoots(gpa, io, env_map);
+    defer freeRoots(gpa, roots);
+    closure.tiers = try dependencyTiers(gpa, arena, io, env_map, proj.dir, roots);
+    for (proj.dependencies) |dep| _ = try closure.resolve(proj.manifest, proj.dir, dep);
+    for (proj.dependencies) |dep| try closure.visit(proj.manifest, dep.name);
+    const out = try arena.alloc(NamedDir, closure.order.items.len);
+    for (closure.order.items, out) |pkg, *o| o.* = .{ .name = pkg.name, .dir = try linkFreeDir(arena, io, pkg.dir) };
+    return out;
+}
+
 /// Load, into `out`, the modules of every package of `DepClosure` for the
 /// project at `project_dir` whose manifest is `project` — dependencies before
 /// dependents.
