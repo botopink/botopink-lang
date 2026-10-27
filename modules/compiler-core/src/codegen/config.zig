@@ -53,6 +53,13 @@ pub const Config = struct {
     /// (`botopink build` / `run`); the snapshot harness records the module
     /// the backend lowers, so it leaves it off.
     wasm_artifact: bool = false,
+    /// Decisions 1021 (2), 1026, 1037 (5) — whether a `wasi` build's
+    /// component imports the runtime core `std@__rt` and std's units instead
+    /// of linking std-wasm into the program. Off until the C-API runner (1032
+    /// (3)) composes the units: no program is written with a unit's text, so
+    /// `run` keeps the one-module component. The snapshots' modules
+    /// (`wasm_artifact` off) import the units whatever it says.
+    wasm_units: bool = false,
     /// Decision 1008 (3) — wasm emits only this module, the program's entry:
     /// its component links every body it reaches, so no other module's
     /// component is ever run. Set by `build` and `run` on wasm (decision

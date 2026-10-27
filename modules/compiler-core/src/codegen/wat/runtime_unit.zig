@@ -124,44 +124,68 @@ pub const Runtime = struct {
     /// (decision 1021's data reserve, sized at link time).
     pub fn coreFor(r: *const Runtime, ar: std.mem.Allocator, pages: u32) !struct { text: []const u8, bytes: []const u8 } {
         if (pages <= r.pages) return .{ .text = r.core_text, .bytes = r.core_bytes };
-        const items = try ar.dupe(ast.Item, r.core.items);
-        for (items) |*it| if (it.* == .memory) {
-            it.memory.min_pages = pages;
-        };
-        const m: ast.Module = .{ .items = items };
-        return .{ .text = try renderText(ar, m), .bytes = try binary.encodeModule(ar, m) };
+        return .{ .text = try withMinPagesText(ar, r.core_text, pages), .bytes = try withMinPagesBinary(ar, r.core_bytes, pages) };
     }
 };
 
 pub const Error = link.Error || binary.Error || reader.Error || error{
     /// The std units' imports make a cycle (`failure()` names it).
     UnitCycle,
+    /// The embedded runtime does not read: a compiler built wrong.
+    BadBlob,
 };
 
 var mutex: std.atomic.Mutex = .unlocked;
 var arena_state: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var built: ?Runtime = null;
-var failed: ?Error = null;
 var fail_diag: []const u8 = "";
 
 fn lock() void {
     while (!mutex.tryLock()) std.atomic.spinLoopHint();
 }
 
-/// The core and std's units. Built on the first call and kept for the
-/// process: they are the same for every program.
+/// The serialized runtime `zig build` embeds (`serialize`, written by the
+/// `std-units` tool's `--blob`, decision 1032 (4)): read on the first `get`
+/// instead of cutting std-wasm in every compiler process. Empty in that tool
+/// itself, which cuts it (`built()`).
+const embedded: []const u8 = @embedFile("std_units.bin");
+
+var cut: ?Runtime = null;
+var cut_failed: ?Error = null;
+
+/// The core and std's units, the same for every program: the embedded
+/// runtime, read on the first call and kept for the process (cut from
+/// std-wasm when none is embedded).
 pub fn get() Error!*const Runtime {
+    if (embedded.len == 0) return built();
     lock();
     defer mutex.unlock();
-    if (built) |*r| return r;
-    if (failed) |e| return e;
+    if (built_from_blob) |*r| return r;
+    built_from_blob = deserialize(arena_state.allocator(), embedded) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadBlob => {
+            fail_diag = "the embedded runtime does not read (rebuild the compiler)";
+            return error.BadBlob;
+        },
+    };
+    return &built_from_blob.?;
+}
+
+var built_from_blob: ?Runtime = null;
+
+/// The core and std's units cut from std-wasm now (`build`): what `std-units`
+/// serializes, and the oracle the embedded runtime is compared with.
+pub fn built() Error!*const Runtime {
+    lock();
+    defer mutex.unlock();
+    if (cut) |*r| return r;
+    if (cut_failed) |e| return e;
     var diag: link.Diag = .{};
-    built = build(arena_state.allocator(), &diag) catch |e| {
-        failed = e;
+    cut = build(arena_state.allocator(), &diag) catch |e| {
+        cut_failed = e;
         fail_diag = diag.message;
         return e;
     };
-    return &built.?;
+    return &cut.?;
 }
 
 /// Why `get` failed, for a refusal's text.
@@ -582,6 +606,193 @@ fn forward(ar: std.mem.Allocator, im: ast.Import) !ast.Func {
     };
 }
 
+// ── the embedded runtime (decision 1032 (4)) ─────────────────────────────────
+
+const blob_magic = "BPRU1\n";
+
+/// `r` as the bytes `zig build` embeds: the core's and every unit's text and
+/// bytes, the dependency graph, and each `std:` / leaf reference with its
+/// type — what a compiler process needs, with no std-wasm to cut. The
+/// references in name order, so one runtime has one blob.
+pub fn serialize(ar: std.mem.Allocator, r: *const Runtime) ![]const u8 {
+    var o: std.ArrayListUnmanaged(u8) = .empty;
+    try o.appendSlice(ar, blob_magic);
+    try putU32(ar, &o, r.end);
+    try putU32(ar, &o, r.pages);
+    try putStr(ar, &o, r.core_text);
+    try putStr(ar, &o, r.core_bytes);
+    try putStr(ar, &o, r.graph);
+    try putU32(ar, &o, @intCast(r.units.len));
+    for (r.units) |u| {
+        try putStr(ar, &o, u.name);
+        try putStr(ar, &o, u.file_name);
+        try putU32(ar, &o, @intCast(u.deps.len));
+        for (u.deps) |d| try putStr(ar, &o, d);
+        try o.append(ar, @intFromBool(u.host_fs));
+        try putStr(ar, &o, u.text);
+        try putStr(ar, &o, u.bytes);
+    }
+    for ([_]*const std.StringHashMapUnmanaged(Ref){ &r.std_refs, &r.leaf_refs }) |refs| {
+        const keys = try ar.alloc([]const u8, refs.count());
+        var it = refs.keyIterator();
+        var i: usize = 0;
+        while (it.next()) |k| : (i += 1) keys[i] = k.*;
+        std.mem.sort([]const u8, keys, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        try putU32(ar, &o, @intCast(keys.len));
+        for (keys) |k| {
+            const ref = refs.get(k).?;
+            try putStr(ar, &o, k);
+            try putStr(ar, &o, ref.unit);
+            try putStr(ar, &o, ref.@"export");
+            try putU32(ar, &o, @intCast(ref.type.params.len));
+            for (ref.type.params) |t| try putU32(ar, &o, @intFromEnum(t));
+            try putU32(ar, &o, if (ref.type.result) |t| @intFromEnum(t) else std.math.maxInt(u32));
+        }
+    }
+    return o.items;
+}
+
+/// The runtime `serialize` wrote; its texts and bytes are slices of `blob`.
+/// `core` and each unit's `module` are empty: nothing reads them past the cut.
+pub fn deserialize(ar: std.mem.Allocator, blob: []const u8) error{ OutOfMemory, BadBlob }!Runtime {
+    var rd: BlobReader = .{ .b = blob };
+    if (!std.mem.startsWith(u8, blob, blob_magic)) return error.BadBlob;
+    rd.i = blob_magic.len;
+    const end = try rd.u32_();
+    const pages = try rd.u32_();
+    const core_text = try rd.str();
+    const core_bytes = try rd.str();
+    const graph = try rd.str();
+    const units = try ar.alloc(Unit, try rd.u32_());
+    for (units) |*u| {
+        const n = try rd.str();
+        const file = try rd.str();
+        const deps = try ar.alloc([]const u8, try rd.u32_());
+        for (deps) |*d| d.* = try rd.str();
+        const host_fs = (try rd.byte()) != 0;
+        u.* = .{ .name = n, .file_name = file, .module = .{ .items = &.{} }, .deps = deps, .host_fs = host_fs, .text = try rd.str(), .bytes = try rd.str() };
+    }
+    var maps: [2]std.StringHashMapUnmanaged(Ref) = .{ .empty, .empty };
+    for (&maps) |*m| {
+        const n = try rd.u32_();
+        try m.ensureTotalCapacity(ar, n);
+        for (0..n) |_| {
+            const k = try rd.str();
+            const unit_name = try rd.str();
+            const exp = try rd.str();
+            const params = try ar.alloc(ast.ValType, try rd.u32_());
+            for (params) |*t| t.* = @enumFromInt(@as(u16, @intCast(try rd.u32_())));
+            const res = try rd.u32_();
+            m.putAssumeCapacity(k, .{ .unit = unit_name, .@"export" = exp, .type = .{ .params = params, .result = if (res == std.math.maxInt(u32)) null else @enumFromInt(@as(u16, @intCast(res))) } });
+        }
+    }
+    if (rd.i != blob.len) return error.BadBlob;
+    return .{
+        .core = .{ .items = &.{} },
+        .end = end,
+        .pages = pages,
+        .core_text = core_text,
+        .core_bytes = core_bytes,
+        .units = units,
+        .std_refs = maps[0],
+        .leaf_refs = maps[1],
+        .graph = graph,
+    };
+}
+
+const BlobReader = struct {
+    b: []const u8,
+    i: usize = 0,
+    fn byte(r: *BlobReader) error{BadBlob}!u8 {
+        if (r.i >= r.b.len) return error.BadBlob;
+        r.i += 1;
+        return r.b[r.i - 1];
+    }
+    fn u32_(r: *BlobReader) error{BadBlob}!u32 {
+        if (r.i + 4 > r.b.len) return error.BadBlob;
+        defer r.i += 4;
+        return std.mem.readInt(u32, r.b[r.i..][0..4], .little);
+    }
+    fn str(r: *BlobReader) error{BadBlob}![]const u8 {
+        const n = try r.u32_();
+        if (r.i + n > r.b.len) return error.BadBlob;
+        defer r.i += n;
+        return r.b[r.i .. r.i + n];
+    }
+};
+
+fn putU32(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: u32) !void {
+    var b: [4]u8 = undefined;
+    std.mem.writeInt(u32, &b, v, .little);
+    try o.appendSlice(ar, &b);
+}
+
+fn putStr(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: []const u8) !void {
+    try putU32(ar, o, @intCast(v.len));
+    try o.appendSlice(ar, v);
+}
+
+/// The core's text with its memory starting at `pages` pages: the one
+/// `(memory (export "memory") <n>` line rewritten (`wat_emitter`'s spelling).
+fn withMinPagesText(ar: std.mem.Allocator, text: []const u8, pages: u32) ![]const u8 {
+    const head = "  (memory (export \"" ++ memory_export ++ "\") ";
+    const at = std.mem.indexOf(u8, text, head) orelse return error.OutOfMemory;
+    const num = at + head.len;
+    var e = num;
+    while (e < text.len and std.ascii.isDigit(text[e])) e += 1;
+    return std.fmt.allocPrint(ar, "{s}{d}{s}", .{ text[0..num], pages, text[e..] });
+}
+
+/// The core's binary with its memory starting at `pages` pages: the memory
+/// section (5) re-encoded, every other section as it is.
+fn withMinPagesBinary(ar: std.mem.Allocator, bytes: []const u8, pages: u32) ![]const u8 {
+    var o: std.ArrayListUnmanaged(u8) = .empty;
+    try o.appendSlice(ar, bytes[0..8]);
+    var i: usize = 8;
+    while (i < bytes.len) {
+        const id = bytes[i];
+        i += 1;
+        const len = uleb(bytes, &i) orelse return error.OutOfMemory;
+        const payload = bytes[i .. i + len];
+        i += len;
+        if (id != 5) {
+            try o.append(ar, id);
+            try putUleb(ar, &o, len);
+            try o.appendSlice(ar, payload);
+            continue;
+        }
+        // One memory: its count, its limits' flag, its minimum, its maximum.
+        var j: usize = 0;
+        const count = uleb(payload, &j) orelse return error.OutOfMemory;
+        const flags = payload[j];
+        j += 1;
+        _ = uleb(payload, &j) orelse return error.OutOfMemory;
+        var p: std.ArrayListUnmanaged(u8) = .empty;
+        try putUleb(ar, &p, count);
+        try p.append(ar, flags);
+        try putUleb(ar, &p, pages);
+        try p.appendSlice(ar, payload[j..]);
+        try o.append(ar, 5);
+        try putUleb(ar, &o, p.items.len);
+        try o.appendSlice(ar, p.items);
+    }
+    return o.items;
+}
+
+fn putUleb(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: usize) !void {
+    var x = v;
+    while (true) {
+        const b: u8 = @intCast(x & 0x7f);
+        x >>= 7;
+        if (x == 0) return o.append(ar, b);
+        try o.append(ar, b | 0x80);
+    }
+}
+
 // ── what a binary module imports ─────────────────────────────────────────────
 
 /// What a binary program module imports of the runtime: the modules it
@@ -670,7 +881,7 @@ fn uleb(b: []const u8, i: *usize) ?usize {
 }
 
 test "the core holds no std module's function; every std-wasm export and leaf is a unit's" {
-    const r = try get();
+    const r = try built();
     var diag: link.Diag = .{};
     var a = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer a.deinit();
@@ -691,5 +902,35 @@ test "the core holds no std module's function; every std-wasm export and leaf is
     const cl = try r.closure(ar, &.{"std@io@fs"});
     try std.testing.expectEqualStrings("std@io@fs", cl[cl.len - 1].name);
     try std.testing.expect(!importsRuntime(r.core_bytes));
-    try std.testing.expectEqual(r, try get());
+    try std.testing.expectEqual(r, try built());
+}
+
+test "the embedded runtime is the one cut from std-wasm now (decision 1032 (4))" {
+    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const fresh = try serialize(ar, try built());
+    // A compiler embeds the runtime its own sources cut: never a stale one.
+    try std.testing.expect(embedded.len > 0);
+    try std.testing.expect(std.mem.eql(u8, fresh, embedded));
+    const back = try deserialize(ar, fresh);
+    try std.testing.expectEqualSlices(u8, fresh, try serialize(ar, &back));
+    const r = try get();
+    try std.testing.expectEqual(r.units.len, (try built()).units.len);
+}
+
+test "a core started with more pages is the model's, text and binary" {
+    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const r = try built();
+    const pages = r.pages + 3;
+    const items = try ar.dupe(ast.Item, r.core.items);
+    for (items) |*it| if (it.* == .memory) {
+        it.memory.min_pages = pages;
+    };
+    const m: ast.Module = .{ .items = items };
+    const got = try r.coreFor(ar, pages);
+    try std.testing.expectEqualStrings(try renderText(ar, m), got.text);
+    try std.testing.expectEqualSlices(u8, try binary.encodeModule(ar, m), got.bytes);
 }

@@ -231,9 +231,9 @@ comptime runtime — keep the core module, so the snapshots record what the
 backend lowers and the comptime runtime keeps the core-module subset.
 
 The component is the module, untouched but for its start, inside a fixed
-frame (with the runtime unit's `$rt` ahead of it, § The runtime core and std's units, which is
-what imports `wasi_snapshot_preview1`'s `fd_write` and `random_get` now; a
-module of the `browser` host keeps importing them itself); a preview 1 adapter the compiler writes serves them over
+frame (under `Config.wasm_units` with the runtime unit's `$rt` ahead of it, § The runtime core and
+std's units, which is then what imports `wasi_snapshot_preview1`'s `fd_write` and `random_get`; else, and
+on the `browser` host, the module imports them itself); a preview 1 adapter the compiler writes serves them over
 preview 2 (`wasi:cli/stdout` / `stderr` and `wasi:io/streams`'
 `blocking-write-and-flush`, 4096 bytes at a time through a scratch memory of its
 own; `wasi:random/random`'s `get-random-u64`). The adapter reads the module's
@@ -1218,13 +1218,21 @@ overflow trap as RUN LOGs.
 
 ## The runtime core and std's units (decisions 1021 (2), 1026, piece P3)
 
-A `wasi` program and the module a snapshot runs (`Artifact.component`, `.module`) import, instead of
-carrying them, the **runtime core** `std@__rt` and the **std units** `std@<path>` it reaches
-(`runtime_unit.zig`); the `browser` host keeps one module with std-wasm linked in until its loader
-instantiates several (P6). All are built from the compiler's own bytes, once per process, the same for
-every program: the CLI writes `std@__rt.wasm` and each unit the program reaches beside its `.wat`
-(`build.zig` `writeRuntimeUnits`, a file already holding the bytes left alone), and `zig build
-std-wasm` writes them all into `zig-out/lib/std-wasm/` (`src/std_units_main.zig`).
+The module a snapshot runs (`.module`) imports, instead of carrying them, the **runtime core**
+`std@__rt` and the **std units** `std@<path>` it reaches (`runtime_unit.zig`); so does a `wasi`
+program's component (`Artifact.component`) under `Config.wasm_units`, which stays off until the C-API
+runner composes units (decision 1037 (5): no program is written with a unit's text, so the component
+links std-wasm in as before P3); the `browser` host keeps one module with std-wasm linked in until
+its loader instantiates several (P6). All are the same bytes for every program and are cut once per
+compiler build (decision 1032 (4)): `zig build` runs `src/std_units_main.zig --blob`, which serializes
+the cut (`runtime_unit.serialize`: the core's and each unit's text and bytes, the dependency graph,
+every `std:` / leaf reference with its type), and compiler-core embeds it (`std_units.bin`); `get()`
+reads it (`deserialize`) and no compiler process cuts std-wasm; `built()` cuts it now (the tool's,
+and the test that the embedded blob is the one the sources cut). `coreFor` starts the core's memory with
+more pages by rewriting the one memory line and section (`withMinPagesText` / `withMinPagesBinary`,
+equal to the model's rendering by test). Under `wasm_units` the CLI writes `std@__rt.wasm` and each unit
+the program reaches beside its `.wat` (`build.zig` `writeRuntimeUnits`, a file already holding the bytes
+left alone), and `zig build std-wasm` writes them all into `zig-out/lib/std-wasm/`.
 
 **The core** holds what is no std module's:
 

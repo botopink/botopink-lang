@@ -300,16 +300,13 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
-        // Decisions 440 (2), 450 (3): std-wasm, decoded into a `--target wasm`
-        // program and into the comptime runtime.
-        mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
-        addStdWasmLeaves(b, mod, std_wasm_leaves, &std_wasm_leaf_files);
-    }
     // Decision 1026 (2) — `zig build std-wasm`: the runtime core and std's
     // units, cut from the side module by compiler-core's own decoder
     // (`codegen/wat/runtime_unit.zig`), into `zig-out/lib/std-wasm/`.
-    {
+    // Decision 1032 (4) — the same tool's `--blob` serializes them once per
+    // build, and compiler-core embeds that (`std_units.bin`): no compiler
+    // process cuts std-wasm again. The tool itself embeds an empty one.
+    const std_units_blob = blk: {
         const std_units_mod = b.createModule(.{
             .root_source_file = b.path("modules/compiler-core/src/std_units_main.zig"),
             .target = b.graph.host,
@@ -320,11 +317,22 @@ pub fn build(b: *std.Build) void {
             },
         });
         std_units_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+        std_units_mod.addAnonymousImport("std_units.bin", .{ .root_source_file = b.addWriteFiles().add("std_units.bin", "") });
         addStdWasmLeaves(b, std_units_mod, std_wasm_leaves, &std_wasm_leaf_files);
         const std_units_exe = b.addExecutable(.{ .name = "std-units", .root_module = std_units_mod });
         const run_std_units = b.addRunArtifact(std_units_exe);
         const units_dir = run_std_units.addOutputDirectoryArg("std-wasm");
         std_wasm_step.dependOn(&b.addInstallDirectory(.{ .source_dir = units_dir, .install_dir = .lib, .install_subdir = "std-wasm" }).step);
+        const run_blob = b.addRunArtifact(std_units_exe);
+        run_blob.addArg("--blob");
+        break :blk run_blob.addOutputFileArg("std_units.bin");
+    };
+    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
+        // Decisions 440 (2), 450 (3): std-wasm, decoded into a `--target wasm`
+        // program and into the comptime runtime.
+        mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+        mod.addAnonymousImport("std_units.bin", .{ .root_source_file = std_units_blob });
+        addStdWasmLeaves(b, mod, std_wasm_leaves, &std_wasm_leaf_files);
     }
     // wasmtime runs it in-process on every native build (`persistent_wat.zig`,
     // decision 543): its C API's headers, from the library this target links.
@@ -672,14 +680,11 @@ pub fn build(b: *std.Build) void {
     // output folder, each dependency written once per its key and two
     // packages of one name refused (`workspace_out.sh`, decision 1015 (4)), and
     // a dependency's units taken from the unit cache by a second package over it
-    // (`unit_cache.sh`, decision 1008 (2)), and the wasm runtime core and
-    // std's units (`wasm_runtime_unit.sh`, `wasm_std_unit_per_module.sh`,
-    // decisions 1021 (2), 1026: the files beside the entry, written once, only
-    // the units a program reaches composed). The language
+    // (`unit_cache.sh`, decision 1008 (2)). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh", "wasm_runtime_unit.sh", "wasm_std_unit_per_module.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "target_reuse.sh", "load_reuse.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh", "workspace_out.sh", "unit_cache.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {
@@ -728,6 +733,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     web_core_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
+    web_core_mod.addAnonymousImport("std_units.bin", .{ .root_source_file = std_units_blob });
     addStdWasmLeaves(b, web_core_mod, std_wasm_leaves, &std_wasm_leaf_files);
     const web_exe = b.addExecutable(.{
         .name = "botopink",

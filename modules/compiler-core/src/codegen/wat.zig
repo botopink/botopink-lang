@@ -379,6 +379,9 @@ pub fn codegenEmit(
     const outer_packages = build_packages;
     build_packages = config.packages;
     defer build_packages = outer_packages;
+    const outer_units = units_on_wasi;
+    units_on_wasi = config.wasm_units;
+    defer units_on_wasi = outer_units;
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -1532,6 +1535,8 @@ threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) 
 /// The build's packages (`codegenEmit`): which modules are a dependency's
 /// (decision 531, `dropUnlowerableDependencyFns`).
 threadlocal var build_packages: ?crossModule.Packages = null;
+/// `Config.wasm_units` of the build being emitted.
+threadlocal var units_on_wasi: bool = false;
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
 /// Decision 518 (2) — a second pass over the same program when the first one
@@ -1676,8 +1681,10 @@ fn emitWatPass(
     // imports the runtime unit `std@__rt`: its memory, heap, allocator,
     // std-wasm and host functions; the module's own data starts past the
     // runtime unit's. The `browser` host's loader instantiates one module
-    // still (decision 1021's P6), which links std-wasm in.
-    const rt: ?*const runtimeUnit.Runtime = if (artifact == .browser) null else runtimeUnit.get() catch |err| switch (err) {
+    // still (decision 1021's P6), which links std-wasm in; so does a `wasi`
+    // build's component until the runner composes units (`Config.wasm_units`,
+    // decision 1037 (5)).
+    const rt: ?*const runtimeUnit.Runtime = if (artifact == .browser or (artifact == .component and !units_on_wasi)) null else runtimeUnit.get() catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return em.refuse(null, "the runtime unit `{s}` cannot be built ({s}): {s}", .{ runtimeUnit.name, @errorName(err), runtimeUnit.failure() }),
     };

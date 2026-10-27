@@ -124,6 +124,24 @@ compiler-cli/
 │   │                          with its import; each piece's origin comment
 │   │                          (decision 798 (2)) over it
 │   ├── resolved_file/       ← its fixture: `app` and `lib`
+│   ├── wasm_runtime_unit.sh ← the wasm runtime core and std's units (decisions
+│   │                          1021 (2), 1026; not in `test-cli` until the C-API
+│   │                          runner composes units, decision 1037 (5)): a one-module `hello` builds to
+│   │                          `main.wat`, `std@__rt.wasm` and the units it reaches
+│   │                          (`std@number`, `std@string`), written once and the
+│   │                          same for another program; wasmtime answers what
+│   │                          erlang answers; the core exports no std function;
+│   │                          the entry imports std-wasm from its units, its
+│   │                          memory and heap from `std@__rt`, carries none of
+│   │                          std-wasm's functions and is under 50 KB
+│   ├── wasm_runtime_unit/   ← its fixture: `hello`
+│   ├── wasm_std_unit_per_module.sh ← cell `wasm_std_unit_per_module` (decision 1026;
+│   │                          waits on the runner as above):
+│   │                          hello-world composes the core alone; a program
+│   │                          using `io.fs` adds `std@io@fs` and what it imports,
+│   │                          each before `$main` and after its imports; both
+│   │                          answer as on erlang
+│   ├── wasm_std_unit_per_module/ ← its fixtures: `hello`, `files`
 │   ├── build_modes_same_answer.sh ← cell `build_modes_same_answer` as a CLI case
 │   │                          (decision 798 (5); the suite builds a package one
 │   │                          way): `build_modes/app` (a decorator's member and
