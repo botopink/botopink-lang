@@ -19,5 +19,5 @@
 Proved also by [array_literal_numeric_join](../mixed_literals_infer_union-150/cases/array_literal_numeric_join/src/main.bp)
 Proved also by [bigint_plus_int_literal](../bigint_decimal_strict_json-332/cases/bigint_plus_int_literal/src/main.bp)
 Proved also by [bigint_unsuffixed_literal](../bigint_decimal_strict_json-332/cases/bigint_unsuffixed_literal/src/main.bp)
-Proved also by [comptime_wide_literal](../comptime_runs_at_build-331/run/src/cases/comptime_wide_literal/mod.bp)
+Proved also by [comptime_wide_literal](../comptime_runs_at_build-331/cases/comptime_wide_literal/src/main.bp)
 Proved also by [wide_literal_past_js_safe_integer](../i64_is_64_bit_everywhere-319/cases/wide_literal_past_js_safe_integer/src/main.bp)

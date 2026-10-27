@@ -2,4 +2,4 @@
 
 [cells/decorator_reads_catalogue_dependency/src/main.bp](cells/decorator_reads_catalogue_dependency/src/main.bp)
 
-Proved also by [init_executor_handle_typed](../decorator_decl_parameter_type_is_contract-716/run/src/cases/init_executor_handle_typed/mod.bp)
+Proved also by [init_executor_handle_typed](../decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_typed/src/main.bp)

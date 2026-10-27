@@ -17,4 +17,4 @@
 [cases/trailing_lambda_call/src/main.bp](cases/trailing_lambda_call/src/main.bp)
 
 Proved also by [comptime_block_in_body](../comptime_evaluated_and_lifted-266/cases/comptime_block_in_body/src/main.bp)
-Proved also by [comptime_expression_is_block](../type_application_versus_comparison-255/run/src/cases/comptime_expression_is_block/mod.bp)
+Proved also by [comptime_expression_is_block](../type_application_versus_comparison-255/cases/comptime_expression_is_block/src/main.bp)

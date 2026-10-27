@@ -9,4 +9,4 @@
 [cells/render_scope_library/src/main.bp](cells/render_scope_library/src/main.bp)
 
 Proved also by [component_alias_answers_value](../body_marker_whole_return_type-553/cases/component_alias_answers_value/src/main.bp)
-Proved also by [component_hook_and_component](../body_marker_whole_return_type-553/cells/component_hook_and_component/src/main.bp)
+Proved also by [component_hook_and_component](../body_marker_whole_return_type-553/cases/component_hook_and_component/src/main.bp)

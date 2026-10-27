@@ -14,5 +14,5 @@
 [cases/record_spread_positional_argument/src/main.bp](cases/record_spread_positional_argument/src/main.bp)
 
 Proved also by [record_param_spread_other_type](../component_props_plain_or_rest-529/cases/record_param_spread_other_type/src/main.bp)
-Proved also by [record_spread_beside_record_update](../component_props_plain_or_rest-529/run/src/cases/record_spread_beside_record_update/mod.bp)
-Proved also by [record_update_base_not_a_name](../component_props_plain_or_rest-529/run/src/cases/record_update_base_not_a_name/mod.bp)
+Proved also by [record_spread_beside_record_update](../component_props_plain_or_rest-529/cases/record_spread_beside_record_update/src/main.bp)
+Proved also by [record_update_base_not_a_name](../component_props_plain_or_rest-529/cases/record_update_base_not_a_name/src/main.bp)

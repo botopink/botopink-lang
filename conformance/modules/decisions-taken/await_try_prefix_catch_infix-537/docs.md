@@ -4,4 +4,4 @@
 [cells/catch_lowest_precedence/src/main.bp](cells/catch_lowest_precedence/src/main.bp)
 [cells/try_await_prefix_operators/src/main.bp](cells/try_await_prefix_operators/src/main.bp)
 
-Proved also by [marker_lambda_async](../body_marker_whole_return_type-553/cells/marker_lambda_async/src/main.bp)
+Proved also by [marker_lambda_async](../body_marker_whole_return_type-553/cases/marker_lambda_async/src/main.bp)
