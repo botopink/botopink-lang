@@ -1,3 +1,0 @@
-botopink-cell 1
-out blog/[slug], revalidate 3600000ms, dynamicParams false
-out about, revalidate never, dynamicParams true

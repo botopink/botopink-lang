@@ -61,7 +61,7 @@ async fn run() -> Async<void> {
     }
 }
 
-pub fn main() -> void {
+pub async fn main() -> Async<void> {
     val xs = [1, 2, 3];
     for xs { x ->
         print("bare " + x.toString());
@@ -115,5 +115,5 @@ pub fn main() -> void {
     }
     print(firstOver(["u", "v", "w"], 15));
     print(firstOver(["u"], 15));
-    run();
+    await run();
 }

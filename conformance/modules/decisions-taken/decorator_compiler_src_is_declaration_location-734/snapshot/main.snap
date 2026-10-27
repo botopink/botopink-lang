@@ -1,0 +1,5 @@
+botopink-cell 2
+== decorator_compiler_src_is_declaration_location
+out src/main.bp:8:1
+out src/main.bp:11:1
+out total 3

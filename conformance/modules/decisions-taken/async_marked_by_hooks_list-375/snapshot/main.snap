@@ -1,0 +1,5 @@
+botopink-cell 2
+== decl_hooks_async
+out Page: async, Header: sync, Comments: async, Card: sync
+out Ring: async, Link: async
+out Feed: async

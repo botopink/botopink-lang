@@ -87,6 +87,6 @@ async fn run() -> Async<void> {
     print("nextDelay " + delays.join(","));
 }
 
-pub fn main() -> void {
-    run();
+pub async fn main() -> Async<void> {
+    await run();
 }

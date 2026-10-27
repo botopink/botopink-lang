@@ -69,7 +69,7 @@ and a `<!-- example: modules/<module>/run/src/cases/<case> -->`
 line (`refused/…`, `cells/<case>`) names one; a module holding both `cases/` and `src/`, or a `cases/<x>`
 that is no cell, is refused:
 
-<!-- example: modules/decisions-taken/cell_cases_directory-765/cells/prints -->
+<!-- example: modules/decisions-taken/cell_cases_directory-765/cases/prints -->
 
 A `.snap` is a record per line, in this order, one spelling per answer:
 
@@ -1156,7 +1156,7 @@ used to build it or written in the type:
 A tuple's `bool` element prints `true` / `false`, read by its label or its
 index, a module-level tuple's read inside a function too:
 
-<!-- example: modules/global/cells/global_tuple_bool_field -->
+<!-- example: modules/global/cases/global_tuple_bool_field -->
 
 A tuple's `toString()` is the text `print` writes for it — `#(1, 2)`, its string elements quoted, a nested tuple inside — and it joins a string in a `+` the same way:
 
@@ -1199,7 +1199,7 @@ std's prelude writes every member of a primitive `pub` — `pub fn`, `pub declar
 
 <!-- example: modules/decisions-taken/method_private_to_module-859/cells/method_through_behavior -->
 <!-- example: modules/decisions-taken/method_private_to_module-859/cases/method_private_to_module -->
-<!-- example: modules/decisions-taken/added_member_is_pub-887/cells/added_member_is_pub -->
+<!-- example: modules/decisions-taken/added_member_is_pub-887/cases/added_member_is_pub -->
 
 An extension block of another module met by such a method is refused at the block (decision 886, § behavior).
 
@@ -1225,7 +1225,7 @@ A variant written with the leading dot is resolved by the declared type of the
 parameter it is passed to, whichever module declares the function:
 `phase.describe(.Slow)` with `describe(p: Phase)` in `phase`.
 
-<!-- example: modules/dot/cells/dot_variant_argument_imported_fn -->
+<!-- example: modules/dot/cases/dot_variant_argument_imported_fn -->
 
 #### Sections of an enum
 
@@ -1254,7 +1254,7 @@ A value of a section prints as the leaf's whole path, as written —
 a list; no name of the backend's own (the section's wrapper record, `_inner`)
 reaches the output.
 
-<!-- example: modules/decisions-taken/enum_section_prints_full_path-601/cells/enum_section_prints_full_path -->
+<!-- example: modules/decisions-taken/enum_section_prints_full_path-601/cases/enum_section_prints_full_path -->
 
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
@@ -2011,7 +2011,7 @@ the operator that divides, never at the whole expression. At run time each targe
 (commonJS and wasm `Infinity`, erlang and beam the `panic` `division by zero: / on f64`, 675). An integer division by zero at build is the same
 refusal, naming `7 / 0`:
 
-<!-- example: modules/decisions-taken/comptime_equality_iterative-471/cells/comptime_deep_structure_equality -->
+<!-- example: modules/decisions-taken/comptime_equality_iterative-471/cases/comptime_deep_structure_equality -->
 <!-- example: modules/decisions-taken/comptime_badarith_message-472/cells/comptime_float_division_by_zero -->
 <!-- example: modules/decisions-taken/comptime_badarith_message-472/cells/comptime_integer_division_by_zero -->
 
@@ -2990,7 +2990,7 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cells/context_enum_default -->
 
-<!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cells/context_provide_made_at_run_time -->
+<!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cases/context_provide_made_at_run_time -->
 
 **Memo** (decisions 755, 771, 774). `val v = use memo({ -> make });` is std's
 hook `hooks.memo<T>(make: fn() -> T) -> Component<T>`, imported as any std
@@ -4323,8 +4323,8 @@ that is not `async`, or in a `comptime { … }` inside such a body, nothing awai
 in a value, written without `;`, is refused `init-executor-value` at that value: no value is dropped.
 
 <!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_async_executor_in_async_body -->
-<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_async_executor_outside_async_refused -->
-<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_executor_value_refused -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/init_async_executor_outside_async_refused -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cases/init_executor_value_refused -->
 
 ### `compiler.load`
 
@@ -4360,9 +4360,9 @@ the program's own (`conformance/lib/`, decision 989).
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_library_entry_root -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_resolves_own_dependencies -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name -->
-<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name_unknown -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cases/load_by_package_name_unknown -->
 <!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
-<!-- example: modules/decisions-taken/compiler_load_answers_result-782/cells/compiler_load_answers_result -->
+<!-- example: modules/decisions-taken/compiler_load_answers_result-782/cases/compiler_load_answers_result -->
 <!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->
 
 `botopink test` leaves them out the same way: a `test/` module that loads a package reads its
@@ -4627,7 +4627,7 @@ sections' names joined by `.` (`Color.Warm`), `null` at the top level. A section
 is no entry, its wrapper constructor (`Token.Color`) is, with its one field; a
 numeric leaf is named by its digits.
 
-<!-- example: modules/decisions-taken/compiler_variants_typed_entries-848/cells/compiler_variants_typed_entries -->
+<!-- example: modules/decisions-taken/compiler_variants_typed_entries-848/cases/compiler_variants_typed_entries -->
 
 `compiler.fail(message, at: decl)` refuses it at the annotation, and what the
 decorator produces goes to one of four places (decisions 216, 575 (3), 576),
@@ -4935,7 +4935,7 @@ declaration's position (decision 580): a module's `val`s, `var`s, `_`
 statements and executors run in one order, source order, so a `val` written
 below an annotated declaration reads what that declaration's executor did.
 
-<!-- example: modules/decisions-taken/executor_runs_in_source_order-580/cells/init_executor_module_val_order -->
+<!-- example: modules/decisions-taken/executor_runs_in_source_order-580/cases/init_executor_module_val_order -->
 
 The declared type of the `syntax decl` parameter is the contract the
 annotated declaration meets (decision 716), and every tree the decorator
@@ -6191,7 +6191,7 @@ wasm data segment —, so a file that is not text embeds byte for byte; an `open
 in a run-time body reads when the program runs, from the resolved path, so the file
 is deployed with the program. A failure at build is a located build error.
 
-<!-- example: modules/decisions-taken/unicode_case_tables_embedded-559/cells/embed_binary_file -->
+<!-- example: modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file -->
 
 The path is relative to the `botopink.json` of the package that writes it; a
 path passed on through a `comptime` parameter is read in the caller's package:

@@ -3,7 +3,7 @@
 [cells/load_library_entry_root/src/main.bp](cells/load_library_entry_root/src/main.bp)
 [cells/load_resolves_own_dependencies/src/main.bp](cells/load_resolves_own_dependencies/src/main.bp)
 [cells/load_by_package_name/src/main.bp](cells/load_by_package_name/src/main.bp)
-[cells/load_by_package_name_unknown/src/main.bp](cells/load_by_package_name_unknown/src/main.bp)
+[cases/load_by_package_name_unknown/src/main.bp](cases/load_by_package_name_unknown/src/main.bp)
 
 ``m.`test`()`` runs the loaded package's tests in-process: one `TestCase` per test with what it printed, a failing or
 aborting test a case with `ok: false` and the next one run, a crash outside every test `.Abort`, an `Async` when a

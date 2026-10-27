@@ -191,7 +191,7 @@ fn ifPlainValue(b: bool) -> string {
     return show(v);
 }
 
-pub fn main() -> void {
+pub async fn main() -> Async<void> {
     print(blockArms(Shape.Circle(r: 1)));
     print(blockArms(Shape.Label(text: "b")));
     print(lambdaArms(1));
@@ -218,5 +218,5 @@ pub fn main() -> void {
     print(ifArgumentBlock(false));
     print(ifPlainValue(true));
     print(ifPlainValue(false));
-    run();
+    await run();
 }

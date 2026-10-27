@@ -1,0 +1,7 @@
+botopink-cell 2
+== init_async_executor_outside_async_refused
+refused error: init-async-executor-outside-async: this executor is `async`, and its body is written into no `async` body here: write `compiler.init({ -> … })`
+at src/main.bp:8:21
+== init_executor_value_refused
+refused error: init-executor-value: the executor answers nothing, and its last expression, written without `;`, is a `string`
+at src/main.bp:9:14

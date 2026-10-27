@@ -4,4 +4,4 @@ A page's settings are arguments of its decorator, typed, beside its route: `blog
 
 Cells in this repository that also bear on it: `modules/decisions-taken/compiler_annotation_labelled_arguments-305/cases/annotation_label_equals_decorator`.
 
-[cells/page_settings_are_page_arguments/src/main.bp](cells/page_settings_are_page_arguments/src/main.bp) · [cells/page_settings_are_page_arguments/src/pages.bp](cells/page_settings_are_page_arguments/src/pages.bp)
+[cases/page_settings_are_page_arguments/src/main.bp](cases/page_settings_are_page_arguments/src/main.bp) · [cases/page_settings_are_page_arguments/src/pages.bp](cases/page_settings_are_page_arguments/src/pages.bp)

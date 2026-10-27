@@ -1,0 +1,7 @@
+botopink-cell 2
+== commonjs_generic_body_receives_type_shape
+out 3.0
+out 3
+out 1.5 and 2.0
+out Box(value: 2.0)
+out 4.0

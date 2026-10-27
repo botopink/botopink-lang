@@ -1,0 +1,8 @@
+botopink-cell 2
+== enum_section_prints_full_path
+out Token.Color.White
+out Token.Layout.Break.After
+out Token.After
+out picked Token.Color.Black
+out in a hole: Token.Color.Black
+out [Token.Color.White, Token.Layout.Break.Before]

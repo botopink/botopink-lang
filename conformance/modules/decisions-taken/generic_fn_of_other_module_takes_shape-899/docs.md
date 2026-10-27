@@ -6,5 +6,5 @@ declared signature from the export info (generic, bodied, no host binding) and h
 type parameter, at a call of the exact arity; the answer depends on the signature alone, never on the callee's body,
 so a cached dependant stays sound (509 (2)). The `.d.ts`, the `T` values and the other targets are unchanged.
 
-[cells/generic_fn_of_other_module_takes_shape/src/main.bp](cells/generic_fn_of_other_module_takes_shape/src/main.bp)
+[cases/generic_fn_of_other_module_takes_shape/src/main.bp](cases/generic_fn_of_other_module_takes_shape/src/main.bp)
 [cells/generic_fn_of_dependency_takes_shape/src/main.bp](cells/generic_fn_of_dependency_takes_shape/src/main.bp)

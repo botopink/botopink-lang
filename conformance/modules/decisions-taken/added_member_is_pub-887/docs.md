@@ -4,4 +4,4 @@ A member a decorator adds reaches every importer: `Users.spell(…)`, added by `
 from `main`; `xs.length` reads the property std's prelude writes `pub val length: i32;`
 (`added_member_is_pub`, on the four targets).
 
-[cells/added_member_is_pub/src/main.bp](cells/added_member_is_pub/src/main.bp)
+[cases/added_member_is_pub/src/main.bp](cases/added_member_is_pub/src/main.bp)

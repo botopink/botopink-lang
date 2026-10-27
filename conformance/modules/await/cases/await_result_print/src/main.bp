@@ -58,6 +58,6 @@ async fn run(n: i32) -> Async<void> {
     }
 }
 
-pub fn main() -> void {
-    run(3);
+pub async fn main() -> Async<void> {
+    await run(3);
 }

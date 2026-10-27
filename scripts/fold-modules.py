@@ -41,13 +41,29 @@ RUN_TIMEOUT = 900
 FOLDABLE_CELL_RECORDS = {"out", "refused", "at", "label", "abort"}
 MODULES = "conformance/modules"
 
-TEMPLATE_HEAD = '''//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
-//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+TEMPLATE_HEAD = '''//// The module's one package (decisions 789 (4), 982 (5), 998 (5)): each case is a package under
+//// `cases/`, loaded at build by `runCase`; a refused case prints its refusals, a running one prints
+//// what its `main` wrote (989 (1)) — awaited in `main`'s `async` body when the case's own `main` is.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+/// What a case wrote, its final newline left to `print`.
+fn lines(text: string) -> string {
+    return if (text.endsWith("\n")) text.slice(0, text.length - 1) else text;
+}
+
+fn shown(name: string, ran: Result<string, RunFailure>) -> void {
+    print("== " + name);
+    case ran {
+        Ok(text) -> print(lines(text));
+        Error(f) {
+            if (f.output != "") print(lines(f.output));
+            print("abort " + f.message);
+        }
+    }
+}
 
 fn runCase(comptime name: string) -> void {
-    print("== " + name + " comptime");
     val loaded = try comptime compiler.load("cases/" + name) catch { r ->
         compiler.init({ ->
             print("== " + name);
@@ -60,17 +76,15 @@ fn runCase(comptime name: string) -> void {
         });
         return;
     };
-    compiler.init({ ->
-        print("== " + name);
-        try loaded.run() catch { f -> print("abort " + f.message) }
-    });
+    if (comptime loaded.mainAsync())
+        compiler.init({ async -> shown(name, await loaded.run()); })
+    else
+        compiler.init({ -> shown(name, loaded.run()); });
 }
 
-comptime {
+pub async fn main() -> Async<void> {
 '''
 TEMPLATE_TAIL = '''}
-
-pub fn main() -> void {}
 '''
 
 
@@ -193,8 +207,11 @@ def gather(module):
                     why = "narrowed targets"
                 if m.get("dependencies"):
                     why = why or "dependencies"
-                if set(m) - {"name"}:
-                    why = why or "manifest keys " + ",".join(sorted(set(m) - {"name"}))
+                # A folded cell keeps its own manifest: a `version`, or a `src` that is
+                # the default, changes nothing of how the case loads.
+                extra = set(m) - {"name", "version"} - ({"src"} if m.get("src") in ("src", "src/") else set())
+                if extra:
+                    why = why or "manifest keys " + ",".join(sorted(extra))
             except (OSError, ValueError):
                 why = "no readable botopink.json"
             for extra in ("deps", "snapshot/targets", "draft", "cases"):

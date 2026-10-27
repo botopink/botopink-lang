@@ -1,0 +1,10 @@
+botopink-cell 2
+== hand_written_twin_name_is_free
+out value
+out type
+out hand-written pick__type
+out warm
+out hand-written __Color__Warm
+out __Color__Warm(label: "hand-written __Color__Warm")
+out hand-written __embed_path
+out embedded note

@@ -1,0 +1,4 @@
+botopink-cell 2
+== page_settings_are_page_arguments
+out blog/[slug], revalidate 3600000ms, dynamicParams false
+out about, revalidate never, dynamicParams true

@@ -7,4 +7,4 @@ and the same holds when `show` is called through a function value. On commonJS t
 the body a hidden trailing argument with that type's print shape, one JavaScript body per function; the values, the
 `.d.ts` and every other target are unchanged, and the cost lands only where a generic writes a `T` as text.
 
-[cells/commonjs_generic_body_receives_type_shape/src/main.bp](cells/commonjs_generic_body_receives_type_shape/src/main.bp)
+[cases/commonjs_generic_body_receives_type_shape/src/main.bp](cases/commonjs_generic_body_receives_type_shape/src/main.bp)

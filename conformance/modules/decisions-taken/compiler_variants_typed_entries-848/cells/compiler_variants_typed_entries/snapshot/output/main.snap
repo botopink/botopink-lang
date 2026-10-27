@@ -1,2 +1,0 @@
-botopink-cell 1
-out Eof()@-#0 Num(value:i32)@-#0 Color(value:Token.Color)@-#0 Red()@Color#0 Warm(value:Token.Color.Warm)@Color#0 Orange()@Color.Warm#0 500()@Color.Warm#0

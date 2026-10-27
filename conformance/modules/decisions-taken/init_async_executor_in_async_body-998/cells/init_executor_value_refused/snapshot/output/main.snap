@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: init-executor-value: the executor answers nothing, and its last expression, written without `;`, is a `string`
-at src/main.bp:9:14

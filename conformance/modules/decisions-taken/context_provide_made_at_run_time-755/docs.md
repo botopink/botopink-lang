@@ -4,4 +4,4 @@ The example's `App` makes the context it provides from its own parameter `dark`.
 
 Cells in this repository that also bear on it: `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_read`, `modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_provide_bound`.
 
-[cells/context_provide_made_at_run_time/src/main.bp](cells/context_provide_made_at_run_time/src/main.bp)
+[cases/context_provide_made_at_run_time/src/main.bp](cases/context_provide_made_at_run_time/src/main.bp)

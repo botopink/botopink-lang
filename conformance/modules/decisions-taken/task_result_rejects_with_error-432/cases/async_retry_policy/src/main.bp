@@ -24,6 +24,6 @@ async fn run() -> Async<void> {
     }
 }
 
-pub fn main() -> void {
-    run();
+pub async fn main() -> Async<void> {
+    await run();
 }

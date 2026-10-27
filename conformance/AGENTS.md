@@ -370,7 +370,7 @@ readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it
 144 B-141 adds `modules/meta/cases/meta_list_method_on_optional` and `modules/meta/cases/meta_list_coalesced_method` (a method on an
 optional's list, a coalesced list) and `modules/array/cases/array_map_component_imported` (a component of an imported module),
 each red on wasm on the parent binary and green on the four targets.
-Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
+Decision 375 (`HookNode.async`) adds `modules/decisions-taken/async_marked_by_hooks_list-375/cases/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
 `modules/decisions-taken/async_marked_by_hooks_list-375/cells/decl_hooks_async_imported` (an imported node's mark) on the four targets, and
 `modules/decisions-taken/async_marked_by_hooks_list-375/cells/component_sync_plain_function` (commonJS only, `"targets"` — the host `pending` has only a Node binding:
@@ -385,7 +385,7 @@ return before a `use`); `modules/decisions-taken/use_at_component_top_level-357/
 Decision 277 (`decl.hooks`, `01-checker` step 23) adds `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct` (a host hook: one node;
 commonJS, erlang and beam — `session` has no wasm binding), `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_all_nodes` (four nodes, a
 component once, calls in body order), `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_custom_hook` (a hook's own node),
-`modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_cycle` (an edge back), `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_function_value` (`hook: null`),
+`modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_cycle` (an edge back), `modules/decisions-taken/decl_hooks_reachable_components-277/cases/decl_hooks_function_value` (`hook: null`),
 `modules/decisions-taken/route_read_through_hooks-293/cells/decl_hooks_type_args` (a `use`'s type arguments with their fields, decision 293),
 `modules/decisions-taken/context_named_by_value_type-379/cells/decl_hooks_context` (each `provide` / `context` with its context object, 354 (4); wasm refuses the
 `use`) and `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_imported` (another module's nodes, a hook through an alias with its own
@@ -522,7 +522,7 @@ namespace call, an imported template's built code and a decorator's member) and
 each refused or mistyped by the parent binary. B-23's Conformance step pins the two refusals 310
 leaves, each green on the group's base: `modules/decisions-taken/aliased_same_named_types-310/cases/import_two_types_one_name_unaliased` (two
 un-aliased items of two modules' `Policy`, decision 170) and
-`modules/decisions-taken/local_type_beside_aliased_import-603/cells/import_alias_beside_local_type` (a type of this module beside an aliased same-named
+`modules/decisions-taken/local_type_beside_aliased_import-603/cases/import_alias_beside_local_type` (a type of this module beside an aliased same-named
 import — refused while question B-23-a was open, two types by decision 603: it prints, constructs,
 answers its own method and is told apart by `is` from the alias).
 `modules/behavior/cases/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
@@ -668,7 +668,7 @@ variant; the parent's lowering failed `MissingPackage`).
 a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
 import — the wasm comptime runtime runs `bang`'s `.Wasm(body: …)` cell (its Erlang cell never runs at
 build, decision 452) and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
-`modules/decisions-taken/decorator_calls_host_comptime_cell-341/cells/decorator_imported_host_function` (the same through an imported function and an imported
+`modules/decisions-taken/decorator_calls_host_comptime_cell-341/cases/decorator_imported_host_function` (the same through an imported function and an imported
 decorator: the export carries its host and std functions),
 `modules/decisions-taken/comptime_never_translates_erlang-452/cases/comptime_host_cell_unavailable` (decisions 434 (4), 452: a host function with neither a `std:` nor a
 `fn:` cell, refused at the call naming both — was the cell `decorator_host_cell_missing`),
@@ -922,7 +922,7 @@ module load — erlang and beam dropped the write), `modules/decisions-taken/neg
 `modules/behavior/run/src/cases/behavior_method_dispatch_by_value` (wasm dispatches a behavior-typed call),
 `modules/string/cases/string_char_code_non_ascii` (wasm answered bytes), `modules/val/cases/val_assert_variant_pattern` (commonJS
 `ReferenceError`, beam `{unassigned, …}`) and `modules/is/cases/is_enum_variant` and
-`modules/renderer/cells/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
+`modules/renderer/cases/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
 `snapshot/output/` answer shared by four targets: `modules/string/cases/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
 one empty line — and `words` over blanks), `modules/array/cases/array_flat_forms` (`flatten`, `flat`, `flatMap`
@@ -1125,7 +1125,7 @@ outside an `f64` function — wasm refused the module, commonJS printed `0`) and
 `modules/linked/run/src/cases/linked_val_name_collision` (a module-level `val` and `var` two linked modules declare, read,
 written, imported under an alias and shadowed by a parameter — wasm read the first one).
 `modules/val/cases/val_assert_record_pattern` gained the labelled form (erlang bound it by position).
-`modules/hof/cells/hof_named_function` (a local, an imported and a bound function named as an array method's
+`modules/hof/cases/hof_named_function` (a local, an imported and a bound function named as an array method's
 argument — wasm trapped), `modules/generic/run/src/cases/generic_body_specialized` (a method on a type-parameter value, a float
 through one, a behavior's generic associated fn and `Dict<string, string>.at` over a key built at
 run time — wasm answered from one word-typed body) and `modules/imported/run/src/cases/imported_fn_as_value` (handed over by
@@ -1284,7 +1284,7 @@ time, never at build) with `modules/decisions-taken/expr_decl_removed_compiler_t
 Decisions 384 and 395 add, on the four targets, `modules/decisions-taken/typed_member_reads_own_meta-395/cases/member_reads_own_meta` (`#[validated]`'s
 member reads `for (comptime @typeInfo(T).metaAll(Check))`, typed `Check<T>[]` in the decorator's
 body and answered with `Conta`'s two `#[check]`s where the member is rendered; the rules and messages
-run with the program) and `modules/decisions-taken/local_type_beside_aliased_import-603/cells/decorator_member_type_same_name` (a member naming its module's
+run with the program) and `modules/decisions-taken/local_type_beside_aliased_import-603/cases/decorator_member_type_same_name` (a member naming its module's
 `Violation` where the annotated module declares one: two types, the member's under its hygiene alias
 — refused at the annotation, question B-23-a, until decision 603), and `modules/decisions-taken/member_names_resolve_where_written-384/run/src/cases/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
 Decision 311 (`01-checker` step 29 — the template annotation `` #[f @`…`] ``) adds, on the four targets,
@@ -1642,7 +1642,7 @@ object form when the workspaces manifest (`aa80e30b`) started refusing the array
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
 The `embed_*` cells (decision 519, 144 B-12) carry the files their program embeds beside their
-`botopink.json` (`assets/…`; a loaded package reads them from its own directory): `modules/decisions-taken/embed_returns_asset-519/cells/embed_text_file` and `modules/decisions-taken/unicode_case_tables_embedded-559/cells/embed_binary_file` (an `Asset`'s path, size,
+`botopink.json` (`assets/…`; a loaded package reads them from its own directory): `modules/decisions-taken/embed_returns_asset-519/cells/embed_text_file` and `modules/decisions-taken/unicode_case_tables_embedded-559/cases/embed_binary_file` (an `Asset`'s path, size,
 SHA-256 and bytes on the four targets, a file with a zero byte and bytes past 0x7f included),
 `modules/decisions-taken/embed_returns_asset-519/cells/embed_through_comptime_param` (a local dependency and the project each hold an
 `assets/note.txt`: the path a `comptime` parameter passes is read in the caller's package, the
@@ -1682,7 +1682,7 @@ beam (`make` is declared `pub` by `a/theme` and by `b/theme`) and wasm (`cannot 
 make/0`); four targets now (the real case: `emilia/theme` beside `styled/theme` under
 `jhonstart-emilia`, where erlang tagged emilia's `Ns` with `styled@theme@@Ns__v__…`).
 
-`modules/field/cells/field_name_collision` is the third cell that needs two modules to say anything, and the
+`modules/field/cases/field_name_collision` is the third cell that needs two modules to say anything, and the
 defect it pins is **invisible in one file**. A record is a tagged tuple on erlang, so a field read is
 a POSITION, and the position comes from the field's NAME alone when the receiver's type was lost —
 at the optional binder of `if (hitOf()) { h -> … }`, for one. The name only identifies a record when

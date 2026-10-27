@@ -10,4 +10,4 @@ Decision 786 amends the answer to `Result<compiler.Module, compiler.Refused>`: `
 In the cell `main` loads a file that compiles and one that does not, asks each answer, and handles both with
 `try … catch`: the handler runs for the refused file alone, with at least one refusal.
 
-[cells/compiler_load_answers_result/src/main.bp](cells/compiler_load_answers_result/src/main.bp)
+[cases/compiler_load_answers_result/src/main.bp](cases/compiler_load_answers_result/src/main.bp)

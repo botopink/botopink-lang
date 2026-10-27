@@ -12,5 +12,5 @@ An `async` executor in a body that is not `async` is `init-async-executor-outsid
 (`init_async_executor_outside_async_refused`); an executor whose body ends in a value is `init-executor-value`, at
 that value (`init_executor_value_refused`).
 
-[cells/init_async_executor_outside_async_refused/src/main.bp](cells/init_async_executor_outside_async_refused/src/main.bp)
-[cells/init_executor_value_refused/src/main.bp](cells/init_executor_value_refused/src/main.bp)
+[cases/init_async_executor_outside_async_refused/src/main.bp](cases/init_async_executor_outside_async_refused/src/main.bp)
+[cases/init_executor_value_refused/src/main.bp](cases/init_executor_value_refused/src/main.bp)
