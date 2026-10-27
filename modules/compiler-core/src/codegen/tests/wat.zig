@@ -5168,7 +5168,7 @@ test "wat: units ---- a wasi entry with the units on imports them, names them in
 
     // The frame over the units' bytes, run through the runner.
     var fw: std.Io.Writer.Allocating = .init(ar);
-    try watEmitter.frameOf(ar, &fw.writer, bin);
+    try watEmitter.frameOf(ar, &fw.writer, bin, &.{});
     var failure: ?[]u8 = null;
     const comp = (try engine.precompiled(a, io, null, fw.written(), .component, false, &failure)) orelse {
         std.debug.print("\n=== frame refused: {s}\n", .{failure.?});
@@ -5245,4 +5245,124 @@ test "wat: decision 1021 (10) ---- flatMap, pop, an empty inner array and a spre
         \\    print(names);
         \\}
     , "[1, 2, 3]\n[1, 10, 2, 20]\n[\"a\", \"b\", \"c\"]\n[]\n0\n3\n[1, 2]\nb\na\nnone\n[]\n");
+}
+
+// Decision 1032 (6) P4 — with `Config.wasm_units` on, each module of a
+// program is a unit of its own: `lib` exports its `pub` functions (through
+// decision 1037's wrappers where a type definition crosses), the entry
+// imports them from `test@lib` instead of linking their bodies and names the
+// unit in its `botopink.units` before itself; every import of every unit is
+// an export of the unit it names, typed alike (the index oracle, extended to
+// program units); and the frame over the units runs through `runner.run`.
+test "wat: units ---- each module of a program is a unit, importing what the units it reaches export" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const engine = @import("../wat/engine.zig");
+    const runner = @import("../wat/runner.zig");
+    const watEmitter = @import("../wat/wat_emitter.zig");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    var outputs = try h.generate(a, &.{
+        .{ .path = "lib", .source =
+        \\pub type Point(x: i32, y: i32)
+        \\
+        \\pub fn greet(name: string) -> string {
+        \\    return "hi, " + name;
+        \\}
+        \\
+        \\pub fn shift(p: Point, d: i32) -> Point {
+        \\    return Point(x: p.x + d, y: p.y);
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {greet, shift, Point} from "lib";
+        \\
+        \\fn main() -> void {
+        \\    print(greet("bo"));
+        \\    val p = shift(Point(x: 1, y: 2), 3);
+        \\    print(p.x);
+        \\}
+        },
+    }, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const rt = try ru.get();
+    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
+    var entry: ?[]const u8 = null;
+    for (outputs.items) |o| {
+        const bin = o.result.wasm orelse continue;
+        const stems = try ru.unitsOf(ar, bin);
+        if (stems.len == 0) continue;
+        try program.append(ar, .{ .name = stems[stems.len - 1], .bytes = bin });
+        if (std.mem.eql(u8, o.name, "main")) entry = bin;
+    }
+    const bin = entry orelse return error.ModuleDidNotCompile;
+    const stems = try ru.unitsOf(ar, bin);
+    try std.testing.expectEqualStrings("test@lib", stems[stems.len - 2]);
+    try std.testing.expectEqualStrings("test@main", stems[stems.len - 1]);
+    const main_text = (try ru.faceOfBytes(ar, bin)).text;
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@lib\" \"greet\" ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@lib\" \"shift\" ") != null);
+
+    // The index oracle over every unit of the program.
+    for (program.items) |p| {
+        const face = try ru.faceOfBytes(ar, p.bytes);
+        var lines = std.mem.tokenizeScalar(u8, face.text, '\n');
+        while (lines.next()) |l| {
+            const head = "    (import \"";
+            if (!std.mem.startsWith(u8, l, head)) continue;
+            const rest = l[head.len..];
+            const q = std.mem.indexOfScalar(u8, rest, '"').?;
+            const module = rest[0..q];
+            const unit_face = if (std.mem.eql(u8, module, ru.name)) rt.core_face else if (rt.unit(module)) |u| u.face else for (program.items) |o| {
+                if (std.mem.eql(u8, o.name, module)) break try ru.faceOfBytes(ar, o.bytes);
+            } else return error.TestUnexpectedResult;
+            const want = try std.fmt.allocPrint(ar, "    (export {s}", .{rest[q + 2 ..]});
+            if (std.mem.indexOf(u8, unit_face.text, want[0 .. want.len - 1]) == null) {
+                std.debug.print("\n=== {s}: no export for {s}\n", .{ p.name, l });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+
+    var fw: std.Io.Writer.Allocating = .init(ar);
+    try watEmitter.frameOf(ar, &fw.writer, bin, program.items);
+    var failure: ?[]u8 = null;
+    const comp = (try engine.precompiled(a, io, null, fw.written(), .component, false, &failure)) orelse {
+        std.debug.print("\n=== frame refused: {s}\n", .{failure.?});
+        a.free(failure.?);
+        return error.TestUnexpectedResult;
+    };
+    defer comp.code.deinit();
+    var held: std.ArrayListUnmanaged(engine.Precompiled) = .empty;
+    defer {
+        for (held.items) |p| p.code.deinit();
+        held.deinit(a);
+    }
+    const units = try ar.alloc(runner.Unit, stems.len);
+    for (stems, units, 0..) |s, *u, k| {
+        const bytes = if (std.mem.eql(u8, s, ru.name)) rt.core_bytes else if (rt.unit(s)) |su| su.bytes else for (program.items) |p| {
+            if (std.mem.eql(u8, p.name, s)) break p.bytes;
+        } else return error.TestUnexpectedResult;
+        const pc = (try engine.precompiled(a, io, null, bytes, .module, false, &failure)) orelse {
+            std.debug.print("\n=== unit {s} refused: {s}\n", .{ s, failure.? });
+            a.free(failure.?);
+            return error.TestUnexpectedResult;
+        };
+        try held.append(a, pc);
+        u.* = .{ .name = try std.fmt.allocPrint(ar, "unit-{d}", .{k}), .module = pc.code.module };
+    }
+    const out = try runner.run(a, comp.code.component, units, .{ .stdout = .capture });
+    defer out.deinit(a);
+    if (out.trap) |t| std.debug.print("\n=== trap: {s}\n", .{t});
+    try std.testing.expectEqual(@as(i32, 0), out.status);
+    try std.testing.expectEqualStrings("hi, bo\n4\n", out.stdout orelse "");
 }

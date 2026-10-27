@@ -253,10 +253,16 @@ pub fn renderFrame(w: *Writer, units: []const FrameUnit) FrameError!void {
     try w.writeAll(")\n");
 }
 
-/// The frame of a `wasi` entry whose units are the runtime's (the core and
-/// std's): `entry`'s bytes, its `botopink.units` read, each std unit's face
-/// the runtime's index, the entry's read from its bytes.
-pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8) (FrameError || runtimeUnit.FaceError || error{RuntimeUnitUnavailable})!void {
+/// A program or library unit's bytes (decision 1032 (6) P4), by its stem.
+pub const UnitBytes = struct {
+    name: []const u8,
+    bytes: []const u8,
+};
+
+/// The frame of a `wasi` entry: `entry`'s bytes, its `botopink.units` read,
+/// each std unit's face the runtime's index, each program unit's (`program`,
+/// by stem) and the entry's read from their bytes.
+pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8, program: []const UnitBytes) (FrameError || runtimeUnit.FaceError || error{RuntimeUnitUnavailable})!void {
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
     const ar = arena_state.allocator();
@@ -272,9 +278,13 @@ pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8) (FrameEr
             u.* = .{ .name = s, .face = try runtimeUnit.faceOfBytes(ar, entry) };
         } else if (std.mem.eql(u8, s, runtimeUnit.name)) {
             u.* = .{ .name = s, .face = r.core_face };
-        } else {
-            const unit = r.unit(s) orelse return error.UnknownUnitImport;
+        } else if (r.unit(s)) |unit| {
             u.* = .{ .name = s, .face = unit.face };
+        } else {
+            const p = for (program) |p| {
+                if (std.mem.eql(u8, p.name, s)) break p;
+            } else return error.UnknownUnitImport;
+            u.* = .{ .name = s, .face = try runtimeUnit.faceOfBytes(ar, p.bytes) };
         }
     }
     try renderFrame(w, units);

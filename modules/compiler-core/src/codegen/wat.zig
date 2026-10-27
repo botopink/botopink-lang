@@ -384,7 +384,27 @@ pub fn codegenEmit(
     units_on_wasi = config.wasm_units;
     defer units_on_wasi = outer_units;
 
-    for (outputs) |*ct| {
+    // Decision 1032 (6) P4 — with the units on, every module of a `wasi`
+    // build is a unit of its own, emitted after the program units it
+    // imports, so each knows what they export and the units they name.
+    const units_mode = config.wasm_units and artifact == .component;
+    var units_registry: std.StringHashMapUnmanaged(ProgramUnit) = .empty;
+    const outer_registry = program_units;
+    const outer_registry_alloc = program_units_alloc;
+    program_units = if (units_mode) &units_registry else null;
+    program_units_alloc = na;
+    defer {
+        program_units = outer_registry;
+        program_units_alloc = outer_registry_alloc;
+    }
+    const order = if (units_mode) try unitOrder(na, outputs, &scopes, config) else blk: {
+        const o = try na.alloc(usize, outputs.len);
+        for (o, 0..) |*x, k| x.* = k;
+        break :blk o;
+    };
+
+    for (order) |oi| {
+        const ct = &outputs[oi];
         switch (ct.outcome) {
             .parseError, .typeError => try results.append(alloc, try ModuleOutput.failedModule(alloc, ct.*)),
             .validationError => |verr| {
@@ -401,7 +421,9 @@ pub fn codegenEmit(
             .ok => |*ok| {
                 // Decision 1008 (3) — `run` executes the entry's component
                 // alone, which links what it reaches: no other is emitted.
-                if (config.wasm_entry_only) |entry_name| if (!std.mem.eql(u8, ct.name, entry_name)) continue;
+                // With the units on, every module is a unit the entry's frame
+                // composes (decision 1032 (6)).
+                if (config.wasm_entry_only) |entry_name| if (!units_mode and !std.mem.eql(u8, ct.name, entry_name)) continue;
                 // Decision 1008 (2) — a dependency module whose unit the
                 // unit cache holds is not emitted again. Its unit links only
                 // its own dependencies (its closure, decision 509 (2)); a
@@ -421,6 +443,8 @@ pub fn codegenEmit(
                 // declared dependency, then of the root package, that has a body
                 // first, imported or not,
                 // each after what it imports.
+                var inits: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer inits.deinit(alloc);
                 if (programEntry(ok.transformed, config.test_mode)) |entry| {
                     var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
                     defer dep_mods.deinit(alloc);
@@ -431,6 +455,12 @@ pub fn codegenEmit(
                         // Decisions 787, 792 (2) — a loaded package's bodies run at
                         // `run()`, never with the program's own.
                         if (crossModule.isLoadedModule(o.name)) continue;
+                        // With the units on, such a module's body runs in its
+                        // own unit's `__bp_init`, which the entry's frame calls.
+                        if (units_mode and isProgramUnit(o.name)) {
+                            try inits.append(alloc, o.name);
+                            continue;
+                        }
                         try visited.put(o.name, {});
                         try collectLinks(alloc, scope.outputs, &scope.cross, dok.transformed, &visited, &linked, entry);
                         try linked.append(alloc, .{
@@ -450,7 +480,12 @@ pub fn codegenEmit(
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
-                const emitted = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused) catch |err| {
+                unit_inits = inits.items;
+                registering_unit = units_mode;
+                const emitted_or = emitWat(alloc, ct.name, ct.srcPath, ok.transformed, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &missing, &refused);
+                unit_inits = &.{};
+                registering_unit = false;
+                const emitted = emitted_or catch |err| {
                     // A construct this backend cannot lower reaches the
                     // driver the same way: located, naming the construct,
                     // failing only this module.
@@ -536,6 +571,57 @@ pub fn codegenEmit(
 
     try relocateLinkedRefusals(alloc, results.items, &refusals, refused_links.items);
     return results;
+}
+
+/// Decision 1032 (6) P4 — the order the modules are emitted in with the units
+/// on: each after the program units it imports and, for an entry, after the
+/// modules whose bodies its frame runs (`unit_inits`), so a unit's
+/// `botopink.units` and imports are built from what those exported.
+fn unitOrder(ar: std.mem.Allocator, outputs: []ComptimeOutput, scopes: *crossModule.Scopes, config: configMod.Config) ![]usize {
+    const n = outputs.len;
+    const deps = try ar.alloc([]const usize, n);
+    for (outputs, deps) |*o, *d| {
+        d.* = &.{};
+        const ok = switch (o.outcome) {
+            .ok => |*ok| ok,
+            else => continue,
+        };
+        const scope = try scopes.forModule(o.name);
+        var visited = std.StringHashMap(void).init(ar);
+        try visited.put(o.name, {});
+        var linked: std.ArrayListUnmanaged(Linked) = .empty;
+        try collectLinks(ar, scope.outputs, &scope.cross, ok.transformed, &visited, &linked, null);
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (linked.items) |l| try names.append(ar, l.name);
+        if (programEntry(ok.transformed, config.test_mode) != null) {
+            var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
+            try crossModule.programModules(ar, scope.outputs, config.packages, o.name, &dep_mods);
+            for (dep_mods.items) |m| try names.append(ar, m.name);
+        }
+        var idx: std.ArrayListUnmanaged(usize) = .empty;
+        for (names.items) |nm| {
+            if (!isProgramUnit(nm)) continue;
+            for (outputs, 0..) |*q, k| if (std.mem.eql(u8, q.name, nm)) {
+                try idx.append(ar, k);
+                break;
+            };
+        }
+        d.* = idx.items;
+    }
+    const state = try ar.alloc(u8, n);
+    @memset(state, 0);
+    var out: std.ArrayListUnmanaged(usize) = .empty;
+    const Walk = struct {
+        fn visit(a: std.mem.Allocator, k: usize, ds: []const []const usize, st: []u8, o: *std.ArrayListUnmanaged(usize)) !void {
+            if (st[k] != 0) return;
+            st[k] = 1;
+            for (ds[k]) |j| try visit(a, j, ds, st, o);
+            st[k] = 2;
+            try o.append(a, k);
+        }
+    };
+    for (0..n) |k| try Walk.visit(ar, k, deps, state, &out);
+    return out.items;
 }
 
 /// Decision 513 (1): the test unit's prefix (`__test__/<module path>`).
@@ -1637,6 +1723,34 @@ threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) 
 threadlocal var build_packages: ?crossModule.Packages = null;
 /// `Config.wasm_units` of the build being emitted.
 threadlocal var units_on_wasi: bool = false;
+
+/// Decision 1032 (6) P4 — a program or library module emitted as a unit of
+/// its own: its `botopink.units` lines and the functions it exports, each by
+/// its name with the type the boundary carries (decision 1037).
+const ProgramUnit = struct {
+    lines: []const u8,
+    exports: std.StringHashMapUnmanaged(wat.FuncType) = .empty,
+};
+
+/// With the units on (`codegenEmit`): every program unit emitted so far, by
+/// module name, and the allocator that outlives the build's modules.
+threadlocal var program_units: ?*std.StringHashMapUnmanaged(ProgramUnit) = null;
+threadlocal var program_units_alloc: std.mem.Allocator = undefined;
+/// The module being emitted is a program unit to register (not its test
+/// program).
+threadlocal var registering_unit: bool = false;
+/// The modules whose `__bp_init` the entry being emitted runs although it
+/// imports nothing of theirs (decisions 660, 677: every module of the program
+/// with a body), each after what it imports.
+threadlocal var unit_inits: []const []const u8 = &.{};
+
+/// Whether `module` is a program or library unit of its own with the units
+/// on: neither std's (linked into its importer) nor a loaded package's.
+fn isProgramUnit(module: []const u8) bool {
+    if (crossModule.isLoadedModule(module)) return false;
+    const pk = build_packages orelse return true;
+    return !std.mem.eql(u8, pk.idOf(module).package, crossModule.EMBEDDED_PACKAGE);
+}
 const DataSeg = struct { offset: u32, len: u32, content: []const u8 };
 
 /// Decision 518 (2) — a second pass over the same program when the first one
@@ -2509,6 +2623,14 @@ fn emitWatPass(
 
     if (em.mode == .gc) try em.finishGc(&items, program_range[0], program_range[1]);
 
+    // Decision 1032 (6) P4 — with the units on, a `wasi` build's module is a
+    // unit: it exports its own `pub` functions and imports, from the program
+    // unit that declares it, each function of another one that unit exports
+    // with the type this one lowered it to (decision 1037's boundary).
+    const units_entry = artifact == .component and rt != null;
+    var unit_exports: std.StringHashMapUnmanaged(wat.FuncType) = .empty;
+    if (units_entry and em.mode == .gc) try unitBoundary(ar, &items, own_program, decls.items, owner.items, linked, &unit_exports);
+
     // Decisions 1021 (2), 1032 — a module with data of its own holds it in
     // passive segments, and its start grows the core's memory to hold it,
     // copies each in, and moves the runtime unit's heap past it, before
@@ -2544,11 +2666,20 @@ fn emitWatPass(
     // module of its own code alone: `botopink.units` names the units the
     // component frame imports, in dependency order (the core first, the
     // entry last; `wat_emitter.renderFrame`).
-    const units_entry = artifact == .component and rt != null;
-    if (units_entry) try items.append(ar, .{ .custom = .{
-        .name = runtimeUnit.units_section,
-        .bytes = try unitsLines(ar, rt.?, items.items, try entryStem(ar, module_name)),
-    } });
+    if (units_entry) {
+        const lines = try unitsLines(ar, rt.?, items.items, try entryStem(ar, module_name), linked, unit_inits);
+        try items.append(ar, .{ .custom = .{ .name = runtimeUnit.units_section, .bytes = lines } });
+        if (registering_unit) if (program_units) |reg| {
+            const pa = program_units_alloc;
+            var pu: ProgramUnit = .{ .lines = try pa.dupe(u8, lines) };
+            var it = unit_exports.iterator();
+            while (it.next()) |e| try pu.exports.put(pa, try pa.dupe(u8, e.key_ptr.*), .{
+                .params = try pa.dupe(ValType, e.value_ptr.params),
+                .result = e.value_ptr.result,
+            });
+            try reg.put(pa, try pa.dupe(u8, module_name), pu);
+        };
+    }
 
     // One model, two renderings: the text the snapshot records and the binary
     // an engine instantiates (`wasm_binary_emitter.zig`).
@@ -2583,16 +2714,185 @@ fn entryStem(ar: std.mem.Allocator, module_name: []const u8) ![]const u8 {
     };
 }
 
-/// `botopink.units`' text: the core, the std units the module imports and
-/// theirs in dependency order, then `entry` — one stem per line.
-fn unitsLines(ar: std.mem.Allocator, r: *const runtimeUnit.Runtime, items: []const Item, entry: []const u8) ![]const u8 {
+/// `botopink.units`' text: the core, the std units the module and the
+/// program units it names import, and theirs, in dependency order; then those
+/// program units (decision 1032 (6) P4: every program unit it links and
+/// every one in `inits`, each with the units its own `botopink.units` names);
+/// then `entry` — one stem per line.
+fn unitsLines(
+    ar: std.mem.Allocator,
+    r: *const runtimeUnit.Runtime,
+    items: []const Item,
+    entry: []const u8,
+    linked: []const Linked,
+    inits: []const []const u8,
+) ![]const u8 {
     var roots: std.ArrayListUnmanaged([]const u8) = .empty;
     for (items) |it| if (it == .import) try roots.append(ar, it.import.module);
+    // The program units, each after the ones it names.
+    var program: std.StringArrayHashMapUnmanaged(void) = .empty;
+    if (program_units) |reg| {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (linked) |l| if (isProgramUnit(l.name)) try names.append(ar, l.name);
+        try names.appendSlice(ar, inits);
+        for (names.items) |nm| {
+            const pu = reg.get(nm) orelse continue;
+            var it = std.mem.tokenizeScalar(u8, pu.lines, '\n');
+            while (it.next()) |stem| {
+                if (std.mem.eql(u8, stem, runtimeUnit.name)) continue;
+                if (r.unit(stem) != null) {
+                    try roots.append(ar, stem);
+                    continue;
+                }
+                if (!std.mem.eql(u8, stem, entry)) try program.put(ar, stem, {});
+            }
+        }
+    }
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.print(ar, "{s}\n", .{runtimeUnit.name});
     for (try r.closure(ar, roots.items)) |u| try text.print(ar, "{s}\n", .{u.name});
+    for (program.keys()) |stem| try text.print(ar, "{s}\n", .{stem});
     try text.print(ar, "{s}\n", .{entry});
     return text.items;
+}
+
+/// Decision 1032 (6) P4 — a program unit's boundary, on its GC module after
+/// `finishGc`. Each of its own `pub` functions that may cross (`crossesUnit`)
+/// is exported under its name — through decision 1037's wrapper when its type
+/// names a type definition — and recorded in `exports` with the type the
+/// boundary carries. Each function linked from another program unit that
+/// unit exports with the same type is imported from it instead of defined:
+/// `(import "<pkg>@<path>" "<name>" …)`, called through a thunk of the
+/// concrete type when the boundary is abstract. A linked function its unit
+/// does not export so stays linked (a generic one is instantiated here).
+fn unitBoundary(
+    ar: std.mem.Allocator,
+    items: *std.ArrayListUnmanaged(Item),
+    own_program: ast.Program,
+    decls: []const ast.DeclKind,
+    owner: []const usize,
+    linked: []const Linked,
+    exports: *std.StringHashMapUnmanaged(wat.FuncType),
+) !void {
+    const defs = wat.typesOf(.{ .items = items.items });
+    var wrappers: std.ArrayListUnmanaged(Item) = .empty;
+    for (own_program.decls) |d| {
+        if (d != .@"fn") continue;
+        const f = d.@"fn";
+        if (!f.isPub or isMain0(f) or !crossesUnit(f, own_program.decls)) continue;
+        const func = funcItem(items.items, f.name) orelse continue;
+        // The names it is exported under: those the lowering gave it (a
+        // `pub` function's own), and its name.
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try names.appendSlice(ar, func.exports);
+        for (names.items) |x| {
+            if (std.mem.eql(u8, x, f.name)) break;
+        } else try names.append(ar, f.name);
+        const ft = try funcTypeOf(ar, func.*);
+        if (runtimeUnit.crossesAbstract(ft)) {
+            func.exports = &.{};
+            try wrappers.append(ar, .{ .func = try runtimeUnit.exportWrapper(ar, defs, func.*, names.items) });
+            try exports.put(ar, f.name, try runtimeUnit.abstractType(ar, defs, ft));
+        } else {
+            func.exports = names.items;
+            try exports.put(ar, f.name, ft);
+        }
+    }
+    try items.appendSlice(ar, wrappers.items);
+
+    const reg = program_units orelse return;
+    var imports: std.ArrayListUnmanaged(Item) = .empty;
+    for (decls, owner) |d, from| {
+        if (from >= linked.len or d != .@"fn") continue;
+        const l = linked[from];
+        const pu = reg.get(l.name) orelse continue;
+        const sym = d.@"fn".name;
+        const prefix_len = l.name.len + 1;
+        const bare = if (sym.len > prefix_len and std.mem.startsWith(u8, sym, l.name) and sym[l.name.len] == '/') sym[prefix_len..] else sym;
+        const want = pu.exports.get(bare) orelse continue;
+        const k = for (items.items, 0..) |it, k| {
+            if (it == .func and std.mem.eql(u8, it.func.name, sym)) break k;
+        } else continue;
+        const ft = try funcTypeOf(ar, items.items[k].func);
+        const crosses = runtimeUnit.crossesAbstract(ft);
+        const have = if (crosses) try runtimeUnit.abstractType(ar, defs, ft) else ft;
+        if (!sameFuncType(have, want)) continue;
+        const stem = try entryStem(ar, l.name);
+        if (crosses) {
+            try imports.append(ar, .{ .import = .{ .module = stem, .name = bare, .func = try runtimeUnit.abiSymbol(ar, sym), .type = have } });
+            items.items[k] = .{ .func = try runtimeUnit.importThunk(ar, sym, ft) };
+        } else {
+            try imports.append(ar, .{ .import = .{ .module = stem, .name = bare, .func = sym, .type = ft } });
+            _ = items.orderedRemove(k);
+        }
+    }
+    var at: usize = 0;
+    for (items.items, 0..) |it, k| if (it == .import) {
+        at = k + 1;
+    };
+    try items.insertSlice(ar, at, imports.items);
+}
+
+fn funcItem(items: []Item, name: []const u8) ?*wat.Func {
+    for (items) |*it| if (it.* == .func and std.mem.eql(u8, it.func.name, name)) return &it.func;
+    return null;
+}
+
+fn funcTypeOf(ar: std.mem.Allocator, f: wat.Func) !wat.FuncType {
+    const params = try ar.alloc(ValType, f.params.len);
+    for (params, f.params) |*p, q| p.* = q.ty;
+    return .{ .params = params, .result = f.result };
+}
+
+fn sameFuncType(a: wat.FuncType, b: wat.FuncType) bool {
+    if (a.params.len != b.params.len or a.result != b.result) return false;
+    for (a.params, b.params) |x, y| if (x != y) return false;
+    return true;
+}
+
+/// Whether a function of a program unit may cross into another unit: no
+/// generic parameter (each importer instantiates its own), no effect (a task's
+/// state machine is its module's), no host binding, and a signature no
+/// function value reaches — a closure is an index into its unit's table until
+/// the shared table (decision 1021 (4)) is the core's.
+fn crossesUnit(f: ast.FnDecl, decls: []const ast.DeclKind) bool {
+    if (f.genericParams.len > 0 or f.effect != null or f.marker != null or f.isDeclare or f.anonymousDefault) return false;
+    for (f.params) |p| if (!closureFree(p.typeRef, decls, 0)) return false;
+    if (f.returnType) |r| if (!closureFree(r, decls, 0)) return false;
+    return true;
+}
+
+fn closureFree(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
+    if (depth > 8) return false;
+    return switch (t) {
+        .named => |n| blk: {
+            for (decls) |d| if (d == .type_ and std.mem.eql(u8, d.type_.name, n)) {
+                const td = d.type_;
+                if (td.genericParams.len > 0) break :blk false;
+                switch (td.shape) {
+                    .record => |fs| for (fs) |fl| if (!closureFree(fl.typeRef, decls, depth + 1)) break :blk false,
+                    .enum_ => |e| {
+                        if (e.sections.len > 0) break :blk false;
+                        for (e.variants) |v| for (v.fields) |fl| if (!closureFree(fl.typeRef, decls, depth + 1)) break :blk false;
+                    },
+                }
+                break :blk true;
+            };
+            break :blk isUnitScalarName(n);
+        },
+        .array => |inner| closureFree(inner.*, decls, depth + 1),
+        .optional => |inner| closureFree(inner.*, decls, depth + 1),
+        .tuple_ => |elems| for (elems) |e| {
+            if (!closureFree(e, decls, depth + 1)) break false;
+        } else true,
+        else => false,
+    };
+}
+
+fn isUnitScalarName(n: []const u8) bool {
+    const names = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "int", "float", "bool", "string", "void" };
+    for (names) |x| if (std.mem.eql(u8, x, n)) return true;
+    return false;
 }
 
 /// `im` as a module importing the runtime unit names it: the WASI function

@@ -1319,8 +1319,27 @@ imported as the core module `unit-<k>`, declared by its face; instantiated in or
 units it imports (by stem), the preview 1 shim, `$fs_shim`, `$bp_shim`; a module `$bp_inits` calling
 every unit's `__bp_init` in order; `$main` an instance of the entry's `memory` and `_start` and that
 `__bp_init`, which the preview 1 / host / fs adapters read as before. `frameOf(entry_bytes)` is the
-frame of an entry whose units are the core and std's (faces from the runtime, the entry's from its
-bytes). `tests/wat.zig` `units ----` emits an entry with the units on, checks every import against
+frame of an entry: the core's and std's faces from the runtime, each program unit's (`UnitBytes`, by
+stem) and the entry's from their bytes.
+
+**Program and library units** (decision 1032 (6) P4): with the units on, every module of a `wasi` build is
+a unit `<pkg>@<path>` of its own (`Config.wasm_entry_only` is not applied), emitted after the program
+units it reaches (`wat.zig` `unitOrder`): a module std does not own and no loaded package's
+(`isProgramUnit`); std's `.bp` modules stay linked into their importer. Its start is its `__bp_init`;
+an entry no longer links the modules whose bodies the program runs (decisions 660, 677) — their own
+`__bp_init` runs in the frame (`unit_inits`). On a GC module, after `finishGc`, `unitBoundary` exports
+each of the unit's own `pub` functions that may cross (`crossesUnit`: no generic parameter, no effect,
+no host binding, a signature no function value reaches — a closure is an index into its unit's table
+until the core holds the shared table, 1021 (4)) under its name, through 1037's wrapper when its type
+names a type definition, and records the boundary's type (`ProgramUnit.exports`); each function linked
+from another program unit that the unit exports with the same type is imported from it
+(`(import "<pkg>@<path>" "<name>" …)`, through a thunk when abstract) instead of defined — anything
+else (a generic function, a method, a linear module's) stays linked. `botopink.units` merges what the
+program units it links or runs name: the core, every std unit any of them imports, the program units in
+dependency order, the module itself. `tests/wat.zig` `units ---- each module of a program is a unit`
+holds the index oracle over every unit of a two-module program and runs its frame. Not yet: the dead
+code a replaced body called stays in the importer; the capture state and the GC print helpers are each
+unit's own (1028 (2)). `tests/wat.zig` `units ----` emits an entry with the units on, checks every import against
 the face of the unit it names, and runs the frame over the units' bytes through `runner.run` (R0).
 
 ## std-wasm in the program (decisions 440, 441, front 144 B-00e)
