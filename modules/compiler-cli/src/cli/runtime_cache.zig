@@ -50,10 +50,25 @@ pub fn rootPath(arena: std.mem.Allocator, dir: []const u8, pkg: []const u8) ![]c
 /// The key of the package `proj` (decision 1006 (3)): its files, its
 /// effective manifest and its direct dependencies' runtime keys — which
 /// `libs.loadDependenciesWith` computed into `keys.runtime` (`want_runtime`).
-pub fn keyOf(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, keys: *const libs.ClosureKeys) !Key {
+/// `outputs` are the command's output directories (`--out`, `--emit-runtime`),
+/// as given: those inside the package are left out of the key (decision
+/// 1006-b (3), `insidePackage`).
+pub fn keyOf(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, keys: *const libs.ClosureKeys, outputs: []const []const u8) !Key {
     var deps: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
     for (proj.dependencies) |d| if (keys.runtime.get(d.name)) |k| try deps.append(arena, .{ .name = d.name, .key = k });
-    return code_cache.runtimeKey(arena, io, proj.dir, proj.manifest, deps.items);
+    var inside: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (outputs) |o| if (try insidePackage(arena, proj.dir, o)) |rel| try inside.append(arena, rel);
+    return code_cache.runtimeKey(arena, io, proj.dir, proj.manifest, deps.items, inside.items);
+}
+
+/// `dir` (relative to the working directory, the package's, or absolute) as a
+/// path from the package directory `pkg_dir` when it lies inside it; null
+/// otherwise, or when it is the package itself.
+pub fn insidePackage(arena: std.mem.Allocator, pkg_dir: []const u8, dir: []const u8) !?[]const u8 {
+    const abs = if (std.fs.path.isAbsolute(dir)) try std.fs.path.resolve(arena, &.{dir}) else try std.fs.path.resolve(arena, &.{ pkg_dir, dir });
+    const root = try std.fs.path.resolve(arena, &.{pkg_dir});
+    if (abs.len <= root.len + 1 or !std.mem.startsWith(u8, abs, root) or abs[root.len] != '/') return null;
+    return abs[root.len + 1 ..];
 }
 
 /// Whether the `.bpr` set of `pkg` in `dir` is fresh for `key` under `stamp`.
@@ -85,7 +100,20 @@ const testing = std.testing;
 const test_scratch = @import("test_scratch");
 const manifest = @import("manifest");
 
-test "runtimeKey: by content; out/, hidden entries and node_modules left out; the stamp and a dependency move it" {
+test "insidePackage: an output directory inside the package, as a path from it" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings("rt", (try insidePackage(a, "/p/app", "rt")).?);
+    try testing.expectEqualStrings("b/o", (try insidePackage(a, "/p/app", "./b/o/")).?);
+    try testing.expectEqualStrings("rt", (try insidePackage(a, "/p/app", "/p/app/rt")).?);
+    try testing.expect((try insidePackage(a, "/p/app", "/p/other/rt")) == null);
+    try testing.expect((try insidePackage(a, "/p/app", "../rt")) == null);
+    try testing.expect((try insidePackage(a, "/p/app", ".")) == null);
+    try testing.expect((try insidePackage(a, "/p/app", "/p/appx/rt")) == null);
+}
+
+test "runtimeKey: by content; out/, hidden entries, node_modules, *.new and the outputs left out; the stamp and a dependency move it" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
@@ -99,18 +127,20 @@ test "runtimeKey: by content; out/, hidden entries and node_modules left out; th
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ base, "src/main.bp" }), .data = "pub fn main() -> void {}\n" });
     var err: ?manifest.Located = null;
     const m = try manifest.parse(arena, "{ \"name\": \"k\" }", "botopink.json", &err);
-    const k0 = try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1");
-    // Left out: out/, a hidden entry, node_modules.
-    for ([_][]const u8{ "out/x.js", ".state/runtime/k.bpr", "src/.hidden", "node_modules/m/i.js" }) |rel| {
+    const k0 = try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1", &.{"build/o"});
+    // Left out: out/, a hidden entry, node_modules, a `*.new`, an output directory.
+    for ([_][]const u8{ "out/x.js", ".state/runtime/k.bpr", "src/.hidden", "node_modules/m/i.js", "snapshot/main.snap.new", "build/o/x.js" }) |rel| {
         const p = try std.fs.path.join(arena, &.{ base, rel });
         try cwd.createDirPath(io, std.fs.path.dirname(p).?);
         try cwd.writeFile(io, .{ .sub_path = p, .data = "noise" });
     }
-    try testing.expectEqualSlices(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1")));
+    try testing.expectEqualSlices(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1", &.{"build/o"})));
+    // The directory named as an output only.
+    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1", &.{}))));
     // Another compiler, a dependency's key, a changed byte.
-    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s2"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s2", &.{"build/o"}))));
     const dep: code_cache.DepKey = .{ .name = "d", .key = @splat('a') };
-    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{dep}, "s1"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{dep}, "s1", &.{"build/o"}))));
     try cwd.writeFile(io, .{ .sub_path = try std.fs.path.join(arena, &.{ base, "src/main.bp" }), .data = "pub fn main() -> void { }\n" });
-    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1"))));
+    try testing.expect(!std.mem.eql(u8, &k0, &(try code_cache.runtimeKeyWith(arena, io, base, m, &.{}, "s1", &.{"build/o"}))));
 }

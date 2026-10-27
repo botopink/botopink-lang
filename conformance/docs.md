@@ -6314,8 +6314,9 @@ A bare `botopink build` — no `--target` — runs the analysis and comptime and
 `botopink build --target <t>` and `botopink run --target <t>` (or `run` with the manifest's `target`) emit from that
 set while it is fresh, with no comptime — nothing of the build phase is printed —, and otherwise build it, write it
 and emit in one comptime pass. The key is a hash of the compiler's source stamp (never the host it was built on), every
-file of the package but `.botopinkbuild/`, `out/`, hidden entries and `node_modules`, its effective manifest and each
-dependency's key; no file time is read. `build --cold` ignores the key and rebuilds; `run --cold` reuses a fresh set
+file of the package but `.botopinkbuild/`, `out/`, hidden entries, `node_modules`, every `*.new` file and the
+command's own output directories inside it (`--out`, `--emit-runtime`), its effective manifest and each dependency's
+key (decision 1006-b); no file time is read. `build --cold` ignores the key and rebuilds; `run --cold` reuses a fresh set
 and reads no code cache (decision 1006).
 
 <!-- example: modules/decisions-taken/module_bpr_reused_across_targets-1006/cells/module_bpr_reused_across_targets -->

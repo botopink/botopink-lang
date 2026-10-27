@@ -635,7 +635,7 @@ fn loadClosure(
         if (!k.want_runtime) continue;
         var rt_deps: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
         for (pkg.manifest.dependencies) |d| if (k.runtime.get(d.name)) |dk| try rt_deps.append(arena, .{ .name = d.name, .key = dk });
-        try k.runtime.put(k.arena, try k.arena.dupe(u8, pkg.name), try code_cache.runtimeKey(arena, io, pkg.dir, pkg.manifest, rt_deps.items));
+        try k.runtime.put(k.arena, try k.arena.dupe(u8, pkg.name), try code_cache.runtimeKey(arena, io, pkg.dir, pkg.manifest, rt_deps.items, &.{}));
     };
 }
 

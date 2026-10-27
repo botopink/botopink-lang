@@ -393,15 +393,18 @@ pub fn closureKeyReading(
 /// package (`runtimeFiles`) by content, its effective manifest
 /// (`effectiveManifest`, decision 512) and each dependency's runtime key
 /// (Merkle, by name). No file time is read, and no target: a `.bpr` is
-/// target-free (798 (4)).
+/// target-free (798 (4)). `outputs` are the command's own output directories
+/// inside the package, as paths from it (`--out`, `--emit-runtime`; decision
+/// 1006-b (3)): left out with everything under them.
 pub fn runtimeKey(
     arena: std.mem.Allocator,
     io: std.Io,
     pkg_dir: []const u8,
     m: manifest.Manifest,
     deps: []const DepKey,
+    outputs: []const []const u8,
 ) ![KEY_HEX]u8 {
-    return runtimeKeyWith(arena, io, pkg_dir, m, deps, build_stamp.source_hash);
+    return runtimeKeyWith(arena, io, pkg_dir, m, deps, build_stamp.source_hash, outputs);
 }
 
 /// `runtimeKey` with the compiler's stamp given — what a test varies.
@@ -412,6 +415,7 @@ pub fn runtimeKeyWith(
     m: manifest.Manifest,
     deps: []const DepKey,
     stamp: []const u8,
+    outputs: []const []const u8,
 ) ![KEY_HEX]u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     h.update("botopink-runtime-1\x00");
@@ -420,7 +424,7 @@ pub fn runtimeKeyWith(
     h.update(&.{0});
 
     var files: std.ArrayListUnmanaged([]const u8) = .empty;
-    try runtimeFiles(arena, io, pkg_dir, ".", &files);
+    try runtimeFiles(arena, io, pkg_dir, ".", outputs, &files);
     std.mem.sort([]const u8, files.items, {}, lessThan);
     h.update("files\x00");
     for (files.items) |rel| {
@@ -457,9 +461,11 @@ pub fn runtimeKeyWith(
 
 /// Every regular file of the package under `<base>/<rel>` that the `.bpr` key
 /// hashes (decision 1006 (3)), as a path from `base`: a hidden entry (`.git`,
-/// `.botopinkbuild/` among them) and `node_modules` at any depth, and the
-/// package's own `out/`, are left out.
-fn runtimeFiles(arena: std.mem.Allocator, io: std.Io, base: []const u8, rel: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
+/// `.botopinkbuild/` among them), `node_modules` and every `*.new` file (a
+/// snapshot candidate a run writes) at any depth, the package's own `out/`,
+/// and the command's output directories `outputs` (decision 1006-b (3)) are
+/// left out.
+fn runtimeFiles(arena: std.mem.Allocator, io: std.Io, base: []const u8, rel: []const u8, outputs: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
     const top = std.mem.eql(u8, rel, ".");
     const full = if (top) base else try std.fs.path.join(arena, &.{ base, rel });
     var d = std.Io.Dir.cwd().openDir(io, full, .{ .iterate = true }) catch return;
@@ -470,9 +476,10 @@ fn runtimeFiles(arena: std.mem.Allocator, io: std.Io, base: []const u8, rel: []c
         if (std.mem.eql(u8, e.name, "node_modules")) continue;
         if (top and std.mem.eql(u8, e.name, "out")) continue;
         const child = if (top) try arena.dupe(u8, e.name) else try std.fmt.allocPrint(arena, "{s}/{s}", .{ rel, e.name });
+        if (isOneOf(outputs, child)) continue;
         switch (e.kind) {
-            .directory => try runtimeFiles(arena, io, base, child, out),
-            .file => try out.append(arena, child),
+            .directory => try runtimeFiles(arena, io, base, child, outputs, out),
+            .file => if (!std.mem.endsWith(u8, e.name, ".new")) try out.append(arena, child),
             else => {},
         }
     }

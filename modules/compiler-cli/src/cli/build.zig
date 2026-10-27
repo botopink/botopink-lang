@@ -365,7 +365,7 @@ fn runBuild(
     // the same comptime pass that emits. `--cold` on `build` ignores the key;
     // `--emit-resolved` needs the analysis.
     const rt_dir = opts.emit_runtime orelse try runtime_cache.dirFor(arena, proj);
-    const rt_key = try runtime_cache.keyOf(arena, io, proj, &closure_keys);
+    const rt_key = try runtime_cache.keyOf(arena, io, proj, &closure_keys, if (opts.emit_runtime) |d| &.{ opts.out_dir, d } else &.{opts.out_dir});
     if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
         if (opts.target == null) return 0;
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
