@@ -11,4 +11,4 @@
 
 Proved also by [context_optional_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cases/context_optional_wide_number_through_scope/src/main.bp)
 Proved also by [context_wide_number_through_scope](../component_is_lambda_over_render_scope-388/cases/context_wide_number_through_scope/src/main.bp)
-Proved also by [inject_default_imported](../inject_rides_context_tree-416/cells/inject_default_imported/src/main.bp)
+Proved also by [inject_default_imported](../inject_rides_context_tree-416/cases/inject_default_imported/src/main.bp)

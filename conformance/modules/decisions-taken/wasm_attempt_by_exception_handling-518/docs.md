@@ -6,7 +6,7 @@
 [cells/std_json_on_every_target/src/main.bp](cells/std_json_on_every_target/src/main.bp)
 [cells/std_unsupported_refused_at_the_call/src/main.bp](cells/std_unsupported_refused_at_the_call/src/main.bp)
 
-Proved also by [import_std_folder_namespace](../import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace/src/main.bp)
+Proved also by [import_std_folder_namespace](../import_alias_on_type_and_folder_namespace-110/cases/import_std_folder_namespace/src/main.bp)
 Proved also by [int_division_by_zero_is_panic](../failure_kinds_exact_every_target-527/cases/int_division_by_zero_is_panic/src/main.bp)
 Proved also by [std_failure_attempt](../failure_kinds_exact_every_target-527/cases/std_failure_attempt/src/main.bp)
 Proved also by [std_failure_attempt_task](../attempt_task_form-494/cases/std_failure_attempt_task/src/main.bp)
