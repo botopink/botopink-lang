@@ -1,0 +1,13 @@
+//// A `pub type Tok` of this package, read at build.
+
+pub type Tok {
+    Bold,
+    Plain,
+}
+
+pub fn label(t: Tok) -> string {
+    return case t {
+        Bold -> "bold";
+        Plain -> "plain";
+    };
+}

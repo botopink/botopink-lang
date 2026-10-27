@@ -19,3 +19,8 @@ is `run-module-untraced`.
 [cases/run_module_refused/src/main.bp](cases/run_module_refused/src/main.bp)
 [cases/module_construction/src/main.bp](cases/module_construction/src/main.bp)
 [cells/run_on_module_alias/src/main.bp](cells/run_on_module_alias/src/main.bp)
+[cases/sibling_declares_tok/src/main.bp](cases/sibling_declares_tok/src/main.bp)
+[cases/sibling_decorator_named_all/src/main.bp](cases/sibling_decorator_named_all/src/main.bp)
+[cases/sibling_exports_all/src/main.bp](cases/sibling_exports_all/src/main.bp)
+[cases/sibling_exports_all_again/src/main.bp](cases/sibling_exports_all_again/src/main.bp)
+[cases/sibling_std_code_template/src/main.bp](cases/sibling_std_code_template/src/main.bp)

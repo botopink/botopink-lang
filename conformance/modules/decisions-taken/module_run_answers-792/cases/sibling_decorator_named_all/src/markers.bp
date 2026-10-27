@@ -1,0 +1,10 @@
+//// A decorator named `all`, loaded beside two packages that each export a
+//// `pub fn all`.
+
+import {compiler} from "std";
+
+pub fn all(syntax decl: unknown) -> void {
+    compiler.addMember("marked", fn() -> string {
+        return "marked " + compiler.name(decl)!;
+    });
+}

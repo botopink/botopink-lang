@@ -1651,6 +1651,20 @@ fn sectionWrapper(arena: std.mem.Allocator, owner: []const u8, section: []const 
     return .{ .name = section, .fields = fields, .numeric = false };
 }
 
+/// Whether the module at registry key `path` is one the module `env` checks
+/// can name (`crossModule.loadedSees`): a loaded package (decision 792 (5))
+/// sees no sibling loaded package's modules — two cases of one root build
+/// each declaring their own `Tok` are two programs, not one ambiguous name.
+fn seesModule(env: *Env, path: []const u8) bool {
+    return crossModule.loadedSees(packageOf(env.modulePath), packageOf(path));
+}
+
+/// The package part of a module path: what comes before its first `/`.
+fn packageOf(path: []const u8) []const u8 {
+    const slash = std.mem.indexOfScalar(u8, path, '/') orelse return path;
+    return path[0..slash];
+}
+
 fn findDeclared(env: *Env, name: []const u8) ?FoundType {
     for (env.moduleDecls) |d| switch (d) {
         .type_ => |t| if (std.mem.eql(u8, t.name, name)) return .{ .decl = t, .helpers = ownFns(env) },
@@ -1681,6 +1695,7 @@ fn findDeclared(env: *Env, name: []const u8) ?FoundType {
     var found: ?ast.TypeDecl = null;
     var it = registry.iterator();
     while (it.next()) |e| {
+        if (!seesModule(env, e.key_ptr.*)) continue;
         const d = e.value_ptr.get(name) orelse continue;
         if (d != .type_) continue;
         if (found != null) return null;
@@ -1693,6 +1708,7 @@ fn findDeclared(env: *Env, name: []const u8) ?FoundType {
     const key = std.mem.concat(env.arena, u8, &.{ "\x01", name }) catch return null;
     var pit = registry.iterator();
     while (pit.next()) |e| {
+        if (!seesModule(env, e.key_ptr.*)) continue;
         const d = e.value_ptr.get(key) orelse continue;
         if (d != .type_) continue;
         if (found != null) return null;

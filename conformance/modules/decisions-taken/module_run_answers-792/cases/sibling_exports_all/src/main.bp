@@ -1,0 +1,12 @@
+//// Decision 792 (5) — a loaded package is a program of its own: its
+//// `registry.all` is its own module's, whatever a package loaded beside it
+//// declares under the same name (`sibling_exports_all_again`,
+//// `sibling_decorator_named_all`).
+
+pub mod registry;
+import {registry.all};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(all());
+}

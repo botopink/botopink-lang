@@ -41,5 +41,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("module_construction");
     runCase("run_in_called_function");
     runCase("run_module_refused");
+    runCase("sibling_exports_all");
+    runCase("sibling_exports_all_again");
+    runCase("sibling_decorator_named_all");
+    runCase("sibling_declares_tok");
+    runCase("sibling_std_code_template");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

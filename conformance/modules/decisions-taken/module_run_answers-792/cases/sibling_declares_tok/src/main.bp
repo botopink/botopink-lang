@@ -1,0 +1,12 @@
+//// Decision 792 (5) — a `pub type Tok` of this package, read at build,
+//// loaded beside a package whose template runs std's `code`, which builds
+//// std's private `Tok` (`sibling_std_code_template`): neither package sees
+//// the other's.
+
+pub mod tok;
+import {tok.Tok, tok.label};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(comptime label(Tok.Bold));
+}

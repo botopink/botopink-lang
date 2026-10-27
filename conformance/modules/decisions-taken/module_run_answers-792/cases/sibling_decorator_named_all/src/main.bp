@@ -1,0 +1,15 @@
+//// Decision 792 (5) — an import a loaded package writes resolves among its
+//// own modules and the packages it loaded. Two sibling packages exporting
+//// `all` (`sibling_exports_all`, `sibling_exports_all_again`) do not make
+//// `markers.all` ambiguous here.
+
+pub mod markers;
+import {markers.all};
+import {io.terminal.print} from "std";
+
+#[all]
+type Box(n: i32)
+
+pub fn main() -> void {
+    print(Box.marked());
+}

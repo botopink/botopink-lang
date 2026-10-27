@@ -372,6 +372,35 @@ pub const CrossModule = struct {
         arity: ?usize,
     ) Pick {
         const list = self.owners.get(name) orelse return .none;
+        return pickIn(list, name, source, arity);
+    }
+
+    /// `pick` for an import module `consumer` writes, counting only the
+    /// declarations it can see (`loadedSees`): a loaded package's imports
+    /// resolve in its own package and the packages it loaded, never in a
+    /// sibling's — two cases of one root build each declaring `all` are two
+    /// programs, not one ambiguous name.
+    pub fn pickFor(
+        self: *const CrossModule,
+        alloc: std.mem.Allocator,
+        consumer: []const u8,
+        name: []const u8,
+        source: ?ast.ImportSource,
+        arity: ?usize,
+    ) !Pick {
+        const list = self.owners.get(name) orelse return .none;
+        const own = self.packages.idOf(consumer).package;
+        var seen: std.ArrayListUnmanaged(ExportInfo) = .empty;
+        for (list) |e| if (loadedSees(own, self.packages.idOf(e.module).package)) try seen.append(alloc, e);
+        return pickIn(seen.items, name, source, arity);
+    }
+
+    fn pickIn(
+        list: []const ExportInfo,
+        name: []const u8,
+        source: ?ast.ImportSource,
+        arity: ?usize,
+    ) Pick {
         if (list.len == 0) return .none;
         if (list.len == 1) return .{ .one = list[0] };
 
@@ -445,6 +474,19 @@ pub const CrossModule = struct {
         };
     }
 };
+
+/// Whether a module of package `own` can name a declaration of package
+/// `other` (decision 792 (5)): every package sees one that is no loaded
+/// package; a loaded package is seen by itself and by the package that
+/// loaded it (its name extends that package's, `bp_load__m` loading
+/// `bp_load__m__cases__c`), never by a sibling or an unrelated one.
+pub fn loadedSees(own: []const u8, other: []const u8) bool {
+    const load = @import("../comptime/load.zig");
+    if (!load.isLoadedPackage(other)) return true;
+    if (std.mem.eql(u8, own, other)) return true;
+    if (!load.isLoadedPackage(own)) return true;
+    return other.len > own.len + 2 and std.mem.startsWith(u8, other, own) and std.mem.startsWith(u8, other[own.len..], "__");
+}
 
 /// Last path segment of a module path. NOT the module atom any more — it is
 /// what a *source-level* name is compared against (an `import { order } from
@@ -1343,7 +1385,7 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                     // prefix names, so `url.parse` beside `json.parse` is two
                     // answered questions, not a contest.
                     const leaf_src = try u.leafSource(imp, scratch.allocator(), false);
-                    switch (tmp.pick(imp.leaf(), leaf_src, null)) {
+                    switch (try tmp.pickFor(scratch.allocator(), ct.name, imp.leaf(), leaf_src, null)) {
                         .contested => |c| try export_faults.put(ct.name, c),
                         .none, .one => {},
                     }

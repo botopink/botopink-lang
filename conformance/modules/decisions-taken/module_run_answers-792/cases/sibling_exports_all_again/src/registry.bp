@@ -1,0 +1,5 @@
+//// A `pub fn all` of this package's own `registry`.
+
+pub fn all() -> string {
+    return "second registry";
+}

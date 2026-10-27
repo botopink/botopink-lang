@@ -1,0 +1,10 @@
+//// Decision 792 (5) — the same program as `sibling_exports_all`, loaded
+//// beside it: each package's `registry.all` is its own.
+
+pub mod registry;
+import {registry.all};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(all());
+}

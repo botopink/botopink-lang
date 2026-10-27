@@ -1,0 +1,16 @@
+//// Decision 792 (5) — a template whose body runs std's `code` carries std's
+//// private `Tok`, never the `pub type Tok` a sibling loaded package declares
+//// (`sibling_declares_tok`).
+
+import {code, compiler, io.terminal.print} from "std";
+
+type Visitor(who: string)
+
+fn greet(syntax self: Visitor, syntax q: string) -> string {
+    val said = "template " + compiler.text(q) + ", ";
+    return code @`${said} + ${self}.who`;
+}
+
+pub fn main() -> void {
+    print(Visitor(who: "Bia").greet "hello");
+}
