@@ -2,15 +2,29 @@
 //// parameter counted — and no name or platform text, on every target and in
 //// a `comptime` body (decision 1051): a top-level `fn`, a closure, an
 //// associated function named without a call, a function in a record field
-//// and in an array, and a function written into a template hole.
+//// and in an array, and a function written into a template hole. Every
+//// shape a backend may lower a function to answers its declared arity
+//// (decision 1062): an associated function with a rest parameter or a
+//// default one, an `async fn`, a component with hooks and a generic `fn`;
+//// a template hole of a function at build writes `fn/<arity>` too.
 
-import {io.terminal.print} from "std";
+import {context.RenderScope, io.terminal.print} from "std";
+
+type Element(text: string) implement Renderable
 
 pub type Handler(name: string, run: fn(i32, i32) -> i32)
 
 pub type Box(n: i32) {
     fn wrap(n: i32) -> Box {
         return Box(n: n + 1);
+    }
+
+    fn all(first: i32, ..rest: i32[]) -> i32 {
+        return first;
+    }
+
+    fn make(n: i32, k: i32 = 1) -> Box {
+        return Box(n: n + k);
     }
 }
 
@@ -30,12 +44,36 @@ fn none() -> string {
     return "none";
 }
 
+async fn later(x: i32, y: i32) -> Async<i32> {
+    return x + y;
+}
+
+component fn label() -> Component<string> {
+    return "card:";
+}
+
+component fn Card(title: string) -> Component<Element> {
+    val prefix = use label();
+    return Element(text: prefix + title);
+}
+
+fn shown<T>(x: T) -> string {
+    return "${x}";
+}
+
+fn pick<T>(a: T, b: T) -> T {
+    return a;
+}
+
 val atBuild = comptime {
     val c = 2;
     val add: fn(i32, i32) -> i32 = { a, b -> a + b + c };
     print(twice, scaled, add, [twice, twice]);
+    print("hole ${scaled}");
     1
 };
+
+val holeAtBuild = comptime "${twice}";
 
 pub fn main() -> void {
     print(twice);
@@ -52,4 +90,6 @@ pub fn main() -> void {
     print(twice, scaled);
     print("run = ${h.run}");
     print(atBuild, scaled(2), shift(1), h.run(2, 3));
+    print(Box.all, Box.make, later, label, Card, shown, pick);
+    print(holeAtBuild, Box.all(4, 5, 6), Box.make(1), pick(7, 8), shown(9));
 }

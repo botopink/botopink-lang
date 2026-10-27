@@ -3203,6 +3203,33 @@ const Emitter = struct {
         return effectShape(f.effect);
     }
 
+    /// Decisions 1051, 1062 (1) — whether a JS function whose botopink declaration
+    /// has `declared` parameters must carry `__bp_arity`, which `__bp_show` reads
+    /// to print it `fn/<arity>`: unstamped only when its JS parameter list is
+    /// `declared` plain identifiers, so `length` already answers the arity; any
+    /// other shape (a rest parameter, a JS default, a destructuring, a parameter
+    /// the emitter adds) is stamped. The one test every emission site asks.
+    fn needsArityStamp(params: []const js.Param, declared: usize) bool {
+        if (params.len != declared) return true;
+        for (params) |p| {
+            if (p.rest or p.default != null) return true;
+            switch (p.pattern) {
+                .ident, .name => {},
+                else => return true,
+            }
+        }
+        return false;
+    }
+
+    /// `<target>.__bp_arity = <declared>;` — `needsArityStamp`'s stamp.
+    fn arityStamp(self: *Emitter, target: js.Expr, declared: usize) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(target, "__bp_arity"),
+            "=",
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{declared}) },
+        ) };
+    }
+
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
         var shape = self.fnShape(f);
@@ -3252,18 +3279,10 @@ const Emitter = struct {
             .params = params,
             .body = .{ .stmts = body },
         } };
-        // Decision 1051 — a function value prints `fn/<arity>`, its declared
-        // arity; where JavaScript's `length` answers another (a rest
-        // parameter, a print-shape parameter after its own), the function
-        // carries the declared one as `__bp_arity`.
-        const js_len = for (params, 0..) |p, i| {
-            if (p.rest or p.default != null) break i;
-        } else params.len;
-        const decl = if (js_len == f.params.len) fn_decl else try self.b.group(&.{ fn_decl, .{ .expr = try self.b.assign(
-            try self.b.member(.{ .ident = f.name }, "__bp_arity"),
-            "=",
-            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{f.params.len}) },
-        ) } });
+        const decl = if (needsArityStamp(params, f.params.len))
+            try self.b.group(&.{ fn_decl, try self.arityStamp(.{ .ident = f.name }, f.params.len) })
+        else
+            fn_decl;
         if (!f.isPub) return decl;
         return self.b.group(&.{ decl, .{ .expr = try self.b.assign(
             try self.b.member(.{ .name = "exports" }, f.name),
@@ -3319,6 +3338,8 @@ const Emitter = struct {
             ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
         }
         var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
+        // Decision 1062 (1) — the `__bp_arity` stamps of its associated functions.
+        var stamps: std.ArrayListUnmanaged(js.Stmt) = .empty;
         for (r.methods) |m| {
             if (hostMethods.isHostMethod(m)) {
                 if (try self.hostMethodMember(m, false)) |member| try members.append(self.arena(), member);
@@ -3386,6 +3407,9 @@ const Emitter = struct {
                 .is_async = shape.is_async,
                 .is_generator = shape.is_generator,
             });
+            // An associated function is a value (`Box.wrap`): its arity (1062 (1)).
+            if (!has_self and needsArityStamp(params, m.params.len))
+                try stamps.append(self.arena(), try self.arityStamp(try self.b.member(.{ .name = r.name }, m.name), m.params.len));
         }
         for (r.implement) |im| switch (im) {
             .named => |n| try self.appendInterfaceDefaults(&members, n, 0),
@@ -3400,6 +3424,7 @@ const Emitter = struct {
         const marker = try self.protoName(r.name, r.printedName());
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
         try out.appendSlice(self.arena(), &.{ class, marker });
+        try out.appendSlice(self.arena(), stamps.items);
         try self.appendBehaviorMarks(&out, r.name, r);
         if (try self.protoShapes(r.name, r.recordFields())) |shapes| try out.append(self.arena(), shapes);
         if (r.isPub) try out.append(self.arena(), try self.pubExport(r.name));
@@ -3751,6 +3776,10 @@ const Emitter = struct {
                 .is_async = shape.is_async,
                 .is_generator = shape.is_generator,
             });
+            // An enum's function is a value (`Size.of`): its arity (1062 (1)).
+            const declared = if (recv_first or m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) m.params.len else m.params.len - 1;
+            if (needsArityStamp(params, declared))
+                try tail.append(self.arena(), try self.arityStamp(try self.b.member(.{ .name = e.name }, m.name), declared));
             // An enum that implements a behavior is reached through a value
             // of the behavior, whose call is `r.path()` — the receiver's own
             // method, as for a record. The static takes the receiver first,
@@ -3870,14 +3899,17 @@ const Emitter = struct {
                         .argc = m.params.len,
                     };
                     try primOpTemplate.render(ref.text, &tmpl);
+                    const tparams = try self.buildParams(m.params);
                     try stmts.append(self.arena(), .{ .expr = try self.b.assign(
                         try self.b.member(.{ .name = assoc_ns }, m.name),
                         "=",
                         .{ .function = .{
-                            .params = try self.buildParams(m.params),
+                            .params = tparams,
                             .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try tmpl.finish() }}), .layout = .spaced },
                         } },
                     ) });
+                    if (needsArityStamp(tparams, m.params.len))
+                        try stmts.append(self.arena(), try self.arityStamp(try self.b.member(.{ .name = assoc_ns }, m.name), m.params.len));
                     continue;
                 };
                 const body_src = m.body orelse continue;
@@ -3891,6 +3923,8 @@ const Emitter = struct {
                     "=",
                     .{ .function = .{ .params = params, .body = .{ .stmts = body } } },
                 ) });
+                if (needsArityStamp(params, m.params.len))
+                    try stmts.append(self.arena(), try self.arityStamp(try self.b.member(.{ .name = assoc_ns }, m.name), m.params.len));
             }
             // A `pub` behavior another module imports: `Shape.unit()` there
             // reads this namespace object through its `require` (144 B-19).

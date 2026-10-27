@@ -84,6 +84,7 @@ function greet({ name }) {
     __bp_print(name);
     return name;
 }
+greet.__bp_arity = 1;
 
 function main() {
     greet(new Person("Ana", 30));

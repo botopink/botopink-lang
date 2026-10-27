@@ -1979,9 +1979,13 @@ codegen/
   cell `function_value_prints`): an `is_function` clause before `~p` reading
   `erlang:fun_info(V, arity)` on erlang (comptime too: std-wasm serves
   `fun_info/2`) and beam; on commonJS `fn_branch` in `__bp_show` reads
-  `v.__bp_arity ?? v.length` — `buildFn` stamps `__bp_arity` only on a fn whose
-  JavaScript `length` differs (a rest parameter, a print-shape parameter), and a
-  template hole of a function type goes through `__bp_text` (`textHoleNeedsHelper`);
+  `v.__bp_arity ?? v.length` — every emission of a function a value can name (a
+  top-level `fn`, a type's or an enum's associated function, a behavior's
+  namespace function) asks `needsArityStamp(params, declared)` and stamps
+  `__bp_arity` unless its JS parameters are `declared` plain identifiers (decision
+  1062 (1); a lambda's arrow always is), and a template hole of a function type
+  goes through `__bp_text` (`textHoleNeedsHelper`); erlang's `'__bp_text'/1`
+  (comptime's hole) has the same `is_function` arm (1062 (2));
   on wasm the `F <n>` shape (§ wat). Everything else — a
   host tuple, a plain atom, `true`/`false` — keeps the `~p` it had. Numeric formatting is
   `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.

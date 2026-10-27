@@ -961,6 +961,8 @@ class Dict {
     }
 }
 Dict.prototype.__bp = "Dict";
+Dict.empty.__bp_arity = 0;
+Dict.ofEntries.__bp_arity = 1;
 Dict.prototype["__bp_b_std@primitives@@Index"] = true;
 Dict.prototype["__bp_b_std@primitives@@Display"] = true;
 Dict.prototype.__bp_s = { pairs: ["[", ["#", null, null]] };
@@ -1062,6 +1064,8 @@ class Set {
     }
 }
 Set.prototype.__bp = "Set";
+Set.empty.__bp_arity = 0;
+Set.fromList.__bp_arity = 1;
 exports.Set = Set;
 
 // ── empty-collection boundary (B1) ──
@@ -1126,6 +1130,8 @@ class Queue {
     }
 }
 Queue.prototype.__bp = "Queue";
+Queue.empty.__bp_arity = 0;
+Queue.fromList.__bp_arity = 1;
 exports.Queue = Queue;
 
 // ── empty-collection boundary (B1) ──

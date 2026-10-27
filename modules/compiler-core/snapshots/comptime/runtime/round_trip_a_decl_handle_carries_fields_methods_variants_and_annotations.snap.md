@@ -1186,7 +1186,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 448
+  i32.const 456
   i32.add
   i32.const 21
   call $rt_atom
@@ -1195,7 +1195,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 472
+  i32.const 480
   i32.add
   i32.const 4
   call $rt_bin
@@ -1306,7 +1306,7 @@ import {compiler} from "std";
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 440
+  i32.const 448
   i32.add
   i32.const 4
   call $rt_atom
@@ -2569,7 +2569,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 0
   global.get $__lit
-  i32.const 448
+  i32.const 456
   i32.add
   i32.const 21
   call $rt_atom
@@ -2578,7 +2578,7 @@ import {compiler} from "std";
   local.get $s1
   i32.const 1
   global.get $__lit
-  i32.const 472
+  i32.const 480
   i32.add
   i32.const 4
   call $rt_bin
@@ -2689,7 +2689,7 @@ import {compiler} from "std";
   (block $L18
   (block $L19
   global.get $__lit
-  i32.const 440
+  i32.const 448
   i32.add
   i32.const 4
   call $rt_atom

@@ -1,6 +1,7 @@
 botopink-cell 2
 == function_value_prints
 build fn/1 fn/2 fn/2 [fn/1, fn/1]
+build hole fn/2
 out fn/1
 out fn/0
 out fn/2
@@ -11,3 +12,5 @@ out [fn/1, fn/1]
 out fn/1 fn/2
 out run = fn/2
 out 1 6 11 5
+out fn/2 fn/2 fn/2 fn/0 fn/1 fn/1 fn/2
+out fn/1 4 Box(n: 2) 7 9

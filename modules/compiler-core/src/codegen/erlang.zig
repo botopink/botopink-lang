@@ -1416,15 +1416,27 @@ fn slicedCodepointsOf(comptime to: Ast.Expr) Ast.Expr {
     });
 }
 
-/// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
-/// its `~p` rendering. Every comptime module carries it; a typed module emits it
-/// when a string `+` has an operand that is not provably a string
-/// (`concatSegments`).
+/// `'__bp_text'/1`: any term as a binary — a binary is itself, a function value
+/// `fn/<arity>` (decisions 1051, 1062 (2)), anything else its `~p` rendering.
+/// Every comptime module carries it; a typed module emits it when a string `+`
+/// has an operand that is not provably a string (`concatSegments`).
 const text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .clauses = &.{
     .{
         .patterns = &.{Ast.Expr.v("Value")},
         .guards = &.{isA("binary", "Value")},
         .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .guards = &.{isA("function", "Value")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "iolist_to_binary", .args = &.{.{ .list = &.{
+            .{ .string = "fn/" },
+            .{ .call = .{ .module = "erlang", .name = "integer_to_list", .args = &.{.{ .call = .{ .module = "erlang", .name = "element", .args = &.{
+                .{ .number = "2" },
+                .{ .call = .{ .module = "erlang", .name = "fun_info", .args = &.{ Ast.Expr.v("Value"), Ast.Expr.a("arity") } } },
+            } } }} } },
+        } }} } } }}),
         .layout = .inline_,
     },
     .{
