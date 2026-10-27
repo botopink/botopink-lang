@@ -3130,6 +3130,7 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
         .renderable = implementsRenderable(r.implement),
         .opaque_ = r.isOpaque,
         .makers = if (r.isOpaque) try opaqueTypes.makers(env.arena, r) else &.{},
+        .reflection = r.reflectionRecord,
     } });
 
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
@@ -3431,7 +3432,13 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
             for (fields, 0..) |f, i| ps[i] = f.type_;
             break :blk try env.funcType(ps, ctorRetType);
         };
-        try env.bind(v.name, ctorType);
+        // Decision 1071 (1) — a record type of the variant's name in scope
+        // keeps its constructor: a bare variant is no expression (decision
+        // 587), so `Field(…)` beside `DeclKind { …, Field, … }` builds the
+        // record `Field`, and the variant is `DeclKind.Field` or a `case`
+        // pattern's `Field` (std `compiler`'s reflection records).
+        const recordNamed = if (env.lookupTypeDef(v.name)) |td| td == .record else false;
+        if (!recordNamed) try env.bind(v.name, ctorType);
         try noteVariantClaim(env, e.name, v.name, ctorType);
 
         // Constructor params (F4 fn-param-default-expansion): register the
@@ -3439,7 +3446,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
         // (`Level.Error`) so transform's `expandTrailingDefaults` finds it for
         // either call shape — `Error("boom")` or `Level.Error("boom")`.
         const variant_params = try enumVariantAsParams(env, v);
-        try env.ctorParams.put(v.name, variant_params);
+        if (!recordNamed) try env.ctorParams.put(v.name, variant_params);
         const qname = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ e.name, v.name });
         try env.ctorParams.put(qname, variant_params);
     }
@@ -3473,6 +3480,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
         .variants = variants,
         .implements = implNames,
         .renderable = implementsRenderable(e.implement),
+        .reflection = e.reflectionRecord,
     } });
     // Bind the enum name itself so `inferDecl` can look it up.
     const enumInstance = try env.namedType(e.name);
@@ -23054,6 +23062,7 @@ fn checkOpaqueCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
     }
     if (env.localBindDepth(call.callee) != null) return;
     const name = env.importedTypeAliases.get(call.callee) orelse call.callee;
+    try opaqueTypes.refuseReflectionConstruction(env, name, c.loc, call.lowering);
     return opaqueTypes.refuseConstruction(env, name, c.loc, call.lowering);
 }
 

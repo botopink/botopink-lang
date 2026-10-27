@@ -54,6 +54,19 @@ pub fn refuseConstruction(env: *Env, name: []const u8, loc: ast.Loc, lowering: b
     return error.TypeError;
 }
 
+/// Decision 1071 (1) — `Field(…)` written for one of std `compiler`'s
+/// reflection records outside std (`TypeDef.Record.reflection`): only the
+/// crossing builds one, as only `compiler.load` answers a `Module` (792 (3));
+/// its fields stay readable.
+pub fn refuseReflectionConstruction(env: *Env, name: []const u8, loc: ast.Loc, lowering: bool) InferError!void {
+    if (lowering) return;
+    const td = env.lookupTypeDef(name) orelse return;
+    if (td != .record or !td.record.reflection) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `compiler.{s}` is a reflection record — `{s}(…)` is written only by std's crossing (decision 1071)", .{ diagnostics.opaque_construction, name, name });
+    env.lastError = TypeError.custom(msg, "Read one from a declaration handle (`compiler.fields(d)`, `compiler.variants(d)`, …); its fields are read as any record's.").withLoc(loc);
+    return error.TypeError;
+}
+
 /// `x.f` read on a value of the opaque record `name`: refused outside `X`'s
 /// methods.
 pub fn refuseField(env: *Env, name: []const u8, member: []const u8, loc: ast.Loc) InferError!void {

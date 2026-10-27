@@ -1,0 +1,7 @@
+botopink-cell 2
+== comptime_reflection_types_at_runtime
+out Token is a type (type): Eof() Num(value:i32) Pair(left:string,right:string)
+out type,fn,val
+== comptime_reflection_record_built_by_hand
+refused error: opaque-construction: `compiler.Field` is a reflection record — `Field(…)` is written only by std's crossing (decision 1071)
+at src/main.bp:9:13

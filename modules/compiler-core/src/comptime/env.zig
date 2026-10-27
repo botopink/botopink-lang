@@ -71,6 +71,9 @@ pub const TypeDef = union(enum) {
         /// Decision 811 (1) — the `pub` methods answering the type, which
         /// `opaque-construction` names.
         makers: []const []const u8 = &.{},
+        /// Decision 1071 (1) — std `compiler`'s reflection record as an
+        /// importer sees it (`ast.TypeDecl.reflectionRecord`).
+        reflection: bool = false,
     };
 
     pub const Struct = struct {
@@ -97,6 +100,9 @@ pub const TypeDef = union(enum) {
         /// True when this type implements the marker `@Renderable` (decision
         /// 354): a `@Component<R>` with this `R` is a component, not a hook.
         renderable: bool = false,
+        /// Decision 1071 (1) — std `compiler`'s `DeclKind` as an importer
+        /// sees it (`ast.TypeDecl.reflectionRecord`).
+        reflection: bool = false,
     };
 
     /// True when this type implements `@Renderable` (decision 354).

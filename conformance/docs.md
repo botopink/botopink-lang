@@ -4637,6 +4637,24 @@ numeric leaf is named by its digits.
 
 <!-- example: modules/decisions-taken/compiler_variants_typed_entries-848/cases/compiler_variants_typed_entries -->
 
+The records these reads answer are user surface with a run-time form (decision
+1071 (1)): `compiler.Field`, `compiler.Method`, `compiler.Variant`,
+`compiler.Param`, `compiler.DeclAnnotation` and the enum `compiler.DeclKind`
+(`Type`, `Behavior`, `Fn`, `Method`, `Field`, `Val`, `Element`, `Component`)
+are std's types, imported as any other (`import {compiler.Variant} from
+"std"`). A body keeps one in a typed binding (`val vs: compiler.Variant[] =
+compiler.variants(decl)`), a `case` over `compiler.kind(decl)` names its
+variants bare, and a function of the program that takes one is compiled for
+every target like any other function. Their fields are read as any record's;
+only std builds one, as only `compiler.load` builds a `Module` — `Field(…)`
+written in a program is `opaque-construction`, the record named, never the
+variant `DeclKind.Field`. `DeclAnnotation.decorator` holds the decorator's
+qualified name.
+
+<!-- example: modules/decisions-taken/comptime_reflection_types_at_runtime-1071/cases/comptime_reflection_types_at_runtime -->
+
+<!-- example: modules/decisions-taken/comptime_reflection_types_at_runtime-1071/cases/comptime_reflection_record_built_by_hand -->
+
 `compiler.fail(message, at: decl)` refuses it at the annotation, and what the
 decorator produces goes to one of four places (decisions 216, 575 (3), 576),
 the outputs a decorator's only (`compiler-output-outside-decorator`):

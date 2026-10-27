@@ -5,6 +5,7 @@
 test {
     _ = @import("tests/infer_exprs.zig");
     _ = @import("tests/compiler_members.zig");
+    _ = @import("tests/reflection_records.zig");
     _ = @import("tests/load.zig");
     _ = @import("tests/comptime_blocks.zig");
     _ = @import("../comptime.zig");

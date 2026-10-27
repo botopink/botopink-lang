@@ -4964,6 +4964,14 @@ pub const TypeDecl = struct {
     /// is called only there (and by the compiler's own lowering). Left out of
     /// the dump when false.
     isOpaque: bool = false,
+    /// Decision 1071 (1) — one of std `compiler`'s reflection records
+    /// (`Field`, `Method`, `Variant`, `Param`, `DeclAnnotation`, `DeclKind`)
+    /// as std exports it to an importer (`comptime.zig`, the std type
+    /// export): the importer checks it as the compiler's own record of its
+    /// name (`__Decl__Field`, `unify.zig` `reflectionAlike`) and builds none
+    /// (`opaque_types.zig` `refuseReflectionConstruction`); std's own module
+    /// is the crossing that builds them. Left out of the dump when false.
+    reflectionRecord: bool = false,
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -5021,7 +5029,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive", "properties", "isOpaque" });
+        return stringifyOmitting(this, jws, &.{ "loc", "startLoc" }, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments", "derivedFrom", "derivedPartial", "isPrimitive", "properties", "isOpaque", "reflectionRecord" });
     }
 };
 

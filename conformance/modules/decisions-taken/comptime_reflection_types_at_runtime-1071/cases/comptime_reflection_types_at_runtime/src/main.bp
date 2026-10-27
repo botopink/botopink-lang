@@ -1,0 +1,55 @@
+//// Decision 1071 (1) — the reflection records a decorator body reads are user
+//// surface with a run-time form: `compiler.variants(decl)` answers a
+//// `compiler.Variant[]`, `compiler.kind(decl)` a `compiler.DeclKind` a `case`
+//// matches by its variants, and a function of the program that takes one is
+//// compiled for the target like any other — the decorator calls `row` and
+//// `kindName` at build, `main` calls `kindName` at run time.
+
+import {compiler, compiler.DeclKind, compiler.Variant, io.terminal.print} from "std";
+
+type Outline(text: string)
+
+fn row(v: Variant) -> string {
+    return v.name
+        + "("
+        + v.fields.map({ f -> f.name + ":" + f.typeName }).join(",")
+        + ")";
+}
+
+fn kindName(k: DeclKind) -> string {
+    return case k {
+        Type -> "type";
+        Fn -> "fn";
+        Val -> "val";
+        _ -> "other";
+    };
+}
+
+fn outline(syntax decl: unknown) -> void {
+    val vs: Variant[] = compiler.variants(decl);
+    val kind = case compiler.kind(decl) {
+        Type -> "a type";
+        Fn -> "a function";
+        _ -> "another declaration";
+    };
+    compiler.setMeta(Outline(text: compiler.name(decl)!
+        + " is "
+        + kind
+        + " ("
+        + kindName(compiler.kind(decl))
+        + "): "
+        + vs.map({ v -> row(v) }).join(" ")));
+}
+
+#[outline]
+type Token {
+    Eof,
+    Num(value: i32),
+    Pair(left: string, right: string),
+}
+
+pub fn main() -> void {
+    print(comptime compiler.typeInfo(Token).meta(Outline)?.text ?? "none");
+    val kinds: DeclKind[] = [DeclKind.Type, DeclKind.Fn, DeclKind.Val];
+    print(kinds.map({ k -> kindName(k) }).join(","));
+}

@@ -9,6 +9,7 @@ const transform = @import("./comptime/transform.zig");
 const context_lower = @import("comptime/context_lower.zig");
 const resolved_origins = @import("comptime/resolved_origins.zig");
 const typeIdentity = @import("comptime/type_identity.zig");
+const unifyMod = @import("comptime/unify.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
 const std_calls = @import("./comptime/std_calls.zig");
@@ -2280,6 +2281,12 @@ fn isIdentChar(c: u8) bool {
 /// type of one of those names takes the name (`infer.zig`
 /// `dropReflectionAlias`), so a decorator module that imports a user `Param`
 /// still reads `m.params` of a `@Decl` as the reflection's `Param`.
+///
+/// Decision 1071 (1) — std `compiler.bp` declares the run-time forms of these
+/// records under their public names (`Field`, `Method`, `Variant`, `Param`,
+/// `DeclAnnotation`, `DeclKind`); a value of either is one type
+/// (`comptime/unify.zig` `reflectionAlike`), and `comptime/tests/
+/// reflection_records.zig` holds the two field by field.
 pub const decl_reflection_src =
     \\pub type __DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type __Span(start: i32, end: i32, line: i32)
@@ -4129,6 +4136,15 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
     _ = try infer.inferProgram(env, program);
+    // T17, decision 1071 (1) — the public spellings every module sees of the
+    // records a handle hands out (`Param` = `__Decl__Param`, …): std's
+    // aliases were these until `compiler.bp` declared the records' run-time
+    // forms; a module that imports one (or declares its own) takes the name
+    // (`infer.zig` `dropReflectionAlias`).
+    for (unifyMod.reflection_records) |r| {
+        if (!std.mem.startsWith(u8, r[1], "__Decl__") or env.typeAliases.contains(r[0])) continue;
+        try env.typeAliases.put(env.arena, r[0], .{ .name = r[0], .isPub = true, .target = .{ .named = r[1] } });
+    }
 }
 
 /// Decision 539 (6) — the `pub behavior`s of `primitives.bp`'s compiler section a compiler rule
@@ -4464,8 +4480,15 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             for (program.decls) |decl| if (decl == .use) for (decl.use.imports) |imp| {
                 if (!imp.isQualified()) continue;
                 const decls = env.stdModuleTypes.get(try imp.prefixPath(env.arena)) orelse continue;
-                for (decls) |d| if (d == .typeAlias and std.mem.eql(u8, d.typeAlias.name, imp.leaf()) and d.typeAlias.target == .named)
-                    try imported_aliases.append(env.arena, d.typeAlias);
+                for (decls) |d| {
+                    if (d == .typeAlias and std.mem.eql(u8, d.typeAlias.name, imp.leaf()) and d.typeAlias.target == .named)
+                        try imported_aliases.append(env.arena, d.typeAlias);
+                    // Decision 1071 (1) — a reflection record it imports
+                    // (`types.bp`'s `annotations: DeclAnnotation[]`) names the
+                    // compiler's own record, as the alias it was did.
+                    if (d == .type_ and d.type_.reflectionRecord and std.mem.eql(u8, d.type_.name, imp.leaf()))
+                        try imported_aliases.append(env.arena, .{ .name = d.type_.name, .target = .{ .named = unifyMod.reflectionInternalName(d.type_.name).? } });
+                }
             };
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
@@ -4474,6 +4497,15 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
                     else => false,
                 };
                 if (!is_pub_type) continue;
+                // Decision 1071 (1) — std `compiler`'s reflection records
+                // reach an importer flagged: checked there as the compiler's
+                // own records of their names, built only here.
+                if (decl == .type_ and std.mem.eql(u8, mod_name, "compiler") and unifyMod.reflectionInternalName(decl.type_.name) != null) {
+                    var t = decl.type_;
+                    t.reflectionRecord = true;
+                    try type_decls.append(env.arena, .{ .type_ = t });
+                    continue;
+                }
                 if (decl == .type_ and imported_aliases.items.len > 0) {
                     var t = decl.type_;
                     for (imported_aliases.items) |a| t = try typeIdentity.renameTypeRefs(env.arena, t, a.name, a.target.named);

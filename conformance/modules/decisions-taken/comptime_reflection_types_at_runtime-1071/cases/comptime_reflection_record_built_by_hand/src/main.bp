@@ -1,0 +1,11 @@
+//// Decision 1071 (1) — a reflection record is built only by std's crossing,
+//// as a `Module` only by `compiler.load` (decision 792 (3)): `Field(…)`
+//// written in a program is refused, and names the record — not the variant
+//// `DeclKind.Field` of the same name.
+
+import {compiler.Field, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val f = Field(name: "id", typeName: "i32", annotations: []);
+    print(f.name);
+}

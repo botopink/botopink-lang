@@ -51,6 +51,45 @@ pub fn mentionsBytes(t: *T.Type) bool {
     };
 }
 
+/// Decision 1071 (1) — std `compiler`'s reflection records under their
+/// public names, each beside the compiler's own record a body is checked
+/// against (`comptime.zig` `decl_reflection_src`). The two hold the same
+/// fields in the same order (`tests/reflection_records.zig`).
+pub const reflection_records = [_][2][]const u8{
+    .{ "DeclKind", "__DeclKind" },
+    .{ "DeclAnnotation", "__Decl__Annotation" },
+    .{ "Param", "__Decl__Param" },
+    .{ "Field", "__Decl__Field" },
+    .{ "Method", "__Decl__Method" },
+    .{ "Variant", "__Decl__Variant" },
+};
+
+/// The compiler's own record a public reflection name stands beside, or null.
+pub fn reflectionInternalName(public: []const u8) ?[]const u8 {
+    for (reflection_records) |r| if (std.mem.eql(u8, r[0], public)) return r[1];
+    return null;
+}
+
+/// Decision 1071 (1) — whether the named types `a` and `b` are one
+/// reflection record: one the compiler's own (`__Decl__Field`), the other
+/// std `compiler`'s of the public name (`Field`) as this module imported it
+/// (`TypeDef.Record.reflection`). A module's own `Field`, or one imported
+/// from elsewhere, is not.
+pub fn reflectionAlike(env: *Env, a: []const u8, b: []const u8) bool {
+    return reflectionPair(env, a, b) or reflectionPair(env, b, a);
+}
+
+fn reflectionPair(env: *Env, public: []const u8, internal: []const u8) bool {
+    const want = reflectionInternalName(public) orelse return false;
+    if (!std.mem.eql(u8, want, internal)) return false;
+    const td = env.lookupTypeDef(public) orelse return false;
+    return switch (td) {
+        .record => |r| r.reflection,
+        .enum_ => |e| e.reflection,
+        else => false,
+    };
+}
+
 /// Unify types `a` and `b`.  Both are dereferenced first so link chains
 /// are never seen inside the match arms.
 ///
@@ -178,6 +217,7 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
                     return unify(env, na.args[0], tb);
                 }
                 if (!std.mem.eql(u8, na.name, nb.name)) {
+                    if (na.args.len == 0 and nb.args.len == 0 and reflectionAlike(env, na.name, nb.name)) return;
                     env.lastError = TypeError.typeMismatch(ta, tb);
                     return error.TypeError;
                 }

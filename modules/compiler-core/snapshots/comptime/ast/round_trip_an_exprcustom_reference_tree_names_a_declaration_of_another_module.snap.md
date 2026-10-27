@@ -548,19 +548,50 @@ pub type ExprContext = __ExprContext;
 
 pub type CustomNode = __CustomNode;
 
-pub type DeclKind = __DeclKind;
-
-pub type DeclAnnotation = __Decl__Annotation;
-
-pub type Param = __Decl__Param;
-
-pub type Field = __Decl__Field;
-
-pub type Method = __Decl__Method;
-
-pub type Variant = __Decl__Variant;
-
 pub type HookNode = __HookNode;
+
+// ── The reflection records (decisions 576 (13), 848, 1071 (1)) ─────────────
+// What a declaration handle's reads answer — `compiler.fields(d)` a
+// `Field[]`, `compiler.variants(d)` a `Variant[]`, `compiler.kind(d)` a
+// `DeclKind` —, each with a run-time form: a function of the program takes,
+// keeps and reads one as any record (`fn row(v: compiler.Variant) -> string`).
+// Only the crossing below builds one (`declOf`, as `Decl` and `Module`, decision
+// 792 (3)); outside std, `Field(…)` is `reflection-construction`. A body is
+// checked against the compiler's own records of these names (`__Decl__Field`,
+// … in `comptime.zig` `decl_reflection_src`), which hold the same fields in the
+// same order (`comptime/tests/reflection_records.zig`); `compiler.Field<T>`
+// (decision 599 (3), `Type.Field<T>`) is another type, the generic field key.
+
+// What kind of declaration a handle is.
+pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
+
+// One annotation (`#[name(args…)]`): its raw argument lexemes and the
+// qualified name of the decorator its name names (`main@@column`) — a name,
+// not a function value (decision 1071 (1)).
+pub type DeclAnnotation(name: string, args: string[], decorator: string)
+
+pub type Param(name: string, typeName: string)
+
+pub type Field(name: string, typeName: string, annotations: DeclAnnotation[])
+
+// `meta` the typed meta values the method's decorators recorded (decision
+// 298), what `compiler.meta<M>(m)` reads; the crossing's alone.
+pub type Method(
+    name: string,
+    params: Param[],
+    returnType: string,
+    annotations: DeclAnnotation[],
+    meta: MetaEntry[],
+)
+
+// One constructible variant (decision 848): `section` the enclosing sections'
+// names joined by `.`, `null` at the top level.
+pub type Variant(
+    name: string,
+    fields: Field[],
+    annotations: DeclAnnotation[],
+    section: ?string,
+)
 
 // ── The crossing (decisions 550, 1035 (4), 1038 (3)) ───────────────────────
 // What crosses into and out of a comptime evaluation is JSON in the core
@@ -1813,37 +1844,16 @@ fn blockFrames(r: BlockReply) -> Frame[] {
 // […]}`, a variant its name). A key the Erlang path writes only when it holds
 // something (a capture's `value`, `holes`, `__bp_annotations`) is written only
 // then. Each shape has a reader (`…Of(Json)`) and a writer (`…Json`); the
-// records are closed — no `unknown` —, and the compiler's reflection types
-// (`Field`, `Method`, `DeclKind`, `Stage`, `HookNode`, `Declared`) have no
-// run-time form, so the crossing spells its own (`…Entry`), the kind and the
-// stage as their names.
-
-// One annotation (`#[name(args…)]`): its raw argument lexemes and the
-// identity of the decorator its name names (`main@@column`).
-pub type AnnotationEntry(name: string, args: string[], decorator: string)
-
-pub type ParamEntry(name: string, typeName: string)
-
-pub type FieldEntry(name: string, typeName: string, annotations: AnnotationEntry[])
+// records are closed — no `unknown` —: the reflection records a body reads
+// (`Field`, `Method`, `Variant`, `Param`, `DeclAnnotation`, `DeclKind`) are
+// the ones declared above under their public names (decision 1071 (1)), the
+// kind and the stage enums written as their variants' names; what has no
+// public name of its own (`HookNode`, `Declared`, `TypeInfo`) crosses as an
+// `…Entry` record.
 
 // One typed meta value a decorator recorded (decision 298): the record type's
 // name and its value (JSON key `type`).
 pub type MetaEntry(typeName: string, value: BuildValue)
-
-pub type MethodEntry(
-    name: string,
-    params: ParamEntry[],
-    returnType: string,
-    annotations: AnnotationEntry[],
-    meta: MetaEntry[],
-)
-
-pub type VariantEntry(
-    name: string,
-    fields: FieldEntry[],
-    annotations: AnnotationEntry[],
-    section: ?string,
-)
 
 // One string meta entry of a declaration (`<decorator>.<key>`).
 pub type MetaPair(key: string, value: string)
@@ -1861,14 +1871,14 @@ pub type DeclaredEntry(
 pub type TypeArgEntry(
     name: string,
     module: string,
-    fields: FieldEntry[],
-    methods: MethodEntry[],
+    fields: Field[],
+    methods: Method[],
     meta: MetaPair[],
 )
 
 pub type HookUseEntry(
     hook: ?DeclaredEntry,
-    annotations: AnnotationEntry[],
+    annotations: DeclAnnotation[],
     at: string,
     typeArgs: TypeArgEntry[],
     context: ?DeclaredEntry,
@@ -1883,8 +1893,13 @@ pub type HookEntry(
     uses: HookUseEntry[],
     calls: HookCallEntry[],
     async: bool,
-    stage: string,
+    stage: Stage,
 )
+
+// The prelude's `Stage` (`primitives.bp`), declared again here so the
+// crossing builds one on every target: the prelude's has no run-time form of
+// its own. Same name, same variants — one type to the checker.
+type Stage { Build, Run, Any }
 
 // What a handle `compiler.lookup` answered carries (decision 415 (2)): the
 // typed meta its decorators recorded — `pending` while they have not run
@@ -1910,15 +1925,15 @@ pub type DeclTag(attrs: AttrEntry[], meta: MetaEntry[])
 // erased body's lowering declares the handle as this type and each
 // `compiler.X(decl)` becomes a read of its field.
 pub opaque type Decl(
-    kind: string,
+    kind: DeclKind,
     name: string,
-    fields: FieldEntry[],
-    variants: VariantEntry[],
-    methods: MethodEntry[],
+    fields: Field[],
+    variants: Variant[],
+    methods: Method[],
     returnType: string,
-    annotations: AnnotationEntry[],
+    annotations: DeclAnnotation[],
     hooks: HookEntry[],
-    params: ParamEntry[],
+    params: Param[],
     component: ?Decl,
     module: string,
     owner: ?DeclaredEntry,
@@ -1930,15 +1945,15 @@ pub opaque type Decl(
         val component = jsonField(j, "component") ?? Json.JsonNull;
         val owner = jsonField(j, "owner") ?? Json.JsonNull;
         return Decl(
-            kind: textField(j, "kind") ?? "",
+            kind: declKindOf(textField(j, "kind") ?? ""),
             name: textField(j, "name") ?? "",
-            fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
-            variants: itemsOf(jsonField(j, "variants") ?? Json.JsonNull).map({ v -> variantEntryOf(v) }),
-            methods: methodEntriesOf(jsonField(j, "methods") ?? Json.JsonNull),
+            fields: fieldListOf(jsonField(j, "fields") ?? Json.JsonNull),
+            variants: itemsOf(jsonField(j, "variants") ?? Json.JsonNull).map({ v -> variantOf(v) }),
+            methods: methodListOf(jsonField(j, "methods") ?? Json.JsonNull),
             returnType: textField(j, "returnType") ?? "",
-            annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+            annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
             hooks: itemsOf(jsonField(j, "hooks") ?? Json.JsonNull).map({ h -> hookEntryOf(h) }),
-            params: paramEntriesOf(jsonField(j, "params") ?? Json.JsonNull),
+            params: paramListOf(jsonField(j, "params") ?? Json.JsonNull),
             component: if (isNull(component)) null else Decl.of(component),
             module: textField(j, "module") ?? "",
             owner: if (isNull(owner)) null else declaredEntryOf(owner),
@@ -1952,15 +1967,15 @@ pub opaque type Decl(
     // order.
     fn json(self: Self) -> Json {
         var fs: JsonField[] = [
-            JsonField(key: "kind", value: Json.JsonString(value: self.kind)),
+            JsonField(key: "kind", value: Json.JsonString(value: declKindName(self.kind))),
             JsonField(key: "name", value: Json.JsonString(value: self.name)),
-            JsonField(key: "fields", value: fieldEntriesJson(self.fields)),
-            JsonField(key: "variants", value: Json.JsonArray(items: self.variants.map({ v -> variantEntryJson(v) }))),
-            JsonField(key: "methods", value: methodEntriesJson(self.methods)),
+            JsonField(key: "fields", value: fieldListJson(self.fields)),
+            JsonField(key: "variants", value: Json.JsonArray(items: self.variants.map({ v -> variantJson(v) }))),
+            JsonField(key: "methods", value: methodListJson(self.methods)),
             JsonField(key: "returnType", value: Json.JsonString(value: self.returnType)),
-            JsonField(key: "annotations", value: annotationEntriesJson(self.annotations)),
+            JsonField(key: "annotations", value: declAnnotationListJson(self.annotations)),
             JsonField(key: "hooks", value: Json.JsonArray(items: self.hooks.map({ h -> hookEntryJson(h) }))),
-            JsonField(key: "params", value: paramEntriesJson(self.params)),
+            JsonField(key: "params", value: paramListJson(self.params)),
             JsonField(key: "component", value: optionalDeclJson(self.component)),
             JsonField(key: "module", value: Json.JsonString(value: self.module)),
             JsonField(key: "owner", value: optionalDeclaredJson(self.owner)),
@@ -1988,8 +2003,34 @@ pub opaque type Decl(
         val lookup = self.lookup;
         val identity = if (lookup != null) lookup.identity else "";
         val local = if (lookup != null) lookup.local else self.name;
-        return Binding(name: self.name, kind: self.kind, identity: identity, local: local, handle: self);
+        return Binding(name: self.name, kind: declKindName(self.kind), identity: identity, local: local, handle: self);
     }
+}
+
+// A `DeclKind` crosses as its variant's name (`"Fn"`); the Erlang path
+// writes no other.
+fn declKindOf(name: string) -> DeclKind {
+    if (name == "Behavior") return DeclKind.Behavior;
+    if (name == "Fn") return DeclKind.Fn;
+    if (name == "Method") return DeclKind.Method;
+    if (name == "Field") return DeclKind.Field;
+    if (name == "Val") return DeclKind.Val;
+    if (name == "Element") return DeclKind.Element;
+    if (name == "Component") return DeclKind.Component;
+    return DeclKind.Type;
+}
+
+fn declKindName(k: DeclKind) -> string {
+    return case k {
+        Type -> "Type";
+        Behavior -> "Behavior";
+        Fn -> "Fn";
+        Method -> "Method";
+        Field -> "Field";
+        Val -> "Val";
+        Element -> "Element";
+        Component -> "Component";
+    };
 }
 
 // The handle `j` holds (decision 792 (3)'s opaque shape: the one way to build
@@ -2037,11 +2078,11 @@ fn textsJson(xs: string[]) -> Json {
     return Json.JsonArray(items: xs.map({ x -> Json.JsonString(value: x) }));
 }
 
-pub fn annotationEntryOf(j: Json) -> AnnotationEntry {
-    return AnnotationEntry(name: textField(j, "name") ?? "", args: textsOfJson(jsonField(j, "args") ?? Json.JsonNull), decorator: textField(j, "decorator") ?? "");
+pub fn declAnnotationOf(j: Json) -> DeclAnnotation {
+    return DeclAnnotation(name: textField(j, "name") ?? "", args: textsOfJson(jsonField(j, "args") ?? Json.JsonNull), decorator: textField(j, "decorator") ?? "");
 }
 
-pub fn annotationEntryJson(a: AnnotationEntry) -> Json {
+pub fn declAnnotationJson(a: DeclAnnotation) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: a.name)),
         JsonField(key: "args", value: textsJson(a.args)),
@@ -2049,40 +2090,40 @@ pub fn annotationEntryJson(a: AnnotationEntry) -> Json {
     ]);
 }
 
-fn annotationEntriesOf(j: Json) -> AnnotationEntry[] {
-    return itemsOf(j).map({ a -> annotationEntryOf(a) });
+fn declAnnotationListOf(j: Json) -> DeclAnnotation[] {
+    return itemsOf(j).map({ a -> declAnnotationOf(a) });
 }
 
-fn annotationEntriesJson(xs: AnnotationEntry[]) -> Json {
-    return Json.JsonArray(items: xs.map({ a -> annotationEntryJson(a) }));
+fn declAnnotationListJson(xs: DeclAnnotation[]) -> Json {
+    return Json.JsonArray(items: xs.map({ a -> declAnnotationJson(a) }));
 }
 
-fn paramEntriesOf(j: Json) -> ParamEntry[] {
-    return itemsOf(j).map({ p -> ParamEntry(name: textField(p, "name") ?? "", typeName: textField(p, "typeName") ?? "") });
+fn paramListOf(j: Json) -> Param[] {
+    return itemsOf(j).map({ p -> Param(name: textField(p, "name") ?? "", typeName: textField(p, "typeName") ?? "") });
 }
 
-fn paramEntriesJson(xs: ParamEntry[]) -> Json {
+fn paramListJson(xs: Param[]) -> Json {
     return Json.JsonArray(items: xs.map({ p -> Json.JsonObject(fields: [JsonField(key: "name", value: Json.JsonString(value: p.name)), JsonField(key: "typeName", value: Json.JsonString(value: p.typeName))]) }));
 }
 
-pub fn fieldEntryOf(j: Json) -> FieldEntry {
-    return FieldEntry(name: textField(j, "name") ?? "", typeName: textField(j, "typeName") ?? "", annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull));
+pub fn fieldOf(j: Json) -> Field {
+    return Field(name: textField(j, "name") ?? "", typeName: textField(j, "typeName") ?? "", annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull));
 }
 
-pub fn fieldEntryJson(f: FieldEntry) -> Json {
+pub fn fieldJson(f: Field) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: f.name)),
         JsonField(key: "typeName", value: Json.JsonString(value: f.typeName)),
-        JsonField(key: "annotations", value: annotationEntriesJson(f.annotations)),
+        JsonField(key: "annotations", value: declAnnotationListJson(f.annotations)),
     ]);
 }
 
-fn fieldEntriesOf(j: Json) -> FieldEntry[] {
-    return itemsOf(j).map({ f -> fieldEntryOf(f) });
+fn fieldListOf(j: Json) -> Field[] {
+    return itemsOf(j).map({ f -> fieldOf(f) });
 }
 
-fn fieldEntriesJson(xs: FieldEntry[]) -> Json {
-    return Json.JsonArray(items: xs.map({ f -> fieldEntryJson(f) }));
+fn fieldListJson(xs: Field[]) -> Json {
+    return Json.JsonArray(items: xs.map({ f -> fieldJson(f) }));
 }
 
 // A typed meta value (I5): `{"type": name, "value": v}`, `v` written as a
@@ -2106,48 +2147,48 @@ fn metaEntriesJson(xs: MetaEntry[]) -> Json {
     return Json.JsonArray(items: xs.map({ m -> metaEntryJson(m) }));
 }
 
-pub fn methodEntryOf(j: Json) -> MethodEntry {
-    return MethodEntry(
+pub fn methodOf(j: Json) -> Method {
+    return Method(
         name: textField(j, "name") ?? "",
-        params: paramEntriesOf(jsonField(j, "params") ?? Json.JsonNull),
+        params: paramListOf(jsonField(j, "params") ?? Json.JsonNull),
         returnType: textField(j, "returnType") ?? "",
-        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
         meta: metaEntriesOf(jsonField(j, "meta") ?? Json.JsonNull),
     );
 }
 
-pub fn methodEntryJson(m: MethodEntry) -> Json {
+pub fn methodJson(m: Method) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: m.name)),
-        JsonField(key: "params", value: paramEntriesJson(m.params)),
+        JsonField(key: "params", value: paramListJson(m.params)),
         JsonField(key: "returnType", value: Json.JsonString(value: m.returnType)),
-        JsonField(key: "annotations", value: annotationEntriesJson(m.annotations)),
+        JsonField(key: "annotations", value: declAnnotationListJson(m.annotations)),
         JsonField(key: "meta", value: metaEntriesJson(m.meta)),
     ]);
 }
 
-fn methodEntriesOf(j: Json) -> MethodEntry[] {
-    return itemsOf(j).map({ m -> methodEntryOf(m) });
+fn methodListOf(j: Json) -> Method[] {
+    return itemsOf(j).map({ m -> methodOf(m) });
 }
 
-fn methodEntriesJson(xs: MethodEntry[]) -> Json {
-    return Json.JsonArray(items: xs.map({ m -> methodEntryJson(m) }));
+fn methodListJson(xs: Method[]) -> Json {
+    return Json.JsonArray(items: xs.map({ m -> methodJson(m) }));
 }
 
-pub fn variantEntryOf(j: Json) -> VariantEntry {
-    return VariantEntry(
+pub fn variantOf(j: Json) -> Variant {
+    return Variant(
         name: textField(j, "name") ?? "",
-        fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
-        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        fields: fieldListOf(jsonField(j, "fields") ?? Json.JsonNull),
+        annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
         section: textField(j, "section"),
     );
 }
 
-pub fn variantEntryJson(v: VariantEntry) -> Json {
+pub fn variantJson(v: Variant) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: v.name)),
-        JsonField(key: "fields", value: fieldEntriesJson(v.fields)),
-        JsonField(key: "annotations", value: annotationEntriesJson(v.annotations)),
+        JsonField(key: "fields", value: fieldListJson(v.fields)),
+        JsonField(key: "annotations", value: declAnnotationListJson(v.annotations)),
         JsonField(key: "section", value: optionalText(v.section)),
     ]);
 }
@@ -2194,8 +2235,8 @@ fn typeArgEntryOf(j: Json) -> TypeArgEntry {
     return TypeArgEntry(
         name: textField(j, "name") ?? "",
         module: textField(j, "module") ?? "",
-        fields: fieldEntriesOf(jsonField(j, "fields") ?? Json.JsonNull),
-        methods: methodEntriesOf(jsonField(j, "methods") ?? Json.JsonNull),
+        fields: fieldListOf(jsonField(j, "fields") ?? Json.JsonNull),
+        methods: methodListOf(jsonField(j, "methods") ?? Json.JsonNull),
         meta: metaPairsOf(jsonField(j, "meta") ?? Json.JsonNull),
     );
 }
@@ -2204,8 +2245,8 @@ fn typeArgEntryJson(t: TypeArgEntry) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: t.name)),
         JsonField(key: "module", value: Json.JsonString(value: t.module)),
-        JsonField(key: "fields", value: fieldEntriesJson(t.fields)),
-        JsonField(key: "methods", value: methodEntriesJson(t.methods)),
+        JsonField(key: "fields", value: fieldListJson(t.fields)),
+        JsonField(key: "methods", value: methodListJson(t.methods)),
         JsonField(key: "meta", value: metaPairsJson(t.meta)),
     ]);
 }
@@ -2213,7 +2254,7 @@ fn typeArgEntryJson(t: TypeArgEntry) -> Json {
 fn hookUseEntryOf(j: Json) -> HookUseEntry {
     return HookUseEntry(
         hook: optionalDeclaredOf(jsonField(j, "hook")),
-        annotations: annotationEntriesOf(jsonField(j, "annotations") ?? Json.JsonNull),
+        annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
         at: textField(j, "at") ?? "",
         typeArgs: itemsOf(jsonField(j, "typeArgs") ?? Json.JsonNull).map({ t -> typeArgEntryOf(t) }),
         context: optionalDeclaredOf(jsonField(j, "context")),
@@ -2223,11 +2264,26 @@ fn hookUseEntryOf(j: Json) -> HookUseEntry {
 fn hookUseEntryJson(u: HookUseEntry) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "hook", value: optionalDeclaredJson(u.hook)),
-        JsonField(key: "annotations", value: annotationEntriesJson(u.annotations)),
+        JsonField(key: "annotations", value: declAnnotationListJson(u.annotations)),
         JsonField(key: "at", value: Json.JsonString(value: u.at)),
         JsonField(key: "typeArgs", value: Json.JsonArray(items: u.typeArgs.map({ t -> typeArgEntryJson(t) }))),
         JsonField(key: "context", value: optionalDeclaredJson(u.context)),
     ]);
+}
+
+// A `Stage` crosses as its variant's name (`"Run"`).
+fn stageOf(name: string) -> Stage {
+    if (name == "Build") return Stage.Build;
+    if (name == "Run") return Stage.Run;
+    return Stage.Any;
+}
+
+fn stageName(s: Stage) -> string {
+    return case s {
+        Build -> "Build";
+        Run -> "Run";
+        Any -> "Any";
+    };
 }
 
 pub fn hookEntryOf(j: Json) -> HookEntry {
@@ -2236,7 +2292,7 @@ pub fn hookEntryOf(j: Json) -> HookEntry {
         uses: itemsOf(jsonField(j, "uses") ?? Json.JsonNull).map({ u -> hookUseEntryOf(u) }),
         calls: itemsOf(jsonField(j, "calls") ?? Json.JsonNull).map({ c -> HookCallEntry(callee: optionalDeclaredOf(jsonField(c, "callee")), at: textField(c, "at") ?? "") }),
         async: boolField(j, "async"),
-        stage: textField(j, "stage") ?? "",
+        stage: stageOf(textField(j, "stage") ?? ""),
     );
 }
 
@@ -2246,7 +2302,7 @@ pub fn hookEntryJson(h: HookEntry) -> Json {
         JsonField(key: "uses", value: Json.JsonArray(items: h.uses.map({ u -> hookUseEntryJson(u) }))),
         JsonField(key: "calls", value: Json.JsonArray(items: h.calls.map({ c -> Json.JsonObject(fields: [JsonField(key: "callee", value: optionalDeclaredJson(c.callee)), JsonField(key: "at", value: Json.JsonString(value: c.at))]) }))),
         JsonField(key: "async", value: Json.JsonBool(value: h.async)),
-        JsonField(key: "stage", value: Json.JsonString(value: h.stage)),
+        JsonField(key: "stage", value: Json.JsonString(value: stageName(h.stage))),
     ]);
 }
 
@@ -2897,7 +2953,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
             },
             {
               "name": "kind",
-              "type": "__DeclKind"
+              "type": "DeclKind"
             },
             {
               "name": "name",
@@ -2957,7 +3013,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__DeclKind"
+          "return_type": "DeclKind"
         },
         {
           "name": "moduleOf",
@@ -3082,7 +3138,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__Decl__Field[]"
+          "return_type": "Field[]"
         },
         {
           "name": "methods",
@@ -3097,7 +3153,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__Decl__Method[]"
+          "return_type": "Method[]"
         },
         {
           "name": "params",
@@ -3112,7 +3168,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__Decl__Param[]"
+          "return_type": "Param[]"
         },
         {
           "name": "returnType",
@@ -3157,7 +3213,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__Decl__Annotation[]"
+          "return_type": "DeclAnnotation[]"
         },
         {
           "name": "variants",
@@ -3172,7 +3228,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
               "is_comptime": true
             }
           ],
-          "return_type": "__Decl__Variant[]"
+          "return_type": "Variant[]"
         },
         {
           "name": "find",
@@ -3805,22 +3861,81 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       "ast": "typeAlias"
     },
     {
-      "ast": "typeAlias"
+      "ast": "enum_def",
+      "name": "DeclKind",
+      "variants": [
+        {
+          "name": "Type"
+        },
+        {
+          "name": "Behavior"
+        },
+        {
+          "name": "Fn"
+        },
+        {
+          "name": "Method"
+        },
+        {
+          "name": "Field"
+        },
+        {
+          "name": "Val"
+        },
+        {
+          "name": "Element"
+        },
+        {
+          "name": "Component"
+        }
+      ]
     },
     {
-      "ast": "typeAlias"
+      "ast": "record_def",
+      "name": "DeclAnnotation",
+      "fields": {
+        "name": "string",
+        "args": "string[]",
+        "decorator": "string"
+      }
     },
     {
-      "ast": "typeAlias"
+      "ast": "record_def",
+      "name": "Param",
+      "fields": {
+        "name": "string",
+        "typeName": "string"
+      }
     },
     {
-      "ast": "typeAlias"
+      "ast": "record_def",
+      "name": "Field",
+      "fields": {
+        "name": "string",
+        "typeName": "string",
+        "annotations": "DeclAnnotation[]"
+      }
     },
     {
-      "ast": "typeAlias"
+      "ast": "record_def",
+      "name": "Method",
+      "fields": {
+        "name": "string",
+        "params": "Param[]",
+        "returnType": "string",
+        "annotations": "DeclAnnotation[]",
+        "meta": "MetaEntry[]"
+      }
     },
     {
-      "ast": "typeAlias"
+      "ast": "record_def",
+      "name": "Variant",
+      "fields": {
+        "name": "string",
+        "fields": "Field[]",
+        "annotations": "DeclAnnotation[]",
+        "section": "?string"
+      }
     },
     {
       "ast": "enum_def",
@@ -6656,57 +6771,10 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "record_def",
-      "name": "AnnotationEntry",
-      "fields": {
-        "name": "string",
-        "args": "string[]",
-        "decorator": "string"
-      }
-    },
-    {
-      "ast": "record_def",
-      "name": "ParamEntry",
-      "fields": {
-        "name": "string",
-        "typeName": "string"
-      }
-    },
-    {
-      "ast": "record_def",
-      "name": "FieldEntry",
-      "fields": {
-        "name": "string",
-        "typeName": "string",
-        "annotations": "AnnotationEntry[]"
-      }
-    },
-    {
-      "ast": "record_def",
       "name": "MetaEntry",
       "fields": {
         "typeName": "string",
         "value": "BuildValue"
-      }
-    },
-    {
-      "ast": "record_def",
-      "name": "MethodEntry",
-      "fields": {
-        "name": "string",
-        "params": "ParamEntry[]",
-        "returnType": "string",
-        "annotations": "AnnotationEntry[]",
-        "meta": "MetaEntry[]"
-      }
-    },
-    {
-      "ast": "record_def",
-      "name": "VariantEntry",
-      "fields": {
-        "name": "string",
-        "fields": "FieldEntry[]",
-        "annotations": "AnnotationEntry[]",
-        "section": "?string"
       }
     },
     {
@@ -6733,8 +6801,8 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       "fields": {
         "name": "string",
         "module": "string",
-        "fields": "FieldEntry[]",
-        "methods": "MethodEntry[]",
+        "fields": "Field[]",
+        "methods": "Method[]",
         "meta": "MetaPair[]"
       }
     },
@@ -6743,7 +6811,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       "name": "HookUseEntry",
       "fields": {
         "hook": "?DeclaredEntry",
-        "annotations": "AnnotationEntry[]",
+        "annotations": "DeclAnnotation[]",
         "at": "string",
         "typeArgs": "TypeArgEntry[]",
         "context": "?DeclaredEntry"
@@ -6765,8 +6833,23 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         "uses": "HookUseEntry[]",
         "calls": "HookCallEntry[]",
         "async": "bool",
-        "stage": "string"
+        "stage": "Stage"
       }
+    },
+    {
+      "ast": "enum_def",
+      "name": "Stage",
+      "variants": [
+        {
+          "name": "Build"
+        },
+        {
+          "name": "Run"
+        },
+        {
+          "name": "Any"
+        }
+      ]
     },
     {
       "ast": "record_def",
@@ -6798,15 +6881,15 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       "ast": "record_def",
       "name": "Decl",
       "fields": {
-        "kind": "string",
+        "kind": "DeclKind",
         "name": "string",
-        "fields": "FieldEntry[]",
-        "variants": "VariantEntry[]",
-        "methods": "MethodEntry[]",
+        "fields": "Field[]",
+        "variants": "Variant[]",
+        "methods": "Method[]",
         "returnType": "string",
-        "annotations": "AnnotationEntry[]",
+        "annotations": "DeclAnnotation[]",
         "hooks": "HookEntry[]",
-        "params": "ParamEntry[]",
+        "params": "Param[]",
         "component": "?Decl",
         "module": "string",
         "owner": "?DeclaredEntry",
@@ -6844,6 +6927,61 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
             }
           ],
           "return_type": "Binding"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "declKindOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "DeclKind",
+      "body": [
+        {
+          "source": "if (name == \"Behavior\") return DeclKind.Behavior;"
+        },
+        {
+          "source": "if (name == \"Fn\") return DeclKind.Fn;"
+        },
+        {
+          "source": "if (name == \"Method\") return DeclKind.Method;"
+        },
+        {
+          "source": "if (name == \"Field\") return DeclKind.Field;"
+        },
+        {
+          "source": "if (name == \"Val\") return DeclKind.Val;"
+        },
+        {
+          "source": "if (name == \"Element\") return DeclKind.Element;"
+        },
+        {
+          "source": "if (name == \"Component\") return DeclKind.Component;"
+        },
+        {
+          "source": "return DeclKind.Type;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "declKindName",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "k",
+          "type": "DeclKind"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case k {"
         }
       ]
     },
@@ -6995,7 +7133,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "annotationEntryOf",
+      "name": "declAnnotationOf",
       "is_pub": true,
       "params": [
         {
@@ -7003,21 +7141,21 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "AnnotationEntry",
+      "return_type": "DeclAnnotation",
       "body": [
         {
-          "source": "return AnnotationEntry(name: textField(j, \"name\") ?? \"\", args: textsOfJson(jsonField(j, \"args\") ?? Json.JsonNull), decorator: textField(j, \"decorator\") ?? \"\");"
+          "source": "return DeclAnnotation(name: textField(j, \"name\") ?? \"\", args: textsOfJson(jsonField(j, \"args\") ?? Json.JsonNull), decorator: textField(j, \"decorator\") ?? \"\");"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "annotationEntryJson",
+      "name": "declAnnotationJson",
       "is_pub": true,
       "params": [
         {
           "name": "a",
-          "type": "AnnotationEntry"
+          "type": "DeclAnnotation"
         }
       ],
       "return_type": "Json",
@@ -7029,7 +7167,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "annotationEntriesOf",
+      "name": "declAnnotationListOf",
       "is_pub": false,
       "params": [
         {
@@ -7037,33 +7175,33 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "AnnotationEntry[]",
+      "return_type": "DeclAnnotation[]",
       "body": [
         {
-          "source": "return itemsOf(j).map({ a -> annotationEntryOf(a) });"
+          "source": "return itemsOf(j).map({ a -> declAnnotationOf(a) });"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "annotationEntriesJson",
+      "name": "declAnnotationListJson",
       "is_pub": false,
       "params": [
         {
           "name": "xs",
-          "type": "AnnotationEntry[]"
+          "type": "DeclAnnotation[]"
         }
       ],
       "return_type": "Json",
       "body": [
         {
-          "source": "return Json.JsonArray(items: xs.map({ a -> annotationEntryJson(a) }));"
+          "source": "return Json.JsonArray(items: xs.map({ a -> declAnnotationJson(a) }));"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "paramEntriesOf",
+      "name": "paramListOf",
       "is_pub": false,
       "params": [
         {
@@ -7071,21 +7209,21 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "ParamEntry[]",
+      "return_type": "Param[]",
       "body": [
         {
-          "source": "return itemsOf(j).map({ p -> ParamEntry(name: textField(p, \"name\") ?? \"\", typeName: textField(p, \"typeName\") ?? \"\") });"
+          "source": "return itemsOf(j).map({ p -> Param(name: textField(p, \"name\") ?? \"\", typeName: textField(p, \"typeName\") ?? \"\") });"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "paramEntriesJson",
+      "name": "paramListJson",
       "is_pub": false,
       "params": [
         {
           "name": "xs",
-          "type": "ParamEntry[]"
+          "type": "Param[]"
         }
       ],
       "return_type": "Json",
@@ -7097,7 +7235,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "fieldEntryOf",
+      "name": "fieldOf",
       "is_pub": true,
       "params": [
         {
@@ -7105,21 +7243,21 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "FieldEntry",
+      "return_type": "Field",
       "body": [
         {
-          "source": "return FieldEntry(name: textField(j, \"name\") ?? \"\", typeName: textField(j, \"typeName\") ?? \"\", annotations: annotationEntriesOf(jsonField(j, \"annotations\") ?? Json.JsonNull));"
+          "source": "return Field(name: textField(j, \"name\") ?? \"\", typeName: textField(j, \"typeName\") ?? \"\", annotations: declAnnotationListOf(jsonField(j, \"annotations\") ?? Json.JsonNull));"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "fieldEntryJson",
+      "name": "fieldJson",
       "is_pub": true,
       "params": [
         {
           "name": "f",
-          "type": "FieldEntry"
+          "type": "Field"
         }
       ],
       "return_type": "Json",
@@ -7131,7 +7269,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "fieldEntriesOf",
+      "name": "fieldListOf",
       "is_pub": false,
       "params": [
         {
@@ -7139,27 +7277,27 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "FieldEntry[]",
+      "return_type": "Field[]",
       "body": [
         {
-          "source": "return itemsOf(j).map({ f -> fieldEntryOf(f) });"
+          "source": "return itemsOf(j).map({ f -> fieldOf(f) });"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "fieldEntriesJson",
+      "name": "fieldListJson",
       "is_pub": false,
       "params": [
         {
           "name": "xs",
-          "type": "FieldEntry[]"
+          "type": "Field[]"
         }
       ],
       "return_type": "Json",
       "body": [
         {
-          "source": "return Json.JsonArray(items: xs.map({ f -> fieldEntryJson(f) }));"
+          "source": "return Json.JsonArray(items: xs.map({ f -> fieldJson(f) }));"
         }
       ]
     },
@@ -7233,7 +7371,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "methodEntryOf",
+      "name": "methodOf",
       "is_pub": true,
       "params": [
         {
@@ -7241,21 +7379,21 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "MethodEntry",
+      "return_type": "Method",
       "body": [
         {
-          "source": "return MethodEntry("
+          "source": "return Method("
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "methodEntryJson",
+      "name": "methodJson",
       "is_pub": true,
       "params": [
         {
           "name": "m",
-          "type": "MethodEntry"
+          "type": "Method"
         }
       ],
       "return_type": "Json",
@@ -7267,7 +7405,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
     },
     {
       "ast": "fn_def",
-      "name": "methodEntriesOf",
+      "name": "methodListOf",
       "is_pub": false,
       "params": [
         {
@@ -7275,33 +7413,33 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "MethodEntry[]",
+      "return_type": "Method[]",
       "body": [
         {
-          "source": "return itemsOf(j).map({ m -> methodEntryOf(m) });"
+          "source": "return itemsOf(j).map({ m -> methodOf(m) });"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "methodEntriesJson",
+      "name": "methodListJson",
       "is_pub": false,
       "params": [
         {
           "name": "xs",
-          "type": "MethodEntry[]"
+          "type": "Method[]"
         }
       ],
       "return_type": "Json",
       "body": [
         {
-          "source": "return Json.JsonArray(items: xs.map({ m -> methodEntryJson(m) }));"
+          "source": "return Json.JsonArray(items: xs.map({ m -> methodJson(m) }));"
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "variantEntryOf",
+      "name": "variantOf",
       "is_pub": true,
       "params": [
         {
@@ -7309,21 +7447,21 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
           "type": "Json"
         }
       ],
-      "return_type": "VariantEntry",
+      "return_type": "Variant",
       "body": [
         {
-          "source": "return VariantEntry("
+          "source": "return Variant("
         }
       ]
     },
     {
       "ast": "fn_def",
-      "name": "variantEntryJson",
+      "name": "variantJson",
       "is_pub": true,
       "params": [
         {
           "name": "v",
-          "type": "VariantEntry"
+          "type": "Variant"
         }
       ],
       "return_type": "Json",
@@ -7509,6 +7647,46 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       "body": [
         {
           "source": "return Json.JsonObject(fields: ["
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "stageOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "Stage",
+      "body": [
+        {
+          "source": "if (name == \"Build\") return Stage.Build;"
+        },
+        {
+          "source": "if (name == \"Run\") return Stage.Run;"
+        },
+        {
+          "source": "return Stage.Any;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "stageName",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "Stage"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case s {"
         }
       ]
     },
