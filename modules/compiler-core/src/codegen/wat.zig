@@ -2221,7 +2221,7 @@ fn emitGcOnly(
     const located = (if (missing) |m| m.* != null else false) or (if (refused) |r| r.* != null else false);
     if (!located) if (refused) |slot| {
         slot.* = .{
-            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory (decision 1033 (1))", .{ module_name, first_gap orelse @errorName(err) }),
+            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory", .{ module_name, first_gap orelse @errorName(err) }),
             .loc = null,
         };
     };
