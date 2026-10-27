@@ -7,11 +7,11 @@
 //! the two are held here field by field: the same names in the same order, each
 //! field's type the same once the compiler's names are read as std's.
 //!
-//! Two differences are the decision's own and named here, nothing else:
+//! One difference is the decision's own and named here, nothing else:
 //! `DeclAnnotation.decorator` is the decorator's qualified name at run time (a
-//! `string`, C0's I3) where the checker holds a `Decorator`; and std's
-//! `Method` ends with `meta`, the typed meta the crossing carries for
-//! `compiler.meta<M>(m)`, which the checker's record does not hold.
+//! `string`, C0's I3) where the checker holds a `Decorator`. A method's typed
+//! meta crosses beside it, kept by the codec inside `Decl` (decision 1075 (1)),
+//! so std's `Method` is the checker's, field for field.
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -19,9 +19,6 @@ const unifyMod = @import("../unify.zig");
 const Lexer = @import("../../lexer.zig").Lexer;
 const Parser = @import("../../parser.zig").Parser;
 const ast = @import("../../ast.zig");
-
-/// A field std's record holds after the checker's, the crossing's alone.
-const crossing_only = [_][2][]const u8{.{ "Method", "meta" }};
 
 /// A field whose run-time type is not the checker's: the record, the field,
 /// the checker's type, std's.
@@ -49,11 +46,6 @@ fn publicSpelling(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
     var out = text;
     for (unifyMod.reflection_records) |r| out = try std.mem.replaceOwned(u8, arena, out, r[1], r[0]);
     return out;
-}
-
-fn isCrossingOnly(record: []const u8, field: []const u8) bool {
-    for (crossing_only) |c| if (std.mem.eql(u8, c[0], record) and std.mem.eql(u8, c[1], field)) return true;
-    return false;
 }
 
 /// Every difference between the checker's records and std's, one line each.
@@ -86,7 +78,7 @@ fn drift(arena: std.mem.Allocator, checker_src: []const u8, std_src: []const u8)
             if (!std.mem.eql(u8, v.name, tv[i].name) or v.fields.len != 0 or tv[i].fields.len != 0)
                 try out.append(arena, try std.fmt.allocPrint(arena, "`{s}`'s variant {d} is `{s}`, `{s}`'s `{s}`", .{ internal, i, v.name, public, tv[i].name }));
         }
-        // A record: the checker's fields first, in order, then the crossing's.
+        // A record: the checker's fields, in order, and no other.
         const mf = mine.recordFields();
         const tf = theirs.recordFields();
         for (mf, 0..) |f, i| {
@@ -107,7 +99,7 @@ fn drift(arena: std.mem.Allocator, checker_src: []const u8, std_src: []const u8)
             if (!std.mem.eql(u8, want, got))
                 try out.append(arena, try std.fmt.allocPrint(arena, "`{s}.{s}` is `{s}` to the checker and `{s}` in compiler.bp", .{ public, f.name, want, got }));
         }
-        for (tf[@min(mf.len, tf.len)..]) |g| if (!isCrossingOnly(public, g.name))
+        for (tf[@min(mf.len, tf.len)..]) |g|
             try out.append(arena, try std.fmt.allocPrint(arena, "compiler.bp's `{s}` holds `{s}`, which the checker's `{s}` does not", .{ public, g.name, internal }));
     }
     return out.items;
@@ -138,4 +130,33 @@ test "decision 1071 (1): a field std's record lacks, or spells another type, is 
     const kinds = try std.mem.replaceOwned(u8, arena, src, "pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }", "pub type DeclKind { Type, Behavior, Fn, Method, Field, Val, Component, Element }");
     const swapped = try drift(arena, comptimeMod.decl_reflection_src, kinds);
     try std.testing.expectEqual(@as(usize, 2), swapped.len);
+}
+
+/// Decision 1075 (2) — how a value of each enum `primitives.bp` declares is
+/// held at run time; an enum named nowhere here fails the sweep.
+fn runTimeForm(name: []const u8) ?[]const u8 {
+    for (comptimeMod.prelude_run_time_enums) |e| if (std.mem.eql(u8, e.name, name)) return "prepended to the module that names it (`withPreludeEnumDecls`)";
+    if (std.mem.eql(u8, name, "YieldStep")) return "prepended to the module that names it (`withYieldStepDecl`)";
+    if (std.mem.eql(u8, name, "Result")) return "each backend's own `Ok` / `Error`";
+    for (unifyMod.reflection_records) |r| if (std.mem.eql(u8, r[1], name)) return "std `compiler`'s record of the public name";
+    return null;
+}
+
+test "decision 1075 (2): every enum of primitives.bp has a run-time form" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try parse(arena, @import("std_prelude").builtins);
+    var enums: usize = 0;
+    var missing: usize = 0;
+    for (program.decls) |d| {
+        if (d != .type_ or d.type_.variants().len == 0) continue;
+        enums += 1;
+        if (runTimeForm(d.type_.name) == null) {
+            std.debug.print("primitives.bp's enum `{s}` has no run-time form and no refusal of its run-time use\n", .{d.type_.name});
+            missing += 1;
+        }
+    }
+    try std.testing.expect(enums >= 5);
+    try std.testing.expectEqual(@as(usize, 0), missing);
 }

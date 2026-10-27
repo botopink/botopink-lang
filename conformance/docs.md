@@ -4647,13 +4647,19 @@ compiler.variants(decl)`), a `case` over `compiler.kind(decl)` names its
 variants bare, and a function of the program that takes one is compiled for
 every target like any other function. Their fields are read as any record's;
 only std builds one, as only `compiler.load` builds a `Module` — `Field(…)`
-written in a program is `opaque-construction`, the record named, never the
-variant `DeclKind.Field`. `DeclAnnotation.decorator` holds the decorator's
+written in a program is `opaque-construction`, naming the record and its builder
+(`compiler.declOf`), never the variant `DeclKind.Field` (decision 1075 (3)). `DeclAnnotation.decorator` holds the decorator's
 qualified name.
 
 <!-- example: modules/decisions-taken/comptime_reflection_types_at_runtime-1071/cases/comptime_reflection_types_at_runtime -->
 
 <!-- example: modules/decisions-taken/comptime_reflection_types_at_runtime-1071/cases/comptime_reflection_record_built_by_hand -->
+
+A function's stage, the prelude's `Stage` (`Build`, `Run`, `Any`) a hook's
+`stage` holds, is an enum like any other at run time (decision 1075 (2)): printed
+as `Stage.Run`, matched by `case`, compared with `==`, held in an array.
+
+<!-- example: modules/decisions-taken/stage_enum_runtime-1075/cases/stage_enum_runtime -->
 
 `compiler.fail(message, at: decl)` refuses it at the annotation, and what the
 decorator produces goes to one of four places (decisions 216, 575 (3), 576),

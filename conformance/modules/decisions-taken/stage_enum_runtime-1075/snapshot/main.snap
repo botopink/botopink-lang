@@ -1,0 +1,9 @@
+botopink-cell 2
+== stage_enum_runtime
+out Stage.Run
+out Stage.Any
+out at run time
+out at either
+out true
+out false
+out at build, at run time, at either

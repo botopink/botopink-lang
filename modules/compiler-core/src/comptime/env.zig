@@ -1140,6 +1140,12 @@ pub const Env = struct {
     /// does for the record, so every backend builds and matches `Yield(value)`
     /// / `Done` through the enum path it already has.
     usesYieldStep: bool = false,
+    /// Decision 1075 (2) — the prelude's unit enums this module named
+    /// (`Stage`, `Target`: a type reference or the name read, `Stage.Run`),
+    /// bit `i` for `comptime.zig` `prelude_run_time_enums[i]`; each is
+    /// prepended to the transformed program as `usesYieldStep` does, so every
+    /// backend builds and matches it through its own enum path.
+    usesPreludeEnums: u8 = 0,
     /// Decision 519 — the reader `@embed` reads this module's package
     /// through (`Module.files`); null in a compiler with no file system, where
     /// every `@embed` is refused at the call (`embed-no-reader`).

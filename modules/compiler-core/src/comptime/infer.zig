@@ -14659,6 +14659,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // (`comptime.zig`, `withSourceLocationDecl`).
             if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
             if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
+            if (comptimeMod.preludeRunTimeEnumBit(n)) |bit| env.usesPreludeEnums |= bit;
             // Decision 578 (4) — `anyvalue` is a template's return (read as
             // its built code's type) and nothing else — but in std's
             // `compiler.bp`, where `Compiler.build` declares it as its answer.
@@ -14747,6 +14748,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                     return error.TypeError;
                 }
                 if (std.mem.eql(u8, b.name, yield_step_type_name)) env.usesYieldStep = true;
+                if (comptimeMod.preludeRunTimeEnumBit(b.name)) |bit| env.usesPreludeEnums |= bit;
 
                 // Decision 8 §1.2 — `Self<…>` inside a declaration is the
                 // declaration's own type applied to the written arguments
@@ -18487,6 +18489,9 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 return inferIdentifierExpr(env, renamed.identifier, loc);
             }
             if (env.lookup(name)) |ty| {
+                if (env.localBindDepth(name) == null) if (comptimeMod.preludeRunTimeEnumBit(name)) |bit| {
+                    env.usesPreludeEnums |= bit;
+                };
                 try refuseBareVariant(env, name, ty, loc, false);
                 if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which == .provide or which == .context)
                     return refuseContextHookWithoutUse(env, name, loc);

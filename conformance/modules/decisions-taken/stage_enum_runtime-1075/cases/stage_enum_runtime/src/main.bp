@@ -1,0 +1,27 @@
+//// Decision 1075 (2) — the prelude's `Stage` is an enum like any other at run
+//// time: a value is printed as `Stage.Run`, matched by `case`, compared
+//// with `==`, held in an array, on every target. Beam answered `Stage.Run` as
+//// `Build`.
+
+import {io.terminal.print} from "std";
+
+fn when(s: Stage) -> string {
+    return case s {
+        Build -> "at build";
+        Run -> "at run time";
+        Any -> "at either";
+    };
+}
+
+pub fn main() -> void {
+    val r = Stage.Run;
+    val a = Stage.Any;
+    print(r);
+    print(a);
+    print(when(r));
+    print(when(a));
+    print(r == Stage.Run);
+    print(a == Stage.Run);
+    val stages: Stage[] = [Stage.Build, r, a];
+    print(stages.map({ s -> when(s) }).join(", "));
+}

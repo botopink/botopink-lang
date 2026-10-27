@@ -314,6 +314,12 @@ primitives.bp` test) into the global env, so an annotation, `case` over
 — the `SourceLocation` splice — so every backend builds and matches the variants
 through its own enum path; a module declaring its own `YieldStep` keeps it.
 
+**Decision 1075 (2) — the prelude's unit enums `Stage` and `Target`** have the same run-time form: naming one (a
+type reference, or the name read — `Stage.Run`) sets its bit of `env.usesPreludeEnums`, and `withPreludeEnumDecls`
+prepends `prelude_run_time_enums`' private declaration (`primitives.bp`'s text, pinned by the `prelude run-time enums
+match primitives.bp` test); a module declaring or importing its own of the name keeps it. Before it, `Stage.Run` was
+an unbound variable on erlang and commonJS and answered `Build` on beam.
+
 **Decision 119 — `effect-return-ambiguous-nesting`.** In a nested
 `-> @Result<@Result<U, E>, E>` (the value layer's `U` is itself a `@Result`), a
 returned `@Result` that is not the whole wrapper fits two layers — wrapped
@@ -1798,11 +1804,13 @@ write ETF until C4, which writes this JSON instead. What C1 and C4 must keep:
   `comptime_floats_in_a_block_reply`); definitive once the codecs run on wasm (B-196, B-197).
 - **`Decl`'s records are the reflection records under their public names** (1071 (1)): `Field`, `Method`,
   `Variant`, `Param`, `DeclAnnotation` and the enum `DeclKind` are std `compiler`'s, each with a run-time form, built
-  only by the crossing; `kind` is a `DeclKind`, `HookEntry.stage` a `Stage` (declared again in `compiler.bp`: the
-  prelude's has none), each crossing as its variant's name; `DeclAnnotation.decorator` is the decorator's qualified
+  only by the crossing; `kind` is a `DeclKind`, `HookEntry.stage` the prelude's `Stage` (a run-time form since 1075 (2):
+  `comptime.zig` `withPreludeEnumDecls` prepends `Stage` / `Target` to the module that names them), each crossing as its
+  variant's name; `DeclAnnotation.decorator` is the decorator's qualified
   name. A body is still checked against the compiler's own records (`__Decl__Field`, …), one type with std's
-  (`unify.zig` `reflectionAlike`), held field by field (`tests/reflection_records.zig`); std's `Method` also carries
-  the crossing's `meta`. A record of a variant's name keeps its constructor (`Field(…)` beside `DeclKind.Field`,
+  (`unify.zig` `reflectionAlike`), held field by field with no exception but `DeclAnnotation.decorator`
+  (`tests/reflection_records.zig`); a method's typed meta crosses beside it, kept by the codec in `Decl.methodMeta`
+  by the method's name (1075 (1)). A record of a variant's name keeps its constructor (`Field(…)` beside `DeclKind.Field`,
   `infer.zig` `registerEnum`); outside std it is `opaque-construction`. `compiler.fields(d)` becoming a field read of
   `Decl` is the lowering's next step.
 

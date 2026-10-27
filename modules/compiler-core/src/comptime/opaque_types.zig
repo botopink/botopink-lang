@@ -62,7 +62,7 @@ pub fn refuseReflectionConstruction(env: *Env, name: []const u8, loc: ast.Loc, l
     if (lowering) return;
     const td = env.lookupTypeDef(name) orelse return;
     if (td != .record or !td.record.reflection) return;
-    const msg = try std.fmt.allocPrint(env.arena, "{s}: `compiler.{s}` is a reflection record — `{s}(…)` is written only by std's crossing (decision 1071)", .{ diagnostics.opaque_construction, name, name });
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `compiler.{s}` is built only by std's crossing, `compiler.declOf` — `{s}(…)` is not written in a program (decisions 1071, 1075)", .{ diagnostics.opaque_construction, name, name });
     env.lastError = TypeError.custom(msg, "Read one from a declaration handle (`compiler.fields(d)`, `compiler.variants(d)`, …); its fields are read as any record's.").withLoc(loc);
     return error.TypeError;
 }

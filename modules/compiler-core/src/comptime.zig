@@ -732,7 +732,9 @@ pub fn isSplicedRecord(name: []const u8) bool {
 /// sequence): the same splice `withSourceLocationDecl` makes for the record, so
 /// each backend builds `Yield(v)` / `Done` and matches them through the enum
 /// path it already has. A module declaring its own `YieldStep` keeps it.
-fn withYieldStepDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+fn withYieldStepDecl(arena: std.mem.Allocator, prog0: ast.Program, env: *const envMod.Env) !ast.Program {
+    // Decision 1075 (2) — the prelude's other enums, the same splice.
+    const prog = try withPreludeEnumDecls(arena, prog0, env);
     if (!env.usesYieldStep) return prog;
     for (prog.decls) |d| switch (d) {
         .type_ => |t| if (std.mem.eql(u8, t.name, infer.yield_step_type_name)) return prog,
@@ -747,6 +749,55 @@ fn withYieldStepDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const en
     new_decls[0] = decl_prog.decls[0];
     @memcpy(new_decls[1..], prog.decls);
     return ast.Program{ .decls = new_decls };
+}
+
+/// Decision 1075 (2) — the prelude's unit enums with a run-time form: each
+/// is `primitives.bp`'s declaration (the `prelude run-time enums match
+/// primitives.bp` test), prepended private to the module that names it
+/// (`Env.usesPreludeEnums`), as `withYieldStepDecl` does; a module declaring or
+/// importing its own of the name keeps it.
+pub const prelude_run_time_enums = [_]struct { name: []const u8, src: []const u8 }{
+    .{ .name = "Stage", .src = "type Stage { Build, Run, Any }" },
+    .{ .name = "Target", .src = "type Target { Node, Typescript, Erlang, Beam, Wasm }" },
+};
+
+/// The bit of `Env.usesPreludeEnums` naming `name`, or null.
+pub fn preludeRunTimeEnumBit(name: []const u8) ?u8 {
+    for (prelude_run_time_enums, 0..) |e, i| if (std.mem.eql(u8, e.name, name)) return @as(u8, 1) << @intCast(i);
+    return null;
+}
+
+fn withPreludeEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (env.usesPreludeEnums == 0) return prog;
+    var added: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    outer: for (prelude_run_time_enums, 0..) |e, i| {
+        if (env.usesPreludeEnums & (@as(u8, 1) << @intCast(i)) == 0) continue;
+        for (prog.decls) |d| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, e.name)) continue :outer,
+            .use => |u| for (u.imports) |imp| if (std.mem.eql(u8, imp.name(), e.name)) continue :outer,
+            else => {},
+        };
+        var lx = Lexer.init(e.src);
+        const tokens = try lx.scanAll(arena);
+        var p = Parser.init(tokens);
+        const decl_prog = try p.parse(arena);
+        if (decl_prog.decls.len != 1) continue;
+        try added.append(arena, decl_prog.decls[0]);
+    }
+    if (added.items.len == 0) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, added.items.len + prog.decls.len);
+    @memcpy(new_decls[0..added.items.len], added.items);
+    @memcpy(new_decls[added.items.len..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+test "prelude run-time enums match primitives.bp" {
+    const builtins = @import("std_prelude").builtins;
+    for (prelude_run_time_enums) |e| {
+        const want = try std.fmt.allocPrint(std.testing.allocator, "pub {s}\n", .{e.src});
+        defer std.testing.allocator.free(want);
+        try std.testing.expect(std.mem.indexOf(u8, builtins, want) != null);
+    }
 }
 
 /// The declaration `withYieldStepDecl` splices: private, like
@@ -1689,6 +1740,7 @@ fn analyzeMerged(
     env.usesSourceRecord = false;
     env.usesAsset = false;
     env.usesYieldStep = false;
+    env.usesPreludeEnums = 0;
     env.templateEval = templateEvalCtx;
     if (templateEvalCtx) |c| env.targetTrace = c.target_trace;
     env.skipDecoratorInvoke = true;
@@ -1870,6 +1922,7 @@ fn analyzeSource(
     env.usesSourceRecord = false;
     env.usesAsset = false;
     env.usesYieldStep = false;
+    env.usesPreludeEnums = 0;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
     env.templateEval = templateEvalCtx;
     if (templateEvalCtx) |c| env.targetTrace = c.target_trace;

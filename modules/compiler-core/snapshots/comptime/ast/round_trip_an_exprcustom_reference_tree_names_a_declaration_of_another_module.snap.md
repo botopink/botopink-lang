@@ -574,14 +574,11 @@ pub type Param(name: string, typeName: string)
 
 pub type Field(name: string, typeName: string, annotations: DeclAnnotation[])
 
-// `meta` the typed meta values the method's decorators recorded (decision
-// 298), what `compiler.meta<M>(m)` reads; the crossing's alone.
 pub type Method(
     name: string,
     params: Param[],
     returnType: string,
     annotations: DeclAnnotation[],
-    meta: MetaEntry[],
 )
 
 // One constructible variant (decision 848): `section` the enclosing sections'
@@ -1874,6 +1871,7 @@ pub type TypeArgEntry(
     fields: Field[],
     methods: Method[],
     meta: MetaPair[],
+    methodMeta: MethodMeta[],
 )
 
 pub type HookUseEntry(
@@ -1896,10 +1894,11 @@ pub type HookEntry(
     stage: Stage,
 )
 
-// The prelude's `Stage` (`primitives.bp`), declared again here so the
-// crossing builds one on every target: the prelude's has no run-time form of
-// its own. Same name, same variants — one type to the checker.
-type Stage { Build, Run, Any }
+// The typed meta values a method's decorators recorded (decision 298),
+// what `compiler.meta<M>(m)` reads: they cross beside the method, in its
+// JSON object, and the codec keeps them here by the method's name — `Method`
+// holds the compiler's reflection fields alone (decision 1075 (1)).
+pub type MethodMeta(method: string, meta: MetaEntry[])
 
 // What a handle `compiler.lookup` answered carries (decision 415 (2)): the
 // typed meta its decorators recorded — `pending` while they have not run
@@ -1930,6 +1929,7 @@ pub opaque type Decl(
     fields: Field[],
     variants: Variant[],
     methods: Method[],
+    methodMeta: MethodMeta[],
     returnType: string,
     annotations: DeclAnnotation[],
     hooks: HookEntry[],
@@ -1950,6 +1950,7 @@ pub opaque type Decl(
             fields: fieldListOf(jsonField(j, "fields") ?? Json.JsonNull),
             variants: itemsOf(jsonField(j, "variants") ?? Json.JsonNull).map({ v -> variantOf(v) }),
             methods: methodListOf(jsonField(j, "methods") ?? Json.JsonNull),
+            methodMeta: methodMetaListOf(jsonField(j, "methods") ?? Json.JsonNull),
             returnType: textField(j, "returnType") ?? "",
             annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
             hooks: itemsOf(jsonField(j, "hooks") ?? Json.JsonNull).map({ h -> hookEntryOf(h) }),
@@ -1971,7 +1972,7 @@ pub opaque type Decl(
             JsonField(key: "name", value: Json.JsonString(value: self.name)),
             JsonField(key: "fields", value: fieldListJson(self.fields)),
             JsonField(key: "variants", value: Json.JsonArray(items: self.variants.map({ v -> variantJson(v) }))),
-            JsonField(key: "methods", value: methodListJson(self.methods)),
+            JsonField(key: "methods", value: methodListJson(self.methods, self.methodMeta)),
             JsonField(key: "returnType", value: Json.JsonString(value: self.returnType)),
             JsonField(key: "annotations", value: declAnnotationListJson(self.annotations)),
             JsonField(key: "hooks", value: Json.JsonArray(items: self.hooks.map({ h -> hookEntryJson(h) }))),
@@ -2153,26 +2154,37 @@ pub fn methodOf(j: Json) -> Method {
         params: paramListOf(jsonField(j, "params") ?? Json.JsonNull),
         returnType: textField(j, "returnType") ?? "",
         annotations: declAnnotationListOf(jsonField(j, "annotations") ?? Json.JsonNull),
-        meta: metaEntriesOf(jsonField(j, "meta") ?? Json.JsonNull),
     );
 }
 
-pub fn methodJson(m: Method) -> Json {
+// A method as the input writes it, its meta (`meta`, the last key) the one
+// `metas` keeps under its name, `[]` when none.
+pub fn methodJson(m: Method, metas: MethodMeta[]) -> Json {
     return Json.JsonObject(fields: [
         JsonField(key: "name", value: Json.JsonString(value: m.name)),
         JsonField(key: "params", value: paramListJson(m.params)),
         JsonField(key: "returnType", value: Json.JsonString(value: m.returnType)),
         JsonField(key: "annotations", value: declAnnotationListJson(m.annotations)),
-        JsonField(key: "meta", value: metaEntriesJson(m.meta)),
+        JsonField(key: "meta", value: metaEntriesJson(metaOfMethod(m.name, metas))),
     ]);
+}
+
+fn metaOfMethod(name: string, metas: MethodMeta[]) -> MetaEntry[] {
+    val found = metas.filter({ mm -> mm.method == name });
+    if (found.length == 0) return [];
+    return found[0]!.meta;
+}
+
+fn methodMetaListOf(j: Json) -> MethodMeta[] {
+    return itemsOf(j).map({ m -> MethodMeta(method: textField(m, "name") ?? "", meta: metaEntriesOf(jsonField(m, "meta") ?? Json.JsonNull)) });
 }
 
 fn methodListOf(j: Json) -> Method[] {
     return itemsOf(j).map({ m -> methodOf(m) });
 }
 
-fn methodListJson(xs: Method[]) -> Json {
-    return Json.JsonArray(items: xs.map({ m -> methodJson(m) }));
+fn methodListJson(xs: Method[], metas: MethodMeta[]) -> Json {
+    return Json.JsonArray(items: xs.map({ m -> methodJson(m, metas) }));
 }
 
 pub fn variantOf(j: Json) -> Variant {
@@ -2238,6 +2250,7 @@ fn typeArgEntryOf(j: Json) -> TypeArgEntry {
         fields: fieldListOf(jsonField(j, "fields") ?? Json.JsonNull),
         methods: methodListOf(jsonField(j, "methods") ?? Json.JsonNull),
         meta: metaPairsOf(jsonField(j, "meta") ?? Json.JsonNull),
+        methodMeta: methodMetaListOf(jsonField(j, "methods") ?? Json.JsonNull),
     );
 }
 
@@ -2246,7 +2259,7 @@ fn typeArgEntryJson(t: TypeArgEntry) -> Json {
         JsonField(key: "name", value: Json.JsonString(value: t.name)),
         JsonField(key: "module", value: Json.JsonString(value: t.module)),
         JsonField(key: "fields", value: fieldListJson(t.fields)),
-        JsonField(key: "methods", value: methodListJson(t.methods)),
+        JsonField(key: "methods", value: methodListJson(t.methods, t.methodMeta)),
         JsonField(key: "meta", value: metaPairsJson(t.meta)),
     ]);
 }
@@ -3923,8 +3936,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         "name": "string",
         "params": "Param[]",
         "returnType": "string",
-        "annotations": "DeclAnnotation[]",
-        "meta": "MetaEntry[]"
+        "annotations": "DeclAnnotation[]"
       }
     },
     {
@@ -6803,7 +6815,8 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         "module": "string",
         "fields": "Field[]",
         "methods": "Method[]",
-        "meta": "MetaPair[]"
+        "meta": "MetaPair[]",
+        "methodMeta": "MethodMeta[]"
       }
     },
     {
@@ -6837,19 +6850,12 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
       }
     },
     {
-      "ast": "enum_def",
-      "name": "Stage",
-      "variants": [
-        {
-          "name": "Build"
-        },
-        {
-          "name": "Run"
-        },
-        {
-          "name": "Any"
-        }
-      ]
+      "ast": "record_def",
+      "name": "MethodMeta",
+      "fields": {
+        "method": "string",
+        "meta": "MetaEntry[]"
+      }
     },
     {
       "ast": "record_def",
@@ -6886,6 +6892,7 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         "fields": "Field[]",
         "variants": "Variant[]",
         "methods": "Method[]",
+        "methodMeta": "MethodMeta[]",
         "returnType": "string",
         "annotations": "DeclAnnotation[]",
         "hooks": "HookEntry[]",
@@ -7394,12 +7401,60 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         {
           "name": "m",
           "type": "Method"
+        },
+        {
+          "name": "metas",
+          "type": "MethodMeta[]"
         }
       ],
       "return_type": "Json",
       "body": [
         {
           "source": "return Json.JsonObject(fields: ["
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "metaOfMethod",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "metas",
+          "type": "MethodMeta[]"
+        }
+      ],
+      "return_type": "MetaEntry[]",
+      "body": [
+        {
+          "source": "val found = metas.filter({ mm -> mm.method == name });"
+        },
+        {
+          "source": "if (found.length == 0) return [];"
+        },
+        {
+          "source": "return found[0]!.meta;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "methodMetaListOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "MethodMeta[]",
+      "body": [
+        {
+          "source": "return itemsOf(j).map({ m -> MethodMeta(method: textField(m, \"name\") ?? \"\", meta: metaEntriesOf(jsonField(m, \"meta\") ?? Json.JsonNull)) });"
         }
       ]
     },
@@ -7428,12 +7483,16 @@ pub fn blockWithPrinted(r: BlockReply, printed: ?string) -> BlockReply {
         {
           "name": "xs",
           "type": "Method[]"
+        },
+        {
+          "name": "metas",
+          "type": "MethodMeta[]"
         }
       ],
       "return_type": "Json",
       "body": [
         {
-          "source": "return Json.JsonArray(items: xs.map({ m -> methodJson(m) }));"
+          "source": "return Json.JsonArray(items: xs.map({ m -> methodJson(m, metas) }));"
         }
       ]
     },
