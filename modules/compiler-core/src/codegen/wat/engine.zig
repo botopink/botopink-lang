@@ -94,23 +94,6 @@ pub fn onWasmStack(comptime f: anytype, args: anytype) @typeInfo(@TypeOf(f)).@"f
     return call.out;
 }
 
-/// Test support: replace the engine with a private one that does not use the
-/// parallel compiler. For a forked child only (the parent's compile worker
-/// threads do not exist there).
-pub fn resetEngineAfterFork() void {
-    const config = c.wasm_config_new().?;
-    c.wasmtime_config_wasm_exceptions_set(config, true);
-    c.wasmtime_config_wasm_function_references_set(config, true);
-    c.wasmtime_config_wasm_gc_set(config, true);
-    c.wasmtime_config_wasm_component_model_set(config, true);
-    c.wasmtime_config_parallel_compilation_set(config, false);
-    c.wasmtime_config_epoch_interruption_set(config, true);
-    c.wasmtime_config_max_wasm_stack_set(config, wasm_stack);
-    c.wasmtime_config_async_stack_size_set(config, async_stack);
-    engine = c.wasm_engine_new_with_config(config).?;
-    engine_lock.store(0, .release);
-}
-
 /// Move the engine's epoch one tick: every store whose deadline is the next
 /// tick traps (`interrupted`). Signal-safe; a no-op before the engine exists.
 pub fn incrementEpoch() void {

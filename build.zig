@@ -351,6 +351,25 @@ pub fn build(b: *std.Build) void {
     // `test_scratch` roots are per process, the runtime cache is written by
     // rename — which is what makes the shards safe. The count is scheduling,
     // never coverage: `-Dtest-shards=1` runs the one process of before.
+    // Decisions 1037, 1045 — `gc-import-probe`: the compile that makes wasmtime
+    // panic runs in this tool's process, never in the test binary; the runner's
+    // test (`codegen/wat/runner.zig`) spawns it by the path below.
+    {
+        const probe_mod = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-core/src/gc_import_probe_main.zig"),
+            .target = target_for_libc,
+        });
+        exposeWasmtimeHeaders(b, probe_mod, target);
+        const probe_exe = b.addExecutable(.{ .name = "gc-import-probe", .root_module = probe_mod });
+        linkWasmtime(b, probe_exe);
+        const probe_opts = b.addOptions();
+        probe_opts.addOptionPath("path", probe_exe.getEmittedBin());
+        // The path above may be relative to the build root; the tests run in
+        // `modules/compiler-core`.
+        probe_opts.addOption([]const u8, "root", b.pathFromRoot("."));
+        core_test_mod.addOptions("gc_import_probe", probe_opts);
+    }
+
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,

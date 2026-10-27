@@ -872,62 +872,37 @@ test "boundary: a failed cast is a trap with status 1" {
     try std.testing.expectEqualStrings("trap status=1 wasm trap: cast failure", r);
 }
 
-/// Compile `comp_wat` as a component in a forked child (a wasmtime panic
-/// aborts the process): `ok`, `refused <message>`, or `PROCESS DIED …` /
-/// `EXITED <status>` when the child did not end normally.
-fn compileIsolated(alloc: std.mem.Allocator, comp_wat: []const u8) ![]u8 {
-    var fds: [2]c_int = undefined;
-    if (std.c.pipe(&fds) != 0) return error.TestUnexpectedResult;
-    const pid = std.c.fork();
-    if (pid < 0) return error.TestUnexpectedResult;
-    if (pid == 0) {
-        _ = std.c.close(fds[0]);
-        _ = std.c.dup2(fds[1], 1);
-        _ = std.c.dup2(fds[1], 2);
-        _ = std.c.alarm(60);
-        engine_mod.resetEngineAfterFork();
-        var failure: ?[]u8 = null;
-        const line: []const u8 = if (engine_mod.precompiled(std.heap.page_allocator, std.testing.io, null, comp_wat, .component, false, &failure) catch null) |pc| blk: {
-            pc.code.deinit();
-            break :blk "ok";
-        } else std.fmt.allocPrint(std.heap.page_allocator, "refused {s}", .{failure orelse "(error)"}) catch "refused";
-        _ = std.c.write(1, line.ptr, line.len);
-        std.c._exit(0);
-    }
-    _ = std.c.close(fds[1]);
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(alloc);
-    var chunk: [4096]u8 = undefined;
-    while (true) {
-        const n = std.c.read(fds[0], &chunk, chunk.len);
-        if (n <= 0) break;
-        try buf.appendSlice(alloc, chunk[0..@intCast(n)]);
-    }
-    _ = std.c.close(fds[0]);
-    var status: c_int = 0;
-    _ = std.c.waitpid(pid, &status, 0);
-    const sig: u32 = @intCast(status & 0x7f);
-    if (sig != 0) return std.fmt.allocPrint(alloc, "PROCESS DIED (signal {d}); output: {s}", .{ sig, buf.items });
-    const code: u32 = @intCast((status >> 8) & 0xff);
-    if (code != 0) return std.fmt.allocPrint(alloc, "EXITED {d}; output: {s}", .{ code, buf.items });
-    return alloc.dupe(u8, buf.items);
+/// Run `gc-import-probe <which>` (`src/gc_import_probe_main.zig`, built by
+/// `build.zig`): the compile that makes wasmtime panic runs in that process,
+/// never in this test binary.
+fn gcImportProbe(alloc: std.mem.Allocator, which: []const u8) !std.process.RunResult {
+    const probe = @import("gc_import_probe");
+    const exe = if (std.fs.path.isAbsolute(probe.path)) try alloc.dupe(u8, probe.path) else try std.fs.path.join(alloc, &.{ probe.root, probe.path });
+    defer alloc.free(exe);
+    return std.process.run(alloc, std.testing.io, .{ .argv = &.{ exe, which } });
 }
 
 test "probe: a concrete GC type in an imported core module's type is refused (the recorded reproduction)" {
     const alloc = std.testing.allocator;
     // Decisions 1037 / 1045: a red here means a wasmtime bump compiles the import — revisit the abstract boundary.
-    const concrete = try compileIsolated(alloc,
-        \\(component (import "unit-0" (core module $u (type $s (struct)) (type $f (func (param (ref null $s)))) (export "a" (func (type $f))))))
-    );
-    defer alloc.free(concrete);
-    report("concrete struct ref in the imported module type", concrete);
-    try std.testing.expect(!std.mem.eql(u8, concrete, "ok"));
+    const concrete = try gcImportProbe(alloc, "concrete");
+    defer alloc.free(concrete.stdout);
+    defer alloc.free(concrete.stderr);
+    const refused = switch (concrete.term) {
+        // A panic: the tool turns its abort into exit 134, wasmtime's text on stderr.
+        .exited => |code| code != 0 and (std.mem.indexOf(u8, concrete.stderr, "panicked at") != null or std.mem.startsWith(u8, concrete.stdout, "refused ")),
+        .signal => |sig| sig == .ABRT,
+        else => false,
+    };
+    if (!refused) std.debug.print("\ngc-import-probe concrete: {any}\nstdout: {s}\nstderr: {s}\n", .{ concrete.term, concrete.stdout, concrete.stderr });
+    try std.testing.expect(refused);
+
     // The control: the same import through an abstract ref compiles.
-    const abstract = try compileIsolated(alloc,
-        \\(component (import "unit-0" (core module $u (type $f (func (param anyref))) (export "a" (func (type $f))))))
-    );
-    defer alloc.free(abstract);
-    try std.testing.expectEqualStrings("ok", abstract);
+    const abstract = try gcImportProbe(alloc, "abstract");
+    defer alloc.free(abstract.stdout);
+    defer alloc.free(abstract.stderr);
+    try std.testing.expectEqualStrings("ok\n", abstract.stdout);
+    try std.testing.expect(abstract.term == .exited and abstract.term.exited == 0);
 }
 
 // ── R1: core modules, the time limit, interrupt, loaded code ────────────────
