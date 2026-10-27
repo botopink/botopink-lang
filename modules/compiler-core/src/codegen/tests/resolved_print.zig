@@ -26,28 +26,28 @@ const cells_dir = "../../conformance/modules";
 /// (decision 835 (3)), which no program without comptime answers.
 const cells = [_][]const u8{
     // Decorators: an added member, an `@emit`, a meta read, `compiler.init`.
-    "decorator/cells/decorator_entity_table",
-    "decorator/cells/decorator_arguments_meta",
-    "decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_before_main",
-    "decisions-taken/ast_fn_node_builds_mock_member-753/cells/ast_fn_node_builds_mock_member",
-    "decisions-taken/typed_member_reads_own_meta-395/cells/member_reads_own_meta",
+    "decorator/cases/decorator_entity_table",
+    "decorator/cases/decorator_arguments_meta",
+    "decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main",
+    "decisions-taken/ast_fn_node_builds_mock_member-753/cases/ast_fn_node_builds_mock_member",
+    "decisions-taken/typed_member_reads_own_meta-395/cases/member_reads_own_meta",
     "decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/decl_member_owner",
     // Templates.
-    "decisions-taken/template_called_with_raw_text-577/cells/template_annotation",
+    "decisions-taken/template_called_with_raw_text-577/cases/template_annotation",
     "decisions-taken/template_called_with_raw_text-577/cells/template_known_at_build",
-    "decisions-taken/template_call_type_is_built_code-426/cells/template_call_typed_by_expansion",
-    "decisions-taken/ast_fn_node_builds_mock_member-753/cells/code_template_builds_ast",
+    "decisions-taken/template_call_type_is_built_code-426/cases/template_call_typed_by_expansion",
+    "decisions-taken/ast_fn_node_builds_mock_member-753/cases/code_template_builds_ast",
     // Top-level `comptime` blocks and their executors.
-    "decisions-taken/module_comptime_block-788/cells/module_comptime_block",
+    "decisions-taken/module_comptime_block-788/cases/module_comptime_block",
     // Folded values, specialised copies (`name_$N` between backticks), a
     // value-or-type parameter's twin, generics.
-    "comptime/cells/comptime_section_value",
-    "comptime/cells/comptime_fn_name_shadowed_by_local",
-    "comptime/cells/comptime_value_or_type_param",
-    "generic/cells/generic_method_map",
+    "comptime/cases/comptime_section_value",
+    "comptime/cases/comptime_fn_name_shadowed_by_local",
+    "comptime/cases/comptime_value_or_type_param",
+    "generic/cases/generic_method_map",
     "decisions-taken/commonjs_generic_body_receives_type_shape-673/cells/commonjs_generic_body_receives_type_shape",
     // A folded context, printed `createContext(v)` (decision 835 (1)).
-    "decisions-taken/component_is_lambda_over_render_scope-388/cells/component_is_lambda",
+    "decisions-taken/component_is_lambda_over_render_scope-388/cases/component_is_lambda",
 };
 
 fn moduleOf(source: []const u8) codegen.Module {
