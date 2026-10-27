@@ -38,6 +38,9 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("is_type_outside_value_or_type");
+    runCase("type_arg_read");
+    runCase("value_or_type_mismatch");
     runCase("value_or_type_param");
     runCase("value_or_type_param_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);

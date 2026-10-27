@@ -38,6 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("decorator_arguments_meta");
+    runCase("decorator_entity_table");
     runCase("decorator_calls_imported_function");
     runCase("decorator_calls_module_function");
     runCase("decorator_emitted_proxies_dispatch");

@@ -41,6 +41,36 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<void> {
+    runCase("await_in_result_generator");
+    runCase("await_under_result");
+    runCase("component_plain_return");
+    runCase("component_try_element");
+    runCase("effect_wrapper_behind_alias");
+    runCase("for_await_future_generator_in_result");
+    runCase("for_await_without_task");
+    runCase("for_future_generator_without_await");
+    runCase("iter_await");
+    runCase("iter_mixed_yield_return");
+    runCase("iterator_throw_without_result");
+    runCase("marker_lambda_type_mismatch");
+    runCase("marker_lambda_without_expected_type");
+    runCase("marker_on_declaration");
+    runCase("marker_type_mismatch");
+    runCase("marker_without_arrow");
+    runCase("result_hint_await");
+    runCase("result_hint_for_item");
+    runCase("result_hint_inferred_iter");
+    runCase("task_throw_without_result");
+    runCase("task_try_await_without_result");
+    runCase("throw_in_generator");
+    runCase("try_in_generator");
+    runCase("try_in_plain_fn");
+    runCase("use_of_component");
+    runCase("use_under_task");
+    runCase("yield_in_context");
+    runCase("yield_in_result");
+    runCase("yield_step_error_param");
+    runCase("component_alias_answers_value");
     runCase("component_call_awaited");
     runCase("component_call_renders");
     runCase("component_hook_and_component");

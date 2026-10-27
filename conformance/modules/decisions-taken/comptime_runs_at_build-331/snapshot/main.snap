@@ -1,4 +1,10 @@
 botopink-cell 2
+== comptime_section_path_declared_after
+refused error: the comptime reaches the section path `.Pad.All.8` at 32:12 in `later`, which is not resolved where the comptime runs — declare `later` before the `comptime` in this module
+at src/main.bp:28:11
+== comptime_value_not_liftable
+refused error: comptime-value-not-liftable: the value is a lambda that captures the comptime block's state — only a declared function, or a lambda reading nothing the block declares, is lifted
+at src/main.bp:8:15
 == comptime_block_with_loop
 out 2
 out 6

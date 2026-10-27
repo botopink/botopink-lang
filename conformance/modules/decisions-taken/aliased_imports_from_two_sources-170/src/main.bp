@@ -38,6 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("std_namespace_signature_names_shadowed_type");
+    runCase("std_namespace_type_beside_own_type");
     runCase("std_namespace_beside_aliased_type");
     runCase("std_namespace_beside_own_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);

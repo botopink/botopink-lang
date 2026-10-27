@@ -38,6 +38,13 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("tag_annotation_add_member");
+    runCase("tag_annotation_add_type");
+    runCase("tag_annotation_emit");
+    runCase("tag_annotation_meta_twice");
+    runCase("tag_annotation_not_decorator");
+    runCase("tag_annotation_reads_meta");
+    runCase("tag_annotation_unknown_name");
     runCase("tag_decl_meta");
     runCase("tag_decl_meta_read");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);

@@ -1,4 +1,30 @@
 botopink-cell 2
+== record_param_clash
+refused error: record-param-clash: `size` is both a parameter of `Card` and a field of `CardProps`, the type of `..props`
+at src/main.bp:9:29
+== record_param_default
+refused error[record-param-default]: a record parameter takes no default
+at src/main.bp:8:28
+label default on a record parameter
+== record_param_not_record
+refused error: record-param-not-record: `..props: Color` — `Color` is no record type, and only a record's fields can be a function's parameters from outside
+at src/main.bp:11:19
+== record_param_spread_other_type
+refused error: record-spread-type: a spread into `CardProps` copies a `CardProps` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `NoteProps` is neither
+at src/main.bp:17:16
+== record_param_twice
+refused error: record-param-twice: `Card` already takes `..card` as its record parameter — a function has at most one
+at src/main.bp:10:28
+== record_param_unknown_label
+refused error: record-param-label: `color` names neither a parameter of `Card` nor a field of `CardProps`, the type of `..props`
+at src/main.bp:13:41
+== record_param_variadic
+refused error: record-param-variadic: `Card` takes both `..props: R` and the variadic `..rest` — a record parameter and a variadic do not share a function
+at src/main.bp:9:29
+== record_spread_dot_dot_dot
+refused error[spread-dot-dot-dot]: `...` is the inclusive range, not a spread
+at src/main.bp:11:18
+label write `..`
 == record_param
 out a:1!
 out b*:3?

@@ -1,4 +1,7 @@
 botopink-cell 2
+== import_two_types_one_name_unaliased
+refused error: import-name-collision: `Policy` is already bound by the import of `Policy` from `a/p`; `Policy` from `b/p` would bind it again
+at src/main.bp:9:9
 == import_std_type_beside_aliased_type
 out 1
 out 5

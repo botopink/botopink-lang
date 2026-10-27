@@ -38,6 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("comptime_section_path_declared_after");
+    runCase("comptime_value_not_liftable");
     runCase("comptime_block_with_loop");
     runCase("comptime_enum_section_value");
     runCase("comptime_function_reference");

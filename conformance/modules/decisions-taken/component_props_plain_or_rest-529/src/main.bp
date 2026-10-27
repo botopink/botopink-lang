@@ -38,6 +38,14 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("record_param_clash");
+    runCase("record_param_default");
+    runCase("record_param_not_record");
+    runCase("record_param_spread_other_type");
+    runCase("record_param_twice");
+    runCase("record_param_unknown_label");
+    runCase("record_param_variadic");
+    runCase("record_spread_dot_dot_dot");
     runCase("record_param");
     runCase("record_param_across_modules");
     runCase("record_spread_beside_record_update");

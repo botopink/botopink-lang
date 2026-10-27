@@ -38,6 +38,11 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("redundant_module_import");
+    runCase("shorthand_import");
+    runCase("private_module_through_namespace");
+    runCase("shorthand_import_one_candidate");
+    runCase("shorthand_import_several_candidates");
     runCase("mod_namespace_cascade");
     runCase("mod_reexport_by_val");
     runCase("optional_record_carrier");

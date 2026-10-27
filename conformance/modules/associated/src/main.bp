@@ -38,6 +38,10 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("associated_fn_missing_argument");
+    runCase("associated_fn_missing_required");
+    runCase("associated_fn_too_many_arguments");
+    runCase("associated_fn_unknown");
     runCase("associated_fn_as_value");
     runCase("associated_fn_default");
     runCase("associated_fn_of_type_default");

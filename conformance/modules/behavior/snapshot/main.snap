@@ -1,3 +1,11 @@
 botopink-cell 2
+== behavior_default_fn_body_checked
+refused error: unbound variable 'nothingHere'
+at src/main.bp:12:16
+== behavior_method_result_typed
+refused error: type mismatch: expected i32, got string
+at src/main.bp:18:20
+== behavior_default_awaits
+out 41
 == behavior_parameter
 out hi bob

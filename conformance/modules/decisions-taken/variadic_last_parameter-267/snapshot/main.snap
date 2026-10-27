@@ -1,0 +1,37 @@
+botopink-cell 2
+== variadic_default
+refused error[variadic-default]: a variadic parameter takes no default
+at src/main.bp:6:24
+label default on a variadic
+== variadic_label
+refused error: variadic-label: `values` of `sum` is variadic and takes no label
+at src/main.bp:11:23
+== variadic_not_array
+refused error[variadic-not-array]: a variadic parameter's type is written as an array `T[]`
+at src/main.bp:7:17
+label not `T[]`
+== variadic_not_last
+refused error[variadic-not-last]: a variadic parameter must be the last parameter
+at src/main.bp:6:10
+label variadic before another parameter
+== variadic_spread_at_call
+refused error: variadic-spread: `sum` is variadic, and a call passes its arguments one by one — there is no spread at a call
+at src/main.bp:13:17
+== variadic_twice
+refused error[variadic-twice]: a function has at most one variadic parameter
+at src/main.bp:6:21
+label a second variadic
+== variadic_across_modules
+out 6
+out 0
+== variadic_parameter
+out none: 0 -> 0
+out one: 1 -> 4
+out three: 3 -> 6
+out 2
+out 0
+out
+out x
+out x+y+z
+out 2
+out two 3

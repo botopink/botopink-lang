@@ -38,6 +38,9 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("behavior_default_fn_body_checked");
+    runCase("behavior_method_result_typed");
+    runCase("behavior_default_awaits");
     runCase("behavior_parameter");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

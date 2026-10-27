@@ -38,6 +38,9 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("import_same_name_twice_unaliased");
+    runCase("import_std_groups");
+    runCase("import_tree_group");
     runCase("import_behavior_named_like_prelude");
     runCase("import_capitalised_fn");
     runCase("import_nested_module_namespace");

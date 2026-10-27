@@ -1,4 +1,25 @@
 botopink-cell 2
+== call_spread
+refused error: call-spread: `soma` constructs no record — a spread copies a record's fields into its constructor, and a function call takes none
+at src/main.bp:14:16
+== record_spread_label_twice
+refused error: record-spread-arguments: field `nome` of `Pessoa` is labelled twice
+at src/main.bp:11:40
+== record_spread_missing_field
+refused error: record-spread-missing-field: field `nome` of `Pessoa` has no default, and no spread or label supplies it
+at src/main.bp:13:13
+== record_spread_optional
+refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `?Pessoa` is neither
+at src/main.bp:15:20
+== record_spread_other_type
+refused error: record-spread-type: a spread into `Pessoa` copies a `Pessoa` or a type derived from it by `Type.pick`, `Type.omit` or `Type.merge` — `Animal` is neither
+at src/main.bp:13:20
+== record_spread_overridden_label_type
+refused error: type mismatch: expected string, got i32
+at src/main.bp:11:26
+== record_spread_positional_argument
+refused error: record-spread-arguments: beside a spread, every argument of `Pessoa` names its field
+at src/main.bp:10:27
 == record_spread
 out Pessoa(nome: "Ana", email: "bia@a", telefone: "2", idade: 20)
 out Pessoa(nome: "Bia", email: "bia@a", telefone: "2", idade: 20)

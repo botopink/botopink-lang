@@ -1,4 +1,16 @@
 botopink-cell 2
+== associated_fn_missing_argument
+refused error: 'of' expects 2 argument(s), got 1
+at src/main.bp:14:17
+== associated_fn_missing_required
+refused error: 'by' expects 2 argument(s), got 1
+at src/main.bp:13:17
+== associated_fn_too_many_arguments
+refused error: 'of' expects 1 argument(s), got 2
+at src/main.bp:15:17
+== associated_fn_unknown
+refused error: unknown-associated-fn: `City` has no associated fn `table`
+at src/main.bp:6:16
 == associated_fn_as_value
 out 2
 out 11

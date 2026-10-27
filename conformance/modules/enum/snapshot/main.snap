@@ -1,4 +1,21 @@
 botopink-cell 2
+== enum_section_ambiguous_path
+refused error: the path ".Color.Red.500" is carried by more than one enum — "Border" and "Token" — and nothing here says which (ES5 — enum-sections path ambiguity)
+at src/main.bp:21:13
+== enum_variant_duplicate
+refused error[enum-variant-duplicate]: this variant is already declared at this level of the enum
+at src/main.bp:7:26
+label this variant is already declared at this level of the enum
+== enum_declaration
+out red
+out 2.0
+== enum_section_path_by_expected_type
+out token
+== enum_section_path_qualified
+out true
+out true
+== enum_sections
+out a colour
 == enum_implements_behavior
 out /a
 out /a

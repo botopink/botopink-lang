@@ -38,6 +38,12 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("enum_section_ambiguous_path");
+    runCase("enum_variant_duplicate");
+    runCase("enum_declaration");
+    runCase("enum_section_path_by_expected_type");
+    runCase("enum_section_path_qualified");
+    runCase("enum_sections");
     runCase("enum_implements_behavior");
     runCase("enum_payload_value_prints");
     runCase("enum_section_expected_type");

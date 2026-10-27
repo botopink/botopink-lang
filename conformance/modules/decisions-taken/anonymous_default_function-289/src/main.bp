@@ -38,6 +38,9 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("default_named_twice");
+    runCase("default_twice");
+    runCase("default_unknown");
     runCase("default_anonymous");
     runCase("default_named_later");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);

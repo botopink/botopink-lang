@@ -1,4 +1,7 @@
 botopink-cell 2
+== imported_type_alias_in_later_signature
+out example.com
+out true
 == import_alias_on_type
 out 5
 out a

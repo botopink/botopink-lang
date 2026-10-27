@@ -1,4 +1,13 @@
 botopink-cell 2
+== module_init_order
+out first
+out second
+out main
+out 1
+out 1
+== module_main_called_from_package_main
+out package main
+out module main
 == module_fn_named_like_bif
 out 4
 out k=v

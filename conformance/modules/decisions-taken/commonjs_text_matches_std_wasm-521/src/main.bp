@@ -38,6 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("generic_fn_value_takes_shape");
+    runCase("tuple_in_type_parameter_slot");
     runCase("float_text_at_run_time");
     runCase("float_text_everywhere");
     runCase("generic_float_text");

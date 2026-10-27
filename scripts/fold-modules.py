@@ -441,6 +441,12 @@ def git(*args, cwd=None):
 
 
 def apply(module, botopink):
+    main = os.path.join(module, "src", "main.bp")
+    if os.path.exists(main) and "candidate.finish" in read(main):
+        # Folding writes the module's main.bp and snapshot afresh: over a module already in
+        # 989's shape it would drop every case it runs. Its leftovers are not folded here.
+        print("%s: skip (already in 989's shape)" % module)
+        return 1
     ok, whys = plan(module, botopink)
     if not ok:
         print("%s: nothing folds" % module)

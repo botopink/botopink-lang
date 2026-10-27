@@ -1,4 +1,13 @@
 botopink-cell 2
+== backtick_name_empty
+refused error: empty backtick identifier
+at src/main.bp:7:9
+== backtick_name_in_diagnostic
+refused error: unknown field '`y pos`' on type '`my point`'
+at src/main.bp:11:13
+== backtick_name_line_break
+refused error: unclosed backtick identifier
+at src/main.bp:8:9
 == backtick_name_binding
 out 41
 out 42

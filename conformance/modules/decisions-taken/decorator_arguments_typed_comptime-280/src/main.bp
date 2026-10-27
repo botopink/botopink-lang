@@ -38,6 +38,23 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("comptime_arg_not_known");
+    runCase("comptime_default_outside_decorator");
+    runCase("decorator_arg_function_mismatch");
+    runCase("decorator_arg_label_unknown");
+    runCase("decorator_arg_unbound_function");
+    runCase("decorator_argument_kind");
+    runCase("decorator_check_without_rule_not_bool");
+    runCase("decorator_decl_pattern_mismatch");
+    runCase("decorator_decl_pattern_return");
+    runCase("decorator_field_key_case");
+    runCase("decorator_field_key_too_many");
+    runCase("decorator_function_argument_mismatch");
+    runCase("decorator_param_not_comptime");
+    runCase("decorator_record_argument_mismatch");
+    runCase("decorator_type_argument_unknown");
+    runCase("decorator_variant_case");
+    runCase("decorator_decl_pattern");
     runCase("decorator_argument_values");
     runCase("decorator_function_arguments");
     runCase("decorator_record_argument");

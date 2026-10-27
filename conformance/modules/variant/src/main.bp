@@ -38,6 +38,7 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("variant_name_ambiguous");
     runCase("variant_leading_dot_expected");
     runCase("variant_leading_dot_two_enums_case");
     runCase("variant_name_collision");
