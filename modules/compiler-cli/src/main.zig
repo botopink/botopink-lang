@@ -52,7 +52,7 @@ const HELP =
     \\  botopink <command> [options]
     \\
     \\Commands:
-    \\  build    Compile the project to the configured target
+    \\  build    Build the package's .bpr set (no --target), or compile it to a target
     \\  run      Compile and run the project
     \\  test     Compile and run every test block in the project
     \\  check    Type-check without generating code
@@ -67,10 +67,13 @@ const HELP =
     \\an unexpected argument or an unsupported target is a usage error (exit 1).
     \\
     \\Options for `build`:
-    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
+    \\  (no --target)                Run comptime and write the package's .bpr set and its key to
+    \\                               <cache root>/.botopinkbuild/runtime/<package>/ (no out/); reused while its key is fresh
+    \\  --target <commonJS|erlang|beam|wasm>   Emit that target into --out, from the .bpr set when it is fresh, else
+    \\                               building it first in the same pass
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
-    \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  --cold                       Read nothing from the code cache; write what is compiled; ignore the .bpr key and rebuild
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
     \\  --json                       Stdout is JSON lines, one event each, stderr as without it: {"event":"targets","target":T,"targets":[…]},
     \\                               {"event":"build","text":L} (one per line a build body printed, in order),
@@ -78,14 +81,16 @@ const HELP =
     \\                               {"event":"runtime","path":F,"root":B} (per .bpr written by --emit-runtime), and last
     \\                               {"event":"summary","ok":B,"exit":N,"refused":N}
     \\  --emit-resolved <dir>        Write the resolved program (no comptime left) one file per module, <dir>/<package>/<module>.bp, for reading
-    \\  --emit-runtime <dir>         Write each package's resolved tree to <dir>/<package>.bpr, to build any target from later
+    \\  --emit-runtime <dir>         The .bpr set's directory instead: each package's resolved tree to <dir>/<package>.bpr
+    \\                               and the key to <dir>/<package>.key, to build any target from later
     \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\
     \\Options for `run`:
-    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
+    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target (default: the manifest's); the .bpr set is
+    \\                               reused while its key is fresh, else built first
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
-    \\  --cold                       Read nothing from the code cache; write what is compiled
+    \\  --cold                       Read nothing from the code cache; write what is compiled; a fresh .bpr set is reused
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
     \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\  --                           Pass remaining args to the program
@@ -415,7 +420,9 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             opts.typescript = true;
         } else if (std.mem.eql(u8, flag.name, "--cold")) {
             try noValue(flag, diag);
+            // `build --cold` ignores the `.bpr` key and rebuilds (decision 1006 (4)).
             opts.cold = true;
+            opts.rebuild = true;
         } else if (std.mem.eql(u8, flag.name, "--json")) {
             try noValue(flag, diag);
             opts.json = true;
@@ -592,6 +599,7 @@ test {
     _ = @import("./cli/reporter.zig");
     _ = @import("./cli/resolver.zig");
     _ = @import("./cli/run.zig");
+    _ = @import("./cli/runtime_cache.zig");
     _ = @import("./cli/scanner.zig");
     _ = @import("./cli/sources.zig");
     _ = @import("./cli/test_cmd.zig");

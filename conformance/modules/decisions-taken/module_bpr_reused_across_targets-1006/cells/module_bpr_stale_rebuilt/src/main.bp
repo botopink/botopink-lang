@@ -1,0 +1,15 @@
+import {io.terminal.print} from "std";
+
+//// Decision 1006 — a changed source file makes the `.bpr` set's key stale: the next `botopink run --target <t>`
+//// builds it again (the build phase prints `comptime ran` once more) and answers the changed program
+//// (`modules/compiler-cli/tests/runtime_reuse.sh` edits `greeting.bp` before each target's run).
+
+mod greeting;
+
+comptime {
+    print("comptime ran");
+}
+
+pub fn main() -> void {
+    print(greeting.text());
+}

@@ -99,10 +99,10 @@ expect_out "unbound variable 'noSuchFunction'" "renders the type error"
 echo "==> C2 a failed rebuild leaves no stale artifact for run"
 P="$(project c2)"
 printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("stale build v1");\n}\n' >"$P/src/main.bp"
-run "$P" build
+run "$P" build --target commonJS
 expect_code 0 "v1 build"
 printf 'pub fn main() -> void {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
-run "$P" build
+run "$P" build --target commonJS
 expect_code 1 "broken rebuild"
 [[ ! -e "$P/out/c2@main.js" ]] && ok "out/c2@main.js removed" || fail "out/c2@main.js from v1 survived the failed build"
 run "$P" run
@@ -113,15 +113,15 @@ expect_no_out "stale build v1" "run does not execute the stale artifact"
 echo "==> \"typings\": true writes the .d.ts without --typescript; neither writes none"
 P="$(project typings)"
 printf 'pub fn greet(name: string) -> string {\n    return "hi " + name;\n}\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
-run "$P" build
+run "$P" build --target commonJS
 expect_code 0 "build without typings"
 [[ ! -e "$P/out/typings@main.d.ts" ]] && ok "no .d.ts without \"typings\" or --typescript" || fail "out/typings@main.d.ts written with neither"
-run "$P" build --typescript
+run "$P" build --target commonJS --typescript
 expect_code 0 "build --typescript"
 [[ -e "$P/out/typings@main.d.ts" ]] && ok "--typescript writes out/typings@main.d.ts" || fail "--typescript wrote no out/typings@main.d.ts"
 rm -rf "$P/out"
 printf '{ "name": "typings", "version": "0.1.0", "target": "commonJS", "typings": true }\n' >"$P/botopink.json"
-run "$P" build
+run "$P" build --target commonJS
 expect_code 0 "build with \"typings\": true"
 if [[ -e "$P/out/typings@main.d.ts" ]]; then
   ok "\"typings\": true writes out/typings@main.d.ts"
@@ -129,7 +129,7 @@ if [[ -e "$P/out/typings@main.d.ts" ]]; then
 else
   fail "\"typings\": true wrote no out/typings@main.d.ts"
 fi
-run "$P" build --typescript
+run "$P" build --target commonJS --typescript
 expect_code 0 "build with both"
 [[ -e "$P/out/typings@main.d.ts" ]] && ok "both together write out/typings@main.d.ts" || fail "both together wrote no out/typings@main.d.ts"
 
@@ -189,13 +189,13 @@ for target in commonJS erlang beam wasm; do
   P="$(project exec-$target "$target")"
   printf 'import {io.terminal.print} from "std";\npub fn main() -> void {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
   # With the real runtimes on PATH: nothing is executed, so nothing is cached.
-  run "$P" build
+  run "$P" build --target "$target"
   expect_code 0 "build --target $target"
   [[ ! -e "$P/.botopinkbuild/runtime-cache" ]] && ok "$target: no runtime-cache entry" || fail "$target: build left .botopinkbuild/runtime-cache ($(ls "$P/.botopinkbuild/runtime-cache" | head -1))"
   # With recording shims first on PATH: no runtime is spawned at all.
   rm -rf "$P/out" "$P/.botopinkbuild"
   set +e
-  OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
+  OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build --target "$target" 2>&1)"
   CODE=$?
   set -e
   if [[ $target == erlang || $target == beam ]]; then
@@ -233,14 +233,14 @@ for target in erlang beam; do
   P="$(project otp-$target "$target")"
   printf '%s' "$MAIN_OK" >"$P/src/main.bp"
   set +e
-  OUT="$(cd "$P" && PATH="$WORK/otp29:$PATH" "$BP" build 2>&1)"
+  OUT="$(cd "$P" && PATH="$WORK/otp29:$PATH" "$BP" build --target "$target" 2>&1)"
   CODE=$?
   set -e
   expect_code 1 "build --target $target with OTP 29 first on PATH"
   expect_out "botopink emits Erlang for OTP 28, and \`erl\` on PATH is OTP 29 — install OTP 28 and put it on PATH" "names both releases"
   [[ ! -e "$P/out" ]] && ok "$target: nothing written before the refusal" || fail "$target: the refused build wrote $(find "$P/out" -type f | head -1)"
   set +e
-  OUT="$(cd "$P" && PATH="$WORK/otp28:$PATH" "$BP" build 2>&1)"
+  OUT="$(cd "$P" && PATH="$WORK/otp28:$PATH" "$BP" build --target "$target" 2>&1)"
   CODE=$?
   set -e
   expect_code 0 "build --target $target with OTP 28 first on PATH"
@@ -266,7 +266,7 @@ mkdir -p "$WORK/otp29rec"; : >"$WORK/otp29rec.log"
 printf '#!/bin/sh\necho "erl $*" >>"%s"\nprintf 29\n' "$WORK/otp29rec.log" >"$WORK/otp29rec/erl"
 chmod +x "$WORK/otp29rec/erl"
 set +e
-OUT="$(cd "$P" && PATH="$WORK/otp29rec:$PATH" "$BP" build 2>&1)"
+OUT="$(cd "$P" && PATH="$WORK/otp29rec:$PATH" "$BP" build --target commonJS 2>&1)"
 CODE=$?
 set -e
 expect_code 0 "commonJS build running a template, OTP 29 first on PATH"
@@ -324,7 +324,7 @@ expect_out "botopink.json:1:" "located at the name"
 echo "==> build --target erlang refuses emitted erlang the OTP compiler rejects"
 P="$(project erlcrefused erlang)"
 printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() -> void {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
-run "$P" build
+run "$P" build --target erlang
 expect_code 1 "build --target erlang of a module erlc rejects"
 expect_out "erlcrefused@main.erl:" "names the refused module"
 expect_out "the OTP compiler refused emitted erlang" "says the build is not a program"
@@ -352,19 +352,19 @@ P="$(project erlcache erlang)"
 printf '{ "name": "erlcache", "target": "erlang", "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$P/botopink.json"
 printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word());\n}\n' >"$P/src/main.bp"
 markers() { { find "$1/.botopinkbuild/cache/code" -name "*.beam" 2>/dev/null || true; } | wc -l | tr -d " "; }
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a program over a dependency failed"
+( cd "$P" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a program over a dependency failed"
 m1="$(markers "$P")"
 [[ "$m1" -gt 0 ]] && ok "the dependency's modules are kept under .botopinkbuild/cache/code/ ($m1 entr(ies))" || fail "no entry was written under $P/.botopinkbuild/cache/code"
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
+( cd "$P" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
 [[ "$(markers "$P")" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new entries ($(markers "$P") vs $m1)"
 printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word() + "!");\n}\n' >"$P/src/main.bp"
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed project source builds" || fail "the changed project build failed"
+( cd "$P" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "a changed project source builds" || fail "the changed project build failed"
 [[ "$(markers "$P")" == "$m1" ]] && ok "the project's own module is never stored" || fail "the project's own module was stored ($(markers "$P") vs $m1)"
 rm -rf "$P/.botopinkbuild"
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a build after rm -rf .botopinkbuild" || fail "the build after deleting .botopinkbuild failed"
+( cd "$P" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "a build after rm -rf .botopinkbuild" || fail "the build after deleting .botopinkbuild failed"
 [[ "$(markers "$P")" == "$m1" ]] && ok "deleting .botopinkbuild deleted every entry: each was compiled again ($m1 rewritten)" || fail "after rm -rf .botopinkbuild the build wrote $(markers "$P") entr(ies), not $m1 — one was answered from elsewhere"
 printf 'pub fn word() -> string {\n    return "two";\n}\n' >"$WORK/erlcache-lib/src/root.bp"
-( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed dependency builds" || fail "the build over a changed dependency failed"
+( cd "$P" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "a changed dependency builds" || fail "the build over a changed dependency failed"
 [[ "$(markers "$P")" -gt "$m1" ]] && ok "a changed dependency source is a new key, compiled again" || fail "a changed dependency source was answered from the cache"
 [[ "$(user_cache_files)" -eq 0 ]] && ok "nothing was written under HOME/.cache/botopink" || fail "a build wrote under HOME/.cache/botopink: $(find "$USER_CACHE/.cache/botopink" -type f | head -3 | tr '\n' ' ')"
 run "$P" clean
@@ -375,7 +375,7 @@ P="$(project erlcacherefused erlang)"
 printf 'import {io.terminal.print, compiler} from "std";\n#[compiler.external(.Erlang("lists:reverse($0 ++)"))]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() -> void {\n    print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 for i in 1 2; do
   set +e
-  OUT="$(cd "$P" && bp_isolated build 2>&1)"
+  OUT="$(cd "$P" && bp_isolated build --target erlang 2>&1)"
   CODE=$?
   set -e
   [[ $CODE -eq 1 ]] && grep -qF "the OTP compiler refused emitted erlang" <<<"$OUT" \
@@ -392,7 +392,7 @@ rm -rf "$WS"; mkdir -p "$WS/modules/wsapp/src"
 printf '{ "name": "wscache", "version": "0.1.0", "workspaces": ["modules/*"], "dependencies": { "erlcachelib": { "path": "../erlcache-lib" } } }\n' >"$WS/botopink.json"
 printf '{ "name": "wsapp", "target": "erlang" }\n' >"$WS/modules/wsapp/botopink.json"
 printf 'import {io.terminal.print} from "std";\nimport {word} from "erlcachelib";\n\npub fn main() -> void {\n    print(word());\n}\n' >"$WS/modules/wsapp/src/main.bp"
-( cd "$WS/modules/wsapp" && bp_isolated build >/dev/null 2>&1 ) && ok "a member builds" || fail "the workspace member's erlang build failed"
+( cd "$WS/modules/wsapp" && bp_isolated build --target erlang >/dev/null 2>&1 ) && ok "a member builds" || fail "the workspace member's erlang build failed"
 [[ "$(markers "$WS")" -gt 0 ]] && ok "its dependency's modules are under the workspace root's .botopinkbuild/cache/code/" || fail "no entry under $WS/.botopinkbuild/cache/code"
 [[ ! -e "$WS/modules/wsapp/.botopinkbuild/cache" ]] && ok "none under the member's own .botopinkbuild/" || fail "the member kept a cache of its own"
 run "$WS/modules/wsapp" clean
@@ -717,7 +717,7 @@ printf 'import {compiler} from "std";\n#[compiler.external(.JavaScript("""requir
 printf 'export function greet() {\n    return "from the sidecar";\n}\n' >"$LIBROOT/sidelib/src/side.mjs"
 OUTDIR="$WORK/sidecar-build/out"; mkdir -p "$WORK/sidecar-build"
 set +e
-OUT="$(cd "$P" && BOTOPINK_LIB_ROOTS="$LIBROOT" "$BP" build --out "$OUTDIR" 2>&1)"
+OUT="$(cd "$P" && BOTOPINK_LIB_ROOTS="$LIBROOT" "$BP" build --target commonJS --out "$OUTDIR" 2>&1)"
 CODE=$?
 set -e
 expect_code 0 "build with a dependency sidecar"
@@ -1215,7 +1215,7 @@ DECOY="$WORK/decoyroot"; rm -rf "$DECOY"
 sidecar_lib "$DECOY/side" "from the decoy checkout"
 
 echo "==> a workspace member's sidecar is shipped through the resolved dependency"
-run "$SWS/examples/side-app" build
+run "$SWS/examples/side-app" build --target commonJS
 expect_code 0 "build of a member-dependency with a sidecar"
 if [[ -f "$SWS/examples/side-app/out/side@side.mjs" ]]; then
   ok "out/side@side.mjs shipped"
@@ -1230,7 +1230,7 @@ echo "==> a second checkout declaring the same name does not silence the shipper
 # still does.
 rm -rf "$SWS/examples/side-app/out"
 set +e
-OUT="$(cd "$SWS/examples/side-app" && BOTOPINK_LIB_ROOTS="$DECOY" "$BP" build 2>&1)"
+OUT="$(cd "$SWS/examples/side-app" && BOTOPINK_LIB_ROOTS="$DECOY" "$BP" build --target commonJS 2>&1)"
 CODE=$?
 set -e
 expect_code 0 "build with the library name declared twice across roots"
@@ -1244,7 +1244,7 @@ fi
 echo "==> a path dependency outside every library root ships its sidecar"
 PLIB="$WORK/sidepath"; rm -rf "$PLIB"; sidecar_lib "$PLIB" "from the path dependency"
 PAPP="$WORK/sidepathapp"; rm -rf "$PAPP"; sidecar_app "$PAPP" "{ \"path\": \"$PLIB\" }"
-run "$PAPP" build
+run "$PAPP" build --target commonJS
 expect_code 0 "build with a path dependency carrying a sidecar"
 if [[ -f "$PAPP/out/side@side.mjs" ]]; then
   ok "out/side@side.mjs shipped from the path dependency"
@@ -1256,7 +1256,7 @@ fi
 echo "==> a sidecar that cannot be shipped is a located error, not exit 0"
 rm -f "$PLIB/src/side.mjs"
 rm -rf "$PAPP/out"
-run "$PAPP" build
+run "$PAPP" build --target commonJS
 expect_code 1 "build whose dependency has no sidecar to ship"
 expect_out 'dependency '"'"'side'"'"' requires "./side.mjs" from module '"'"'side/root'"'"'' "names the dependency, the require and the module"
 expect_out "$PLIB/src/side.mjs" "names the last path it looked at"
@@ -1279,7 +1279,7 @@ TAPP="$WORK/transapp"; rm -rf "$TAPP"; mkdir -p "$TAPP/src"
 # that declares it declares no other target.
 printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "targets": ["commonJS"], "entry": "main.bp",\n  "dependencies": { "mid": { "path": "%s" } } }\n' "$TWS/modules/mid" >"$TAPP/botopink.json"
 printf 'import {io.terminal.print} from "std";\nimport { midMark } from "mid";\n\npub fn main() -> void {\n    print(midMark());\n}\n' >"$TAPP/src/main.bp"
-run "$TAPP" build
+run "$TAPP" build --target commonJS
 expect_code 0 "build with a sidecar two dependencies away"
 if [[ -f "$TAPP/out/side@side.mjs" ]]; then
   ok "out/side@side.mjs shipped from mid's workspace sibling"

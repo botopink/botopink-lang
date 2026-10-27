@@ -74,7 +74,7 @@ pub fn run(
 /// `out_dir`, which then runs as a build's does. The entry module's `fn main`
 /// is looked for in the tree the file holds (decision 517).
 fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts: Options, file: []const u8, env_map: libs.EnvMap) !u8 {
-    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir, .entry = opts.module }, file, env_map, opts.module);
+    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir, .entry = opts.module }, file, env_map, opts.module, null);
     if (built.exit != 0) return built.exit;
     const target = opts.target.?;
     if (!built.has_main) {

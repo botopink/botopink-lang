@@ -101,7 +101,9 @@ expect_eq "targets" '{"event": "targets", "held": ["commonJS", "erlang"], "targe
 expect_eq "build prints" $'{"event": "build", "text": "first"}\n{"event": "build", "text": "second"}' "$(events "$WORK/clean.out" build)"
 expect_eq "summary" '{"event": "summary", "exit": 0, "ok": true, "refused": 0}' "$(events "$WORK/clean.out" summary)"
 grep -q "Compiling" "$WORK/clean.err" && ok "stderr keeps the CLI's messages" || fail "stderr lost 'Compiling'"
-( cd "$P" && "$BP_BIN" build --target commonJS --out "$WORK/plain-out" ) >"$WORK/plain.out" 2>"$WORK/plain.err"
+# `--cold`: the `.bpr` set the build above wrote is fresh, and a build from it prints nothing of the build phase
+# (decision 1006 (2), (4)).
+( cd "$P" && "$BP_BIN" build --cold --target commonJS --out "$WORK/plain-out" ) >"$WORK/plain.out" 2>"$WORK/plain.err"
 expect_eq "stdout without --json is the raw prints" $'first\nsecond' "$(cat "$WORK/plain.out")"
 [[ -e "$P/out/clean@main.js" ]] && ok "the artifact is written" || fail "no out/clean@main.js"
 

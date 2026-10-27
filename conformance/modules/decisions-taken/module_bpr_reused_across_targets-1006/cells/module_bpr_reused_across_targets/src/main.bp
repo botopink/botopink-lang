@@ -1,0 +1,14 @@
+import {io.terminal.print} from "std";
+
+//// Decision 1006 — `botopink run --target <t>` builds the package's `.bpr` set once and reuses it while its
+//// key is fresh: run on one target, the build phase prints (`comptime ran`); run then on another, the answer is
+//// the same and the build phase prints nothing — no comptime ran, the `.bpr` untouched
+//// (`modules/compiler-cli/tests/runtime_reuse.sh` runs it on the four targets in turn).
+
+comptime {
+    print("comptime ran");
+}
+
+pub fn main() -> void {
+    print("answer 42");
+}

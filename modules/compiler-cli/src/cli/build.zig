@@ -14,13 +14,17 @@ const build_stamp = @import("build_stamp");
 const refusals = @import("./refusals.zig");
 const manifest = @import("manifest");
 const runtime_file = bp.runtime_file;
+const runtime_cache = @import("./runtime_cache.zig");
 
 const Module = bp.Module;
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
 pub const Options = struct {
-    target: ?config.Target = null, // null → use project config
+    /// null: a bare `build` — comptime and the package's `.bpr` set, no
+    /// `out/` (decision 1006 (2)); `run` hands the manifest's target when it
+    /// is given none.
+    target: ?config.Target = null,
     out_dir: []const u8 = "out",
     /// `--typescript`: write a `.d.ts` beside each `.js` for this build. The
     /// package's `"typings": true` turns it on too (decisions 619, 620):
@@ -29,13 +33,18 @@ pub const Options = struct {
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5), `code_cache.zig`).
     cold: bool = false,
+    /// `build --cold`: the `.bpr` key is ignored and the set rebuilt (decision
+    /// 1006 (4)); `run --cold` leaves it off and reuses a fresh set.
+    rebuild: bool = false,
     /// `--emit-resolved <dir>`: the resolved program written one file per
     /// module, `<dir>/<pkg>/<module path>.bp`, for reading (decisions 798 (2),
     /// (3), 834 (1)).
     emit_resolved: ?[]const u8 = null,
-    /// `--emit-runtime <dir>`: the resolved tree of every package of the
-    /// program written to `<dir>/<group>.bpr`, to build any target from later
-    /// (decision 805 (1)).
+    /// `--emit-runtime <dir>`: the directory of the `.bpr` set — the resolved
+    /// tree of every package of the program, `<dir>/<group>.bpr`, and the
+    /// root's key `<dir>/<pkg>.key` — instead of the cache root's
+    /// `.botopinkbuild/runtime/<pkg>/` (decisions 805 (1), 1006 (2)); each
+    /// file written is named on stderr.
     emit_runtime: ?[]const u8 = null,
     /// `botopink build <file>.bpr`: the program read back from its root
     /// package's `.bpr` and emitted with no comptime (decision 805 (3)).
@@ -117,6 +126,11 @@ const RuntimeSink = struct {
     root: []const u8,
     deps: []const []const u8,
     wasm_host: bp.ast.WasmHost,
+    /// `--emit-runtime`: each file written named on stderr (decision 798 (3));
+    /// the cache root's set is written silently.
+    announce: bool,
+    /// The root's key (decision 1006 (3)), written once the set is whole.
+    key: runtime_cache.Key,
     /// `--json`: the `.bpr` paths written, root's flagged, for the `runtime` events.
     written: ?*std.ArrayListUnmanaged(Written) = null,
     keep: std.mem.Allocator = undefined,
@@ -148,6 +162,8 @@ const RuntimeSink = struct {
             else => return err,
         };
         const stamp = runtimeStamp();
+        // A set written in part is never fresh: its key goes first.
+        runtime_cache.removeKey(arena, self.io, self.dir, self.root);
         var it = groups.iterator();
         while (it.next()) |g| {
             const mods = g.value_ptr.items;
@@ -169,9 +185,11 @@ const RuntimeSink = struct {
             // dependency's `.bpr` another build is writing reads the old file
             // or the new one, never a part.
             try analysis_store.write(arena, self.io, path, bytes);
+            if (!self.announce) continue;
             reporter.print("  wrote {s}\n", .{path});
             if (self.written) |w| try w.append(self.keep, .{ .path = try self.keep.dupe(u8, path), .root = is_root });
         }
+        try runtime_cache.writeKey(arena, self.io, self.dir, self.root, self.key);
     }
 };
 
@@ -291,7 +309,7 @@ fn runBuild(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cold) code_cache.cold = true;
-    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null)).exit;
+    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null, null)).exit;
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
@@ -303,13 +321,15 @@ fn runBuild(
         return 1;
     };
 
+    // A bare `build` emits no target (decision 1006 (2)); the manifest's
+    // target still names the level B entries its analysis reads and writes.
     const target = opts.target orelse proj.parsedTarget() orelse {
         reportUnsupportedTarget(proj.target);
         return 1;
     };
     // erlang and beam: the `erl` on PATH runs the OTP release the compiler
     // emits for, or nothing is built (decision 228, `otp.zig`).
-    if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
+    if (opts.target != null and (target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
     if (json_state) |j| jsonTargets(j, gpa, proj, target, env_map);
 
     // Resolve declared external libs from disk (generic — `libs/<name>/`). The
@@ -317,7 +337,7 @@ fn runBuild(
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
     const entry_target: code_cache.EntryTarget = .{ .target = target, .host = proj.wasmHost() };
-    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj) };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj), .want_runtime = true };
     const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         reportDependencyError(err);
         return 1;
@@ -336,6 +356,19 @@ fn runBuild(
         reporter.errMsg("no source files found in src/");
         reporter.hintMsg("create a .bp file, e.g. src/main.bp");
         return 1;
+    }
+
+    // The `.bpr` set (decision 1006 (2), (3), `runtime_cache.zig`): fresh — its
+    // key the one computed now, its root file this compiler's — it is built
+    // from, with no comptime; else this build writes it, and its key, from
+    // the same comptime pass that emits. `--cold` on `build` ignores the key;
+    // `--emit-resolved` needs the analysis.
+    const rt_dir = opts.emit_runtime orelse try runtime_cache.dirFor(arena, proj);
+    const rt_key = try runtime_cache.keyOf(arena, io, proj, &closure_keys);
+    if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
+        if (opts.target == null) return 0;
+        const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
+        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, null, proj)).exit;
     }
 
     // The code cache's level B (144 B-60): a dependency whose analysis entry
@@ -385,18 +418,14 @@ fn runBuild(
         bp.comptime_pipeline.keep_resolved = true;
         sinks.resolved = &sink;
     }
-    if (opts.emit_runtime) |dir| {
-        runtime_sink = .{ .gpa = gpa, .io = io, .dir = dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host };
-        if (json_state) |j| {
-            runtime_sink.written = &j.written;
-            runtime_sink.keep = j.arena;
-        }
-        sinks.runtime = &runtime_sink;
-    }
-    const hook: ?bp.codegen.AnalysedHook = if (sinks.resolved != null or sinks.runtime != null)
-        .{ .ctx = &sinks, .call = AnalysedSinks.call }
-    else
-        null;
+    runtime_sink = .{ .gpa = gpa, .io = io, .dir = rt_dir, .root = proj.name, .deps = cfg.packages.deps, .wasm_host = cfg.wasm_host, .announce = opts.emit_runtime != null, .key = rt_key };
+    if (json_state) |j| if (opts.emit_runtime != null) {
+        runtime_sink.written = &j.written;
+        runtime_sink.keep = j.arena;
+    };
+    sinks.runtime = &runtime_sink;
+    const hook: bp.codegen.AnalysedHook = .{ .ctx = &sinks, .call = AnalysedSinks.call };
+    if (opts.target == null) return analyseOnly(gpa, io, arena, modules, cfg, &sinks, &level_b, loaded.orphans.len, t0);
     var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false, .on_analysed = hook }) catch |err| {
         reporter.errMsg("compilation failed");
         reporter.print("  {s}\n", .{@errorName(err)});
@@ -455,6 +484,54 @@ fn runBuild(
     return 0;
 }
 
+/// A bare `build` (decision 1006 (2)): the comptime pass alone, for no target
+/// (798 (4)), its `.bpr` set and key written by `sinks`, no `out/`. What the
+/// build bodies printed goes to stdout in build order, as a target's build
+/// prints it; each module's diagnostics are rendered as `check` renders them.
+fn analyseOnly(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    modules: []const Module,
+    cfg: bp.codegen.Config,
+    sinks: *AnalysedSinks,
+    level_b: *analysis_store.Cache,
+    orphans: usize,
+    t0: std.Io.Timestamp,
+) !u8 {
+    var session = bp.codegen.analyse(gpa, modules, io, cfg) catch |err| {
+        reporter.errMsg("compilation failed");
+        reporter.print("  {s}\n", .{@errorName(err)});
+        return 1;
+    };
+    defer session.deinit(gpa);
+    try AnalysedSinks.call(sinks, session.outputs.items, session.readers);
+    level_b.commit();
+    const t1 = std.Io.Timestamp.now(io, .awake);
+
+    for (session.outputs.items) |o| {
+        const text = switch (o.outcome) {
+            .ok => |ok| ok.build_output,
+            .typeError, .validationError => if (o.target_trace) |t| t.build_output else "",
+            .parseError => "",
+        };
+        if (text.len == 0) continue;
+        if (json_state) |j| jsonBuildLines(j, text) else if (reporter.sink == null) reporter.stdout(io, text);
+    }
+    if (json_state) |j| j.modules = session.outputs.items.len;
+    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (session.outputs.items) |o| {
+        if (diagnostics.renderOutcome(gpa, io, arena, o)) try failed.append(arena, o.name);
+    }
+    diagnostics.reportOrphans(arena, orphans);
+    if (failed.items.len > 0) {
+        diagnostics.reportFailedModules(arena, failed.items);
+        return 1;
+    }
+    reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
+    return 0;
+}
+
 /// What a build from a `.bpr` answers `run` (`run.zig`): its exit status, the
 /// program's root package and whether its entry module declares `fn main`.
 pub const RuntimeBuild = struct {
@@ -478,6 +555,10 @@ pub fn runRuntime(
     file: []const u8,
     env_map: libs.EnvMap,
     entry: ?[]const u8,
+    /// The project a fresh `.bpr` set is built for (decision 1006 (2)), its
+    /// manifest read: its directory is the working one, its code cache and
+    /// `"typings"` its own. Null for a `.bpr` named on the command line.
+    project: ?config.ProjectConfig,
 ) !RuntimeBuild {
     const target = opts.target orelse {
         reporter.errCode(runtime_codes.target_required, "a .bpr has no manifest; write --target <commonJS|erlang|beam|wasm>");
@@ -495,7 +576,7 @@ pub fn runRuntime(
 
     // A `.bpr` is built from the directory of the project that wrote it (decision 838 (3)):
     // its host files are found from there, as a direct build finds them.
-    if (!inItsProject(arena, io, file, meta.root)) return .{ .exit = 1 };
+    if (project == null and !inItsProject(arena, io, file, meta.root)) return .{ .exit = 1 };
 
     // Each package's file once, beside the root's.
     const dir = std.fs.path.dirname(file) orelse ".";
@@ -519,10 +600,11 @@ pub fn runRuntime(
 
     // Read before the emit, which may rewrite a tree in place.
     const has_main = if (entry) |name| declaresMain(outputs, name) else false;
-    const proj: config.ProjectConfig = .{ .name = meta.root };
+    const proj: config.ProjectConfig = project orelse .{ .name = meta.root };
+    const typings = opts.typescript or (project != null and proj.manifest.typings);
     const cfg = bp.codegen.Config{
         .targetSource = targetSource(target),
-        .typeDefLanguage = if (opts.typescript) .typescript else null,
+        .typeDefLanguage = if (typings) .typescript else null,
         .build_root = ".botopinkbuild",
         .packages = .{ .root = meta.root, .deps = meta.deps },
         .wasm_host = meta.wasm_host,

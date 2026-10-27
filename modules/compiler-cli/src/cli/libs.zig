@@ -299,6 +299,13 @@ pub const ClosureKeys = struct {
     /// what this build's analysis of it reads, for `analysis_store.Cache`
     /// to write as its INPUTS.
     logs: std.StringHashMapUnmanaged(*bp.ReadLog) = .empty,
+    /// Every package's `.bpr` key (decision 1006 (3), `code_cache.runtimeKey`),
+    /// by import name: target-free, Merkle over its dependencies' — what the
+    /// key of the package a command builds hashes for its dependencies
+    /// (`runtime_cache.zig`).
+    runtime: std.StringHashMapUnmanaged([code_cache.KEY_HEX]u8) = .empty,
+    /// Whether to fill `runtime` (`build` and `run` only).
+    want_runtime: bool = false,
 };
 
 /// `loadDependencies`, filling `keys` (when given) with every package's
@@ -625,6 +632,10 @@ fn loadClosure(
         const inputs = if (k.cache_root) |r| try analysis_store.readInputs(arena, io, r, k.target, pkg.name) else &.{};
         const key = try code_cache.closureKeyReading(arena, io, pkg.dir, pkg.manifest, dep_keys.items, k.target, code_cache.compilerKey(k.target.target), inputs);
         try k.keys.put(k.arena, try k.arena.dupe(u8, pkg.name), key);
+        if (!k.want_runtime) continue;
+        var rt_deps: std.ArrayListUnmanaged(code_cache.DepKey) = .empty;
+        for (pkg.manifest.dependencies) |d| if (k.runtime.get(d.name)) |dk| try rt_deps.append(arena, .{ .name = d.name, .key = dk });
+        try k.runtime.put(k.arena, try k.arena.dupe(u8, pkg.name), try code_cache.runtimeKey(arena, io, pkg.dir, pkg.manifest, rt_deps.items));
     };
 }
 

@@ -101,6 +101,8 @@ for target in commonJS erlang beam wasm; do
   cmp -s "$RT-commonJS/lib.bpr" "$rt/lib.bpr" || fail "$target: lib.bpr differs from the one the commonJS build wrote"
 
   # `run`: the direct run prints the build phase, the run from the `.bpr` does not.
+  # Direct: no `.bpr` set of the project's own to reuse (decision 1006 (2)).
+  rm -rf "$APP/.botopinkbuild/runtime"
   bp "$WORK/run-direct.out" run --target "$target" --out "$WORK/run-direct-$target" || fail "$target: the direct run failed"
   grep -v -e 'Compiling' -e 'Compiled' -e '^build a$' "$WORK/run-direct.out" > "$WORK/want.out"
   grep -q '^build a$' "$WORK/run-direct.out" || fail "$target: the direct run printed no build output"

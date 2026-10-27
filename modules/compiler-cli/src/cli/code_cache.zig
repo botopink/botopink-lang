@@ -382,6 +382,98 @@ pub fn closureKeyReading(
     return std.fmt.bytesToHex(digest, .lower);
 }
 
+/// The key of a package's `.bpr` set (decision 1006 (3)): a hash of a fixed
+/// tag, the compiler's source stamp (805 (2): `build_stamp.source_hash`, the
+/// sources the binary is built from — never the host it was built on, so a
+/// `.bpr` built on one machine is fresh on another), every file of the
+/// package (`runtimeFiles`) by content, its effective manifest
+/// (`effectiveManifest`, decision 512) and each dependency's runtime key
+/// (Merkle, by name). No file time is read, and no target: a `.bpr` is
+/// target-free (798 (4)).
+pub fn runtimeKey(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    pkg_dir: []const u8,
+    m: manifest.Manifest,
+    deps: []const DepKey,
+) ![KEY_HEX]u8 {
+    return runtimeKeyWith(arena, io, pkg_dir, m, deps, build_stamp.source_hash);
+}
+
+/// `runtimeKey` with the compiler's stamp given — what a test varies.
+pub fn runtimeKeyWith(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    pkg_dir: []const u8,
+    m: manifest.Manifest,
+    deps: []const DepKey,
+    stamp: []const u8,
+) ![KEY_HEX]u8 {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-runtime-1\x00");
+    h.update("compiler\x00");
+    h.update(stamp);
+    h.update(&.{0});
+
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    try runtimeFiles(arena, io, pkg_dir, ".", &files);
+    std.mem.sort([]const u8, files.items, {}, lessThan);
+    h.update("files\x00");
+    for (files.items) |rel| {
+        const path = try std.fs.path.join(arena, &.{ pkg_dir, rel });
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited);
+        h.update(rel);
+        h.update(&.{0});
+        var len_buf: [24]u8 = undefined;
+        h.update(std.fmt.bufPrint(&len_buf, "{d}", .{bytes.len}) catch unreachable);
+        h.update(&.{0});
+        h.update(bytes);
+        h.update(&.{0});
+    }
+
+    effectiveManifest(&h, m);
+
+    const sorted = try arena.dupe(DepKey, deps);
+    std.mem.sort(DepKey, sorted, {}, struct {
+        fn lt(_: void, a: DepKey, b: DepKey) bool {
+            return std.mem.lessThan(u8, a.name, b.name);
+        }
+    }.lt);
+    h.update("deps\x00");
+    for (sorted) |d| {
+        h.update(d.name);
+        h.update(&.{0});
+        h.update(&d.key);
+        h.update(&.{0});
+    }
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// Every regular file of the package under `<base>/<rel>` that the `.bpr` key
+/// hashes (decision 1006 (3)), as a path from `base`: a hidden entry (`.git`,
+/// `.botopinkbuild/` among them) and `node_modules` at any depth, and the
+/// package's own `out/`, are left out.
+fn runtimeFiles(arena: std.mem.Allocator, io: std.Io, base: []const u8, rel: []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    const top = std.mem.eql(u8, rel, ".");
+    const full = if (top) base else try std.fs.path.join(arena, &.{ base, rel });
+    var d = std.Io.Dir.cwd().openDir(io, full, .{ .iterate = true }) catch return;
+    defer d.close(io);
+    var it = d.iterate();
+    while (try it.next(io)) |e| {
+        if (e.name.len > 0 and e.name[0] == '.') continue;
+        if (std.mem.eql(u8, e.name, "node_modules")) continue;
+        if (top and std.mem.eql(u8, e.name, "out")) continue;
+        const child = if (top) try arena.dupe(u8, e.name) else try std.fmt.allocPrint(arena, "{s}/{s}", .{ rel, e.name });
+        switch (e.kind) {
+            .directory => try runtimeFiles(arena, io, base, child, out),
+            .file => try out.append(arena, child),
+            else => {},
+        }
+    }
+}
+
 /// The key of std's module `module` (its path under std, `io/fs`): std is
 /// embedded in the binary, so its bytes are inside the compiler key — the
 /// module path, the target, the host and the compiler say it all.

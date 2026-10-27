@@ -4,8 +4,8 @@
 # over `build_modes/app`, a package with a decorator (an added member and a
 # `compiler.init` executor), a template, a top-level `comptime` block and a
 # folded value,
-#   • on commonJS, erlang, beam and wasm, the program built directly (no
-#     intermediate written) and the program built from its intermediate
+#   • on commonJS, erlang, beam and wasm, the program built directly (from
+#     its sources: the package's own `.bpr` set removed first, decision 1006) and the program built from its intermediate
 #     (`build --emit-runtime <dir>`, then `build` over `<dir>/app.bpr`) are
 #     the same files, byte for byte, and `run` from the intermediate prints
 #     what the direct `run` prints, byte for byte;
@@ -52,6 +52,8 @@ fi
 [[ -f "$RT/app.bpr" ]] || fail "--emit-runtime wrote no app.bpr"
 
 for target in commonJS erlang beam wasm; do
+  # Direct: no `.bpr` set of the project's own to reuse (decision 1006 (2)).
+  rm -rf "$APP/.botopinkbuild/runtime"
   if ! bp "$WORK/direct.out" "$WORK/direct.err" build --target "$target" --out "$WORK/direct-$target"; then
     fail "$target: the direct build failed"; show "$WORK/direct.err"; continue
   fi
@@ -61,6 +63,7 @@ for target in commonJS erlang beam wasm; do
   diff -r "$WORK/direct-$target" "$WORK/bpr-$target" > "$WORK/diff.log" \
     || { fail "$target: built from app.bpr differs from the direct build"; show "$WORK/diff.log"; }
 
+  rm -rf "$APP/.botopinkbuild/runtime"
   bp "$WORK/run-direct.out" "$WORK/run-direct.err" run --target "$target" --out "$WORK/run-direct-$target" \
     || { fail "$target: the direct run failed"; show "$WORK/run-direct.err"; continue; }
   grep -qx 'block,own' "$WORK/run-direct.out" || { fail "$target: the direct run did not run the executors"; show "$WORK/run-direct.out"; }

@@ -144,6 +144,16 @@ pub const Decoded = struct {
     outputs: []comptimeMod.ComptimeOutput,
 };
 
+/// Whether `bytes` opens as a `.bpr` the compiler `stamp` names wrote — its
+/// two magics and its stamp, nothing decoded (decision 1006 (3): a fresh
+/// `.bpr` set's root file opens with this stamp).
+pub fn opensWith(bytes: []const u8, stamp: Stamp) bool {
+    if (bytes.len < MAGIC.len + entry.MAGIC.len + 32 or !std.mem.eql(u8, bytes[0..MAGIC.len], MAGIC)) return false;
+    const body = bytes[MAGIC.len..];
+    if (!std.mem.eql(u8, body[0..entry.MAGIC.len], entry.MAGIC)) return false;
+    return std.mem.eql(u8, body[entry.MAGIC.len..][0..32], &stamp);
+}
+
 /// The file `bytes`, written by the compiler `stamp` names, decoded into
 /// `arena` — else why it is not.
 pub fn read(arena: std.mem.Allocator, bytes: []const u8, stamp: Stamp) ReadError!Decoded {

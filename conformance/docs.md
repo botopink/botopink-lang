@@ -6308,6 +6308,19 @@ botopink run --target commonJS
 botopink build --target erlang
 ```
 
+A bare `botopink build` — no `--target` — runs the analysis and comptime and writes the package's `.bpr` set
+(the resolved tree of every package of the program, decision 805) and its key to
+`<cache root>/.botopinkbuild/runtime/<package>/`, and no `out/`; `--emit-runtime <dir>` names another directory.
+`botopink build --target <t>` and `botopink run --target <t>` (or `run` with the manifest's `target`) emit from that
+set while it is fresh, with no comptime — nothing of the build phase is printed —, and otherwise build it, write it
+and emit in one comptime pass. The key is a hash of the compiler's source stamp (never the host it was built on), every
+file of the package but `.botopinkbuild/`, `out/`, hidden entries and `node_modules`, its effective manifest and each
+dependency's key; no file time is read. `build --cold` ignores the key and rebuilds; `run --cold` reuses a fresh set
+and reads no code cache (decision 1006).
+
+<!-- example: modules/decisions-taken/module_bpr_reused_across_targets-1006/cells/module_bpr_reused_across_targets -->
+<!-- example: modules/decisions-taken/module_bpr_reused_across_targets-1006/cells/module_bpr_stale_rebuilt -->
+
 `botopink clean` deletes `out/` and `.botopinkbuild/` whole: the comptime
 scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
 `bpmp install` / `bpmp link` links under `.botopinkbuild/deps/` — run either
@@ -6412,7 +6425,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `description` | string | — | — (documentation) | One line. |
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
 | `entry` | string | `main.bp` | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | An executable's entry module under `src` — `main.bp` when absent; it says only where execution starts and never narrows what the package holds (decision 677). A library has no entry: the key in a manifest with no `main` is refused, `manifest-entry-in-library`, located at the key (decisions 733, 592 (2)). Every module under `src` is in the program whether a module imports it or not (decision 677) — checked, compiled, linked, its executors run (§ Decorators) — so a type error in it refuses the build; `test/` is not `src` and keeps its own rule. |
-| `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
+| `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink run` and `test`; a bare `botopink build` emits no target (decision 1006). One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
 | `targets` | array of strings | every target | `botopink packages`, `conformance/run.sh` | The targets the libraries' conformance job may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[compiler.external(.<Target>(…))]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). A declared dependency's `targets` hold every target of the package that declares it (decision 676): one that lacks a target is refused at the dependant's manifest, on the dependency's line, whatever target the build is for — `error[dependency-target-missing]: kit declares no erlang, beam, wasm targets` —, and each dependency's own dependencies answer to its targets, so the whole graph builds for every target of the root. |
 | `files` | — | — | — | Gone (decision 703): what a consumer may import is the tree — every `pub` item outside `src/internal/`, which is private to its package (decision 592 (8)). Once B-69 / B-75 land a manifest still writing `files` is refused, located, naming `src/internal/`. |
 | `dependencies` | **object** | `{}`; a workspace member's: its workspace's | compiler, LSP, runner, `bpmp` | The object form only — below. A workspace member inherits every dependency its workspace declares and adds its own; it may not declare one the workspace declares (decision 512, § A workspace). |
