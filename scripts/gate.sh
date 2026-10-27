@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gate.sh — the botopink-lang gate, one ordered run. Stages 1–4 run one after
 # the other, each only after the previous one passed, so a failure there is
-# found by the cheapest stage that can see it. Stages 4b–12 only read the tree
+# found by the cheapest stage that can see it. Stages 4b–11 only read the tree
 # stage 4 has built and tested, so they run SIDE BY SIDE, each with its output
 # captured; they are then printed one block per stage in the order below, and
 # the gate stops at the first red one IN THAT ORDER — the stage, the output and
@@ -45,12 +45,7 @@
 #                           names a conformance cell or suite, and no
 #                           ```botopink fence is left inline
 #                           (scripts/check-docs.sh; decision 461)
-#  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
-#                           conformance cells and every package under libs/
-#                           (std included) passes
-#                           `tsc --noEmit --strict`, and every emitted `.js`
-#                           passes `node --check` (needs `npx` and `node`)
-#  12. zig build test-web   compiler-core built for wasm32-wasi (the browser
+#  11. zig build test-web   compiler-core built for wasm32-wasi (the browser
 #                           compiler) and modules/compiler-web/tests/smoke.js
 #                           under node — CI's step, so its red is the gate's
 #                           (decision 231); default build mode, as CI runs it
@@ -107,8 +102,7 @@
 #             from this list: it keeps no list of stages of its own.
 #
 #             `--list-stages --uses-binaries` prints only the stages that run the
-#             installed binaries (test-cli, test-conformance, test-docs,
-#             tsc-check): the jobs that need the build job's artifact.
+#             installed binaries (test-cli, test-conformance, test-docs): the jobs that need the build job's artifact.
 #
 #   --list-rows
 #             print the CI rows, one per line, in the gate's order (decision
@@ -128,7 +122,7 @@
 #   --stage <name>
 #             (repeatable) run only the named stages, in the gate's order, and
 #             nothing else; no `--stage` runs every stage as always. A selected
-#             run never reads or writes the green-tree record. Stages 5–12
+#             run never reads or writes the green-tree record. Stages 5–11
 #             read the binaries stage 2 (`build`) installs, so a run that
 #             selects one of them without `build` needs them in `zig-out/`
 #             already — with `--prebuilt`.
@@ -167,10 +161,10 @@ set -euo pipefail
 
 # § stage names — the stages in the order the gate runs them. `--list-stages`
 # prints this list; a CI job runs one name (`--stage`).
-STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-conformance test-docs tsc-check test-web)
+STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-conformance test-docs test-web)
 # The stages that run the installed binaries (zig-out/bin) stage 2 builds; every other stage
 # (but `build` itself) reads sources only. `--list-stages --uses-binaries` prints these.
-BIN_STAGES=(test-cli test-conformance test-docs tsc-check)
+BIN_STAGES=(test-cli test-conformance test-docs)
 # The stages a CI row runs one target at a time (`--list-rows`, `--target`; decision 1004 (2)),
 # and their targets, in the order the rows are listed.
 PER_TARGET_STAGES=(test-conformance)
@@ -491,7 +485,7 @@ if [ "${#selected[@]}" -eq 0 ] && [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ 
 fi
 
 # ── § build mode ─────────────────────────────────────────────────────────────
-# The binaries stages 4b–12 run are built `-Doptimize=ReleaseSafe` — the
+# The binaries stages 4b–11 run are built `-Doptimize=ReleaseSafe` — the
 # mode `release.yml` ships — so the gate runs the compiler a user installs.
 # ReleaseSafe keeps every runtime safety check (bounds, overflow, `unreachable`,
 # `std.debug.assert`); what it drops is Debug's allocator, whose leak report
@@ -602,15 +596,15 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
     { cat "$par/plan.docs.err"; fail "scripts/check-docs.sh --list"; }
 fi
 
-# ── § side by side: stages 4b–12 ─────────────────────────────────────────────
-# 4b, 5 and 6 are already running (§ ahead of the build); 7–12 start here.
+# ── § side by side: stages 4b–11 ─────────────────────────────────────────────
+# 4b, 5 and 6 are already running (§ ahead of the build); 7–11 start here.
 # Each reads what stages 2–4 left and writes only its own scratch (`mktemp`
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
 # directories, stay one stage and run in order inside it. The pools inside
-# `test-conformance` and `tsc-check` admit a job only while the
-# machine's runnable threads are at most its CPUs, so running them together
-# shares the CPUs rather than multiplying the load.
+# `test-conformance` admits a job only while the
+# machine's runnable threads are at most its CPUs, so running it beside the other
+# stages shares the CPUs rather than multiplying the load.
 #
 # Every stage runs to completion even when an earlier one is red — that is the
 # price of a red run, never of a green one. The report is the serial gate's: the
@@ -628,7 +622,7 @@ fi
 # old bound, MemAvailable / 768 MiB, let ~10 test-libs jobs of 1–3.5 GiB run
 # beside a 7 GiB wasm compile, and the hook alone took a 31 GB machine to 0–1 GB).
 # Each stage that runs a pool gets its share of the total (the libraries' stage is part of
-# test-conformance since decision 996): test-conformance 80 %, tsc-check 10 %, at least 1 each; test-docs reads files and runs no
+# test-conformance since decision 996): test-conformance 80 %, at least 1 (the commonJS row's tsc and node --check run inside it, decision 1013); test-docs reads files and runs no
 # pool. The stages keep their own `--jobs` flag and admission; only the number
 # they are given changes, so a report is the bytes it was.
 #
@@ -640,7 +634,6 @@ fi
 #   test-conformance job (one `botopink test` suite, or one target's run of the root
 #       package's `.bpr`: 0.09–0.32 GiB, m2-0063): under 0.89 GiB; the root package's
 #       one build runs before its pool starts (§ the root package, conformance/run.sh);
-#   tsc-check job (`--jobs 1`, one `tsc` and its `node --check`): 0.62 GiB;
 #   test-web (`zig build test-web`, the wasm32-wasi compile of compiler-web,
 #       one process whatever `-j`): 7.39 GiB;
 #   test-cli (four scripts, one after another): 3.45 GiB.
@@ -658,7 +651,6 @@ budget_fixed_mib=$((budget_web_mib + budget_cli_mib)) # both, the whole gate's
 # figure is a library's (rakun-ssr 3.55 GiB); the libraries' own stage is gone, and the whole gate's
 # 80 % goes to conformance.
 budget_conf_mib=3700
-budget_tsc_mib=768       # a tsc-check job (0.62 GiB)
 # shellcheck source=lib/pool.sh
 . scripts/lib/pool.sh
 if [ -n "$jobs_total" ]; then
@@ -668,7 +660,7 @@ else
     budget_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
     if [ -n "$budget_avail_kb" ]; then
         budget_total="$(pool_budget_for "$budget_avail_kb" "$(pool_cpus)" "$budget_reserve_mib" "$budget_web_mib" \
-            "$budget_cli_mib" "$budget_conf_mib" "$budget_tsc_mib" ${selected[@]+"${selected[@]}"})"
+            "$budget_cli_mib" "$budget_conf_mib" ${selected[@]+"${selected[@]}"})"
     else
         budget_total="$(pool_cpus)" # no /proc/meminfo (macOS): one per CPU
     fi
@@ -677,13 +669,13 @@ share_alone=0
 if [ "${#selected[@]}" -gt 0 ]; then
     # A selected run splits the total among the pool stages it runs, not among the three.
     npools=0
-    for s in test-conformance tsc-check; do want "$s" && npools=$((npools + 1)); done
+    for s in test-conformance; do want "$s" && npools=$((npools + 1)); done
     [ "$npools" -gt 0 ] && share_alone=$((100 / npools))
 fi
 share() { # <percent> — that part of the total, at least 1 (pool.sh)
     if [ "$share_alone" -gt 0 ]; then pool_share "$budget_total" "$share_alone"; else pool_share "$budget_total" "$1"; fi
 }
-echo "gate: job budget $budget_total — test-conformance $(share 80), tsc-check $(share 10)"
+echo "gate: job budget $budget_total — test-conformance $(share 80)"
 want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
@@ -691,7 +683,6 @@ if [ "$run_lang" -eq 1 ]; then
     launch 6 conformance_cmd "$(share 80)" ${lang_args[@]+"${lang_args[@]}"}
 fi
 want test-docs && launch 7 zig build test-docs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
-want tsc-check && launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
 want test-web && launch 9 zig build test-web -j"$(share 10)"
 wait
 
@@ -720,7 +711,7 @@ check_counts() { # <n>
 }
 
 report() { # <n> <stage title> <pass text> <fail text>
-    local names=(x x test-bpmp beam-export-audit test-cli x test-conformance test-docs tsc-check test-web)
+    local names=(x x test-bpmp beam-export-audit test-cli x test-conformance test-docs test-web)
     [ "${names[$1]}" != x ] && want "${names[$1]}" || return 0
     stage "$2"
     if [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; then
@@ -745,8 +736,6 @@ report 6 "zig build test-conformance" "zig build test-conformance" \
     "zig build test-conformance (a FAIL line above names the module or the suite; a red module's cases and their differences follow it)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the line and why)"
-report 8 "tsc --noEmit over the emitted .d.ts, node --check over the emitted .js (scripts/tsc-check.sh)" "tsc-check" \
-    "scripts/tsc-check.sh (the tsc error above names the project and the .d.ts; the defect is codegen/typescript.zig's)"
 report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node)" "zig build test-web" \
     "zig build test-web (a wasm32 compile error or a smoke.js assertion above names the defect)"
 

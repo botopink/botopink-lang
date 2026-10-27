@@ -24,7 +24,7 @@
 #              release, the backend partition audit, `zig build test`,
 #              `test-bpmp`, the beam export audit, `test-web`); starts at once.
 #   installed  one job per row that runs the installed binaries (`test-cli`,
-#              `test-docs`, `tsc-check`, and `test-conformance` once
+#              `test-docs`, and `test-conformance` once
 #              per target, `--target <t>`, each row its own verdict); downloads
 #              `build`'s artifact and runs with `--prebuilt`, so nothing compiles
 #              the compiler again.

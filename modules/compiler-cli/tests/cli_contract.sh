@@ -1430,18 +1430,18 @@ gate_mode_says "mode=step reach_all=1 targets=none why=no changed file to measur
   "a step with no changed file reaches every cell" \
   front/x
 POOL_SHARES="$(bash -c '. "$1"; for p in 80 10; do pool_share 16 "$p"; done; pool_share 1 10' _ "$REPO_ROOT/scripts/lib/pool.sh" | tr '\n' ' ')"
-[[ "$POOL_SHARES" == "12 1 1 " ]] && ok "one total of 16 jobs: test-conformance 12 (80 %), tsc-check 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '12 1 1 '"
+[[ "$POOL_SHARES" == "12 1 1 " ]] && ok "one total of 16 jobs: test-conformance 12 (80 %), a 10 % share 1; a share is at least 1" || fail "pool_share: got '$POOL_SHARES', want '12 1 1 '"
 # 144 B-129: the total of jobs is bounded by the stages' measured peaks (the
 # `budget_*_mib` of gate.sh § job budget): the largest n <= CPUs whose estimated
 # peak fits MemAvailable minus the reserve and the uncounted test-web / test-cli.
-eval "$(grep -E '^budget_(reserve|web|cli|fixed|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
+eval "$(grep -E '^budget_(reserve|web|cli|fixed|conf)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
 budget() { # <MemAvailable GiB> <cpus>
-  bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6" "$7"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
-    "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_conf_mib" "$budget_tsc_mib"
+  bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
+    "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_conf_mib"
 }
 # By hand: room = 28 GiB - 3 GiB reserve - 11 200 MiB (test-web 7700 + test-cli 3500) = 14 400 MiB; a test-conformance job
-# costs 3700 MiB (a library's peak, decision 996) and gets 80 % of the total, a tsc-check job 768 MiB and 10 %:
-# n = 5 -> 4 * 3700 + 768 = 15 568 > 14 400; n = 4 -> 3 * 3700 + 768 = 11 868 <= 14 400, so 4 jobs, not 16.
+# costs 3700 MiB (a library's peak, decision 996) and gets 80 % of the total:
+# n = 5 -> 4 * 3700 = 14 800 > 14 400; n = 4 -> 3 * 3700 = 11 100 <= 14 400, so 4 jobs, not 16.
 [[ "$(budget 28 16)" == "4" ]] && ok "28 GiB available, 16 CPUs: a total of 4 jobs, not 16" || fail "pool_budget_jobs 28 GiB / 16 CPUs: got '$(budget 28 16)', want 4"
 [[ "$(budget 4 16)" == "1" ]] && ok "4 GiB available: a total of 1 job (the floor)" || fail "pool_budget_jobs 4 GiB / 16 CPUs: got '$(budget 4 16)', want 1"
 [[ "$(budget 64 4)" == "4" ]] && ok "64 GiB available, 4 CPUs: bounded by the CPUs" || fail "pool_budget_jobs 64 GiB / 4 CPUs: got '$(budget 64 4)', want 4"
@@ -1449,19 +1449,19 @@ BUDGET_OVER=""
 for gib in 8 12 16 20 24 28 31 40 64 128; do
   for cpus in 2 4 8 16 32; do
     n="$(budget "$gib" "$cpus")"
-    sh_conf=$(( n * 80 / 100 )); sh_tsc=$(( n * 10 / 100 ))
-    [[ "$sh_conf" -ge 1 ]] || sh_conf=1; [[ "$sh_tsc" -ge 1 ]] || sh_tsc=1
-    cost=$(( sh_conf * budget_conf_mib + sh_tsc * budget_tsc_mib + budget_fixed_mib + budget_reserve_mib ))
+    sh_conf=$(( n * 80 / 100 ))
+    [[ "$sh_conf" -ge 1 ]] || sh_conf=1
+    cost=$(( sh_conf * budget_conf_mib + budget_fixed_mib + budget_reserve_mib ))
     if [[ "$n" -gt "$cpus" || ( "$n" -gt 1 && "$cost" -gt $(( gib * 1024 )) ) ]]; then BUDGET_OVER="$BUDGET_OVER ${gib}GiB/${cpus}cpu=$n"; fi
   done
 done
 [[ -z "$BUDGET_OVER" ]] && ok "the estimated peak of the total stays under MemAvailable minus the reserve, for 8–128 GiB and 2–32 CPUs" || fail "pool_budget_jobs exceeds its bound:$BUDGET_OVER"
 # The budget counts only the stages this invocation runs (a `--stage` run counts its own): a 16 GB / 4-CPU
-# runner (about 14 GiB available) gave 1 job to both pool stages when test-web + test-cli were always counted.
+# runner (about 14 GiB available) gave 1 job to the pool stage when test-web + test-cli were always counted.
 budget_for() { # <MemAvailable GiB> <cpus> [<stage>…]
   local gib="$1" cpus="$2"; shift 2
   bash -c '. "$1"; shift; pool_budget_for "$@"' _ "$REPO_ROOT/scripts/lib/pool.sh" $(( gib * 1048576 )) "$cpus" \
-    "$budget_reserve_mib" "$budget_web_mib" "$budget_cli_mib" "$budget_conf_mib" "$budget_tsc_mib" "$@"
+    "$budget_reserve_mib" "$budget_web_mib" "$budget_cli_mib" "$budget_conf_mib" "$@"
 }
 RUNNER_GIB=14 RUNNER_CPUS=4
 B_WHOLE="$(budget_for $RUNNER_GIB $RUNNER_CPUS)"

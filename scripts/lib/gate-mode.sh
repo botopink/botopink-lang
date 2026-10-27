@@ -22,7 +22,7 @@
 #
 # A file reaches ONE backend when the partition lists it under that target; it
 # reaches NOTHING beyond the stages that always run (formatting, build, `zig
-# build test`, test-cli, test-docs, tsc-check, test-web) when it is a `*.md`
+# build test`, test-cli, test-docs, test-web) when it is a `*.md`
 # outside libs/ — the compiler's source set leaves every `*.md` out
 # (modules/source-stamp/src/root.zig), so no cell reads one;
 # every other file — the dispatcher, the checker, comptime, std (libs/), the

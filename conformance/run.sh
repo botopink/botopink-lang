@@ -83,6 +83,11 @@
 #                      the run also holds the workspace documents that quote the member list
 #                      to the tool (`botopink packages --check-docs`, decision 993 (7))
 #
+# The commonJS row of the root package also checks its own output tree (decision 1013 (3), § the
+# commonJS tree): one `tsc --noEmit --strict` (pinned) over `out/commonJS/`'s `.d.ts` and `node --check`
+# over its `.js`, with libs/std, query's consumer cell and every `test/` project joined to it; its
+# verdict is the `[commonJS] tsc` line of the report. There is no separate tsc-check stage.
+#
 # Outcome rules: a job passes or it fails, and a run fails on any `FAIL`. There
 # is no list of known failures (decision 154): a red module is red until the
 # compiler passes it.
@@ -223,6 +228,46 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/bp-conformance.XXXXXX")"
 lib_run=""
 trap 'rm -rf "$work"; [ -z "$lib_run" ] || rm -rf "$lib_run"' EXIT
 
+# Decision 1013 (5), shown firing: the commonJS tree's check against hand-made flat trees. An error
+# planted in std's one `.d.ts` is reported once (two members import it, one report); an error in a
+# member is reported naming it and no other file; a `.js` node cannot parse is reported; two
+# `.d.ts` of one name at different real paths are a red; a clean tree is green.
+self_test_tsc() {
+    local d="$work/self-test/tsc" bad=0 tree log n
+    tsc_tree_fixture() { # <name> — a clean tree: std@math plus two members importing it
+        tree="$d/$1/commonJS"; log="$d/$1.log"
+        mkdir -p "$tree"
+        printf 'export declare function add(a: number, b: number): number;\n' >"$tree/std@math.d.ts"
+        printf 'exports.add = (a, b) => a + b;\n' >"$tree/std@math.js"
+        for m in one two; do
+            printf 'import { add } from "./std@math";\nexport declare function %s(): number;\n' "$m" >"$tree/$m@main.d.ts"
+            printf 'const { add } = require("./std@math");\nexports.%s = () => add(1, 2);\n' "$m" >"$tree/$m@main.js"
+        done
+    }
+    tsc_tree_fixture clean
+    tsc_tree "$tree" "$log" || { echo "self-test: a clean commonJS tree was reported red:" >&2; sed 's/^/    /' "$log" >&2; bad=1; }
+    tsc_tree_fixture std
+    printf 'export declare function add(a: number, b: number): number;\nexport declare const broken: Nope;\n' >"$tree/std@math.d.ts"
+    tsc_tree "$tree" "$log" && { echo "self-test: an error planted in std's .d.ts was accepted" >&2; bad=1; }
+    n="$(grep -c 'error TS' "$log")"
+    { [ "$n" = 1 ] && grep -q 'std@math.d.ts' "$log"; } || { echo "self-test: an error in std's .d.ts must be reported once, naming it (got $n):" >&2; sed 's/^/    /' "$log" >&2; bad=1; }
+    tsc_tree_fixture member
+    printf 'export declare function two(): Missing;\n' >"$tree/two@main.d.ts"
+    tsc_tree "$tree" "$log" && { echo "self-test: an error planted in a member's .d.ts was accepted" >&2; bad=1; }
+    { [ "$(grep -c 'error TS' "$log")" = 1 ] && grep -q 'two@main.d.ts' "$log" && ! grep -q 'one@main.d.ts' "$log"; } \
+        || { echo "self-test: an error in a member must be reported once, naming that member alone:" >&2; sed 's/^/    /' "$log" >&2; bad=1; }
+    tsc_tree_fixture node
+    printf 'exports.two = () => ( ;\n' >"$tree/two@main.js"
+    tsc_tree "$tree" "$log" && { echo "self-test: a .js node cannot parse was accepted" >&2; bad=1; }
+    grep -q 'two@main.js' "$log" || { echo "self-test: node --check's refusal does not name two@main.js:" >&2; sed 's/^/    /' "$log" >&2; bad=1; }
+    tsc_tree_fixture twice
+    mkdir -p "$tree/sub"
+    printf 'export declare function add(a: string): string;\n' >"$tree/sub/std@math.d.ts"
+    tsc_tree "$tree" "$log" && { echo "self-test: two std@math.d.ts at different real paths were accepted" >&2; bad=1; }
+    grep -q 'std@math.d.ts is in the tree at more than one real path' "$log" || { echo "self-test: the duplicate std@math.d.ts was not named:" >&2; sed 's/^/    /' "$log" >&2; bad=1; }
+    return $bad
+}
+
 # ── § self-test ───────────────────────────────────────────────────────────────
 # § the targets of a test suite, shown firing. A synthetic suite — two project
 # suites whose narrowing the compiler backs with a host-binding refusal, one
@@ -331,8 +376,8 @@ BP
 1 cases outside 989's shape (shrink-only)
 [*] modules/oldshape — not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion
 narrowings: 2 exclusions audited
-by target: commonJS 5/7 · erlang 6/8 · wasm 4/7 · beam 5/8 · * 0/6
-conformance: 20 passed, 16 failed
+by target: commonJS 6/8 · erlang 6/8 · wasm 4/7 · beam 5/8 · * 0/6
+conformance: 21 passed, 16 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green module
     # passed: no line may name them.
@@ -452,6 +497,7 @@ WANT
         grep -E 'libraries/good|libraries/hard' "$st/lib-report.txt" >&2
         missing=1
     fi
+    self_test_tsc || missing=1
     if [ $missing -ne 0 ]; then
         echo "self-test: FAILED — the synthetic suite's report was:" >&2
         sed 's/^/    /' "$st/report.txt" >&2
@@ -459,7 +505,7 @@ WANT
         sed 's/^/    /' "$st/lib-report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996; --cold reaches a job only when given (decision 1006 P0)"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996; --cold reaches a job only when given (decision 1006 P0); the commonJS tree's tsc once: a planted std .d.ts error reported once, a member's naming it, a node --check refusal, a duplicated .d.ts name (decision 1013 (5))"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -715,6 +761,141 @@ build_root() {
     fi
 }
 
+# ── § the commonJS tree, checked once (decision 1013 (3)) ────────────────────
+# The commonJS row's output is one flat tree, `<out>/commonJS/`: each package's modules are
+# `<pkg>@<module>.js` with their `.d.ts` beside them, and a dependency (std) exists once.
+# `tsc --noEmit --strict` runs ONCE over the tree's non-empty `.d.ts` — the file list is a
+# generated `tsconfig.json`, not argv; std's `.d.ts` is one file, checked once whole (decision
+# 1011 (3)) — and `node --check` runs over every `.js`, one file per process, on the pool. The
+# separate tsc-check stage is gone. `tsc` is `npx -p typescript@<TS_VERSION>`: pinned, so the
+# verdict is a function of the tree; no `npx` is a refusal, never a skip (decision 67). Two
+# paths of one `.d.ts` name that reach different real files are a red of the tree.
+# A run of the whole suite joins libs/std, query's consumer cell and every project under `test/`
+# to the root package's tree (`build --target commonJS --workspace-out <out>` into the same
+# folder; a project whose `"targets"` leaves commonJS out, or whose commonJS answer refuses a
+# module, is left out structurally; one that should build and does not is red).
+TS_VERSION=7.0.2
+
+tsc_bin() { # prints the pinned `tsc`, or nothing
+    command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1 || return 1
+    local t
+    t="$(npx -y -p "typescript@$TS_VERSION" -c 'command -v tsc' 2>/dev/null)" || return 1
+    [ -n "$t" ] && [ -x "$t" ] && printf '%s\n' "$t"
+}
+
+# Does the manifest narrow its project away from commonJS? Does the project refuse a module there?
+tsc_excludes_commonjs() { # <manifest>
+    local targets
+    targets="$(tr -d '\n' <"$1" | grep -o '"targets"[[:space:]]*:[[:space:]]*\[[^]]*\]' || true)"
+    [ -n "$targets" ] && ! printf '%s' "$targets" | grep -q '"commonJS"'
+}
+tsc_refused_on_commonjs() { # <project dir>
+    local snap rel
+    [ -d "$1/snapshot" ] || return 1
+    if [ -d "$1/snapshot/targets/commonJS" ] && grep -rqs '^refused ' "$1/snapshot/targets/commonJS"; then return 0; fi
+    [ -d "$1/snapshot/output" ] || return 1
+    while IFS= read -r snap; do
+        rel="${snap#"$1/snapshot/output/"}"
+        [ -f "$1/snapshot/targets/commonJS/$rel" ] && continue
+        grep -qs '^refused ' "$snap" && return 0
+    done < <(find "$1/snapshot/output" -name '*.snap')
+    return 1
+}
+
+# The projects that join the root package's tree, one directory per line; `MISSING:<what>` for a
+# project that must be there and is not.
+tsc_extra_projects() {
+    local d p q=""
+    if [ -f "$lib_root/std/botopink.json" ]; then echo "$lib_root/std"; else echo "MISSING:std at $lib_root/std"; fi
+    for d in "$repo/../query" "$repo/repository/query"; do
+        [ -d "$d/conformance/modules/generic_loader_binding" ] && { q="$d/conformance/modules/generic_loader_binding"; break; }
+    done
+    if [ -n "$q" ]; then echo "$q"; else echo "MISSING:query's conformance/modules/generic_loader_binding (../query or repository/query)"; fi
+    for p in "$here"/test/*/; do
+        p="${p%/}"
+        [ -f "$p/botopink.json" ] || continue
+        tsc_refused_on_commonjs "$p" && continue
+        tsc_excludes_commonjs "$p/botopink.json" && continue
+        echo "$p"
+    done
+}
+
+# One extra project built into the tree: <n> <project dir> <out dir> <log dir>. A project suite
+# that holds `test/` alone is built from a scratch copy whose `src/` is that `test/`.
+tsc_build_extra() {
+    local n="$1" p="$2" out="$3" logs="$4" src="$2"
+    if [ ! -d "$p/src" ] && [ -d "$p/test" ] && ! grep -q '"src"' "$p/botopink.json"; then
+        src="$logs/stage-$n"
+        mkdir -p "$src"
+        cp "$p/botopink.json" "$src/"
+        cp -R "$p/test" "$src/src"
+    fi
+    if ! (cd "$src" && with_timeout 1200 "$compiler" build --target commonJS --workspace-out "$out" $cold_flag >"$logs/b-$n.txt" 2>&1); then
+        { printf '  %s does not build on commonJS:\n' "$p"; strip <"$logs/b-$n.txt" | tail -5 | sed 's/^/    /'; } >"$logs/f-$n.txt"
+    fi
+}
+
+# tsc_tree <tree dir> <log file> — 0 when `tsc` accepts the tree's `.d.ts` and `node` parses its
+# `.js`; otherwise 1, every diagnostic in the log. The tree is `<out>/commonJS/`.
+tsc_tree() {
+    local tree="$1" log="$2" tsc files js bad=0 res name
+    : >"$log"
+    if ! tsc="$(tsc_bin)"; then
+        echo "no node or npx on PATH, or npx could not provide typescript@$TS_VERSION (a refusal, never a skip)" >>"$log"
+        return 1
+    fi
+    files="$(cd "$tree" && find . -name '*.d.ts' -size +0 | sort)"
+    js="$(cd "$tree" && find . -name '*.js' | sort)"
+    [ -n "$files" ] || { echo "the build emitted no .d.ts" >>"$log"; return 1; }
+    [ -n "$js" ] || { echo "the build emitted no .js" >>"$log"; return 1; }
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        echo "$name is in the tree at more than one real path" >>"$log"; bad=1
+    done < <(cd "$tree" && find . -name '*.d.ts' | while IFS= read -r f; do printf '%s\t%s\n' "$(basename "$f")" "$(realpath "$f")"; done | sort -u | cut -f1 | uniq -d)
+    printf '%s\n' "$files" | node -e '
+      const fs = require("fs");
+      const files = fs.readFileSync(0, "utf8").split("\n").filter(Boolean);
+      fs.writeFileSync(process.argv[1], JSON.stringify({
+        compilerOptions: { noEmit: true, strict: true, lib: ["es2022"], module: "commonjs", types: [] },
+        files,
+      }, null, 2) + "\n");
+    ' "$tree/tsconfig.json"
+    if ! res="$(cd "$tree" && "$tsc" -p tsconfig.json 2>&1)"; then
+        printf '%s\n' "$res" >>"$log"; bad=1
+    fi
+    if ! res="$(cd "$tree" && printf '%s\n' "$js" | tr '\n' '\0' | xargs -0 -n 1 -P "${jobs:-4}" node --check 2>&1)"; then
+        printf '%s\n' "$res" | sed 's/^/node --check: /' >>"$log"; bad=1
+    fi
+    return $bad
+}
+
+# The row's check after the root package's commonJS run: the extras join the tree (a run of the
+# whole suite), then `tsc_tree`. <out dir> <scratch dir> <log file>; 0 green.
+tsc_row() {
+    local out="$1" lg="$2/tsc-logs" log="$3" n=0 p f
+    mkdir -p "$lg"
+    : >"$lg/missing.txt"
+    if [ -z "$suite" ]; then
+        local seen=" " nm
+        while IFS= read -r p; do
+            case "$p" in
+                MISSING:*) printf '  %s not found\n' "${p#MISSING:}" >>"$lg/missing.txt" ;;
+                *)
+                    nm="$(tr -d '\n' <"$p/botopink.json" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+                    case "$seen" in *" $nm "*) printf '  two projects of the tree are named %s (%s): a name is one package\n' "$nm" "$p" >>"$lg/missing.txt"; continue ;; esac
+                    seen="$seen$nm "
+                    n=$((n + 1)); printf '%s\0%s\0%s\0%s\0' "$n" "$p" "$out" "$lg" ;;
+            esac
+        done < <(tsc_extra_projects) | xargs -0 -r -n 4 -P "${jobs:-4}" bash -c 'tsc_build_extra "$@"' _
+    fi
+    tsc_tree "$out/commonJS" "$log"
+    local rc=$?
+    for f in "$lg"/missing.txt "$lg"/f-*.txt; do
+        [ -s "$f" ] && { cat "$f" >>"$log"; rc=1; }
+    done
+    return $rc
+}
+
 # One target's run of the root package: one result line per module the program
 # printed a verdict for (`<t>\tmodules/<m>\tok|fail\t…`, a red module's lines under
 # its verdict kept as its log), and a red of its own when the run ended without
@@ -756,6 +937,18 @@ run_root() { # <target> <out file>
       if (problem) text += [t, "modules", "fail", problem].join("\t") + "\n";
       fs.writeFileSync(process.env.OUT, text);
     '
+    # Decision 1013 (3): the commonJS row's tree is checked once, whole.
+    if [ "$t" = commonJS ]; then
+        local tlog="$dir/tsc.log"
+        if [ ! -d "$dir/out/commonJS" ]; then
+            printf '%s\ttsc\tfail\t%s\n' "$t" "the run left no out/commonJS tree to check" >>"$out"
+        elif tsc_row "$dir/out" "$dir" "$tlog"; then
+            printf '%s\ttsc\tok\t\n' "$t" >>"$out"
+        else
+            cp "$tlog" "$work/log-commonJS-tsc"
+            printf '%s\ttsc\tfail\t%s\n' "$t" "tsc --noEmit --strict $TS_VERSION or node --check refused the commonJS tree ($(grep -c . "$tlog") lines)" >>"$out"
+        fi
+    fi
 }
 
 # ── § the libraries ──────────────────────────────────────────────────────────
@@ -1033,8 +1226,8 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f reach_report run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
-export here work compiler lib_root LIB_PROGRAM_TEMPLATE cold_flag
+export -f tsc_bin tsc_excludes_commonjs tsc_refused_on_commonjs tsc_extra_projects tsc_build_extra tsc_tree tsc_row reach_report run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export here repo suite jobs TS_VERSION work compiler lib_root LIB_PROGRAM_TEMPLATE cold_flag
 export LIB_TIMEOUT="$lib_timeout"
 
 if [ $self_test -eq 1 ]; then

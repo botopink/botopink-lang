@@ -1,1 +1,1 @@
-{ "name": "language_tests", "version": "0.0.1", "src": ".", "entry": "root.bp" }
+{ "name": "src_at_package_root", "version": "0.0.1", "src": ".", "entry": "root.bp" }

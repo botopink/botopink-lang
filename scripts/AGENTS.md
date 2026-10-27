@@ -19,7 +19,6 @@ scripts/
 ├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink packages --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell — `modules/<cell>`, `modules/<m>/cells/<c>` — or a case of a package, `modules/<m>/run/src/cases/<c>` / `refused/…` (decision 779; `modules/<m>/cases/<c>`, 765, while one remains) (`zig build test-docs`)
-├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules (and `modules/*/cases/*`, decision 765) emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
@@ -166,7 +165,7 @@ decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build test-conformance`
 (`conformance/`, a red cell fails it; every package of `botopink packages --list` tested there, one program per
 package per target — decision 996 took the libraries' stage into it, `conformance/AGENTS.md`), `zig build test-docs`
-(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
+(`check-docs.sh`), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
@@ -175,7 +174,7 @@ install tests) would otherwise act on the committing repository.
 
 **Stages by name (decision 987).** `gate.sh --list-stages` prints the stage names in the order the
 gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli
-test-conformance test-docs tsc-check test-web`; `--uses-binaries` prints the ones that run the
+test-conformance test-docs test-web`; `--uses-binaries` prints the ones that run the
 installed binaries); `--list-rows` prints CI's rows (decision 1004 (2)) — `<stage>`, or `<stage>
 <target>` once per target for a stage split by target (`PER_TARGET_STAGES`: `test-conformance` on
 commonJS, erlang, beam and wasm) —, `--uses-binaries` again narrowing them; `--stage <name>`
@@ -193,36 +192,22 @@ conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; t
 (`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name> [--target <t>]`, one job per row of
 `--list-rows`, and keeps no list.
 
-### tsc-check.sh
+### The commonJS tree's tsc (decision 1013)
 
-`scripts/tsc-check.sh [<project>…]` builds the library the compiler ships
-(`libs/std/` — decision 326: the shared libraries are repositories of their
-own, checked by their own gates), query's consumer cell
-(`../query/conformance/modules/generic_loader_binding`, the sibling checkout's), every conformance cell (`conformance/modules/<cell>/`, each a project with its own
-manifest, decision 475) and every `conformance/test/<project>/` with `botopink build --target commonJS`
-into a scratch directory and runs `tsc --noEmit --strict --lib
-es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
-per project, (a `conformance/test/<project>/` that holds `test/` alone, as `botopink test` reads it, is built from a scratch copy whose `src/` is that `test/`) and `node --check` over each build's `.js` files (one `node` at a time inside a project) — the run cells execute their module under node, this reaches
-the modules nothing runs: the libraries' and the example's. A cell is left out
-only structurally — its commonJS answer refuses a module (a `refused` record in
-`snapshot/targets/commonJS/`, or in `snapshot/output/` with no commonJS departure
-of its own) or its manifest's `"targets"` list has no `commonJS` — and a project that does not
-build, or emits no `.d.ts` or no `.js`, is red; no `node` on `PATH` is a
-refusal. The projects run `--jobs <N>` at a time (`xargs -P`; default one per CPU, the gate hands
-its share): each writes its diagnostics, verdict and module count to its own file under a scratch
-directory, and the parent prints them in project order, so the log, the verdicts and the exit
-status are a serial run's; a dependency's `.d.ts` is checked whole by every project that reaches it
-(decision 1011 (3): no per-hash skip). `tsc` is
-`npx -p typescript@<TS_VERSION>` (pinned in the script, so the verdict is a
-function of the tree); no `npx` on `PATH` is a refusal, never a skip (decision
-67). A planted typedef defect (`array<number>` for a `pub val` of an array)
-reds `pub_val_across_modules` and `pub_val_in_a_test`; the `libs/` rows were
-added after std's `testing/snapshots.d.ts` named the undeclared prelude record
-`SourceLocation` (6 × `TS2304`) with no stage to see it — the six libraries
-cost ~1.5 s of the stage's ~12 s. A planted host template that is not
-JavaScript (`#[@external(.JavaScript("($0 +* 1"))]`) reds its project with node's
-`SyntaxError` and the file. Since every cell has its own manifest (144 B-29 step H) the walk
-reaches the former single-file cells too: 474 projects and 854 modules, every one accepted.
+There is no tsc-check stage and no `scripts/tsc-check.sh`: the commonJS row of `conformance/run.sh` checks its own
+output. After the root package's `run --target commonJS --out <dir>`, `run.sh` joins `libs/std`, query's consumer
+cell (`../query/conformance/modules/generic_loader_binding`, or `repository/query`) and every project under
+`conformance/test/` to that tree (`build --target commonJS --workspace-out <dir>`, a project whose `"targets"`
+leaves commonJS out, or whose commonJS answer refuses a module, left out; a name shared by two projects is
+refused), writes a `tsconfig.json` listing the tree's non-empty `.d.ts` files (`strict`, `lib es2022`, `module
+commonjs`, `noEmit`), and runs `tsc -p` once over `<dir>/commonJS/` and `node --check` over each `.js` (one
+process per file, `--jobs` at a time). `tsc` is `npx -p typescript@<TS_VERSION>` (`TS_VERSION` in `run.sh`, so the
+verdict is a function of the tree); no `npx` is a refusal, never a skip (decision 67). std's `.d.ts` is one file,
+checked once whole (decision 1011 (3)); two `.d.ts` of one name at different real paths are a red. The verdict is
+the `[commonJS] tsc` line of the report, its diagnostics under it. `run.sh --self-test` plants an error in std's
+`.d.ts`, one in a member's, a `.js` node cannot parse and a duplicated `std@math.d.ts` in hand-made trees. The
+decision is 1013; a typedef `tsc` refuses is a defect of `compiler-core/src/codegen/typescript.zig`, a module
+`node` cannot parse one of `commonJS.zig`.
 
 ### Build mode
 
@@ -343,7 +328,7 @@ their counts (§ Stage times, the plan, the budget) are read with the same `--ta
 a narrowed stage is held to its narrowed plan (the root package's runs on the reached targets,
 its one build before them); the restriction audits stay in every plan. Every stage that is not a cell set — formatting,
 the OTP release, the build, the backend partition audit, `zig build test`, `test-bpmp`,
-the beam export audit, `test-cli`, `test-docs`, `tsc-check`, `test-web` — runs in both
+the beam export audit, `test-cli`, `test-docs`, `test-web` — runs in both
 modes. Only the full gate writes the green-tree record (§ Green-tree record): a step
 gate ran a subset, and a later `--staged` run on `feat` over the same bytes must not
 skip stages because of it.
@@ -445,7 +430,7 @@ the largest whose estimated peak fits `MemAvailable` minus a 3 GiB reserve and t
 144 B-129 — the old `MemAvailable / 768 MiB` bound let ~10 `test-libs` jobs of 1–3.5 GiB run beside test-web's 7 GiB wasm
 compile, and the hook alone took a 31 GB machine to 0–1 GB available), and passes each stage its share through the flag it
 already had: `test-conformance` 80 % (`-- --jobs N`; the libraries' stage is part of it since decision 996, so its per-job figure is a library's, 3700 MiB),
-`tsc-check.sh` 10 % (`--jobs N`, the projects checked at once; the whole total when it is the one pool stage) and `test-web` `-j`
+`test-web` `-j`
 10 %, at least 1 each (`pool_share` of `lib/pool.sh`) — 12 / 1 / 1 on 16 CPUs.
 `modules/compiler-cli/tests/cli_contract.sh` holds the shares, the `--jobs` refusals and
 `lib/gate-mode.sh`'s answers (§ Step gate and full gate) to their contract. `test-docs` had 5 % until 144
@@ -474,7 +459,6 @@ Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 | `test-libs` | 8m21, 2540 | 5m34, 1938 |
 | `test-conformance` | 9m02, 1468 | 7m12, 1019 |
 | `test-docs` | 23s | 32.6s, 28 |
-| `tsc-check` | 55s | 55s, 47 |
 | `test-web` | 1m10 | 1m11, 66 |
 | whole gate | 12m27, 5680 | 10m24, 4616 (a second cold run: 10m36, 4665, every stage within 3 %) |
 

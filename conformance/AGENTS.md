@@ -1955,7 +1955,7 @@ pattern and a range), `modules/decisions-taken/bigint_decimal_strict_json-332/ca
 fit i64` on commonJS, erlang and beam), `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_division_by_zero` (`abort`, commonJS's
 `integer division by zero: / on bigint at src/main.bp:10:14`), `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_across_modules` (a
 sibling's `pub fn`, `pub` record and `pub val` holding `bigint`s; its `.d.ts` through
-`scripts/tsc-check.sh`), and the refusals `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_literal_fraction` (`1.5n`, at the suffix),
+the commonJS row's `tsc` over the tree, `run.sh`), and the refusals `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_literal_fraction` (`1.5n`, at the suffix),
 `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_plus_int_literal` (`2n + 1`, at the `1`), `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_unsuffixed_literal`
 (`val x: bigint = 2`), `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_into_i64` (`val x: i64 = 2n`) and, question 139-a's answer,
 `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_type_test` (`x is i32` over a `bigint`), `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_into_unknown` and

@@ -1,1 +1,1 @@
-{ "name": "language_tests", "version": "0.0.1", "src": "src/" }
+{ "name": "test_in_subdirectory", "version": "0.0.1", "src": "src/" }
