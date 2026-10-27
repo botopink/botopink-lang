@@ -185,8 +185,10 @@ pub const exports = [_]Export{
 /// the `.wat` leaves of `wat/<module>.wat`, and the helpers only they reach.
 /// `path` is the std module that declares them — `text` is `String`'s
 /// (`primitives.bp`), `random` is `io/random`'s, `fs` is `io/fs`'s; a module
-/// whose functions only the wasm codegen calls (`array`, `bigint`, `bytes`,
-/// `heap`) is a unit of its own name. Every module of `exports`, `program`
+/// bound by no std module of its own is named after the primitive it serves
+/// (`array`, `bigint`, `bytes`, decision 1028 (1)), and `heap`, which has no
+/// `.bp`, is the internal unit `__heap` (`std@__heap`, as `std@__rt`): a unit
+/// of its own, outside the core, in a program only when it reaches it. Every module of `exports`, `program`
 /// and `wat/` is listed (a test of compiler-core's holds them to each other).
 pub const Unit = struct { module: []const u8, path: []const u8 };
 
@@ -196,7 +198,7 @@ pub const units = [_]Unit{
     .{ .module = "bytes", .path = "bytes" },
     .{ .module = "array", .path = "array" },
     .{ .module = "bigint", .path = "bigint" },
-    .{ .module = "heap", .path = "heap" },
+    .{ .module = "heap", .path = "__heap" },
     .{ .module = "hash", .path = "hash" },
     .{ .module = "encoding", .path = "encoding" },
     .{ .module = "random", .path = "io/random" },

@@ -309,7 +309,8 @@ what layout a word typed by a type parameter has (the backend does not monomorph
 - **Into std's units** (decision 1026): on `--target wasm` (the `wasi` host) std-wasm is cut into the
   runtime core `std@__rt` and one unit per std module, `std@<path>.wasm` — `root.units` names the std
   module each std-wasm module's exports and `.wat` leaves belong to (`text` → `string`, `random` →
-  `io/random`, `fs` → `io/fs`, the others by their own name); compiler-core's
+  `io/random`, `fs` → `io/fs`, the others by the primitive they serve; `heap`, which has no `.bp`, is
+  the internal unit `std@__heap`, outside the core, decision 1028 (1)); compiler-core's
   `codegen/wat/runtime_unit.zig` decodes the side module whole, places each export and leaf in its
   unit and each shared helper in the core, and a snapshot's module imports the units it reaches (a `wasi`
   build's program too once the C-API runner composes them, decision 1037 (5)). `zig build

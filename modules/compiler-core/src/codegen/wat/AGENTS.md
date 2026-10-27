@@ -1252,8 +1252,10 @@ left alone), and `zig build std-wasm` writes them all into `zig-out/lib/std-wasm
 | `__std_sp`, `__std_sp_check` (std-wasm's stack), and the decoded helpers several std units share, by their symbols | — |
 
 **A std unit** holds one std module's functions: std-wasm's `root.units` names the std module of each
-std-wasm module (`text` → `string`, `number`, `bytes`, `array`, `bigint`, `heap`, `hash`, `encoding`,
-`random` → `io/random`, `fs` → `io/fs`), and the unit exports its decoded functions as
+std-wasm module (`text` → `string`, `number`, `bytes`, `array`, `bigint`, `hash`, `encoding`,
+`random` → `io/random`, `fs` → `io/fs`; a module bound by no std module of its own is named after the
+primitive it serves, and `heap`, which has no `.bp`, is the internal unit `std@__heap` — outside the core,
+in a program only when it reaches it, decision 1028 (1)), and the unit exports its decoded functions as
 `std:<module>.<function>`, its `.wat` leaves as `wat:<module>.<function>` (symbols `__wat_<m>_<f>`,
 apart from a decoded function of the same name), read against the canonical prelude rec group
 (decision 1021 (9)) it declares alone, with the prelude's marshal helpers and `$__random_state` it
