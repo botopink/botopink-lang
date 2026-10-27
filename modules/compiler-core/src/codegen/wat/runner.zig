@@ -402,32 +402,11 @@ pub fn runEntry(
     defer arena_state.deinit();
     const ar = arena_state.allocator();
     var failure: ?[]u8 = null;
-    const bin = (try engine_mod.binaryOf(ar, entry, &failure)) orelse return noRun(alloc, failure.?);
-    const stems = runtimeUnit.unitsOf(ar, bin) catch return noRun(alloc, "the entry's botopink.units section does not read");
-    if (stems.len == 0) return noRun(alloc, "the entry names no unit (no botopink.units section)");
-
-    // Every unit's bytes, the program's own kept for the frame's faces.
-    const all = try ar.alloc([]const u8, stems.len);
-    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
-    for (stems[0 .. stems.len - 1], all[0 .. stems.len - 1]) |stem, *bytes| {
-        const path = try std.fmt.allocPrint(ar, "{s}/{s}.wasm", .{ units.dir, stem });
-        const file: ?[]const u8 = std.Io.Dir.cwd().readFileAlloc(io, path, ar, .unlimited) catch null;
-        bytes.* = file orelse (if (units.runtime) runtimeBytes(stem) else null) orelse
-            return noRun(alloc, try std.fmt.allocPrint(ar, "no unit {s}.wasm beside the entry in {s}", .{ stem, units.dir }));
-        if (runtimeBytes(stem) == null) try program.append(ar, .{ .name = stem, .bytes = bytes.* });
-    }
-    all[stems.len - 1] = bin;
-
-    // A unit whose index does not read is named (decision 1037: a concrete
-    // GC type on its boundary is a compiler defect).
-    for (stems, all) |stem, bytes| if (runtimeBytes(stem) == null) {
-        _ = runtimeUnit.faceOfBytes(ar, bytes) catch |err| return switch (err) {
-            error.OutOfMemory => error.OutOfMemory,
-            else => noRun(alloc, try std.fmt.allocPrint(ar, "the unit {s}'s index does not read: {s}", .{ stem, @errorName(err) })),
-        };
-    };
+    const g = (try gather(ar, io, entry, units, &failure)) orelse return noRun(alloc, failure.?);
+    const stems = g.stems;
+    const all = g.bytes;
     var frame: std.Io.Writer.Allocating = .init(ar);
-    watEmitter.frameOf(ar, &frame.writer, bin, program.items) catch |err| return switch (err) {
+    watEmitter.frameOf(ar, &frame.writer, g.bytes[g.bytes.len - 1], g.program) catch |err| return switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         else => noRun(alloc, try std.fmt.allocPrint(ar, "the entry's component frame cannot be built: {s}", .{@errorName(err)})),
     };
@@ -445,6 +424,55 @@ pub fn runEntry(
         return .{ .status = 1, .trap = failure };
     defer comp.deinit();
     return run(alloc, comp.component, linked, opts);
+}
+
+/// A units entry's units, gathered (`runEntry`, and `pack.zig`'s packed
+/// component, decision 1036): the stems its `botopink.units` names, in
+/// order, the entry last; each one's bytes (`bytes[k]` is `stems[k]`'s, the
+/// entry's binary last); the program's own units (neither the core nor a std
+/// unit), which the frame reads faces from.
+pub const Gathered = struct {
+    stems: []const []const u8,
+    bytes: []const []const u8,
+    program: []const watEmitter.UnitBytes,
+};
+
+/// Read every unit `entry` (binary or `.wat`) names from `units`, in `ar`.
+/// Null with `failure` set (in `ar`) when the entry does not read, names no
+/// unit, a unit is missing, or a unit's index does not read (decision 1037:
+/// a concrete GC type on its boundary is a compiler defect).
+pub fn gather(ar: std.mem.Allocator, io: std.Io, entry: []const u8, units: UnitSource, failure: *?[]u8) Error!?Gathered {
+    const bin = (try engine_mod.binaryOf(ar, entry, failure)) orelse return null;
+    const stems = runtimeUnit.unitsOf(ar, bin) catch {
+        failure.* = try ar.dupe(u8, "the entry's botopink.units section does not read");
+        return null;
+    };
+    if (stems.len == 0) {
+        failure.* = try ar.dupe(u8, "the entry names no unit (no botopink.units section)");
+        return null;
+    }
+    const all = try ar.alloc([]const u8, stems.len);
+    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
+    for (stems[0 .. stems.len - 1], all[0 .. stems.len - 1]) |stem, *bytes| {
+        const path = try std.fmt.allocPrint(ar, "{s}/{s}.wasm", .{ units.dir, stem });
+        const file: ?[]const u8 = std.Io.Dir.cwd().readFileAlloc(io, path, ar, .unlimited) catch null;
+        bytes.* = file orelse (if (units.runtime) runtimeBytes(stem) else null) orelse {
+            failure.* = try std.fmt.allocPrint(ar, "no unit {s}.wasm beside the entry in {s}", .{ stem, units.dir });
+            return null;
+        };
+        if (runtimeBytes(stem) == null) try program.append(ar, .{ .name = stem, .bytes = bytes.* });
+    }
+    all[stems.len - 1] = bin;
+    for (stems, all) |stem, bytes| if (runtimeBytes(stem) == null) {
+        _ = runtimeUnit.faceOfBytes(ar, bytes) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                failure.* = try std.fmt.allocPrint(ar, "the unit {s}'s index does not read: {s}", .{ stem, @errorName(err) });
+                return null;
+            },
+        };
+    };
+    return .{ .stems = stems, .bytes = all, .program = program.items };
 }
 
 /// The compiler's own bytes of the core or the std unit `stem`.

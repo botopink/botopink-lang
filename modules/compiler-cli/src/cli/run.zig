@@ -343,7 +343,7 @@ pub fn declaresMain(arena: std.mem.Allocator, source: []const u8) bool {
 /// (`<src>/<module>.bp`) exists and declares no `fn main` (decision 517). The
 /// message is the same for commonJS, erlang, beam and wasm on either host,
 /// located at the entry module.
-fn refuseWithoutMain(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, module: []const u8) !bool {
+pub fn refuseWithoutMain(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig, module: []const u8) !bool {
     const path = try std.fmt.allocPrint(arena, "{s}/{s}.bp", .{ proj.srcDir(), module });
     const source = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(16 * 1024 * 1024)) catch return false;
     if (declaresMain(arena, source)) return false;

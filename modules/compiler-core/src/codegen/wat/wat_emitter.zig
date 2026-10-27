@@ -187,6 +187,21 @@ pub const FrameError = Error || std.mem.Allocator.Error || error{
 /// and `bp_host`; `wasi:cli/run`'s `run` calls every unit's `__bp_init` in
 /// order, then the entry's `_start`. The frame carries no unit's text.
 pub fn renderFrame(w: *Writer, units: []const FrameUnit) FrameError!void {
+    return renderFrameAs(w, units, .import);
+}
+
+/// How the frame holds its units: `.import` — each a core module the
+/// component imports as `unit-<k>`, declared by its face (the runner's,
+/// decision 1032); `.slot` — each a core module defined in the component
+/// whose body is a placeholder exporting only `pack_slot_prefix ++ "<k>"`,
+/// which `pack.zig` replaces with the unit's own bytes (decision 1036).
+pub const FrameMode = enum { import, slot };
+
+/// The export a `.slot` frame's placeholder module `k` carries, `<prefix><k>`.
+pub const pack_slot_prefix = "botopink.pack-slot-";
+
+/// `renderFrame` with the units held as `mode` says.
+pub fn renderFrameAs(w: *Writer, units: []const FrameUnit, mode: FrameMode) FrameError!void {
     if (units.len == 0) return error.NoEntry;
     const entry = units[units.len - 1];
     var has_host = false;
@@ -201,11 +216,14 @@ pub fn renderFrame(w: *Writer, units: []const FrameUnit) FrameError!void {
     try w.writeAll(component_imports);
     if (has_host) try w.writeAll(component_host_imports);
     if (has_fs) try w.writeAll(component_fs_imports);
-    for (units, 0..) |u, k| {
-        try w.print("  (import \"unit-{d}\" (core module $u{d}\n", .{ k, k });
-        try w.writeAll(u.face.text);
-        try w.writeAll("  ))\n");
-    }
+    for (units, 0..) |u, k| switch (mode) {
+        .import => {
+            try w.print("  (import \"unit-{d}\" (core module $u{d}\n", .{ k, k });
+            try w.writeAll(u.face.text);
+            try w.writeAll("  ))\n");
+        },
+        .slot => try w.print("  (core module $u{d} (func (export \"" ++ pack_slot_prefix ++ "{d}\")))\n", .{ k, k }),
+    };
     try w.writeAll(component_adapter_head);
     if (has_host) try w.writeAll(component_host_shim);
     if (has_fs) try w.writeAll(component_fs_shim);
@@ -263,6 +281,11 @@ pub const UnitBytes = struct {
 /// each std unit's face the runtime's index, each program unit's (`program`,
 /// by stem) and the entry's read from their bytes.
 pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8, program: []const UnitBytes) (FrameError || runtimeUnit.FaceError || error{RuntimeUnitUnavailable})!void {
+    return frameOfAs(alloc, w, entry, program, .import);
+}
+
+/// `frameOf` with the units held as `mode` says (`.slot`: `pack.zig`).
+pub fn frameOfAs(alloc: std.mem.Allocator, w: *Writer, entry: []const u8, program: []const UnitBytes, mode: FrameMode) (FrameError || runtimeUnit.FaceError || error{RuntimeUnitUnavailable})!void {
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
     const ar = arena_state.allocator();
@@ -287,7 +310,7 @@ pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8, program:
             u.* = .{ .name = s, .face = try runtimeUnit.faceOfBytes(ar, p.bytes) };
         }
     }
-    try renderFrame(w, units);
+    try renderFrameAs(w, units, mode);
 }
 
 const component_imports =

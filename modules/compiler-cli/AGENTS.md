@@ -183,6 +183,19 @@ compiler-cli/
 │   │                          the build wrote, the core first and the entry last;
 │   │                          both answer as on erlang through the runner
 │   ├── wasm_std_unit_per_module/ ← its fixtures: `hello`, `files` (also the browser column: `compiler-web/tests/smoke.js` composes them in the page, 1069 (5))
+│   ├── wasm_pack.sh         ← cell `wasm_pack_runs_standalone` (decisions 1036, 1079 (2)):
+│   │                          `one`, `two` (two modules) and `files` (`io.fs`) packed
+│   │                          into `dist/<pkg>.wasm` (built first when `out/wasm/` is
+│   │                          absent); always structurally: every top-level import
+│   │                          `wasi:*` (no `unit-<k>`, `std@…`, `bp_*`), every unit
+│   │                          file of `out/wasm/` embedded byte for byte, a second
+│   │                          pack the same bytes, `build` writing no `dist/`; then
+│   │                          a standalone `wasmtime run` answering what `run
+│   │                          --target wasm` answers — skipped, named, without the
+│   │                          `wasmtime` CLI (CI's `pack` job alone installs it)
+│   ├── wasm_pack/           ← its fixtures: `one`, `two`, `files`; `component_imports.js`
+│   │                          (node: a component's top-level imports, and which unit
+│   │                          files are not embedded in it)
 │   ├── build_modes_same_answer.sh ← cell `build_modes_same_answer` as a CLI case
 │   │                          (decision 798 (5); the suite builds a package one
 │   │                          way): `build_modes/app` (a decorator's member and

@@ -16,5 +16,6 @@ test {
     _ = @import("./codegen/tests.zig");
     _ = @import("./codegen/wat/engine.zig");
     _ = @import("./codegen/wat/runner.zig");
+    _ = @import("./codegen/wat/pack.zig");
     _ = @import("./codegen/wat/comptime_host.zig");
 }

@@ -49,6 +49,7 @@ pub fn comptimeUnits(allocator: std.mem.Allocator, outputs: []const ComptimeOutp
 /// runner over it (decisions 1032, 1034); native builds only.
 pub const wasmEngine = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/engine.zig");
 pub const wasmRunner = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/runner.zig");
+pub const wasmPack = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/pack.zig");
 /// The comptime host (decision 1035 (2)): natively over the runner (C3a), on
 /// a wasm host the page's engine through `bp_host.run_units` (C3b, 1038 (2)).
 pub const wasmComptimeHost = if (@import("builtin").cpu.arch.isWasm()) @import("./codegen/wat/comptime_page.zig") else @import("./codegen/wat/comptime_host.zig");

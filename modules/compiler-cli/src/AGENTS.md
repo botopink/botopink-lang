@@ -20,12 +20,12 @@ src/
 
 | File | Role |
 |---|---|
-| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `test`, `format` (alias `fmt`), `new`, `clean`, `cell` (`new <path>` / `check <cell|directory>`), `help` (`--help`/`-h`), `version` (`--version`/`-v`); `<command> --help` / `-h` — before a `--` — prints the same `HELP` (`wantsHelp`), whose `clean` paragraph says what `clean` deletes. Carries the unit tests for every parser (contract rows C10–C12, C14). |
+| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `pack` (decision 1036), `test`, `format` (alias `fmt`), `new`, `clean`, `cell` (`new <path>` / `check <cell|directory>`), `help` (`--help`/`-h`), `version` (`--version`/`-v`); `<command> --help` / `-h` — before a `--` — prints the same `HELP` (`wantsHelp`), whose `clean` paragraph says what `clean` deletes. Carries the unit tests for every parser (contract rows C10–C12, C14). |
 
 ## Development notes
 
 - `main.zig` keeps a `parseXxxOpts(...)` helper per command (`parseBuildOpts`,
-  `parseCheckOpts`, `parseRunOpts`, `parseTestOpts`, `parseFormatOpts`,
+  `parseCheckOpts`, `parseRunOpts`, `parsePackOpts`, `parseTestOpts`, `parseFormatOpts`,
   `parseNewOpts`, `parseCellOpts`, `parseNoOpts` for `clean`) — pure: they
   return `ArgError` with the offending token in `ArgDiag`, and `usageError`
   prints it (exit 1). **No parser drops a token**: an unknown flag, an

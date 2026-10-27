@@ -38,6 +38,11 @@
 #              artifacts and runs with `--prebuilt --prebuilt-sets`: the row only
 #              runs `run --target <t>`, no comptime, and a member whose handed set
 #              it built again is a red (`prebuilt sets: N reused, M built again`).
+#   pack       `wasm_pack_runs_standalone` (`modules/compiler-cli/tests/wasm_pack.sh`,
+#              decisions 1036, 1079 (2)) with `build`'s binaries: the one job given
+#              the pinned wasmtime CLI (ci-setup's `wasmtime-cli` input), so the packed
+#              component is run by a standalone `wasmtime run`; a failed download
+#              is this job's red alone. Elsewhere the script skips that half, named.
 #   gate       the run's one verdict: red when any job above is (a matrix job
 #              is red when any of its rows is).
 #
@@ -261,11 +266,38 @@ jobs:
           TARGET: ${{ matrix.row.target }}
         run: bash scripts/gate.sh --cold --portable --prebuilt --prebuilt-sets --stage "$STAGE" ${TARGET:+--target "$TARGET"}
 
+  # Decisions 1036, 1079 (2): the one job with the wasmtime CLI, for `wasm_pack_runs_standalone`.
+  pack:
+    name: wasm_pack_runs_standalone (tests/wasm_pack.sh)
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+      - uses: ./.github/actions/ci-setup
+        with:
+          wasmtime-cli: 'true'
+      - uses: actions/download-artifact@v4
+        with:
+          name: zig-out
+      - name: Unpack the binaries
+        shell: bash
+        run: tar -xzf zig-out.tgz
+      # The cell's wasmtime half must run here, never skip.
+      - name: The wasmtime CLI is on PATH
+        shell: bash
+        run: wasmtime --version
+      - name: modules/compiler-cli/tests/wasm_pack.sh
+        shell: bash
+        run: BOTOPINK_BIN="$PWD/zig-out/bin/botopink" bash modules/compiler-cli/tests/wasm_pack.sh
+
   # The run's one verdict, for a front's Conformance step (decision 477).
   gate:
     name: scripts/gate.sh
     if: always()
-    needs: [stages, build, unit, installed, sets, conformance]
+    needs: [stages, build, unit, installed, sets, conformance, pack]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:

@@ -1,0 +1,13 @@
+pub type Point(x: i32, y: i32)
+
+pub fn greet(name: string) -> string {
+    return "hi, " + name;
+}
+
+pub fn shift(p: Point, d: i32) -> Point {
+    return Point(x: p.x + d, y: p.y);
+}
+
+test "greet says hi" {
+    assert (greet("bo") == "hi, bo");
+}

@@ -6,6 +6,7 @@
 /// Commands:
 ///   build    Compile the project to the configured target
 ///   run      Compile and run the project
+///   pack     Pack the wasm program into one WASI component, dist/<pkg>.wasm
 ///   check    Type-check without generating code
 ///   format   Format source files
 ///   new      Create a new botopink project
@@ -19,6 +20,7 @@ const reporter = @import("./cli/reporter.zig");
 const build_cmd = @import("./cli/build.zig");
 const check_cmd = @import("./cli/check.zig");
 const run_cmd = @import("./cli/run.zig");
+const pack_cmd = @import("./cli/pack.zig");
 const format_cmd = @import("./cli/format_cmd.zig");
 const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
@@ -54,6 +56,7 @@ const HELP =
     \\Commands:
     \\  build    Build the package's .bpr set (no --target), or compile it to a target
     \\  run      Compile and run the project
+    \\  pack     Pack the wasm program into one WASI p2 component, dist/<package>.wasm
     \\  test     Compile and run every test block in the project
     \\  check    Type-check without generating code
     \\  format   Format source files
@@ -111,6 +114,13 @@ const HELP =
     \\  --                           Pass remaining args to the program
     \\At a workspace root, `run --target <t>` builds and runs every member, each in its own process, over one --out folder,
     \\with `build`'s lines, count and --timeout
+    \\
+    \\Options for `pack` (the one command that packs; `build` and `run` write separate units):
+    \\                               Builds on wasm first when out/wasm/ is stale or absent (as `run` does), then writes
+    \\                               dist/<package>.wasm: every unit the program reaches embedded, runnable by `wasmtime run`
+    \\  --out <dir>                  The build's output directory the units are read from (default: out)
+    \\  --cold                       The build reads nothing from the code cache
+    \\  --cache-root <dir>           File the code cache and the unit cache under <dir>
     \\
     \\Options for `test`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
@@ -294,6 +304,11 @@ fn dispatch(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, cmd, "run")) {
         const opts = parseRunOpts(arena, rest, &diag) catch |err| return usageError(cmd, err, diag);
         return run_cmd.run(gpa, io, opts, env_map);
+    }
+
+    if (std.mem.eql(u8, cmd, "pack")) {
+        const opts = parsePackOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
+        return pack_cmd.run(gpa, io, opts, env_map);
     }
 
     if (std.mem.eql(u8, cmd, "test")) {
@@ -557,6 +572,23 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
     return opts;
 }
 
+fn parsePackOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!pack_cmd.Options {
+    var opts: pack_cmd.Options = .{};
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const flag = splitFlag(args[i]);
+        if (std.mem.eql(u8, flag.name, "--out")) {
+            opts.out_dir = try flagValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--cold")) {
+            try noValue(flag, diag);
+            opts.cold = true;
+        } else if (std.mem.eql(u8, flag.name, "--cache-root")) {
+            opts.cache_root = try dirValue(args, &i, flag, diag);
+        } else return reject(args[i], diag);
+    }
+    return opts;
+}
+
 fn parseTestOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!test_cmd.Options {
     var opts: test_cmd.Options = .{};
     var i: usize = 0;
@@ -763,6 +795,17 @@ test "build, run and test take --cold, which carries no value (decision 509 (5))
     try std.testing.expectError(error.UnknownFlag, parseBuildOpts(argv(&.{ "--jobs", "4" }), &d));
     try std.testing.expectError(error.UnknownFlag, parseRunOpts(arena_inst.allocator(), argv(&.{ "--jobs", "4" }), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"--cold=yes"}), &d));
+}
+
+test "pack takes --out, --cold and --cache-root, and no --target (decision 1036)" {
+    var d: ArgDiag = .{};
+    const o = try parsePackOpts(argv(&.{ "--out=build", "--cold", "--cache-root", "c" }), &d);
+    try std.testing.expectEqualStrings("build", o.out_dir);
+    try std.testing.expect(o.cold);
+    try std.testing.expectEqualStrings("c", o.cache_root.?);
+    try std.testing.expectEqualStrings("out", (try parsePackOpts(argv(&.{}), &d)).out_dir);
+    try std.testing.expectError(error.UnknownFlag, parsePackOpts(argv(&.{ "--target", "wasm" }), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parsePackOpts(argv(&.{"app.wasm"}), &d));
 }
 
 test "C11: format rejects an unknown flag and keeps files" {
