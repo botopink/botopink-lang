@@ -53,10 +53,10 @@ at src/main.bp:8:15
 refused error: type mismatch: expected i32, got string
 at src/main.bp:6:25
 == init_executor_answers
-refused error: the executor answers nothing, and its last expression, written without `;`, is a `i32`
+refused error: init-executor-value: the executor answers nothing, and its last expression, written without `;`, is a `i32`
 at src/main.bp:10:24
 == init_executor_named_answers
-refused error: the executor answers nothing, and its last expression, written without `;`, is a `i32`
+refused error: init-executor-value: the executor answers nothing, and its last expression, written without `;`, is a `i32`
 at src/main.bp:9:19
 == method_tail_in_void
 refused error: `Counter.bump` answers nothing, and its last expression, written without `;`, is a `i32`
