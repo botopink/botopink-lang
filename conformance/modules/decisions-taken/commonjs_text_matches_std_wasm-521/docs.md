@@ -12,4 +12,4 @@
 [cases/tuple_in_type_parameter_slot/src/main.bp](cases/tuple_in_type_parameter_slot/src/main.bp)
 [cases/tuple_variable_in_generic_text/src/main.bp](cases/tuple_variable_in_generic_text/src/main.bp)
 
-Proved also by [generic_float_record_text](../template_hole_writes_print_text-530/run/src/cases/generic_float_record_text/mod.bp)
+Proved also by [generic_float_record_text](../template_hole_writes_print_text-530/cases/generic_float_record_text/src/main.bp)

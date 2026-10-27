@@ -10,6 +10,6 @@ between the first two — `await` reads both. The same holds for `Component<R>` 
 Cells that also bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_type_mismatch`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_lambda_async`.
 
 [cases/async_resolve_unmarked/src/main.bp](cases/async_resolve_unmarked/src/main.bp)
-[cells/unmarked_async_bare_value_refused/src/main.bp](cells/unmarked_async_bare_value_refused/src/main.bp)
-[cells/unmarked_async_throw_refused/src/main.bp](cells/unmarked_async_throw_refused/src/main.bp)
-[cells/unmarked_component_bare_value_refused/src/main.bp](cells/unmarked_component_bare_value_refused/src/main.bp)
+[cells/unmarked_async_bare_value_refused/src/main.bp](cases/unmarked_async_bare_value_refused/src/main.bp)
+[cells/unmarked_async_throw_refused/src/main.bp](cases/unmarked_async_throw_refused/src/main.bp)
+[cells/unmarked_component_bare_value_refused/src/main.bp](cases/unmarked_component_bare_value_refused/src/main.bp)

@@ -12,4 +12,4 @@ Proved also by [host_node_task_result](../binding_result_true_maps_host_errors-4
 Proved also by [std_asserts_throws_over_attempt](../failure_kinds_exact_every_target-527/cases/std_asserts_throws_over_attempt/src/main.bp)
 Proved also by [std_failure_attempt](../failure_kinds_exact_every_target-527/cases/std_failure_attempt/src/main.bp)
 Proved also by [std_failure_types](../failure_kinds-492/cases/std_failure_types/src/main.bp)
-Proved also by [std_host_error_variants](../std_module_error_enum-486/cells/std_host_error_variants/src/main.bp)
+Proved also by [std_host_error_variants](../std_module_error_enum-486/cases/std_host_error_variants/src/main.bp)

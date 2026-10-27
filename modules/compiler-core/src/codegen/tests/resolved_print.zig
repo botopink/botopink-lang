@@ -34,7 +34,7 @@ const cells = [_][]const u8{
     "decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/decl_member_owner",
     // Templates.
     "decisions-taken/template_called_with_raw_text-577/cases/template_annotation",
-    "decisions-taken/template_called_with_raw_text-577/cells/template_known_at_build",
+    "decisions-taken/template_called_with_raw_text-577/cases/template_known_at_build",
     "decisions-taken/template_call_type_is_built_code-426/cases/template_call_typed_by_expansion",
     "decisions-taken/ast_fn_node_builds_mock_member-753/cases/code_template_builds_ast",
     // Top-level `comptime` blocks and their executors.

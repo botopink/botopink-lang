@@ -7,4 +7,4 @@
 [cases/import_type_method_result/src/main.bp](cases/import_type_method_result/src/main.bp)
 
 Proved also by [import_std_folder_namespace](../import_alias_on_type_and_folder_namespace-110/cells/import_std_folder_namespace/src/main.bp)
-Proved also by [namespace_import_module](../shorthand_import_refused-337/cells/namespace_import_module/src/main.bp)
+Proved also by [namespace_import_module](../shorthand_import_refused-337/cases/namespace_import_module/src/main.bp)

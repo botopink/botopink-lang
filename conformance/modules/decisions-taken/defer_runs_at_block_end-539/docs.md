@@ -8,4 +8,4 @@
 [cases/defer_reads_binding_at_defer/src/main.bp](cases/defer_reads_binding_at_defer/src/main.bp)
 [cases/defer_reads_var_set_in_arm/src/main.bp](cases/defer_reads_var_set_in_arm/src/main.bp)
 
-Proved also by [fs_file_defer_close](../fs_typed_error_shape-540/cells/fs_file_defer_close/src/main.bp)
+Proved also by [fs_file_defer_close](../fs_typed_error_shape-540/cases/fs_file_defer_close/src/main.bp)

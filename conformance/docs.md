@@ -1860,7 +1860,7 @@ A template hole writes the text `print` writes for every value (decision 530) â€
 a `string` writes itself. A type implementing `Display` writes its `display()` in a hole as in `print`.
 A `bytes` hole stays refused.
 
-<!-- example: modules/decisions-taken/template_hole_writes_print_text-530/run/src/cases/template_hole_prints_every_value -->
+<!-- example: modules/decisions-taken/template_hole_writes_print_text-530/cases/template_hole_prints_every_value -->
 
 ### Numeric literals
 
@@ -5816,7 +5816,7 @@ record's field.
 
 <!-- example: modules/decisions-taken/commonjs_text_matches_std_wasm-521/cases/float_text_everywhere -->
 <!-- example: modules/decisions-taken/commonjs_text_matches_std_wasm-521/cases/generic_float_text -->
-<!-- example: modules/decisions-taken/template_hole_writes_print_text-530/run/src/cases/generic_float_record_text -->
+<!-- example: modules/decisions-taken/template_hole_writes_print_text-530/cases/generic_float_record_text -->
 
 | Adapter | Signature | Answers |
 |---|---|---|
