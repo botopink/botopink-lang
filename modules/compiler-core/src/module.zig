@@ -69,12 +69,52 @@ pub const PackageFiles = struct {
     /// relative to `root`: every `rel` read through this reader is under it,
     /// and the log notes it as `root`'s path. Empty for the package itself.
     dir: []const u8 = "",
+    /// Decision 993 (3) — the files under a directory of the package, each
+    /// path relative to it with `/` separators, sorted; a directory that is
+    /// not there has none. Null for a reader that cannot list (an in-memory
+    /// one): it then answers no file.
+    list: ?*const fn (io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const []const u8 = null,
 
     pub const ReadError = error{ FileNotFound, Unreadable, OutOfMemory };
 
     /// The package at `root` on disk — the CLI's and the language server's.
     pub fn disk(io: std.Io, root: []const u8) PackageFiles {
-        return .{ .root = root, .io = io, .read = readDisk };
+        return .{ .root = root, .io = io, .read = readDisk, .list = listDisk };
+    }
+
+    /// The files under `rel`, a directory of the package (`list`), each
+    /// relative to `rel`, sorted; each is noted in the log as a read would
+    /// note it.
+    pub fn listFiles(self: PackageFiles, arena: std.mem.Allocator, rel: []const u8) ReadError![]const []const u8 {
+        const lister = self.list orelse return &.{};
+        const full = if (self.dir.len == 0) rel else std.fs.path.join(arena, &.{ self.dir, rel }) catch return error.OutOfMemory;
+        const files = try lister(self.io, arena, self.root, full);
+        if (self.log) |l| for (files) |f| l.note(std.fs.path.join(arena, &.{ full, f }) catch return error.OutOfMemory);
+        return files;
+    }
+
+    fn listDisk(io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const []const u8 {
+        const path = std.fs.path.join(arena, &.{ root, rel }) catch return error.OutOfMemory;
+        var dir = std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true, .access_sub_paths = true }) catch |err| switch (err) {
+            error.FileNotFound, error.NotDir => return &.{},
+            else => return error.Unreadable,
+        };
+        defer dir.close(io);
+        var walker = dir.walk(arena) catch return error.OutOfMemory;
+        defer walker.deinit();
+        var out: std.ArrayListUnmanaged([]const u8) = .empty;
+        while (walker.next(io) catch return error.Unreadable) |entry| {
+            if (entry.kind != .file) continue;
+            const p = arena.dupe(u8, entry.path) catch return error.OutOfMemory;
+            std.mem.replaceScalar(u8, p, '\\', '/');
+            out.append(arena, p) catch return error.OutOfMemory;
+        }
+        std.mem.sort([]const u8, out.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        return out.items;
     }
 
     /// The reader of the package at `sub`, a directory of this one

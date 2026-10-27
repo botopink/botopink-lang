@@ -89,7 +89,9 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   record `Asset(path, bytes, size, hash)`: `infer.zig` `inferEmbedBuiltin`
   reads the file through the module's reader (`Module.files`, a
   `PackageFiles` the CLI and the language server hand — `compiler-web` none,
-  so `embed-no-reader`) and rewrites the call into the constructor, its bytes a
+  so `embed-no-reader`; its `list` / `listFiles` answers the files under a
+  directory, what `compiler.load` reads a package's `test/` suite through,
+  decision 993 (3)) and rewrites the call into the constructor, its bytes a
   `bytesLit` every backend embeds; `comptime.zig` `withAssetDecl` prepends the
   record. A path through a `comptime` parameter is read at each call, in the
   caller's package, and passed as a hidden last parameter

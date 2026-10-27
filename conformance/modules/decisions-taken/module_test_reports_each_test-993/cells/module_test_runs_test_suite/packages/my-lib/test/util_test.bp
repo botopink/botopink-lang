@@ -1,0 +1,18 @@
+import {compiler, io.terminal.print} from "std";
+import {a.double};
+import {b.quadruple};
+
+fn atLeast(n: i32, floor: i32) -> Result<void, string> {
+    if (n < floor) throw "below the floor";
+    return;
+}
+
+test "util: a suite file imports the package's modules" {
+    print("from " + (comptime compiler.src()).file);
+    assert double(3) == 6;
+    assert quadruple(1) == 4;
+}
+
+test "util: a failing suite test is a case, and the next runs" {
+    try atLeast(double(2), 5);
+}

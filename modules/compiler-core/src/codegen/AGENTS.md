@@ -1877,7 +1877,9 @@ codegen/
   modules from every other package's closure; commonJS binds what a module
   imports from it to a function that drops the package's entries from node's
   `require` cache (its root's directory) and `require`s it when called (its
-  body runs at every `run()`, decision 806 (3)), and erlang (`emitErlangModule`)
+  body runs at every `run()`, decision 806 (3)) — a module of the same loaded
+  package (its `test/` suite, decision 993 (3)) imports it as any package's
+  module does —, and erlang (`emitErlangModule`)
   and beam (`emitFn`) begin its root's `__bp_loaded_main` with the
   `'_botopink_init'/0` calls of its closure and its own; each module of the
   package with run-time state (`hasRunState`: a cached `val`, a module `var` of

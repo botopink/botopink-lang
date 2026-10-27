@@ -122,11 +122,21 @@ pub fn endsWithLoadedEntry(name: []const u8) bool {
 /// a string literal's lexeme (a NUL no `main`'s error text starts with).
 pub const off_marker = "\\0bp-off:";
 
-/// The package a loaded file is compiled into when a `run` reaches it.
+/// The package a loaded file is compiled into when a `run` reaches it: an
+/// identifier, since its aliases are names in the program (`runAlias`,
+/// `testsAlias`) — each `/` is `__`, any other byte that is not a letter, a
+/// digit or `_` is `_x<hex>` (a resolver's directory, decision 993 (2), is a
+/// whole path: `botopink-lang`, `.tasks`).
 pub fn packageName(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
     const stem = if (std.mem.endsWith(u8, path, ".bp")) path[0 .. path.len - 3] else path;
-    const out = try std.mem.replaceOwned(u8, arena, stem, "/", "__");
-    return std.mem.concat(arena, u8, &.{ package_prefix, out });
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    try out.appendSlice(arena, package_prefix);
+    for (stem) |c| switch (c) {
+        '/' => try out.appendSlice(arena, "__"),
+        'a'...'z', 'A'...'Z', '0'...'9', '_' => try out.append(arena, c),
+        else => try out.print(arena, "_x{x:0>2}", .{c}),
+    };
+    return out.items;
 }
 
 /// Whether `package` is a loaded file's (`packageName`).
@@ -166,6 +176,11 @@ pub const Entry = struct {
     /// with no resolver (the caller's modules are the package's then). They
     /// live as long as the process.
     dependencies: []const Module = &.{},
+    /// Decision 993 (3) — the package's `test/` suite (`testSuite`): every
+    /// `.bp` file under its `test/` directory, each named by its path there
+    /// without `.bp`, as `botopink test` names them. They join the program
+    /// only when a `` `test`() `` reaches the package (`packageModules`).
+    test_modules: []const Module = &.{},
 };
 
 /// The state of one top-level compile (`comptime.compileWith` enters and
@@ -1069,6 +1084,9 @@ pub const test_method = "`test`";
 /// one `test_entry_type` each, every module's — its body and the package's
 /// run first, anew at every `` `test`() `` as at every `run()` (806 (3)).
 pub const loaded_tests_fn = "__bp_loaded_tests";
+/// The local name of the `k`-th `test/` suite module's `tests_fn` in a
+/// tested package's root (`withTestFns`).
+const suite_alias_prefix = "__bp_suite_";
 /// `loaded_tests_fn` of the root the emit puts in place of a package the
 /// target refuses (`codegen/loaded_targets.zig`, decision 989 (3)): it throws
 /// `off_marker` as `loaded_main_off_fn` does.
@@ -1255,7 +1273,8 @@ pub fn testsAsync(entry: Entry) !bool {
     defer scratch_state.deinit();
     const scratch = scratch_state.allocator();
     var found = false;
-    outer: for (entry.modules) |m| {
+    const all = try std.mem.concat(scratch, Module, &.{ entry.modules, entry.test_modules });
+    outer: for (all) |m| {
         var lx = Lexer.init(m.source);
         const tokens = lx.scanAll(scratch) catch continue;
         var p = Parser.init(tokens);
@@ -1333,6 +1352,14 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
         .mod => |m| try text.print(arena, ".append({s}." ++ tests_fn ++ "())", .{m.name}),
         else => {},
     };
+    // The package's `test/` suite after its `src/` tests, in path order, as
+    // `botopink test` runs it: each suite module's own registry.
+    var suite_imports: std.ArrayListUnmanaged(u8) = .empty;
+    if (is_root) for (entry.test_modules, 0..) |sm, s| {
+        const logical = try std.mem.replaceOwned(u8, arena, sm.path, "/", ".");
+        try suite_imports.print(arena, "import {{{s}." ++ tests_fn ++ " as " ++ suite_alias_prefix ++ "{d}}};\n", .{ logical, s });
+        try text.print(arena, ".append(" ++ suite_alias_prefix ++ "{d}())", .{s});
+    };
     try text.appendSlice(arena, ";\n}\n");
     if (is_root) try text.print(arena, "pub fn " ++ loaded_tests_fn ++ "() -> Result<{s}[], string> {{\n    return " ++ tests_fn ++ "();\n}}\n" ++
         "pub fn " ++ loaded_tests_off_fn ++ "() -> Result<{s}[], string> {{\n    throw \"\";\n}}\n", .{ entry_type, entry_type });
@@ -1346,9 +1373,14 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
     // A package with no `main` is tested too (993 (3)): its root keeps no
     // `loaded_main_fn`, whose body calls the `main` it lacks (`packageModules`).
     const drop_main = is_root and has_loaded_main and !entry.has_main;
-    const decls = try arena.alloc(ast.DeclKind, program.decls.len + generated.decls.len - n_tests - @intFromBool(drop_main));
+    const suite = if (suite_imports.items.len == 0) ast.Program{ .decls = &.{} } else parseShifted(arena, try lasting(suite_imports.items), helper_first_line + 200, null) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => @panic("Module.test: the test suite's imports do not parse"),
+    };
+    const decls = try arena.alloc(ast.DeclKind, suite.decls.len + program.decls.len + generated.decls.len - n_tests - @intFromBool(drop_main));
+    @memcpy(decls[0..suite.decls.len], suite.decls);
     var k: usize = 0;
-    var i: usize = 0;
+    var i: usize = suite.decls.len;
     for (program.decls) |d| {
         if (drop_main and d == .@"fn" and std.mem.eql(u8, d.@"fn".name, loaded_main_fn)) continue;
         defer i += 1;
@@ -1433,7 +1465,27 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
             .files = m.files,
         };
     }
-    return out;
+    // Decision 993 (3) — a tested package's `test/` suite joins with it.
+    const tested = for (state.tests.items) |p| {
+        if (std.mem.eql(u8, p, entry.path)) break true;
+    } else false;
+    if (!tested or entry.test_modules.len == 0) return out;
+    const suite = try arena.alloc(Module, entry.test_modules.len);
+    for (entry.test_modules, suite) |m, *s| s.* = .{
+        .path = try lasting(try std.mem.concat(arena, u8, &.{ pkg, "/", m.path })),
+        .source = try lasting(m.source),
+        .srcPath = try lasting(m.srcPath),
+        .package = try lasting(pkg),
+        .targets = targets,
+        .files = m.files,
+    };
+    // Each suite module imports the package's modules and the root imports
+    // each suite's registry: the suite compiles before the root.
+    var ordered: std.ArrayListUnmanaged(Module) = .empty;
+    for (entry.modules, out) |m, o| if (!m.root) try ordered.append(arena, o);
+    try ordered.appendSlice(arena, suite);
+    for (entry.modules, out) |m, o| if (m.root) try ordered.append(arena, o);
+    return ordered.items;
 }
 
 /// A manifest's `targets` as `loaded_info_fn` writes them: the names
@@ -1885,7 +1937,38 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
             else => if (o.target_trace) |t| try printed.appendSlice(scratch, t.build_output),
         }
     }
-    return .{ .diagnostics = try remember(req.path, manifest.name, printed.items, refusals.items, own, own_dependencies, main_of, targets) };
+    const ds = try remember(req.path, manifest.name, printed.items, refusals.items, own, own_dependencies, main_of, targets);
+    if (state.entries.getPtr(req.path)) |e| e.test_modules = try testSuite(stateArena(), pkg_files, targets, wasm_host);
+    return .{ .diagnostics = ds };
+}
+
+/// Decision 993 (3) — the `test/` suite of the package `files` reads: each
+/// `.bp` file under `test/`, named by its path there without `.bp` (`a_test`,
+/// `nested/b_test`), its `@src().file` the package-relative path, in path
+/// order — the modules `botopink test` scans beside `src/`.
+fn testSuite(arena: std.mem.Allocator, files: PackageFiles, targets: ?moduleMod.Targets, wasm_host: ast.WasmHost) ![]const Module {
+    const listed = files.listFiles(arena, "test") catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return &.{},
+    };
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    for (listed) |rel| {
+        if (!std.mem.endsWith(u8, rel, ".bp") or std.mem.endsWith(u8, rel, ".d.bp")) continue;
+        const file = try std.mem.concat(arena, u8, &.{ "test/", rel });
+        const source = files.readFile(arena, file) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => continue,
+        };
+        try out.append(arena, .{
+            .path = try arena.dupe(u8, rel[0 .. rel.len - 3]),
+            .source = source,
+            .srcPath = file,
+            .targets = targets,
+            .wasm_host = wasm_host,
+            .files = files,
+        });
+    }
+    return out.items;
 }
 
 const MainOf = struct { has: bool = false, result: bool = false, async_: bool = false };
@@ -1984,7 +2067,59 @@ fn gatherTree(scratch: std.mem.Allocator, arena: std.mem.Allocator, req: Request
         }
     }
     std.mem.reverse(Module, out.items);
-    return out.items;
+    return orderedByImports(scratch, out.items);
+}
+
+/// `mods` (children before their parent) reordered so every module follows
+/// the modules of the package it imports (`import {state.ActionState};`
+/// names `state`, decision 337), as the CLI's resolver orders a package's
+/// modules (`orderPackageModules`): each step places the first module whose
+/// imports are all placed; a cycle keeps the rest in order, the checker
+/// naming what is unbound.
+fn orderedByImports(scratch: std.mem.Allocator, mods: []Module) ![]Module {
+    const n = mods.len;
+    if (n < 2) return mods;
+    const needs = try scratch.alloc(bool, n * n);
+    @memset(needs, false);
+    for (mods, 0..) |m, i| {
+        var lx = Lexer.init(m.source);
+        const tokens = lx.scanAll(scratch) catch continue;
+        var p = Parser.init(tokens);
+        const program = p.parse(scratch) catch continue;
+        for (program.decls) |d| switch (d) {
+            .use => |imp| if (imp.source == .root) for (imp.imports) |item| {
+                // The longest leading run of segments that is a module.
+                var k = item.segments.len;
+                while (k > 0) : (k -= 1) {
+                    const path = try std.mem.join(scratch, "/", item.segments[0..k]);
+                    const j = for (mods, 0..) |o, jj| {
+                        if (std.mem.eql(u8, o.path, path)) break jj;
+                    } else continue;
+                    if (j != i) needs[i * n + j] = true;
+                    break;
+                }
+            },
+            else => {},
+        };
+    }
+    const placed = try scratch.alloc(bool, n);
+    @memset(placed, false);
+    const order = try scratch.alloc(Module, n);
+    for (0..n) |count| {
+        const pick: usize = pick: {
+            for (0..n) |i| {
+                if (placed[i]) continue;
+                for (0..n) |j| {
+                    if (needs[i * n + j] and !placed[j]) break;
+                } else break :pick i;
+            }
+            for (0..n) |i| if (!placed[i]) break :pick i;
+            unreachable;
+        };
+        placed[pick] = true;
+        order[count] = mods[pick];
+    }
+    return order;
 }
 
 fn joinPath(a: std.mem.Allocator, dir: []const u8, rel: []const u8) ![]const u8 {

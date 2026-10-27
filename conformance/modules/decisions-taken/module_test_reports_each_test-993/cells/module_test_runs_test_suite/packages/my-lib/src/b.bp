@@ -1,0 +1,5 @@
+import {a.double};
+
+pub fn quadruple(n: i32) -> i32 {
+    return double(double(n));
+}

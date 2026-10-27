@@ -1,0 +1,33 @@
+//// Decision 993 (3) — ``m.`test`()`` runs the loaded package's `test/` suite beside its inline
+//// `test` blocks, as `botopink test` does: the `src/` tests first, then every `.bp` file under
+//// `test/` in path order (`nested/deep_test` before `util_test`), each case's `file` that file;
+//// a suite file imports the package's modules by their path. Its `compiler.src().file` is
+//// prefixed by the load directory. A package whose directory is no identifier (`my-lib`) is
+//// tested as any other.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(report) {
+            print("cases " + report.cases.length.toString());
+            for report.cases { c ->
+                val verdict = if (c.ok) "ok" else "FAIL";
+                print(verdict + " " + c.name + " " + c.file + ":" + c.line.toString() + " [" + c.output + "] " + c.message);
+            }
+        }
+        Error(r) -> print("error " + r.message);
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/my-lib");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

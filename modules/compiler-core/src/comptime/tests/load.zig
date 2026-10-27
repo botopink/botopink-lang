@@ -331,6 +331,9 @@ test "decision 792 (5): a loaded package is named from its path" {
     try std.testing.expectEqualStrings("bp_load__packages__fine", try loadMod.packageName(arena, "packages/fine"));
     try std.testing.expect(loadMod.isLoadedPackage("bp_load__packages__fine"));
     try std.testing.expect(!loadMod.isLoadedPackage("lib"));
+    // A resolver's directory is a whole path (decision 993 (2)): every byte
+    // that is no identifier's is escaped, so the name stays one.
+    try std.testing.expectEqualStrings("bp_load____w__botopink_x2dlang___x2etasks__css", try loadMod.packageName(arena, "/w/botopink-lang/.tasks/css"));
 }
 
 test "decision 787: a read's path is known as written — a literal, or a `+` of literals a `comptime` parameter left" {

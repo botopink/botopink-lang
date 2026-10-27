@@ -4198,8 +4198,12 @@ const Emitter = struct {
                 // of no argument, `__bp_loaded_main`), and anew at every
                 // `run()` — the package's entries in node's `require` cache
                 // (its root's directory) are dropped first, so its `val`s,
-                // `var`s, body and executors run again.
-                if (@import("../comptime/load.zig").isLoadedPackage(info.module)) {
+                // `var`s, body and executors run again. A module of the same
+                // loaded package (its `test/` suite, decision 993 (3)) imports
+                // it as any module of a package does.
+                const loaded_pkg = info.module[0 .. std.mem.indexOfScalar(u8, info.module, '/') orelse info.module.len];
+                const same_package = std.mem.startsWith(u8, self.module_name, loaded_pkg) and self.module_name.len > loaded_pkg.len and self.module_name[loaded_pkg.len] == '/';
+                if (@import("../comptime/load.zig").isLoadedPackage(info.module) and !same_package) {
                     for (props.items) |p| {
                         const path = try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module });
                         const text = try std.fmt.allocPrint(self.arena(), "() => {{ const __p = require.resolve(\"{s}\"); const __d = require(\"path\").dirname(__p) + require(\"path\").sep; for (const __k of Object.keys(require.cache)) {{ if (__k.startsWith(__d)) {{ delete require.cache[__k]; }} }} return require(__p).{s}(); }}", .{ path, p.key });

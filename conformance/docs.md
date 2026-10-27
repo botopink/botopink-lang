@@ -4436,7 +4436,8 @@ backticks (decision 561) —, written where `run()` is and refused where it is, 
 blocks, compiled in test mode beside its modules, in the program's own process, and answers
 `Result<TestReport, RunFailure>`. `TestReport(cases: TestCase[])` holds one `TestCase(name, file, line, ok, output,
 message, at, durationMs)` per test — the root's tests in the order they are written, then each `mod`'s, the same way
-down; `file` relative to the package, `output` what the test wrote to standard output —; a test that fails (an
+down, then the package's `test/` suite: every `.bp` file under `test/`, in path order, a file there importing the
+package's modules by their path, as `botopink test` collects them; `file` relative to the package, `output` what the test wrote to standard output —; a test that fails (an
 `assert`, a `try`, a `throw`) or crashes is a case with `ok: false`, `message` the failure's text and `at` the test's
 `<file>:<line>`, and the next test runs. A package with no test answers no case, one with no `main` is tested too, and
 a dependency's tests never run. `Error(RunFailure)` is only `.Refused` or `.Excluded` — the target refuses the package
@@ -4447,6 +4448,7 @@ awaited. Inside a loaded package, `compiler.src().file` is prefixed by the direc
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_reports_each_test -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_refused_on_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_excluded_target -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_runs_test_suite -->
 
 `run-outside-init` names a place, never a receiver (decision 792 (4), (7)): a local alias of the captured
 `Module` (`val m2 = m; m2.run()`) in the init body runs the loaded file's `main` as `m.run()` does. A

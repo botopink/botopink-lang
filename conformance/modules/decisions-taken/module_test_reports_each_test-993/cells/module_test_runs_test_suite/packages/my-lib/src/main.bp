@@ -1,0 +1,8 @@
+//// `b` imports `a`, and is declared first: the package's modules compile in
+//// import order, not in declaration order.
+mod b;
+mod a;
+
+test "root: the root's own test runs first" {
+    assert 1 + 1 == 2;
+}
