@@ -1,0 +1,28 @@
+//// Decision 993 (3) — a failing `assert` in a loaded package's test names its own file, as
+//// `botopink test` prints it: the root's `src/main.bp`, a `mod`'s `src/inner.bp`, a `test/`
+//// suite file's `test/suite_test.bp` — each `file:line:col` the assert's, on every target.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(report) {
+            for report.cases { c ->
+                print(c.name + " | " + c.message);
+            }
+        }
+        Error(r) -> print("error " + r.message);
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/located");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ -> print("load refused " + refused.module.path()) });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

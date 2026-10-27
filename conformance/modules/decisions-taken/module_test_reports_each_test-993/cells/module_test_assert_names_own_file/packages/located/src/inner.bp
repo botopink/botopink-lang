@@ -1,0 +1,3 @@
+test "inner: fails" {
+    assert 1 == 2;
+}
