@@ -14,3 +14,12 @@ at src/main.bp:8:81
 == external_wasm_host_binding
 out 2.0
 out -2.0
+== wasm_host_browser_runs
+out hello from the browser host
+out 2.0
+out true
+== wasm_host_from_manifest
+out 2.0
+== wasm_host_from_manifest on wasm
+refused error: `floorOf` has no implementation for the wasm backend
+at src/main.bp:18:11

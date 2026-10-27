@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)
-at src/cases/comptime_random_unseeded/mod.bp:9:28
-from src/cases/comptime_random_unseeded/mod.bp:9:19

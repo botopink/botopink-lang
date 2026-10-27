@@ -1,5 +1,0 @@
-botopink-cell 1
-refused error: {error,{panic,<<"too long: Point">>}}
-at src/cases/decorator_helper_raise_located/mod.bp:10:28
-from src/cases/decorator_helper_raise_located/mod.bp:15:13
-from src/cases/decorator_helper_raise_located/mod.bp:19:3

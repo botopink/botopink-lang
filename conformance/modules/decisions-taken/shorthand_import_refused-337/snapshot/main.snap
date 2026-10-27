@@ -31,3 +31,13 @@ out zz
 out de
 out 3
 out 3
+== mod_binds_namespace
+out a b
+out c d
+out 6
+out true
+== namespace_import_module
+out signed(a)
+out true
+out HI!
+out local b

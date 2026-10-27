@@ -4,3 +4,12 @@ out 1
 out 2
 out second
 out 5
+== unmarked_async_bare_value_refused
+refused error: type mismatch: expected Async<i32>, got i32 — this body carries no `async` marker, so it returns the whole `Async<i32>`
+at src/main.bp:9:12
+== unmarked_async_throw_refused
+refused error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — this body carries no `async` marker, so it returns the whole `Async<…>` and a `Result` inside it is no channel of the body's — write `async fn`; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
+at src/main.bp:14:16
+== unmarked_component_bare_value_refused
+refused error: type mismatch: expected Component<View>, got View — this body carries no `component` marker, so it returns the whole `Component<View>`
+at src/main.bp:11:12

@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("import_module_path_in_braces");
+    runCase("import_bundled_package_beside_own_module");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

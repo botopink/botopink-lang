@@ -1,0 +1,9 @@
+botopink-cell 2
+== comptime_random_float_unseeded
+refused error: an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)
+at src/main.bp:9:28
+from src/main.bp:9:19
+== decorator_random_float_unseeded
+refused error: an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)
+at src/main.bp:11:13
+from src/main.bp:17:3

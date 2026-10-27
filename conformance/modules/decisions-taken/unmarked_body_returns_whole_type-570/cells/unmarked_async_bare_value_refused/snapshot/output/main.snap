@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected Async<i32>, got i32 — this body carries no `async` marker, so it returns the whole `Async<i32>`
-at src/main.bp:9:12

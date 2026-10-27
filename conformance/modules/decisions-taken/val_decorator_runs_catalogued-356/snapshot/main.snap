@@ -22,3 +22,8 @@ out 2
 out port i32
 out host 
 out 8081
+== template_reads_val_build_value
+out page: VIOLET
+== template_val_value_not_comptime
+refused error: typeinfo-all-template-value: the template expanded here reads an entry's `value` (at src/looks.bp:18:23), and `brand` is no `val` whose initializer is `comptime` — it has no build value
+at src/main.bp:10:11

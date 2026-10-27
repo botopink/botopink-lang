@@ -56,5 +56,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("typeinfo_of_value");
     runCase("init_executor_before_main");
     runCase("type_param_generic_form");
+    runCase("init_executor_binder_shadows_local");
+    runCase("init_executor_from_library");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

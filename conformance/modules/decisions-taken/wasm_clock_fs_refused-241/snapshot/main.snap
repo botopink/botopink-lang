@@ -1,0 +1,12 @@
+botopink-cell 2
+== std_template_host_fns_across_modules
+out true
+out true
+out false
+out true
+out 1
+out true
+out 6869
+out 64
+out "a"
+out true

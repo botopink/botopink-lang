@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: unbound variable 'userId'
-at src/cases/template_annotation_unknown_hole/mod.bp:22:7
-from src/cases/template_annotation_unknown_hole/mod.bp:11:14

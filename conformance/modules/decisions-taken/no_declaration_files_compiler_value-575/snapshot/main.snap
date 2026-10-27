@@ -67,3 +67,10 @@ out greeting
 out hello
 out 3
 out 9
+== init_executor_binder_shadows_local
+out catch negativo
+out [fine]
+out main
+== init_executor_from_library
+out ["/health -> health", "/ -> index", "/about -> about"]
+out index about ok

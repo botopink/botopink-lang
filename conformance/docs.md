@@ -311,7 +311,7 @@ error: shorthand-import: `perimeter` names no module of this package — write i
 `from` never names a module of this package. Beside a module named like a
 package, the brace form reaches the module and `from` the package:
 
-<!-- example: modules/decisions-taken/own_module_import_without_from-206/cells/import_bundled_package_beside_own_module -->
+<!-- example: modules/decisions-taken/own_module_import_without_from-206/cases/import_bundled_package_beside_own_module -->
 
 A package wins its name: `from "log"` is the dependency `log` although the package
 has a module `log` of its own, so a dependency declared later never changes
@@ -515,7 +515,7 @@ commonJS, erlang and beam.
 
 <!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts -->
 
-<!-- example: modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds -->
+<!-- example: modules/decisions-taken/stat_mtime_whole_seconds-499/cases/fs_stat_mtime_whole_seconds -->
 
 ### The command line, `io.stdin`, `io.terminal` and `io.process`
 
@@ -657,7 +657,7 @@ written yet (a build for wasm refuses a program that calls `fetch`, naming the h
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
-<!-- example: modules/decisions-taken/own_module_import_without_from-206/cells/import_bundled_package_beside_own_module -->
+<!-- example: modules/decisions-taken/own_module_import_without_from-206/cases/import_bundled_package_beside_own_module -->
 
 ```json
 {
@@ -3473,15 +3473,15 @@ An unmarked `-> Async<T>` / `-> Component<R>` body returning the bare value is
 a type mismatch at the value, its hint naming the marker (`async fn`,
 `component fn`) and `Async.resolve`:
 
-<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_async_bare_value_refused -->
-<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_component_bare_value_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cases/unmarked_async_bare_value_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cases/unmarked_component_bare_value_refused -->
 
 An unmarked `-> Async<Result<T, E>>` body has no failure channel of its own:
 the `Result` is inside the task it returns whole, so its `throw` or
 propagating `try` is `effect-try-without-fallible-channel`, naming the
 marker:
 
-<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cells/unmarked_async_throw_refused -->
+<!-- example: modules/decisions-taken/unmarked_body_returns_whole_type-570/cases/unmarked_async_throw_refused -->
 
 ### Results
 
@@ -3736,7 +3736,7 @@ i32) -> …`, so `n.toString()` in it resolves:
 withdrawn from `Async<T>` and from `Async<Result<T, E>>`, so a call to one is refused as
 an unknown member:
 
-<!-- example: modules/decisions-taken/task_methods_withdrawn_async_block-523/cells/task_method_refused -->
+<!-- example: modules/decisions-taken/task_methods_withdrawn_async_block-523/cases/task_method_refused -->
 
 A task's value is read by `await`, and a failing task is read one way: `try await … catch`,
 or `case` on `await`'s `Result`. Every composition of a task — recover, map, bind, map the
@@ -3938,7 +3938,7 @@ expression, which the hint names as the frame that ran it:
 
 <!-- example: modules/decisions-taken/decorator_invocations_independent-343/cases/typeinfo_all_duplicate_at_entry -->
 
-<!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/refused/src/cases/comptime_random_float_unseeded -->
+<!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/cases/comptime_random_float_unseeded -->
 
 ### Functions expanded at their call
 
@@ -4052,9 +4052,9 @@ folds at build (decisions 355, 376, 380) it folds, and a value that raises
 there is refused at the call that raised (§ Compile-time evaluation), with a
 `called from` line for each call of the chain (decision 532):
 
-<!-- example: modules/decisions-taken/template_called_with_raw_text-577/cells/template_known_at_build -->
+<!-- example: modules/decisions-taken/template_called_with_raw_text-577/cases/template_known_at_build -->
 
-<!-- example: modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_hole_typed_at_caller -->
+<!-- example: modules/decisions-taken/template_called_with_raw_text-577/cases/template_hole_typed_at_caller -->
 
 An error in the code a template builds is located where the text it came from
 is written (decision 577 (1), 14s8-a (e)): an identifier, a number or a string
@@ -4067,9 +4067,9 @@ expression, on its own line of a multi-line text:
 
 <!-- example: modules/decisions-taken/template_hole_error_at_column-691/cases/template_hole_error_at_column -->
 
-<!-- example: modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_hole_error_on_later_line -->
+<!-- example: modules/decisions-taken/template_called_with_raw_text-577/cases/template_hole_error_on_later_line -->
 
-<!-- example: modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_hole_error_far_in_built_code -->
+<!-- example: modules/decisions-taken/template_called_with_raw_text-577/cases/template_hole_error_far_in_built_code -->
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
@@ -4723,9 +4723,9 @@ body or in a function the body calls, of this module or another — and each cal
 of the chain is a `called from` line, down to the annotation that ran the body
 (``called from src/main.bp:13:13``, ``called from src/main.bp:17:3``):
 
-<!-- example: modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/decorator_helper_raise_located -->
+<!-- example: modules/decisions-taken/seeded_random_std_wasm-451/cases/decorator_helper_raise_located -->
 
-<!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/refused/src/cases/decorator_random_float_unseeded -->
+<!-- example: modules/decisions-taken/unseeded_random_refused_at_build-456/cases/decorator_random_float_unseeded -->
 
 A decorator's body reaches the std modules its module imports, a nested
 namespace included (`random.seed(7)` after `import {io.random} from "std"`); a body
@@ -4900,7 +4900,7 @@ program that declares its package, imported or not, before the program's own.
 
 <!-- example: modules/decisions-taken/compiler_init_executor-615/cases/init_order_modules -->
 
-<!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_from_library -->
+<!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_from_library -->
 
 A declared dependency is part of the program (decision 660): every module of
 every package `botopink.json` declares — and of every package those declare —
@@ -5583,7 +5583,7 @@ binding stays private, writes `result: true`, and the public function maps the `
 module's own error enum (`EncodingError`, `ClockError`, `FsError`), so the same input is the same variant
 on every target; `json`, `regex` and `io.process` answer std's `HostError` itself, its `kind` `"host"`.
 
-<!-- example: modules/decisions-taken/std_module_error_enum-486/cells/std_host_error_variants -->
+<!-- example: modules/decisions-taken/std_module_error_enum-486/cases/std_host_error_variants -->
 
 One annotation binds the BEAM: `.Erlang` serves the erlang and the beam
 targets, the same VM and the same OTP calls (decision 437). `.Beam` is

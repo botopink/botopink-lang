@@ -1,0 +1,22 @@
+botopink-cell 2
+== std_host_error_variants
+out json.parse of an object: ok
+out json.parse of bad text: host
+out json.stringify of bad text: host
+out json.unquote of a string literal: ok
+out json.unquote of a number: host
+out base64Decode of base64: ok
+out base64Decode of bad text: NotBase64
+out base64UrlDecode of bad text: NotBase64
+out base64DecodeBytes of bad text: NotBase64
+out hexDecode of hex: ok
+out hexDecode of bad text: NotHex
+out hexDecode of an odd length: NotHex
+out hexDecodeBytes of bad text: NotHex
+out percentDecode of an escape: ok
+out percentDecode of a bad escape: NotPercentEncoded
+out regex.compile of a pattern: ok
+out regex.compile of a bad pattern: host
+out clock.parseIso8601 of a timestamp: ok
+out clock.parseIso8601 of bad text: NotRfc3339
+out process.run of a missing binary: host

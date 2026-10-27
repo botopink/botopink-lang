@@ -1,1 +1,1 @@
-{ "name": "optional_member_access_needs_safe_call-45" }
+{"name": "optional_member_access_needs_safe_call-45", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

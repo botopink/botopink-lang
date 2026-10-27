@@ -10,3 +10,28 @@ out inner chain!
 out find(self, id): select * from users where id = $1 limit 1 <- id | byName(self, name, minAge): select * from users where name = $1 and age > $2 <- name, minAge (audit 2)
 out delete from sessions where user = $1 <- user
 out ana out
+== expr_call_outside_expr
+refused error: syntax-call-outside-syntax: `shout` is a template, called only with a template text, and is called here another way
+at src/main.bp:14:11
+== template_annotation_call_form
+refused error: syntax-call-outside-syntax: `#[sql(…)]` names the template `sql`, which is written `#[sql @`…`]`
+at src/main.bp:14:3
+== template_annotation_unknown_hole
+refused error: unbound variable 'userId'
+at src/main.bp:22:7
+from src/main.bp:11:14
+== template_hole_error_far_in_built_code
+refused error: type mismatch: expected string, got bool
+at src/main.bp:57:27
+== template_hole_error_on_later_line
+refused error: unbound variable 'missing'
+at src/main.bp:40:19
+== template_hole_typed_at_caller
+refused error: type mismatch: expected string, got bool
+at src/main.bp:59:25
+== template_signature
+refused error: template-signature: the template `repeat` takes its text and nothing else, and declares `times`
+at src/main.bp:8:29
+== template_known_at_build
+out HELLO WORLD
+out HELLO BOB

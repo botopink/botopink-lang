@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("string_from_codepoint");
+    runCase("string_from_codepoint_surrogate");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

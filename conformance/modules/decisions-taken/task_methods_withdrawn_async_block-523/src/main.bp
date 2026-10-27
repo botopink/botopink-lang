@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("task_compose_by_async_block");
+    runCase("task_method_refused");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

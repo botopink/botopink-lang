@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: syntax-call-outside-syntax: `shout` is a template, called only with a template text, and is called here another way
-at src/cases/expr_call_outside_expr/mod.bp:14:11

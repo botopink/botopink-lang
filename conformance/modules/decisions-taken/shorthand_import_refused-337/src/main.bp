@@ -46,5 +46,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("mod_namespace_cascade");
     runCase("mod_reexport_by_val");
     runCase("optional_record_carrier");
+    runCase("mod_binds_namespace");
+    runCase("namespace_import_module");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

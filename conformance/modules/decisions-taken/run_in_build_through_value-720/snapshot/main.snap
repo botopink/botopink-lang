@@ -1,0 +1,5 @@
+botopink-cell 2
+== run_in_build_through_value
+refused error: run-in-build: `io_clock.nowMillis` runs only when the program runs, and the build reached it
+at src/main.bp:22:9
+from src/main.bp:20:17

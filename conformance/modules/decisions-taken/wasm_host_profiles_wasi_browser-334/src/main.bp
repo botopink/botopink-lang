@@ -43,5 +43,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("external_wasm_host_twice");
     runCase("external_wasm_host_unknown");
     runCase("external_wasm_host_binding");
+    runCase("wasm_host_browser_runs");
+    runCase("wasm_host_from_manifest");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

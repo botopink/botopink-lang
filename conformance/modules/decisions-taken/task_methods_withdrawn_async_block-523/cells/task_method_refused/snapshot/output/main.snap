@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: 'map' is not declared in any behavior implemented for 'Async'
-at src/main.bp:14:21

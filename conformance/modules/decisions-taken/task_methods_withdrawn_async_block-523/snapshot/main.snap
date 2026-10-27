@@ -4,3 +4,6 @@ out safe good 5
 out safe bad 0
 out doubled 20
 out chained 40
+== task_method_refused
+refused error: 'map' is not declared in any behavior implemented for 'Async'
+at src/main.bp:14:21

@@ -41,5 +41,13 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("compiler_template_forms");
     runCase("template_call_in_built_code");
     runCase("template_annotation");
+    runCase("expr_call_outside_expr");
+    runCase("template_annotation_call_form");
+    runCase("template_annotation_unknown_hole");
+    runCase("template_hole_error_far_in_built_code");
+    runCase("template_hole_error_on_later_line");
+    runCase("template_hole_typed_at_caller");
+    runCase("template_signature");
+    runCase("template_known_at_build");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }
