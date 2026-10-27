@@ -4842,3 +4842,52 @@ test "wat: gc ---- f?.(x) over an optional function field answering a string, a 
         \\}
     );
 }
+
+test "wat: gc ---- val assert over a variant, a record and a Result, its catch taken" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Shape { Circle(r: i32), Square(side: i32) }
+        \\
+        \\type Person(name: string, age: i32)
+        \\
+        \\fn parse(s: string) -> Result<i32, string> {
+        \\    if (s == "") throw "empty input";
+        \\    return s.length;
+        \\}
+        \\
+        \\fn radius(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch Shape.Circle(r: 0 - 1);
+        \\    return r;
+        \\}
+        \\
+        \\fn describe(p: Person) -> string {
+        \\    val assert Person(n, a) = p;
+        \\    return n + "/" + a.toString();
+        \\}
+        \\
+        \\fn size(s: string) -> i32 {
+        \\    val assert Ok(n) = parse(s);
+        \\    return n;
+        \\}
+        \\
+        \\fn reason(s: string) -> string {
+        \\    val assert Error(message) = parse(s);
+        \\    return message;
+        \\}
+        \\
+        \\fn older(p: Person) -> i32 {
+        \\    val assert Person(n, a) = p catch Person(name: "none", age: 0);
+        \\    return a + n.length;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(radius(Shape.Circle(r: 3)));
+        \\    print(radius(Shape.Square(side: 2)));
+        \\    print(describe(Person(name: "ana", age: 30)));
+        \\    print(size("four"));
+        \\    print(reason(""));
+        \\    print(older(Person(name: "bo", age: 41)));
+        \\}
+    );
+}

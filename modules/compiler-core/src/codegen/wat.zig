@@ -13689,8 +13689,11 @@ const Emitter = struct {
     fn lowerAssertPattern(self: *Emitter, ap: anytype, loc: ast.Loc) anyerror!void {
         const slot = try std.fmt.allocPrint(self.arena(), "__assert_{d}", .{self.assert_seq});
         self.assert_seq += 1;
-        try self.declareLocal(slot, .i32);
-        try self.lowerCoerced(ap.expr.*, .i32);
+        // A GC module keeps the subject as the reference it is (a record, a
+        // variant, a `@Result`), as a `case` subject is (`lowerCase`).
+        const srepr: Repr = if (self.mode == .gc) self.wasmTypeOf(ap.expr.*) else .i32;
+        try self.declareLocal(slot, srepr);
+        try self.lowerCoerced(ap.expr.*, srepr);
         try self.emit(.{ .local_set = slot });
         if (self.isStringExpr(ap.expr.*)) try self.str_locals.put(slot, {});
         if (self.resultShapeOf(ap.expr.*)) |shape| try self.result_subjects.put(slot, shape);
@@ -13702,7 +13705,7 @@ const Emitter = struct {
             var then_c: Capture = .{};
             self.open(&then_c);
             const handler_tail = self.exprTail(ap.handler.*);
-            try self.lowerExpr(ap.handler.*);
+            if (self.mode == .gc and handler_tail == .value) try self.lowerCoerced(ap.handler.*, srepr) else try self.lowerExpr(ap.handler.*);
             if (handler_tail == .value) try self.emit(.{ .local_set = slot });
             const then_seq = self.seal(&then_c, if (handler_tail == .terminated) .terminated else .none);
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
