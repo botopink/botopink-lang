@@ -1,0 +1,5 @@
+mod inner;
+
+test "root: fails" {
+    assert 1 == 3;
+}

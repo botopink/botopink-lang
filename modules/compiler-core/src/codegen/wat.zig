@@ -432,6 +432,7 @@ pub fn codegenEmit(
                             .instance_lowerings = dok.instance_lowerings,
                             .via = entry,
                             .declared = true,
+                            .src_path = o.srcPath,
                         });
                     }
                 }
@@ -630,6 +631,10 @@ const Linked = struct {
     /// Linked because it is a module of the program (decisions 660, 677):
     /// `via` is then the program's entry, no import of it.
     declared: bool = false,
+    /// The module's package-relative source path (`src/inner.bp`): what a
+    /// failed assert in one of its declarations names (decision 527 (2)), the
+    /// consumer's own `src_path` being another file. Empty when unknown.
+    src_path: []const u8 = "",
 };
 
 /// Every module `program` imports from, transitively, dependencies first. An
@@ -687,10 +692,19 @@ fn collectLinks(
                     .rewrites = ok.dispatch_rewrites,
                     .instance_lowerings = ok.instance_lowerings,
                     .via = reached,
+                    .src_path = o.srcPath,
                 });
             }
         }
     }
+}
+
+/// The source path a declaration of `linked[from]` is lowered under — the
+/// consumer's own (`own`) when `from` is the consumer, else the linked
+/// module's (empty when unknown: the emitter's `<module>.bp` fallback).
+fn srcPathOf(linked: []const Linked, from: usize, own: []const u8) []const u8 {
+    if (from >= linked.len) return own;
+    return linked[from].src_path;
 }
 
 /// The name a value of a linked type prints under: a mangled `<module>/<Name>`
@@ -1063,6 +1077,8 @@ const GenericFn = struct {
     /// A queued copy's: the consumer location a refusal inside it is
     /// reported at (`Emitter.foreign_origin`).
     origin: ?ast.Loc = null,
+    /// The declaring module's source path (`Emitter.src_path`).
+    src_path: []const u8 = "",
 };
 
 /// A method of a generic `type`, its owner and the owner's type parameters,
@@ -1134,9 +1150,10 @@ const GenericMethod = struct {
     /// The owner's type parameters this copy substituted (`A` → `string`),
     /// so a field the owner declares `left: A` reads as `string` in it.
     subs: []const TypeSub = &.{},
-    /// As `GenericFn.linked` / `.origin`.
+    /// As `GenericFn.linked` / `.origin` / `.src_path`.
     linked: bool = false,
     origin: ?ast.Loc = null,
+    src_path: []const u8 = "",
 };
 
 /// A type parameter's name and the type a specialisation writes for it.
@@ -1899,6 +1916,7 @@ fn emitWatPass(
                 .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
                 .renames = if (val_maps.len > 0) &val_maps[from] else null,
                 .linked = from < linked.len,
+                .src_path = srcPathOf(linked, from, src_path),
             });
         },
         // A method of a generic `type` (`Dict<K, V>.at`), by the symbol its
@@ -1918,6 +1936,7 @@ fn emitWatPass(
                 .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
                 .renames = if (val_maps.len > 0) &val_maps[from] else null,
                 .linked = from < linked.len,
+                .src_path = srcPathOf(linked, from, src_path),
             });
         },
         // A behavior's generic associated `default fn` (`Seq<A>.firstOr`),
@@ -1939,6 +1958,7 @@ fn emitWatPass(
                 .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
                 .renames = if (val_maps.len > 0) &val_maps[from] else null,
                 .linked = from < linked.len,
+                .src_path = srcPathOf(linked, from, src_path),
             });
         },
         else => {},
@@ -1949,6 +1969,7 @@ fn emitWatPass(
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
         em.global_renames = if (val_maps.len > 0) &val_maps[from] else null;
         em.foreign_origin = if (from < linked.len) linked[from].via else null;
+        em.src_path = srcPathOf(linked, from, src_path);
         em.loaded_pkg = if (from < linked.len and crossModule.isLoadedModule(linked[from].name)) loadedPackageOf(linked[from].name) else null;
         const before = em.items.items.len;
         try em.emitDecl(decl);
@@ -1973,6 +1994,7 @@ fn emitWatPass(
         if (em.mode == .gc and from < linked.len) for (em.items.items[before..]) |it| if (it == .func) try em.gc_linked_fns.put(em.alloc, it.func.name, {});
     }
     em.foreign_origin = null;
+    em.src_path = src_path;
     em.global_renames = null;
     em.rewrites = rewrites;
     em.instance_lowerings = own_instance_lowerings;
@@ -19276,6 +19298,9 @@ const Emitter = struct {
         rewrites: ?std.AutoHashMap(ast.Loc, []const u8) = null,
         lowerings: ?std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
         renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
+        /// The source path of the module the lambda is written in
+        /// (`Emitter.src_path`): a failed assert in it names that file.
+        src_path: []const u8 = "",
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
         /// Per parameter: the cell a float or 64-bit argument arrives in —
@@ -20645,6 +20670,7 @@ const Emitter = struct {
             .rewrites = self.rewrites,
             .lowerings = self.instance_lowerings,
             .renames = self.global_renames,
+            .src_path = self.src_path,
             .idx = idx,
             .param_ft = param_ft,
             .ret_ft = ret_ft,
@@ -21502,8 +21528,9 @@ const Emitter = struct {
         while (li < self.lambdas.items.len or ai < self.assoc_needed.items.len or si < self.spec_pending.items.len or mi < self.mspec_pending.items.len) {
             while (mi < self.mspec_pending.items.len) : (mi += 1) {
                 const sp = self.mspec_pending.items[mi];
-                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.owner_tparams, self.field_subs_owner, self.field_subs, self.foreign_origin };
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.owner_tparams, self.field_subs_owner, self.field_subs, self.foreign_origin, self.src_path };
                 self.foreign_origin = sp.origin;
+                if (sp.src_path.len > 0) self.src_path = sp.src_path;
                 self.rewrites = sp.rewrites;
                 self.instance_lowerings = sp.lowerings;
                 self.global_renames = sp.renames;
@@ -21519,14 +21546,16 @@ const Emitter = struct {
                     self.field_subs_owner = saved[4];
                     self.field_subs = saved[5];
                     self.foreign_origin = saved[6];
+                    self.src_path = saved[7];
                     self.in_spec = false;
                 }
                 try self.emitMemberFn(sp.owner, sp.method);
             }
             while (si < self.spec_pending.items.len) : (si += 1) {
                 const sp = self.spec_pending.items[si];
-                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.foreign_origin };
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.foreign_origin, self.src_path };
                 self.foreign_origin = sp.origin;
+                if (sp.src_path.len > 0) self.src_path = sp.src_path;
                 self.rewrites = sp.rewrites;
                 self.instance_lowerings = sp.lowerings;
                 self.global_renames = sp.renames;
@@ -21536,20 +21565,23 @@ const Emitter = struct {
                     self.instance_lowerings = saved[1];
                     self.global_renames = saved[2];
                     self.foreign_origin = saved[3];
+                    self.src_path = saved[4];
                     self.in_spec = false;
                 }
                 try self.emitFn(sp.decl);
             }
             while (li < self.lambdas.items.len) : (li += 1) {
                 const l = self.lambdas.items[li];
-                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames };
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.src_path };
                 if (l.rewrites) |r| self.rewrites = r;
                 if (l.lowerings) |il| self.instance_lowerings = il;
                 if (l.fn_ref == null) self.global_renames = l.renames;
+                if (l.src_path.len > 0) self.src_path = l.src_path;
                 defer {
                     self.rewrites = saved[0];
                     self.instance_lowerings = saved[1];
                     self.global_renames = saved[2];
+                    self.src_path = saved[3];
                 }
                 try self.emitLifted(l);
             }
@@ -22941,7 +22973,7 @@ const Emitter = struct {
         }
         copy.genericParams = left.items;
         try self.registerFn(copy);
-        try self.spec_pending.append(self.alloc, .{ .decl = copy, .rewrites = g.rewrites, .lowerings = g.lowerings, .renames = g.renames, .origin = self.specOrigin(g.linked) });
+        try self.spec_pending.append(self.alloc, .{ .decl = copy, .rewrites = g.rewrites, .lowerings = g.lowerings, .renames = g.renames, .origin = self.specOrigin(g.linked), .src_path = g.src_path });
         return sym;
     }
 
@@ -24069,6 +24101,7 @@ const Emitter = struct {
             .renames = gm.renames,
             .subs = subs.items,
             .origin = self.specOrigin(gm.linked),
+            .src_path = gm.src_path,
         });
         return out;
     }

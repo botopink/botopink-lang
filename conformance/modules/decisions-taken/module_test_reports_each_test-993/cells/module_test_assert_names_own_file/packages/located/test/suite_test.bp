@@ -1,0 +1,3 @@
+test "suite: fails" {
+    assert 2 == 3;
+}
