@@ -1,0 +1,7 @@
+mod mark;
+
+import {mark.where, mark.shown};
+
+test "placed: the call's file" {
+    where(1);
+}

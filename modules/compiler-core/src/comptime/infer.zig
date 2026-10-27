@@ -7077,7 +7077,7 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
         .templateText = a.templateText != null,
         .loc = at,
         .modulePath = env.modulePath,
-        .srcFile = env.srcPathOf(env.modulePath),
+        .srcFile = try captureSrcFile(env),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };
@@ -8341,6 +8341,14 @@ fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
 /// module's own, or the one the session recorded when `module` was analysed
 /// (`Reflection.srcPaths`), else `<module>.bp`. A decorator or template body
 /// run from another module is located in that file, so its diagnostic names it.
+/// The file a syntax capture's `compiler.source(…).file` names: the module's
+/// own, prefixed inside a loaded package by the directory it was loaded from,
+/// as `compiler.src()`'s is (decision 993 (3), B-168).
+fn captureSrcFile(env: *Env) ![]const u8 {
+    if (env.srcPath.len > 0) if (try loadMod.loadedSrcPath(env.arena, env.package, env.srcPath)) |p| return p;
+    return env.srcPathOf(env.modulePath);
+}
+
 fn srcPathOfModule(env: *Env, module: []const u8) []const u8 {
     return env.srcPathOf(module);
 }
@@ -10284,7 +10292,7 @@ fn captureExprArg(
             .multiline = false,
             .loc = rawArg.getLoc(),
             .modulePath = env.modulePath,
-            .srcFile = env.srcPathOf(env.modulePath),
+            .srcFile = try captureSrcFile(env),
             .scope = env.scopeSnapshot,
         };
     }
@@ -10346,7 +10354,7 @@ fn captureExprArg(
         .templateText = templateText != null,
         .loc = litLoc,
         .modulePath = env.modulePath,
-        .srcFile = env.srcPathOf(env.modulePath),
+        .srcFile = try captureSrcFile(env),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };

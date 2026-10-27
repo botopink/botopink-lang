@@ -1,0 +1,31 @@
+//// Decision 993 (3) — inside a loaded package a syntax argument's `compiler.source(…).file` is
+//// prefixed by the directory the package was loaded from, as `compiler.src().file` is: `placed`'s
+//// test calls `where`, which prints the file of its argument, `packages/placed/src/main.bp`.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(report) {
+            for report.cases { c ->
+                val verdict = if (c.ok) "ok" else "FAIL";
+                print(verdict + " " + c.name + " [" + c.output + "]");
+            }
+        }
+        Error(r) -> print("error " + r.message);
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/placed");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ ->
+            for refused.diagnostics { d -> print("load refused " + d.message); }
+        });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

@@ -4443,11 +4443,15 @@ package's modules by their path, as `botopink test` collects them; `file` relati
 a dependency's tests never run. `Error(RunFailure)` is only `.Refused` or `.Excluded` — the target refuses the package
 at `emit`, none of its tests run — or `.Abort` for a crash outside every test (its body runs anew at each
 ``test`()``), `output` what was written before. A package whose tests await makes ``test`()`` answer an `Async`,
-awaited. Inside a loaded package, `compiler.src().file` is prefixed by the directory the package was loaded from.
+awaited. Each test runs with `BOTOPINK_TEST_NAME` holding its name and the run with `BOTOPINK_TEST_TMPDIR` naming a
+scratch directory of the call's own, as under `botopink test`. Inside a loaded package, `compiler.src().file` and a
+syntax argument's `compiler.source(…).file` are prefixed by the directory the package was loaded from.
 
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_reports_each_test -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_refused_on_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_excluded_target -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_sets_test_env -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_source_names_loaded_file -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_runs_test_suite -->
 
 `run-outside-init` names a place, never a receiver (decision 792 (4), (7)): a local alias of the captured
