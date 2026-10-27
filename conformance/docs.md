@@ -6319,7 +6319,7 @@ command's own output directories inside it (`--out`, `--emit-runtime`), its effe
 key (decision 1006-b); no file time is read. `build --cold` ignores the key and rebuilds; `run --cold` reuses a fresh set
 and reads no code cache (decision 1006; proven by the CLI's `modules/compiler-cli/tests/runtime_reuse.sh`).
 
-On `erlang` and `beam` a module's `.beam` in the target's folder (`out/erl/`, `out/beam/`) is loaded as it is while
+On `erlang` and `beam` a module's `.beam` in the target's folder (`out/erlang/`, `out/beam/`) is loaded as it is while
 its emitted source is unchanged, the package's own modules included: beside each `.beam` a record holds the hash of
 the `.erl` / `.S` it was compiled from, the compiler's source stamp and the OTP release, and `botopink run --target
 erlang|beam` compiles only the modules whose record is missing or differs — never by a file time. The build's OTP check
@@ -6599,8 +6599,7 @@ row says otherwise):
 A `#[compiler.external(.JavaScript("./x.mjs", "f"))]` lowers to a relative `require("./x.mjs")`
 in the emitted module. The file is the library's, not the consumer's, so
 `botopink build` and `botopink test` copy it next to the emitted JS —
-`<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's
-own — and rewrite the `require` when the authored path would escape the output
+`<out>/commonJS/<pkg>@x.mjs`, flat beside the modules (decisions 1015, 1023) — and rewrite the `require` when the authored path would escape the output
 directory. The `.erl` host module of an `#[compiler.external(.Erlang("host", "f"))]` is
 copied the same way.
 

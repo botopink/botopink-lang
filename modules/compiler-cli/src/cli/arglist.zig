@@ -102,7 +102,7 @@ test "write puts one entry per line" {
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     defer test_scratch.remove(io, "arglist");
-    const p = try writeIn(arena, io, test_scratch.path(io, "arglist"), &.{ "out/erl/a@b.erl", "out/erl/c.erl" });
+    const p = try writeIn(arena, io, test_scratch.path(io, "arglist"), &.{ "out/erlang/a@b.erl", "out/erlang/c.erl" });
     const text = try std.Io.Dir.cwd().readFileAlloc(io, p, arena, .unlimited);
-    try std.testing.expectEqualStrings("out/erl/a@b.erl\nout/erl/c.erl\n", text);
+    try std.testing.expectEqualStrings("out/erlang/a@b.erl\nout/erlang/c.erl\n", text);
 }

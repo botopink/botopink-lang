@@ -104,7 +104,7 @@ expect_code 0 "v1 build"
 printf 'pub fn main() -> void {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
 run "$P" build --target commonJS
 expect_code 1 "broken rebuild"
-[[ ! -e "$P/out/c2@main.js" ]] && ok "out/c2@main.js removed" || fail "out/c2@main.js from v1 survived the failed build"
+[[ ! -e "$P/out/commonJS/c2@main.js" ]] && ok "out/commonJS/c2@main.js removed" || fail "out/commonJS/c2@main.js from v1 survived the failed build"
 run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
@@ -115,23 +115,23 @@ P="$(project typings)"
 printf 'pub fn greet(name: string) -> string {\n    return "hi " + name;\n}\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
 run "$P" build --target commonJS
 expect_code 0 "build without typings"
-[[ ! -e "$P/out/typings@main.d.ts" ]] && ok "no .d.ts without \"typings\" or --typescript" || fail "out/typings@main.d.ts written with neither"
+[[ ! -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "no .d.ts without \"typings\" or --typescript" || fail "out/typings@main.d.ts written with neither"
 run "$P" build --target commonJS --typescript
 expect_code 0 "build --typescript"
-[[ -e "$P/out/typings@main.d.ts" ]] && ok "--typescript writes out/typings@main.d.ts" || fail "--typescript wrote no out/typings@main.d.ts"
+[[ -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "--typescript writes out/commonJS/typings@main.d.ts" || fail "--typescript wrote no out/commonJS/typings@main.d.ts"
 rm -rf "$P/out"
 printf '{ "name": "typings", "version": "0.1.0", "target": "commonJS", "typings": true }\n' >"$P/botopink.json"
 run "$P" build --target commonJS
 expect_code 0 "build with \"typings\": true"
-if [[ -e "$P/out/typings@main.d.ts" ]]; then
-  ok "\"typings\": true writes out/typings@main.d.ts"
-  expect_file_out "$P/out/typings@main.d.ts" "greet(name: string): string" "the .d.ts types greet"
+if [[ -e "$P/out/commonJS/typings@main.d.ts" ]]; then
+  ok "\"typings\": true writes out/commonJS/typings@main.d.ts"
+  expect_file_out "$P/out/commonJS/typings@main.d.ts" "greet(name: string): string" "the .d.ts types greet"
 else
-  fail "\"typings\": true wrote no out/typings@main.d.ts"
+  fail "\"typings\": true wrote no out/commonJS/typings@main.d.ts"
 fi
 run "$P" build --target commonJS --typescript
 expect_code 0 "build with both"
-[[ -e "$P/out/typings@main.d.ts" ]] && ok "both together write out/typings@main.d.ts" || fail "both together wrote no out/typings@main.d.ts"
+[[ -e "$P/out/commonJS/typings@main.d.ts" ]] && ok "both together write out/commonJS/typings@main.d.ts" || fail "both together wrote no out/commonJS/typings@main.d.ts"
 
 # ── checker warnings reach build and test (decision 57, front 26 step 4) ─────
 # `check` prints `OkData.warnings`; `build` and `test` read the compiler's
@@ -271,7 +271,7 @@ CODE=$?
 set -e
 expect_code 0 "commonJS build running a template, OTP 29 first on PATH"
 [[ ! -s "$WORK/otp29rec.log" ]] && ok "commonJS comptime spawned no erl" || fail "commonJS comptime spawned: $(tr '\n' ';' <"$WORK/otp29rec.log")"
-expect_file_out "$P/out/otp_comptime@main.js" "__bp_print(8)" "the template ran (wat runtime)"
+expect_file_out "$P/out/commonJS/otp_comptime@main.js" "__bp_print(8)" "the template ran (wat runtime)"
 set +e
 OUT="$(cd "$P" && PATH="$WORK/otp29rec:$PATH" "$BP" build --target erlang 2>&1)"
 CODE=$?
@@ -630,7 +630,7 @@ if have node; then
   # An erlang runner loads every `.erl` under its own directory before its
   # tests run (`'__bp_load_siblings'/0`). The scratch directory used to be the
   # run directory's `tmp/`, so a fixture project a test built there — its
-  # `out/erl/` — was compiled and loaded by every test module that ran after
+  # `out/erlang/` — was compiled and loaded by every test module that ran after
   # it: ~6 500 sources per module in rakun-scheduling, five CPU-minutes each,
   # and a fixture's module loaded over the run's own. Each test module here
   # leaves an `.erl` the OTP compiler refuses in the scratch directory; if any
@@ -723,11 +723,11 @@ CODE=$?
 set -e
 expect_code 0 "build with a dependency sidecar"
 # Decision 1015: flat, named after its package — `<out>/sidelib@side.mjs`.
-[[ -f "$OUTDIR/sidelib@side.mjs" ]] && ok "the sidecar is inside --out" || fail "the sidecar is not at $OUTDIR/sidelib@side.mjs"
+[[ -f "$OUTDIR/commonJS/sidelib@side.mjs" ]] && ok "the sidecar is inside --out" || fail "the sidecar is not at $OUTDIR/commonJS/sidelib@side.mjs"
 [[ ! -e "$WORK/sidecar-build/src/side.mjs" ]] && ok "nothing is written beside --out" || fail "a sidecar was written beside --out"
 if have node; then
   set +e
-  OUT="$(cd "$OUTDIR" && node sidecar@main.js 2>&1)"
+  OUT="$(cd "$OUTDIR/commonJS" && node sidecar@main.js 2>&1)"
   CODE=$?
   set -e
   expect_code 0 "the built program runs"
@@ -846,9 +846,9 @@ expect_code 1 "build --frobnicate"
 expect_out "unknown flag '--frobnicate'" "names the unknown flag"
 run "$P" build --target=erlang --out out-eq
 expect_code 0 "build --target=erlang"
-# 13 half 1: an erlang artifact lands at `<out>/erl/<module atom><ext>`, and the
+# 13 half 1: an erlang artifact lands at `<out>/erlang/<module atom><ext>`, and the
 # atom starts with the package (decision 109) — this project is named `c11`.
-[[ -f "$P/out-eq/erl/c11@main.erl" && ! -e "$P/out-eq/c11@main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/erl/c11@main.erl"
+[[ -f "$P/out-eq/erlang/c11@main.erl" && ! -e "$P/out-eq/commonJS/c11@main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/erlang/c11@main.erl"
 run "$P" test --target wasm2
 expect_code 1 "test --target wasm2"
 
@@ -862,7 +862,7 @@ printf '%s' "$MAIN_OK" >"$P/src/main.bp"
 run "$P" build
 expect_code 1 "build with \"target\": \"frobnicate\""
 expect_out "unsupported target 'frobnicate'" "names the manifest target"
-[[ ! -e "$P/out/c12@main.js" ]] && ok "no commonJS fallback artifact" || fail "unsupported manifest target degraded to commonJS"
+[[ ! -e "$P/out/commonJS/c12@main.js" ]] && ok "no commonJS fallback artifact" || fail "unsupported manifest target degraded to commonJS"
 
 # ── C13 — clean reports a failed delete ──────────────────────────────────────
 echo "==> C13 clean exits 1 when a delete fails"
@@ -1182,7 +1182,7 @@ fi
 # ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
 # A `#[@external(.JavaScript("""require("./x.mjs")…"""))]` lowers to a relative `require` in the
 # emitted module, and the CLI copies the source `.mjs` next to it, flat as
-# `<pkg>@<base>` (decision 1015: `out/side@side.mjs`). The owner of
+# `<pkg>@<base>` (decisions 1015, 1023: `out/commonJS/side@side.mjs`). The owner of
 # that file is the dependency the build RESOLVED — not the first directory of
 # that name across the library roots — and a sidecar that cannot be shipped is
 # a located error, never a silent exit 0 (decision 67: no flag turns it off).
@@ -1218,11 +1218,11 @@ sidecar_lib "$DECOY/side" "from the decoy checkout"
 echo "==> a workspace member's sidecar is shipped through the resolved dependency"
 run "$SWS/examples/side-app" build --target commonJS
 expect_code 0 "build of a member-dependency with a sidecar"
-if [[ -f "$SWS/examples/side-app/out/side@side.mjs" ]]; then
-  ok "out/side@side.mjs shipped"
-  expect_file_out "$SWS/examples/side-app/out/side@side.mjs" "from the workspace member" "shipped from the resolved member, not by name"
+if [[ -f "$SWS/examples/side-app/out/commonJS/side@side.mjs" ]]; then
+  ok "out/commonJS/side@side.mjs shipped"
+  expect_file_out "$SWS/examples/side-app/out/commonJS/side@side.mjs" "from the workspace member" "shipped from the resolved member, not by name"
 else
-  fail "out/side@side.mjs was not shipped"
+  fail "out/commonJS/side@side.mjs was not shipped"
 fi
 
 echo "==> a second checkout declaring the same name does not silence the shipper"
@@ -1235,9 +1235,9 @@ OUT="$(cd "$SWS/examples/side-app" && BOTOPINK_LIB_ROOTS="$DECOY" "$BP" build --
 CODE=$?
 set -e
 expect_code 0 "build with the library name declared twice across roots"
-if [[ -f "$SWS/examples/side-app/out/side@side.mjs" ]]; then
-  ok "out/side@side.mjs shipped despite the duplicate name"
-  expect_file_out "$SWS/examples/side-app/out/side@side.mjs" "from the workspace member" "the resolved dependency wins over the decoy"
+if [[ -f "$SWS/examples/side-app/out/commonJS/side@side.mjs" ]]; then
+  ok "out/commonJS/side@side.mjs shipped despite the duplicate name"
+  expect_file_out "$SWS/examples/side-app/out/commonJS/side@side.mjs" "from the workspace member" "the resolved dependency wins over the decoy"
 else
   fail "the duplicate name silenced the sidecar shipper"
 fi
@@ -1247,9 +1247,9 @@ PLIB="$WORK/sidepath"; rm -rf "$PLIB"; sidecar_lib "$PLIB" "from the path depend
 PAPP="$WORK/sidepathapp"; rm -rf "$PAPP"; sidecar_app "$PAPP" "{ \"path\": \"$PLIB\" }"
 run "$PAPP" build --target commonJS
 expect_code 0 "build with a path dependency carrying a sidecar"
-if [[ -f "$PAPP/out/side@side.mjs" ]]; then
-  ok "out/side@side.mjs shipped from the path dependency"
-  expect_file_out "$PAPP/out/side@side.mjs" "from the path dependency" "shipped from the directory the build resolved"
+if [[ -f "$PAPP/out/commonJS/side@side.mjs" ]]; then
+  ok "out/commonJS/side@side.mjs shipped from the path dependency"
+  expect_file_out "$PAPP/out/commonJS/side@side.mjs" "from the path dependency" "shipped from the directory the build resolved"
 else
   fail "a path dependency's sidecar was not shipped"
 fi
@@ -1262,7 +1262,7 @@ expect_code 1 "build whose dependency has no sidecar to ship"
 expect_out 'dependency '"'"'side'"'"' requires "./side.mjs" from module '"'"'side/root'"'"'' "names the dependency, the require and the module"
 expect_out "$PLIB/src/side.mjs" "names the last path it looked at"
 expect_out "botopink.json:2:21" "locates the dependency entry of the project manifest"
-[[ ! -e "$PAPP/out/side@side.mjs" ]] && ok "nothing half-shipped" || fail "a sidecar was written by the refused build"
+[[ ! -e "$PAPP/out/commonJS/side@side.mjs" ]] && ok "nothing half-shipped" || fail "a sidecar was written by the refused build"
 
 echo "==> a dependency of a path dependency ships its sidecar from the directory the build resolved"
 # The app sits outside the workspace and names only `mid`, by path; `side` is
@@ -1282,9 +1282,9 @@ printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "target
 printf 'import {io.terminal.print} from "std";\nimport { midMark } from "mid";\n\npub fn main() -> void {\n    print(midMark());\n}\n' >"$TAPP/src/main.bp"
 run "$TAPP" build --target commonJS
 expect_code 0 "build with a sidecar two dependencies away"
-if [[ -f "$TAPP/out/side@side.mjs" ]]; then
-  ok "out/side@side.mjs shipped from mid's workspace sibling"
-  expect_file_out "$TAPP/out/side@side.mjs" "from the transitive member" "shipped from the directory the build resolved"
+if [[ -f "$TAPP/out/commonJS/side@side.mjs" ]]; then
+  ok "out/commonJS/side@side.mjs shipped from mid's workspace sibling"
+  expect_file_out "$TAPP/out/commonJS/side@side.mjs" "from the transitive member" "shipped from the directory the build resolved"
 else
   fail "a transitive dependency's sidecar was not shipped"
 fi
@@ -1295,7 +1295,7 @@ fi
 # build ships the project's `src/sidecars/*.erl` beside the emitted modules
 # (`libs.shipErlSidecars`). On beam the assembled entry's
 # `'__bp_load_siblings'/0` compiles that `.erl` itself, so only the `.S` files
-# are assembled here; on erlang every `.erl` of `out/erl/` is compiled, because
+# are assembled here; on erlang every `.erl` of `out/erlang/` is compiled, because
 # a plain erlang build carries no sibling loader yet (02-erlang step 9).
 # The program is the conformance cell `conformance/modules/erlang/cells/erlang_host_sidecar_shipped`;
 # what it prints is its `snapshot/output/main.snap`'s `out` lines.
@@ -1306,7 +1306,7 @@ if have erl && have erlc; then
     cp -R "$REPO_ROOT/conformance/modules/erlang/cells/erlang_host_sidecar_shipped" "$P"
     run "$P" build --target "$T"
     expect_code 0 "build --target $T"
-    D="$P/out/$([[ "$T" == erlang ]] && echo erl || echo beam)"
+    D="$P/out/$T"
     [[ -f "$D/lt_greeter.erl" ]] && ok "$T: the sidecar is shipped into $(basename "$D")/" || fail "$T: $D/lt_greeter.erl was not shipped"
     set +e
     if [[ "$T" == erlang ]]; then

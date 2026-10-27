@@ -1,5 +1,5 @@
 /// A `.beam`'s record (decision 1007): on erlang and beam a module's `.beam`
-/// in the target's folder (`out/erl/`, `out/beam/`) is loaded as it is while
+/// in the target's folder (`out/erlang/`, `out/beam/`) is loaded as it is while
 /// the source it was compiled from is unchanged — the package's own modules
 /// included. Beside each `<atom>.beam` lies `<atom>.beam.rec`, three lines:
 ///

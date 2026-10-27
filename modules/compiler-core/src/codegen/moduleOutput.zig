@@ -151,7 +151,7 @@ pub const MissingExternal = struct {
 /// `13-module-identity`: every `type` declared in a file is its own erlang/BEAM
 /// module, named by `crossModule.typeAtom` (`app@models@@Person`, decision 109), holding
 /// the type's methods. `atom` is the rendered module atom, which is also the
-/// artifact's basename (`out/erl/<atom>.erl`, `out/beam/<atom>.S`); `code` is
+/// artifact's basename (`out/erlang/<atom>.erl`, `out/beam/<atom>.S`); `code` is
 /// the module's text in the target's language. Both owned by the
 /// `GenerateResult`. commonJS and wasm produce none: a class already is the
 /// type's identity there (decision 5), and wasm is single-module.

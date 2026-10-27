@@ -86,12 +86,12 @@ ok "\`{ \"name\": \"one\" }\` builds against the workspace's \`lib\`"
 echo "==> the store holds the dependencies' modules, never the member's"
 N1="$(entries)"
 [[ "$N1" -gt 0 ]] || fail "the dependencies' .beam files are stored under the workspace root ($STORE)"
-OWN="$WS/one/out/erl/one@main.beam"
+OWN="$WS/one/out/erlang/one@main.beam"
 [[ -f "$OWN" ]] || fail "the member's own module was compiled ($OWN)"
 [[ "$(links "$OWN")" -eq 1 ]] || fail "the member's own .beam is no link to an entry"
-DEP_ERL="$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')"
+DEP_ERL="$(find "$WS/one/out/erlang" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')"
 [[ "$N1" -eq "$DEP_ERL" ]] || fail "one entry per dependency module ($N1 entries, $DEP_ERL dependency modules)"
-LIB1="$WS/one/out/erl/lib@root.beam"
+LIB1="$WS/one/out/erlang/lib@root.beam"
 [[ "$(links "$LIB1")" -ge 2 ]] || fail "a dependency's .beam is a link to its entry"
 ok "$N1 entries, each a dependency's module; the member's own module is not one"
 
@@ -101,8 +101,8 @@ run_in "$WS/two" run --target erlang
 [[ $CODE -eq 0 ]] && grep -q '^hello two$' <<<"$OUT" || { echo "$OUT" >&2; fail "run of the second member"; }
 [[ "$(entries)" -eq "$N1" ]] || fail "the second member added entries ($(entries) against $N1)"
 [[ "$(inodes)" == "$BEFORE" ]] || fail "an entry was written again — the second member compiled a dependency"
-[[ "$(inode "$WS/two/out/erl/lib@root.beam")" -eq "$(inode "$LIB1")" ]] || fail "the second member's lib .beam is the entry the first stored"
-[[ "$(links "$WS/two/out/erl/two@main.beam")" -eq 1 ]] || fail "the second member's own module was compiled"
+[[ "$(inode "$WS/two/out/erlang/lib@root.beam")" -eq "$(inode "$LIB1")" ]] || fail "the second member's lib .beam is the entry the first stored"
+[[ "$(links "$WS/two/out/erlang/two@main.beam")" -eq 1 ]] || fail "the second member's own module was compiled"
 ok "the second member linked every dependency .beam, compiled its own"
 
 echo "==> build, run and test share a dependency's entry"
@@ -119,16 +119,16 @@ echo "==> build_materialises_dependency_beams: build leaves the dependencies' .b
 rm -rf "$WS/one/out"
 run_in "$WS/one" build --target erlang
 [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "build of the first member (exit $CODE)"; }
-for e in "$WS"/one/out/erl/lib@*.erl; do
+for e in "$WS"/one/out/erlang/lib@*.erl; do
   b="${e%.erl}.beam"
   [[ -f "$b" ]] || fail "build left no .beam beside $(basename "$e")"
   [[ "$(links "$b")" -ge 2 ]] || fail "$(basename "$b") is no link to its cache entry"
 done
 # Decision 1007 (2): the build's OTP check writes the member's own `.beam` too — never stored, no link.
-OWN_BEAM="$WS/one/out/erl/one@main.beam"
+OWN_BEAM="$WS/one/out/erlang/one@main.beam"
 [[ -f "$OWN_BEAM" && "$(links "$OWN_BEAM")" -eq 1 && -s "$OWN_BEAM.rec" ]] || fail "build wrote no own .beam with its record, or linked it to the store"
-DEP_BEAMS="$(find "$WS/one/out/erl" -name '*@*.beam' ! -name 'one@*' | wc -l | tr -d ' ')"
-[[ "$DEP_BEAMS" -eq "$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')" ]] || fail "one .beam per dependency module"
+DEP_BEAMS="$(find "$WS/one/out/erlang" -name '*@*.beam' ! -name 'one@*' | wc -l | tr -d ' ')"
+[[ "$DEP_BEAMS" -eq "$(find "$WS/one/out/erlang" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')" ]] || fail "one .beam per dependency module"
 ok "$DEP_BEAMS dependency .beam files, links to the entries; the member's own module compiled beside its .erl, never stored"
 
 echo "==> beam: both members, one store in the workspace"
@@ -169,10 +169,10 @@ while read -r ino rel; do ln "$STORE/$rel" "$PIN/$ino"; done <<<"$BEFORE"
 rm -rf "$WS/one/out"
 run_in "$WS/one" run --target erlang --cold
 [[ $CODE -eq 0 ]] && grep -q '^hullo one$' <<<"$OUT" || { echo "$OUT" >&2; fail "a cold run"; }
-[[ "$(links "$WS/one/out/erl/lib@root.beam")" -eq 1 ]] || fail "--cold links nothing from the store"
+[[ "$(links "$WS/one/out/erlang/lib@root.beam")" -eq 1 ]] || fail "--cold links nothing from the store"
 # Entries the cold run wrote again: the same name, another inode.
 REWRITTEN="$(join <(echo "$BEFORE" | awk '{print $2, $1}' | sort) <(inodes | awk '{print $2, $1}' | sort) | awk '$2 != $3' | wc -l | tr -d ' ')"
-DEP_NOW="$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')"
+DEP_NOW="$(find "$WS/one/out/erlang" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')"
 [[ "$REWRITTEN" -eq "$DEP_NOW" ]] || fail "--cold rewrote every entry of the run's dependencies ($REWRITTEN of $DEP_NOW)"
 chmod -R u+w "$PIN"; rm -rf "$PIN"
 ok "every dependency compiled afresh and its entry written again"

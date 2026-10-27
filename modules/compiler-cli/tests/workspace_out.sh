@@ -15,6 +15,8 @@
 #     are refused before anything is built, naming both directories.
 # erlang and beam (their files are `<pkg>@<path>` already); commonJS's flat
 # names are codegen's (1015 (1)).
+#   • the folder is named by the target, literally (decision 1023): the root's
+#     `build --target <t>` lays exactly `out/<t>/` on each of the four targets.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -64,7 +66,7 @@ for c in one two; do
 done
 
 for target in erlang beam; do
-  case "$target" in erlang) sub=erl; ext=erl ;; beam) sub=beam; ext=S ;; esac
+  case "$target" in erlang) sub=erlang; ext=erl ;; beam) sub=beam; ext=S ;; esac
   DIR="$WS/out/$sub"
   LIB="$DIR/lib@root.$ext"
   rm -rf "$WS/out" "$WS/one/out" "$WS/two/out"
@@ -115,6 +117,18 @@ for target in erlang beam; do
   [[ "$(inode "$LIB")" != "$(inode "$WORK/pin-lib")" ]] || fail "$target: build --cold left lib's file as it was"
   ok "$target: a stale key and --cold rewrite the dependency"
   rm -f "$WORK/pin-lib" "$WORK/pin-std"
+done
+
+# ── the folder named by the target (decision 1023) ─────────────────────────
+for target in commonJS erlang beam wasm; do
+  echo "==> $target: the root's build lays exactly out/$target/"
+  rm -rf "$WS/out" "$WS/one/out" "$WS/two/out"
+  run_in "$WS" build --target "$target"
+  [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "$target: the root's build (exit $CODE)"; continue; }
+  laid="$(cd "$WS/out" && ls -A)"
+  [[ "$laid" == "$target" ]] || fail "$target: out/ holds '$(tr '\n' ' ' <<<"$laid")', not exactly $target/"
+  [[ ! -e "$WS/one/out" && ! -e "$WS/two/out" ]] || fail "$target: a member wrote its own out/"
+  ok "$target: out/$target/ alone"
 done
 
 # ── two packages of one name at two directories ─────────────────────────────

@@ -44,10 +44,10 @@ WORK="$(mktemp -d "${tmp_root%/}/botopink-closure-invariant.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 cp -R "$SCRIPT_DIR/closure_invariant/." "$WORK/"
 
-# The library's files of one build: commonJS and wasm write a package's modules
-# under `<package>/`, erlang and beam name each module `<package>@<path>`.
+# The library's files of one build: wasm writes a package's modules
+# under `wasm/<package>/`, commonJS, erlang and beam name each module `<package>@<path>`.
 shelf_files() { # <consumer> <target>
-  ( cd "$WORK/$1/out-$2" && find . -type f \( -path './shelf/*' -o -name 'shelf@*' \) | sed 's|^\./||' | LC_ALL=C sort )
+  ( cd "$WORK/$1/out-$2" && find . -type f \( -path '*/shelf/*' -o -name 'shelf@*' \) | sed 's|^\./||' | LC_ALL=C sort )
 }
 
 # Compare `shelf`'s files of two consumers' builds of one target.

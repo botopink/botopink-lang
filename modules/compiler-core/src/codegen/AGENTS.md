@@ -1063,7 +1063,7 @@ codegen/
   `CrossModule.imported` (the BARE-name import route), which is why a *qualified*
   std host call (`import { erlang } from "std"` then `erlang.self()`) resolved,
   type-checked, emitted `'std@erlang':self()` and died `undef`: the import names
-  the module, never the symbol, and `out/erl/std@erlang.erl` was two lines of
+  the module, never the symbol, and `out/erlang/std@erlang.erl` was two lines of
   code. `pub` is the promise that the name is callable from outside; whether this
   build reaches it does not decide whether the module is complete, so a
   single-module program with a `pub declare fn` now carries the wrapper too
@@ -1111,8 +1111,8 @@ codegen/
   beside the running module's `.beam` (`code:which(?MODULE)`) whose module is
   not loadable is compiled and loaded, and one that does not compile refuses
   the run, named. `botopink build` ships `src/sidecars/<host>.erl` into
-  `out/erl/`; a program started with only its entry compiled (`erlc` of one
-  file, `erl -pa out/erl`) called the sidecar `undef`. Under `botopink run`
+  `out/erlang/`; a program started with only its entry compiled (`erlc` of one
+  file, `erl -pa out/erlang`) called the sidecar `undef`. Under `botopink run`
   every module is compiled already, so the loader costs one
   `code:ensure_loaded/1` per file. Measured by hand on
   `conformance/modules/erlang/cells/erlang_host_sidecar_shipped` until the CLI half
@@ -2150,7 +2150,7 @@ codegen/
   is what `botopink run --target beam` does). It is the BEAM twin of the erlang
   TEST runner's function of the same name (`erlang.zig` `testRunnerForms`); the
   erlang BUILD has no loader of its own — `botopink run --target erlang`
-  compiles `out/erl/*.erl` — and that row is `02-erlang`'s.
+  compiles `out/erlang/*.erl` — and that row is `02-erlang`'s.
   **Which modules carry it** (`buildBindsBeamHost`): an entry (a module with
   `main/0`) of a build in which some module declares a BEAM host binding of its
   own — a `declare fn`, or a `type` or one of its methods, under

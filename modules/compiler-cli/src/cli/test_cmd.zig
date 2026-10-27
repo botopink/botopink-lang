@@ -149,7 +149,7 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 /// It sits BESIDE the run's directory, never inside it: an erlang runner loads
 /// every `.erl` under its own directory before its tests run
 /// (`'__bp_load_siblings'/0`, `codegen/erlang.zig`), and a fixture project a
-/// test builds holds an `out/erl/` of its own. Inside the run's directory, every
+/// test builds holds an `out/erlang/` of its own. Inside the run's directory, every
 /// test module that ran after rakun-scheduling's build tests compiled and loaded
 /// the ~6 500 fixture `.erl` those tests had written — about five CPU-minutes per
 /// module, and modules of the fixtures' builds loaded over the run's own.

@@ -47,7 +47,7 @@
 ////
 //// How a qualified std host call reaches these, measured: on the erlang
 //// backend `beam.pdPut(t, t)` is emitted as a call to the std module
-//// itself (`std@beam:pdPut(T, T)`), so the emitted `out/erl/std@beam.erl`
+//// itself (`std@beam:pdPut(T, T)`), so the emitted `out/erlang/std@beam.erl`
 //// has to define and export a `pdPut/2` of its own. It used to be
 //// `-module(std@beam).` and nothing else — no export, no function — and
 //// every call through it answered `undef` at run time (`std@erlang:self()`

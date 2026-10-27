@@ -10,6 +10,11 @@
 # `"./lib@root"`; the entry keeping decision 870's `require.main === module`;
 # and the program answering alike on the three targets.
 #
+# Decision 1023 — the folder is named by the target, literally: a package's
+# `build --target <t>` lays exactly `out/<t>/` (`out/commonJS/`, `out/erlang/`,
+# `out/beam/`, `out/wasm/`) and nothing else under `out/`; an `--out <dir>`
+# names the base, the target's folder under it (`<dir>/<t>/`).
+#
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
 set -euo pipefail
@@ -89,9 +94,12 @@ want_answer=$'app!\n<bia>'
 for target in commonJS erlang beam; do
   flags=()
   [[ "$target" == commonJS ]] && flags=(--typescript)
-  if ! (cd "$WORK/app" && "$BP_BIN" build --target "$target" --out "out/$target" "${flags[@]}" >/dev/null 2>"$WORK/build-$target.log"); then
+  rm -rf "$WORK/app/out"
+  if ! (cd "$WORK/app" && "$BP_BIN" build --target "$target" "${flags[@]}" >/dev/null 2>"$WORK/build-$target.log"); then
     fail "$target: build failed"; sed 's/^/      /' "$WORK/build-$target.log" >&2; continue
   fi
+  laid="$(cd "$WORK/app/out" && ls -A)"
+  [[ "$laid" == "$target" ]] || fail "$target: out/ holds '$(tr '\n' ' ' <<<"$laid")', not exactly $target/"
   case "$target" in
     commonJS)
       want=$'app@main.d.ts\napp@main.js\napp@models.d.ts\napp@models.js\napp@models@user.d.ts\napp@models@user.js\napp@util.d.ts\napp@util.js\nlib@root.d.ts\nlib@root.js\nlib@util.d.ts\nlib@util.js'
@@ -102,11 +110,11 @@ for target in commonJS erlang beam; do
       ;;
     erlang)
       want=$'app@main.erl\napp@models.erl\napp@models@user.erl\napp@util.erl\nlib@root.erl\nlib@util.erl'
-      got="$(listing erlang erl .erl | grep -v '@@')"
+      got="$(listing erlang "" .erl | grep -v '@@')"
       ;;
     beam)
       want=$'app@main.S\napp@models.S\napp@models@user.S\napp@util.S\nlib@root.S\nlib@util.S'
-      got="$(listing beam beam .S | grep -v '@@')"
+      got="$(listing beam "" .S | grep -v '@@')"
       ;;
   esac
   if [[ "$got" != "$want" ]]; then
@@ -115,9 +123,34 @@ for target in commonJS erlang beam; do
   fi
   answer="$(cd "$WORK/app" && "$BP_BIN" run --target "$target" 2>/dev/null | grep -v '^\s*$' | grep -v 'Compil' || true)"
   [[ "$answer" == "$want_answer" ]] || fail "$target: the program answered '$answer', not '$want_answer'"
+  # Kept for the commonJS checks below.
+  [[ "$target" == commonJS ]] && cp -r "$WORK/app/out/commonJS" "$WORK/commonJS-out"
 done
 
-js="$WORK/app/out/commonJS"
+# wasm: the same one folder, `out/wasm/`, its entry component inside it; and
+# on every target an `--out <dir>` is the base the target's folder goes under.
+rm -rf "$WORK/app/out"
+if (cd "$WORK/app" && "$BP_BIN" build --target wasm >/dev/null 2>"$WORK/build-wasm.log"); then
+  laid="$(cd "$WORK/app/out" && ls -A)"
+  [[ "$laid" == wasm ]] || fail "wasm: out/ holds '$(tr '\n' ' ' <<<"$laid")', not exactly wasm/"
+  [[ -n "$(find "$WORK/app/out/wasm" -maxdepth 1 -name '*.wat' | head -1)" ]] || fail "wasm: no .wat in out/wasm/"
+  if command -v wasmtime >/dev/null 2>&1; then
+    answer="$(cd "$WORK/app" && "$BP_BIN" run --target wasm 2>/dev/null | grep -v '^\s*$' | grep -v 'Compil' || true)"
+    [[ "$answer" == "$want_answer" ]] || fail "wasm: the program answered '$answer', not '$want_answer'"
+  fi
+else
+  fail "wasm: build failed"; sed 's/^/      /' "$WORK/build-wasm.log" >&2
+fi
+for target in commonJS erlang beam wasm; do
+  rm -rf "$WORK/app/elsewhere"
+  if ! (cd "$WORK/app" && "$BP_BIN" build --target "$target" --out elsewhere >/dev/null 2>"$WORK/build-$target-out.log"); then
+    fail "$target --out elsewhere: build failed"; sed 's/^/      /' "$WORK/build-$target-out.log" >&2; continue
+  fi
+  laid="$(cd "$WORK/app/elsewhere" && ls -A)"
+  [[ "$laid" == "$target" ]] || fail "$target --out elsewhere: it holds '$(tr '\n' ' ' <<<"$laid")', not exactly $target/"
+done
+
+js="$WORK/commonJS-out"
 if [[ -f "$js/lib@root.js" ]]; then
   grep -q 'require("./lib@util")' "$js/lib@root.js" || fail 'lib@root.js does not require its sibling "./lib@util"'
   grep -q 'require("./lib@root")' "$js/app@main.js" || fail 'app@main.js does not require "./lib@root"'

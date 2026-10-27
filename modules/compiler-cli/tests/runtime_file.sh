@@ -119,10 +119,10 @@ for target in commonJS erlang beam wasm; do
   if [[ "$target" == wasm ]]; then
     for d in direct bpr; do
       wats="$(cd "$WORK/$d-$target" && find . -type f | sort | tr '\n' ' ')"
-      [[ "$wats" == "./main.wat " ]] || fail "wasm: the $d build wrote ${wats:-nothing}, not main.wat alone"
+      [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the $d build wrote ${wats:-nothing}, not main.wat alone"
     done
     if command -v wasmtime >/dev/null 2>&1; then
-      wasmtime run -S http -W gc=y -W exceptions=y "$WORK/direct-$target/main.wat" > "$WORK/wt.out" 2>/dev/null || fail "wasm: wasmtime failed on the build's main.wat"
+      wasmtime run -S http -W gc=y -W exceptions=y "$WORK/direct-$target/wasm/main.wat" > "$WORK/wt.out" 2>/dev/null || fail "wasm: wasmtime failed on the build's main.wat"
       diff <(grep -v '^build a$' "$WORK/wt.out") "$WORK/want.out" > "$WORK/diff.log" \
         || { fail "wasm: the build's main.wat answers otherwise under wasmtime"; sed 's/^/      /' "$WORK/diff.log" >&2; }
     else
@@ -130,12 +130,12 @@ for target in commonJS erlang beam wasm; do
     fi
     # Decision 1006-b (5): the run that builds the set emits the entry's component alone too.
     wats="$(cd "$WORK/run-direct-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
-    [[ "$wats" == "./main.wat " ]] || fail "wasm: the direct run (building the set) wrote ${wats:-no .wat}, not main.wat alone"
-    cmp -s "$WORK/run-direct-$target/main.wat" "$WORK/bpr-$target/main.wat" \
+    [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the direct run (building the set) wrote ${wats:-no .wat}, not main.wat alone"
+    cmp -s "$WORK/run-direct-$target/wasm/main.wat" "$WORK/bpr-$target/wasm/main.wat" \
       || fail "wasm: the direct run's main.wat differs from the build's"
     wats="$(cd "$WORK/run-bpr-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
-    [[ "$wats" == "./main.wat " ]] || fail "wasm: the run from its own .bpr wrote ${wats:-no .wat}, not main.wat alone"
-    cmp -s "$WORK/run-bpr-$target/main.wat" "$WORK/bpr-$target/main.wat" \
+    [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the run from its own .bpr wrote ${wats:-no .wat}, not main.wat alone"
+    cmp -s "$WORK/run-bpr-$target/wasm/main.wat" "$WORK/bpr-$target/wasm/main.wat" \
       || fail "wasm: the run's main.wat differs from the build's"
   fi
 done
@@ -174,7 +174,7 @@ WEB="$WORK/web"
 if ! bpin "$WEB" "$WORK/direct.log" build --target wasm --out "$WORK/direct-web" --emit-runtime "$WORK/rt-web"; then
   fail "web: the direct build failed"; sed 's/^/      /' "$WORK/direct.log" >&2
 else
-  [[ -f "$WORK/direct-web/main.mjs" ]] || fail "web: the direct build wrote no main.mjs loader"
+  [[ -f "$WORK/direct-web/wasm/main.mjs" ]] || fail "web: the direct build wrote no main.mjs loader"
   if ! bpin "$WEB" "$WORK/bpr.log" build --target wasm --out "$WORK/bpr-web" "$WORK/rt-web/web.bpr"; then
     fail "web: the build from web.bpr failed"; sed 's/^/      /' "$WORK/bpr.log" >&2
   else

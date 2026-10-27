@@ -608,13 +608,13 @@ test "isDependencyArtifact: another package's module or unit, never the project'
     defer arena.deinit();
     const own = try ownAtomPrefix(arena.allocator(), "alpha");
     try testing.expectEqualStrings("alpha@", own);
-    try testing.expect(isDependencyArtifact("out/erl/emilia@theme.erl", own));
-    try testing.expect(isDependencyArtifact("out/erl/std@io@fs@@File.erl", own));
+    try testing.expect(isDependencyArtifact("out/erlang/emilia@theme.erl", own));
+    try testing.expect(isDependencyArtifact("out/erlang/std@io@fs@@File.erl", own));
     try testing.expect(isDependencyArtifact("out/beam/emilia@theme.S", own));
-    try testing.expect(!isDependencyArtifact("out/erl/alpha@main.erl", own));
-    try testing.expect(!isDependencyArtifact("out/erl/alpha@main@@Point.erl", own));
-    try testing.expect(!isDependencyArtifact("out/erl/rakun_file_router.erl", own));
-    try testing.expect(!isDependencyArtifact("out/erl/bp@comptime__ct__x.erl", own));
+    try testing.expect(!isDependencyArtifact("out/erlang/alpha@main.erl", own));
+    try testing.expect(!isDependencyArtifact("out/erlang/alpha@main@@Point.erl", own));
+    try testing.expect(!isDependencyArtifact("out/erlang/rakun_file_router.erl", own));
+    try testing.expect(!isDependencyArtifact("out/erlang/bp@comptime__ct__x.erl", own));
     // A package named with a dash: its atoms use `_`.
     try testing.expectEqualStrings("rakun_web@", try ownAtomPrefix(arena.allocator(), "rakun-web"));
 }

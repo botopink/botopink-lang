@@ -105,7 +105,7 @@ grep -q "Compiling" "$WORK/clean.err" && ok "stderr keeps the CLI's messages" ||
 # (decision 1006 (2), (4)).
 ( cd "$P" && "$BP_BIN" build --cold --target commonJS --out "$WORK/plain-out" ) >"$WORK/plain.out" 2>"$WORK/plain.err"
 expect_eq "stdout without --json is the raw prints" $'first\nsecond' "$(cat "$WORK/plain.out")"
-[[ -e "$P/out/clean@main.js" ]] && ok "the artifact is written" || fail "no out/clean@main.js"
+[[ -e "$P/out/commonJS/clean@main.js" ]] && ok "the artifact is written" || fail "no out/commonJS/clean@main.js"
 
 # ── a refused build ───────────────────────────────────────────────────────────
 echo "==> a refused build: each refusal with its from lines"

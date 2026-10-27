@@ -59,10 +59,10 @@ needs_flags() {
 NUMERIC="$SCRIPT_DIR/backend_exec/numeric"
 echo "==> [numeric] wasm: build + wasmtime --invoke main"
 ( cd "$NUMERIC" && "$BP_BIN" build --target wasm )
-head -1 "$NUMERIC/out/main.wat" | grep -qx '(component' || { echo "  wasm: out/main.wat is not a component" >&2; exit 1; }
-core_module "$NUMERIC/out/main.wat" > "$NUMERIC/out/main.core.wat"
-mapfile -t flags < <(needs_flags "$NUMERIC/out/main.core.wat")
-got="$(wasmtime run "${flags[@]}" --invoke main "$NUMERIC/out/main.core.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+head -1 "$NUMERIC/out/wasm/main.wat" | grep -qx '(component' || { echo "  wasm: out/wasm/main.wat is not a component" >&2; exit 1; }
+core_module "$NUMERIC/out/wasm/main.wat" > "$NUMERIC/out/wasm/main.core.wat"
+mapfile -t flags < <(needs_flags "$NUMERIC/out/wasm/main.core.wat")
+got="$(wasmtime run "${flags[@]}" --invoke main "$NUMERIC/out/wasm/main.core.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 if [[ "$got" == "55" ]]; then
   echo "  wasm: main() => $got"
 else

@@ -4,7 +4,7 @@
 # decision 1007's ledger row: reuse is a property of two runs, which no cell
 # expresses):
 #   • `beam_reused_when_source_unchanged`: on erlang and on beam, a second
-#     `run --target <t>` compiles no module — every `.beam` in `out/erl/` /
+#     `run --target <t>` compiles no module — every `.beam` in `out/erlang/` /
 #     `out/beam/` the same file (its inode, pinned by a link of its own) — and
 #     answers the same; beside each `.beam` its record `<atom>.beam.rec` (the
 #     source's hash, the compiler's source stamp, the OTP release);
@@ -47,7 +47,7 @@ says() { # <what> <line>
   printf '%s\n' "$2" > "$WORK/want"
   cmp -s "$WORK/want" "$WORK/out" || { fail "$1: stdout differs"; diff "$WORK/want" "$WORK/out" | sed 's/^/      /' >&2 || true; }
 }
-sub() { [[ "$1" == erlang ]] && echo erl || echo beam; }
+sub() { [[ "$1" == erlang ]] && echo erlang || echo beam; }
 # pin <dir> <tag>: a link to every `.beam` of <dir>, so its inode is not reused.
 pin() {
   rm -rf "$WORK/pin-$2"; mkdir -p "$WORK/pin-$2"
@@ -74,7 +74,7 @@ for target in erlang beam; do
   says "$target: run --cold" "area 12"
   for f in "$WORK/pin-$target"/*.beam; do same "$D" "$target" "$(basename "$f")" || fail "$target: run --cold compiled $(basename "$f") again"; done
 done
-D="$C/out/erl"
+D="$C/out/erlang"
 bp "$C" build --cold --target erlang || { fail "build --cold failed"; show "$WORK/err"; }
 for f in "$WORK/pin-erlang"/*.beam; do same "$D" erlang "$(basename "$f")" && fail "build --cold reused $(basename "$f")"; done
 

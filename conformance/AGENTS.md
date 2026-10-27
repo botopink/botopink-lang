@@ -2106,7 +2106,7 @@ template that builds a record's tag spells it (`'external_host_record@main@@Poin
 
 **A beam program's host modules.** `botopink build --target beam` ships the `.erl` of every
 `#[@external(.Erlang("<host>", …))]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
-beside the `.S` files — the files the erlang build ships into `out/erl/` — and a host module that is
+beside the `.S` files — the files the erlang build ships into `out/erlang/` — and a host module that is
 neither shipped nor on the Erlang code path is the same located refusal on both
 (`modules/external/cells/external_erlang_host_module_missing`). Nothing assembles an `.erl`: the
 entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside its own `.beam` before the

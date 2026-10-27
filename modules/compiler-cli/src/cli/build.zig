@@ -935,11 +935,16 @@ pub fn targetSource(target: config.Target) bp.codegen.TargetSource {
 /// `erl -pa <one directory>` can load a multi-module program from; commonJS
 /// and its `.d.ts` take the same name (`std@math.js`, `std@math.d.ts`), each
 /// `require` naming a sibling. wasm keeps the module path.
+///
+/// Decision 1023: the folder is named by the target, literally — `out/commonJS/`,
+/// `out/erlang/`, `out/beam/`, `out/wasm/` — for a package's build and a
+/// workspace root's alike; an `--out <dir>` names the base the folder goes under.
 pub fn targetSubdir(target: config.Target) []const u8 {
     return switch (target) {
-        .erlang => "erl/",
+        .commonJS => "commonJS/",
+        .erlang => "erlang/",
         .beam => "beam/",
-        .commonJS, .wasm => "",
+        .wasm => "wasm/",
     };
 }
 
@@ -1054,9 +1059,9 @@ fn writeOutputs(
         }
         if (once) |*w| if (w.skips(pkg)) continue;
         var file: FileWriter = .{ .io = io, .once = if (once) |*w| w else null, .pkg = pkg };
-        // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS `out/<pkg>@<path>.js`,
-        // flat (decision 1015). wasm: `out/<module path><ext>`, so
-        // subdirectories may have to be created.
+        // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS
+        // `out/commonJS/<pkg>@<path>.js`, flat (decisions 1015, 1023). wasm:
+        // `out/wasm/<module path><ext>`, so subdirectories may have to be created.
         const sub_path = try artifactPath(gpa, out_dir, target, packages, o.name, ext);
         defer gpa.free(sub_path);
 
@@ -1107,10 +1112,10 @@ fn writeOutputs(
     // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — each flat beside the
     // modules as `<pkg>@<base>` (decision 1015).
     if (target == .commonJS) {
-        try libs.shipMjsSidecars(gpa, io, outputs, packages, out_dir, ext, env_map);
+        try libs.shipMjsSidecars(gpa, io, outputs, packages, std.mem.trimEnd(u8, folder, "/"), ext, env_map);
     }
     // erlang and BEAM: a `#[@external(.Erlang("host:fn($0)"))]`'s `host.erl` goes
-    // beside the emitted modules — `out/erl/`, where `botopink run` compiles
+    // beside the emitted modules — `out/erlang/`, where `botopink run` compiles
     // every `.erl` onto the code path, and `out/beam/`, where the assembled
     // entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside
     // it. A host module that is neither shipped nor in the Erlang code path is

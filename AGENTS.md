@@ -399,7 +399,7 @@ Do not use `--no-verify`.
   project; the conformance suite's, its root package `conformance/modules/`), by the hash of the
   bytes compiled and the OTP compiler's version, and link it (hard link, else
   copy) into the run's own output; the package under test is compiled when
-  its `.beam` record in `out/erl/` / `out/beam/` does not match (decision 1007:
+  its `.beam` record in `out/erlang/` / `out/beam/` does not match (decision 1007:
   the source's hash, the compiler's source stamp, the OTP release — `run`
   loads a matching `.beam` as it is, `build --cold` compiles every one).
   `--cold` reads nothing and writes what it compiled; `rm -rf

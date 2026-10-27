@@ -2672,7 +2672,7 @@ fn appendGenHelperForms(b: Ast.Builder, out: *Forms, set: GenHelpers) !void {
 /// `erlang.self()`) resolves, type-checks, emits `'std@erlang':self()` and dies
 /// with `{undef,[{'std@erlang',self,[],[]}, …]}`, because the import names the
 /// MODULE and never the symbol, so the predicate looked in the wrong place.
-/// `out/erl/std@erlang.erl` was two lines of code and `out/erl/std@beam.erl`
+/// `out/erlang/std@erlang.erl` was two lines of code and `out/erlang/std@beam.erl`
 /// one. `cross` is no longer read: a module that declares a `pub` external is
 /// incomplete without the wrapper whether or not anything is compiled beside it.
 fn externalWrapperNeeded(f: ast.FnDecl) bool {
@@ -2682,9 +2682,9 @@ fn externalWrapperNeeded(f: ast.FnDecl) bool {
 /// `'__bp_load_siblings'/0` of a built entry point (language-gaps T1): every
 /// `.erl` beside the running module's `.beam` whose module is not loadable is
 /// compiled and loaded, first thing in `'_botopink_main'/0`. `botopink build`
-/// ships a package's `src/sidecars/<host>.erl` into `out/erl/` beside the
+/// ships a package's `src/sidecars/<host>.erl` into `out/erlang/` beside the
 /// emitted modules, and a program started on that directory with only its
-/// entry compiled (`erlc` of one file, then `erl -pa out/erl`) called the
+/// entry compiled (`erlc` of one file, then `erl -pa out/erlang`) called the
 /// sidecar `undef`. A module already loadable — `botopink run` compiles every
 /// `.erl` — is left alone, so the loader costs one `code:ensure_loaded/1` per
 /// file there. A sidecar that does not compile REFUSES THE RUN, named, with the
