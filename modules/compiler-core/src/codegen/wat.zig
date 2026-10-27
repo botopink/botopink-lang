@@ -520,7 +520,14 @@ pub fn codegenEmit(
                     if (try testProgram(unit_arena.allocator(), ok.transformed, if (ct.srcPath.len > 0) ct.srcPath else try std.fmt.allocPrint(unit_arena.allocator(), "{s}.bp", .{ct.name}))) |tp| {
                         var unit_missing: ?moduleOutput.MissingExternal = null;
                         var unit_refused: ?Emitter.Refusal = null;
-                        const unit = emitWat(alloc, ct.name, ct.srcPath, tp, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused) catch |err| {
+                        // Decision 1032 (6) P4 — with the units on, the test
+                        // entry is the unit `<pkg>@<module>.test`.
+                        unit_inits = inits.items;
+                        unit_stem_suffix = if (units_mode) test_stem_suffix else "";
+                        const unit_or = emitWat(alloc, ct.name, ct.srcPath, tp, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &scope.cross, external_lookup, artifact, &unit_missing, &unit_refused);
+                        unit_inits = &.{};
+                        unit_stem_suffix = "";
+                        const unit = unit_or catch |err| {
                             const diagnostic: moduleOutput.Diagnostic = if (unit_missing) |me|
                                 try me.diagnostic(alloc)
                             else if (unit_refused) |r|
@@ -543,13 +550,14 @@ pub fn codegenEmit(
                         };
                         // The text is the artifact (`wasmtime` runs a `.wat`
                         // component as `botopink run` does).
-                        alloc.free(unit.binary);
+                        const unit_wasm: ?[]u8 = if (units_mode) unit.binary else null;
+                        if (!units_mode) alloc.free(unit.binary);
                         for (unit.std_funcs) |f| {
                             alloc.free(f.symbol);
                             alloc.free(f.label);
                         }
                         if (unit.std_funcs.len > 0) alloc.free(unit.std_funcs);
-                        test_unit = .{ .atom = try std.fmt.allocPrint(alloc, TEST_UNIT_PREFIX ++ "/{s}", .{ct.name}), .code = unit.text };
+                        test_unit = .{ .atom = try std.fmt.allocPrint(alloc, TEST_UNIT_PREFIX ++ "/{s}", .{ct.name}), .code = unit.text, .wasm = unit_wasm };
                     }
                 }
                 try results.append(alloc, .{
@@ -1743,6 +1751,10 @@ threadlocal var registering_unit: bool = false;
 /// imports nothing of theirs (decisions 660, 677: every module of the program
 /// with a body), each after what it imports.
 threadlocal var unit_inits: []const []const u8 = &.{};
+/// Appended to the stem of the unit being emitted: a module's test entry is
+/// `<pkg>@<module>.test` (decision 1032 (6) P4).
+threadlocal var unit_stem_suffix: []const u8 = "";
+pub const test_stem_suffix = ".test";
 
 /// Whether `module` is a program or library unit of its own with the units
 /// on: neither std's (linked into its importer) nor a loaded package's.
@@ -2667,7 +2679,8 @@ fn emitWatPass(
     // component frame imports, in dependency order (the core first, the
     // entry last; `wat_emitter.renderFrame`).
     if (units_entry) {
-        const lines = try unitsLines(ar, rt.?, items.items, try entryStem(ar, module_name), linked, unit_inits);
+        const self_stem = try std.fmt.allocPrint(ar, "{s}{s}", .{ try entryStem(ar, module_name), unit_stem_suffix });
+        const lines = try unitsLines(ar, rt.?, items.items, self_stem, linked, unit_inits);
         try items.append(ar, .{ .custom = .{ .name = runtimeUnit.units_section, .bytes = lines } });
         if (registering_unit) if (program_units) |reg| {
             const pa = program_units_alloc;

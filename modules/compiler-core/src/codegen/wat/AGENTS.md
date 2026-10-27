@@ -1337,7 +1337,11 @@ from another program unit that the unit exports with the same type is imported f
 else (a generic function, a method, a linear module's) stays linked. `botopink.units` merges what the
 program units it links or runs name: the core, every std unit any of them imports, the program units in
 dependency order, the module itself. `tests/wat.zig` `units ---- each module of a program is a unit`
-holds the index oracle over every unit of a two-module program and runs its frame. Not yet: the dead
+holds the index oracle over every unit of a two-module program and runs its frame. **The test entry**:
+under `botopink test` (`Config.test_mode`) a module's test program is the unit `<pkg>@<module>.test`
+(`unit_stem_suffix`, the last line of its `botopink.units`), shaped as the module's unit and importing
+what its tests reach; its binary is `ModuleOutput.test_unit.wasm` (`units ---- a module's test entry`
+runs its frame). Writing it as `<stem>.test.wasm` and running it is the CLI runner's (1032 (6), machine 2). Not yet: the dead
 code a replaced body called stays in the importer; the capture state and the GC print helpers are each
 unit's own (1028 (2)). `tests/wat.zig` `units ----` emits an entry with the units on, checks every import against
 the face of the unit it names, and runs the frame over the units' bytes through `runner.run` (R0).

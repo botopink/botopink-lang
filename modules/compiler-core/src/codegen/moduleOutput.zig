@@ -158,6 +158,9 @@ pub const MissingExternal = struct {
 pub const Unit = struct {
     atom: []u8,
     code: []u8,
+    /// Decision 1032 (6) P4 — a wasm test entry's binary under
+    /// `Config.wasm_units` (`<pkg>@<module>.test.wasm`); null otherwise.
+    wasm: ?[]u8 = null,
 };
 
 /// Final per-module output after all pipeline stages.
@@ -229,6 +232,7 @@ pub const GenerateResult = struct {
         if (self.test_unit) |u| {
             allocator.free(u.atom);
             allocator.free(u.code);
+            if (u.wasm) |w| allocator.free(w);
         }
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);

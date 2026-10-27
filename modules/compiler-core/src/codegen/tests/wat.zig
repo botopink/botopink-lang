@@ -5366,3 +5366,102 @@ test "wat: units ---- each module of a program is a unit, importing what the uni
     try std.testing.expectEqual(@as(i32, 0), out.status);
     try std.testing.expectEqualStrings("hi, bo\n4\n", out.stdout orelse "");
 }
+
+/// The stdout of the frame over `entry`'s units (the core, std's, and the
+/// program units `program` holds by stem), run through `runner.run`.
+fn runUnitsFrame(a: std.mem.Allocator, ar: std.mem.Allocator, entry: []const u8, program: []const @import("../wat/wat_emitter.zig").UnitBytes) ![]const u8 {
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const engine = @import("../wat/engine.zig");
+    const runner = @import("../wat/runner.zig");
+    const watEmitter = @import("../wat/wat_emitter.zig");
+    const rt = try ru.get();
+    const stems = try ru.unitsOf(ar, entry);
+    var fw: std.Io.Writer.Allocating = .init(ar);
+    try watEmitter.frameOf(ar, &fw.writer, entry, program);
+    var failure: ?[]u8 = null;
+    const comp = (try engine.precompiled(a, io, null, fw.written(), .component, false, &failure)) orelse {
+        std.debug.print("\n=== frame refused: {s}\n", .{failure.?});
+        a.free(failure.?);
+        return error.TestUnexpectedResult;
+    };
+    defer comp.code.deinit();
+    var held: std.ArrayListUnmanaged(engine.Precompiled) = .empty;
+    defer {
+        for (held.items) |p| p.code.deinit();
+        held.deinit(a);
+    }
+    const units = try ar.alloc(runner.Unit, stems.len);
+    for (stems, units, 0..) |s, *u, k| {
+        const bytes = if (k == stems.len - 1) entry else if (std.mem.eql(u8, s, ru.name)) rt.core_bytes else if (rt.unit(s)) |su| su.bytes else for (program) |p| {
+            if (std.mem.eql(u8, p.name, s)) break p.bytes;
+        } else return error.TestUnexpectedResult;
+        const pc = (try engine.precompiled(a, io, null, bytes, .module, false, &failure)) orelse {
+            std.debug.print("\n=== unit {s} refused: {s}\n", .{ s, failure.? });
+            a.free(failure.?);
+            return error.TestUnexpectedResult;
+        };
+        try held.append(a, pc);
+        u.* = .{ .name = try std.fmt.allocPrint(ar, "unit-{d}", .{k}), .module = pc.code.module };
+    }
+    const out = try runner.run(a, comp.code.component, units, .{ .stdout = .capture });
+    defer out.deinit(a);
+    if (out.trap) |t| std.debug.print("\n=== trap: {s}\n", .{t});
+    try std.testing.expectEqual(@as(i32, 0), out.status);
+    return ar.dupe(u8, out.stdout orelse "");
+}
+
+// Decision 1032 (6) P4 — under `botopink test` with the units on, a module's
+// test entry is the unit `<pkg>@<module>.test` (its `botopink.units`' last
+// line), importing the program units its tests reach as the module does;
+// its frame runs the tests.
+test "wat: units ---- a module's test entry is the unit <pkg>@<module>.test" {
+    const a = std.testing.allocator;
+    const ru = @import("../wat/runtime_unit.zig");
+    const watEmitter = @import("../wat/wat_emitter.zig");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    cfg.test_mode = true;
+    var outputs = try h.generate(a, &.{
+        .{ .path = "util", .source =
+        \\pub fn twice(n: i32) -> i32 {
+        \\    return n * 2;
+        \\}
+        },
+        .{ .path = "calc", .source =
+        \\import {twice} from "util";
+        \\
+        \\pub fn quad(n: i32) -> i32 {
+        \\    return twice(twice(n));
+        \\}
+        \\
+        \\test "quad" {
+        \\    assert quad(3) == 12;
+        \\}
+        },
+    }, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
+    var entry: ?[]const u8 = null;
+    for (outputs.items) |o| {
+        if (o.result.wasm) |bin| {
+            const stems = try ru.unitsOf(ar, bin);
+            if (stems.len > 0) try program.append(ar, .{ .name = stems[stems.len - 1], .bytes = bin });
+        }
+        if (std.mem.eql(u8, o.name, "calc")) entry = (o.result.test_unit orelse return error.NoTestUnit).wasm;
+    }
+    const bin = entry orelse return error.NoTestUnit;
+    const stems = try ru.unitsOf(ar, bin);
+    try std.testing.expectEqualStrings("test@calc.test", stems[stems.len - 1]);
+    try std.testing.expectEqualStrings("test@util", stems[stems.len - 2]);
+    try std.testing.expect(std.mem.indexOf(u8, (try ru.faceOfBytes(ar, bin)).text, "(import \"test@util\" \"twice\" ") != null);
+    const out = try runUnitsFrame(a, ar, bin, program.items);
+    try std.testing.expect(std.mem.indexOf(u8, out, "1 passed, 0 failed") != null);
+}
