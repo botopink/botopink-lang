@@ -1017,8 +1017,9 @@ pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_bin
     if (wasm_binary) |b| if (runtimeUnit.importsRuntime(b)) {
         const r = try runtimeUnit.get();
         const im = try runtimeUnit.importsOf(uar, b);
-        const core = try r.coreFor(uar, im.pages);
-        try preload.append(uar, .{ .name = runtimeUnit.name, .code = core.bytes });
+        // The core's bytes are fixed (decision 1032): the module grows the
+        // memory past its own data.
+        try preload.append(uar, .{ .name = runtimeUnit.name, .code = r.core_bytes });
         for (try r.closure(uar, im.units)) |u| try preload.append(uar, .{ .name = u.name, .code = u.bytes });
     };
     var key: [64]u8 = undefined;

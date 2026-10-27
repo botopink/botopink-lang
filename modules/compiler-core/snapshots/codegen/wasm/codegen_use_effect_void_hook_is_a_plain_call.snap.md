@@ -810,14 +810,14 @@ component fn Widget() -> Component<Element> {
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1))
-  (data (i32.const 11696) "\18\00\00\00R\07Context\01\0ccontextValueG")
-  (data (i32.const 11724) "\01\00\00\00i")
-  (data (i32.const 11732) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 11824) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
-  (data (i32.const 11896) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 11924) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 11956) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data (i32.const 11988) "\0a\00\00\00R\07Element\00")
+  (data $__bp_seg0 "\18\00\00\00R\07Context\01\0ccontextValueG")
+  (data $__bp_seg1 "\01\00\00\00i")
+  (data $__bp_seg2 "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
+  (data $__bp_seg3 "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
+  (data $__bp_seg4 "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data $__bp_seg5 "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data $__bp_seg6 "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (data $__bp_seg7 "\0a\00\00\00R\07Element\00")
   (func $createContext (param $value i32) (result i32)
     (local $__mem0 i32)
     i32.const 12
@@ -1734,6 +1734,58 @@ component fn Widget() -> Component<Element> {
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 28
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11724
+    i32.const 0
+    i32.const 5
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11732
+    i32.const 0
+    i32.const 90
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
+    i32.const 11824
+    i32.const 0
+    i32.const 69
+    memory.init $__bp_seg3
+    data.drop $__bp_seg3
+    i32.const 11896
+    i32.const 0
+    i32.const 26
+    memory.init $__bp_seg4
+    data.drop $__bp_seg4
+    i32.const 11924
+    i32.const 0
+    i32.const 32
+    memory.init $__bp_seg5
+    data.drop $__bp_seg5
+    i32.const 11956
+    i32.const 0
+    i32.const 29
+    memory.init $__bp_seg6
+    data.drop $__bp_seg6
+    i32.const 11988
+    i32.const 0
+    i32.const 14
+    memory.init $__bp_seg7
+    data.drop $__bp_seg7
     global.get $__heap_ptr
     i32.const 12004
     i32.lt_u

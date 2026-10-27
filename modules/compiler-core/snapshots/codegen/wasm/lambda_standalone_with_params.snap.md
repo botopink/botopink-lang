@@ -20,7 +20,7 @@ import {io.terminal.print} from "std";
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0))
   (start $__bp_reserve)
-  (data (i32.const 11696) "\29\00\00\00integer overflow: + on i32 at main.bp:2:7")
+  (data $__bp_seg0 "\29\00\00\00integer overflow: + on i32 at main.bp:2:7")
   (global $add (mut i32) (i32.const 0))
   (global $result (mut i32) (i32.const 0))
   (func $main
@@ -481,6 +481,23 @@ import {io.terminal.print} from "std";
     unreachable
   )
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 45
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
     global.get $__heap_ptr
     i32.const 11744
     i32.lt_u

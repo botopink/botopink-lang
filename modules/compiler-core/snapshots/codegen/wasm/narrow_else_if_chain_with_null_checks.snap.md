@@ -20,9 +20,9 @@ import {io.terminal.print} from "std";
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\04\00\00\00zero")
-  (data (i32.const 11704) "\09\00\00\00nonzero: ")
-  (data (i32.const 11720) "\04\00\00\00null")
+  (data $__bp_seg0 "\04\00\00\00zero")
+  (data $__bp_seg1 "\09\00\00\00nonzero: ")
+  (data $__bp_seg2 "\04\00\00\00null")
   (func $classify (param $x i32) (result i32)
     (local $__opt0 i32)
     (local $__opt1 i32)
@@ -511,6 +511,33 @@ import {io.terminal.print} from "std";
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 8
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11704
+    i32.const 0
+    i32.const 13
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11720
+    i32.const 0
+    i32.const 8
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
     global.get $__heap_ptr
     i32.const 11728
     i32.lt_u

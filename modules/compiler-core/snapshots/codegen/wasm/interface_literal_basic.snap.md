@@ -18,10 +18,10 @@ import {io.terminal.print} from "std";
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\04\00\00\00Type")
-  (data (i32.const 11704) "\02\00\00\00Fn")
-  (data (i32.const 11712) "\07\00\00\00Service")
-  (data (i32.const 11724) "\00\00\00\00")
+  (data $__bp_seg0 "\04\00\00\00Type")
+  (data $__bp_seg1 "\02\00\00\00Fn")
+  (data $__bp_seg2 "\07\00\00\00Service")
+  (data $__bp_seg3 "\00\00\00\00")
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -300,6 +300,38 @@ import {io.terminal.print} from "std";
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 8
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11704
+    i32.const 0
+    i32.const 6
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11712
+    i32.const 0
+    i32.const 11
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
+    i32.const 11724
+    i32.const 0
+    i32.const 4
+    memory.init $__bp_seg3
+    data.drop $__bp_seg3
     global.get $__heap_ptr
     i32.const 11728
     i32.lt_u

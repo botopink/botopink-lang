@@ -17,12 +17,12 @@ fn describe() -> string {
   (import "std@array" "std:array.slice" (func $__std_array_slice (param i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\01\00\00\00a")
-  (data (i32.const 11704) "\01\00\00\00b")
-  (data (i32.const 11712) "\01\00\00\00c")
-  (data (i32.const 11720) "\05\00\00\00empty")
-  (data (i32.const 11732) "\03\00\00\00one")
-  (data (i32.const 11740) "\04\00\00\00many")
+  (data $__bp_seg0 "\01\00\00\00a")
+  (data $__bp_seg1 "\01\00\00\00b")
+  (data $__bp_seg2 "\01\00\00\00c")
+  (data $__bp_seg3 "\05\00\00\00empty")
+  (data $__bp_seg4 "\03\00\00\00one")
+  (data $__bp_seg5 "\04\00\00\00many")
   (func $describe (result i32)
     (local $__mem0 i32)
     (local $items i32)
@@ -98,6 +98,48 @@ fn describe() -> string {
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 5
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11704
+    i32.const 0
+    i32.const 5
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11712
+    i32.const 0
+    i32.const 5
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
+    i32.const 11720
+    i32.const 0
+    i32.const 9
+    memory.init $__bp_seg3
+    data.drop $__bp_seg3
+    i32.const 11732
+    i32.const 0
+    i32.const 7
+    memory.init $__bp_seg4
+    data.drop $__bp_seg4
+    i32.const 11740
+    i32.const 0
+    i32.const 8
+    memory.init $__bp_seg5
+    data.drop $__bp_seg5
     global.get $__heap_ptr
     i32.const 11748
     i32.lt_u

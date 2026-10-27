@@ -41,7 +41,7 @@ import {io.terminal.print} from "std";
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\0b\00\00\00R\04Pato\01\02idi")
+  (data $__bp_seg0 "\0b\00\00\00R\04Pato\01\02idi")
   (func $Pato_swim (param $self i32) (result i32)
     local.get $self
     i32.load ;; .id
@@ -252,6 +252,23 @@ import {io.terminal.print} from "std";
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 15
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
     global.get $__heap_ptr
     i32.const 11712
     i32.lt_u

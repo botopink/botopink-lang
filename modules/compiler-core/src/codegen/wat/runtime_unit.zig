@@ -218,8 +218,9 @@ pub const Runtime = struct {
     /// The first byte past std-wasm's data and stack: where the program's
     /// data starts, and the heap's first address.
     end: u32,
-    /// The pages the core's memory starts with: `end`'s. A composition
-    /// starts it with more when the program's data asks (`coreFor`).
+    /// The pages the core's memory starts with: `end`'s. Its bytes are
+    /// fixed (decision 1032): a program unit grows the memory past its own
+    /// data at start.
     pages: u32,
     core_text: []const u8,
     core_bytes: []const u8,
@@ -254,14 +255,6 @@ pub const Runtime = struct {
         var out: std.ArrayListUnmanaged(*const Unit) = .empty;
         for (r.units) |*u| if (want.contains(u.name)) try out.append(ar, u);
         return out.items;
-    }
-
-    /// The core as a composition instantiates it: its memory starting with
-    /// `pages` pages when the program's data needs more than `Runtime.pages`
-    /// (decision 1021's data reserve, sized at link time).
-    pub fn coreFor(r: *const Runtime, ar: std.mem.Allocator, pages: u32) !struct { text: []const u8, bytes: []const u8 } {
-        if (pages <= r.pages) return .{ .text = r.core_text, .bytes = r.core_bytes };
-        return .{ .text = try withMinPagesText(ar, r.core_text, pages), .bytes = try withMinPagesBinary(ar, r.core_bytes, pages) };
     }
 };
 
@@ -921,63 +914,6 @@ fn putStr(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: []const u8) 
     try o.appendSlice(ar, v);
 }
 
-/// The core's text with its memory starting at `pages` pages: the one
-/// `(memory (export "memory") <n>` line rewritten (`wat_emitter`'s spelling).
-fn withMinPagesText(ar: std.mem.Allocator, text: []const u8, pages: u32) ![]const u8 {
-    const head = "  (memory (export \"" ++ memory_export ++ "\") ";
-    const at = std.mem.indexOf(u8, text, head) orelse return error.OutOfMemory;
-    const num = at + head.len;
-    var e = num;
-    while (e < text.len and std.ascii.isDigit(text[e])) e += 1;
-    return std.fmt.allocPrint(ar, "{s}{d}{s}", .{ text[0..num], pages, text[e..] });
-}
-
-/// The core's binary with its memory starting at `pages` pages: the memory
-/// section (5) re-encoded, every other section as it is.
-fn withMinPagesBinary(ar: std.mem.Allocator, bytes: []const u8, pages: u32) ![]const u8 {
-    var o: std.ArrayListUnmanaged(u8) = .empty;
-    try o.appendSlice(ar, bytes[0..8]);
-    var i: usize = 8;
-    while (i < bytes.len) {
-        const id = bytes[i];
-        i += 1;
-        const len = uleb(bytes, &i) orelse return error.OutOfMemory;
-        const payload = bytes[i .. i + len];
-        i += len;
-        if (id != 5) {
-            try o.append(ar, id);
-            try putUleb(ar, &o, len);
-            try o.appendSlice(ar, payload);
-            continue;
-        }
-        // One memory: its count, its limits' flag, its minimum, its maximum.
-        var j: usize = 0;
-        const count = uleb(payload, &j) orelse return error.OutOfMemory;
-        const flags = payload[j];
-        j += 1;
-        _ = uleb(payload, &j) orelse return error.OutOfMemory;
-        var p: std.ArrayListUnmanaged(u8) = .empty;
-        try putUleb(ar, &p, count);
-        try p.append(ar, flags);
-        try putUleb(ar, &p, pages);
-        try p.appendSlice(ar, payload[j..]);
-        try o.append(ar, 5);
-        try putUleb(ar, &o, p.items.len);
-        try o.appendSlice(ar, p.items);
-    }
-    return o.items;
-}
-
-fn putUleb(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: usize) !void {
-    var x = v;
-    while (true) {
-        const b: u8 = @intCast(x & 0x7f);
-        x >>= 7;
-        if (x == 0) return o.append(ar, b);
-        try o.append(ar, b | 0x80);
-    }
-}
-
 // ── a unit's face: the index the frame and the entry are emitted against ────
 
 /// Decision 1032 — what one unit imports and exports, each with its type:
@@ -1488,22 +1424,6 @@ test "the embedded runtime is the one cut from std-wasm now (decision 1032 (4))"
     try std.testing.expectEqualSlices(u8, fresh, try serialize(ar, &back));
     const r = try get();
     try std.testing.expectEqual(r.units.len, (try built()).units.len);
-}
-
-test "a core started with more pages is the model's, text and binary" {
-    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer a.deinit();
-    const ar = a.allocator();
-    const r = try built();
-    const pages = r.pages + 3;
-    const items = try ar.dupe(ast.Item, r.core.items);
-    for (items) |*it| if (it.* == .memory) {
-        it.memory.min_pages = pages;
-    };
-    const m: ast.Module = .{ .items = items };
-    const got = try r.coreFor(ar, pages);
-    try std.testing.expectEqualStrings(try renderText(ar, m), got.text);
-    try std.testing.expectEqualSlices(u8, try binary.encodeModule(ar, m), got.bytes);
 }
 
 test "decision 1037: no unit's import or exported function names a type definition; a wrapper casts to the concrete one" {

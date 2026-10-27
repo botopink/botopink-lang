@@ -179,7 +179,8 @@ const FuncCtx = struct {
                 if (a) |ta| if (b) |tb| if (ta != tb) return self.fail("a select over two types");
                 if (a orelse b) |t| try st.push(t) else try st.items.append(self.arena, null);
             },
-            .memory_copy, .memory_fill => {
+            .data_drop => {},
+            .memory_copy, .memory_fill, .memory_init => {
                 try st.pop(.i32);
                 try st.pop(.i32);
                 try st.pop(.i32);

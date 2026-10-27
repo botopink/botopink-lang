@@ -1302,6 +1302,8 @@ fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
         .@"unreachable" => try w.writeAll("unreachable"),
         .memory_copy => try w.writeAll("memory.copy"),
         .memory_fill => try w.writeAll("memory.fill"),
+        .memory_init => |seg| try w.print("memory.init ${f}", .{id(seg)}),
+        .data_drop => |seg| try w.print("data.drop ${f}", .{id(seg)}),
         .select => try w.writeAll("select"),
         .br_table => |t| {
             try w.writeAll("br_table");

@@ -21,7 +21,7 @@ import {io.terminal.print} from "std";
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0))
-  (data (i32.const 11696) "\2a\00\00\00integer overflow: * on i32 at main.bp:3:47")
+  (data $__bp_seg0 "\2a\00\00\00integer overflow: * on i32 at main.bp:3:47")
   (func $mk (result i32)
     (local $__mem0 i32)
     (local $value i32)
@@ -499,6 +499,23 @@ import {io.terminal.print} from "std";
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 46
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
     global.get $__heap_ptr
     i32.const 11744
     i32.lt_u

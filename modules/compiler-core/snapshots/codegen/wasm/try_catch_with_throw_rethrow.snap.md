@@ -16,9 +16,9 @@ fn strict() -> Result<i32, string> {
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\10\00\00\00R\08ApiError\01\03msgs")
-  (data (i32.const 11716) "\09\00\00\00not found")
-  (data (i32.const 11732) "\0c\00\00\00fetch failed")
+  (data $__bp_seg0 "\10\00\00\00R\08ApiError\01\03msgs")
+  (data $__bp_seg1 "\09\00\00\00not found")
+  (data $__bp_seg2 "\0c\00\00\00fetch failed")
   (func $fetch (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -88,6 +88,33 @@ fn strict() -> Result<i32, string> {
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 20
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11716
+    i32.const 0
+    i32.const 13
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11732
+    i32.const 0
+    i32.const 16
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
     global.get $__heap_ptr
     i32.const 11748
     i32.lt_u

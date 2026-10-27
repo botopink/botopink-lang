@@ -13,7 +13,7 @@ fn f() -> Result<void, string> {
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\09\00\00\00not empty")
+  (data $__bp_seg0 "\09\00\00\00not empty")
   (func $f (result i32)
     (local $__mem0 i32)
     (local $list i32)
@@ -64,6 +64,23 @@ fn f() -> Result<void, string> {
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 13
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
     global.get $__heap_ptr
     i32.const 11712
     i32.lt_u

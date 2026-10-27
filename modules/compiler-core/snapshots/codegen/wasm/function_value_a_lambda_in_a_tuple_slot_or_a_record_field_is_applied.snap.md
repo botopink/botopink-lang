@@ -27,10 +27,10 @@ import {io.terminal.print} from "std";
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (data (i32.const 11696) "\0c\00\00\00R\03Ops\01\04stepi")
-  (data (i32.const 11712) "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
-  (data (i32.const 11760) "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
-  (data (i32.const 11808) "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
+  (data $__bp_seg0 "\0c\00\00\00R\03Ops\01\04stepi")
+  (data $__bp_seg1 "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
+  (data $__bp_seg2 "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
+  (data $__bp_seg3 "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
   (func $mk (result i32)
     (local $__mem0 i32)
     (local $value i32)
@@ -587,6 +587,38 @@ import {io.terminal.print} from "std";
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 16
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11712
+    i32.const 0
+    i32.const 46
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
+    i32.const 11760
+    i32.const 0
+    i32.const 47
+    memory.init $__bp_seg2
+    data.drop $__bp_seg2
+    i32.const 11808
+    i32.const 0
+    i32.const 47
+    memory.init $__bp_seg3
+    data.drop $__bp_seg3
     global.get $__heap_ptr
     i32.const 11856
     i32.lt_u

@@ -2392,10 +2392,10 @@ fn emitWatPass(
         heap_ptr_at += n;
         program_lo += n;
         program_hi += n;
-        // The memory the module needs of the core's: up to the end of its
-        // data; the composition starts the core's memory with that many
-        // pages (`Runtime.coreFor`, sized at link time).
-        items.items[memory_at].memory.min_pages = @max(r.pages, (data_end + 65535) / 65536);
+        // Decision 1032 — the core's bytes are fixed: the module asks for
+        // the core's pages, and grows the memory past its data at start
+        // (`reserveData`).
+        items.items[memory_at].memory.min_pages = r.pages;
     } else if (em.std_exports.count() > 0) {
         var diag: stdWasmLink.Diag = .{};
         const linked_std = stdWasmLink.link(ar, em.std_exports.keys(), @intCast(em.next_data_offset), &diag) catch |err| switch (err) {
@@ -2463,9 +2463,19 @@ fn emitWatPass(
 
     if (em.mode == .gc) try em.finishGc(&items, program_range[0], program_range[1]);
 
-    // Decision 1021 (2) — a module with data of its own moves the runtime
-    // unit's heap past it when it starts, before anything allocates.
-    if (rt) |r| if (data_end > r.end) try reserveData(ar, &items, data_end);
+    // Decisions 1021 (2), 1032 — a module with data of its own holds it in
+    // passive segments, and its start grows the core's memory to hold it,
+    // copies each in, and moves the runtime unit's heap past it, before
+    // anything allocates.
+    if (rt) |r| {
+        var segs: std.ArrayListUnmanaged(PassiveData) = .empty;
+        for (items.items) |*it| if (it.* == .data and it.data.passive == null) {
+            const seg_name = try std.fmt.allocPrint(ar, "__bp_seg{d}", .{segs.items.len});
+            try segs.append(ar, .{ .name = seg_name, .offset = it.data.offset, .len = @intCast((if (it.data.len_prefix != null) @as(usize, 4) else 0) + it.data.bytes.len) });
+            it.data.passive = seg_name;
+        };
+        if (data_end > r.end or segs.items.len > 0) try reserveData(ar, &items, data_end, segs.items);
+    }
 
     // WasmGC (front 164 s2, decision 544) — a module declaring GC types needs
     // the host's GC (`wasmtime run -W gc=y`), whatever its bindings name.
@@ -2548,16 +2558,43 @@ fn viaRuntime(rt: ?*const runtimeUnit.Runtime, im: wat.Import) wat.Import {
     return out;
 }
 
-/// `$__bp_reserve`, the module's start: the runtime unit's heap pointer
-/// moved past the module's data (`end`), then the start the module had.
-fn reserveData(ar: std.mem.Allocator, items: *std.ArrayListUnmanaged(Item), end: u32) !void {
+/// One of the module's data segments made passive (decision 1032): where
+/// its bytes go, and how many.
+const PassiveData = struct { name: []const u8, offset: u32, len: u32 };
+
+/// `$__bp_reserve`, the module's start: the memory grown to hold the
+/// module's data (`end`) when it is smaller, each passive segment copied to
+/// its offset and dropped, the runtime unit's heap pointer moved past the
+/// data, then the start the module had.
+fn reserveData(ar: std.mem.Allocator, items: *std.ArrayListUnmanaged(Item), end: u32, segs: []const PassiveData) !void {
     const reserve = "__bp_reserve";
     const end_text = try std.fmt.allocPrint(ar, "{d}", .{end});
+    const pages_text = try std.fmt.allocPrint(ar, "{d}", .{(end + 65535) / 65536});
     const set = try ar.dupe(wat.Line, &.{
         .{ .indent = 6, .instr = .{ .@"const" = .{ .ty = .i32, .text = end_text } } },
         .{ .indent = 6, .instr = .{ .global_set = heap_ptr } },
     });
+    const grow = try ar.dupe(wat.Line, &.{
+        .{ .indent = 6, .instr = .{ .@"const" = .{ .ty = .i32, .text = pages_text } } },
+        .{ .indent = 6, .instr = .memory_size },
+        .{ .indent = 6, .instr = .{ .op = .{ .ty = .i32, .name = "sub" } } },
+        .{ .indent = 6, .instr = .memory_grow },
+        .{ .indent = 6, .instr = .drop },
+    });
     var body: std.ArrayListUnmanaged(wat.Line) = .empty;
+    try body.appendSlice(ar, &.{
+        .{ .indent = 4, .instr = .memory_size },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = pages_text } } },
+        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_u" } } },
+        .{ .indent = 4, .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = grow, .stack = .none } } } } },
+    });
+    for (segs) |sg| try body.appendSlice(ar, &.{
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{sg.offset}) } } },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{sg.len}) } } },
+        .{ .indent = 4, .instr = .{ .memory_init = sg.name } },
+        .{ .indent = 4, .instr = .{ .data_drop = sg.name } },
+    });
     try body.appendSlice(ar, &.{
         .{ .indent = 4, .instr = .{ .global_get = heap_ptr } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = end_text } } },

@@ -12,8 +12,8 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0))
-  (data (i32.const 11696) "\14\00\00\00R\05State\02\05valueG\03seti")
-  (data (i32.const 11720) "\01\00\00\00i")
+  (data $__bp_seg0 "\14\00\00\00R\05State\02\05valueG\03seti")
+  (data $__bp_seg1 "\01\00\00\00i")
   (func $make (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -64,6 +64,28 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
   )
   (start $__bp_reserve)
   (func $__bp_reserve
+    memory.size
+    i32.const 1
+    i32.lt_u
+    (if
+      (then
+      i32.const 1
+      memory.size
+      i32.sub
+      memory.grow
+      drop
+      )
+    )
+    i32.const 11696
+    i32.const 0
+    i32.const 24
+    memory.init $__bp_seg0
+    data.drop $__bp_seg0
+    i32.const 11720
+    i32.const 0
+    i32.const 5
+    memory.init $__bp_seg1
+    data.drop $__bp_seg1
     global.get $__heap_ptr
     i32.const 11728
     i32.lt_u

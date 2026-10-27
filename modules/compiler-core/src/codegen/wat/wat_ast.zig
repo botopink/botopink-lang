@@ -269,6 +269,12 @@ pub const Instr = union(enum) {
     memory_copy,
     /// `memory.fill` — `dst`, `byte`, `len` (bulk memory, as `memory_copy`).
     memory_fill,
+    /// `memory.init $seg` — `dst`, `src` offset in the passive segment,
+    /// `len` (bulk memory; decision 1032's entry data, copied in at
+    /// `__bp_init`).
+    memory_init: []const u8,
+    /// `data.drop $seg` — the passive segment released.
+    data_drop: []const u8,
     /// `select` — the first operand if the third is non-zero, else the second.
     select,
     /// `br_table` — the label the popped index picks, `default` past the end.
@@ -743,6 +749,7 @@ fn checkGc(m: Module, defs: []const TypeDef, s: Seq) Invalid!void {
             _ = try arrayElem(defs, a.ty);
             if (!declaresData(m, a.data)) return error.UndefinedData;
         },
+        .memory_init, .data_drop => |seg| if (!declaresData(m, seg)) return error.UndefinedData,
         .ref_null, .ref_test, .ref_cast => |t| try checkValue(defs, t),
         .@"if" => |n| {
             if (n.result) |r| try checkValue(defs, r);

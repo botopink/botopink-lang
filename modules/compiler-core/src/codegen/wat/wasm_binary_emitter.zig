@@ -628,6 +628,15 @@ const Body = struct {
             .@"unreachable" => try o.append(ar, 0x00),
             .memory_copy => try o.appendSlice(ar, &.{ 0xFC, 0x0A, 0x00, 0x00 }),
             .memory_fill => try o.appendSlice(ar, &.{ 0xFC, 0x0B, 0x00 }),
+            .memory_init => |seg| {
+                try o.appendSlice(ar, &.{ 0xFC, 0x08 });
+                try uleb(ar, o, try c.e.dataIndex(seg));
+                try o.append(ar, 0x00);
+            },
+            .data_drop => |seg| {
+                try o.appendSlice(ar, &.{ 0xFC, 0x09 });
+                try uleb(ar, o, try c.e.dataIndex(seg));
+            },
             .select => try o.append(ar, 0x1B),
             .br_table => |t| {
                 try o.append(ar, 0x0E);
