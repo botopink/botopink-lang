@@ -40,5 +40,12 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("method_extra_argument");
     runCase("method_missing_argument");
+    runCase("method_behavior_parameter_implementer");
+    runCase("method_default_argument");
+    runCase("method_name_collision");
+    runCase("method_named_like_module_fn");
+    runCase("method_on_number_literal");
+    runCase("method_on_static_result");
+    runCase("method_on_unimported_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

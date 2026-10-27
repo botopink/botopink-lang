@@ -5,3 +5,7 @@ out 0
 == two_modules_one_type_name
 out a-20
 out b-102
+== two_packages_one_module_name
+out a:red blue a-x a:red
+out b:4px 4px b-y b:4px
+out own

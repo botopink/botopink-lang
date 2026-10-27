@@ -47,5 +47,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("optional_chain_method");
     runCase("optional_chain_method_on_dict_field");
     runCase("optional_enum_method_sibling");
+    runCase("optional_index_arithmetic");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

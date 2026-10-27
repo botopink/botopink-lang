@@ -31,3 +31,12 @@ out 5
 out 10
 out 21
 out 42
+== module_named_like_its_package
+refused error: type mismatch: expected i32, got string
+at src/main.bp:10:18
+== module_val_call_init
+out 2
+out b
+out 3.0
+== module_var_in_dependency
+out 2

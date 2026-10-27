@@ -252,7 +252,7 @@ A dependency's module named whole — `import {shapes} from "kit"` for
 written as a type, `shapes.Pt(…)` and `shapes.origin()` called, `shapes.shift`
 a function value (decision 430):
 
-<!-- example: modules/package/cells/package_module_namespace -->
+<!-- example: modules/package/cases/package_module_namespace -->
 
 **An item that names a module always binds its namespace** (decision 582). `import
 {components.card};` binds `card`, the namespace of `components/card`: `card.Props`
@@ -335,11 +335,11 @@ they are two modules: inside the first, `import {theme.Ns};` names its own `them
 the second its own, and a project's `theme` is a third. Neither import is ambiguous, and
 neither `Ns` is ever read as the other's — in the checker, in every backend's module names
 and calls, in the `.d.ts` and at compile time. Pinned by
-`conformance/modules/two/cells/two_packages_one_module_name`. A module named like its package — `src/p.bp`
+`conformance/modules/two/cases/two_packages_one_module_name`. A module named like its package — `src/p.bp`
 of the package `p` — is one module, `p/p`, like any other: a program using it that is refused
 answers its own refusal alone.
 
-<!-- example: modules/module/cells/module_named_like_its_package -->
+<!-- example: modules/module/cases/module_named_like_its_package -->
 
 **A path and a group are one tree, and only the leaf enters scope.** An item
 may walk into a module (`shapes.circle.name`), and several items under one
@@ -800,7 +800,7 @@ whose initialisers have effects registers itself by being loaded:
 An initialiser is any expression, a call included (`val t = "a b".split(" ");`):
 the functions of the module read the bound value, whatever else they call:
 
-<!-- example: modules/module/cells/module_val_call_init -->
+<!-- example: modules/module/cases/module_val_call_init -->
 
 An initialiser reads the module's earlier `val`s, bound by then — a `_`-prefixed name a program
 writes (`val _c = …`) is a binding like any other, read by name; only `_` itself is a statement:
@@ -829,7 +829,7 @@ through a `fn` and one read print `2`:
 The same holds for a `var` of a dependency's module, read and written through
 that module's functions:
 
-<!-- example: modules/module/cells/module_var_in_dependency -->
+<!-- example: modules/module/cases/module_var_in_dependency -->
 
 On the BEAM the annotation `#[compiler.beamMemory(.<member>)]` names where a module `var`
 lives (§ `compiler.beamMemory`); off the BEAM it is accepted and has no effect (decision 547). A
@@ -966,7 +966,7 @@ A program's own function is the program's whatever a std module names the same: 
 are called as written, also where the program imports `io.process` (which declares `run`) and
 `io.terminal` (which declares `size`):
 
-<!-- example: modules/user/cells/user_fn_named_like_std -->
+<!-- example: modules/user/cases/user_fn_named_like_std -->
 
 ## Types
 
@@ -1304,7 +1304,7 @@ A method's parameter typed by a behavior takes an implementer as a free
 function's does — through the instance and through the type alike
 (decision 430):
 
-<!-- example: modules/method/run/src/cases/method_behavior_parameter_implementer -->
+<!-- example: modules/method/cases/method_behavior_parameter_implementer -->
 
 A behavior's static `fn` — a member taking no `self` — is written `fn`, never
 `default fn` (decision 628): with a body it is the behavior's own function, one
@@ -4100,7 +4100,7 @@ value is that type wherever it was not imported: its fields and their methods
 resolve on every target, as they do on the value of an imported function
 (`built.size.toString()` after `` val built = shelf @`built` ``).
 
-<!-- example: modules/template/cells/template_answer_method -->
+<!-- example: modules/template/cases/template_answer_method -->
 
 A library's default handle is also its namespace: after `import {shapes} from
 "shapes"`, where the package's default module declares the template `shapes`,
@@ -4203,7 +4203,7 @@ the literal, or with `compiler.fail(message, at: q, span: Span(start, end,
 line))`, located at that span of its text in the caller's file: on the opening
 line of a template text the text begins after its `` @` ``.
 
-<!-- example: modules/template/refused/src/cases/template_fail_at_column_on_open_line -->
+<!-- example: modules/template/cases/template_fail_at_column_on_open_line -->
 
 A template whose second parameter is `syntax decl: unknown` is written as an
 annotation, `` #[f @`…`] `` — § Template annotations below.
@@ -4702,7 +4702,7 @@ use, the one line the expansion has in the file.
 
 <!-- example: modules/decorator/cases/decorator_raise_names_body_file -->
 
-<!-- example: modules/template/refused/src/cases/template_raise_names_body_file -->
+<!-- example: modules/template/cases/template_raise_names_body_file -->
 
 A template declared in the module that uses it is located the same way: its body's raising call is refused in
 that module's own file, and the use is its `called from` line.
@@ -6056,7 +6056,7 @@ trap notice) is the runtime's own. An abort writes to stderr alone — a checked
 integer operator's abort as `panic`'s —, so what the program printed before it
 is its whole stdout, on every target:
 
-<!-- example: modules/panic/cells/panic_library_message -->
+<!-- example: modules/panic/cases/panic_library_message -->
 <!-- example: modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i32 -->
 
 What an uncaught abort writes is the `Failure` an `attempt` would have answered

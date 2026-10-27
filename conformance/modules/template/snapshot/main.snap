@@ -8,3 +8,13 @@ out q
 == template_two_alike_expansions
 out [2, 1]
 out [2, 5]
+== template_fail_at_column_on_open_line
+refused error: markup: `!` is not markup
+at src/main.bp:18:27
+== template_raise_names_body_file
+refused error: {error,{panic,<<"boom hi">>}}
+at src/tpl.bp:5:5
+from src/main.bp:12:11
+== template_answer_method
+out built
+out 5

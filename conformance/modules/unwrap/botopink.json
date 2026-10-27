@@ -1,1 +1,1 @@
-{ "name": "unwrap" }
+{"name": "unwrap", "dependencies": {"conformance-lib": {"path": "../../lib"}}}

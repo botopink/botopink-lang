@@ -342,8 +342,10 @@ comptime {
     runModule("missing");
     runModule("mod");
     runModule("module");
+    runModule("modules");
     runModule("mutual");
     runModule("narrow");
+    runModule("narrowed");
     runModule("narrowing");
     runModule("nested");
     runModule("nullish");
@@ -352,6 +354,8 @@ comptime {
     runModule("option");
     runModule("optional");
     runModule("own");
+    runModule("package");
+    runModule("panic");
     runModule("parameter");
     runModule("pattern");
     runModule("pipeline");
@@ -360,6 +364,7 @@ comptime {
     runModule("primitive");
     runModule("print");
     runModule("program");
+    runModule("pub");
     runModule("record");
     runModule("reserved");
     runModule("result");
@@ -367,6 +372,7 @@ comptime {
     runModule("run");
     runModule("section");
     runModule("self");
+    runModule("sibling");
     runModule("smoke");
     runModule("static");
     runModule("string");
@@ -375,13 +381,18 @@ comptime {
     runModule("terminal");
     runModule("ternary");
     runModule("throw");
+    runModule("todo");
     runModule("tuple");
+    runModule("two");
     runModule("typeinfo");
     runModule("u64");
     runModule("union");
     runModule("unit");
     runModule("unknown");
     runModule("unsigned");
+    runModule("untyped");
+    runModule("unwrap");
+    runModule("user");
     runModule("val");
     runModule("value");
     runModule("var");

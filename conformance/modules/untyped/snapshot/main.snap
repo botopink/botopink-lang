@@ -1,0 +1,6 @@
+botopink-cell 2
+== untyped_array_float_push
+out 2
+== untyped_array_float_push on wasm
+refused error: the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `f64[]`)
+at src/main.bp:13:22

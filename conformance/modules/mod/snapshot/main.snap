@@ -2,3 +2,7 @@ botopink-cell 2
 == mod_tree
 out circle
 out 7
+== mod_namespace_reexport
+out [x]
+out a b
+out c+d

@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("nullish_tuple_operand");
+    runCase("nullish_default_optional_array");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

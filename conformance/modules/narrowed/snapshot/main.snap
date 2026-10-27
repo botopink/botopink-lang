@@ -1,0 +1,6 @@
+botopink-cell 2
+== narrowed_optional_std_field_across_packages
+out 42
+out none
+out 1
+out 5

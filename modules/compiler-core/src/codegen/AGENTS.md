@@ -292,7 +292,7 @@ codegen/
   module and package boundary, and it is what `variantTest`, the payload arms
   and `@Result` already used. `unit_variant_names` therefore records only the
   NAMES, to tell a variant from a binding. Pinned by
-  `conformance/modules/package/cells/package_variant_identity/`, which one package cannot
+  `conformance/modules/package/cases/package_variant_identity/`, which one package cannot
   express. `is`/`val assert` still test `instanceof` (below) and inherit the
   same limit wherever a class is re-emitted.
 - **`null` / `true` / `false` as a field's pattern are tests**
@@ -997,7 +997,7 @@ codegen/
   declaration sends the call to `'__bp_method'/3` (`dynamicMethodNode`,
   `method_helper_form`), which applies `element(1, V)`'s module, keeping the
   `maps:get` dispatch for a map receiver exactly as `'__bp_field'/2` does.
-  Pinned by `conformance/modules/method/run/src/cases/method_name_collision`, and measured on the
+  Pinned by `conformance/modules/method/cases/method_name_collision`, and measured on the
   consumer library that found it: 1 passed / 8 failed → 9 / 0 on erlang.
   **A `type` with no bodied method emits no module**: an artifact holding one
   `-module` line is not written and no snapshot section shows one. Half 3 gives

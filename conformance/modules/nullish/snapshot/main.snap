@@ -2,3 +2,11 @@ botopink-cell 2
 == nullish_tuple_operand
 out 7
 out 4
+== nullish_default_optional_array
+out [2, 3]
+out []
+out 0
+out ["a", "b"]
+out none
+out x
+out 0

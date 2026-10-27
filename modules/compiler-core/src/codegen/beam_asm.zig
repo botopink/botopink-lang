@@ -13625,7 +13625,7 @@ const Emitter = struct {
     /// value (decision 21): its element 1 is its type's module, whose method
     /// takes the receiver first — `erlang:apply(element(1, V), Method, [V |
     /// Args])`. Used when no type is known for the receiver but some type of
-    /// the program declares the method (`modules/method/run/src/cases/method_name_collision`: two
+    /// the program declares the method (`modules/method/cases/method_name_collision`: two
     /// `toArray/1`, a generic return), and when the type's NAME is declared by
     /// two modules (`modules/type/run/src/cases/type_name_collision`).
     fn lowerDynamicMethodCall(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {

@@ -41,5 +41,8 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("template_default_arg_two_expansions");
     runCase("template_name_collision");
     runCase("template_two_alike_expansions");
+    runCase("template_fail_at_column_on_open_line");
+    runCase("template_raise_names_body_file");
+    runCase("template_answer_method");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

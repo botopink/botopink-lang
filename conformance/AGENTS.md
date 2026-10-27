@@ -409,7 +409,7 @@ answered by the parent binary).
 Decision 139 (a negative index counts from the end) adds `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
-Decision 140 adds `modules/pub/cells/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
+Decision 140 adds `modules/pub/cases/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
 an array, a primitive and a lambda imported from a sibling, one under an alias, read from `main`, a
 function and a method; the module bodies of `base` (imported only by `config`) and `config` run
 before `main`, dependencies first, and a val read twice is evaluated once — on all four targets.
@@ -627,7 +627,7 @@ argument); both `unexpected ','` / a comparison on the parent binary.
 `modules/decorator/cases/decorator_raise_names_body_file` — a decorator declared in `src/deco.bp` whose body
 `@panic`s, refused at the annotation in `src/main.bp` with the message naming
 `src/deco.bp:3:5`; the parent binary named no file. Its Conformance step's proposal adds
-`modules/template/refused/src/cases/template_raise_names_body_file` — a template declared in `src/tpl.bp` whose body `@panic`s, refused at
+`modules/template/cases/template_raise_names_body_file` — a template declared in `src/tpl.bp` whose body `@panic`s, refused at
 the call in `src/main.bp` with the message naming `src/tpl.bp:3:5` (the parent binary named no file) — and B-27's
 the project suite `test/bpp_header_test` (a `test` written in a `.bpp` header, found and run by `botopink test`
 on commonJS, erlang and beam; a pin).
@@ -1031,9 +1031,9 @@ at any depth of a statement ends the function), `modules/result/cases/result_met
 `@Result` wraps its `throw` / `return`), `modules/test_in_subdirectory` (a test file in `test/unit/`
 reaches the project on erlang), `modules/record/cases/record_method_named_length` (a type's `length` method never
 answers an array's `length`), `modules/imported/cases/imported_fn_field_call` (a function-typed field of an imported
-record is applied), `modules/method/run/src/cases/method_on_unimported_type` (a method on a value whose type the module
+record is applied), `modules/method/cases/method_on_unimported_type` (a method on a value whose type the module
 never imported: std's `Dict`, and another imported type declaring the same method),
-`modules/method/cases/method_missing_argument`, `modules/method/cases/method_extra_argument` and `modules/method/run/src/cases/method_default_argument` (a
+`modules/method/cases/method_missing_argument`, `modules/method/cases/method_extra_argument` and `modules/method/cases/method_default_argument` (a
 method call's arity), `modules/result/cases/result_pattern_beside_enum_variant` (`Error(e)` over a `@Result` beside an
 enum declaring `Error`), `modules/decorator/cases/decorator_calls_module_function` and
 `modules/decorator/cases/decorator_imported_calls_module_function` (a decorator body calls its module's
@@ -1043,7 +1043,7 @@ module and the project's own).
 The second language-gaps sweep (`front/gaps-sweep-2`) adds a cell per row it fixed, every one
 failing on the parent binary: `modules/result/cases/result_void_falls_off_end` (decision 2 over an effect return —
 a `@Result` in any layer, `@Result<void, E>` included, and a `@Async` / `@Component` whose value is a
-value, end with `return`), `modules/narrowed/cells/narrowed_optional_std_field_across_packages` (a method chain on a
+value, end with `return`), `modules/narrowed/cases/narrowed_optional_std_field_across_packages` (a method chain on a
 field of a narrowed optional, and of an optional binder, whose type another package declares and
 this module never names — its field a std type only that package imports;
 `modules/generic/cases/generic_type_through_imported_function` keeps two instances of such a generic type apart),
@@ -1307,7 +1307,7 @@ on the four targets, `modules/decisions-taken/template_call_expands_any_expressi
 `modules/decisions-taken/template_call_expands_any_expression-425/cases/template_in_field_default` (a field's and a parameter's default) — red on the parent binary
 (`twice is not defined` at run time) — and `modules/decisions-taken/template_call_expands_any_expression-425/cases/template_in_lambda`, `modules/decisions-taken/template_call_expands_any_expression-425/cases/template_in_argument`,
 `modules/decisions-taken/template_call_expands_any_expression-425/cases/template_in_case_arm`, which the parent already expanded.
-144 B-68 adds `modules/template/cells/template_answer_method` (a library template's answer, a type the consumer does not import: a method on its field),
+144 B-68 adds `modules/template/cases/template_answer_method` (a library template's answer, a type the consumer does not import: a method on its field),
 red on the parent binary (erlang aborted, wasm refused `toString/0`).
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -1653,7 +1653,7 @@ library's own `@embed` in the library's), and the refusals `embed_path_absolute`
 `embed_path_outside_package`, `embed_file_missing`, `embed_path_not_known` and `embed_text_not_utf8`.
 `modules/decisions-taken/bytes_build_constant_only-520/cases/bytes_comptime` answers `1` since decision 520 (a `Bytes` value exists at build).
 
-`modules/package/cells/package_variant_identity` is the second local-dependency cell, and it is here because the
+`modules/package/cases/package_variant_identity` is the second local-dependency cell, and it is here because the
 defect it pins is **invisible in one package**: the value is built in the consumer and the `case`
 that reads it lives in the dependency. commonJS tested a payload-less arm with `instanceof` whenever
 the variant's bare name was unique in the module; an enum SECTION desugars into an inner enum no
@@ -1669,13 +1669,13 @@ prints `2.0` in an `unknown` slot as `2`. `modules/optional/cases/optional_chain
 the rest of a `?.` chain, its absent probes read through `??`; erlang's and beam's halves were 02's
 and 03's.
 
-`modules/sibling/cells/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
+`modules/sibling/cases/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
 step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {leaf.Twig};`), once in the
 project and once inside `deps/tree/` (`api.bp`'s `import {leaf.Leaf};`). commonJS used to write the
 literal word `module` as the path — `require("./module")` / `require("../module")` — so such a
 program built and then died with `Cannot find module`. Green on all four targets.
 
-`modules/two/cells/two_packages_one_module_name` pins decisions 170 and 337's module identity — a module is
+`modules/two/cases/two_packages_one_module_name` pins decisions 170 and 337's module identity — a module is
 its package plus its path. Dependencies `a` and `b` each hold `theme` (`Ns` with different fields,
 `make`, a template `tag`), each package's `user` imports its own `theme` by path (`b`'s without
 importing `Ns`) and evaluates a `comptime make().show()`, and the project has a `theme` of its own:
@@ -1698,7 +1698,7 @@ declarations one slot further apart and the same guess reads past the tuple and 
 notice. wasm passes since 1.0.10-beta `00 · 05-wasm`: its optional binder takes the payload's record
 type, where it used to answer `0` for a field read off it whatever the names were.
 
-`modules/method/run/src/cases/method_name_collision` is the same defect one axis over, and the fourth cell that needs two
+`modules/method/cases/method_name_collision` is the same defect one axis over, and the fourth cell that needs two
 modules. Policy 3 puts a method in its TYPE's module on erlang, so a call on a receiver inference
 left untyped needs an OWNER, and the owner came from the method's NAME alone — keyed by the name
 with no arity, first writer wins, over the modules the file happens to import from, so the export
@@ -1751,7 +1751,7 @@ expects nothing is refused naming both enums (`modules/variant/cases/variant_nam
 with a different field and a third matches both positionally (commonJS printed `null`; beam bound
 the whole value, `03-beam`'s row).
 
-`modules/variant/cells/variant_positional_payload_same_name_packages` — the same across two dependency packages, each declaring
+`modules/variant/cases/variant_positional_payload_same_name_packages` — the same across two dependency packages, each declaring
 `Text` with another field (commonJS read `$0` off a class that carried none).
 
 `modules/variant/cases/variant_payload_wildcard_and_nested` — `Rect(w, _)`, `Rect(_, h)`, `Circle(_)` and a variant
@@ -1852,7 +1852,7 @@ records / enum / `case` / lambda program, wasm included), `modules/mutual/cases/
 reports a failed test stays `modules/compiler-cli/tests/test_tooling.sh`'s.
 
 **botopink-lang's `examples/`** (144 B-29 step H, decisions 457, 461): `modules/hello/cases/hello`,
-`modules/modules/cells/modules` (the `mod` / `pub mod` tree; its `docs.md` is the example's README),
+`modules/modules/cases/modules` (the `mod` / `pub mod` tree; its `docs.md` is the example's README),
 `modules/yamlconf/cases/yamlconf` (a config template lifting the labelled tuple `#(server, debug)`: `8038`,
 `true`) and `modules/yamlconf/cases/yamlconf_unknown_label` (the example's commented-out `cfg.server.prot`,
 refused at the label, `this tuple has no element labeled \`prot\``), and the suite
@@ -1871,9 +1871,9 @@ four-target cells for numbers wasm answered wrongly at exit 0 — `modules/decis
 float's shortest round-trip text, where erlang and beam agree with commonJS), `modules/float/cases/float_slot_keeps_f64`
 (a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64/cases/i64_full_width`
 (`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and four cells refused on
-wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional/cells/optional_index_arithmetic`
+wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional/cases/optional_index_arithmetic`
 (`xs[i] + 1`), `modules/i64/cases/i64_in_array_slot`, `modules/fn/cases/fn_value_float_argument`,
-`modules/untyped/cells/untyped_array_float_push` (`modules/generic/cases/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
+`modules/untyped/cases/untyped_array_float_push` (`modules/generic/cases/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
 float goes into a generic slot in its box in a GC module).
 
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
@@ -2030,7 +2030,7 @@ refused at the type — accepted on the parent).
 `fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported/cases/imported_variant_positional_payload` —
 `Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on
 all four targets (commonJS read a property named after the binding and died on `undefined`).
-`modules/method/run/src/cases/method_named_like_module_fn` — a module declaring `startsWith(syntax decl: unknown, …)` and
+`modules/method/cases/method_named_like_module_fn` — a module declaring `startsWith(syntax decl: unknown, …)` and
 `endsWith(a, b)` calls the string methods of those names (erlang refused the module with
 `PrimOpArgIndexOutOfRange`, commonJS answered `false`), on all four targets.
 `test/type_method_prim_default` — a `type`'s method calls `String.parseInt`, whose body calls
@@ -2095,7 +2095,7 @@ UTF-8 (`LANG=C`, or none) `modules/string/cases/string_split_empty_separator` is
 host locale is a backend defect, not a reason to pin a locale in the runner.
 
 A cell's claims apply on every target it reaches, beam included: the assembled program's status is
-read there too (`modules/panic/cells/panic_aborts` and `modules/todo/cells/todo_aborts` abort on beam — the second for a
+read there too (`modules/panic/cases/panic_aborts` and `modules/todo/cases/todo_aborts` abort on beam — the second for a
 different reason, § Notes). A cell that every target refuses is built on
 all four, and its `refused` line is the same on each.
 
@@ -2421,7 +2421,7 @@ row is pinned by a cell that passes on every target its kind has:
 | `??` | deliberately absent (14) | parses and runs (decision 28); `catch` is `@Result`-only, so nothing else gives an optional a default | `test/nullish_default.bp` |
 | `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "no index expression in the grammar" | parses, checks and runs (decisions 30, 63, 139) | `modules/decisions-taken/record_field_assignment_refused-37/cases/index_expression`, `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_dict`, `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_past_the_end_is_null`, `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_negative_from_end` |
 | a bodyless `fn` with `-> void` | no rule | parses and runs (decision 33); without a return type it is `bodyless-fn-needs-return-type` | `test/bodyless_fn`, `modules/bodyless/cases/bodyless_fn_no_return_type` |
-| a method on a parenthesised expression or a number literal — `(a == b).toString()`, `("ab").length`, `42.toString()` | open | one production; `42.toString()` prints `42` on all four targets (commonJS once wrote `42.toString()` into the program, which node reads as a float) | `test/paren_receiver.bp`, `modules/method/run/src/cases/method_on_number_literal` |
+| a method on a parenthesised expression or a number literal — `(a == b).toString()`, `("ab").length`, `42.toString()` | open | one production; `42.toString()` prints `42` on all four targets (commonJS once wrote `42.toString()` into the program, which node reads as a float) | `test/paren_receiver.bp`, `modules/method/cases/method_on_number_literal` |
 
 **The range pattern — decision 53.** `...` is inclusive in a pattern; `..` is exclusive in a slice
 and in `for (a..b)`, Zig's split. `1..9` in an arm is `error[pattern-range-exclusive]` located at
@@ -2548,10 +2548,10 @@ compiler refuses it before any comptime runtime runs, the message names the call
 in the body and the caret is the annotation that ran it.
 
 **`@panic` and `@todo` abort with stdout intact and a non-zero status on all four backends**
-(`modules/panic/cells/panic_aborts`, `modules/todo/cells/todo_aborts`, `abort`). On beam a function whose whole
+(`modules/panic/cases/panic_aborts`, `modules/todo/cases/todo_aborts`, `abort`). On beam a function whose whole
 body is `@todo()` is emitted and raises the builtin's own `{todo, <<"not implemented">>}` —
 re-measured by front 12 of 1.0.11-beta (it used to be dropped, and the abort was `undef`).
-A `@panic`'s message reaches stderr unchanged on all four (`modules/panic/cells/panic_library_message`, a
+A `@panic`'s message reaches stderr unchanged on all four (`modules/panic/cases/panic_library_message`, a
 library-built message with quotes and a non-ASCII dash, `stderr` in `output/`, decision 430, 144 B-41):
 erlang and beam write the message itself, not the term with its bytes as numbers; wasm writes it
 before the trap.
@@ -2579,10 +2579,10 @@ of its declared signature (it was a fresh variable to the checker, an unbound va
 abort on beam, unplaced on wasm). `modules/decorator/cases/decorator_member_record_update` pins a record update
 in a member `decl.addMember` adds — `Point(..self, y: 0)`, `Point(..v, z: z)` — on every target (it was
 emitted `new T(v, x)` on commonJS before 144 B-14).
-`modules/package/cells/package_module_namespace` reads a dependency's module through its namespace — a type, a
+`modules/package/cases/package_module_namespace` reads a dependency's module through its namespace — a type, a
 constructor, a call, a function value (`unknown type 'shapes.Pt'` before).
 
-`modules/method/run/src/cases/method_behavior_parameter_implementer` passes an implementer to a method's and an
+`modules/method/cases/method_behavior_parameter_implementer` passes an implementer to a method's and an
 associated fn's behavior-typed parameter (`expected Styleable, got Prop` before).
 
 `modules/decisions-taken/compiler_same_compares_declaration_handles-666/cases/decorator_argument_decorator_name` hands a decorator's name, and an array of names, to a

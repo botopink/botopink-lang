@@ -181,7 +181,7 @@ scope (the function value `compose<A, B, C>` answers) crosses boxed in its own r
 over an optional array is an array (`isArrayExpr`, `printShapeOf` by the optional's declared payload) and its
 empty `[]` default takes the branch's array type (`branchLastStmt`); a `[]` element of a tuple returned against
 its declared `#(…)` takes its slot's type (`expected_tuple`, `gcTupleLit`); a value whose GC repr is a string
-prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish/cells/nullish_default_optional_array`, whose wasm
+prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish/cases/nullish_default_optional_array`, whose wasm
 answers were addresses before. Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
@@ -896,7 +896,7 @@ exit 0, then trapped at the lambda's entry. Any other lambda keeps
 had (`modules/generic/cells/generic_field_fn_value`, `tests/wat.zig`'s refusal fixture).
 
 `modules/generic/cases/generic_string_equality` pins every way a type parameter gets a
-string bound on four targets, `modules/method/run/src/cases/method_on_unimported_type` (`Dict.at`
+string bound on four targets, `modules/method/cases/method_on_unimported_type` (`Dict.at`
 with a key `split` built) included — it already passed at the open, through
 `specializeMethod`. **What stays**: a call whose arguments and context say
 nothing about the type keeps the one generic body — a generic fn stored in
@@ -1218,8 +1218,8 @@ class beside them. What each number is here, and what is refused:
 Cells (four targets, one `.out`): `modules/decisions-taken/wasm_prints_std_wasm_text-441/cells/float_shortest_text`,
 `modules/float/run/src/cases/float_slot_keeps_f64`, `modules/i64/cells/i64_full_width`, `modules/u64/cells/u64_tuple_slot`,
 `modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/u64_record_field_print`, `modules/optional/cells/optional_u64_to_string`; refused on wasm
-(`.wasm.expect`): `modules/optional/cells/optional_index_arithmetic`, `modules/i64/cases/i64_in_array_slot`,
-`modules/fn/cells/fn_value_float_argument`, `modules/untyped/cells/untyped_array_float_push`
+(`.wasm.expect`): `modules/optional/cases/optional_index_arithmetic`, `modules/i64/cases/i64_in_array_slot`,
+`modules/fn/cells/fn_value_float_argument`, `modules/untyped/cases/untyped_array_float_push`
 (`modules/generic/cases/generic_field_float` is answered since 164 s2 P3: a float in a generic slot is boxed). `tests/wat.zig` pins the forms erlang spells
 otherwise or cannot make (`1e+21`, `5e-324`, `Infinity`, `NaN`) and the
 overflow trap as RUN LOGs.

@@ -399,7 +399,7 @@ code path:
 | `conformance/modules/two/run/src/cases/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
 | `conformance/modules/mod/cells/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
 | `conformance/modules/std/run/src/cases/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
-| `conformance/modules/modules/cells/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
+| `conformance/modules/modules/cases/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
 
 The shape that works is the one the beam arm of the language runner (`tests/language/run.sh`, before 144 B-29 step H) already
 uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
@@ -407,7 +407,7 @@ file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
 atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
 `-pa <out_dir>` looks — then `erl -noshell -pa <out_dir> -eval "<module>:main([]), halt()."`.
 `main([])` and not `main()`: `main/1` is always exported, while `main/0` is
-emitted only when `main` is `pub` (`conformance/modules/modules/cells/modules` declares `fn main()` and
+emitted only when `main` is `pub` (`conformance/modules/modules/cases/modules` declares `fn main()` and
 exports just `'_botopink_main'/0, main/1`). A crash's exit status moves from
 escript's `127` to `erl`'s `1`.
 
@@ -815,7 +815,7 @@ release tags). Bump it in the same change you want tagged.
 **only the file it is handed**. Every cross-module call in a multi-module program
 was therefore `undefined function <mod>:<fn>` at run time, with correct and
 correctly qualified emitted code — three `conformance/modules/*` cells and
-`conformance/modules/modules/cells/modules` failed on erlang for that reason alone.
+`conformance/modules/modules/cases/modules` failed on erlang for that reason alone.
 
 Two shapes that look like the fix and are not:
 
@@ -839,7 +839,7 @@ Two details that are load-bearing:
 - **`main([])`, not `main()`.** `main/1` is always exported — it is the escript
   entry point — while `main/0` is emitted only when `main` is `pub`. A runner
   calling `main:main()` fails with `undef` on any project whose entry is a plain
-  `fn main()`, `conformance/modules/modules/cells/modules` included. The asymmetry itself lives in
+  `fn main()`, `conformance/modules/modules/cases/modules` included. The asymmetry itself lives in
   `codegen/erlang.zig` and is not changed here.
 - **A crashing program now exits `1`.** `erl` returns 1 where `escript` returned
   127 (measured on a `1 / 0` program). The 127 was escript's artefact, nothing

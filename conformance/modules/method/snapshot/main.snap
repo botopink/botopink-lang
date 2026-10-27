@@ -5,3 +5,31 @@ at src/main.bp:10:41
 == method_missing_argument
 refused error: 'set' expects 3 argument(s), got 2
 at src/main.bp:15:41
+== method_behavior_parameter_implementer
+out gap:1rem | c {color: red} | u m:0
+== method_default_argument
+out x=dflt
+out y=dflt
+out z=v
+== method_name_collision
+out 3
+out 2
+out 4
+== method_named_like_module_fn
+out true
+out false
+out true
+out false
+out 3
+== method_on_number_literal
+out 42
+out 2
+out 1.5
+== method_on_static_result
+out card/card
+== method_on_unimported_type
+out 2
+out 1
+out false
+out true
+out true

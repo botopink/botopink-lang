@@ -1,0 +1,8 @@
+botopink-cell 2
+== panic_aborts
+out before
+abort
+== panic_library_message
+out before
+abort
+stderr lib check: '--gutter' is in no known namespace — a name must start with a prefix

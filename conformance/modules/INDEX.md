@@ -1105,15 +1105,15 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/meta_typed | modules/decisions-taken/decorator_meta_keyed_by_type-298/cases/meta_typed | 298 |  | b |
 | modules/meta_typed_catalogue | modules/decisions-taken/decorator_meta_keyed_by_type-298/cells/meta_typed_catalogue | 298 |  | b |
 | modules/meta_typed_records | modules/meta/cases/meta_typed_records |  |  | c |
-| modules/method_behavior_parameter_implementer | modules/method/run/src/cases/method_behavior_parameter_implementer |  |  | c |
-| modules/method_default_argument | modules/method/run/src/cases/method_default_argument |  |  | c |
+| modules/method_behavior_parameter_implementer | modules/method/cases/method_behavior_parameter_implementer |  |  | c |
+| modules/method_default_argument | modules/method/cases/method_default_argument |  |  | c |
 | modules/method_extra_argument | modules/method/cases/method_extra_argument |  |  | c |
 | modules/method_missing_argument | modules/method/cases/method_missing_argument |  |  | c |
-| modules/method_name_collision | modules/method/run/src/cases/method_name_collision |  |  | c |
-| modules/method_named_like_module_fn | modules/method/run/src/cases/method_named_like_module_fn |  |  | c |
-| modules/method_on_number_literal | modules/method/run/src/cases/method_on_number_literal |  |  | c |
-| modules/method_on_static_result | modules/method/run/src/cases/method_on_static_result |  |  | c |
-| modules/method_on_unimported_type | modules/method/run/src/cases/method_on_unimported_type |  |  | c |
+| modules/method_name_collision | modules/method/cases/method_name_collision |  |  | c |
+| modules/method_named_like_module_fn | modules/method/cases/method_named_like_module_fn |  |  | c |
+| modules/method_on_number_literal | modules/method/cases/method_on_number_literal |  |  | c |
+| modules/method_on_static_result | modules/method/cases/method_on_static_result |  |  | c |
+| modules/method_on_unimported_type | modules/method/cases/method_on_unimported_type |  |  | c |
 | modules/method_param_default_not_trailing | modules/decisions-taken/defaults_are_trailing-244/cases/method_param_default_not_trailing | 244 |  | b |
 | modules/method_tail_in_void | modules/decisions-taken/fn_tail_value-409/cases/method_tail_in_void | 409 |  | b |
 | modules/method_tail_value | modules/decisions-taken/fn_tail_value-409/cases/method_tail_value | 409 |  | b |
@@ -1121,18 +1121,18 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/mod_binds_namespace | modules/decisions-taken/shorthand_import_refused-337/cells/mod_binds_namespace | 337 |  | b |
 | modules/mod_namespace_callable_default | modules/decisions-taken/module_import_binds_namespace-582/cells/mod_namespace_callable_default | 582 | 337 | b |
 | modules/mod_namespace_cascade | modules/decisions-taken/shorthand_import_refused-337/cases/mod_namespace_cascade | 337 |  | b |
-| modules/mod_namespace_reexport | modules/mod/cells/mod_namespace_reexport |  |  | c |
+| modules/mod_namespace_reexport | modules/mod/cases/mod_namespace_reexport |  |  | c |
 | modules/mod_reexport_by_val | modules/decisions-taken/shorthand_import_refused-337/cases/mod_reexport_by_val | 337 |  | b |
 | modules/mod_tree | modules/mod/cases/mod_tree |  |  | c |
 | modules/module_fn_named_like_bif | modules/module/cases/module_fn_named_like_bif |  |  | c |
 | modules/module_init_order | modules/module/cases/module_init_order |  |  | c |
-| modules/module_named_like_its_package | modules/module/cells/module_named_like_its_package |  |  | c |
-| modules/module_val_call_init | modules/module/cells/module_val_call_init |  |  | c |
+| modules/module_named_like_its_package | modules/module/cases/module_named_like_its_package |  |  | c |
+| modules/module_val_call_init | modules/module/cases/module_val_call_init |  |  | c |
 | modules/module_val_reads_module_val | modules/module/cases/module_val_reads_module_val |  |  | c |
 | modules/module_var | modules/decisions-taken/reported_surface_forms_all_parse-28/cases/module_var | 28 |  | b |
-| modules/module_var_in_dependency | modules/module/cells/module_var_in_dependency |  |  | c |
+| modules/module_var_in_dependency | modules/module/cases/module_var_in_dependency |  |  | c |
 | modules/module_var_self_registration | modules/module/cases/module_var_self_registration |  |  | c |
-| modules/modules | modules/modules/cells/modules |  |  | c |
+| modules/modules | modules/modules/cases/modules |  |  | c |
 | modules/mutual_recursion_forward_reference | modules/mutual/cases/mutual_recursion_forward_reference |  |  | c |
 | modules/namespace_import_module | modules/decisions-taken/shorthand_import_refused-337/cells/namespace_import_module | 337 | 107 | b |
 | modules/namespace_not_a_value | modules/decisions-taken/module_import_binds_namespace-582/cases/namespace_not_a_value | 582 |  | b |
@@ -1144,7 +1144,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/narrow_ends_at_assignment | modules/narrow/cases/narrow_ends_at_assignment |  |  | c |
 | modules/narrow_in_logical_operands | modules/narrow/cases/narrow_in_logical_operands |  |  | c |
 | modules/narrow_or_keeps_optional | modules/narrow/cases/narrow_or_keeps_optional |  |  | c |
-| modules/narrowed_optional_std_field_across_packages | modules/narrowed/cells/narrowed_optional_std_field_across_packages |  |  | c |
+| modules/narrowed_optional_std_field_across_packages | modules/narrowed/cases/narrowed_optional_std_field_across_packages |  |  | c |
 | modules/narrowing_null_check | modules/narrowing/cases/narrowing_null_check |  |  | c |
 | modules/narrowing_null_guard_clause | modules/narrowing/cases/narrowing_null_guard_clause |  |  | c |
 | modules/nested_fn_decl | modules/nested/cases/nested_fn_decl |  |  | c |
@@ -1188,7 +1188,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/optional_function_field_from_fn_value | modules/optional/cases/optional_function_field_from_fn_value |  |  | c |
 | modules/optional_has_no_methods | modules/decisions-taken/optional_typescript_operators-330/cases/optional_has_no_methods | 330 |  | b |
 | modules/optional_if_null_initializer | modules/decisions-taken/optional_typescript_operators-330/cases/optional_if_null_initializer | 330 |  | b |
-| modules/optional_index_arithmetic | modules/optional/cells/optional_index_arithmetic |  |  | c |
+| modules/optional_index_arithmetic | modules/optional/cases/optional_index_arithmetic |  |  | c |
 | modules/optional_length_method | modules/optional/cases/optional_length_method |  |  | c |
 | modules/optional_member_default | modules/decisions-taken/optional_typescript_operators-330/cases/optional_member_default | 330 |  | b |
 | modules/optional_method_absent_receiver | modules/decisions-taken/optional_typescript_operators-330/cases/optional_method_absent_receiver | 330 |  | b |
@@ -1202,11 +1202,11 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/optional_unknown_takes_function | modules/decisions-taken/bare_variant_expression_refused-587/cases/optional_unknown_takes_function | 587 |  | b |
 | modules/optional_variant_pattern | modules/decisions-taken/optional_case_null_and_binder-54/cells/optional_variant_pattern | 54 |  | b |
 | modules/own_type_beside_std_type_import | modules/own/cases/own_type_beside_std_type_import |  |  | c |
-| modules/package_module_namespace | modules/package/cells/package_module_namespace |  |  | c |
-| modules/package_variant_identity | modules/package/cells/package_variant_identity |  |  | c |
-| modules/panic_aborts | modules/panic/cells/panic_aborts |  |  | c |
+| modules/package_module_namespace | modules/package/cases/package_module_namespace |  |  | c |
+| modules/package_variant_identity | modules/package/cases/package_variant_identity |  |  | c |
+| modules/panic_aborts | modules/panic/cases/panic_aborts |  |  | c |
 | modules/panic_from_failure | modules/decisions-taken/prelude_is_primitives-606/cells/panic_from_failure | 606 | 535 | b |
-| modules/panic_library_message | modules/panic/cells/panic_library_message |  |  | c |
+| modules/panic_library_message | modules/panic/cases/panic_library_message |  |  | c |
 | modules/parameter_defaults | modules/parameter/cases/parameter_defaults |  |  | c |
 | modules/parameter_defaults_record | modules/parameter/cases/parameter_defaults_record |  |  | c |
 | modules/pattern_range_exclusive | modules/pattern/cases/pattern_range_exclusive |  |  | c |
@@ -1236,7 +1236,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/program_array_behavior_default | modules/program/cases/program_array_behavior_default |  |  | c |
 | modules/program_primitive_behavior_extends_std | modules/program/cases/program_primitive_behavior_extends_std |  |  | c |
 | modules/program_primitive_behavior_redeclares_std | modules/program/cases/program_primitive_behavior_redeclares_std |  |  | c |
-| modules/pub_val_across_modules | modules/pub/cells/pub_val_across_modules |  |  | c |
+| modules/pub_val_across_modules | modules/pub/cases/pub_val_across_modules |  |  | c |
 | modules/record_construct_read | modules/record/cases/record_construct_read |  |  | c |
 | modules/record_empty | modules/record/cases/record_empty |  |  | c |
 | modules/record_enum_case_lambda | modules/record/cases/record_enum_case_lambda |  |  | c |
@@ -1329,7 +1329,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/shorthand_import_one_candidate | modules/decisions-taken/shorthand_import_refused-337/cases/shorthand_import_one_candidate | 337 |  | b |
 | modules/shorthand_import_several_candidates | modules/decisions-taken/shorthand_import_refused-337/cases/shorthand_import_several_candidates | 337 | 170 | b |
 | modules/sibling_blocks_bind_one_name | modules/decisions-taken/shadowing_in_inner_blocks_refused-205/cases/sibling_blocks_bind_one_name | 205 |  | b |
-| modules/sibling_import_in_a_dependency | modules/sibling/cells/sibling_import_in_a_dependency |  |  | c |
+| modules/sibling_import_in_a_dependency | modules/sibling/cases/sibling_import_in_a_dependency |  |  | c |
 | modules/sidecar_called_from_folder_module | modules/sidecar/cells/sidecar_called_from_folder_module |  |  | c |
 | modules/sidecar_named_like_emitted_atom | modules/sidecar/cells/sidecar_named_like_emitted_atom |  |  | c |
 | modules/smoke | modules/smoke/cases/smoke |  |  | c |
@@ -1455,7 +1455,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/template_annotation_unknown_hole | modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_annotation_unknown_hole | 577 | 311 | b |
 | modules/template_annotation_without_decl | modules/decisions-taken/bodyless_type_method_is_host_binding-311/cases/template_annotation_without_decl | 311 |  | b |
 | modules/template_answer_component | modules/decisions-taken/template_marked_by_syntax_text-578/cases/template_answer_component | 578 | 426 | b |
-| modules/template_answer_method | modules/template/cells/template_answer_method |  |  | c |
+| modules/template_answer_method | modules/template/cases/template_answer_method |  |  | c |
 | modules/template_answers_ast | modules/decisions-taken/code_never_enters_as_string-625/cells/template_answers_ast | 625 |  | b |
 | modules/template_bindings_decls | modules/decisions-taken/query_template_assembled_at_build-415/cells/template_bindings_decls | 415 |  | b |
 | modules/template_build_outside_bound | modules/decisions-taken/template_call_type_is_built_code-426/cases/template_build_outside_bound | 426 |  | b |
@@ -1470,7 +1470,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/template_catalogue_two_themes | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/template_catalogue_two_themes | 665 |  | b |
 | modules/template_default_arg_two_expansions | modules/template/cases/template_default_arg_two_expansions |  |  | c |
 | modules/template_destructuring_init | modules/decisions-taken/template_call_expands_any_expression-425/cases/template_destructuring_init | 425 |  | b |
-| modules/template_fail_at_column_on_open_line | modules/template/refused/src/cases/template_fail_at_column_on_open_line |  |  | c |
+| modules/template_fail_at_column_on_open_line | modules/template/cases/template_fail_at_column_on_open_line |  |  | c |
 | modules/template_function_value | modules/decisions-taken/template_call_expands_any_expression-425/cases/template_function_value | 425 |  | b |
 | modules/template_hole_error_at_column | modules/decisions-taken/template_hole_error_at_column-691/cases/template_hole_error_at_column | 691 |  | a |
 | modules/template_hole_error_far_in_built_code | modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_hole_error_far_in_built_code | 577 |  | t |
@@ -1503,7 +1503,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/template_name_shadowed_by_local | modules/decisions-taken/template_call_expands_any_expression-425/cases/template_name_shadowed_by_local | 425 |  | b |
 | modules/template_note_on_mismatch | modules/decisions-taken/template_call_type_is_built_code-426/cases/template_note_on_mismatch | 426 |  | b |
 | modules/template_own_raise_located | modules/decisions-taken/build_raise_located_with_frames-532/cells/template_own_raise_located | 532 |  | b |
-| modules/template_raise_names_body_file | modules/template/refused/src/cases/template_raise_names_body_file |  |  | c |
+| modules/template_raise_names_body_file | modules/template/cases/template_raise_names_body_file |  |  | c |
 | modules/template_reads_program_catalogue | modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/template_reads_program_catalogue | 665 |  | b |
 | modules/template_reads_val_build_value | modules/decisions-taken/val_decorator_runs_catalogued-356/cells/template_reads_val_build_value | 356 |  | b |
 | modules/template_signature | modules/decisions-taken/template_called_with_raw_text-577/refused/src/cases/template_signature | 577 |  | b |
@@ -1515,7 +1515,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/throw_in_case_arm_result | modules/throw/cases/throw_in_case_arm_result |  |  | c |
 | modules/throw_in_generator | modules/decisions-taken/body_marker_whole_return_type-553/cases/throw_in_generator | 553 |  | b |
 | modules/throw_outside_result | modules/throw/cases/throw_outside_result |  |  | c |
-| modules/todo_aborts | modules/todo/cells/todo_aborts |  |  | c |
+| modules/todo_aborts | modules/todo/cases/todo_aborts |  |  | c |
 | modules/trailing_lambda_call | modules/decisions-taken/brace_without_arrow_is_block-525/cases/trailing_lambda_call | 525 |  | b |
 | modules/transitive_package_import | modules/decisions-taken/only_direct_dependency_importable-242/cells/transitive_package_import | 242 |  | b |
 | modules/try_await_prefix_operators | modules/decisions-taken/await_try_prefix_catch_infix-537/cells/try_await_prefix_operators | 537 |  | b |
@@ -1539,7 +1539,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/tuple_unknown_label | modules/tuple/cases/tuple_unknown_label |  |  | c |
 | modules/two_modules | modules/two/cases/two_modules |  |  | c |
 | modules/two_modules_one_type_name | modules/two/cases/two_modules_one_type_name |  |  | c |
-| modules/two_packages_one_module_name | modules/two/cells/two_packages_one_module_name |  |  | c |
+| modules/two_packages_one_module_name | modules/two/cases/two_packages_one_module_name |  |  | c |
 | modules/type_alias | modules/decisions-taken/body_marker_whole_return_type-553/cases/type_alias | 553 |  | b |
 | modules/type_alias_declarations | modules/type/cases/type_alias_declarations |  |  | c |
 | modules/type_application_argument_count | modules/decisions-taken/type_application_versus_comparison-255/cases/type_application_argument_count | 255 |  | b |
@@ -1612,10 +1612,10 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/unknown_type_val | modules/unknown/cases/unknown_type_val |  |  | c |
 | modules/unknown_type_var | modules/unknown/cases/unknown_type_var |  |  | c |
 | modules/unsigned_compare_and_divide | modules/unsigned/cases/unsigned_compare_and_divide |  |  | c |
-| modules/untyped_array_float_push | modules/untyped/cells/untyped_array_float_push |  |  | c |
+| modules/untyped_array_float_push | modules/untyped/cases/untyped_array_float_push |  |  | c |
 | modules/unwrap_or_literal_width | modules/unwrap/cases/unwrap_or_literal_width |  |  | c |
 | modules/unwrap_or_positions | modules/unwrap/cases/unwrap_or_positions |  |  | c |
-| modules/unwrap_or_record_field | modules/unwrap/cells/unwrap_or_record_field |  |  | c |
+| modules/unwrap_or_record_field | modules/unwrap/cases/unwrap_or_record_field |  |  | c |
 | modules/use_after_early_return | modules/decisions-taken/use_at_component_top_level-357/cases/use_after_early_return | 357 |  | b |
 | modules/use_after_return | modules/decisions-taken/use_at_component_top_level-357/cases/use_after_return | 357 |  | b |
 | modules/use_at_module_level | modules/use/cases/use_at_module_level |  |  | c |
@@ -1634,7 +1634,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/use_tuple_of_non_tuple | modules/use/cases/use_tuple_of_non_tuple |  |  | c |
 | modules/use_under_task | modules/decisions-taken/body_marker_whole_return_type-553/cases/use_under_task | 553 |  | b |
 | modules/use_without_component | modules/use/cases/use_without_component |  |  | c |
-| modules/user_fn_named_like_std | modules/user/cells/user_fn_named_like_std |  |  | c |
+| modules/user_fn_named_like_std | modules/user/cases/user_fn_named_like_std |  |  | c |
 | modules/val_annotated | modules/val/cases/val_annotated |  |  | c |
 | modules/val_assert_after_catch | modules/val/cases/val_assert_after_catch |  |  | c |
 | modules/val_assert_ok | modules/val/cases/val_assert_ok |  |  | c |
@@ -1676,7 +1676,7 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/variant_payload_wildcard_and_nested | modules/variant/cases/variant_payload_wildcard_and_nested |  |  | c |
 | modules/variant_payload_without_name | modules/decisions-taken/variant_payload_field_unnamed_refused-12/cases/variant_payload_without_name | 12 |  | b |
 | modules/variant_positional_payload_same_name | modules/variant/cases/variant_positional_payload_same_name |  |  | c |
-| modules/variant_positional_payload_same_name_packages | modules/variant/cells/variant_positional_payload_same_name_packages |  |  | c |
+| modules/variant_positional_payload_same_name_packages | modules/variant/cases/variant_positional_payload_same_name_packages |  |  | c |
 | modules/wasm_host_async | modules/decisions-taken/one_adapter_list_both_hosts-394/cases/wasm_host_async | 394 | 393, 392 | b |
 | modules/wasm_host_browser_runs | modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cells/wasm_host_browser_runs | 334 |  | b |
 | modules/wasm_host_from_manifest | modules/decisions-taken/wasm_host_profiles_wasi_browser-334/cells/wasm_host_from_manifest | 334 |  | b |

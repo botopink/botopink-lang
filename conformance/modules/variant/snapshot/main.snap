@@ -33,3 +33,6 @@ out 0
 out first
 out 7
 out 1
+== variant_positional_payload_same_name_packages
+out hello
+out 7

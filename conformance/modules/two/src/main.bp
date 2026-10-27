@@ -40,5 +40,6 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("two_modules");
     runCase("two_modules_one_type_name");
+    runCase("two_packages_one_module_name");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

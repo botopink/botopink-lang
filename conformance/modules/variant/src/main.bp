@@ -44,5 +44,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("variant_name_collision");
     runCase("variant_payload_wildcard_and_nested");
     runCase("variant_positional_payload_same_name");
+    runCase("variant_positional_payload_same_name_packages");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

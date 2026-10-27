@@ -51,3 +51,8 @@ out 42
 out none
 out a
 out a
+== optional_index_arithmetic
+out 2
+== optional_index_arithmetic on wasm
+refused error: the wasm backend has no `add` over an optional value (`xs[i]` answers `?T`): unwrap it first
+at src/main.bp:12:13
