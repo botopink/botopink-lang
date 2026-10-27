@@ -5,3 +5,6 @@ at src/main.bp:7:41
 == no_main_refused
 refused error: load-not-a-package: `compiler.load("packages/empty")` names a package with no `src/main.bp`
 at src/main.bp:7:41
+== loaded_targets_checked
+out node_only true
+out with_erlang refused std-unsupported-on-target at src/main.bp:4

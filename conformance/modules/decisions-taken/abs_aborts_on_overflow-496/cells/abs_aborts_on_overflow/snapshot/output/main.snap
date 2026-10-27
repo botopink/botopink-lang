@@ -1,5 +1,0 @@
-botopink-cell 1
-out 5
-out 7
-abort
-stderr integer overflow: abs on i64

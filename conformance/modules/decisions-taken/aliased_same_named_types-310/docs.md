@@ -1,6 +1,6 @@
 # Decision 310 — Two same-named types from two modules may be imported under aliases — 170 holds for types as for values:
 
-[cells/import_same_type_name_two_packages_one_aliased/src/main.bp](cells/import_same_type_name_two_packages_one_aliased/src/main.bp)
+[cases/import_same_type_name_two_packages_one_aliased/src/main.bp](cases/import_same_type_name_two_packages_one_aliased/src/main.bp)
 [cases/import_std_type_beside_aliased_type/src/main.bp](cases/import_std_type_beside_aliased_type/src/main.bp)
 [cases/import_two_enums_one_name/src/main.bp](cases/import_two_enums_one_name/src/main.bp)
 [cases/import_two_types_one_name/src/main.bp](cases/import_two_types_one_name/src/main.bp)

@@ -1,4 +1,0 @@
-botopink-cell 1
-out 5
-abort
-stderr integer overflow: abs on i32

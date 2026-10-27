@@ -553,7 +553,7 @@ linked one — through `scope_carry.carry` before anything is registered:
   `lowerComponentBody`), awaited in place when the tail awaits — `await ({ -> rest })()`. That
   awaited call is lowered as an `async { rest }` block (`innerClosureBlock`): the closure is a
   state machine inside the component's, so a task the host still holds suspends both instead of
-  trapping in `$__task_block_on` (`modules/decisions-taken/components_compose_by_data-504/cells/component_try_then_awaits_host_task`).
+  trapping in `$__task_block_on` (`modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task`).
 
 The general rows the component cells met, each kept: a lambda captures the names of a called
 expression too (`collectIdents` reads `calleeExpr`: `(state(start))(scope)` captured `start`);
@@ -1573,7 +1573,7 @@ element is a pointer (`elemIsPointer`), so `xs.at(i)` / `xs[i]` answer it unboxe
 A `?bigint` prints `null` or the digits. Refused, located: a `bigint` in a union
 (`lowerAsUnknown`, "has no `bigint` in a union yet" — erlang, beam and commonJS run it; the checker
 keeps a `bigint` out of `unknown` and out of `is`). `modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_arithmetic`,
-`modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_in_containers`, `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_to_i64_aborts` and `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_division_by_zero` (`.exit`
+`modules/decisions-taken/bigint_decimal_strict_json-332/run/src/cases/bigint_in_containers`, `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_to_i64_aborts` and `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_division_by_zero` (`.exit`
 alone: a trap writes no text) run here on both hosts.
 
 ## String indices count codepoints (decision 240)

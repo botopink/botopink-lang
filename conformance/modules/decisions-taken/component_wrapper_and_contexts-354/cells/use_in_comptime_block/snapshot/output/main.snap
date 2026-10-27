@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: use-outside-render-tree: `use` inside a `comptime` block or expression — compile-time evaluation has no render tree, so no hook runs there (decision 354)
-at src/main.bp:15:17

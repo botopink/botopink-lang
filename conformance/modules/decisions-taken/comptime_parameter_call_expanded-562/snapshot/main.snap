@@ -19,3 +19,12 @@ at src/main.bp:30:23
 == expanded_fn_forwards_parameter
 out hi
 out hi!
+== comptime_expand_library_names
+out HOME
+out docs
+out NEWS
+out docs
+== comptime_expand_library_type_error
+refused error: unknown-primitive-method: `i32` has no method `toUpper`
+at greeter/root.bp:10:17
+from src/main.bp:9:5

@@ -27,3 +27,22 @@ refused error: context-provide-outside-component: `use provide(…)` in 'themed'
 at src/main.bp:15:5
 == context_provide_read
 out light page[label:dark]
+== context_sheet_registers
+out registered components badge badge+pad
+out registered components badge badge+pad
+out registered components alone alone
+out badge+pad badge+pad tab alone
+out root badge
+== renderable_type_argument
+refused error[generic-arg-count-exceeded]: `@Renderable` takes no type argument — it is a bare marker (decision 354)
+at src/main.bp:6:46
+label write `@Renderable`
+== use_in_comptime_block
+refused error: use-outside-render-tree: `use` inside a `comptime` block or expression — compile-time evaluation has no render tree, so no hook runs there (decision 354)
+at src/main.bp:15:17
+== use_in_decorator_body
+refused error: use-outside-render-tree: `use` inside a decorator's body — compile-time evaluation has no render tree, so no hook runs there (decision 354)
+at src/main.bp:14:13
+== use_in_template_body
+refused error: use-outside-render-tree: `use` inside a template function's body — compile-time evaluation has no render tree, so no hook runs there (decision 354)
+at src/main.bp:14:13

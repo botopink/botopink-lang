@@ -9,4 +9,4 @@ Cells in this repository that also bear on it: `modules/is/cases/is_function_typ
 [cases/is_comptime_type_parameter/src/main.bp](cases/is_comptime_type_parameter/src/main.bp)
 [cases/type_parameter_bound_by_token/src/main.bp](cases/type_parameter_bound_by_token/src/main.bp)
 [cases/comptime_type_param_of_method/src/main.bp](cases/comptime_type_param_of_method/src/main.bp)
-[cells/comptime_type_token_cross_module/src/main.bp](cells/comptime_type_token_cross_module/src/main.bp)
+[cases/comptime_type_token_cross_module/src/main.bp](cases/comptime_type_token_cross_module/src/main.bp)

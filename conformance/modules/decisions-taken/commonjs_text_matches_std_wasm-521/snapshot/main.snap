@@ -59,3 +59,14 @@ out 5.0
 out οδοσ
 == string_trim_keeps_nbsp
 out [ x ]
+== generic_array_of_floats
+out [2.0, 5.0]
+out [9.0, 2.0]
+== generic_fn_value_called_untyped
+out 3.0
+out s
+out #(1, 2)
+== tuple_variable_in_generic_text
+out #(5, 6)
+out #(5, 6)
+out #("a", 2.5)

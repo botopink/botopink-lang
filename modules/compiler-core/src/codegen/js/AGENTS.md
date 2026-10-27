@@ -376,7 +376,7 @@ no `+ 0` canonicalisation — a `BigInt` mixes with no number, `NumKind.big`), `
 `RangeError`. `===`, `<` and `__bp_show` read a `BigInt` natively. `bigint.of(n)` is `BigInt(n)` (an
 `i64` in either form) and the methods are the prototype patches of std's `behavior BigInt`
 (`isBoxedPrototype` unwraps `this`). The `.d.ts` spells it `bigint` (`typescript.zig` passes the name
-through); `modules/decisions-taken/bigint_decimal_strict_json-332/cells/bigint_across_modules` puts one through `scripts/tsc-check.sh`.
+through); `modules/decisions-taken/bigint_decimal_strict_json-332/cases/bigint_across_modules` puts one through `scripts/tsc-check.sh`.
 
 ## `Bytes` (decision 346)
 

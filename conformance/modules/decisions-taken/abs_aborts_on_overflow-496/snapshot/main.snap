@@ -1,0 +1,10 @@
+botopink-cell 2
+== abs_aborts_on_i32_overflow
+out 5
+abort
+stderr integer overflow: abs on i32
+== abs_aborts_on_overflow
+out 5
+out 7
+abort
+stderr integer overflow: abs on i64

@@ -47,5 +47,11 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("bigint_plus_int_literal");
     runCase("bigint_type_test");
     runCase("bigint_unsuffixed_literal");
+    runCase("bigint_across_modules");
+    runCase("bigint_division_by_zero");
+    runCase("bigint_to_i64_aborts");
+    runCase("decimal_div_by_zero_aborts");
+    runCase("decimal_div_rounding_necessary_aborts");
+    runCase("decimal_exact_arithmetic");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

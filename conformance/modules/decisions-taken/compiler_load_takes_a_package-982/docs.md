@@ -3,4 +3,4 @@
 [cells/package_answers_module/src/main.bp](cells/package_answers_module/src/main.bp)
 [cases/file_path_refused/src/main.bp](cases/file_path_refused/src/main.bp)
 [cases/no_main_refused/src/main.bp](cases/no_main_refused/src/main.bp)
-[cells/loaded_targets_checked/src/main.bp](cells/loaded_targets_checked/src/main.bp)
+[cases/loaded_targets_checked/src/main.bp](cases/loaded_targets_checked/src/main.bp)

@@ -1,3 +1,9 @@
 botopink-cell 2
 == component_awaits_host_task
 out slow 2 fast
+== component_try_catch_then_awaits_host_task
+out loaded 14
+out loaded 2
+== component_try_then_awaits_host_task
+out loaded 14
+out error empty

@@ -42,5 +42,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("type_parameter_bound_by_token");
     runCase("comptime_type_param_of_method");
     runCase("comptime_type_token_handed_on");
+    runCase("comptime_type_token_cross_module");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

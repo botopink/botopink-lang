@@ -20652,7 +20652,7 @@ const Emitter = struct {
     /// state machine like the component's lambda around it, so a task the
     /// host still holds suspends both instead of trapping in
     /// `$__task_block_on`. A `return` in it leaves the closure, as in an
-    /// async block (`modules/decisions-taken/components_compose_by_data-504/cells/component_try_then_awaits_host_task`).
+    /// async block (`modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task`).
     fn innerClosureBlock(e: ast.Expr) ?ast.Expr {
         if (e != .call or e.call.kind != .call) return null;
         const cc = e.call.kind.call;

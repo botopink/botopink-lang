@@ -16,3 +16,11 @@ out 7
 out 2
 out 9
 out -1
+== comptime_type_token_cross_module
+out 2
+out 9
+out 4
+out 2 1 1
+out 21 12
+out 2 true
+out true

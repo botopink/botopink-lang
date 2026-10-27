@@ -1,9 +1,0 @@
-botopink-cell 1
-out srv:1
-out site:t
-out App(port: 1, basePath: "")
-out App(title: "t")
-out 1
-out srv
-out site
-out u

@@ -40,3 +40,12 @@ out 14
 == std_private_type_beside_program_type
 out 4
 out b
+== import_same_type_name_two_packages_one_aliased
+out srv:1
+out site:t
+out App(port: 1, basePath: "")
+out App(title: "t")
+out 1
+out srv
+out site
+out u

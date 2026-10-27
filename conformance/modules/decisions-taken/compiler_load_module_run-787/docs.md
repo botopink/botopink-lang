@@ -14,6 +14,6 @@ message the error's text. The program's own `main` prints last.
 The cell `run_outside_init` calls `run()` in the body that runs at build, outside the init it registers, and is
 refused `run-outside-init`; the cell `load_no_main` runs a file that declares no `main`, refused `load-no-main`.
 
-[cells/compiler_load_module_run/src/main.bp](cells/compiler_load_module_run/src/main.bp)
+[cases/compiler_load_module_run/src/main.bp](cases/compiler_load_module_run/src/main.bp)
 [cases/run_outside_init/src/main.bp](cases/run_outside_init/src/main.bp)
 [cases/load_no_main/src/main.bp](cases/load_no_main/src/main.bp)

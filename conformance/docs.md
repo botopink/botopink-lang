@@ -420,7 +420,7 @@ std module's declaration is located in that module's file:
 
 <!-- example: modules/decisions-taken/aliased_same_named_types-310/cases/import_two_enums_one_name -->
 
-<!-- example: modules/decisions-taken/aliased_same_named_types-310/cells/import_same_type_name_two_packages_one_aliased -->
+<!-- example: modules/decisions-taken/aliased_same_named_types-310/cases/import_same_type_name_two_packages_one_aliased -->
 
 <!-- example: modules/decisions-taken/aliased_same_named_types-310/cases/import_two_types_one_name_reached_indirectly -->
 
@@ -492,11 +492,11 @@ kept (`"1.00"`, `"100"` for a negative scale, never an exponent); and
 `"1E+2"` scale −2), anything else an `Error` naming the text. Pure botopink over
 `bigint`: one answer on the four targets.
 
-<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cells/decimal_exact_arithmetic -->
+<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cases/decimal_exact_arithmetic -->
 
-<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cells/decimal_div_rounding_necessary_aborts -->
+<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cases/decimal_div_rounding_necessary_aborts -->
 
-<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cells/decimal_div_by_zero_aborts -->
+<!-- example: modules/decisions-taken/bigint_decimal_strict_json-332/cases/decimal_div_by_zero_aborts -->
 
 **`io` answers alike on every target.** `io.clock`'s `formatIso8601`,
 `toCivil` and `offsetMinutes` take the epochs RFC 3339 writes,
@@ -507,13 +507,13 @@ naming the value (`clock.toCivil: 253402300800000 is past RFC 3339's range`)
 every target (decision 499). The two run where `io` has a host binding:
 commonJS, erlang and beam.
 
-<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_rfc3339_domain -->
+<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_rfc3339_domain -->
 
-<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_format_past_rfc3339_aborts -->
+<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_format_past_rfc3339_aborts -->
 
-<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_civil_past_rfc3339_aborts -->
+<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_civil_past_rfc3339_aborts -->
 
-<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cells/clock_offset_past_rfc3339_aborts -->
+<!-- example: modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts -->
 
 <!-- example: modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds -->
 
@@ -1082,7 +1082,7 @@ may exist at build (decision 520): a `comptime` computes one, and the artifact
 carries it as a build constant — an Erlang binary, a `Uint8Array` on commonJS, a
 wasm data segment (an `Asset`'s `File` read under `comptime`, `try f.bytes()`, § `Asset`).
 
-<!-- example: modules/decisions-taken/bytes_primitive-346/cells/bytes_round_trip -->
+<!-- example: modules/decisions-taken/bytes_primitive-346/cases/bytes_round_trip -->
 <!-- example: modules/bytes/cases/bytes_length_property -->
 <!-- example: modules/decisions-taken/bytes_build_constant_only-520/cases/bytes_comptime -->
 
@@ -1736,7 +1736,7 @@ its body writes resolve as they do in its own module.
 
 <!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/comptime_type_token_handed_on -->
 
-<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cells/comptime_type_token_cross_module -->
+<!-- example: modules/decisions-taken/comptime_type_token_handed_on-757/cases/comptime_type_token_cross_module -->
 
 A type also travels as a run-time value (decision 758): `t: type<T>` without
 `comptime` is the type's identity, crossing to run time as a `Field(Book,
@@ -2012,8 +2012,8 @@ the operator that divides, never at the whole expression. At run time each targe
 refusal, naming `7 / 0`:
 
 <!-- example: modules/decisions-taken/comptime_equality_iterative-471/cases/comptime_deep_structure_equality -->
-<!-- example: modules/decisions-taken/comptime_badarith_message-472/cells/comptime_float_division_by_zero -->
-<!-- example: modules/decisions-taken/comptime_badarith_message-472/cells/comptime_integer_division_by_zero -->
+<!-- example: modules/decisions-taken/comptime_badarith_message-472/cases/comptime_float_division_by_zero -->
+<!-- example: modules/decisions-taken/comptime_badarith_message-472/cases/comptime_integer_division_by_zero -->
 
 A remainder by zero, a division by zero inside a larger expression and one in a function the `comptime`
 calls are the same refusal, at the `%` or the `/` that divides:
@@ -2935,7 +2935,7 @@ helper (`component-use-outside-compose`) and `Card.compose()` called by hand
 
 <!-- example: modules/decisions-taken/component_compose_entry-804/cases/component_compose_entry -->
 
-<!-- example: modules/decisions-taken/component_compose_entry-804/cells/component_compose_signature_differs -->
+<!-- example: modules/decisions-taken/component_compose_entry-804/cases/component_compose_signature_differs -->
 
 **Contexts** (decisions 354, 378, 379, 722, 723). What a body reads from above
 it is a context; its identity is its value's type. std's
@@ -3108,9 +3108,9 @@ error before the wait, and past it the render waits on the host as before.
 A `try … catch` never leaves: the `catch` value stands for the error and the
 body waits on the host the same way.
 
-<!-- example: modules/decisions-taken/components_compose_by_data-504/cells/component_try_then_awaits_host_task -->
+<!-- example: modules/decisions-taken/components_compose_by_data-504/cases/component_try_then_awaits_host_task -->
 
-<!-- example: modules/decisions-taken/components_compose_by_data-504/cells/component_try_catch_then_awaits_host_task -->
+<!-- example: modules/decisions-taken/components_compose_by_data-504/cases/component_try_catch_then_awaits_host_task -->
 
 ## Functions
 
@@ -4356,14 +4356,14 @@ the program's own (`conformance/lib/`, decision 989).
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/package_answers_module -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/file_path_refused -->
 <!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/no_main_refused -->
-<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cells/loaded_targets_checked -->
+<!-- example: modules/decisions-taken/compiler_load_takes_a_package-982/cases/loaded_targets_checked -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_library_entry_root -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_resolves_own_dependencies -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/load_by_package_name -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cases/load_by_package_name_unknown -->
-<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cells/compiler_load_answers_diagnostics -->
+<!-- example: modules/decisions-taken/compiler_load_answers_diagnostics-780/cases/compiler_load_answers_diagnostics -->
 <!-- example: modules/decisions-taken/compiler_load_answers_result-782/cases/compiler_load_answers_result -->
-<!-- example: modules/decisions-taken/compiler_load_try_catch-783/cells/compiler_load_try_catch -->
+<!-- example: modules/decisions-taken/compiler_load_try_catch-783/cases/compiler_load_try_catch -->
 
 `botopink test` leaves them out the same way: a `test/` module that loads a package reads its
 answer, and no file of it is a failed module of the package under test.
@@ -4418,7 +4418,7 @@ stays out of it. Its module body and its `compiler.init`s run at `run()`, just b
 never at program start with the program's own; `run()` called twice runs `main` twice, in one
 package.
 
-<!-- example: modules/decisions-taken/compiler_load_module_run-787/cells/compiler_load_module_run -->
+<!-- example: modules/decisions-taken/compiler_load_module_run-787/cases/compiler_load_module_run -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_body_at_run -->
 <!-- example: modules/decisions-taken/module_run_answers-792/cells/module_run_twice -->
 
@@ -4557,7 +4557,7 @@ answers — a `case`, a loop, a `comptime` — is not a node. The names a librar
 library's module (decision 112), its private functions included, wherever the
 template is expanded; a `Syntax` splice keeps the caller's scope.
 
-<!-- example: modules/decisions-taken/code_never_enters_as_string-625/cells/template_answers_ast -->
+<!-- example: modules/decisions-taken/code_never_enters_as_string-625/cases/template_answers_ast -->
 
 <!-- example: modules/decisions-taken/ast_fn_node_builds_mock_member-753/cases/ast_fn_node_builds_mock_member -->
 
@@ -4567,7 +4567,7 @@ A tree that is no code is refused at the `ast` call, naming the node
 language has not, a `Name` nothing binds where the tree is spliced, a type
 node where an expression stands, and an `FnParam` outside a `Fn`.
 
-<!-- example: modules/decisions-taken/code_never_enters_as_string-625/cells/ast_ill_formed_refused -->
+<!-- example: modules/decisions-taken/code_never_enters_as_string-625/cases/ast_ill_formed_refused -->
 
 A tree carries no location of its own (decision 752): a type error inside the
 code it builds is reported at the call that expanded the template, its message
@@ -4575,14 +4575,14 @@ naming the `file:line:col` of the `ast` call and the node
 (`` — in `wrong`'s tree at src/trees.bp:13:21, at the node `Lit(value: "abc")` ``).
 The caller's code a `Syntax(e)` splices keeps its own location.
 
-<!-- example: modules/decisions-taken/ast_tree_type_error_at_call-752/cells/ast_tree_type_error_at_call -->
+<!-- example: modules/decisions-taken/ast_tree_type_error_at_call-752/cases/ast_tree_type_error_at_call -->
 
 `Node` is a closed union alias of its kinds (decision 751): a record that is
 none of them is no node. Where a node's field is typed `Node` the checker
 refuses it where it is written; handed whole to `compiler.ast`, whose argument
 is checked in the reply, it is `ast-ill-formed` at the `ast` call.
 
-<!-- example: modules/decisions-taken/ast_node_closed_union-751/cells/ast_node_closed_union -->
+<!-- example: modules/decisions-taken/ast_node_closed_union-751/cases/ast_node_closed_union -->
 
 ### `code`
 
@@ -4707,7 +4707,7 @@ use, the one line the expansion has in the file.
 A template declared in the module that uses it is located the same way: its body's raising call is refused in
 that module's own file, and the use is its `called from` line.
 
-<!-- example: modules/decisions-taken/build_raise_located_with_frames-532/cells/template_own_raise_located -->
+<!-- example: modules/decisions-taken/build_raise_located_with_frames-532/cases/template_own_raise_located -->
 
 A decorator is reached by its name, an alias or a namespace (decision 386):
 `import {markers} from "web";` registers the module's decorators under
@@ -4898,7 +4898,7 @@ program that declares its package, imported or not, before the program's own.
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cases/init_executor_before_main -->
 
-<!-- example: modules/decisions-taken/compiler_init_executor-615/cells/init_order_modules -->
+<!-- example: modules/decisions-taken/compiler_init_executor-615/cases/init_order_modules -->
 
 <!-- example: modules/decisions-taken/no_declaration_files_compiler_value-575/cells/init_executor_from_library -->
 
@@ -5176,13 +5176,13 @@ writes, though the caller imports none of them. A type of the same name the
 caller holds from elsewhere is `import-name-collision` at the call: one module
 holds one type of a name.
 
-<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/cells/comptime_expand_library_names -->
+<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/cases/comptime_expand_library_names -->
 
 A refusal of that code is located in the declaring module, where the refused
 code is written, and the call it was expanded at is its `called from` line:
 `shout(7)` writes `count.toUpper()` over an `i32`.
 
-<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/cells/comptime_expand_library_type_error -->
+<!-- example: modules/decisions-taken/comptime_parameter_call_expanded-562/cases/comptime_expand_library_type_error -->
 
 **A decorator that reads `compiler.hooks` runs last** (decision 372, provisional). A
 module's decorators run in two phases: first every decorator that reads no
@@ -6801,7 +6801,7 @@ Decision 354 leaves one wrapper, `Component<R>`, and `Renderable` as a bare mark
 
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cases/component_base_parameter -->
 <!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cases/context_marker_removed -->
-<!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cells/renderable_type_argument -->
+<!-- example: modules/decisions-taken/component_wrapper_and_contexts-354/cases/renderable_type_argument -->
 
 Four changes are not a rename and are reviewed by hand:
 

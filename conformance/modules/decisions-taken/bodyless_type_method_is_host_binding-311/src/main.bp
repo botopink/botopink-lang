@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("template_annotation_called");
     runCase("template_annotation_not_template");
     runCase("template_annotation_without_decl");
+    runCase("template_annotation_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

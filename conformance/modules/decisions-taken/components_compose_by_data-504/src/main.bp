@@ -39,5 +39,7 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("component_awaits_host_task");
+    runCase("component_try_catch_then_awaits_host_task");
+    runCase("component_try_then_awaits_host_task");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

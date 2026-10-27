@@ -20,3 +20,6 @@ at src/main.bp:12:31
 out 1
 out sweep
 out home,sweep
+== decorator_same
+out check=check srv=web
+out check=check local.serverOnly=other

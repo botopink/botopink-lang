@@ -2,3 +2,5 @@ botopink-cell 2
 == meta_generic_spelling
 refused error: 'meta' expects 2 argument(s), got 1
 at src/main.bp:10:22
+== meta_called_as_declared
+out users:id,name

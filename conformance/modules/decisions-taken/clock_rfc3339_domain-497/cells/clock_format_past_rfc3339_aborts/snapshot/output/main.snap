@@ -1,4 +1,0 @@
-botopink-cell 1
-out before
-abort
-stderr clock.formatIso8601: 9007199254740993 is past RFC 3339's range

@@ -2,7 +2,7 @@
 
 [cases/decorator_argument_decorator_alias/src/main.bp](cases/decorator_argument_decorator_alias/src/main.bp)
 [cases/decorator_argument_decorator_name/src/main.bp](cases/decorator_argument_decorator_name/src/main.bp)
-[cells/decorator_same/src/main.bp](cells/decorator_same/src/main.bp)
+[cases/decorator_same/src/main.bp](cases/decorator_same/src/main.bp)
 [cases/decorator_same_not_decorator/src/main.bp](cases/decorator_same_not_decorator/src/main.bp)
 [cases/typeinfo_all_decorator_argument/src/main.bp](cases/typeinfo_all_decorator_argument/src/main.bp)
 [cases/typeinfo_all_with_number/src/main.bp](cases/typeinfo_all_with_number/src/main.bp)

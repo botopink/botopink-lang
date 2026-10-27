@@ -46,5 +46,8 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("optional_chain_string_text");
     runCase("string_lower_final_sigma");
     runCase("string_trim_keeps_nbsp");
+    runCase("generic_array_of_floats");
+    runCase("generic_fn_value_called_untyped");
+    runCase("tuple_variable_in_generic_text");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

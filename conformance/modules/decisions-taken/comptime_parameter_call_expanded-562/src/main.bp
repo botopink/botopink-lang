@@ -44,5 +44,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("comptime_expand_runtime_argument");
     runCase("typeinfo_all_behavior_call_outside_expansion");
     runCase("expanded_fn_forwards_parameter");
+    runCase("comptime_expand_library_names");
+    runCase("comptime_expand_library_type_error");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

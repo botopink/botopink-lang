@@ -41,5 +41,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("load_not_a_package");
     runCase("load_path_absolute");
     runCase("load_path_outside_package");
+    runCase("compiler_load_answers_diagnostics");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

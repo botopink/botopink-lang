@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: ast-ill-formed: `Lit(value: …)` holds no value known at build: write `Syntax(e)` for a `syntax` value
-at src/literal.bp:5:21

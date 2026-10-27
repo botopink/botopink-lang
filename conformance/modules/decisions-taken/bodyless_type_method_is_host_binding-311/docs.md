@@ -1,7 +1,7 @@
 # Decision 311 — A method with no body in a `type` is only a host binding; a declared-only method is a `behavior`'s; a template can be an annotation.
 
 [cases/template_annotation_called/src/main.bp](cases/template_annotation_called/src/main.bp)
-[cells/template_annotation_imported/src/main.bp](cells/template_annotation_imported/src/main.bp)
+[cases/template_annotation_imported/src/main.bp](cases/template_annotation_imported/src/main.bp)
 [cases/template_annotation_not_template/src/main.bp](cases/template_annotation_not_template/src/main.bp)
 [cases/template_annotation_without_decl/src/main.bp](cases/template_annotation_without_decl/src/main.bp)
 

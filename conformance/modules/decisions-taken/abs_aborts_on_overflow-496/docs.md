@@ -10,5 +10,5 @@ stderr, on every target alike.
 Cells that also bear on it: `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_negate_i32`, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/int_overflow_sub_i64_min`,
 `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_overflow`.
 
-[cells/abs_aborts_on_i32_overflow/src/main.bp](cells/abs_aborts_on_i32_overflow/src/main.bp)
-[cells/abs_aborts_on_overflow/src/main.bp](cells/abs_aborts_on_overflow/src/main.bp)
+[cases/abs_aborts_on_i32_overflow/src/main.bp](cases/abs_aborts_on_i32_overflow/src/main.bp)
+[cases/abs_aborts_on_overflow/src/main.bp](cases/abs_aborts_on_overflow/src/main.bp)

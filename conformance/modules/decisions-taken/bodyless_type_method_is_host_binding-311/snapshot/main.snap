@@ -8,3 +8,6 @@ at src/main.bp:10:3
 == template_annotation_without_decl
 refused error: template-annotation-without-decl: `#[shout @`…`]` names the template function `shout`, which takes no `syntax decl: unknown` beside its text
 at src/main.bp:12:3
+== template_annotation_imported
+out find: select * from users where id = $1 limit 1 <- id
+out delete from s where u = $1

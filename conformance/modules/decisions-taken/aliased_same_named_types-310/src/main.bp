@@ -44,5 +44,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("import_two_types_one_name");
     runCase("import_two_types_one_name_reached_indirectly");
     runCase("std_private_type_beside_program_type");
+    runCase("import_same_type_name_two_packages_one_aliased");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

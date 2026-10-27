@@ -2,3 +2,7 @@ botopink-cell 2
 == compiler_load_catch_without_try
 refused error: try-region-cannot-fail: this `catch` closes a region that holds no `try`, so it handles nothing — write `try` before the call that can fail (`try f() catch …`), or drop the `catch`
 at src/main.bp:10:47
+== compiler_load_try_catch
+out handled src/main.bp:2
+out propagated src/main.bp:2
+out fine loaded

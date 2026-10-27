@@ -2,3 +2,6 @@ botopink-cell 2
 == init_output_outside_decorator
 refused error: compiler-output-outside-decorator: `compiler.init` writes to the annotated declaration, and only a decorator has one
 at src/main.bp:9:14
+== init_order_modules
+out ["second", "first", "later", "own"]
+out first second own

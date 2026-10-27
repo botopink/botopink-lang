@@ -1,3 +1,0 @@
-botopink-cell 1
-out node_only true
-out with_erlang refused std-unsupported-on-target at src/main.bp:4

@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: ast-ill-formed: `Name("nowhere")` names nothing in scope where the tree is spliced
-at src/unbound.bp:4:21

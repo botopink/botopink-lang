@@ -1,0 +1,20 @@
+botopink-cell 2
+== ast_ill_formed_refused
+refused error: ast-ill-formed: `Name("nowhere")` names nothing in scope where the tree is spliced
+at src/unbound.bp:4:21
+refused error: ast-ill-formed: `NamedType(named: "string")` is a type, not an expression: a type node stands where a type is written — an `FnParam`'s annotation, a `Fn`'s `ret`
+at src/types.bp:4:21
+refused error: ast-ill-formed: `FnParam(name: "n", annotation: …)` is a parameter outside a `Fn`: an `FnParam` is only an element of `Fn.params`
+at src/params.bp:4:21
+refused error: ast-ill-formed: `Lit(value: …)` holds no value known at build: write `Syntax(e)` for a `syntax` value
+at src/literal.bp:5:21
+refused error: ast-ill-formed: `Arg(name: "tag", value: …)` is an argument outside a `Call`: an `Arg` is only an element of `Call.args`
+at src/main.bp:20:21
+== template_answers_ast
+out BOX:3
+out [0, 1, 2]
+out long
+out short
+out [2, 4]
+out four 4
+out 6

@@ -103,6 +103,7 @@ comptime {
     runModule("comptime");
     runModule("continue");
     runModule("ctor");
+    runModule("decisions-taken/abs_aborts_on_overflow-496");
     runModule("decisions-taken/aliased_imports_from_two_sources-170");
     runModule("decisions-taken/aliased_same_named_types-310");
     runModule("decisions-taken/anonymous_default_function-289");
@@ -111,6 +112,8 @@ comptime {
     runModule("decisions-taken/asserts_throws_generic-493");
     runModule("decisions-taken/asset_size_hash_open-538");
     runModule("decisions-taken/ast_fn_node_builds_mock_member-753");
+    runModule("decisions-taken/ast_node_closed_union-751");
+    runModule("decisions-taken/ast_tree_type_error_at_call-752");
     runModule("decisions-taken/backtick_escaped_identifier-561");
     runModule("decisions-taken/bare_variant_expression_refused-587");
     runModule("decisions-taken/beam_memory_refused_off_beam-167");
@@ -120,11 +123,15 @@ comptime {
     runModule("decisions-taken/body_cell_botopink_body-610");
     runModule("decisions-taken/bodyless_declarations_two_only-604");
     runModule("decisions-taken/bodyless_type_method_is_host_binding-311");
+    runModule("decisions-taken/build_raise_located_with_frames-532");
     runModule("decisions-taken/build_runtime_binary_reused-805");
     runModule("decisions-taken/builtins_declared_in_d_bp-252");
     runModule("decisions-taken/bytes_build_constant_only-520");
     runModule("decisions-taken/bytes_primitive-346");
     runModule("decisions-taken/case_optional_bare_name_refused-980");
+    runModule("decisions-taken/clock_iso8601_millis_always-849");
+    runModule("decisions-taken/clock_rfc3339_domain-497");
+    runModule("decisions-taken/code_never_enters_as_string-625");
     runModule("decisions-taken/code_template_builds_ast-637");
     runModule("decisions-taken/collections_constructors_type_scoped-111");
     runModule("decisions-taken/commonjs_text_matches_std_wasm-521");
@@ -139,10 +146,15 @@ comptime {
     runModule("decisions-taken/compiler_load_try_catch-783");
     runModule("decisions-taken/compiler_meta_called_as_declared-840");
     runModule("decisions-taken/compiler_name_answers_optional-643");
+    runModule("decisions-taken/compiler_note_appended-686");
     runModule("decisions-taken/compiler_same_compares_declaration_handles-666");
     runModule("decisions-taken/compiler_src_is_a_call-718");
     runModule("decisions-taken/compiler_wrap_with_removed-714");
+    runModule("decisions-taken/component_compose_entry-804");
     runModule("decisions-taken/component_props_plain_or_rest-529");
+    runModule("decisions-taken/component_wrapper_and_contexts-354");
+    runModule("decisions-taken/components_compose_by_data-504");
+    runModule("decisions-taken/comptime_badarith_message-472");
     runModule("decisions-taken/comptime_evaluated_and_lifted-266");
     runModule("decisions-taken/comptime_init_at_call_site-808");
     runModule("decisions-taken/comptime_never_translates_erlang-452");

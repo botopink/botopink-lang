@@ -40,5 +40,9 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("component_compose_called");
     runCase("component_compose_entry");
+    runCase("component_compose_missing");
+    runCase("component_compose_signature_differs");
+    runCase("component_scope_field");
+    runCase("component_use_outside_compose");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

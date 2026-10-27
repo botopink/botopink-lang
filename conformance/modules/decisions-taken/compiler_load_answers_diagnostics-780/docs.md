@@ -13,7 +13,7 @@ which the entry's import then names. Each refusal is printed field by field. The
 `@embed`'s: an absolute path, a `..` segment and a path that names no package are refusals of the program that
 loads, at the argument.
 
-[cells/compiler_load_answers_diagnostics/src/main.bp](cells/compiler_load_answers_diagnostics/src/main.bp)
+[cases/compiler_load_answers_diagnostics/src/main.bp](cases/compiler_load_answers_diagnostics/src/main.bp)
 [cases/load_path_absolute/src/main.bp](cases/load_path_absolute/src/main.bp)
 [cases/load_path_outside_package/src/main.bp](cases/load_path_outside_package/src/main.bp)
 [cases/load_not_a_package/src/main.bp](cases/load_not_a_package/src/main.bp)

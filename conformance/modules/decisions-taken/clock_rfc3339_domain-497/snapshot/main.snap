@@ -1,0 +1,21 @@
+botopink-cell 2
+== clock_civil_past_rfc3339_aborts
+out before
+abort
+stderr clock.toCivil: 253402300800000 is past RFC 3339's range
+== clock_format_past_rfc3339_aborts
+out before
+abort
+stderr clock.formatIso8601: 9007199254740993 is past RFC 3339's range
+== clock_offset_past_rfc3339_aborts
+out before
+abort
+stderr clock.offsetMinutes: -62167219200001 is past RFC 3339's range
+== clock_rfc3339_domain
+out true
+out true
+out 0-1-1 0:0:0 weekday 6
+out 9999-12-31 23:59:59 weekday 5
+out 1970-1-1 0:0:0 weekday 4
+out true
+out true

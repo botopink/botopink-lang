@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: component-scope-field: `Card.scope` is a `RenderScope` — a component holds no scope: the renderer hands it to `compose` at each run (decision 388 (5))
-at src/main.bp:9:33

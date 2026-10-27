@@ -47,5 +47,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("bytes_where_string_expected");
     runCase("bytes_widened_to_unknown");
     runCase("bytes_encoding_bridges");
+    runCase("bytes_round_trip");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

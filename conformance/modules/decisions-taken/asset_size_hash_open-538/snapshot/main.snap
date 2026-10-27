@@ -2,3 +2,7 @@ botopink-cell 2
 == embed_open_without_fs_import
 refused error: embed-open-needs-fs: `open()` hands the `Asset` to std's file system, which this module does not import
 at src/main.bp:7:7
+== embed_size_i64
+out 5
+out 3000000005
+out 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824

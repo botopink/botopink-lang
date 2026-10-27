@@ -2,7 +2,7 @@
 
 [cases/component_compose_called/src/main.bp](cases/component_compose_called/src/main.bp)
 [cases/component_compose_entry/src/main.bp](cases/component_compose_entry/src/main.bp)
-[cells/component_compose_missing/src/main.bp](cells/component_compose_missing/src/main.bp)
-[cells/component_compose_signature_differs/src/main.bp](cells/component_compose_signature_differs/src/main.bp)
-[cells/component_scope_field/src/main.bp](cells/component_scope_field/src/main.bp)
-[cells/component_use_outside_compose/src/main.bp](cells/component_use_outside_compose/src/main.bp)
+[cases/component_compose_missing/src/main.bp](cases/component_compose_missing/src/main.bp)
+[cases/component_compose_signature_differs/src/main.bp](cases/component_compose_signature_differs/src/main.bp)
+[cases/component_scope_field/src/main.bp](cases/component_scope_field/src/main.bp)
+[cases/component_use_outside_compose/src/main.bp](cases/component_use_outside_compose/src/main.bp)

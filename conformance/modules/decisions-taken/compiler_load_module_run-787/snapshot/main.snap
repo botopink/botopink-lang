@@ -6,3 +6,16 @@ at src/main.bp:10:19
 build abort Module.run: every call is lowered to the loaded main
 refused error: run-outside-init: `run()` is called outside a `compiler.init` body
 at src/main.bp:11:19
+== compiler_load_module_run
+out == fine
+out fine main
+out end fine
+out == crash
+out crash main
+out abort boom
+out end crash
+out == err
+out err main
+out abort bad answer
+out end err
+out main

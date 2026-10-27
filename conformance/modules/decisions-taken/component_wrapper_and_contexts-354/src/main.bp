@@ -47,5 +47,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("context_provide_bound");
     runCase("context_provide_in_hook");
     runCase("context_provide_read");
+    runCase("context_sheet_registers");
+    runCase("renderable_type_argument");
+    runCase("use_in_comptime_block");
+    runCase("use_in_decorator_body");
+    runCase("use_in_template_body");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

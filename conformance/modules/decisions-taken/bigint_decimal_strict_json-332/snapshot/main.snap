@@ -78,3 +78,75 @@ at src/main.bp:8:13
 == bigint_unsuffixed_literal
 refused error: the integer literal `2` is not a `bigint` — write `2n`
 at src/main.bp:7:21
+== bigint_across_modules
+out 265252859812191058636308480000000
+out 10000000000000015511210043330985984000000
+out 10000000000000000000000000000000000000000
+== bigint_division_by_zero
+out 1
+out 3
+abort
+== bigint_division_by_zero on commonJS
+out 1
+out 3
+abort
+stderr integer division by zero: / on bigint at src/main.bp:12:14
+== bigint_to_i64_aborts
+out 9223372036854775806
+out -9223372036854775808
+abort
+stderr toI64: 9223372036854775808 does not fit i64
+== bigint_to_i64_aborts on wasm
+out 9223372036854775806
+out -9223372036854775808
+abort
+== decimal_div_by_zero_aborts
+out before
+abort
+stderr Decimal.div: division by zero
+== decimal_div_by_zero_aborts on wasm
+out before
+abort
+== decimal_div_rounding_necessary_aborts
+out before
+abort
+stderr Decimal.div: rounding necessary
+== decimal_div_rounding_necessary_aborts on wasm
+out before
+abort
+== decimal_exact_arithmetic
+out 0.3
+out 0.995
+out -3.375
+out 123456789012345678901234567891.0
+out 1.50
+out 100
+out 0.00
+out -0.005
+out 100
+out 0.0015
+out 0.50
+out -12.340
+out Decimal.parse: "1." is not a decimal
+out Decimal.parse: ".5" is not a decimal
+out Decimal.parse: "1e" is not a decimal
+out Decimal.parse: "12x" is not a decimal
+out 0
+out -1
+out 1
+out 0.33333
+out 0.67
+out 0.66
+out -0.334
+out 3.0
+out 10
+out 5.5: 6 5 6 5 6 5 6
+out 2.5: 3 2 3 2 3 2 2
+out 1.6: 2 1 2 1 2 2 2
+out 1.1: 2 1 2 1 1 1 1
+out 1.0: 1 1 1 1 1 1 1
+out -1.0: -1 -1 -1 -1 -1 -1 -1
+out -1.1: -2 -1 -1 -2 -1 -1 -1
+out -1.6: -2 -1 -1 -2 -2 -2 -2
+out -2.5: -3 -2 -2 -3 -3 -2 -2
+out -5.5: -6 -5 -5 -6 -6 -5 -6

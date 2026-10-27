@@ -1,4 +1,0 @@
-botopink-cell 1
-refused error: unknown-primitive-method: `i32` has no method `toUpper`
-at greeter/root.bp:10:17
-from src/main.bp:9:5

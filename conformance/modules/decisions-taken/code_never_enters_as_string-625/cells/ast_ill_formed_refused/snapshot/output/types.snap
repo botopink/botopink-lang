@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: ast-ill-formed: `NamedType(named: "string")` is a type, not an expression: a type node stands where a type is written — an `FnParam`'s annotation, a `Fn`'s `ret`
-at src/types.bp:4:21
