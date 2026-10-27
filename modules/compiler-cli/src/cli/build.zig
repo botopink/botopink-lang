@@ -63,9 +63,6 @@ pub const Options = struct {
     /// output directory, the member's own files written in place and each
     /// dependency's once per its key. Handed by the workspace root's command.
     workspace_out: ?[]const u8 = null,
-    /// `--jobs <n>`: at a workspace root, the members built at once (decision
-    /// 1006 (5), `fanout.zig`; default the CPUs bounded by memory).
-    jobs: ?usize = null,
     /// `--timeout <s>`: at a workspace root, the seconds each member's process
     /// is given (default 900).
     timeout_s: ?u64 = null,
@@ -242,7 +239,7 @@ pub fn run(
     // folder (decision 1015 (4)) and a bare `build` writes each member's
     // `.bpr` set — each member in its own process (decision 1006 (5)).
     if (opts.workspace_out == null and opts.runtime_input == null and opts.emit_runtime == null and opts.emit_resolved == null) {
-        if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = opts.target, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .jobs = opts.jobs, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = opts.target, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
     }
     if (!opts.json) return runBuild(gpa, io, opts, env_map);
 

@@ -30,10 +30,11 @@
 #                           contract, test tooling, wasm --invoke main
 #   8. (the libraries' stage, test-libs, joined stage 9: decision 996)
 #   9. zig build test-conformance  conformance/ — the conformance suite
-#                           (decisions 457, 466, 989, 990 (6)): the root package
-#                           conformance/modules/ — every self-checking module,
-#                           loaded and run in one program — built once into one
-#                           `.bpr` set (a bare `botopink build`) and run on
+#                           (decisions 457, 466, 989, 990 (6), 1066): the root
+#                           package conformance/modules/ — a workspace of the
+#                           self-checking modules, run.sh starting one process
+#                           per member side by side — each member built once into
+#                           its `.bpr` set (a bare `botopink build`) and run on
 #                           each target (`botopink run --target <t>`, reusing it),
 #                           every conformance/test/ suite by `botopink test
 #                           --json`, and every package `botopink packages

@@ -10,7 +10,7 @@
 #   • eight members over one library build at once under `--cold` (every member rewrites
 #     the library and compiles every `.beam` again), each its own process started by this
 #     script, on erlang, beam, commonJS and wasm — twice per target;
-#   • then the root's `run --target <t> --jobs 8` answers every member;
+#   • then the root's `run --target <t>` answers every member (one after another, decision 1066);
 #   • on wasm each member's entry is its own `<pkg>@main` file in the folder (two members'
 #     `main` never share one name);
 #   • the folder holds no staged leftover (`*.tmp`, `*.bea#`); on erlang and beam every
@@ -153,9 +153,9 @@ for target in erlang beam commonJS wasm; do
       done
     fi
 
-    echo "==> $target round $round: the root's run answers every member, $N at once"
+    echo "==> $target round $round: the root's run answers every member"
     set +e
-    OUT="$(cd "$WS" && "$BP" run --target "$target" --jobs "$N" 2>&1)"
+    OUT="$(cd "$WS" && "$BP" run --target "$target" 2>&1)"
     code=$?
     set -e
     [[ $code -eq 0 ]] || { echo "$OUT" >&2; fail "$target round $round: the root's run (exit $code)"; }

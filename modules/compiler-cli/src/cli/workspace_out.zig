@@ -8,8 +8,9 @@
 /// (`refuseShared`), then hands each member to its own `botopink <cmd>
 /// [--target <t> --workspace-out <out>]` process — a bare `build` hands each
 /// member a bare `build` (its `.bpr` set, no `out/`) — through the fan-out of
-/// decision 1006 (5) (`fanout.zig`: in the workspace's order, on `--jobs`,
-/// each under `--timeout`, one `ok` / `FAIL` line per member and the count).
+/// decisions 1006 (5), 1066 (`fanout.zig`: one after another in the
+/// workspace's order, the whole bounded by `--timeout` when passed (1067),
+/// one `ok` / `FAIL` line per member and the count).
 ///
 /// **Written once** (`Once`): a member process given `--workspace-out` writes
 /// a dependency's files — every module of the package, its units, `.d.ts`,
@@ -141,9 +142,8 @@ pub const RootOptions = struct {
     out_dir: []const u8 = "out",
     cold: bool = false,
     cache_root: ?[]const u8 = null,
-    /// `--jobs`: members at once (default `fanout.defaultJobs`).
-    jobs: ?usize = null,
-    /// `--timeout`: seconds each member is given (default 900).
+    /// `--timeout`: seconds the whole command is given, every member together
+    /// (decision 1067); null, no bound.
     timeout_s: ?u64 = null,
 };
 
@@ -277,8 +277,8 @@ fn fanOut(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, cwd: []c
     const log_dir = try std.fmt.allocPrint(arena, "{s}/.botopinkbuild/tmp/fanout/{x}", .{ cwd, std.mem.readInt(u64, &rand, .little) });
     return fanout.run(gpa, io, members, .{
         .argv = argv.items,
-        .jobs = opts.jobs orelse fanout.defaultJobs(io),
-        .timeout_s = opts.timeout_s orelse fanout.DEFAULT_TIMEOUT_S,
+        .timeout_s = opts.timeout_s,
+        .hand_timeout = opts.command == .run,
         .log_dir = log_dir,
     });
 }

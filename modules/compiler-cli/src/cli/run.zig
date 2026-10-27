@@ -12,6 +12,8 @@ const beam_record = @import("./beam_record.zig");
 const workspace_out = @import("./workspace_out.zig");
 const analysis_store = @import("./analysis_store.zig");
 const manifest = @import("manifest");
+const builtin = @import("builtin");
+const fanout = @import("./fanout.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -29,9 +31,8 @@ pub const Options = struct {
     /// `--workspace-out <dir>`: the member's run from its workspace's one
     /// output folder (decision 1015 (4), `build.Options.workspace_out`).
     workspace_out: ?[]const u8 = null,
-    /// `--jobs <n>` / `--timeout <s>`: at a workspace root, the members run at
-    /// once and the seconds each is given (decision 1006 (5), `fanout.zig`).
-    jobs: ?usize = null,
+    /// `--timeout <s>`: at a workspace root, the seconds each member's process
+    /// is given (decisions 1006 (5), 1066, `fanout.zig`).
     timeout_s: ?u64 = null,
 };
 
@@ -50,9 +51,11 @@ pub fn run(
     // At a workspace root, `run --target <t>` builds and runs each member in
     // its own process, over the workspace's one folder (decision 1015 (4)).
     if (opts.target) |t| if (opts.workspace_out == null) {
-        if (try workspace_out.atRoot(gpa, io, .{ .command = .run, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .jobs = opts.jobs, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .run, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
     };
     const out_dir = opts.workspace_out orelse opts.out_dir;
+    // Decision 1067: `--timeout` bounds the whole command, from here.
+    const deadline_ns: ?i96 = if (opts.timeout_s) |s| std.Io.Timestamp.now(io, .awake).nanoseconds + @as(i96, s) * std.time.ns_per_s else null;
 
     // Load config to determine target.
     const proj = config.load(arena, io) catch |err| {
@@ -83,7 +86,13 @@ pub fn run(
             try build_cmd.wasmEntryPath(arena, out_dir, packages, opts.module)
         else
             try build_cmd.artifactPath(arena, out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
-        const ran = try runWasi(arena, io, proj, entry_path, opts.extra_args, .{});
+        // The wasm runner's epoch deadline is armed from the time left (1067 (2)).
+        const left: ?u64 = if (deadline_ns) |d| @intCast(@max(d - std.Io.Timestamp.now(io, .awake).nanoseconds, 1)) else null;
+        const ran = try runWasi(arena, io, proj, entry_path, opts.extra_args, .{ .timeout_ns = left });
+        if (ran.timed_out) {
+            reportTimeout(arena, opts.timeout_s.?);
+            return 1;
+        }
         return ran.code;
     }
 
@@ -93,7 +102,57 @@ pub fn run(
     for (opts.extra_args) |arg| try full.append(arena, arg);
 
     // Spawn and wait — stdio is inherited from the parent process.
+    if (deadline_ns) |d| return spawnWaitUntil(arena, io, full.items, d, opts.timeout_s.?);
     return spawnWait(arena, io, full.items);
+}
+
+fn reportTimeout(arena: std.mem.Allocator, timeout_s: u64) void {
+    reporter.errMsg(std.fmt.allocPrint(arena, "the command's --timeout of {d} s was reached: the program was stopped", .{timeout_s}) catch "the command's --timeout was reached");
+}
+
+/// `spawnWait` under the command's bound (decision 1067): the program leads a
+/// group of its own (decision 1061 (1), `procgroup`), killed whole when
+/// `deadline_ns` passes; the command then exits 1 naming the bound.
+fn spawnWaitUntil(arena: std.mem.Allocator, io: std.Io, argv: []const []const u8, deadline_ns: i96, timeout_s: u64) !u8 {
+    var child = bp.procgroup.spawn(io, .{ .argv = argv }) catch |err| {
+        reporter.errMsg(arglist.spawnError(arena, argv[0], argv, err));
+        return 1;
+    };
+    defer bp.procgroup.kill(io, &child);
+    const fg = bp.procgroup.Foreground.give(&child);
+    defer fg.restore();
+    const pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id.?);
+    const Watch = struct {
+        done: std.atomic.Value(bool) = .init(false),
+        fired: std.atomic.Value(bool) = .init(false),
+        fn run(w: *@This(), io_: std.Io, pid_: i32, d: i96) void {
+            while (!w.done.load(.acquire)) {
+                if (std.Io.Timestamp.now(io_, .awake).nanoseconds >= d) {
+                    w.fired.store(true, .release);
+                    fanout.killGroup(pid_);
+                    return;
+                }
+                io_.sleep(.fromMilliseconds(50), .awake) catch return;
+            }
+        }
+    };
+    var watch: Watch = .{};
+    const thread = try std.Thread.spawn(.{}, Watch.run, .{ &watch, io, pid, deadline_ns });
+    const term = bp.procgroup.wait(io, &child) catch |e| {
+        watch.done.store(true, .release);
+        thread.join();
+        return e;
+    };
+    watch.done.store(true, .release);
+    thread.join();
+    if (watch.fired.load(.acquire)) {
+        reportTimeout(arena, timeout_s);
+        return 1;
+    }
+    return switch (term) {
+        .exited => |code| code,
+        .signal, .stopped, .unknown => 1,
+    };
 }
 
 /// The command line that runs the program `build` wrote into `out_dir` on
@@ -185,6 +244,9 @@ pub const WasiRun = struct {
     /// holds only the program's units, the core and std's then the
     /// compiler's own bytes.
     units_dir: ?[]const u8 = null,
+    /// The time left of the command's `--timeout` (decision 1067): the wasm
+    /// runner's epoch deadline; null, none.
+    timeout_ns: ?u64 = null,
 };
 
 pub const WasiRan = struct {
@@ -193,6 +255,8 @@ pub const WasiRan = struct {
     code: u8,
     /// The captured stdout, when `WasiRun.stdout` captures.
     stdout: []const u8 = "",
+    /// Stopped by `WasiRun.timeout_ns` (the command's `--timeout`, 1067).
+    timed_out: bool = false,
 };
 
 /// Run the `wasi` program at `path` in this process (decisions 1032 (3),
@@ -235,12 +299,13 @@ pub fn runWasi(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig,
         for (m.keys(), m.values(), 0..) |k, v, i| list[i] = .{ .name = k, .value = v };
         env = .{ .list = list };
     }
-    const opts: runner.Options = .{ .stdout = how.stdout, .stdin_inherit = true, .argv = argv, .env = env, .needs = needs, .cwd = cwd };
+    const opts: runner.Options = .{ .stdout = how.stdout, .stdin_inherit = true, .argv = argv, .env = env, .needs = needs, .cwd = cwd, .timeout_ns = how.timeout_ns };
     const ran = if (code) |cd| switch (cd) {
         .component => |c| try runner.run(arena, c, &.{}, opts),
         .module => |m| try runner.runCore(arena, m, opts),
     } else try runner.runEntry(arena, io, cache_dir, code_cache.cold, text, if (how.units_dir) |d| .{ .dir = d, .runtime = true } else .{ .dir = std.fs.path.dirname(path) orelse "." }, opts);
     if (ran.end == .interrupted) return .{ .code = 130, .stdout = ran.stdout orelse "" };
+    if (ran.end == .timed_out) return .{ .code = 1, .stdout = ran.stdout orelse "", .timed_out = true };
     if (ran.trap) |t| if (t.len > 0) {
         std.Io.File.stderr().writeStreamingAll(io, try std.fmt.allocPrint(arena, "{s}\n", .{t})) catch {};
     };
