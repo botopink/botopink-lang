@@ -780,7 +780,7 @@ check_counts() { # <n>
 }
 
 report() { # <n> <stage title> <pass text> <fail text>
-    local names=(x x test-bpmp beam-export-audit test-cli x test-conformance test-docs test-web)
+    local names=(x x test-bpmp beam-export-audit test-cli x test-conformance test-docs x test-web)
     [ "${names[$1]}" != x ] && want "${names[$1]}" || return 0
     stage "$2"
     if [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; then
