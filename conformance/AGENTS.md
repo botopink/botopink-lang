@@ -2305,7 +2305,7 @@ program printed under the module's verdict. A person accepts a candidate by rena
 
 The report is every `FAIL` line, the narrowing audit's count, a per-target line — `by target:
 commonJS <passed>/<ran> · erlang … · beam … · * …`, a module counted once per target and `*` a
-narrowing refused before any target ran or a roster red — and the total,
+narrowing refused before any target ran or a roster red —, a `target runs:` line — `commonJS built N, reused M · erlang …` (decision 1008 (6)): per target, the runs (the root package's, each library's) that emitted and compiled and those whose target key matched, counted from the one `botopink-target: built|reused` stderr line the CLI prints under `BOTOPINK_TARGET_REPORT` (which `run.sh` sets, reads and hides) — and the total,
 `conformance: <passed> passed, <failed> failed`.
 
 Jobs run in parallel on `../scripts/lib/pool.sh` — the library runner's former rule: `--jobs`

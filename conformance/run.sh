@@ -57,7 +57,12 @@
 #                      (`botopink run --target <t>`, reusing the set), and its printed verdicts —
 #                      `ok   <m>` or `FAIL <m> — …` and the lines under it, then
 #                      `modules: N checked — P passed, F failed` — are that target's
-#                      result per module. The list is held to the tree: a module on
+#                      result per module. The report adds `target runs: <t> built N,
+#                      reused M` per target (decision 1008 (6)): the runs (the root
+#                      package's, each library's) that emitted and compiled, and those
+#                      whose target key matched; the CLI prints one `botopink-target:`
+#                      stderr line under `BOTOPINK_TARGET_REPORT`, which run.sh hides.
+#                      The list is held to the tree: a module on
 #                      disk without its line, a line without its module, and a
 #                      directory still in the old cell shape (`run/`, `refused/`,
 #                      `cells/` with no `snapshot/main.snap`) are reds of their own; a
@@ -464,6 +469,15 @@ json_tests() {
 }
 
 strip() { sed "s/$(printf '\033')\[[0-9;]*m//g"; }
+# Decision 1008 (6): `BOTOPINK_TARGET_REPORT` makes a `--target` run print one stderr line,
+# `botopink-target: built|reused` (emitted and compiled, or its target key matched and it only
+# executed). `note_target` moves it out of a run's stderr into `$work/bt-<target>-<slug>`, which the
+# report counts as `built N, reused M` per target.
+note_target() { # <target> <slug> <stderr file>
+    local l
+    l="$(sed -n 's/^botopink-target: //p' "$3" | tail -1)"
+    [ -z "$l" ] || { printf '%s\n' "$l" >"$work/bt-$1-$2"; sed -i '/^botopink-target: /d' "$3"; }
+}
 # progress lines (`Checking 1 module(s)...`) carry no refusal
 quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
@@ -672,6 +686,7 @@ run_root() { # <target> <out file>
     # `--cold` reads no code cache and still reuses the fresh set (1006 (4)).
     (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
+    note_target "$t" root "$dir/e.txt"
     strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
       const fs = require("fs");
       const t = process.env.T, lines = fs.readFileSync(0, "utf8").split("\n");
@@ -836,6 +851,7 @@ lib_one() { # <name> <target> <out file>
         printf '%s' "$LIB_PROGRAM_TEMPLATE" | sed "s/@PACKAGE@/$name/g" >"$dir/src/main.bp"
         (unset BOTOPINK_LIB_ROOTS; cd "$dir" && with_timeout "$LIB_TIMEOUT" "$compiler" run --target "$t" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
         code=$?
+        note_target "$t" "lib-$slug" "$dir/e.txt"
         strip <"$dir/o.txt" >"$dir/out.txt"
         local summary
         summary="$(grep -E '^library: ' "$dir/out.txt" | tail -1)"
@@ -970,8 +986,9 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export -f note_target run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
 export here work compiler lib_root LIB_PROGRAM_TEMPLATE cold_flag
+export BOTOPINK_TARGET_REPORT=1
 export LIB_TIMEOUT="$lib_timeout"
 
 if [ $self_test -eq 1 ]; then
@@ -1174,6 +1191,18 @@ if (hasDisabled === "1") console.log(`${disabledCount} disabled (shrink-only, de
 const order = ["commonJS", "erlang", "wasm", "beam", "*"];
 const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
+// Decision 1008 (6): per target, the runs that emitted and compiled (built) and the runs whose target key
+// matched (reused) — the root package's and each library's, from the `botopink-target:` line of each run.
+const bt = new Map();
+for (const f of fs.readdirSync(work)) {
+  const m = /^bt-([^-]+)-/.exec(f);
+  if (!m) continue;
+  if (!bt.has(m[1])) bt.set(m[1], { built: 0, reused: 0 });
+  const v = fs.readFileSync(`${work}/${f}`, "utf8").trim();
+  if (v in bt.get(m[1])) bt.get(m[1])[v]++;
+}
+const btKeys = [...bt.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+if (btKeys.length) console.log(`target runs: ${btKeys.map((t) => `${t} built ${bt.get(t).built}, reused ${bt.get(t).reused}`).join(" · ")}`);
 if (leftover !== "") console.log(`${leftover} cases outside 989's shape (shrink-only)`);
 console.log(`cells: ${jobsRan} jobs — ${jobsRan - jobsAudit} run, ${jobsAudit} audits`);
 const colour = fails ? RED : GREEN;
