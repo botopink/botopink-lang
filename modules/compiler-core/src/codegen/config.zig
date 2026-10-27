@@ -55,8 +55,8 @@ pub const Config = struct {
     wasm_artifact: bool = false,
     /// Decision 1008 (3) — wasm emits only this module, the program's entry:
     /// its component links every body it reaches, so no other module's
-    /// component is ever run. Set by `run` over a `.bpr`; `build` (null)
-    /// emits every unit.
+    /// component is ever run. Set by `build` and `run` on wasm (decision
+    /// 1017 (5)); null (a package with no such module, other targets) emits every unit.
     wasm_entry_only: ?[]const u8 = null,
 
     /// The code cache's level B (144 B-60): where the comptime pass reads a

@@ -9,8 +9,9 @@
 #   • on commonJS (with the `.d.ts`), erlang, beam and wasm, the program built
 #     from `app.bpr` writes every file of the direct build, byte for byte, and
 #     `run` from it prints what the direct `run` prints, nothing of the build
-#     phase (the top-level block's `print`); on wasm that run writes the entry's
-#     `main.wat` alone, the build's bytes (decision 1008 (3));
+#     phase (the top-level block's `print`); on wasm the direct build, the build from
+#     `app.bpr` and the run write the entry's `main.wat` alone — a two-module program
+#     (decisions 1008 (3), 1017 (5)) — and `wasmtime` runs the build's file to the run's answer;
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
 #   • the manifest's wasm host (decision 334 (2)) is in the root's `.bpr`: over
@@ -107,9 +108,20 @@ for target in commonJS erlang beam wasm; do
   bp "$WORK/run-bpr.out" run --target "$target" --out "$WORK/run-bpr-$target" "$RT-commonJS/app.bpr" || fail "$target: the run from app.bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
     || { fail "$target: the run from app.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-  # Decision 1008 (3): on wasm the run from a `.bpr` emits only the entry's component, the
-  # build's bytes; the build emits every unit.
+  # Decisions 1008 (3), 1017 (5): on wasm the build, the build from a `.bpr` and the run emit
+  # only the entry's component, the same bytes.
   if [[ "$target" == wasm ]]; then
+    for d in direct bpr; do
+      wats="$(cd "$WORK/$d-$target" && find . -type f | sort | tr '\n' ' ')"
+      [[ "$wats" == "./main.wat " ]] || fail "wasm: the $d build wrote ${wats:-nothing}, not main.wat alone"
+    done
+    if command -v wasmtime >/dev/null 2>&1; then
+      wasmtime run -S http -W gc=y -W exceptions=y "$WORK/direct-$target/main.wat" > "$WORK/wt.out" 2>/dev/null || fail "wasm: wasmtime failed on the build's main.wat"
+      diff <(grep -v '^build a$' "$WORK/wt.out") "$WORK/want.out" > "$WORK/diff.log" \
+        || { fail "wasm: the build's main.wat answers otherwise under wasmtime"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    else
+      fail "wasmtime is not on PATH (decision 67: a missing runtime fails)"
+    fi
     wats="$(cd "$WORK/run-bpr-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
     [[ "$wats" == "./main.wat " ]] || fail "wasm: the run from app.bpr wrote ${wats:-no .wat}, not main.wat alone"
     cmp -s "$WORK/run-bpr-$target/main.wat" "$WORK/bpr-$target/main.wat" \

@@ -58,7 +58,7 @@ pub fn run(
     };
 
     // Build first, into the same directory the entry point is read from.
-    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir, .cold = opts.cold }, env_map);
+    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir, .cold = opts.cold, .entry = opts.module }, env_map);
     if (build_exit != 0) return build_exit;
 
     const argv = try programArgv(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
@@ -74,7 +74,7 @@ pub fn run(
 /// `out_dir`, which then runs as a build's does. The entry module's `fn main`
 /// is looked for in the tree the file holds (decision 517).
 fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts: Options, file: []const u8, env_map: libs.EnvMap) !u8 {
-    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir }, file, env_map, opts.module);
+    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir, .entry = opts.module }, file, env_map, opts.module);
     if (built.exit != 0) return built.exit;
     const target = opts.target.?;
     if (!built.has_main) {

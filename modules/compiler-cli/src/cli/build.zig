@@ -44,6 +44,9 @@ pub const Options = struct {
     /// `runtime`, `summary` (decision 798 (6), `modules/compiler-cli/AGENTS.md`);
     /// stderr is as without it.
     json: bool = false,
+    /// The module the program starts (`run --module`, default `main`): on wasm
+    /// a build emits only its component (decision 1017 (5), `Config.wasm_entry_only`).
+    entry: []const u8 = "main",
     /// `--cache-root <dir>`: the root the code cache's levels A and B file
     /// under, instead of the project's or its workspace's.
     cache_root: ?[]const u8 = null,
@@ -368,6 +371,9 @@ fn runBuild(
         // preview 2 component on `wasi` (decision 334).
         .wasm_artifact = true,
         .analysis_store = &level_b.store,
+        // Decision 1017 (5) — on wasm only the entry's component is written (it links
+        // every body it reaches); a package with no such module keeps every unit.
+        .wasm_entry_only = if (target == .wasm and hasModule(project_modules, opts.entry)) opts.entry else null,
     };
 
     // Run the compiler. `build` emits only: the program is not executed.
@@ -416,7 +422,7 @@ fn runBuild(
         j.modules = outputs.items.len;
         for (outputs.items) |o| if (o.result.build_output.len > 0) jsonBuildLines(j, o.result.build_output);
     } else if (reporter.sink == null) for (outputs.items) |o| if (o.result.build_output.len > 0) reporter.stdout(io, o.result.build_output);
-    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items, cfg.wasm_entry_only != null);
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
@@ -521,16 +527,16 @@ pub fn runRuntime(
         .packages = .{ .root = meta.root, .deps = meta.deps },
         .wasm_host = meta.wasm_host,
         .wasm_artifact = true,
-        // Decision 1008 (3) — `run` executes the entry's component alone:
-        // only it is emitted on wasm; `build` (no entry) emits every unit.
-        .wasm_entry_only = if (target == .wasm) entry else null,
+        // Decisions 1008 (3), 1017 (5) — only the entry's component is emitted on
+        // wasm (`run` executes it alone); a program with no such module keeps every unit.
+        .wasm_entry_only = if (target == .wasm) wasmEntry(outputs, entry orelse opts.entry) else null,
     };
     var emitted = try bp.codegen.emit(gpa, outputs, cfg);
     defer {
         for (emitted.items) |*o| o.result.deinit(gpa);
         emitted.deinit(gpa);
     }
-    const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items);
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items, false);
     writeOutputs(gpa, io, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map) catch |err| switch (err) {
         error.SidecarRefused => return .{ .exit = 1 },
         else => return err,
@@ -568,6 +574,16 @@ fn inItsProject(arena: std.mem.Allocator, io: std.Io, file: []const u8, root: []
 
 /// Whether the analysed module `name` of `outputs` declares a top-level
 /// `fn main` (decision 517, read from the tree a `.bpr` holds).
+fn hasModule(modules: []const Module, name: []const u8) bool {
+    for (modules) |m| if (std.mem.eql(u8, m.path, name)) return true;
+    return false;
+}
+
+fn wasmEntry(outputs: []const bp.codegen.ComptimeOutput, name: []const u8) ?[]const u8 {
+    for (outputs) |o| if (std.mem.eql(u8, o.name, name)) return name;
+    return null;
+}
+
 fn declaresMain(outputs: []const bp.codegen.ComptimeOutput, name: []const u8) bool {
     for (outputs) |o| {
         if (!std.mem.eql(u8, o.name, name)) continue;

@@ -431,7 +431,7 @@ pub fn run(
     // modules that compiled from running their tests. A warning is printed
     // as `check` prints it and fails nothing (decision 57).
     diagnostics.renderWarnings(gpa, io, arena, outputs.items);
-    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items, false);
 
     // This run's own artifact tree, empty by construction: a previous run's
     // artifact of a module that no longer compiles cannot be found (or run) by

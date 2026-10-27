@@ -269,6 +269,9 @@ pub fn failedOutputs(
     arena: std.mem.Allocator,
     modules: []const Module,
     outputs: []const bp.codegen.ModuleOutput,
+    /// `Config.wasm_entry_only`: a module the backend left out on purpose is
+    /// not a failure (decision 1017 (5)); every other arm returns an output.
+    entry_only: bool,
 ) ![]const []const u8 {
     var returned = std.StringHashMap(void).init(arena);
     var failed: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -276,10 +279,10 @@ pub fn failedOutputs(
         try returned.put(o.name, {});
         if (o.result.failed()) try failed.append(arena, o.name);
     }
-    for (modules) |m| {
+    if (!entry_only) for (modules) |m| {
         const name = moduleName(m);
         if (!returned.contains(name)) try failed.append(arena, name);
-    }
+    };
     if (failed.items.len > 0) {
         for (outputs) |o| _ = renderResult(gpa, io, arena, o);
     }
@@ -595,7 +598,7 @@ test "failedOutputs names diagnosed and absent modules, never a declaration file
         .{ .name = "main", .src = "", .result = .{ .js = &js_b, .comptime_script = null } },
         .{ .name = "broken", .src = "val x = ;", .result = .{ .js = &js_c, .comptime_script = null, .diagnostic = .{ .syntax = .{ .parse = null } } } },
     };
-    const failed = try failedOutputs(std.testing.allocator, std.testing.io, arena, &modules, &outputs);
+    const failed = try failedOutputs(std.testing.allocator, std.testing.io, arena, &modules, &outputs, false);
     try std.testing.expectEqual(@as(usize, 2), failed.len);
     try std.testing.expectEqualStrings("broken", failed[0]);
     try std.testing.expectEqualStrings("gone", failed[1]);
