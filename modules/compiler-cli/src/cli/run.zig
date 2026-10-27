@@ -511,12 +511,17 @@ fn collectByExt(
 
 /// Spawn `argv` with inherited stdio and return its exit status.
 fn spawnWait(arena: std.mem.Allocator, io: std.Io, argv: []const []const u8) !u8 {
-    var child = std.process.spawn(io, .{ .argv = argv }) catch |err| {
+    var child = bp.procgroup.spawn(io, .{ .argv = argv }) catch |err| {
         reporter.errMsg(arglist.spawnError(arena, argv[0], argv, err));
         return 1;
     };
-    defer child.kill(io);
-    const term = try child.wait(io);
+    defer bp.procgroup.kill(io, &child);
+    // The child leads a group of its own (decision 1061 (1)): on a terminal it
+    // is the foreground group while it runs, so it can read it and Ctrl+C
+    // reaches the whole group.
+    const fg = bp.procgroup.Foreground.give(&child);
+    defer fg.restore();
+    const term = try bp.procgroup.wait(io, &child);
     return switch (term) {
         .exited => |code| code,
         .signal, .stopped, .unknown => 1,

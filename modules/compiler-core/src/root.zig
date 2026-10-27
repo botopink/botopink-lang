@@ -16,6 +16,8 @@ pub const comptime_pipeline = @import("./comptime.zig");
 pub const comptime_runtime = @import("./comptime/runtime/runtime.zig");
 /// The OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228).
 pub const otp = @import("./otp.zig");
+/// Decision 1061 (1) — every child leads a process group, killed as a group.
+pub const procgroup = @import("./procgroup.zig");
 /// The code cache's level B entry format (144 B-60): the container, and the
 /// encoder and decoder of a module's analysis (`comptime/analysis_entry.zig`).
 pub const analysis_entry = @import("./comptime/analysis_entry.zig");

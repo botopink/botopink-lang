@@ -132,17 +132,30 @@ pool_job() { # <inflight dir> <cmd…>
 }
 
 # with_timeout <seconds> <cmd…> — run a command under a wall-clock limit on
-# every runner the gate meets: GNU `timeout`, Homebrew's `gtimeout`, or — on
-# a stock macOS, which ships neither — perl's alarm, which survives the exec
-# and ends the command with SIGALRM. The callers only read pass or fail, never
-# timeout's 124, so the three are interchangeable.
+# every runner the gate meets, in a session of its own (decision 1061 (1)):
+# `setsid timeout -k 5 <s>` — SIGTERM at the limit, SIGKILL five seconds later —
+# and then SIGKILL to the whole session's group, so a `beam.smp` or a `node`
+# the command's children left behind does not outlive the job. A stock macOS
+# ships neither `setsid` nor `timeout`: there it is Homebrew's `gtimeout`, or
+# perl's alarm (which survives the exec and ends the command with SIGALRM), and
+# a perl `setsid` of its own. The callers only read pass or fail, never
+# timeout's 124 or 137, so the three are interchangeable. An interrupted gate
+# (INT, TERM, HUP) kills the job's group before it leaves.
 with_timeout() {
-    local secs="$1"; shift
-    if command -v timeout >/dev/null 2>&1; then
-        timeout "$secs" "$@"
+    local secs="$1" pid rc
+    shift
+    if command -v setsid >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+        setsid timeout -k 5 "$secs" "$@" <&0 &
     elif command -v gtimeout >/dev/null 2>&1; then
-        gtimeout "$secs" "$@"
+        gtimeout -k 5 "$secs" "$@" <&0 &
     else
-        perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"
+        perl -e 'use POSIX (); POSIX::setsid(); alarm shift; exec @ARGV or exit 127' "$secs" "$@" <&0 &
     fi
+    pid=$!
+    trap 'kill -KILL -- "-'"$pid"'" 2>/dev/null; kill -KILL "'"$pid"'" 2>/dev/null; exit 130' INT TERM HUP
+    wait "$pid"
+    rc=$?
+    trap - INT TERM HUP
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    return $rc
 }

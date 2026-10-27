@@ -142,7 +142,7 @@ fn runCaptured(
     timeout_ns: i96,
 ) !RunOutcome {
     if (isErlangTool(argv[0])) try otp.check(io);
-    const result = std.process.run(allocator, io, .{
+    const result = @import("../procgroup.zig").run(allocator, io, .{
         .argv = argv,
         .cwd = if (cwd) |p| .{ .path = p } else .inherit,
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = timeout_ns }, .clock = .real } },

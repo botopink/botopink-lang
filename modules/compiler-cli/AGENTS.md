@@ -210,6 +210,7 @@ compiler-cli/
 │   │                          the script edits, `shapes.bp` untouched)
 │   ├── import_alias_refused.sh ← `from "@/lib.db"` is an unresolved import source and `"alias"` an unknown
 │   │                          manifest key (decisions 1050, 1048)
+│   ├── child_group_killed.sh ← no child outlives the compiler: a hung erlang program under `timeout`, and one ended by SIGINT, leaves no process in the job's session (decision 1061 (1))
 │   ├── workspace_out.sh     ← a workspace root's one output folder (decision 1015 (4)),
 │   │                          its fixture written inline: two members over one
 │   │                          library, on erlang and beam — a member handed
@@ -313,6 +314,7 @@ bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alo
 bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030, 1039)
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
 bash modules/compiler-cli/tests/import_alias_refused.sh  # no import alias: an unresolved source, `alias` an unknown key (1050, 1048)
+bash modules/compiler-cli/tests/child_group_killed.sh  # no child of the compiler outlives it: timeout and SIGINT leave no beam.smp in the job's session (1061 (1))
 bash modules/compiler-cli/tests/workspace_out.sh     # a workspace root's one out/<t>/ folder, dependencies written once, one name one member (1015 (4), 1023, 1013 (2))
 bash modules/compiler-cli/tests/unit_cache.sh        # a dependency's units taken from the unit cache by a second package (1008 (2))
 bash modules/compiler-cli/tests/workspace_run_one_process_per_member.sh # a workspace root's build / run, one process per member, ok / FAIL lines and the count (1006 (5))

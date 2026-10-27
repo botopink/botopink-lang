@@ -192,6 +192,20 @@ fn onSigint(sig: std.posix.SIG) callconv(.c) void {
         if (program) bp.codegen.wasmRunner.interrupt();
         return;
     }
+    bp.procgroup.killAll();
+    const dfl: std.posix.Sigaction = .{
+        .handler = .{ .handler = std.posix.SIG.DFL },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(sig, &dfl, null);
+    std.posix.raise(sig) catch {};
+}
+
+/// Decision 1061 (1) — SIGTERM (a `timeout` above the compiler) kills every
+/// child's group, then ends the process as the default action does.
+fn onSigterm(sig: std.posix.SIG) callconv(.c) void {
+    bp.procgroup.killAll();
     const dfl: std.posix.Sigaction = .{
         .handler = .{ .handler = std.posix.SIG.DFL },
         .mask = std.posix.sigemptyset(),
@@ -209,6 +223,12 @@ fn installSigint() void {
         .flags = 0,
     };
     std.posix.sigaction(.INT, &act, null);
+    const term: std.posix.Sigaction = .{
+        .handler = .{ .handler = onSigterm },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(.TERM, &term, null);
 }
 
 /// Exit code of a command-line usage error (unknown flag, bad target, …).
@@ -219,6 +239,8 @@ fn dispatch(init: std.process.Init) !u8 {
     const io = init.io;
     // The command's `erl` session (`cli/otp.zig`) ends with the command.
     defer otp.close(io);
+    // ... and no child outlives the command (decision 1061 (1)).
+    defer bp.procgroup.killAll();
     const env_map: ?*const std.process.Environ.Map = init.environ_map;
     // Decision 993 (1): a `compiler.load`ed package resolves its own
     // dependencies from its own directory, through the CLI.

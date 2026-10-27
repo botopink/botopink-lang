@@ -183,6 +183,13 @@ fn admit(sh: *Shared) void {
     }
 }
 
+const TERM_GRACE_NS: i64 = 3 * std.time.ns_per_s;
+
+fn termMember(pid: i32) void {
+    if (builtin.os.tag == .windows or pid <= 0) return;
+    std.posix.kill(pid, .TERM) catch {};
+}
+
 fn killGroup(pid: i32) void {
     if (builtin.os.tag == .windows or pid <= 0) return;
     std.posix.kill(-pid, .KILL) catch {};
@@ -224,12 +231,22 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, members: []const Member, opts: Op
     while (printed < members.len) {
         const now = nowNs(io);
         for (slots) |*s| {
-            if (s.done.load(.acquire) or s.timed_out.load(.acquire)) continue;
+            if (s.done.load(.acquire)) continue;
             const pid = s.pid.load(.acquire);
             if (pid == 0) continue;
-            if (now - s.start_ns.load(.acquire) < timeout_ns) continue;
+            const age = now - s.start_ns.load(.acquire);
+            if (s.timed_out.load(.acquire)) {
+                // It ignored the SIGTERM: the group goes.
+                if (age >= timeout_ns + TERM_GRACE_NS) killGroup(pid);
+                continue;
+            }
+            if (age < timeout_ns) continue;
             s.timed_out.store(true, .release);
-            killGroup(pid);
+            // SIGTERM first (decision 1061 (1)): the member's own children lead
+            // groups of their own, which its handler kills; a SIGKILL of its group
+            // alone would leave them. The group is killed when it ended (worker)
+            // or after `TERM_GRACE_NS`.
+            termMember(pid);
         }
         while (printed < members.len and slots[printed].done.load(.acquire)) : (printed += 1) {
             if (try report(arena, io, members[printed], &slots[printed], opts.timeout_s)) passed += 1;

@@ -493,6 +493,15 @@ WANT
         grep -E 'libraries/good|libraries/hard' "$st/lib-report.txt" >&2
         missing=1
     fi
+    # Decision 1061 (1): the `hangs` library's beam run outlasted its bound and was stopped — and no `beam.smp`
+    # it started is left, whose directory is under the self-test's own (a /proc scan by directory, not by pattern).
+    local pid_ cwd_ left_=""
+    for pid_ in /proc/[0-9]*; do
+        [ "$(cat "$pid_/comm" 2>/dev/null)" = beam.smp ] || continue
+        cwd_="$(readlink "$pid_/cwd" 2>/dev/null)"
+        case "$cwd_" in "$lsuite"/*) left_="$left_ ${pid_#/proc/}" ;; esac
+    done
+    [ -z "$left_" ] || { echo "self-test: the hangs-beam run left a beam.smp alive (pid$left_)" >&2; missing=1; }
     self_test_tsc || missing=1
     if [ $missing -ne 0 ]; then
         echo "self-test: FAILED — the synthetic suite's report was:" >&2

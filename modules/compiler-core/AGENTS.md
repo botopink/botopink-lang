@@ -48,6 +48,8 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
 
 ## Notes
 
+- **Children** (decision 1061 (1)): every process the compiler starts (`erl`, `erlc`, `node`, `tsc`, a test runner) goes through `src/procgroup.zig` — `spawn` / `run` start it as the leader of a process group of its own and record it, `kill` / `wait` / `finish` kill the group (`kill(-pgid, SIGKILL)`) when the child ends, and `killAll` (async-signal-safe, called by the CLI's SIGTERM and SIGINT handlers and at exit) kills every recorded one, so no `beam.smp` outlives the compiler. A raw `std.process.spawn` / `std.process.run` in non-test code is a defect; the test files still use the std ones. `tests/child_group_killed.sh` of the CLI holds it.
+
 - Every target (commonJS + `.d.ts` typedefs, erlang, BEAM assembly, WAT) is
   emitted natively in Zig under `src/codegen/`.
 - Comptime evaluation (decorator, template and `comptime` bodies) runs on the

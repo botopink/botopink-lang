@@ -135,7 +135,7 @@ fn open(io: std.Io) void {
     const argv = [_][]const u8{"erl"} ++ bp.otp.QUIET_FLAGS ++ [_][]const u8{
         "+S", std.fmt.comptimePrint("{d}:1", .{SESSION_SCHEDULERS}), "-noshell", "-eval", SESSION_EVAL,
     };
-    const child = std.process.spawn(io, .{
+    const child = bp.procgroup.spawn(io, .{
         .argv = &argv,
         .stdin = .pipe,
         .stdout = .pipe,
@@ -157,7 +157,7 @@ fn open(io: std.Io) void {
         f.close(io);
         s.child.stdin = null;
     }
-    const term = s.child.wait(io) catch null;
+    const term = bp.procgroup.wait(io, &s.child) catch null;
     const code: ?u8 = if (term) |t| switch (t) {
         .exited => |c| c,
         .signal, .stopped, .unknown => null,
@@ -173,7 +173,7 @@ pub fn close(io: std.Io) void {
             f.close(io);
             s.child.stdin = null;
         }
-        _ = s.child.wait(io) catch s.child.kill(io);
+        _ = bp.procgroup.wait(io, &s.child) catch bp.procgroup.kill(io, &s.child);
         session = null;
     }
 }
@@ -223,7 +223,7 @@ pub fn job(arena: std.mem.Allocator, io: std.Io, eval: []const u8, args: []const
             if (runInSession(arena, io, s, eval, args, online)) |r| return r else |_| {
                 // The VM died under a job: the job failed, and so does every
                 // later one (as a standalone `erl` that crashed would).
-                s.child.kill(io);
+                bp.procgroup.kill(io, &s.child);
                 session = null;
                 return .{ .code = 1, .stdout = "" };
             }
@@ -234,7 +234,7 @@ pub fn job(arena: std.mem.Allocator, io: std.Io, eval: []const u8, args: []const
     try argv.appendSlice(arena, &bp.otp.QUIET_FLAGS);
     try argv.appendSlice(arena, &.{ "+S", "1:1", "-noshell", "-eval", eval, "-extra" });
     try argv.appendSlice(arena, args);
-    const result = try std.process.run(arena, io, .{
+    const result = try bp.procgroup.run(arena, io, .{
         .argv = argv.items,
         .stdout_limit = .limited(16 * 1024 * 1024),
         .stderr_limit = .limited(16 * 1024 * 1024),

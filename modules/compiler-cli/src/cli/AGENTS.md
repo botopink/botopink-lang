@@ -35,6 +35,7 @@ cli/
 ├── bpp.zig            ← the `.bpp` roles (decision 361): the package `"bpp"` names, its declarations std's `bpp` annotations mark
 ├── bpp_unfold.zig     ← the `.bpp` unfold (front 116 step 2): a `.bpp` file read as the module it spells, its lines kept; the positions a diagnostic maps back
 ├── arglist.zig        ← a per-module list handed to a child through a file, never its argv; the E2BIG message
+├── (children)         ← every child the CLI starts (`run`, `test`, the `erl` session, `otp.job`) leads a process group of its own through compiler-core's `procgroup.zig` and is killed as a group on its end, on SIGTERM / SIGINT (`main.zig` handlers) and at exit; a workspace member's `botopink` is sent SIGTERM instead (decision 1061 (1))
 ├── otp.zig            ← the OTP release check of every erlang / beam run (decision 228); the command's one compile `erl` (the session); `mainEval`, the `-eval` of the VM that runs the program (`bp.otp.guardedEval`), which writes an `@panic`'s message to stderr unchanged and exits 1 on erlang and beam (144 B-41)
 ├── diagnostics.zig    ← shared compile diagnostics: located lex/parse/type rendering, named-set guard
 └── reporter.zig       ← stdout/stderr helpers (status, errors, hints, warnings)

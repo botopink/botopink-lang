@@ -730,7 +730,7 @@ pub fn run(
             // as JSONL. Stderr is forwarded untouched (compile-time spam from
             // node/escript still surfaces). The text-mode path stays
             // inherit-stdio so live streaming is unchanged when --json is off.
-            const result = std.process.run(arena, io, .{
+            const result = bp.procgroup.run(arena, io, .{
                 .argv = argv.items,
                 .environ_map = child_env,
                 .stdout_limit = .limited(16 * 1024 * 1024),
@@ -782,12 +782,12 @@ pub fn run(
         // Spawn and wait — stderr is inherited; stdout is streamed through
         // as it arrives (the report stays live) and scanned for the module's
         // summary line, which the run's total is summed from.
-        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
+        var child = bp.procgroup.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
             const msg = arglist.spawnError(arena, runner, argv.items, err);
             reporter.errMsg(msg);
             return 1;
         };
-        defer child.kill(io);
+        defer bp.procgroup.kill(io, &child);
 
         const summary = try teeModuleStdout(arena, io, child.stdout.?);
         if (summary) |c| {
@@ -795,7 +795,7 @@ pub fn run(
             text_failed_total += c.failed;
         } else try no_summary.append(arena, o.name);
 
-        const term = try child.wait(io);
+        const term = try bp.procgroup.wait(io, &child);
         const code: u8 = switch (term) {
             .exited => |c| c,
             .signal, .stopped, .unknown => 1,

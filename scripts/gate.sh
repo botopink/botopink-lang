@@ -297,9 +297,35 @@ early_pids=()
 cleanup() {
     local p
     for p in ${early_pids[@]+"${early_pids[@]}"}; do wait "$p" 2>/dev/null || true; done
+    kill_sessions
     rm -rf ${cleanup_dirs[@]+"${cleanup_dirs[@]}"}
 }
 trap cleanup EXIT
+# Decision 1061 (1) — every launched stage runs in a session of its own
+# (`session_run`), so none is reached by the terminal's Ctrl+C or by a SIGTERM
+# to the gate: an interrupted gate kills each stage's group, and a finished one
+# sweeps what a stage's children left (a `beam.smp`, a `node`).
+kill_sessions() {
+    local f p
+    for f in "$par"/*.pgid; do
+        [ -f "$f" ] || continue
+        p="$(cat "$f" 2>/dev/null)"
+        case "$p" in '' | *[!0-9]*) continue ;; esac
+        kill -KILL -- "-$p" 2>/dev/null || true
+    done
+}
+trap 'kill_sessions; exit 130' INT TERM HUP
+# session_run <pgid file> <cmd…> — the command as the leader of a new session,
+# its pid written to the file first; without `setsid` (macOS) it runs as it is.
+session_run() {
+    local f="$1"
+    shift
+    if command -v setsid >/dev/null 2>&1; then
+        setsid sh -c 'echo $$ >"$0"; exec "$@"' "$f" "$@"
+    else
+        "$@"
+    fi
+}
 gate_start="$(date +%s)"
 # One scratch directory per run: the stage times, and each side-by-side stage's
 # capture and exit status (§ side by side).
@@ -528,7 +554,7 @@ launch() { # <n> <cmd…> — run in the background, output in $par/<n>.out, sta
     local n="$1"
     shift
     (
-        if timed "$par/$n.time" "$@" >"$par/$n.out" 2>&1; then echo 0 >"$par/$n.rc"; else echo $? >"$par/$n.rc"; fi
+        if timed "$par/$n.time" session_run "$par/$n.pgid" "$@" >"$par/$n.out" 2>&1; then echo 0 >"$par/$n.rc"; else echo $? >"$par/$n.rc"; fi
     ) &
     early_pids+=("$!")
 }

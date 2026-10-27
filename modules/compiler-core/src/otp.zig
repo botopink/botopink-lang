@@ -175,7 +175,7 @@ fn probe(io: std.Io) []const u8 {
     var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_inst.deinit();
     // The probe compiles nothing and runs no user code: one scheduler.
-    const result = std.process.run(arena_inst.allocator(), io, .{
+    const result = @import("./procgroup.zig").run(arena_inst.allocator(), io, .{
         .argv = &([_][]const u8{"erl"} ++ QUIET_FLAGS ++ [_][]const u8{ "+S", "1:1", "-noshell", "-eval", PROBE_EVAL }),
         .stdout_limit = .limited(4096),
         .stderr_limit = .limited(64 * 1024),
