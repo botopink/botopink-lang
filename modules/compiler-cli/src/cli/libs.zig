@@ -656,13 +656,18 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
         error.OutOfMemory => return error.OutOfMemory,
         else => return refused.of(a, captured.written(), err),
     };
-    // The modules live as long as the process (`a` is never freed), so they
-    // may join the program a `run()` compiles. The `.bpr` keys of its closure
-    // are computed on the way (decision 1006 (6) P5).
+    // The modules live as long as the process (never freed), so they may join
+    // the program a `run()` compiles. The `.bpr` keys of its closure are
+    // computed on the way (decision 1006 (6) P5).
     var keys_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer keys_arena.deinit();
     var keys: ClosureKeys = .{ .arena = keys_arena.allocator(), .target = .{ .target = .commonJS }, .want_runtime = true, .runtime_only = true };
-    const modules = loadDependenciesIn(a, io, proj, load_env, &keys, try std.fs.path.join(a, &.{ proj.dir, proj.srcDir() })) catch |err| switch (err) {
+    // Decision 1061 (2) — the walk of the closure (the library roots, every
+    // manifest under them, the tiers) is scratch: on an allocator that frees,
+    // not on `a`, where each loaded package with a dependency kept a scan of
+    // the checkout (~150 MB a package in the meta checkout). Only the modules
+    // it answers stay.
+    const modules = loadDependenciesIn(std.heap.smp_allocator, io, proj, load_env, &keys, try std.fs.path.join(a, &.{ proj.dir, proj.srcDir() })) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return refused.of(a, captured.written(), err),
     };
@@ -678,12 +683,20 @@ fn resolveLoadedUncached(a: std.mem.Allocator, io: std.Io, dir: []const u8) !bp.
     });
     var targets: ?[]const []const u8 = null;
     if (proj.manifest.targets == null or proj.manifest.targets_inherited) {
-        const held = heldTargets(a, io, a, proj, load_env) catch |err| switch (err) {
+        // The closure walked again: scratch too, the names copied out.
+        var held_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer held_arena.deinit();
+        const ha = held_arena.allocator();
+        const held = heldTargets(ha, io, ha, proj, load_env) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => return refused.of(a, captured.written(), err),
         };
         // Every target held is no narrowing: the package declares none.
-        if (held.len < ALL_TARGET_NAMES.len) targets = held;
+        if (held.len < ALL_TARGET_NAMES.len) {
+            const kept = try a.alloc([]const u8, held.len);
+            for (held, kept) |t, *k| k.* = try a.dupe(u8, t);
+            targets = kept;
+        }
     }
     return .{ .ok = .{ .modules = modules, .targets = targets } };
 }
@@ -1487,6 +1500,13 @@ const SidecarOwner = struct {
 /// that is the embedded `std`, whose modules are emitted as `std/<mod>` and
 /// which never appears in `dependencies`.
 ///
+/// A package a `run()` brought into the program (`bp_load__<path>`,
+/// decision 792 (5)) is no dependency and no package on disk by that name:
+/// it is none, and nothing is read. Asking the closure and every root for it
+/// read every manifest of the checkout again for each loaded package, into
+/// the shipper's arena (~140 MB a package in the meta checkout): a module
+/// that loads and runs 39 cases peaked at 4.6 GB on erlang (decision 1061 (2)).
+///
 /// Null with `out_err` set is a located problem; null without one is "no such
 /// package" — the caller decides whether that is fatal.
 fn sidecarOwner(
@@ -1499,6 +1519,7 @@ fn sidecarOwner(
     lib: []const u8,
     out_err: *?manifest.Located,
 ) !?SidecarOwner {
+    if (bp.load.isLoadedPackage(lib)) return null;
     if (project) |proj| {
         for (proj.dependencies) |dep| {
             if (!std.mem.eql(u8, dep.name, lib)) continue;
@@ -1568,6 +1589,65 @@ fn closureOwner(
     };
     const pkg = closure.packages.get(lib) orelse return null;
     return .{ .dir = pkg.dir, .package = pkg.manifest };
+}
+
+test "resolveLoaded: what a loaded package keeps is its modules, not the walk of the roots (decision 1061 (2))" {
+    const io = std.testing.io;
+    test_scratch.remove(io, "loaded-keeps");
+    defer test_scratch.remove(io, "loaded-keeps");
+    // A root of many packages: a walk that kept what it read would keep them.
+    const roots_dir = test_scratch.path(io, "loaded-keeps/roots");
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var text_buf: [64]u8 = undefined;
+    for (0..300) |i| {
+        try writeFileP(io, try std.fmt.bufPrint(&path_buf, "{s}/p{d}/botopink.json", .{ roots_dir, i }), try std.fmt.bufPrint(&text_buf, "{{ \"name\": \"p{d}\" }}", .{i}));
+        try writeFileP(io, try std.fmt.bufPrint(&path_buf, "{s}/p{d}/src/main.bp", .{ roots_dir, i }), "pub fn main() -> void {}\n");
+    }
+    try writeFileP(io, test_scratch.path(io, "loaded-keeps/dep/botopink.json"), "{ \"name\": \"dep\", \"version\": \"0.0.1\", \"src\": \"src/\", \"entry\": \"one.bp\", \"files\": [\"one.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "loaded-keeps/dep/src/one.bp"), "pub fn one() -> i32 { return 1; }\n");
+    try writeFileP(io, test_scratch.path(io, "loaded-keeps/pkg/botopink.json"), "{ \"name\": \"pkg\", \"dependencies\": { \"dep\": { \"path\": \"../dep\" } } }");
+    try writeFileP(io, test_scratch.path(io, "loaded-keeps/pkg/src/main.bp"), "import {one} from \"dep\";\npub fn main() -> void { _ = one(); }\n");
+
+    var map = std.process.Environ.Map.init(std.testing.allocator);
+    defer map.deinit();
+    try map.put(ENV_VAR, roots_dir);
+    const saved_env = load_env;
+    load_env = &map;
+    defer load_env = saved_env;
+
+    const before = loaded_arena.queryCapacity();
+    const r = try resolveLoaded(null, io, test_scratch.path(io, "loaded-keeps/pkg"));
+    const kept = loaded_arena.queryCapacity() - before;
+    try std.testing.expect(r == .ok);
+    try std.testing.expectEqual(@as(usize, 1), r.ok.modules.len);
+    try std.testing.expect(kept < 64 * 1024);
+}
+
+test "sidecarOwner: a loaded package is no package on disk — no root is read for it (decision 1061 (2))" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "sidecar-owner-loaded");
+    defer test_scratch.remove(io, "sidecar-owner-loaded");
+    // A root holding a package under the very name a loaded package is
+    // emitted as (a root's child is found by its directory's name): the
+    // lookup, were it made, would answer it.
+    try writeFileP(io, test_scratch.path(io, "sidecar-owner-loaded/repository/bp_load__cases__a/botopink.json"),
+        \\{ "name": "bp_load__cases__a" }
+    );
+    try writeFileP(io, test_scratch.path(io, "sidecar-owner-loaded/repository/bp_load__cases__a/src/main.bp"), "pub fn main() -> void {}\n");
+    try writeFileP(io, test_scratch.path(io, "sidecar-owner-loaded/repository/other/botopink.json"),
+        \\{ "name": "other" }
+    );
+    try writeFileP(io, test_scratch.path(io, "sidecar-owner-loaded/repository/other/src/main.bp"), "pub fn main() -> void {}\n");
+    const roots = [_][]const u8{test_scratch.path(io, "sidecar-owner-loaded/repository")};
+    var err: ?manifest.Located = null;
+    try std.testing.expectEqual(@as(?SidecarOwner, null), try sidecarOwner(std.testing.allocator, arena, io, &roots, null, null, "bp_load__cases__a", &err));
+    try std.testing.expectEqual(@as(?manifest.Located, null), err);
+    // A package by its name is still found among the roots.
+    const other = (try sidecarOwner(std.testing.allocator, arena, io, &roots, null, null, "other", &err)).?;
+    try std.testing.expectEqualStrings("other", other.package.name);
 }
 
 test "closureOwner: a dependency of a path dependency resolves from its dependent's workspace" {
