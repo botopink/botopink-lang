@@ -359,9 +359,9 @@ test "decision 787: a `Module` a body handed an executor is written back as its 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"packages/fine\"}", .{});
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, "{\"name\":\"fine\",\"path\":\"packages/fine\",\"mainAsync\":true}", .{});
     try std.testing.expectEqualStrings(
-        loadMod.module_fn ++ "(name: \"fine\", path: \"packages/fine\", buildOutput: \"\")",
+        loadMod.module_fn ++ "(name: \"fine\", path: \"packages/fine\", buildOutput: \"\", mainAsync: true)",
         (try loadMod.recordSource(arena, parsed)).?,
     );
     try std.testing.expectEqualStrings("packages/fine", loadMod.valuePath(parsed, null).?);

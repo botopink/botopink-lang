@@ -300,7 +300,9 @@ pub type Diagnostic(
 // manifest's name, `path()` the directory as written (`cases/<case>`),
 // `buildOutput()` what its build printed (a top-level `comptime` block's
 // `print`, in order, each line ending in `\n`, before its refusals — decisions
-// 904, 989 (4); `""` when none). No target — comptime
+// 904, 989 (4); `""` when none), `mainAsync()` whether its `main` is `async`
+// (what `run()`'s type follows; read at build, `if (comptime
+// m.mainAsync())` keeping one branch — decision 998 (4)). No target — comptime
 // reads none — and no dependency list: the loaded package still resolves its
 // own to compile. Opaque (decision 811 (4)): only `compiler.load` answers one,
 // through `of`, which no program names — `Module(…)` written outside is
@@ -326,10 +328,11 @@ pub opaque type Module(
     name: string,
     path: string,
     buildOutput: string,
+    mainAsync: bool,
 ) {
     // What `compiler.load`'s answer is built by (`comptime/load.zig`).
-    fn of(name: string, path: string, buildOutput: string) -> Module {
-        return Module(name: name, path: path, buildOutput: buildOutput);
+    fn of(name: string, path: string, buildOutput: string, mainAsync: bool) -> Module {
+        return Module(name: name, path: path, buildOutput: buildOutput, mainAsync: mainAsync);
     }
 
     pub fn name(self: Self) -> string {
@@ -342,6 +345,10 @@ pub opaque type Module(
 
     pub fn buildOutput(self: Self) -> string {
         return self.buildOutput;
+    }
+
+    pub fn mainAsync(self: Self) -> bool {
+        return self.mainAsync;
     }
 
     pub fn run(self: Self) -> Result<string, RunFailure> {
@@ -377,6 +384,30 @@ pub opaque type Module(
     fn captureClose(open: string) -> string {
         return closeCapture(open);
     }
+
+    // Decisions 772, 993 (3) — what a lowered `` `test`() `` sets, as
+    // `botopink test`'s runner does: `BOTOPINK_TEST_TMPDIR` names a new
+    // directory of the call's own while its tests run, removed after
+    // (`testTmpOpen` / `testTmpClose`); `BOTOPINK_TEST_NAME` the running
+    // test's name while its body runs (`testNameOpen` / `testNameClose`),
+    // where `snap` reads it. Each open answers what it replaced, which its
+    // close restores, so a `` `test`() `` inside a test keeps the outer
+    // values. The lowering's calls alone (no `pub`).
+    fn testTmpOpen() -> string {
+        return openTestTmp();
+    }
+
+    fn testTmpClose(open: string) -> void {
+        closeTestTmp(open);
+    }
+
+    fn testNameOpen(name: string) -> string {
+        return openTestName(name);
+    }
+
+    fn testNameClose(open: string) -> void {
+        closeTestName(open);
+    }
 }
 
 // The capture per target (989 (1)): commonJS swaps `process.stdout.write`
@@ -398,6 +429,52 @@ declare fn openCapture() -> string;
     .Wasm(wasi: .CaptureClose),
 )]
 declare fn closeCapture(open: string) -> string;
+
+// The test variables per target (decisions 772, 993 (3)): commonJS writes
+// `process.env`, erlang and beam the `os` environment — what `env.read`
+// reads there. The handle each open answers holds the value it replaced,
+// typed `string` only to cross the call. wasm has no environment to write
+// (`env.read` has no wasm binding, and `botopink test` sets none there): the
+// four do nothing.
+#[compiler.external(
+    .JavaScript("""(() => { const __e = globalThis.process.env; const __d = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "botopink-test-")); const __o = __e.BOTOPINK_TEST_TMPDIR; __e.BOTOPINK_TEST_TMPDIR = __d; return { dir: __d, old: __o }; })()"""),
+    .Erlang("""(fun() -> BpTmpOld = os:getenv("BOTOPINK_TEST_TMPDIR"), BpTmpBase = case os:getenv("TMPDIR") of false -> "/tmp"; "" -> "/tmp"; BpTmpT -> BpTmpT end, BpTmpDir = filename:join(BpTmpBase, "botopink-test-" ++ os:getpid() ++ "-" ++ integer_to_list(erlang:unique_integer([positive])) ++ "-" ++ integer_to_list(rand:uniform(16#7FFFFFFF))), ok = file:make_dir(BpTmpDir), os:putenv("BOTOPINK_TEST_TMPDIR", BpTmpDir), {bp_test_tmp, BpTmpDir, BpTmpOld} end)()"""),
+    .Wasm(body: noTestEnvOpen),
+)]
+declare fn openTestTmp() -> string;
+
+#[compiler.external(
+    .JavaScript("""((__t) => { require("fs").rmSync(__t.dir, { recursive: true, force: true }); if (__t.old === undefined) { delete globalThis.process.env.BOTOPINK_TEST_TMPDIR; } else { globalThis.process.env.BOTOPINK_TEST_TMPDIR = __t.old; } })($0)"""),
+    .Erlang("""(fun({bp_test_tmp, BpTmpDir2, BpTmpOld2}) -> file:del_dir_r(BpTmpDir2), case BpTmpOld2 of false -> os:unsetenv("BOTOPINK_TEST_TMPDIR"); _ -> os:putenv("BOTOPINK_TEST_TMPDIR", BpTmpOld2) end end)($0)"""),
+    .Wasm(body: noTestEnvClose),
+)]
+declare fn closeTestTmp(open: string) -> void;
+
+#[compiler.external(
+    .JavaScript("""((__n) => { const __e = globalThis.process.env; const __o = __e.BOTOPINK_TEST_NAME; __e.BOTOPINK_TEST_NAME = __n; return { old: __o }; })($0)"""),
+    .Erlang("""(fun(BpTnName) -> BpTnOld = os:getenv("BOTOPINK_TEST_NAME"), os:putenv("BOTOPINK_TEST_NAME", binary_to_list(BpTnName)), {bp_test_name, BpTnOld} end)($0)"""),
+    .Wasm(body: noTestNameOpen),
+)]
+declare fn openTestName(name: string) -> string;
+
+#[compiler.external(
+    .JavaScript("""((__t) => { if (__t.old === undefined) { delete globalThis.process.env.BOTOPINK_TEST_NAME; } else { globalThis.process.env.BOTOPINK_TEST_NAME = __t.old; } })($0)"""),
+    .Erlang("""(fun({bp_test_name, BpTnOld2}) -> case BpTnOld2 of false -> os:unsetenv("BOTOPINK_TEST_NAME"); _ -> os:putenv("BOTOPINK_TEST_NAME", BpTnOld2) end end)($0)"""),
+    .Wasm(body: noTestEnvClose),
+)]
+declare fn closeTestName(open: string) -> void;
+
+fn noTestEnvOpen() -> string {
+    return "";
+}
+
+fn noTestNameOpen(name: string) -> string {
+    return "";
+}
+
+fn noTestEnvClose(open: string) -> void {
+    return;
+}
 
 // What `m.run()` answers on its `Error` side (decision 806): `.Failed` when
 // the loaded `main` returns `Error(e)`, `message` the text `print` writes for
@@ -1399,7 +1476,8 @@ pub type HookNode = __HookNode;
       "fields": {
         "name": "string",
         "path": "string",
-        "buildOutput": "string"
+        "buildOutput": "string",
+        "mainAsync": "bool"
       },
       "methods": [
         {
@@ -1416,6 +1494,10 @@ pub type HookNode = __HookNode;
             {
               "name": "buildOutput",
               "type": "string"
+            },
+            {
+              "name": "mainAsync",
+              "type": "bool"
             }
           ],
           "return_type": "Module"
@@ -1454,6 +1536,17 @@ pub type HookNode = __HookNode;
           "return_type": "string"
         },
         {
+          "name": "mainAsync",
+          "is_pub": true,
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "bool"
+        },
+        {
           "name": "run",
           "is_pub": true,
           "params": [
@@ -1489,6 +1582,41 @@ pub type HookNode = __HookNode;
             }
           ],
           "return_type": "string"
+        },
+        {
+          "name": "testTmpOpen",
+          "params": [],
+          "return_type": "string"
+        },
+        {
+          "name": "testTmpClose",
+          "params": [
+            {
+              "name": "open",
+              "type": "string"
+            }
+          ],
+          "return_type": "void"
+        },
+        {
+          "name": "testNameOpen",
+          "params": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "return_type": "string"
+        },
+        {
+          "name": "testNameClose",
+          "params": [
+            {
+              "name": "open",
+              "type": "string"
+            }
+          ],
+          "return_type": "void"
         }
       ]
     },
@@ -1512,6 +1640,99 @@ pub type HookNode = __HookNode;
       ],
       "return_type": "string",
       "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "openTestTmp",
+      "is_pub": false,
+      "params": [],
+      "return_type": "string",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "closeTestTmp",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "open",
+          "type": "string"
+        }
+      ],
+      "return_type": "void",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "openTestName",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "closeTestName",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "open",
+          "type": "string"
+        }
+      ],
+      "return_type": "void",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "noTestEnvOpen",
+      "is_pub": false,
+      "params": [],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return \"\";"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "noTestNameOpen",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return \"\";"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "noTestEnvClose",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "open",
+          "type": "string"
+        }
+      ],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "return;"
+        }
+      ]
     },
     {
       "ast": "record_def",

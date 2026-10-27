@@ -1,0 +1,36 @@
+//// Decision 998 (1), (2), (5), (6) — one `runCase` over a sync and an async case: the loaded
+//// package's `main` read at build (`mainAsync()`), the `async` executor's statements written
+//// into `main`'s `async` body at the call, its `await` that body's; the path `"packages/" + name`
+//// folded at each expansion of the run-time call.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn show(name: string, answer: Result<string, RunFailure>) -> void {
+    case answer {
+        Ok(text) -> print(name + " ok [" + text + "]");
+        Error(r) -> print(name
+            + " failed "
+            + r.message
+            + " ["
+            + r.output
+            + "]");
+    }
+}
+
+fn runCase(comptime name: string) -> void {
+    val loaded = try comptime compiler.load("packages/" + name) catch { r ->
+        compiler.init({ -> print(name + " refused"); });
+        return;
+    };
+    if (comptime loaded.mainAsync())
+        compiler.init({ async -> show(name, await loaded.run()); })
+    else
+        compiler.init({ -> show(name, loaded.run()); });
+}
+
+pub async fn main() -> Async<void> {
+    print("before");
+    runCase("plain");
+    runCase("later");
+    print("after");
+}

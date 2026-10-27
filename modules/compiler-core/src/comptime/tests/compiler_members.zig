@@ -131,9 +131,10 @@ test "decision 786: the records `compiler.load` answers are std's `compiler.Modu
                     std.mem.eql(u8, m.name, loadMod.name_close);
                 try std.testing.expectEqual(!lowering, m.isPub);
             }
-            // `` pub fn `test` `` (decision 993 (3)) beside `run`, and the
-            // test variables a lowered `` `test`() `` sets (decision 772).
-            try std.testing.expectEqual(@as(usize, 12), record.methods.len);
+            // `` pub fn `test` `` (decision 993 (3)) beside `run`, the
+            // test variables a lowered `` `test`() `` sets (decision 772),
+            // and `pub fn mainAsync` (decision 998 (4)).
+            try std.testing.expectEqual(@as(usize, 13), record.methods.len);
         }
     }
     // Decision 993 (3) — what `` `test`() `` answers: the case record the

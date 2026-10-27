@@ -1,0 +1,11 @@
+import {io.terminal.print} from "std";
+
+async fn twice(n: i32) -> Async<i32> {
+    return n * 2;
+}
+
+pub async fn main() -> Async<void> {
+    print("later before");
+    val n = await twice(21);
+    print("later after", n);
+}

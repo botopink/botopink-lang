@@ -4302,6 +4302,18 @@ a decorator registers its own executor.
 <!-- example: modules/decisions-taken/comptime_init_at_call_site-808/run/src/cases/init_at_call_body_block -->
 <!-- example: modules/decisions-taken/comptime_init_at_call_site-808/refused/src/cases/init_at_call_from_decorator -->
 
+`compiler.init` is one function answering `void` at every use (decision 998). Its executor is a plain lambda
+`{ -> … }` or an `async` one `{ async -> … }`, the marker inside the brace; an `await` in an executor needs the
+marker, as in any lambda. An `async` executor stands only where a run-time call expanded inside an `async` body
+writes its statements there, its `await`s that body's; at a decorator, in a top-level `comptime` block, in a body
+that is not `async`, or in a `comptime { … }` inside such a body, nothing awaits it, and it is refused
+`init-async-executor-outside-async` at the `async`, the message naming the plain form. An executor whose body ends
+in a value, written without `;`, is refused `init-executor-value` at that value: no value is dropped.
+
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_async_executor_in_async_body -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_async_executor_outside_async_refused -->
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/init_executor_value_refused -->
+
 ### `compiler.load`
 
 `comptime compiler.load(path)` compiles a package at build (decisions 780, 982, 993 (1)): `path`
@@ -4354,8 +4366,17 @@ A `catch` with no `try` in its region is refused `try-region-cannot-fail`, `comp
 The `Module` (decisions 786, 982 (4)) is the loaded package's, on both sides: `name()` its manifest's
 name, `path()` the directory as written (`cases/<case>`). It carries no target (decision 805 (4))
 and no dependency list: the loaded package still resolves its own to compile.
-It is an opaque type (decision 811 (4)): its fields are read through `name()`, `path()` and
-`buildOutput()`.
+It is an opaque type (decision 811 (4)): its fields are read through `name()`, `path()`,
+`buildOutput()` and `mainAsync()`.
+
+Decision 998 (4), (6) — `mainAsync()` is `true` when the loaded package's `main` is `async` (what `run()`'s type
+follows), read at build as `path()` is: `if (comptime loaded.mainAsync())` keeps one branch where the function is
+expanded. A path built from a `comptime` parameter (`"cases/" + name`) is known at build at a run-time call's
+expansion as at a block's, and `try comptime compiler.load(…) catch { r -> …; return; }` takes its branch there, so
+one helper serves every case: `runCase(name)` loads `"cases/" + name`, and writes
+`compiler.init({ async -> run.ran(name, await loaded.run()); })` for an `async` `main`, the plain form otherwise.
+
+<!-- example: modules/decisions-taken/init_async_executor_in_async_body-998/cells/module_main_async_read_at_build -->
 
 Decision 989 (4) — `buildOutput()`, on the `Ok` side and on a `Refused`'s `module`, is what the loaded
 package's build printed (a top-level `comptime { … }` block's `print`), in order, each line ending in

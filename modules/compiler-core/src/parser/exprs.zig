@@ -277,7 +277,9 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // to and `if (a && b)` reads as the one condition it looks like. This
         // is the only `prec.equality` call site the delimiter argument reaches;
         // the other eleven are open-ended and stay where they are.
-        const cond = try parseExprAtStart(this, alloc, prec.lowest);
+        // Decision 998 (4) — `if (comptime m.mainAsync())`: a condition read
+        // at build, as a `for`'s source may be (`parseForSource`).
+        const cond = if (this.check(.@"comptime")) try this.parseExpr(alloc) else try parseExprAtStart(this, alloc, prec.lowest);
         errdefer @constCast(&cond).deinit(alloc);
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);

@@ -9471,8 +9471,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // Decision 564 — a function expanded at its call site (562) may call a
     // behavior's function on a catalogue entry's `value`.
     const savedInExpansion = env.inExpansion;
-    if (try hooksMod.isExpandedFn(env.arena, f)) env.inExpansion = true;
+    const savedInExpandedFnDecl = env.inExpandedFnDecl;
+    const expandedFn = try hooksMod.isExpandedFn(env.arena, f);
+    if (expandedFn) env.inExpansion = true;
+    env.inExpandedFnDecl = expandedFn;
     defer env.inExpansion = savedInExpansion;
+    defer env.inExpandedFnDecl = savedInExpandedFnDecl;
     // Decision 370 (2) — what a member function handed to `decl.addMember`
     // may not read.
     const savedDecoratorBody = env.decoratorBody;
@@ -13348,6 +13352,14 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     }
     const arg = call.args[0].value;
     const argLoc = arg.getLoc();
+    // Decision 998 (6) — in the own module of a function expanded at its call
+    // (808 (1)), a path that reads one of its `comptime` parameters
+    // (`"cases/" + name`) is each caller's, folded where the call is
+    // expanded: the read is typed by its answer and loads nothing here.
+    if (env.inExpandedFnDecl and readsComptimeParam(arg.*, env.currentParams)) {
+        const typed_only = try loadMod.rewrite(env.arena, loc, .{ .path = "" }, &.{});
+        return inferExprTyped(env, typed_only.*);
+    }
     const by_name = loadMod.isPackageArg(call.args[0]);
     const text = try embedPathValue(env, arg) orelse {
         env.lastError = TypeError.custom(
@@ -13361,6 +13373,20 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = answered.path }, answered.ds);
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
+}
+
+/// Decision 998 (6) — whether `e`, a path written as literals joined by `+`,
+/// reads a `comptime` parameter of `params` (`"cases/" + name`).
+fn readsComptimeParam(e: ast.Expr, params: []const ast.Param) bool {
+    return switch (e) {
+        .binaryOp => |b| b.op == .add and (readsComptimeParam(b.lhs.*, params) or readsComptimeParam(b.rhs.*, params)),
+        .comptime_ => |c| switch (c.kind) {
+            .comptimeExpr => |inner| readsComptimeParam(inner.*, params),
+            else => false,
+        },
+        .collection => |c| c.kind == .grouped and readsComptimeParam(c.kind.grouped.*, params),
+        else => embedMod.paramOfArg(e, params) != null,
+    };
 }
 
 /// What `compiler.load` was written with (decision 993 (2)).
@@ -13764,7 +13790,7 @@ fn inferModuleRun(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr 
         ).withLoc(loc);
         return error.TypeError;
     }
-    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0 and !env.initHereRuns.contains(loc)) {
         env.lastError = TypeError.custom(
             diagnostics.run_outside_init ++ ": `run()` is called outside a `compiler.init` body",
             "A loaded file's `main` runs when the program runs, at the point of an init body that calls `run()` (decisions 787, 792 (7)): write `compiler.init({ -> try m.run() catch { f -> … }; })` in the body that runs at build, never in a function it calls.",
@@ -13826,7 +13852,7 @@ fn inferModuleTest(env: *Env, call: anytype, loc: ast.Loc) InferError!?TypedExpr
         ).withLoc(loc);
         return error.TypeError;
     }
-    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0) {
+    if (!std.mem.startsWith(u8, env.currentFnName, "__bp_executor_") and env.initArgDepth == 0 and !env.initHereRuns.contains(loc)) {
         env.lastError = TypeError.custom(
             diagnostics.run_outside_init ++ ": `test()` is called outside a `compiler.init` body",
             "A loaded package's tests run when the program runs, at the point of an init body that calls ``m.`test`()`` (decisions 787, 993 (3)): write it in a `compiler.init` body of the body that runs at build.",
@@ -25280,6 +25306,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (call.is_builtin and std.mem.eql(u8, call.callee, compilerSurface.load_builtin)) {
                 return inferLoadBuiltin(env, call, loc);
             }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, compilerSurface.init_here_builtin) and call.args.len == 1 and call.trailing.len == 0 and call.args[0].value.* == .function) {
+                return inferInitHereCall(env, call, loc);
+            }
             // A hand-written `SourceLocation(file: …, …)` needs the record
             // declaration spliced in exactly like the rewrite does.
             if (call.receiver == null and !call.is_builtin and std.mem.eql(u8, call.callee, source_location_type_name)) {
@@ -27308,6 +27337,85 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     } } } };
 }
 
+/// Decision 998 (2) — an `async` executor where nothing awaits it, at its
+/// `async`.
+pub fn refuseAsyncExecutor(env: *Env, at: ast.Loc) InferError {
+    env.lastError = TypeError.custom(
+        diagnostics.init_async_executor_outside_async ++ ": this executor is `async`, and its body is written into no `async` body here: write `compiler.init({ -> … })`",
+        "An `async` executor stands only where a function whose every parameter is `comptime` is expanded at a run-time call inside an `async` body, its `await`s that body's (decisions 808 (2), 998 (2)); a decorator's executor, a top-level `comptime` block's and one written into a body that is not `async` run where nothing awaits them.",
+    ).withLoc(at);
+    return error.TypeError;
+}
+
+/// Decisions 808 (1), 998 — `compiler.init(f)` in the own module of a
+/// function whose every parameter is `comptime` (`init_here_builtin`): typed
+/// `void`; `f` checked as the lambda it is — an `async` one as an `async`
+/// lambda — with `Module.run()` admitted in it (787, 792 (7)), and refused
+/// `init-executor-value` when its body ends in a value (998 (3)). Where the
+/// function is expanded, the body is written at the call (`expand_call.zig`).
+fn inferInitHereCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const func = call.args[0].value.function;
+    const expected = try env.funcType(&.{}, try env.freshVar());
+    // Each `comptime x: T` parameter the body holds as an `Expr<T>` is its
+    // `T` in the executor: the expansion writes the argument there (the tree
+    // rule, 575 (4)).
+    const Rebound = struct { name: []const u8, was: *T.Type };
+    var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
+    for (env.currentParams) |p| if (p.exprWrapped) {
+        const was = env.lookup(p.name) orelse continue;
+        const d = was.deref();
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, ast.expr_type_name) and d.named.args.len == 1) d.named.args[0] else continue;
+        try rebound.append(env.arena, .{ .name = p.name, .was = was });
+        try env.bind(p.name, inner);
+    };
+    env.initArgDepth += 1;
+    const fnTyped = try env.arena.create(TypedExpr);
+    fnTyped.* = blk: {
+        defer env.initArgDepth -= 1;
+        break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
+    };
+    for (rebound.items) |r| try env.bind(r.name, r.was);
+    try refuseExecutorValue(env, func, fnTyped.getType());
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), 1);
+    typedArgs[0] = .{ .label = call.args[0].label, .value = fnTyped };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = call.callee,
+        .is_builtin = true,
+        .args = typedArgs,
+        .trailing = &.{},
+    } } } };
+}
+
+/// Decision 998 (3) — `func`, an executor typed `fnTy`, whose body ends in a
+/// value (an `async` one: whose `async` body does) is `init-executor-value`,
+/// at the tail.
+fn refuseExecutorValue(env: *Env, func: ast.FunctionExpr, fnTy: *T.Type) InferError!void {
+    const f = fnTy.deref();
+    if (f.* != .func) return;
+    var ret = f.func.ret.deref();
+    var body: []const ast.Stmt = func.kind.body;
+    if (func.kind.marker == .task) {
+        if (ret.* != .named or !std.mem.eql(u8, ret.named.name, "Async") or ret.named.args.len != 1) return;
+        ret = ret.named.args[0].deref();
+        body = ast.asyncLambdaBody(func) orelse return;
+    }
+    if (ret.* == .named and (std.mem.eql(u8, ret.named.name, "void") or std.mem.eql(u8, ret.named.name, "noreturn"))) return;
+    var k = body.len;
+    while (k > 0 and body[k - 1].expr == .literal and body[k - 1].expr.literal.kind == .comment) k -= 1;
+    if (k == 0) return;
+    const last = body[k - 1];
+    if (last.tail == .none) return;
+    const tail = if (last.expr == .jump and last.expr.jump.kind == .@"return" and last.expr.jump.kind.@"return" != null) last.expr.jump.kind.@"return".?.* else last.expr;
+    if (ret.* == .typeVar) return unifyAt(env, ret, try env.namedType("void"), tail.getLoc());
+    const rendered = try snapshotMod.typeNameOf(env.arena, ret);
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "{s}: the executor answers nothing, and its last expression, written without `;`, is a `{s}`", .{ diagnostics.init_executor_value, rendered }),
+        "`compiler.init` answers `void` at every use (decision 998 (3)): end the last expression with `;` to discard its value.",
+    ).withLoc(tail.getLoc());
+    return error.TypeError;
+}
+
 /// Decision 575 (3) — `compiler.init(f)` in a decorator's body (read onto
 /// the handle, `decl.compile(f)`). `f` is the executor, a function written at
 /// the call that takes nothing; it is the program's code, typed here as a
@@ -27318,6 +27426,9 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
 /// value is refused at it.
 fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const func = call.args[0].value.function;
+    // Decision 998 (2) — a decorator's executor, and a top-level `comptime`
+    // block's, runs in the program's init list: nothing awaits it there.
+    if (func.kind.marker == .task) return refuseAsyncExecutor(env, func.loc);
     try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true, true);
     const expected = try env.funcType(&.{}, try env.freshVar());
 
@@ -27370,7 +27481,7 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
         for (func.kind.body, 0..) |s, k| if (s.tail == .value) {
             tailTy = fnTyped.function.kind.body[k].expr.getType();
         };
-        try refuseValueTailInVoid(env, "the executor", func.kind.body, tailTy);
+        try refuseValueTailInVoid(env, diagnostics.init_executor_value ++ ": the executor", func.kind.body, tailTy);
     }
     for (rebound.items) |r| try env.bind(r.name, r.was);
 
@@ -28320,6 +28431,10 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         if (folded) |f| return env.srcRewrites.put(loc, f);
     }
     if (try blockEval.runtimeRead(env, ct)) |read| {
+        // Decision 998 (4) — in the own module of a function expanded at its
+        // call, a `comptime` over what its build lines bound is each caller's
+        // (`Env.inExpandedFnDecl`): typed here, folded at each expansion.
+        if (env.inExpandedFnDecl) return;
         env.lastError = TypeError.custom(
             try std.fmt.allocPrint(env.arena, "expression cannot be evaluated at compile time: '{s}' is a runtime identifier", .{read.name}),
             "A `comptime` runs while the program is compiled (decision 331): it reads its own locals, literals, functions and types — not a local, a parameter or a module-level `val`, which exist only when the program runs.",

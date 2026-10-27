@@ -3998,6 +3998,21 @@ pub const Program = struct {
 /// for how the function lowers and which body operations (`await` / `yield` /
 /// `use`) its level permits; `throw` / `try` follow the fallible channel (a
 /// `@Result` in some layer of the return, decision 121), not the level.
+/// Decision 584 (1) — the statements of an `async` lambda as written: the
+/// parser writes `{ async -> b }` as `{ -> return async { b } }`
+/// (`parser/exprs.zig` `desugarMarkedBody`); null for any other function.
+pub fn asyncLambdaBody(func: FunctionExpr) ?[]Stmt {
+    if (func.kind.marker != .task) return null;
+    for (func.kind.body) |s| {
+        if (s.expr == .literal and s.expr.literal.kind == .comment) continue;
+        if (s.expr != .jump or s.expr.jump.kind != .@"return") return null;
+        const v = s.expr.jump.kind.@"return" orelse return null;
+        if (v.* != .function or v.function.kind.syntax != .asyncBlock) return null;
+        return v.function.kind.body;
+    }
+    return null;
+}
+
 pub const EffectKind = enum {
     /// `-> @Result<T, E>` — the one fallible wrapper.
     result,

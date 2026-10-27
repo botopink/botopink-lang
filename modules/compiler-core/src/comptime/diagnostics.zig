@@ -878,6 +878,14 @@ pub const compiler_at_run_time: []const u8 = "compiler-at-run-time";
 /// Decision 575 (3) — an output (`compiler.setMeta`, `addMember`, …) outside a
 /// decorator's body.
 pub const compiler_output_outside_decorator: []const u8 = "compiler-output-outside-decorator";
+/// Decision 998 (2) — `compiler.init({ async -> … })` where its body is not
+/// written into an `async` body: a decorator's or a top-level `comptime`
+/// block's executor, a run-time call expanded in a body that is not `async`,
+/// a `comptime { … }` inside a function body. Located at the `async`.
+pub const init_async_executor_outside_async: []const u8 = "init-async-executor-outside-async";
+/// Decision 998 (3) — an executor whose body ends in a value: `compiler.init`
+/// answers `void` at every use. Located at the tail.
+pub const init_executor_value: []const u8 = "init-executor-value";
 
 /// Decisions 614, 642 — a `comptime` parameter of a `compiler.*` read inside a
 /// tree (executor, member, wrapper) given a value of the tree (a lambda's
@@ -1148,6 +1156,8 @@ pub const all_codes = [_][]const u8{
     template_signature,
     compiler_at_run_time,
     compiler_output_outside_decorator,
+    init_async_executor_outside_async,
+    init_executor_value,
     compiler_arg_at_run_time,
     compiler_member_unknown,
     compiler_escapes,

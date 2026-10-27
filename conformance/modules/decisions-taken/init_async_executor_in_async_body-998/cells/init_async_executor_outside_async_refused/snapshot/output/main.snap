@@ -1,0 +1,3 @@
+botopink-cell 1
+refused error: init-async-executor-outside-async: this executor is `async`, and its body is written into no `async` body here: write `compiler.init({ -> … })`
+at src/main.bp:8:21

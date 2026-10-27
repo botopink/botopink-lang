@@ -298,7 +298,9 @@ pub type Diagnostic(
 // manifest's name, `path()` the directory as written (`cases/<case>`),
 // `buildOutput()` what its build printed (a top-level `comptime` block's
 // `print`, in order, each line ending in `\n`, before its refusals — decisions
-// 904, 989 (4); `""` when none). No target — comptime
+// 904, 989 (4); `""` when none), `mainAsync()` whether its `main` is `async`
+// (what `run()`'s type follows; read at build, `if (comptime
+// m.mainAsync())` keeping one branch — decision 998 (4)). No target — comptime
 // reads none — and no dependency list: the loaded package still resolves its
 // own to compile. Opaque (decision 811 (4)): only `compiler.load` answers one,
 // through `of`, which no program names — `Module(…)` written outside is
@@ -324,10 +326,11 @@ pub opaque type Module(
     name: string,
     path: string,
     buildOutput: string,
+    mainAsync: bool,
 ) {
     // What `compiler.load`'s answer is built by (`comptime/load.zig`).
-    fn of(name: string, path: string, buildOutput: string) -> Module {
-        return Module(name: name, path: path, buildOutput: buildOutput);
+    fn of(name: string, path: string, buildOutput: string, mainAsync: bool) -> Module {
+        return Module(name: name, path: path, buildOutput: buildOutput, mainAsync: mainAsync);
     }
 
     pub fn name(self: Self) -> string {
@@ -340,6 +343,10 @@ pub opaque type Module(
 
     pub fn buildOutput(self: Self) -> string {
         return self.buildOutput;
+    }
+
+    pub fn mainAsync(self: Self) -> bool {
+        return self.mainAsync;
     }
 
     pub fn run(self: Self) -> Result<string, RunFailure> {

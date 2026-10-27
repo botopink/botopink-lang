@@ -256,6 +256,9 @@ eleven sites (`comptime <expr>`, the value after `yield [:label]`,
 sites in `parser/decls.zig`, the two `case`-subject sites in `parser/patterns.zig`)
 are open-ended and **stay at `prec.equality`**; widening one of them would swallow
 the token that ends the form.
+A condition that starts with `comptime` (`if (comptime loaded.mainAsync())`,
+decision 998 (4)) is parsed by `parseExpr`, as a `for`'s source may be
+(`parseForSource`): the condition read at build.
 
 The then-branch's binder accepts `_` as well as a name, and `_` binds the name
 `"_"` — the same discard `val _ = …` records. It is deliberately not a null

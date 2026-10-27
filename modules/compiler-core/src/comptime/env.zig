@@ -1101,6 +1101,11 @@ pub const Env = struct {
     /// handle's `compile`): `Module.run()` is written there, or in the
     /// executor's function (`__bp_executor_<k>`), and nowhere else.
     initArgDepth: u32 = 0,
+    /// Decision 998 (1) — the `run()` / `` `test`() `` calls an expansion
+    /// wrote out of an executor's body into the body it stands in
+    /// (`expand_call.zig` `initHere`): admitted as if written in the
+    /// executor, by the call's location.
+    initHereRuns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 364 — the parameters of the function whose body is being
     /// inferred: a `comptime x: @Expr<T>` among them (`Param.exprWrapped`) is
     /// read `x.value`, never `.value` of a type, and answers no other method
@@ -1183,6 +1188,13 @@ pub const Env = struct {
     /// emits, where a behavior's function may be called on a catalogue
     /// entry's `value` (`infer.zig` `refuseBehaviorCallOnEntry`).
     inExpansion: bool = false,
+    /// Decisions 808 (1), 998 (4), (6) — the body of a function expanded at
+    /// its call site checked in its own module (not an expansion of it): a
+    /// `compiler.load` whose path reads a `comptime` parameter and a
+    /// `comptime` that reads a value the function's build lines bound
+    /// (`if (comptime loaded.mainAsync())`) are each caller's, answered where
+    /// the call is expanded; here they are typed and fold nothing.
+    inExpandedFnDecl: bool = false,
     /// Decision 370 (2) — the body of the decorator being inferred: a member
     /// function it hands to `decl.addMember(name, fn…)` reads none of its
     /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.
