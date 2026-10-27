@@ -62,6 +62,7 @@
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
 #                   [--stage <name>]… [--target <t>]… [--prebuilt] [--portable]
+#                   [--test-shards <N>]
 #   scripts/gate.sh --list-stages [--uses-binaries]
 #   scripts/gate.sh --list-rows [--uses-binaries]
 #
@@ -144,6 +145,11 @@
 #             (`-Dcpu=baseline`): CI builds the binaries on one runner and runs
 #             them on others, where a native build dies of SIGILL (exit 132).
 #
+#   --test-shards <N>
+#             the `test` stage runs `zig build test -Dtest-shards=<N>` (build.zig's default is
+#             the CPUs, at most 8; a 4-CPU CI runner passes 8 since the suite mostly waits on
+#             the node / erl / wasmtime its RUN LOGs spawn). Without it the stage is unchanged.
+#
 # The gate keeps no lock and no pool (decisions 468, 469, 508): runs started
 # together share the machine through the meta repository's scheduler, and the
 # commit hook's `--no-conformance` run goes free.
@@ -176,6 +182,7 @@ list_stages=0
 only_bin=0
 prebuilt=0
 portable=0
+test_shards=
 cold=0
 staged=0
 no_conformance=0
@@ -200,6 +207,10 @@ while [ "$#" -gt 0 ]; do
         --stage=*) selected+=("${a#--stage=}") ;;
         --prebuilt) prebuilt=1 ;;
         --portable) portable=1 ;;
+        --test-shards)
+            [ "$#" -gt 0 ] || { echo "gate: --test-shards needs a count" >&2; exit 2; }
+            test_shards="$1"; shift ;;
+        --test-shards=*) test_shards="${a#--test-shards=}" ;;
         --cold) cold=1 ;;
         --staged) staged=1 ;;
         --no-conformance) no_conformance=1 ;;
@@ -552,7 +563,7 @@ if [ "$cold" -eq 1 ]; then
     done
 fi
 test_pid=""
-if want test; then launch 0 zig build test; test_pid=$!; fi
+if want test; then launch 0 zig build test ${test_shards:+-Dtest-shards=$test_shards}; test_pid=$!; fi
 if want test-bpmp; then launch 2 zig build test-bpmp "$opt" ${cpu[@]+"${cpu[@]}"}; fi
 if want beam-export-audit; then launch 3 bash scripts/beam_export_audit.sh; fi
 

@@ -134,12 +134,13 @@ jobs:
           libs: 'true'
           zig-cache: 'true'
           zig-cache-name: ${{ matrix.row.stage }}
-      - name: scripts/gate.sh --cold --stage ${{ matrix.row.stage }}
+      - name: scripts/gate.sh --cold --test-shards 8 --stage ${{ matrix.row.stage }}
         shell: bash
         env:
           STAGE: ${{ matrix.row.stage }}
           TARGET: ${{ matrix.row.target }}
-        run: bash scripts/gate.sh --cold --stage "$STAGE" ${TARGET:+--target "$TARGET"}
+        # 4-CPU runners; the suite mostly waits on node / erl / wasmtime, so 8 shards (gate.sh --test-shards)
+        run: bash scripts/gate.sh --cold --test-shards 8 --stage "$STAGE" ${TARGET:+--target "$TARGET"}
 
   installed:
     name: ${{ matrix.row.target && format('{0} ({1})', matrix.row.stage, matrix.row.target) || matrix.row.stage }}

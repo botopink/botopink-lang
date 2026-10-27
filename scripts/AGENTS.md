@@ -185,6 +185,8 @@ those the step also reaches); no `--stage` runs every stage as before. `--prebui
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
 `test-cli`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
+`--test-shards <N>` makes the `test` stage run `zig build test -Dtest-shards=<N>` (build.zig's default is the CPUs, at most 8); CI's unit job passes 8 on its 4-CPU runners, the suite mostly waiting on node / erl / wasmtime.
+
 `--portable` builds for the baseline CPU (`-Dcpu=baseline` on every `zig build` of the gate): CI builds the
 binaries on one runner and runs them on others, where a native build dies of SIGILL (exit 132). The
 conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
