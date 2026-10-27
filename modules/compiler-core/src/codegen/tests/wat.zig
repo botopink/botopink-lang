@@ -4696,13 +4696,8 @@ test "wat: decision 1027 ---- declarations of one shape stay distinct types (the
     , "person - - -\n- vec - -\n- - box -\n- - - maybe\na person\na vec\na box\nother\nfalse\ntrue\nPerson(name: \"Ana\", age: 30)\nVec(name: \"Ana\", age: 30)\n");
 }
 
-// ── decision 1021 (10), P2b: the conversions and the optionals a WasmGC module had no form for ──
-//
-// Each program is lowered as a WasmGC module (`(rec`) where it fell back to linear memory, its RUN
-// LOG the language's own answer.
-
-test "wat: gc ---- a ?. read of an array, a tuple or an optional array field, and the absent arm of ?.[k]" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+test "wat: decision 1021 (10) ---- a ?. read of an array, a tuple or an optional array field takes its payload from the field's type, and the absent arm of ?.[k] is null in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";
         \\
         \\type Field(name: string)
@@ -4727,11 +4722,11 @@ test "wat: gc ---- a ?. read of an array, a tuple or an optional array field, an
         \\    val empty: ?Form = Form(fields: null, tags: [], range: #(3, 4));
         \\    print(empty?.fields?.[0]?.name ?? "none");
         \\}
-    );
+    , "a,b\n0\n#(1, 2)\nemail\nnone\nnone\n");
 }
 
-test "wat: gc ---- a behavior-typed value an implementer record or variant passes, dispatched by its own type, an ambient behavior and an array of them" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+test "wat: decision 1021 (10) ---- a behavior-typed value is its implementer's reference, dispatched by its own type in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";
         \\
         \\behavior Greeter {
@@ -4808,11 +4803,11 @@ test "wat: gc ---- a behavior-typed value an implementer record or variant passe
         \\    print(lookup(r, "bo"));
         \\    print(lookup(r, "zz"));
         \\}
-    );
+    , "hi bob!\nann 70!\nhi b!\nwoof rex!\nmeow 9!\nhi x?\nann 3?\nmeow 1?\nclosed front\n1\n-1\n");
 }
 
-test "wat: gc ---- f?.(x) over an optional function field answering a string, a word and a float" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+test "wat: decision 1021 (10) ---- f?.(x) over an optional function field answers the optional of a string, a word or a float in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";
         \\
         \\type Cfg(scoper: ?fn(string) -> string = null, count: ?fn(i32) -> i32 = null, half: ?fn(f64) -> f64 = null)
@@ -4840,11 +4835,11 @@ test "wat: gc ---- f?.(x) over an optional function field answering a string, a 
         \\    print(b.count?.(2) ?? -1);
         \\    print(b.half?.(3.0) ?? 0.5);
         \\}
-    );
+    , "x!\n-1\n0.5\nnone\n0\n6\n1.5\n");
 }
 
-test "wat: gc ---- val assert over a variant, a record and a Result, its catch taken" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+test "wat: decision 1021 (10) ---- val assert over a variant, a record and a Result keeps its subject, its catch taken, in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";
         \\
         \\type Shape { Circle(r: i32), Square(side: i32) }
@@ -4889,11 +4884,11 @@ test "wat: gc ---- val assert over a variant, a record and a Result, its catch t
         \\    print(reason(""));
         \\    print(older(Person(name: "bo", age: 41)));
         \\}
-    );
+    , "3\n-1\nana/30\n4\nempty input\n43\n");
 }
 
-test "wat: gc ---- a return written through an alias of a Result is the Result it names" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+test "wat: decision 1021 (10) ---- a return written through an alias of a Result is the Result it names in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";
         \\
         \\type ParseError { Empty }
@@ -4927,7 +4922,7 @@ test "wat: gc ---- a return written through an alias of a Result is the Result i
         \\    print(pass(check(-4)).unwrapOr(0));
         \\    print(pass(check(-1)).isError());
         \\}
-    );
+    , "8080\n7\n4\n0\ntrue\n");
 }
 
 test "wat: decision 1021 (10) ---- a tuple parameter's destructuring binds each element at its type in the GC lowering" {

@@ -1,0 +1,23 @@
+//// Decision 1021 (10) — a parameter written as a tuple pattern (`#(_, s): #(i32, string)`) binds
+//// each element at its type; on wasm the GC lowering destructures it as a `val` is (decision 1021
+//// (10)).
+
+import {io.terminal.print} from "std";
+
+fn second(#(_, s): #(i32, string)) -> string {
+    return s;
+}
+
+fn sum(#(a, b): #(i32, i32)) -> i32 {
+    return a + b;
+}
+
+fn label(#(name, score): #(string, f64)) -> string {
+    return name + "=" + score.toString();
+}
+
+pub fn main() -> void {
+    print(second(#(1, "x")));
+    print(sum(#(2, 40)));
+    print(label(#("ana", 2.5)));
+}

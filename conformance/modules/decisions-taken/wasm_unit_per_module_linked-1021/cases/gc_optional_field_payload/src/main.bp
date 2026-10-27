@@ -1,0 +1,28 @@
+//// Decision 1021 (10) — `recv?.field` over a field holding an array, a tuple or an optional array
+//// answers the optional of the field's declared type, and the absent arm of `xs?.[k]` is absent; on
+//// wasm the GC lowering reads the payload off the field's type (decision 1021 (10)).
+
+import {io.terminal.print} from "std";
+
+type Field(name: string)
+
+type Form(fields: ?Field[], tags: string[], range: #(i32, i32))
+
+fn make(k: i32) -> ?Form {
+    if (k == 0) return null;
+    return Form(fields: [Field(name: "email")], tags: ["a", "b"], range: #(1, 2));
+}
+
+pub fn main() -> void {
+    val f = make(1);
+    val tags: string[] = f?.tags ?? [];
+    print(tags.join(","));
+    val none: string[] = make(0)?.tags ?? [];
+    print(none.length);
+    val r = f?.range ?? #(0, 0);
+    print(r);
+    print(f?.fields?.[0]?.name ?? "none");
+    print(make(0)?.fields?.[0]?.name ?? "none");
+    val empty: ?Form = Form(fields: null, tags: [], range: #(3, 4));
+    print(empty?.fields?.[0]?.name ?? "none");
+}

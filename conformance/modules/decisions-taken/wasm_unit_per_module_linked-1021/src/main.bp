@@ -46,5 +46,11 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("gc_case_arm_assigns");
     runCase("wasm_same_shape_types_distinct");
     runCase("wasm_same_shape_types_distinct_two_packages");
+    runCase("gc_optional_field_payload");
+    runCase("gc_behavior_values");
+    runCase("gc_optional_call_link");
+    runCase("gc_val_assert_subject");
+    runCase("gc_result_alias_return");
+    runCase("gc_param_destructure");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

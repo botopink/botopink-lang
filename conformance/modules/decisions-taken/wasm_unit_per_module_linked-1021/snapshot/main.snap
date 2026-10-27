@@ -86,3 +86,47 @@ out false
 out true
 out Person(name: "Ana", age: 30)
 out Person(name: "Ana", age: 30)
+== gc_optional_field_payload
+out a,b
+out 0
+out #(1, 2)
+out email
+out none
+out none
+== gc_behavior_values
+out hi bob!
+out ann 70!
+out hi b!
+out woof rex!
+out meow 9!
+out hi x?
+out ann 3?
+out meow 1?
+out closed front
+out 1
+out -1
+== gc_optional_call_link
+out x!
+out -1
+out 0.5
+out none
+out 0
+out 6
+out 1.5
+== gc_val_assert_subject
+out 3
+out -1
+out ana/30
+out 4
+out empty input
+out 43
+== gc_result_alias_return
+out 8080
+out 7
+out 4
+out 0
+out true
+== gc_param_destructure
+out x
+out 42
+out ana=2.5
