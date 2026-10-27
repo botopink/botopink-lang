@@ -235,7 +235,7 @@ pub fn build(b: *std.Build) void {
     // `std_wasm_wat/<file>` and reads it with its own reader
     // (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into the program that
     // calls one. A new file is listed here.
-    const std_wasm_leaf_files = [_][]const u8{ "text.wat", "number.wat", "bytes.wat", "random.wat" };
+    const std_wasm_leaf_files = [_][]const u8{ "text.wat", "number.wat", "bytes.wat", "random.wat", "fs.wat", "hash.wat" };
     const std_wasm_leaves = b.addOptions();
     std_wasm_leaves.addOption([]const []const u8, "files", &std_wasm_leaf_files);
 

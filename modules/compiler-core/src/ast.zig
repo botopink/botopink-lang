@@ -3018,20 +3018,24 @@ pub const ExternalLookup = struct {
 /// `.Wasm(…, needs: [.Exceptions])`. The compiler gathers the needs of every
 /// binding a program reaches into the `.wasm`'s `botopink.needs` custom
 /// section, and the runner hands the host only the matching flags
-/// (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`). `gc` (front 164
+/// (`wasmtime run -W exceptions=y`, `-S http`, `-W gc=y`, `--dir`). `gc` (front 164
 /// s2, decision 544) is also every program's that emits GC types: the wasm
 /// codegen adds it whenever the module declares one.
 pub const WasmNeed = enum {
     exceptions,
     http,
     gc,
+    /// Decision 992 — the file system of the process: the runner preopens the
+    /// root and the working directory (`wasmtime run --dir`).
+    filesystem,
 
-    /// The written value of one item — `.Exceptions` / `.Http` / `.Gc` —,
-    /// or null.
+    /// The written value of one item — `.Exceptions` / `.Http` / `.Gc` /
+    /// `.Filesystem` —, or null.
     pub fn ofItem(item: []const u8) ?WasmNeed {
         if (std.mem.eql(u8, item, ".Exceptions")) return .exceptions;
         if (std.mem.eql(u8, item, ".Http")) return .http;
         if (std.mem.eql(u8, item, ".Gc")) return .gc;
+        if (std.mem.eql(u8, item, ".Filesystem")) return .filesystem;
         return null;
     }
 
@@ -3041,6 +3045,7 @@ pub const WasmNeed = enum {
             .exceptions => "Exceptions",
             .http => "Http",
             .gc => "Gc",
+            .filesystem => "Filesystem",
         };
     }
 };

@@ -772,7 +772,7 @@ fn stringMethodAsFn(ar: std.mem.Allocator, m: ast.BehaviorMethod) !ast.FnDecl {
 fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: []const ast.DeclKind) bool {
     // The numeric contracts are the ones the widths' `implement` clauses
     // reach (decision 617 (1)).
-    const prelude_names = [_][]const u8{ "string", "array", "bool" };
+    const prelude_names = [_][]const u8{ "string", "array", "bool", "bytes" };
     const is_prelude = preludeCache.kindsReaching(b.name).len > 0 or for (prelude_names) |pn| {
         if (std.mem.eql(u8, pn, b.name)) break true;
     } else false;
@@ -1520,7 +1520,7 @@ fn pruneUnreached(
 /// (`GCGAP` — what it met —, `GCCONV` the conversion it refused, `GCTC` the
 /// type-check failure, `GCERR` the error, `GCWHY` the module; set `GCTRACE` for the stack of a refused
 /// conversion or gap). Off: flip it to measure which constructs still send modules to linear memory.
-const gc_debug = false;
+const gc_debug = true;
 
 /// The modules of the build this backend refused so far (`emitModules`):
 /// a GC pass that links one falls back (`emitWatPass`).
@@ -2029,6 +2029,8 @@ fn emitWatPass(
     if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
     // Decision 238's `wasi:` adapters each bring the WASI call they make.
     if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = prelude.random_get_import });
+    // Decision 992: the file system leaves call the `bp_fs` host functions.
+    if (em.b.helpers.has(.fs_host)) for (prelude.fs_imports) |im| try items.append(ar, .{ .import = im });
     // Decision 393's host tasks: the host's timer, and on `wasi` its poll
     // (the `browser` loader answers from the event loop, `__bp_ready`).
     if (em.b.helpers.has(.task_host)) {
@@ -3211,6 +3213,7 @@ const Emitter = struct {
             std.fmt.allocPrint(self.alloc, f ++ " — in another module's code this line reaches", args) catch |err| return err
         else
             std.fmt.allocPrint(self.alloc, f, args) catch |err| return err;
+        if (gc_debug) std.debug.print("REFUSE[{s}] {s} @{d}:{d}\n", .{ if (self.mode == .gc) "gc" else "lin", message, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0 });
         if (self.refusal) |old| self.alloc.free(old.message);
         self.refusal = .{ .message = message, .loc = self.foreign_origin orelse loc };
         return error.WasmLoweringRefused;
@@ -10000,12 +10003,18 @@ const Emitter = struct {
         var k: usize = 0;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            if (k >= leaf.params.len or self.vtOf(self.reprOf(p.typeRef)) != leaf.params[k].ty) ok = false;
+            if (k >= leaf.params.len or self.vtOf(self.reprOf(p.typeRef)) != leaf.params[k].ty) {
+                if (gc_debug) std.debug.print("LEAFSIG {s} param {d} tag {s} named {s} gcr {any} watType {any} declared {any} leaf {any}\n", .{ b.name, k, @tagName(p.typeRef), if (p.typeRef == .named) p.typeRef.named else "-", self.gcReprOfType(p.typeRef), watType(p.typeRef), if (k < leaf.params.len) self.vtOf(self.reprOf(p.typeRef)) else .i32, if (k < leaf.params.len) leaf.params[k].ty else .i32 });
+                ok = false;
+            }
             k += 1;
         }
         if (k != leaf.params.len) ok = false;
         const declared: ?ValType = if (f.returnType) |rt| (if (std.mem.eql(u8, stdSpelling(rt), "void")) null else self.vtOf(self.reprOf(rt))) else null;
-        if (declared != leaf.result) ok = false;
+        if (declared != leaf.result) {
+            if (gc_debug) std.debug.print("LEAFSIG {s} result declared {any} leaf {any}\n", .{ b.name, declared, leaf.result });
+            ok = false;
+        }
         if (!ok) return self.refuse(ann_loc, "`.Wasm({s})` on `{s}`: the leaf `{s}` takes and answers other types than the declaration's", .{ shown, f.name, b.name });
     }
 

@@ -290,6 +290,7 @@ pub fn implementationOf(alloc: std.mem.Allocator, src: Source, target: ast.Imple
                 if (std.mem.eql(u8, item, "Exceptions")) impl.addNeed(.exceptions);
                 if (std.mem.eql(u8, item, "Http")) impl.addNeed(.http);
                 if (std.mem.eql(u8, item, "Gc")) impl.addNeed(.gc);
+                if (std.mem.eql(u8, item, "Filesystem")) impl.addNeed(.filesystem);
             }
         } else if (std.mem.eql(u8, field, "inline")) {
             impl.inline_ = boolOf(arg.tokens) orelse false;

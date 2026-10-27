@@ -4439,7 +4439,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             try std_owners.put(env.arena, d.type_.name, .{ .name = d.type_.name, .assoc = try nested_types.namesOf(env.arena, d.type_) });
         };
         const program = try assocTypes.expand(env.arena, try nested_types.expand(env.arena, parsed_std), &std_owners);
-        const bindings = try infer.inferProgramTyped(&env2, program);
+        const bindings = infer.inferProgramTyped(&env2, program) catch |err| {
+            if (env2.lastError) |le| if (le.kind == .custom) std.debug.print("DEBUGSTD {s}: {s}\n", .{ mod_name, le.kind.custom.message });
+            return err;
+        };
         // A carried function runs in a comptime module as every backend runs
         // it: its `@Result` / `@Option` method calls and each `return v` /
         // `throw e` of a `@Result` body written as the builtins its module's

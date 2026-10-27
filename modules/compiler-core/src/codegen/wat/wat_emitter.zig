@@ -98,6 +98,7 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     var has_init = false;
     var has_start = false;
     var has_host = false;
+    var has_fs = false;
     for (m.items) |it| switch (it) {
         .import => |im| if (std.mem.eql(u8, im.module, "wasi_snapshot_preview1")) {
             for (preview1_adapted) |n| {
@@ -105,6 +106,8 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
             } else return error.UnadaptedPreview1Import;
         } else if (std.mem.eql(u8, im.module, "bp_host")) {
             has_host = true;
+        } else if (std.mem.eql(u8, im.module, "bp_fs")) {
+            has_fs = true;
         },
         .func => |f| for (f.exports) |e| {
             if (std.mem.eql(u8, e, "_start")) has_start = true;
@@ -115,13 +118,18 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
 
     try w.writeAll(component_imports);
     if (has_host) try w.writeAll(component_host_imports);
+    if (has_fs) try w.writeAll(component_fs_imports);
     try w.writeAll("  (core module $main\n");
     const defs = ast.typesOf(m);
     for (m.items) |it| try renderItem(w, defs, it);
     try w.writeAll("  )\n");
     try w.writeAll(component_adapter_head);
     if (has_host) try w.writeAll(component_host_shim);
-    try w.writeAll(if (has_host) component_main_hosted else component_main_plain);
+    if (has_fs) try w.writeAll(component_fs_shim);
+    try w.writeAll("  (core instance $main (instantiate $main (with \"wasi_snapshot_preview1\" (instance $shim))");
+    if (has_host) try w.writeAll(" (with \"bp_host\" (instance $bp_shim))");
+    if (has_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
+    try w.writeAll("))\n");
     try w.writeAll(component_adapter_rest);
     if (has_init) try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
     if (has_start) try w.writeAll("    (import \"main\" \"_start\" (func $start))\n");
@@ -130,6 +138,7 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     if (has_start) try w.writeAll("      call $start\n");
     try w.writeAll(component_adapter_tail);
     if (has_host) try w.writeAll(component_host_adapter);
+    if (has_fs) try w.writeAll(component_fs_adapter);
     if (has_start) try w.writeAll(component_run_export);
     try w.writeAll(")\n");
 }
@@ -174,16 +183,6 @@ const component_adapter_head =
     \\      local.get 0 local.get 1 i32.const 1 call_indirect (type $random_get))
     \\  )
     \\  (core instance $shim (instantiate $p1_shim))
-    \\
-;
-
-const component_main_plain =
-    \\  (core instance $main (instantiate $main (with "wasi_snapshot_preview1" (instance $shim))))
-    \\
-;
-
-const component_main_hosted =
-    \\  (core instance $main (instantiate $main (with "wasi_snapshot_preview1" (instance $shim)) (with "bp_host" (instance $bp_shim))))
     \\
 ;
 
@@ -373,6 +372,445 @@ const component_host_adapter =
     \\    (export "delay" (func $bp_adapter "delay"))
     \\    (export "wait" (func $bp_adapter "wait"))
     \\    (export "drop" (func $bp_adapter "drop"))))))
+    \\
+;
+
+// ── the file system's adapter (decision 992) ─────────────────────────────────────
+//
+// A module whose leaves reach the file system imports `bp_fs` (`wat_prelude.fs_imports`):
+// open, close, read, write, stat, stat_at, readdir_open, readdir_next, readdir_close, mkdir,
+// rmdir, unlink, symlink, getenv and cwd, over `(pointer, length)` paths relative to the root
+// the host preopens (`wasmtime run --dir /::/ --dir <cwd>::<cwd>`: the root, and the working
+// directory under its own absolute path). On `wasi` they are `wasi:filesystem`'s `descriptor`'s
+// methods, `preopens` and `wasi:cli/environment`, through trampolines the fixup fills once
+// `$main`'s memory exists — the preview 1 adapter's shape. Every host call reads its strings from,
+// and writes its answer into, a scratch memory of its own (`$fs_scratch_m`, whose `realloc` is a
+// bump the adapter puts back before each call): a path is copied in before the call, a read's
+// bytes and a stat copied out after it. An answer is `-(1 + error-code)` when the host failed.
+
+const component_fs_imports =
+    \\  (import "wasi:clocks/wall-clock@0.2.0" (instance $wall
+    \\    (type $dt (record (field "seconds" u64) (field "nanoseconds" u32)))
+    \\    (export "datetime" (type $dt2 (eq $dt)))
+    \\  ))
+    \\  (alias export $wall "datetime" (type $datetime_t))
+    \\  (import "wasi:filesystem/types@0.2.0" (instance $fst
+    \\    (export "descriptor" (type $descriptor (sub resource)))
+    \\    (export "directory-entry-stream" (type $dstream (sub resource)))
+    \\    (type $dtype_t (enum "unknown" "block-device" "character-device" "directory" "fifo" "symbolic-link" "regular-file" "socket"))
+    \\    (export "descriptor-type" (type $dtype (eq $dtype_t)))
+    \\    (type $dflags_t (flags "read" "write" "file-integrity-sync" "data-integrity-sync" "requested-write-sync" "mutate-directory"))
+    \\    (export "descriptor-flags" (type $dflags (eq $dflags_t)))
+    \\    (type $pflags_t (flags "symlink-follow"))
+    \\    (export "path-flags" (type $pflags (eq $pflags_t)))
+    \\    (type $oflags_t (flags "create" "directory" "exclusive" "truncate"))
+    \\    (export "open-flags" (type $oflags (eq $oflags_t)))
+    \\    (type $ec_t (enum "access" "would-block" "already" "bad-descriptor" "busy" "deadlock" "quota" "exist" "file-too-large" "illegal-byte-sequence" "in-progress" "interrupted" "invalid" "io" "is-directory" "loop" "too-many-links" "message-size" "name-too-long" "no-device" "no-entry" "no-lock" "insufficient-memory" "insufficient-space" "not-directory" "not-empty" "not-recoverable" "unsupported" "no-tty" "no-such-device" "overflow" "not-permitted" "pipe" "read-only" "invalid-seek" "text-file-busy" "cross-device"))
+    \\    (export "error-code" (type $ec (eq $ec_t)))
+    \\    (type $stat_t (record (field "type" $dtype) (field "link-count" u64) (field "size" u64) (field "data-access-timestamp" (option $datetime_t)) (field "data-modification-timestamp" (option $datetime_t)) (field "status-change-timestamp" (option $datetime_t))))
+    \\    (export "descriptor-stat" (type $stat (eq $stat_t)))
+    \\    (type $entry_t (record (field "type" $dtype) (field "name" string)))
+    \\    (export "directory-entry" (type $entry (eq $entry_t)))
+    \\    (export "[method]descriptor.open-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "path-flags" $pflags) (param "path" string) (param "open-flags" $oflags) (param "flags" $dflags) (result (result (own $descriptor) (error $ec)))))
+    \\    (export "[method]descriptor.read"
+    \\      (func (param "self" (borrow $descriptor)) (param "length" u64) (param "offset" u64) (result (result (tuple (list u8) bool) (error $ec)))))
+    \\    (export "[method]descriptor.write"
+    \\      (func (param "self" (borrow $descriptor)) (param "buffer" (list u8)) (param "offset" u64) (result (result u64 (error $ec)))))
+    \\    (export "[method]descriptor.stat"
+    \\      (func (param "self" (borrow $descriptor)) (result (result $stat (error $ec)))))
+    \\    (export "[method]descriptor.stat-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "path-flags" $pflags) (param "path" string) (result (result $stat (error $ec)))))
+    \\    (export "[method]descriptor.read-directory"
+    \\      (func (param "self" (borrow $descriptor)) (result (result (own $dstream) (error $ec)))))
+    \\    (export "[method]directory-entry-stream.read-directory-entry"
+    \\      (func (param "self" (borrow $dstream)) (result (result (option $entry) (error $ec)))))
+    \\    (export "[method]descriptor.create-directory-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "path" string) (result (result (error $ec)))))
+    \\    (export "[method]descriptor.remove-directory-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "path" string) (result (result (error $ec)))))
+    \\    (export "[method]descriptor.unlink-file-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "path" string) (result (result (error $ec)))))
+    \\    (export "[method]descriptor.symlink-at"
+    \\      (func (param "self" (borrow $descriptor)) (param "old-path" string) (param "new-path" string) (result (result (error $ec)))))
+    \\  ))
+    \\  (alias export $fst "descriptor" (type $desc_t))
+    \\  (alias export $fst "directory-entry-stream" (type $dstream_t))
+    \\  (import "wasi:filesystem/preopens@0.2.0" (instance $pre
+    \\    (export "descriptor" (type $d (eq $desc_t)))
+    \\    (export "get-directories" (func (result (list (tuple (own $d) string)))))
+    \\  ))
+    \\  (import "wasi:cli/environment@0.2.0" (instance $envi
+    \\    (export "get-environment" (func (result (list (tuple string string)))))
+    \\  ))
+    \\
+;
+
+const component_fs_shim =
+    \\  (core module $fs_shim_m
+    \\    (type $open (func (param i32 i32 i32) (result i32)))
+    \\    (type $one (func (param i32)))
+    \\    (type $rw (func (param i32 i64 i32 i32) (result i32)))
+    \\    (type $two (func (param i32 i32) (result i32)))
+    \\    (type $four (func (param i32 i32 i32 i32) (result i32)))
+    \\    (table (export "$imports") 15 15 funcref)
+    \\    (func (export "open") (type $open)
+    \\      local.get 0 local.get 1 local.get 2 i32.const 0 call_indirect (type $open))
+    \\    (func (export "close") (type $one)
+    \\      local.get 0 i32.const 1 call_indirect (type $one))
+    \\    (func (export "read") (type $rw)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 2 call_indirect (type $rw))
+    \\    (func (export "write") (type $rw)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 3 call_indirect (type $rw))
+    \\    (func (export "stat") (type $two)
+    \\      local.get 0 local.get 1 i32.const 4 call_indirect (type $two))
+    \\    (func (export "stat_at") (type $four)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 5 call_indirect (type $four))
+    \\    (func (export "readdir_open") (type $two)
+    \\      local.get 0 local.get 1 i32.const 6 call_indirect (type $two))
+    \\    (func (export "readdir_next") (type $open)
+    \\      local.get 0 local.get 1 local.get 2 i32.const 7 call_indirect (type $open))
+    \\    (func (export "readdir_close") (type $one)
+    \\      local.get 0 i32.const 8 call_indirect (type $one))
+    \\    (func (export "mkdir") (type $two)
+    \\      local.get 0 local.get 1 i32.const 9 call_indirect (type $two))
+    \\    (func (export "rmdir") (type $two)
+    \\      local.get 0 local.get 1 i32.const 10 call_indirect (type $two))
+    \\    (func (export "unlink") (type $two)
+    \\      local.get 0 local.get 1 i32.const 11 call_indirect (type $two))
+    \\    (func (export "symlink") (type $four)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 12 call_indirect (type $four))
+    \\    (func (export "getenv") (type $four)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 13 call_indirect (type $four))
+    \\    (func (export "cwd") (type $two)
+    \\      local.get 0 local.get 1 i32.const 14 call_indirect (type $two))
+    \\  )
+    \\  (core instance $fs_shim (instantiate $fs_shim_m))
+    \\
+;
+
+const component_fs_adapter =
+    \\  (core module $fs_scratch_m
+    \\    (memory (export "memory") 4)
+    \\    (global $bump (mut i32) (i32.const 65536))
+    \\    (func (export "reset") i32.const 65536 global.set $bump)
+    \\    (func (export "realloc") (param $old i32) (param $osz i32) (param $align i32) (param $nsz i32) (result i32)
+    \\      (local $p i32)
+    \\      global.get $bump local.get $align i32.const 1 i32.sub i32.add local.get $align i32.const 1 i32.sub i32.const -1 i32.xor i32.and local.set $p
+    \\      local.get $p local.get $nsz i32.add global.set $bump
+    \\      local.get $p))
+    \\  (core instance $fs_scratch (instantiate $fs_scratch_m))
+    \\  (alias core export $fs_scratch "memory" (core memory $fs_memory))
+    \\  (alias core export $fs_scratch "realloc" (core func $fs_realloc))
+    \\  (core func $fs_preopens (canon lower (func $pre "get-directories") (memory $fs_memory) (realloc $fs_realloc)))
+    \\  (core func $fs_environment (canon lower (func $envi "get-environment") (memory $fs_memory) (realloc $fs_realloc)))
+    \\  (core func $fs_open_at (canon lower (func $fst "[method]descriptor.open-at") (memory $fs_memory)))
+    \\  (core func $fs_drop_descriptor (canon resource.drop $desc_t))
+    \\  (core func $fs_read (canon lower (func $fst "[method]descriptor.read") (memory $fs_memory) (realloc $fs_realloc)))
+    \\  (core func $fs_write (canon lower (func $fst "[method]descriptor.write") (memory $fs_memory)))
+    \\  (core func $fs_stat (canon lower (func $fst "[method]descriptor.stat") (memory $fs_memory)))
+    \\  (core func $fs_stat_at (canon lower (func $fst "[method]descriptor.stat-at") (memory $fs_memory)))
+    \\  (core func $fs_read_directory (canon lower (func $fst "[method]descriptor.read-directory") (memory $fs_memory)))
+    \\  (core func $fs_read_entry (canon lower (func $fst "[method]directory-entry-stream.read-directory-entry") (memory $fs_memory) (realloc $fs_realloc)))
+    \\  (core func $fs_drop_stream (canon resource.drop $dstream_t))
+    \\  (core func $fs_mkdir_at (canon lower (func $fst "[method]descriptor.create-directory-at") (memory $fs_memory)))
+    \\  (core func $fs_rmdir_at (canon lower (func $fst "[method]descriptor.remove-directory-at") (memory $fs_memory)))
+    \\  (core func $fs_unlink_at (canon lower (func $fst "[method]descriptor.unlink-file-at") (memory $fs_memory)))
+    \\  (core func $fs_symlink_at (canon lower (func $fst "[method]descriptor.symlink-at") (memory $fs_memory)))
+    \\  (core module $fs_adapter_m
+    \\    (import "main" "memory" (memory $m 0))
+    \\    (import "scratch" "memory" (memory $s 4))
+    \\    (import "scratch" "reset" (func $reset))
+    \\    (import "p2" "preopens" (func $preopens (param i32)))
+    \\    (import "p2" "environment" (func $environment (param i32)))
+    \\    (import "p2" "open-at" (func $open_at (param i32 i32 i32 i32 i32 i32 i32)))
+    \\    (import "p2" "drop-descriptor" (func $drop_descriptor (param i32)))
+    \\    (import "p2" "read" (func $p2_read (param i32 i64 i64 i32)))
+    \\    (import "p2" "write" (func $p2_write (param i32 i32 i32 i64 i32)))
+    \\    (import "p2" "stat" (func $p2_stat (param i32 i32)))
+    \\    (import "p2" "stat-at" (func $p2_stat_at (param i32 i32 i32 i32 i32)))
+    \\    (import "p2" "read-directory" (func $read_directory (param i32 i32)))
+    \\    (import "p2" "read-entry" (func $read_entry (param i32 i32)))
+    \\    (import "p2" "drop-stream" (func $drop_stream (param i32)))
+    \\    (import "p2" "mkdir-at" (func $mkdir_at (param i32 i32 i32 i32)))
+    \\    (import "p2" "rmdir-at" (func $rmdir_at (param i32 i32 i32 i32)))
+    \\    (import "p2" "unlink-at" (func $unlink_at (param i32 i32 i32 i32)))
+    \\    (import "p2" "symlink-at" (func $symlink_at (param i32 i32 i32 i32 i32 i32)))
+    \\    (global $root (mut i32) (i32.const -1))
+    \\    (global $cwdlen (mut i32) (i32.const -100))
+    \\    ;; The preopens, read once: the root the host preopens is the entry named `/` (not-permitted, -32, when there is none), the working
+    \\    ;; directory the first other one, whose name — its absolute path as the host sees it — is kept at 53248.
+    \\    (func $getroot (result i32)
+    \\      (local $p i32) (local $n i32) (local $i i32) (local $e i32) (local $len i32)
+    \\      global.get $root i32.const 0 i32.ge_s (if (then global.get $root return))
+    \\      call $reset
+    \\      i32.const 256 call $preopens
+    \\      i32.const 256 i32.load $s local.set $p
+    \\      i32.const 260 i32.load $s local.set $n
+    \\      (loop $each
+    \\        local.get $i local.get $n i32.ge_u
+    \\        (if (then global.get $root i32.const 0 i32.lt_s (if (then i32.const -32 return)) global.get $root return))
+    \\        local.get $p local.get $i i32.const 12 i32.mul i32.add local.set $e
+    \\        local.get $e i32.load $s offset=8 local.set $len
+    \\        local.get $len i32.const 1 i32.eq
+    \\        local.get $e i32.load $s offset=4 i32.load8_u $s i32.const 47 i32.eq
+    \\        i32.and
+    \\        (if
+    \\          (then global.get $root i32.const 0 i32.lt_s (if (then local.get $e i32.load $s global.set $root)))
+    \\          (else
+    \\            global.get $cwdlen i32.const 0 i32.lt_s
+    \\            local.get $len i32.const 4000 i32.le_u
+    \\            i32.and
+    \\            (if (then
+    \\              i32.const 53248 local.get $e i32.load $s offset=4 local.get $len memory.copy $s $s
+    \\              local.get $len global.set $cwdlen))))
+    \\        local.get $i i32.const 1 i32.add local.set $i
+    \\        br $each)
+    \\      unreachable)
+    \\    ;; `len` bytes at `src` of the program's memory into the scratch at `dst`; the empty path is `.`. Answers the length.
+    \\    (func $stage (param $dst i32) (param $src i32) (param $len i32) (result i32)
+    \\      local.get $len i32.eqz
+    \\      (if (then local.get $dst i32.const 46 i32.store8 $s i32.const 1 return))
+    \\      local.get $dst local.get $src local.get $len memory.copy $s $m
+    \\      local.get $len)
+    \\    ;; The failure `ec` as an answer: -(1 + ec).
+    \\    (func $fail (param $ec i32) (result i32)
+    \\      i32.const -1 local.get $ec i32.sub)
+    \\    (func (export "open") (param $path i32) (param $len i32) (param $mode i32) (result i32)
+    \\      (local $r i32) (local $oflags i32) (local $dflags i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      i32.const 0 local.set $oflags
+    \\      i32.const 1 local.set $dflags
+    \\      local.get $mode i32.const 1 i32.eq (if (then i32.const 9 local.set $oflags i32.const 2 local.set $dflags))
+    \\      local.get $mode i32.const 2 i32.eq (if (then i32.const 1 local.set $oflags i32.const 2 local.set $dflags))
+    \\      local.get $mode i32.const 3 i32.eq (if (then i32.const 2 local.set $oflags i32.const 1 local.set $dflags))
+    \\      local.get $r i32.const 1 i32.const 4096 local.get $len local.get $oflags local.get $dflags i32.const 256 call $open_at
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (result i32)
+    \\        (then i32.const 260 i32.load8_u $s call $fail)
+    \\        (else i32.const 260 i32.load $s)))
+    \\    (func (export "close") (param $h i32)
+    \\      local.get $h call $drop_descriptor)
+    \\    (func (export "read") (param $h i32) (param $off i64) (param $ptr i32) (param $n i32) (result i32)
+    \\      (local $len i32)
+    \\      local.get $n i32.const 131072 i32.gt_u (if (then i32.const 131072 local.set $n))
+    \\      call $reset
+    \\      local.get $h local.get $n i64.extend_i32_u local.get $off i32.const 256 call $p2_read
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (then i32.const 260 i32.load8_u $s call $fail return))
+    \\      i32.const 264 i32.load $s local.set $len
+    \\      local.get $ptr i32.const 260 i32.load $s local.get $len memory.copy $m $s
+    \\      local.get $len)
+    \\    (func (export "write") (param $h i32) (param $off i64) (param $ptr i32) (param $n i32) (result i32)
+    \\      (local $total i32) (local $chunk i32) (local $done i32)
+    \\      (block $out
+    \\        (loop $each
+    \\          local.get $n i32.eqz br_if $out
+    \\          local.get $n i32.const 32768 local.get $n i32.const 32768 i32.lt_u select local.set $chunk
+    \\          call $reset
+    \\          i32.const 16384 local.get $ptr local.get $chunk memory.copy $s $m
+    \\          local.get $h i32.const 16384 local.get $chunk local.get $off i32.const 256 call $p2_write
+    \\          i32.const 256 i32.load8_u $s
+    \\          (if (then i32.const 264 i32.load8_u $s call $fail return))
+    \\          i32.const 264 i64.load $s i32.wrap_i64 local.set $done
+    \\          ;; a host that writes nothing would never finish: io
+    \\          local.get $done i32.eqz (if (then i32.const 13 call $fail return))
+    \\          local.get $off local.get $done i64.extend_i32_u i64.add local.set $off
+    \\          local.get $ptr local.get $done i32.add local.set $ptr
+    \\          local.get $total local.get $done i32.add local.set $total
+    \\          local.get $n local.get $done i32.sub local.set $n
+    \\          br $each))
+    \\      local.get $total)
+    \\    ;; The stat at 264 of the scratch (a `result<descriptor-stat, error-code>` at 256) as `out`.
+    \\    (func $put_stat (param $out i32) (result i32)
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (then i32.const 264 i32.load8_u $s call $fail return))
+    \\      local.get $out i32.const 264 i32.load8_u $s i32.store $m
+    \\      local.get $out i32.const 280 i64.load $s i64.store $m offset=8
+    \\      local.get $out
+    \\      i32.const 312 i32.load8_u $s
+    \\      (if (result i64) (then i32.const 320 i64.load $s) (else i64.const 0))
+    \\      i64.store $m offset=16
+    \\      i32.const 0)
+    \\    (func (export "stat") (param $h i32) (param $out i32) (result i32)
+    \\      call $reset
+    \\      local.get $h i32.const 256 call $p2_stat
+    \\      local.get $out call $put_stat)
+    \\    (func (export "stat_at") (param $path i32) (param $len i32) (param $follow i32) (param $out i32) (result i32)
+    \\      (local $r i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      local.get $r local.get $follow i32.const 4096 local.get $len i32.const 256 call $p2_stat_at
+    \\      local.get $out call $put_stat)
+    \\    (func (export "readdir_open") (param $path i32) (param $len i32) (result i32)
+    \\      (local $r i32) (local $d i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      local.get $r i32.const 1 i32.const 4096 local.get $len i32.const 2 i32.const 1 i32.const 256 call $open_at
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (then i32.const 260 i32.load8_u $s call $fail return))
+    \\      i32.const 260 i32.load $s local.set $d
+    \\      local.get $d i32.const 256 call $read_directory
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (then i32.const 260 i32.load8_u $s local.set $r local.get $d call $drop_descriptor local.get $r call $fail return))
+    \\      local.get $d call $drop_descriptor
+    \\      i32.const 260 i32.load $s)
+    \\    (func (export "readdir_next") (param $stream i32) (param $ptr i32) (param $cap i32) (result i32)
+    \\      (local $len i32)
+    \\      call $reset
+    \\      local.get $stream i32.const 256 call $read_entry
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (then i32.const 260 i32.load8_u $s call $fail return))
+    \\      i32.const 260 i32.load8_u $s i32.eqz (if (then i32.const -100 return))
+    \\      i32.const 272 i32.load $s local.set $len
+    \\      local.get $len i32.const 4 i32.add local.get $cap i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      local.get $ptr i32.const 264 i32.load8_u $s i32.store $m
+    \\      local.get $ptr i32.const 4 i32.add i32.const 268 i32.load $s local.get $len memory.copy $m $s
+    \\      local.get $len)
+    \\    (func (export "readdir_close") (param $stream i32)
+    \\      local.get $stream call $drop_stream)
+    \\    ;; `create-directory-at` / `remove-directory-at` / `unlink-file-at`: a `result<_, error-code>` at 256.
+    \\    (func $unit (result i32)
+    \\      i32.const 256 i32.load8_u $s
+    \\      (if (result i32) (then i32.const 257 i32.load8_u $s call $fail) (else i32.const 0)))
+    \\    (func (export "mkdir") (param $path i32) (param $len i32) (result i32)
+    \\      (local $r i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      local.get $r i32.const 4096 local.get $len i32.const 256 call $mkdir_at
+    \\      call $unit)
+    \\    (func (export "rmdir") (param $path i32) (param $len i32) (result i32)
+    \\      (local $r i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      local.get $r i32.const 4096 local.get $len i32.const 256 call $rmdir_at
+    \\      call $unit)
+    \\    (func (export "unlink") (param $path i32) (param $len i32) (result i32)
+    \\      (local $r i32)
+    \\      local.get $len i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $path local.get $len call $stage local.set $len
+    \\      local.get $r i32.const 4096 local.get $len i32.const 256 call $unlink_at
+    \\      call $unit)
+    \\    (func (export "symlink") (param $target i32) (param $tlen i32) (param $link i32) (param $llen i32) (result i32)
+    \\      (local $r i32)
+    \\      local.get $tlen i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      local.get $llen i32.const 4095 i32.gt_u (if (then i32.const 18 call $fail return))
+    \\      call $getroot local.tee $r i32.const 0 i32.lt_s (if (then local.get $r return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $target local.get $tlen call $stage local.set $tlen
+    \\      i32.const 8192 local.get $link local.get $llen call $stage local.set $llen
+    \\      local.get $r i32.const 4096 local.get $tlen i32.const 8192 local.get $llen i32.const 256 call $symlink_at
+    \\      call $unit)
+    \\    ;; The working directory's absolute path: its length (all of it, however much of it `cap` held), -100 when the host preopens none.
+    \\    (func (export "cwd") (param $ptr i32) (param $cap i32) (result i32)
+    \\      (local $len i32)
+    \\      call $getroot drop
+    \\      global.get $cwdlen local.set $len
+    \\      local.get $len i32.const 0 i32.lt_s (if (then i32.const -100 return))
+    \\      local.get $ptr i32.const 53248 local.get $len local.get $cap local.get $len local.get $cap i32.lt_u select memory.copy $m $s
+    \\      local.get $len)
+    \\    ;; The value of the variable named `name`: its length (all of it, however much of it `cap` held), -100 when it is not set.
+    \\    (func (export "getenv") (param $name i32) (param $nlen i32) (param $ptr i32) (param $cap i32) (result i32)
+    \\      (local $p i32) (local $n i32) (local $i i32) (local $e i32) (local $j i32) (local $same i32) (local $vlen i32)
+    \\      local.get $nlen i32.const 4095 i32.gt_u (if (then i32.const -100 return))
+    \\      call $reset
+    \\      i32.const 4096 local.get $name local.get $nlen memory.copy $s $m
+    \\      i32.const 256 call $environment
+    \\      i32.const 256 i32.load $s local.set $p
+    \\      i32.const 260 i32.load $s local.set $n
+    \\      (loop $each
+    \\        local.get $i local.get $n i32.ge_u (if (then i32.const -100 return))
+    \\        local.get $p local.get $i i32.const 16 i32.mul i32.add local.set $e
+    \\        local.get $e i32.load $s offset=4 local.get $nlen i32.eq
+    \\        (if (then
+    \\          i32.const 1 local.set $same
+    \\          i32.const 0 local.set $j
+    \\          (block $cmp (loop $bytes
+    \\            local.get $j local.get $nlen i32.ge_u br_if $cmp
+    \\            local.get $e i32.load $s local.get $j i32.add i32.load8_u $s
+    \\            i32.const 4096 local.get $j i32.add i32.load8_u $s
+    \\            i32.ne (if (then i32.const 0 local.set $same br $cmp))
+    \\            local.get $j i32.const 1 i32.add local.set $j
+    \\            br $bytes))
+    \\          local.get $same
+    \\          (if (then
+    \\            local.get $e i32.load $s offset=12 local.set $vlen
+    \\            local.get $ptr local.get $e i32.load $s offset=8
+    \\            local.get $vlen local.get $cap local.get $vlen local.get $cap i32.lt_u select
+    \\            memory.copy $m $s
+    \\            local.get $vlen return))))
+    \\        local.get $i i32.const 1 i32.add local.set $i
+    \\        br $each)
+    \\      unreachable)
+    \\  )
+    \\  (core instance $fs_p2
+    \\    (export "preopens" (func $fs_preopens))
+    \\    (export "environment" (func $fs_environment))
+    \\    (export "open-at" (func $fs_open_at))
+    \\    (export "drop-descriptor" (func $fs_drop_descriptor))
+    \\    (export "read" (func $fs_read))
+    \\    (export "write" (func $fs_write))
+    \\    (export "stat" (func $fs_stat))
+    \\    (export "stat-at" (func $fs_stat_at))
+    \\    (export "read-directory" (func $fs_read_directory))
+    \\    (export "read-entry" (func $fs_read_entry))
+    \\    (export "drop-stream" (func $fs_drop_stream))
+    \\    (export "mkdir-at" (func $fs_mkdir_at))
+    \\    (export "rmdir-at" (func $fs_rmdir_at))
+    \\    (export "unlink-at" (func $fs_unlink_at))
+    \\    (export "symlink-at" (func $fs_symlink_at)))
+    \\  (core instance $fs_adapter (instantiate $fs_adapter_m
+    \\    (with "main" (instance $main))
+    \\    (with "scratch" (instance $fs_scratch))
+    \\    (with "p2" (instance $fs_p2))))
+    \\  (core module $fs_fixup
+    \\    (import "" "$imports" (table 15 15 funcref))
+    \\    (import "" "open" (func $open (param i32 i32 i32) (result i32)))
+    \\    (import "" "close" (func $close (param i32)))
+    \\    (import "" "read" (func $read (param i32 i64 i32 i32) (result i32)))
+    \\    (import "" "write" (func $write (param i32 i64 i32 i32) (result i32)))
+    \\    (import "" "stat" (func $stat (param i32 i32) (result i32)))
+    \\    (import "" "stat_at" (func $stat_at (param i32 i32 i32 i32) (result i32)))
+    \\    (import "" "readdir_open" (func $readdir_open (param i32 i32) (result i32)))
+    \\    (import "" "readdir_next" (func $readdir_next (param i32 i32 i32) (result i32)))
+    \\    (import "" "readdir_close" (func $readdir_close (param i32)))
+    \\    (import "" "mkdir" (func $mkdir (param i32 i32) (result i32)))
+    \\    (import "" "rmdir" (func $rmdir (param i32 i32) (result i32)))
+    \\    (import "" "unlink" (func $unlink (param i32 i32) (result i32)))
+    \\    (import "" "symlink" (func $symlink (param i32 i32 i32 i32) (result i32)))
+    \\    (import "" "getenv" (func $getenv (param i32 i32 i32 i32) (result i32)))
+    \\    (import "" "cwd" (func $cwd (param i32 i32) (result i32)))
+    \\    (elem (i32.const 0) func $open $close $read $write $stat $stat_at $readdir_open $readdir_next $readdir_close $mkdir $rmdir $unlink $symlink $getenv $cwd))
+    \\  (core instance (instantiate $fs_fixup (with "" (instance
+    \\    (export "$imports" (table $fs_shim "$imports"))
+    \\    (export "open" (func $fs_adapter "open"))
+    \\    (export "close" (func $fs_adapter "close"))
+    \\    (export "read" (func $fs_adapter "read"))
+    \\    (export "write" (func $fs_adapter "write"))
+    \\    (export "stat" (func $fs_adapter "stat"))
+    \\    (export "stat_at" (func $fs_adapter "stat_at"))
+    \\    (export "readdir_open" (func $fs_adapter "readdir_open"))
+    \\    (export "readdir_next" (func $fs_adapter "readdir_next"))
+    \\    (export "readdir_close" (func $fs_adapter "readdir_close"))
+    \\    (export "mkdir" (func $fs_adapter "mkdir"))
+    \\    (export "rmdir" (func $fs_adapter "rmdir"))
+    \\    (export "unlink" (func $fs_adapter "unlink"))
+    \\    (export "symlink" (func $fs_adapter "symlink"))
+    \\    (export "getenv" (func $fs_adapter "getenv"))
+    \\    (export "cwd" (func $fs_adapter "cwd"))))))
     \\
 ;
 
@@ -987,6 +1425,7 @@ test "every runtime helper group renders with its deps, and only with them" {
         if (set.has(.std_marshal)) try items.append(alloc, .{ .types = &.{prelude.gc_str_def} });
         if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
         if (set.has(.wasi_random_f64)) try items.append(alloc, .{ .import = prelude.random_get_import });
+        if (set.has(.fs_host)) for (prelude.fs_imports) |im| try items.append(alloc, .{ .import = im });
         if (set.has(.task_host)) {
             try items.append(alloc, .{ .import = prelude.bp_host_delay_import });
             try items.append(alloc, .{ .import = prelude.bp_host_wait_import });

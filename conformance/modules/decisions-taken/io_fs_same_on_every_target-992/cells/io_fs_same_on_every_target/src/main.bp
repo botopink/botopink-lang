@@ -1,0 +1,53 @@
+//// Decision 992 — `io.fs` is one behaviour on four targets: a write, a read back, a missing file's
+//// error, a relative path and an absolute one, under directories the cell makes and removes.
+
+import {io.fs, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val absolute = "/tmp/bp-io-fs-same-992";
+    val relative = "bp-io-fs-same-992-rel";
+    fs.removeTree(absolute);
+    fs.removeTree(relative);
+    print(fs.mkdirRecursive(absolute + "/inner").isOk());
+    print(fs.mkdir(relative).isOk());
+
+    // a write and a read back, by an absolute path and by a relative one
+    print(fs.writeText(absolute + "/note.txt", "héllo, fs").isOk());
+    print(fs.readText(absolute + "/note.txt").unwrapOr("?"));
+    print(fs.writeText(relative + "/note.txt", "relative").isOk());
+    print(fs.readText(relative + "/note.txt").unwrapOr("?"));
+    print(fs.appendText(relative + "/note.txt", "!").isOk());
+    print(fs.readText("./" + relative + "/note.txt").unwrapOr("?"));
+
+    // a missing file, a directory read as a file, a file listed as a directory
+    print(fs.readText(absolute + "/missing.txt").unwrapOr("?"));
+    case fs.readText(absolute + "/missing.txt") {
+        Ok(_) -> print("read");
+        Error(e) -> print(e.message());
+    }
+    case fs.readBytes(absolute) {
+        Ok(_) -> print("read");
+        Error(e) -> print(e.message());
+    }
+    case fs.list(absolute + "/note.txt") {
+        Ok(_) -> print("listed");
+        Error(e) -> print(e.message());
+    }
+    case fs.mkdir(absolute) {
+        Ok(_) -> print("made");
+        Error(e) -> print(e.message());
+    }
+
+    // the directory, its size and its names
+    print(fs.list(absolute).unwrapOr(["?"]).join(","));
+    print(fs.stat(absolute + "/note.txt").unwrapOr(fs.FileStat(size: -1l, mtime: 0l, isDir: false)).size);
+    print(fs.stat(absolute + "/inner").unwrapOr(fs.FileStat(size: -1l, mtime: 0l, isDir: false)).isDir);
+    print(fs.walk(absolute).unwrapOr(["?"]).join(","));
+    print(fs.glob("**/*.txt", absolute).unwrapOr(["?"]).join(","));
+
+    // removed
+    print(fs.removeTree(absolute).isOk());
+    print(fs.removeTree(relative).isOk());
+    print(fs.exists(absolute));
+    print(fs.exists(relative));
+}

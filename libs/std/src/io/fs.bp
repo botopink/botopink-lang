@@ -19,10 +19,11 @@
 //// `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
 //// and `lift` reads that message as the `FsError` of the path the caller wrote
 //// (decision 486); no cell catches by hand. All operations are synchronous
-//// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
-//// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
+//// (`*Sync` on Node, blocking BIFs on Erlang, `wasi:filesystem` on wasm: the runner
+//// preopens the root and the working directory, decision 992), and a path is read as
+//// the process reads it — a relative one against the working directory — on every target.
 
-import {path.relative, failure, failure.HostError, compiler};
+import {path.relative, failure, failure.HostError, failure.HostErrorName, io.random, compiler};
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 // caller wrote (for `copy`, the source; for `walk`, the root).
@@ -67,6 +68,7 @@ pub type FileStat(
 #[compiler.external(
     .JavaScript("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: readBytesWasm),
 )]
 declare fn rawReadBytes(path: string) -> Result<bytes, HostError>;
 
@@ -75,6 +77,7 @@ declare fn rawReadBytes(path: string) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeBytesWasm),
 )]
 declare fn rawWriteBytes(path: string, contents: bytes) -> Result<i32, HostError>;
 
@@ -83,6 +86,7 @@ declare fn rawWriteBytes(path: string, contents: bytes) -> Result<i32, HostError
 #[compiler.external(
     .JavaScript("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: appendTextWasm),
 )]
 declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostError>;
 
@@ -93,6 +97,7 @@ declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostErro
 #[compiler.external(
     .JavaScript("""((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })($0)"""),
     .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)($0)"""),
+    .Wasm(body: utf8OffsetWasm),
 )]
 declare fn utf8Offset(bytes: bytes) -> i64;
 
@@ -101,6 +106,7 @@ declare fn utf8Offset(bytes: bytes) -> i64;
 #[compiler.external(
     .JavaScript("""((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })($0)"""),
     .Erlang("""(fun(__B) -> __N = byte_size(__B), if __N >= 2 -> case binary:part(__B, __N - 2, 2) of <<13, 10>> -> binary:part(__B, 0, __N - 2); <<_, 10>> -> binary:part(__B, 0, __N - 1); _ -> __B end; __N =:= 1 -> case __B of <<10>> -> <<>>; _ -> __B end; true -> __B end end)($0)"""),
+    .Wasm(body: stripEolWasm),
 )]
 declare fn stripEol(line: bytes) -> bytes;
 
@@ -110,6 +116,7 @@ declare fn stripEol(line: bytes) -> bytes;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [read, binary, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: openWasm),
 )]
 declare fn rawOpen(path: string) -> Result<unknown, HostError>;
 
@@ -117,6 +124,7 @@ declare fn rawOpen(path: string) -> Result<unknown, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: createWasm),
 )]
 declare fn rawCreate(path: string) -> Result<unknown, HostError>;
 
@@ -125,6 +133,7 @@ declare fn rawCreate(path: string) -> Result<unknown, HostError>;
 #[compiler.external(
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
+    .Wasm(body: memHandleWasm),
 )]
 declare fn memHandle(bytes: bytes) -> unknown;
 
@@ -132,6 +141,7 @@ declare fn memHandle(bytes: bytes) -> unknown;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true),
     .Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+    .Wasm(body: sizeWasm),
 )]
 declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
 
@@ -139,6 +149,7 @@ declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true),
     .Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+    .Wasm(body: readWasm),
 )]
 declare fn rawRead(handle: unknown, n: i32) -> Result<bytes, HostError>;
 
@@ -146,6 +157,7 @@ declare fn rawRead(handle: unknown, n: i32) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true),
+    .Wasm(body: readAllWasm),
 )]
 declare fn rawReadAll(handle: unknown) -> Result<bytes, HostError>;
 
@@ -153,6 +165,7 @@ declare fn rawReadAll(handle: unknown) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: readLineWasm),
 )]
 declare fn rawReadLine(handle: unknown) -> Result<bytes, HostError>;
 
@@ -162,6 +175,7 @@ declare fn rawReadLine(handle: unknown) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> {ok, __Cur} = file:position(__H, cur), __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, __Digest = __L(0, crypto:hash_init(sha256)), {ok, _} = file:position(__H, __Cur), {ok, string:lowercase(binary:encode_hex(__Digest))} end end)($0)""", result: true),
+    .Wasm(body: hashWasm),
 )]
 declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 
@@ -169,6 +183,7 @@ declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true),
     .Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeWasm),
 )]
 declare fn rawWrite(handle: unknown, bytes: bytes) -> Result<i32, HostError>;
 
@@ -176,6 +191,7 @@ declare fn rawWrite(handle: unknown, bytes: bytes) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: closeWasm),
 )]
 declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
 
@@ -186,6 +202,7 @@ declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeTextWasm),
 )]
 declare fn rawWriteText(
     path: string,
@@ -203,6 +220,7 @@ declare fn rawWriteText(
 #[compiler.external(
     .JavaScript("""require('fs').existsSync($0)"""),
     .Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)"""),
+    .Wasm(body: existsWasm),
 )]
 pub declare fn exists(path: string) -> bool;
 
@@ -212,6 +230,7 @@ pub declare fn exists(path: string) -> bool;
 #[compiler.external(
     .JavaScript("""(() => { return require('fs').readdirSync($0) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: listWasm),
 )]
 declare fn rawList(path: string) -> Result<string[], HostError>;
 
@@ -222,6 +241,7 @@ declare fn rawList(path: string) -> Result<string[], HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: mkdirWasm),
 )]
 declare fn rawMkdir(path: string) -> Result<i32, HostError>;
 
@@ -234,6 +254,7 @@ declare fn rawMkdir(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: mkdirRecursiveWasm),
 )]
 declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
 
@@ -245,6 +266,7 @@ declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').rmSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: rmWasm),
 )]
 declare fn rawRm(path: string) -> Result<i32, HostError>;
 
@@ -255,6 +277,7 @@ declare fn rawRm(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: copyWasm),
 )]
 declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
 
@@ -271,6 +294,7 @@ declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: statWasm),
 )]
 declare fn rawStat(path: string) -> Result<FileStat, HostError>;
 
@@ -298,6 +322,7 @@ declare fn rawStat(path: string) -> Result<FileStat, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true),
     .Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true),
+    .Wasm(body: walkWasm),
 )]
 declare fn rawWalk(root: string) -> Result<Walked, HostError>;
 
@@ -326,6 +351,7 @@ declare fn rawWalk(root: string) -> Result<Walked, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() })()"""),
     .Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))] end)($0, $1)"""),
+    .Wasm(body: globWasm),
 )]
 declare fn rawGlob(pattern: string, root: string) -> string[];
 
@@ -339,6 +365,7 @@ declare fn rawGlob(pattern: string, root: string) -> string[];
 #[compiler.external(
     .JavaScript("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: removeTreeWasm),
 )]
 declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
 
@@ -349,6 +376,7 @@ declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bp-std-fs-'))"""),
     .Erlang("""(fun() -> __T = case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, __D = filename:join(__T, "bp-std-fs-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), unicode:characters_to_binary(__D) end)()"""),
+    .Wasm(body: scratchDirWasm),
 )]
 declare fn scratchDir() -> string;
 
@@ -357,12 +385,14 @@ declare fn scratchDir() -> string;
 #[compiler.external(
     .JavaScript("process.cwd()"),
     .Erlang("""(fun() -> {ok, __D} = file:get_cwd(), unicode:characters_to_binary(__D) end)()"""),
+    .Wasm(body: workingDirWasm),
 )]
 declare fn workingDir() -> string;
 
 #[compiler.external(
     .JavaScript("""require('fs').symlinkSync($0, $1)"""),
     .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
+    .Wasm(body: linkToWasm),
 )]
 declare fn linkTo(target: string, link: string) -> void;
 
@@ -389,6 +419,64 @@ fn lift<T>(path: string, r: Result<T, HostError>) -> Result<T, FsError> {
     }
 }
 
+// `lift` for each answer type: the generic one is the wasm backend's to specialise, and a
+// `bytes` or a handle it does not (decision 992).
+fn liftBytes(path: string, r: Result<bytes, HostError>) -> Result<bytes, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftI32(path: string, r: Result<i32, HostError>) -> Result<i32, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftI64(path: string, r: Result<i64, HostError>) -> Result<i64, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftString(path: string, r: Result<string, HostError>) -> Result<string, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftStrings(path: string, r: Result<string[], HostError>) -> Result<string[], FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftStat(path: string, r: Result<FileStat, HostError>) -> Result<FileStat, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftWalked(path: string, r: Result<Walked, HostError>) -> Result<Walked, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftHandle(path: string, r: Result<unknown, HostError>) -> Result<unknown, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
 // The text of `b`, or `InvalidUtf8` at the first invalid byte.
 fn decode(path: string, b: bytes) -> Result<string, FsError> {
     val offset = utf8Offset(b);
@@ -407,6 +495,7 @@ type Walked(
 #[compiler.external(
     .JavaScript("""(($0).mem != null)"""),
     .Erlang("""(case $0 of {mem, _, _} -> true; _ -> false end)"""),
+    .Wasm(body: readOnlyWasm),
 )]
 declare fn rawReadOnly(handle: unknown) -> bool;
 
@@ -414,7 +503,7 @@ declare fn rawReadOnly(handle: unknown) -> bool;
 
 // The file's bytes.
 pub fn readBytes(path: string) -> Result<bytes, FsError> {
-    val b = try lift(path, rawReadBytes(path));
+    val b = try liftBytes(path, rawReadBytes(path));
     return b;
 }
 
@@ -428,60 +517,60 @@ pub fn readText(path: string) -> Result<string, FsError> {
 
 // Write `contents` to `path`, creating or truncating.
 pub fn writeBytes(path: string, contents: bytes) -> Result<i32, FsError> {
-    val n = try lift(path, rawWriteBytes(path, contents));
+    val n = try liftI32(path, rawWriteBytes(path, contents));
     return n;
 }
 
 pub fn writeText(path: string, contents: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawWriteText(path, contents));
+    val n = try liftI32(path, rawWriteText(path, contents));
     return n;
 }
 
 // Append `contents`, creating the file when it is not there.
 pub fn appendText(path: string, contents: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawAppendText(path, contents));
+    val n = try liftI32(path, rawAppendText(path, contents));
     return n;
 }
 
 // ── metadata and directories ─────────────────────────────────────────────────
 
 pub fn stat(path: string) -> Result<FileStat, FsError> {
-    val s = try lift(path, rawStat(path));
+    val s = try liftStat(path, rawStat(path));
     return s;
 }
 
 pub fn list(path: string) -> Result<string[], FsError> {
-    val names = try lift(path, rawList(path));
+    val names = try liftStrings(path, rawList(path));
     return names;
 }
 
 pub fn mkdir(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawMkdir(path));
+    val n = try liftI32(path, rawMkdir(path));
     return n;
 }
 
 pub fn mkdirRecursive(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawMkdirRecursive(path));
+    val n = try liftI32(path, rawMkdirRecursive(path));
     return n;
 }
 
 pub fn rm(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawRm(path));
+    val n = try liftI32(path, rawRm(path));
     return n;
 }
 
 pub fn removeTree(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawRemoveTree(path));
+    val n = try liftI32(path, rawRemoveTree(path));
     return n;
 }
 
 pub fn copy(src: string, dest: string) -> Result<i32, FsError> {
-    val n = try lift(src, rawCopy(src, dest));
+    val n = try liftI32(src, rawCopy(src, dest));
     return n;
 }
 
 pub fn walk(root: string) -> Result<string[], FsError> {
-    val found = try lift(root, rawWalk(root));
+    val found = try liftWalked(root, rawWalk(root));
     if (found.dangling.length > 0) {
         val first = found.dangling.at(0) ?? "";
         throw FsError.Other(path: root, message: ["fs.walk: dangling link \"", first, "\""].join(""));
@@ -497,6 +586,7 @@ pub fn glob(pattern: string, root: string) -> Result<string[], FsError> {
 #[compiler.external(
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
+    .Wasm(body: memHandleWasm),
 )]
 declare fn memoryHandle(bytes: bytes) -> unknown;
 
@@ -513,20 +603,20 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
     // The file's size in bytes.
     pub fn size(self: Self) -> Result<i64, FsError> {
-        val n = try lift(self.location, rawSize(self.handle, self.location));
+        val n = try liftI64(self.location, rawSize(self.handle, self.location));
         return n;
     }
 
     // Up to `n` bytes from the position; empty at the end of the file.
     pub fn read(self: Self, n: i32) -> Result<bytes, FsError> {
         if (n <= 0) return bytes.fromUtf8("");
-        val b = try lift(self.location, rawRead(self.handle, n));
+        val b = try liftBytes(self.location, rawRead(self.handle, n));
         return b;
     }
 
     // Every byte from the position to the end.
     pub fn bytes(self: Self) -> Result<bytes, FsError> {
-        val b = try lift(self.location, rawReadAll(self.handle));
+        val b = try liftBytes(self.location, rawReadAll(self.handle));
         return b;
     }
 
@@ -550,24 +640,24 @@ pub type File(location: string, handle: unknown) implement Closeable {
     // UTF-8 ends the stream with `InvalidUtf8`, its offset counted from the first
     // line this call read.
     pub async iter fn lines(self: Self) -> AsyncIter<Result<string, FsError>> {
-        var consumed = 0l;
+        var consumed = 0;
         while (true) {
-            val raw = try lift(self.location, rawReadLine(self.handle));
+            val raw = try liftBytes(self.location, rawReadLine(self.handle));
             if (raw.length == 0) break;
             val line = stripEol(raw);
             val offset = utf8Offset(line);
             if (offset >= 0l)
-                throw FsError.InvalidUtf8(path: self.location, offset: consumed
+                throw FsError.InvalidUtf8(path: self.location, offset: consumed.toI64()
                     + offset);
             val width: i32 = raw.length;
-            consumed = consumed + width.toI64();
+            consumed = consumed + width;
             yield line.toUtf8().unwrapOr("");
         }
     }
 
     // The SHA-256 of the whole file, lowercase hex.
     pub fn hash(self: Self) -> Result<string, FsError> {
-        val h = try lift(self.location, rawHash(self.handle));
+        val h = try liftString(self.location, rawHash(self.handle));
         return h;
     }
 
@@ -575,7 +665,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     pub fn write(self: Self, b: bytes) -> Result<i32, FsError> {
         if (rawReadOnly(self.handle))
             throw FsError.Other(path: self.location, message: "the file is open for reading");
-        val n = try lift(self.location, rawWrite(self.handle, b));
+        val n = try liftI32(self.location, rawWrite(self.handle, b));
         return n;
     }
 
@@ -587,13 +677,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
 // Open the file at `path` for reading. A directory is `IsDirectory` on every target.
 pub fn open(path: string) -> Result<File, FsError> {
-    val h = try lift(path, rawOpen(path));
+    val h = try liftHandle(path, rawOpen(path));
     return File(location: path, handle: h);
 }
 
 // Open the file at `path` for writing: created, or truncated.
 pub fn create(path: string) -> Result<File, FsError> {
-    val h = try lift(path, rawCreate(path));
+    val h = try liftHandle(path, rawCreate(path));
     return File(location: path, handle: h);
 }
 
@@ -602,6 +692,883 @@ pub fn create(path: string) -> Result<File, FsError> {
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
     return File(location: asset.path, handle: memoryHandle(asset.bytes));
+}
+
+// ── the wasm bodies (decision 992) ───────────────────────────────────────────
+// `io.fs` on wasm answers what it answers on commonJS, erlang and beam: the same functions
+// over the file system of the process, the same paths (a relative one is read against the
+// working directory, an absolute one as it is), the same answers and the same errors. The
+// host is `wasi:filesystem`, reached through std-wasm's leaves (`modules/std-wasm/wat/fs.wat`;
+// the `wasi…` declarations below), which the runner serves with the root and the working
+// directory preopened (`needs: [.Filesystem]`, no flag). A leaf answers a host failure as
+// `-(1 + code)`, `code` the ordinal of `wasi:filesystem`'s `error-code`, or as the `Error`
+// of a `Result<_, i32>` holding the code; `wasiError` writes it as Node's text
+// (`ENOENT: …`), which `fsError` reads as it reads every target's.
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.cwd", needs: [.Filesystem]),
+)]
+declare fn wasiCwd() -> string;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.getenv", needs: [.Filesystem]),
+)]
+declare fn wasiGetenv(name: string) -> string;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.open", needs: [.Filesystem]),
+)]
+declare fn wasiOpen(path: string, mode: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.openMem", needs: [.Filesystem]),
+)]
+declare fn wasiOpenMem(data: bytes) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.close", needs: [.Filesystem]),
+)]
+declare fn wasiClose(block: i32) -> void;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.isMem", needs: [.Filesystem]),
+)]
+declare fn wasiIsMem(block: i32) -> bool;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.tell", needs: [.Filesystem]),
+)]
+declare fn wasiTell(block: i32) -> i64;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.seek", needs: [.Filesystem]),
+)]
+declare fn wasiSeek(block: i32, position: i64) -> void;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.size", needs: [.Filesystem]),
+)]
+declare fn wasiSize(block: i32) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.sizeRaw", needs: [.Filesystem]),
+)]
+declare fn wasiSizeRaw(block: i32) -> i64;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.read", needs: [.Filesystem]),
+)]
+declare fn wasiRead(block: i32, n: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.readAll", needs: [.Filesystem]),
+)]
+declare fn wasiReadAll(block: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.readLine", needs: [.Filesystem]),
+)]
+declare fn wasiReadLine(block: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.write", needs: [.Filesystem]),
+)]
+declare fn wasiWrite(block: i32, data: bytes) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statKind", needs: [.Filesystem]),
+)]
+declare fn wasiStatKind(path: string, follow: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statSize", needs: [.Filesystem]),
+)]
+declare fn wasiStatSize(path: string) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statMtime", needs: [.Filesystem]),
+)]
+declare fn wasiStatMtime(path: string) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.list", needs: [.Filesystem]),
+)]
+declare fn wasiList(path: string) -> Result<string[], i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.mkdir", needs: [.Filesystem]),
+)]
+declare fn wasiMkdir(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.rmdir", needs: [.Filesystem]),
+)]
+declare fn wasiRmdir(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.unlink", needs: [.Filesystem]),
+)]
+declare fn wasiUnlink(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.symlink", needs: [.Filesystem]),
+)]
+declare fn wasiSymlink(target: string, link: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "bytes.at"),
+)]
+declare fn wasiByteAt(data: bytes, index: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "hash.sha256Hex"),
+)]
+declare fn wasiSha256(data: bytes) -> string;
+
+// The POSIX name of the host's error `code`, and its text.
+fn wasiName(code: i32) -> string {
+    val names = [
+        "EACCES", "EAGAIN", "EALREADY", "EBADF", "EBUSY", "EDEADLK", "EDQUOT", "EEXIST",
+        "EFBIG", "EILSEQ", "EINPROGRESS", "EINTR", "EINVAL", "EIO", "EISDIR", "ELOOP",
+        "EMLINK", "EMSGSIZE", "ENAMETOOLONG", "ENODEV", "ENOENT", "ENOLCK", "ENOMEM",
+        "ENOSPC", "ENOTDIR", "ENOTEMPTY", "ENOTRECOVERABLE", "ENOTSUP", "ENOTTY",
+        "ENXIO", "EOVERFLOW", "EPERM", "EPIPE", "EROFS", "ESPIPE", "ETXTBSY", "EXDEV",
+    ];
+    return names.at(code) ?? "EIO";
+}
+
+fn wasiText(code: i32) -> string {
+    val texts = [
+        "permission denied", "resource temporarily unavailable",
+        "connection already in progress", "bad file descriptor", "resource busy or locked",
+        "resource deadlock avoided", "disk quota exceeded", "file already exists",
+        "file too large", "illegal byte sequence", "operation in progress",
+        "interrupted system call", "invalid argument", "i/o error",
+        "illegal operation on a directory", "too many symbolic links encountered",
+        "too many links", "message too long", "name too long", "no such device",
+        "no such file or directory", "no locks available", "not enough memory",
+        "no space left on device", "not a directory", "directory not empty",
+        "state not recoverable", "operation not supported",
+        "inappropriate ioctl for device", "no such device or address",
+        "value too large for defined data type", "operation not permitted", "broken pipe",
+        "read-only file system", "invalid seek", "text file busy",
+        "cross-device link not permitted",
+    ];
+    return texts.at(code) ?? "i/o error";
+}
+
+// The `HostError` of the host's error `code`: `ENOENT: no such file or directory`.
+fn wasiError(code: i32) -> HostError {
+    return HostError(
+        message: wasiName(code) + ": " + wasiText(code),
+        kind: "host",
+        name: HostErrorName.Error,
+        detail: null,
+    );
+}
+
+// The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
+fn okBytes(r: Result<bytes, i32>) -> Result<bytes, HostError> {
+    case r {
+        Ok(b) -> return b;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+fn okStrings(r: Result<string[], i32>) -> Result<string[], HostError> {
+    case r {
+        Ok(xs) -> return xs;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+fn okSize(r: Result<i64, i32>) -> Result<i64, HostError> {
+    case r {
+        Ok(n) -> return n;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+// `path` without the slashes it begins with: the host reads a path relative to the root it preopens.
+fn withoutRoot(path: string) -> string {
+    var p = path;
+    while (p.startsWith("/")) {
+        p = p.slice(1);
+    }
+    return p;
+}
+
+// `name` inside `dir`, `dir` empty being the root.
+fn joinPath(dir: string, name: string) -> string {
+    if (dir == "") return name;
+    return dir + "/" + name;
+}
+
+// `path` as the host reads it: absolute, as it is; relative, from the working directory. The empty
+// path is no file (`ENOENT`), as it is on every target.
+fn resolve(path: string) -> Result<string, HostError> {
+    if (path == "") throw wasiError(20);
+    if (path.startsWith("/")) return withoutRoot(path);
+    val cwd = wasiCwd();
+    if (cwd == "" || cwd == "/") return path;
+    return withoutRoot(cwd + "/" + path);
+}
+
+// The file a handle holds: the handle block `rawOpen`, `rawCreate` and `memHandle` answered.
+fn blockOf(handle: unknown) -> i32 {
+    var block = 0;
+    if (handle is i32) {
+        val b: i32 = handle;
+        block = b;
+    }
+    return block;
+}
+
+// The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
+fn sortedStrings(xs: array<string>) -> array<string> {
+    var out: array<string> = [];
+    var i = 0;
+    while (i < xs.length) {
+        val x = xs.at(i) ?? "";
+        i = i + 1;
+        var j = 0;
+        while (j < out.length && (out.at(j) ?? "") < x) {
+            j = j + 1;
+        }
+        if (j < out.length && (out.at(j) ?? "") == x) continue;
+        out = out.slice(0, j).append([x]).append(out.slice(j));
+    }
+    return out;
+}
+
+fn readBytesWasm(path: string) -> Result<bytes, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 0);
+    if (h < 0) throw wasiError(-1 - h);
+    val r = wasiReadAll(h);
+    wasiClose(h);
+    val b = try okBytes(r);
+    return b;
+}
+
+fn writeBytesWasm(path: string, contents: bytes) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 1);
+    if (h < 0) throw wasiError(-1 - h);
+    val n = wasiWrite(h, contents);
+    wasiClose(h);
+    if (n < 0) throw wasiError(-1 - n);
+    return 0;
+}
+
+fn writeTextWasm(path: string, contents: string) -> Result<i32, HostError> {
+    val n = try writeBytesWasm(path, bytes.fromUtf8(contents));
+    return n;
+}
+
+fn appendTextWasm(path: string, contents: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 2);
+    if (h < 0) throw wasiError(-1 - h);
+    val at = wasiSizeRaw(h);
+    if (at < 0l) {
+        wasiClose(h);
+        throw wasiError(13);
+    }
+    wasiSeek(h, at);
+    val n = wasiWrite(h, bytes.fromUtf8(contents));
+    wasiClose(h);
+    if (n < 0) throw wasiError(-1 - n);
+    return 0;
+}
+
+// The offset of the first byte that starts a sequence that is not UTF-8, `-1` when there is none.
+fn utf8OffsetWasm(data: bytes) -> i64 {
+    val n = data.length();
+    var i = 0;
+    while (i < n) {
+        val c = wasiByteAt(data, i);
+        if (c < 128) {
+            i = i + 1;
+            continue;
+        }
+        var k = 0;
+        if (c >= 194 && c <= 223) {
+            k = 1;
+        } else if (c >= 224 && c <= 239) {
+            k = 2;
+        } else if (c >= 240 && c <= 244) {
+            k = 3;
+        } else {
+            return i.toI64();
+        }
+        if (i + k >= n) return i.toI64();
+        var lo = 128;
+        var hi = 191;
+        if (c == 224) {
+            lo = 160;
+        } else if (c == 237) {
+            hi = 159;
+        } else if (c == 240) {
+            lo = 144;
+        } else if (c == 244) {
+            hi = 143;
+        }
+        val d = wasiByteAt(data, i + 1);
+        if (d < lo || d > hi) return i.toI64();
+        var j = 2;
+        while (j <= k) {
+            val e = wasiByteAt(data, i + j);
+            if (e < 128 || e > 191) return i.toI64();
+            j = j + 1;
+        }
+        i = i + k + 1;
+    }
+    return -1l;
+}
+
+fn stripEolWasm(line: bytes) -> bytes {
+    var n = line.length();
+    if (n > 0 && wasiByteAt(line, n - 1) == 10) {
+        n = n - 1;
+        if (n > 0 && wasiByteAt(line, n - 1) == 13) n = n - 1;
+    }
+    return line.slice(0, n);
+}
+
+fn openWasm(path: string) -> Result<unknown, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 0);
+    if (h < 0) throw wasiError(-1 - h);
+    val handle: unknown = h;
+    return handle;
+}
+
+fn createWasm(path: string) -> Result<unknown, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 1);
+    if (h < 0) throw wasiError(-1 - h);
+    val handle: unknown = h;
+    return handle;
+}
+
+fn memHandleWasm(data: bytes) -> unknown {
+    val handle: unknown = wasiOpenMem(data);
+    return handle;
+}
+
+fn sizeWasm(handle: unknown, path: string) -> Result<i64, HostError> {
+    val n = try okSize(wasiSize(blockOf(handle)));
+    return n;
+}
+
+fn readWasm(handle: unknown, n: i32) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiRead(blockOf(handle), n));
+    return b;
+}
+
+fn readAllWasm(handle: unknown) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiReadAll(blockOf(handle)));
+    return b;
+}
+
+fn readLineWasm(handle: unknown) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiReadLine(blockOf(handle)));
+    return b;
+}
+
+// The SHA-256 of the whole file, the position where it was.
+fn hashWasm(handle: unknown) -> Result<string, HostError> {
+    val block = blockOf(handle);
+    val at = wasiTell(block);
+    wasiSeek(block, 0l);
+    val r = wasiReadAll(block);
+    wasiSeek(block, at);
+    val b = try okBytes(r);
+    return wasiSha256(b);
+}
+
+fn writeWasm(handle: unknown, data: bytes) -> Result<i32, HostError> {
+    val n = wasiWrite(blockOf(handle), data);
+    if (n < 0) throw wasiError(-1 - n);
+    return n;
+}
+
+fn closeWasm(handle: unknown) -> Result<i32, HostError> {
+    wasiClose(blockOf(handle));
+    return 0;
+}
+
+fn readOnlyWasm(handle: unknown) -> bool {
+    return wasiIsMem(blockOf(handle));
+}
+
+fn existsWasm(path: string) -> bool {
+    return case resolve(path) {
+        Ok(p) -> wasiStatKind(p, 1) >= 0;
+        Error(_) -> false;
+    };
+}
+
+fn listWasm(path: string) -> Result<string[], HostError> {
+    val p = try resolve(path);
+    val names = try okStrings(wasiList(p));
+    return sortedStrings(names);
+}
+
+fn mkdirWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val r = wasiMkdir(p);
+    if (r < 0) throw wasiError(-1 - r);
+    return 0;
+}
+
+// The directory and every missing one above it. One that is there is `Ok`; a file in the way is
+// `EEXIST` when it is the directory asked for, `ENOTDIR` when it is above it.
+fn mkdirRecursiveWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    var parts: array<string> = [];
+    val pieces = p.split("/");
+    var i = 0;
+    while (i < pieces.length) {
+        val piece = pieces.at(i) ?? "";
+        i = i + 1;
+        if (piece != "" && piece != ".") parts = parts.append([piece]);
+    }
+    var prefix = "";
+    var k = 0;
+    while (k < parts.length) {
+        prefix = joinPath(prefix, parts.at(k) ?? "");
+        k = k + 1;
+        val kind = wasiStatKind(prefix, 1);
+        if (kind == 3) continue;
+        if (kind >= 0) {
+            if (k == parts.length) throw wasiError(7);
+            throw wasiError(24);
+        }
+        val made = wasiMkdir(prefix);
+        if (made < 0) throw wasiError(-1 - made);
+    }
+    return 0;
+}
+
+// The FILE at `path`: a directory is `EISDIR`, whatever it holds.
+fn rmWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val kind = wasiStatKind(p, 0);
+    if (kind < 0) throw wasiError(-1 - kind);
+    if (kind == 3) throw wasiError(14);
+    val r = wasiUnlink(p);
+    if (r < 0) throw wasiError(-1 - r);
+    return 0;
+}
+
+fn copyWasm(src: string, dest: string) -> Result<i32, HostError> {
+    val contents = try readBytesWasm(src);
+    val written = try writeBytesWasm(dest, contents);
+    return 0;
+}
+
+fn statWasm(path: string) -> Result<FileStat, HostError> {
+    val p = try resolve(path);
+    val kind = wasiStatKind(p, 1);
+    if (kind < 0) throw wasiError(-1 - kind);
+    val size = try okSize(wasiStatSize(p));
+    val seconds = try okSize(wasiStatMtime(p));
+    return FileStat(size: size, mtime: seconds * 1000l, isDir: kind == 3);
+}
+
+// The regular files under `root` and the links whose target is missing, as paths relative to it, in
+// directory order: a work list of directories, not a recursion (a recursive `try` is not lowered on wasm).
+fn walkWasm(root: string) -> Result<Walked, HostError> {
+    val p = try resolve(root);
+    val kind = wasiStatKind(p, 1);
+    if (kind < 0) throw wasiError(-1 - kind);
+    if (kind != 3) throw wasiError(24);
+    var dirs: array<string> = [p];
+    var rels: array<string> = [""];
+    var files: array<string> = [];
+    var dangling: array<string> = [];
+    var next = 0;
+    while (next < dirs.length) {
+        val dir = dirs.at(next) ?? "";
+        val rel = rels.at(next) ?? "";
+        next = next + 1;
+        val names = try okStrings(wasiList(dir));
+        var i = 0;
+        while (i < names.length) {
+            val name = names.at(i) ?? "";
+            i = i + 1;
+            val full = joinPath(dir, name);
+            val sub = joinPath(rel, name);
+            val entry = wasiStatKind(full, 1);
+            if (entry < 0 && entry != -21) throw wasiError(-1 - entry);
+            if (entry == 3) {
+                dirs = dirs.append([full]);
+                rels = rels.append([sub]);
+            }
+            if (entry == 6) files = files.append([sub]);
+            if (entry == -21) dangling = dangling.append([sub]);
+        }
+    }
+    return Walked(files: sortedStrings(files), dangling: sortedStrings(dangling));
+}
+
+// Whether the segment holds a wildcard.
+fn isMagic(seg: string) -> bool {
+    return seg.contains("*") || seg.contains("?") || seg.contains("[") || seg.contains("{");
+}
+
+// A segment with its `{a,b}` alternatives written out, nested ones too; one that is never closed is a name.
+fn expandBraces(seg: string) -> array<string> {
+    val cs = seg.chars();
+    var open = -1;
+    var i = 0;
+    while (i < cs.length) {
+        if ((cs.at(i) ?? "") == "{") {
+            open = i;
+            break;
+        }
+        i = i + 1;
+    }
+    if (open < 0) return [seg];
+    var depth = 0;
+    var close = -1;
+    var cuts: array<i32> = [];
+    var j = open;
+    while (j < cs.length) {
+        val c = cs.at(j) ?? "";
+        if (c == "{") {
+            depth = depth + 1;
+        } else if (c == "}") {
+            depth = depth - 1;
+            if (depth == 0) {
+                close = j;
+                break;
+            }
+        } else if (c == "," && depth == 1) {
+            cuts = cuts.append([j]);
+        }
+        j = j + 1;
+    }
+    if (close < 0) return [seg];
+    val head = cs.slice(0, open).join("");
+    val tail = cs.slice(close + 1).join("");
+    var out: array<string> = [];
+    var start = open + 1;
+    var k = 0;
+    while (k <= cuts.length) {
+        var stop = close;
+        if (k < cuts.length) stop = cuts.at(k) ?? close;
+        val alt = cs.slice(start, stop).join("");
+        out = out.append(expandBraces(head + alt + tail));
+        start = stop + 1;
+        k = k + 1;
+    }
+    return out;
+}
+
+// The `]` that closes the class opened at `at`, `-1` when there is none (the `[` is then a name).
+fn classEnd(pat: array<string>, at: i32) -> i32 {
+    var j = at + 1;
+    if (j < pat.length && ((pat.at(j) ?? "") == "!" || (pat.at(j) ?? "") == "^")) j = j + 1;
+    if (j < pat.length && (pat.at(j) ?? "") == "]") j = j + 1;
+    while (j < pat.length) {
+        if ((pat.at(j) ?? "") == "]") return j;
+        j = j + 1;
+    }
+    return -1;
+}
+
+// Whether `ch` is in the class written between `first` and `stop` (`!` or `^` first negates it, `a-z` is a range).
+fn classHas(pat: array<string>, first: i32, stop: i32, ch: string) -> bool {
+    var i = first;
+    var negate = false;
+    if (i < stop && ((pat.at(i) ?? "") == "!" || (pat.at(i) ?? "") == "^")) {
+        negate = true;
+        i = i + 1;
+    }
+    var found = false;
+    while (i < stop) {
+        val lo = pat.at(i) ?? "";
+        if (i + 2 < stop && (pat.at(i + 1) ?? "") == "-") {
+            val hi = pat.at(i + 2) ?? "";
+            if (lo <= ch && ch <= hi) found = true;
+            i = i + 3;
+        } else {
+            if (lo == ch) found = true;
+            i = i + 1;
+        }
+    }
+    return found != negate;
+}
+
+// `name` against one pattern without braces: `*`, `?`, `[…]`.
+fn globMatch(pat: array<string>, begin: i32, name: array<string>, offset: i32) -> bool {
+    var p = begin;
+    var n = offset;
+    while (p < pat.length) {
+        val c = pat.at(p) ?? "";
+        if (c == "*") {
+            while (p < pat.length && (pat.at(p) ?? "") == "*") {
+                p = p + 1;
+            }
+            if (p == pat.length) return true;
+            var k = n;
+            while (k <= name.length) {
+                if (globMatch(pat, p, name, k)) return true;
+                k = k + 1;
+            }
+            return false;
+        }
+        if (n >= name.length) return false;
+        val ch = name.at(n) ?? "";
+        if (c == "?") {
+            p = p + 1;
+            n = n + 1;
+        } else if (c == "[") {
+            val end = classEnd(pat, p);
+            if (end < 0) {
+                if (ch != "[") return false;
+                p = p + 1;
+                n = n + 1;
+            } else {
+                if (!classHas(pat, p + 1, end, ch)) return false;
+                p = end + 1;
+                n = n + 1;
+            }
+        } else {
+            if (c != ch) return false;
+            p = p + 1;
+            n = n + 1;
+        }
+    }
+    return n == name.length;
+}
+
+fn segmentMatches(seg: string, name: string) -> bool {
+    val alts = expandBraces(seg);
+    val chars = name.chars();
+    var i = 0;
+    while (i < alts.length) {
+        if (globMatch((alts.at(i) ?? "").chars(), 0, chars, 0)) return true;
+        i = i + 1;
+    }
+    return false;
+}
+
+// The names in `dir` the segment matches; a dot name only when the segment itself begins with the dot.
+fn globNames(dir: string, seg: string) -> array<string> {
+    val listed: array<string> = case wasiList(dir) {
+        Ok(xs) -> xs;
+        Error(_) -> [];
+    };
+    var out: array<string> = [];
+    var i = 0;
+    while (i < listed.length) {
+        val name = listed.at(i) ?? "";
+        i = i + 1;
+        if (name.startsWith(".") && !seg.startsWith(".")) continue;
+        if (seg == "*" || segmentMatches(seg, name)) out = out.append([name]);
+    }
+    return out;
+}
+
+// The entries `segs` from `i` match under `dir` (`rel` its path from the root of the glob), added to `out`. A
+// wildcard continues into real directories only; a name goes through a link.
+fn globWalk(segs: array<string>, i: i32, dir: string, rel: string, out: array<string>) -> array<string> {
+    var acc = out;
+    if (i == segs.length) {
+        if (rel != "") acc = acc.append([rel]);
+        return acc;
+    }
+    val seg = segs.at(i) ?? "";
+    val last = i == segs.length - 1;
+    if (seg == "**") {
+        if (!last) acc = globWalk(segs, i + 1, dir, rel, acc);
+        val names = globNames(dir, "*");
+        var k = 0;
+        while (k < names.length) {
+            val name = names.at(k) ?? "";
+            k = k + 1;
+            val full = joinPath(dir, name);
+            val sub = joinPath(rel, name);
+            if (last) acc = acc.append([sub]);
+            if (wasiStatKind(full, 0) == 3) acc = globWalk(segs, i, full, sub, acc);
+        }
+        return acc;
+    }
+    if (!isMagic(seg)) {
+        val full = joinPath(dir, seg);
+        val sub = joinPath(rel, seg);
+        if (last) {
+            if (wasiStatKind(full, 0) >= 0) acc = acc.append([sub]);
+        } else if (wasiStatKind(full, 1) == 3) {
+            acc = globWalk(segs, i + 1, full, sub, acc);
+        }
+        return acc;
+    }
+    val names = globNames(dir, seg);
+    var k = 0;
+    while (k < names.length) {
+        val name = names.at(k) ?? "";
+        k = k + 1;
+        val full = joinPath(dir, name);
+        val sub = joinPath(rel, name);
+        if (last) {
+            acc = acc.append([sub]);
+        } else if (wasiStatKind(full, 0) == 3) {
+            acc = globWalk(segs, i + 1, full, sub, acc);
+        }
+    }
+    return acc;
+}
+
+fn globWasm(pattern: string, root: string) -> string[] {
+    val resolved = resolve(root);
+    if (resolved.isError()) return [];
+    val base = resolved.unwrapOr("");
+    var segs: array<string> = [];
+    val pieces = pattern.split("/");
+    var i = 0;
+    while (i < pieces.length) {
+        val piece = pieces.at(i) ?? "";
+        i = i + 1;
+        if (piece != "" && piece != ".") segs = segs.append([piece]);
+    }
+    val found = globWalk(segs, 0, base, "", []);
+    var kept: array<string> = [];
+    var k = 0;
+    while (k < found.length) {
+        val entry = found.at(k) ?? "";
+        k = k + 1;
+        if (!pattern.endsWith("/") || wasiStatKind(joinPath(base, entry), 0) == 3) kept = kept.append([entry]);
+    }
+    return sortedStrings(kept);
+}
+
+// A path that is not there is `Ok`: the caller wanted it gone. A link is removed, never followed. The
+// directories are found first, then the files removed, then the directories from the deepest.
+fn removeTreeWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val top = wasiStatKind(p, 0);
+    if (top == -21) return 0;
+    if (top < 0) throw wasiError(-1 - top);
+    if (top != 3) {
+        val r = wasiUnlink(p);
+        if (r < 0) throw wasiError(-1 - r);
+        return 0;
+    }
+    var dirs: array<string> = [p];
+    var next = 0;
+    while (next < dirs.length) {
+        val dir = dirs.at(next) ?? "";
+        next = next + 1;
+        val names = try okStrings(wasiList(dir));
+        var i = 0;
+        while (i < names.length) {
+            val full = joinPath(dir, names.at(i) ?? "");
+            i = i + 1;
+            val kind = wasiStatKind(full, 0);
+            if (kind < 0 && kind != -21) throw wasiError(-1 - kind);
+            if (kind == 3) dirs = dirs.append([full]);
+            if (kind >= 0 && kind != 3) {
+                val r = wasiUnlink(full);
+                if (r < 0) throw wasiError(-1 - r);
+            }
+        }
+    }
+    var k = dirs.length;
+    while (k > 0) {
+        k = k - 1;
+        val r = wasiRmdir(dirs.at(k) ?? "");
+        if (r < 0) throw wasiError(-1 - r);
+    }
+    return 0;
+}
+
+// A fresh, unique, empty directory under the host's temporary directory.
+fn scratchDirWasm() -> string {
+    var base = wasiGetenv("TMPDIR");
+    if (base == "") base = "/tmp";
+    var attempt = 0;
+    while (attempt < 100) {
+        val dir = base + "/bp-std-fs-" + random.randomBytes(6);
+        if (wasiMkdir(withoutRoot(dir)) == 0) return dir;
+        attempt = attempt + 1;
+    }
+    failure.panic("io.fs: no scratch directory could be made");
+    return base;
+}
+
+fn workingDirWasm() -> string {
+    val cwd = wasiCwd();
+    if (cwd == "") return "/";
+    return cwd;
+}
+
+fn linkToWasm(target: string, link: string) -> void {
+    val l = resolve(link);
+    if (l.isError()) failure.panic("io.fs: no link path");
+    val r = wasiSymlink(target, l.unwrapOr(""));
+    if (r < 0) failure.panic(wasiError(-1 - r).message);
+}
+
+// A host without `chmod` denies this user nothing: the permission tests have nothing to check there.
+fn denyAllWasm(path: string) -> bool {
+    return false;
+}
+
+fn allowAllWasm(path: string) -> void {
+    return;
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -1017,12 +1984,14 @@ test "fs.File's hash leaves the position where it was" {
 #[compiler.external(
     .JavaScript("""(() => { require('fs').chmodSync($0, 0); return typeof process.getuid === 'function' ? process.getuid() !== 0 : false })()"""),
     .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 0), string:trim(os:cmd("id -u")) =/= "0" end)($0)"""),
+    .Wasm(body: denyAllWasm),
 )]
 declare fn denyAll(path: string) -> bool;
 
 #[compiler.external(
     .JavaScript("""require('fs').chmodSync($0, 0o700)"""),
     .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 8#700), ok end)($0)"""),
+    .Wasm(body: allowAllWasm),
 )]
 declare fn allowAll(path: string) -> void;
 

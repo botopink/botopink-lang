@@ -424,6 +424,7 @@ const Reader = struct {
     fn isImmediate(s: []const u8) bool {
         if (s.len == 0) return false;
         if (s[0] == '$' or s[0] == '-' or s[0] == '+' or std.ascii.isDigit(s[0])) return true;
+        if (std.mem.startsWith(u8, s, "offset=")) return true;
         inline for (.{ "inf", "-inf", "nan", "any", "eq", "i31", "struct", "array", "func", "extern" }) |w| if (std.mem.eql(u8, s, w)) return true;
         return false;
     }
@@ -635,6 +636,24 @@ const Reader = struct {
                 used = 1;
                 break :blk if (s[4] == 't') .{ .ref_test = t } else .{ .ref_cast = t };
             }
+            // Decision 992 — a leaf that reaches the host's file system moves bytes
+            // between its GC strings and linear memory: the loads and stores of the
+            // module's one memory, an optional `offset=N`, and the bulk operations.
+            if (memAccess(s)) |access| {
+                var arg = access.arg;
+                if (imm.len > 0 and imm[0] == .atom and std.mem.startsWith(u8, imm[0].atom.text, "offset=")) {
+                    const lit = imm[0].atom;
+                    arg.offset = std.fmt.parseUnsigned(u32, lit.text["offset=".len..], 10) catch return r.fail(lit.pos, "`{s}` is no offset", .{lit.text});
+                    used = 1;
+                }
+                break :blk if (access.is_load) .{ .load = arg } else .{ .store = arg };
+            }
+            inline for (.{
+                .{ "memory.copy", ast.Instr.memory_copy },
+                .{ "memory.fill", ast.Instr.memory_fill },
+                .{ "memory.size", ast.Instr.memory_size },
+                .{ "memory.grow", ast.Instr.memory_grow },
+            }) |x| if (std.mem.eql(u8, s, x[0])) break :blk x[1];
             if (hostBinding.findOp(s)) |o| break :blk hostBinding.instrOf(o);
             return r.fail(op.pos, "`{s}` is no instruction a leaf reads", .{s});
         };
@@ -642,6 +661,34 @@ const Reader = struct {
         return used;
     }
 };
+
+/// A memory access the text spells (`i32.load`, `i64.load32_u`, `i32.store8`):
+/// its type, width and signedness, and whether it loads.
+fn memAccess(s: []const u8) ?struct { arg: ast.MemArg, is_load: bool } {
+    const dot = std.mem.indexOfScalar(u8, s, '.') orelse return null;
+    const ty: ValType = inline for (.{ "i32", "i64", "f32", "f64" }) |t| {
+        if (std.mem.eql(u8, s[0..dot], t)) break @field(ValType, t);
+    } else return null;
+    const op = s[dot + 1 ..];
+    var arg: ast.MemArg = .{ .ty = ty };
+    const is_load = std.mem.startsWith(u8, op, "load");
+    if (!is_load and !std.mem.startsWith(u8, op, "store")) return null;
+    const suffix = op[if (is_load) 4 else 5..];
+    if (suffix.len == 0) return .{ .arg = arg, .is_load = is_load };
+    var bits = suffix;
+    if (is_load) {
+        // `8_u`, `16_s`, `32_u`: the width, then the sign of the extension.
+        if (bits.len < 3 or bits[bits.len - 2] != '_') return null;
+        arg.signed = switch (bits[bits.len - 1]) {
+            's' => true,
+            'u' => false,
+            else => return null,
+        };
+        bits = bits[0 .. bits.len - 2];
+    }
+    arg.width = if (std.mem.eql(u8, bits, "8")) .byte else if (std.mem.eql(u8, bits, "16")) .half else if (std.mem.eql(u8, bits, "32")) .word else return null;
+    return .{ .arg = arg, .is_load = is_load };
+}
 
 /// Reads every `(func …)` of `src` (the file at `path`). `ar` is an arena:
 /// the functions borrow from it and from `src`. A text that does not read
