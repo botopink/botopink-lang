@@ -1,0 +1,13 @@
+botopink-cell 2
+== async_block_conflicting_errors
+refused error: gen-infer-conflicting-errors: the error types of this block's `throw` / `try` do not agree, so its `Result<U, E>` has no one `E`
+at src/main.bp:25:17
+== async_block_use
+refused error: use-without-component: `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it
+at src/main.bp:11:28
+== result_hint_inferred_async
+refused error: type mismatch: expected i32, got Result — `await` answers the `Result` the Async holds: write `try await t` to propagate its error, or handle it with `case` / `catch`; it is a `Result` because of the `try` at 17:17 in its own block
+at src/main.bp:20:18
+== async_block_all_of
+out ok user1,user2
+out error user 0 does not exist

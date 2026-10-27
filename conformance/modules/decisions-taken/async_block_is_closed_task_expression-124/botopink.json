@@ -1,1 +1,1 @@
-{ "name": "async_block_is_closed_task_expression-124" }
+{"name": "async_block_is_closed_task_expression-124", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

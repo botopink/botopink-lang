@@ -1,1 +1,1 @@
-{ "name": "binding_result_true_maps_host_errors-490" }
+{"name": "binding_result_true_maps_host_errors-490", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}
