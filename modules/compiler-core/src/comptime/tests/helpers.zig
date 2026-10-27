@@ -345,7 +345,7 @@ pub fn resultJumpLoweringCount(
 
 /// Front 14 step 3 — the term round trip, read off the replies: `modules` is
 /// compiled (the capture or the `@Decl` handle reaches the wasm comptime
-/// runtime as external-term bytes in its linear memory, `runtime/etf.zig`),
+/// runtime as external-term bytes in its linear memory, `codegen/beam/etf.zig`),
 /// every module must compile, at least one evaluation must run, and each
 /// evaluation's reply — the `COMPTIME REPLY` section, keys sorted — is
 /// returned in evaluation order (owned by `arena`), for the caller's own

@@ -28,7 +28,7 @@
 //! naming the construct and the Erlang function) — before anything runs, so a
 //! refusal is a compile error of the comptime module, never a zero value.
 const std = @import("std");
-const ep = @import("erl_parse.zig");
+const ep = @import("../../../codegen/beam/erl_parse.zig");
 const wat = @import("../../../codegen/wat/wat_ast.zig");
 const stdWasm = @import("std_wasm");
 

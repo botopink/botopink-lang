@@ -533,7 +533,7 @@ test "template: runtime fail() maps into the caller's template" {
 // ── the term round trip, per shape (front 14 step 3) ──────────────────────────
 //
 // A capture reaches the body as `main/1`'s argument, an external term
-// (`runtime/etf.zig`); each fixture reads the shape back in the body, answers
+// (`codegen/beam/etf.zig`); each fixture reads the shape back in the body, answers
 // it in the reply (`h.canonicalReplies`) beside the exchange snapshots
 // (`comptime/runtime/`).
 

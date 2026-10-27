@@ -10,7 +10,7 @@
 //! A construct the lowering cannot take is a **refusal** naming it
 //! (`Built.refused`), which the evaluator reports as the module not compiling.
 const std = @import("std");
-const ep = @import("erl_parse.zig");
+const ep = @import("../../../codegen/beam/erl_parse.zig");
 const lower = @import("lower.zig");
 const link = @import("link.zig");
 const preludeMod = @import("../prelude.zig");

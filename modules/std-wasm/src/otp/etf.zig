@@ -1,5 +1,5 @@
 //! The external term format the comptime argument arrives in (`rt_etf_decode`,
-//! `binary_to_term/1`): exactly the tags `compiler-core`'s `comptime/runtime/etf.zig`
+//! `binary_to_term/1`): exactly the tags `compiler-core`'s `codegen/beam/etf.zig`
 //! writes.
 const std = @import("std");
 const builtin = @import("builtin");

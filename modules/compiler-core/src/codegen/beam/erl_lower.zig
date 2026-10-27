@@ -1,4 +1,4 @@
-//! Erlang (as `comptime/runtime/wat/erl_parse.zig` reads it) → BEAM
+//! Erlang (as `codegen/beam/erl_parse.zig` reads it) → BEAM
 //! instructions in `beam_file.zig`'s model.
 //!
 //! Its input is an `@External.Erlang` template's one-function module
@@ -54,7 +54,7 @@
 //! error naming the construct, and a comptime cell is not translated
 //! (decision 67) — nothing falls back to evaluating Erlang source.
 const std = @import("std");
-const ep = @import("../../comptime/runtime/wat/erl_parse.zig");
+const ep = @import("erl_parse.zig");
 const bf = @import("beam_file.zig");
 const Term = @import("term.zig").Term;
 

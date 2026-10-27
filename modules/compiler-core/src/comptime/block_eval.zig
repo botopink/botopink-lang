@@ -43,7 +43,7 @@ const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
-const etf = @import("./runtime/etf.zig");
+const etf = @import("../codegen/beam/etf.zig");
 const trace = @import("./trace.zig");
 const diagnostics = @import("./diagnostics.zig");
 const formatMod = @import("../format.zig");
@@ -1758,7 +1758,7 @@ const Module = struct {
 };
 
 /// `main/1`, the function-value registry and the reply encoder. Raw text: the
-/// same text on both runtimes (`wat/erl_parse.zig` reads the subset the
+/// same text on both runtimes (`codegen/beam/erl_parse.zig` reads the subset the
 /// emitter writes).
 fn hostForms(b: Ast.Builder, makers: usize) Error![]const Ast.Form {
     const R = Ast.Expr.r;

@@ -494,7 +494,7 @@ const Wasmtime = struct {
 // ── tests ────────────────────────────────────────────────────────────────────
 
 const program = @import("wat/program.zig");
-const etf = @import("etf.zig");
+const etf = @import("../../codegen/beam/etf.zig");
 const Term = @import("../../codegen/beam/term.zig").Term;
 
 fn runSource(alloc: std.mem.Allocator, module: []const u8, code: []const u8, arg: Term) !Response {

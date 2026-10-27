@@ -3,11 +3,11 @@
 //! template compiled at build time into a helper of the module,
 //! `../beam_asm.zig` `evalTemplate`; the comptime runtime reads no host
 //! function's Erlang cell since decision 452). It reads with
-//! `comptime/runtime/wat/erl_parse.zig` and lowers with `erl_lower.zig`, so
+//! `codegen/beam/erl_parse.zig` and lowers with `erl_lower.zig`, so
 //! there is one Erlang front end.
 const std = @import("std");
 const primOpTemplate = @import("../../comptime/primOpTemplate.zig");
-const erlParse = @import("../../comptime/runtime/wat/erl_parse.zig");
+const erlParse = @import("erl_parse.zig");
 const erlLower = @import("erl_lower.zig");
 
 /// The Erlang body of template `template_raw` called with `argc` arguments

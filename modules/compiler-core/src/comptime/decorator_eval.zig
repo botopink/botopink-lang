@@ -6,7 +6,7 @@
 /// declaration into a `DeclHandle` and runs the decorator body over it:
 ///
 ///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
-///   handle + args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
+///   handle + args ─ `Term` ─ codegen/beam/etf ─ external term ─┐
 ///     → comptime/runtime/runtime `evalWithArg`: the text lowered   │
 ///       to wasm once per module, run with the handle's term ←──────┘
 ///     → JSON `{kind, contributions | message | span}` → `Outcome`
@@ -32,7 +32,7 @@ const Ast = @import("../codegen/beam/erl_ast.zig");
 pub const Term = @import("../codegen/beam/term.zig").Term;
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
-const etf = @import("./runtime/etf.zig");
+const etf = @import("../codegen/beam/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 const typedMeta = @import("./typed_meta.zig");

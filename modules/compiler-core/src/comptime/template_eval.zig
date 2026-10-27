@@ -5,7 +5,7 @@
 /// inspection, the body runs here:
 ///
 ///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
-///   captures + plain args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
+///   captures + plain args ─ `Term` ─ codegen/beam/etf ─ external term ─┐
 ///     → comptime/runtime/runtime `evalWithArg`: the text lowered to wasm   │
 ///       once per module, run with the call site's term ←───────────────────┘
 ///     → JSON reply → `Outcome`
@@ -43,7 +43,7 @@ const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
 const formatMod = @import("../format.zig");
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
-const etf = @import("./runtime/etf.zig");
+const etf = @import("../codegen/beam/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 const decoratorSame = @import("./decorator_same.zig");

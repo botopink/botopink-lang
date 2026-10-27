@@ -24,7 +24,7 @@
 //! | imports (`ImpT`) | `(module, function, arity)` in first-use order; `Arg.ext` encodes as the row's index (`u`) |
 //! | exports (`ExpT`) | one row `(name, arity, entry label)` per `Function` with `exported = true` |
 //! | funs (`FunT`) | one row per distinct `make_fun3` entry label: the function at that label, its arity, the label, a sequential index, the environment size, and `old_uniq` (27 bits of a hash of the code, as `erlc` does) |
-//! | literals (`LitT`) | one entry per distinct compound term, deduplicated by its external-term bytes (`comptime/runtime/etf.zig`, already pinned to OTP's byte vectors); scalars fold to `a`/`i` operands as `beam_asm` folds them |
+//! | literals (`LitT`) | one entry per distinct compound term, deduplicated by its external-term bytes (`codegen/beam/etf.zig`, already pinned to OTP's byte vectors); scalars fold to `a`/`i` operands as `beam_asm` folds them |
 //! | lines (`Line`) | one item per distinct `(file, line)`, indexed from 1 (0 is "no location"); `Arg.line` is the operand of `line`; the file is `Module.source_file` (fname 1) so a stack trace names the `.bp` |
 //! | labels | `label N` defines N; `{f, N}` is encoded as the label **number** (the loader resolves labels, `beam_asm` does not); `label_count` in the `Code` header is one past the highest label |
 //!
@@ -66,7 +66,7 @@
 const std = @import("std");
 const opcodes = @import("opcodes.zig");
 const Term = @import("term.zig").Term;
-const etf = @import("../../comptime/runtime/etf.zig");
+const etf = @import("etf.zig");
 
 pub const Op = opcodes.Op;
 

@@ -9099,7 +9099,7 @@ const Emitter = struct {
     ///
     ///     t(__BpSelf, __BpA0, …) -> <body>
     ///
-    /// read by `comptime/runtime/wat/erl_parse.zig` and lowered by
+    /// read by `codegen/beam/erl_parse.zig` and lowered by
     /// `beam/erl_lower.zig` (`beam/erl_template.zig`) — the reader the comptime
     /// runtime reads every body with — then
     /// relabelled into this module's label space, renamed `'__bp_tpl_<k>'`

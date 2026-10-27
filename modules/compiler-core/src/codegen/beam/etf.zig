@@ -32,7 +32,7 @@
 //! shorthand OTP's own `term_to_binary/1` prefers: both decode to the same list,
 //! and one encoding for one `Term` variant is one thing to get right.
 const std = @import("std");
-const Term = @import("../../codegen/beam/term.zig").Term;
+const Term = @import("term.zig").Term;
 
 /// The leading byte of every external term.
 pub const version_magic: u8 = 131;
