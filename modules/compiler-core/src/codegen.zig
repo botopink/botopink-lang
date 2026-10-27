@@ -28,6 +28,8 @@ pub const TargetSource = configMod.TargetSource;
 /// `outputStem` (erlang, BEAM and commonJS take the module's flat name — its
 /// ATOM, decision 1015 — wasm the module path) and `erlAtom` beside it.
 pub const crossModule = @import("./codegen/crossModule.zig");
+/// The unit cache an emit reads (decision 1008 (2)).
+pub const unitCache = @import("./codegen/unit_cache.zig");
 /// Decision 334 — the loader a wasm build for the `browser` host writes
 /// beside its `.wasm` (`botopink build`).
 pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
@@ -233,13 +235,17 @@ pub fn generateWith(
     var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
     if (options.on_analysed) |hook| try hook.call(hook.ctx, session.outputs.items, session.readers);
-    // The code cache's level B CODE (144 B-60 S4): a dependency module whose
-    // entry holds its unit is not emitted again, and an entry without one is
-    // staged again with it. `botopink test` too: a dependency gets no test
-    // unit and its production unit does not depend on `test_mode` (decision
-    // 513), and a test unit is never cached (`analysis_entry.code_skips`).
-    var cfg = config;
-    cfg.level_b_code = session.level_b_code;
+    // The unit cache (decision 1008 (2)): a dependency module whose unit it
+    // holds is not emitted again — never a module answering for the whole
+    // program — and once the emit returned the store keeps what it will, while
+    // the session's `readers` live. `botopink test` too: a dependency gets no
+    // test unit and its production unit does not depend on `test_mode`
+    // (decision 513).
+    const cfg = config;
+    if (cfg.unit_cache) |u| u.readers = session.readers;
+    defer if (cfg.unit_cache) |u| {
+        u.readers = &.{};
+    };
     var refused: std.ArrayListUnmanaged([]const u8) = .empty;
     defer refused.deinit(allocator);
     var outputs = try emitChecked(allocator, session.outputs.items, cfg, &refused);
@@ -247,7 +253,7 @@ pub fn generateWith(
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
     }
-    if (cfg.level_b_code) |code| try code.record(allocator, outputs.items, cfg.codeEmit());
+    if (cfg.unit_cache) |u| u.record(outputs.items);
     try attachWarnings(allocator, session.outputs.items, outputs.items, refused.items);
 
     // A host that cannot spawn a process (the browser build, front 18 step 5)

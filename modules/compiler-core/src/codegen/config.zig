@@ -1,5 +1,5 @@
 const std = @import("std");
-const levelB = @import("../comptime/level_b.zig");
+const unitCache = @import("./unit_cache.zig");
 /// Target module source emitted by the code generator.
 pub const TargetSource = enum {
     commonJS,
@@ -63,31 +63,22 @@ pub const Config = struct {
     /// dependency's analysis from and hands the entries it analysed to — the
     /// CLI's analysis store. Null analyses everything and stores nothing.
     analysis_store: ?*@import("../comptime/level_b.zig").Store = null,
-    /// The CODE of the compile's level B entries (144 B-60 S4), set by
-    /// `codegen.generateWith` under every command that emits, `test_mode`
-    /// too (decision 513: a dependency's unit is the same bytes under
-    /// `botopink test`, and a test unit is never cached): an emitter takes a dependency
-    /// module's unit from it (`cachedUnit`) instead of emitting the module,
-    /// and gives a module whose entry lacks CODE everything CODE holds
-    /// (`recordsCode`). Null: emit every module.
-    level_b_code: ?*levelB.Code = null,
+    /// The unit cache (decision 1008 (2), `unit_cache.zig`): an emitter takes
+    /// a dependency module's unit from it (`cachedUnit`) instead of emitting
+    /// the module. Set by the CLI under every command that emits; null emits
+    /// every module.
+    unit_cache: ?*unitCache.UnitCache = null,
 
-    /// The unit of module `name` read back from its entry's CODE, owned by
+    /// The unit of module `name` read back from the unit cache, owned by
     /// `alloc`, or null: emit it. An emitter asks right where it would emit
     /// the module, after the program's own refusals (an atom fault, an
-    /// ambiguous import) — those are the program's, never the entry's.
+    /// ambiguous import) — those are the program's, never the cache's.
     pub fn cachedUnit(self: Config, alloc: std.mem.Allocator, name: []const u8) !?@import("moduleOutput.zig").GenerateResult {
-        const code = self.level_b_code orelse return null;
-        return code.take(alloc, name, self.codeEmit());
+        const cache = self.unit_cache orelse return null;
+        return cache.take(alloc, name, self.codeEmit());
     }
 
-    /// Whether module `name`'s unit is to be written into its entry's CODE.
-    pub fn recordsCode(self: Config, name: []const u8) bool {
-        const code = self.level_b_code orelse return false;
-        return code.records(name);
-    }
-
-    pub fn codeEmit(self: Config) levelB.Code.Emit {
+    pub fn codeEmit(self: Config) unitCache.Emit {
         return .{ .wasm_artifact = self.wasm_artifact, .typedef = self.typeDefLanguage != null };
     }
 };

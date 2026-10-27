@@ -11,7 +11,7 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
-├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all fourteen
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs every one
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus a type
 │   │                          error's `= hint:` under its excerpt from `check`
 │   │                          and `build`, plus the
@@ -50,8 +50,9 @@ compiler-cli/
 │   │                          a test reads its module's private fn and `val` on
 │   │                          all four targets, a dependency's tests never run
 │   │                          (decision 513), and a second run reads the
-│   │                          dependency's level B entry with its CODE (not
-│   │                          rewritten) with the same results (144 B-60);
+│   │                          dependency's level B entry and its unit-cache
+│   │                          entry (neither rewritten) with the same results
+│   │                          (144 B-60, decision 1008 (2));
 │   │                          `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
@@ -185,6 +186,18 @@ compiler-cli/
 │   │                          --target` answers both members; a stale key and
 │   │                          `--cold` rewrite; two members' `json` at two
 │   │                          directories refused, naming both, nothing written
+│   ├── unit_cache.sh        ← the unit cache (decision 1008 (2); the proof of its
+│   │                          piece), its fixture written inline: a workspace of
+│   │                          two members over one library, on erlang, beam,
+│   │                          commonJS and — wasmtime on PATH — wasm: the first
+│   │                          member's build writes `.botopinkbuild/cache/unit/
+│   │                          <target>/lib.bpu` under the root, the second's
+│   │                          writes no entry again (inode and time) and its
+│   │                          library files are the first's bytes; a changed
+│   │                          library source writes the entry anew and answers
+│   │                          the change; `build --cold` rewrites every entry;
+│   │                          the answers are a cold build's (wasm emits only
+│   │                          the entry, 1008 (3): answers alone)
 │   └── level_b.sh           ← the code cache's level B (144 B-60): over the closure
 │   │                          invariant's fixture, `build --cold`, a build that
 │   │                          writes `.botopinkbuild/analysis/`, one that reads it —
@@ -197,8 +210,9 @@ compiler-cli/
 │   │                          bytes reads the entry (the key is by content),
 │   │                          another target leaves it, a truncated one is
 │   │                          discarded and written whole again (as `--cold`);
-│   │                          an entry `check` wrote gets its CODE from the next
-│   │                          build (larger, once), read after, the same bytes
+│   │                          `check` writes no unit, the next build writes
+│   │                          shelf's unit-cache entry once per key
+│   │                          (`--typescript` another), read after, the same bytes
 │   └── analysis_equivalence.sh ← level B over real libraries (144 B-60, guard 2,
 │   │                          `test-analysis-equivalence`): two conformance cells
 │   │                          each of rakun's packages `rakun`, `rakun-bpp` and
@@ -231,7 +245,7 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all fourteen scripts, in order, against the installed CLI
+zig build test-cli      # every script, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 zig build test-closure-invariant # closure_invariant.sh alone (also in test-cli)
 zig build test-analysis-equivalence # analysis_equivalence.sh alone (also in test-cli)
@@ -255,6 +269,7 @@ bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alo
 bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030, 1039)
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
 bash modules/compiler-cli/tests/workspace_out.sh     # a workspace root's one out/<t>/ folder, dependencies written once (1015 (4), 1023)
+bash modules/compiler-cli/tests/unit_cache.sh        # a dependency's units taken from the unit cache by a second package (1008 (2))
 ```
 
 > **Every assertion is hard** — there are no pinned reds, and a missing runtime

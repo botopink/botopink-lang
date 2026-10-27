@@ -17,6 +17,7 @@ const runtime_file = bp.runtime_file;
 const runtime_cache = @import("./runtime_cache.zig");
 const beam_record = @import("./beam_record.zig");
 const workspace_out = @import("./workspace_out.zig");
+const unit_cache = @import("./unit_cache.zig");
 
 const Module = bp.Module;
 
@@ -286,7 +287,7 @@ fn runBuild(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cold) code_cache.cold = true;
-    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null, null, null)).exit;
+    if (opts.runtime_input) |file| return (try runRuntime(gpa, io, arena, opts, file, env_map, null, null, null, null)).exit;
 
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
@@ -361,7 +362,7 @@ fn runBuild(
         if (shared == null and !opts.rebuild and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) return 0;
         if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
-        const built = (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared)).exit;
+        const built = (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared, &closure_keys.runtime)).exit;
         if (built == 0 and shared == null) runtime_cache.writeTargetKey(arena, io, rt_dir, t, tkey);
         return built;
     }
@@ -388,18 +389,27 @@ fn runBuild(
     // location (below); the rest still compile.
     const modules = all_modules;
 
+    // The unit cache (decision 1008 (2), `unit_cache.zig`): a dependency's
+    // units taken from it instead of emitted again; what this build emitted
+    // of one is written there once the emit returned.
+    const packages = try libs.packagesOf(arena, proj, dep_modules);
+    const typings = opts.typescript or proj.manifest.typings;
+    var units: unit_cache.Cache = undefined;
+    try units.init(gpa, arena, io, analysis_store.root(proj), entry_target, packages, &closure_keys.runtime, .{ .wasm_artifact = true, .typedef = typings });
+
     // Build codegen config. The package names start every erlang/BEAM
     // module atom (decision 109).
     const cfg = bp.codegen.Config{
         .targetSource = targetSource(target),
-        .typeDefLanguage = if (opts.typescript or proj.manifest.typings) .typescript else null,
+        .typeDefLanguage = if (typings) .typescript else null,
         .build_root = ".botopinkbuild",
-        .packages = try libs.packagesOf(arena, proj, dep_modules),
+        .packages = packages,
         .wasm_host = proj.wasmHost(),
         // The file a wasm build writes is what its host runs: the WASI
         // preview 2 component on `wasi` (decision 334).
         .wasm_artifact = true,
         .analysis_store = &level_b.store,
+        .unit_cache = &units.iface,
         // Decision 1017 (5) — on wasm only the entry's component is written (it links
         // every body it reaches); a package with no such module keeps every unit.
         .wasm_entry_only = if (target == .wasm and hasModule(project_modules, opts.entry)) opts.entry else null,
@@ -587,6 +597,10 @@ pub fn runRuntime(
     project: ?config.ProjectConfig,
     /// `--workspace-out`'s keys (`workspace_out.Shared`); null otherwise.
     shared: ?workspace_out.Shared,
+    /// The `.bpr` keys of the program's dependencies
+    /// (`libs.ClosureKeys.runtime`): the unit cache's keys (decision 1008
+    /// (2)). Null for a `.bpr` named on the command line: every unit emitted.
+    runtime_keys: ?*const std.StringHashMapUnmanaged(unit_cache.Key),
 ) !RuntimeBuild {
     const target = opts.target orelse {
         reporter.errCode(runtime_codes.target_required, "a .bpr has no manifest; write --target <commonJS|erlang|beam|wasm>");
@@ -630,22 +644,32 @@ pub fn runRuntime(
     const has_main = if (entry) |name| declaresMain(outputs, name) else false;
     const proj: config.ProjectConfig = project orelse .{ .name = meta.root };
     const typings = opts.typescript or (project != null and proj.manifest.typings);
+    const packages: bp.codegen.crossModule.Packages = .{ .root = meta.root, .deps = meta.deps };
+    // The unit cache (decision 1008 (2)), as a direct build reads it; a
+    // dependency module the root's file holds answers for the whole program.
+    var units: unit_cache.Cache = undefined;
+    if (runtime_keys) |keys| {
+        try units.init(gpa, arena, io, analysis_store.root(proj), .{ .target = target, .host = meta.wasm_host }, packages, keys, .{ .wasm_artifact = true, .typedef = typings });
+        units.iface.readers = try unit_cache.readersOf(arena, packages, meta.program);
+    }
     const cfg = bp.codegen.Config{
         .targetSource = targetSource(target),
         .typeDefLanguage = if (typings) .typescript else null,
         .build_root = ".botopinkbuild",
-        .packages = .{ .root = meta.root, .deps = meta.deps },
+        .packages = packages,
         .wasm_host = meta.wasm_host,
         .wasm_artifact = true,
         // Decisions 1008 (3), 1017 (5) — only the entry's component is emitted on
         // wasm (`run` executes it alone); a program with no such module keeps every unit.
         .wasm_entry_only = if (target == .wasm) wasmEntry(outputs, entry orelse opts.entry) else null,
+        .unit_cache = if (runtime_keys != null) &units.iface else null,
     };
     var emitted = try bp.codegen.emit(gpa, outputs, cfg);
     defer {
         for (emitted.items) |*o| o.result.deinit(gpa);
         emitted.deinit(gpa);
     }
+    if (runtime_keys != null) units.iface.record(emitted.items);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, emitted.items, false);
     writeOutputs(gpa, io, arena, emitted.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map, shared, cfg.typeDefLanguage != null) catch |err| switch (err) {
         error.SidecarRefused => return .{ .exit = 1 },

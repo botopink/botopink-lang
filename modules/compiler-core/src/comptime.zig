@@ -242,10 +242,6 @@ fn collectCustomAst(arena: std.mem.Allocator, env: *const envMod.Env) ![]const C
 pub const ComptimeSession = struct {
     arena: std.heap.ArenaAllocator,
     outputs: std.ArrayListUnmanaged(ComptimeOutput),
-    /// The code cache's level B CODE of this compile (144 B-60 S4): the units
-    /// its entries hold and the entries still without them, for the emit
-    /// (`codegen.generateWith`). Null without a store. In `arena`.
-    level_b_code: ?*levelB.Code = null,
     /// Decision 787 — the modules of the loaded packages a `run()` brought
     /// into the program (`compileWith`): their sources, which the outputs
     /// read, live as long as the session.
@@ -5097,7 +5093,6 @@ fn compileOnce(
     var lb_session: levelB.Session = undefined;
     const lb: ?*levelB.Session = if (store) |st| blk: {
         lb_session = try levelB.Session.init(arena_alloc, allocator, st);
-        session.level_b_code = lb_session.code;
         break :blk &lb_session;
     } else null;
     if (lb) |l| try l.lookup(modules, .packages);

@@ -13,9 +13,12 @@
 #   • across invocations: a file rewritten with the same bytes reads the
 #     entry (the key is by content), another target leaves it, a truncated
 #     entry is discarded and written whole again — the output as --cold's;
-#   • CODE (S4): an entry `check` wrote (no unit) is written again, larger, by
-#     the next build and read, not rewritten, by the ones after (with and
-#     without `--typescript`) — the same bytes as `--cold`;
+#   • the units (once level B's CODE, now the unit cache's, decision 1008
+#     (2)): `check` writes none and its analysis entry is read, not rewritten,
+#     by the next build, which writes the dependency's unit entry
+#     (`.botopinkbuild/cache/unit/<target>/<package>.bpu`); the build after
+#     reads it, not rewritten; `--typescript` is another key — the same bytes
+#     as `--cold` throughout;
 #   • the entries live under the workspace's cache root,
 #     `.botopinkbuild/analysis/<target>/<package>.bpa`, std's one per module
 #     under `std/`, `wasm` and `wasm.browser` apart.
@@ -164,36 +167,43 @@ diff -r "$WORK/plain/out-truncated-cold" "$WORK/plain/out-truncated" > "$WORK/di
   || { fail "erlang: the build after a truncated entry differs from --cold"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
 [[ "$failures" -eq "$miss_failures" ]] && echo "  ✓ across invocations: the same bytes rewritten read the entry, another target leaves it, a truncated one is discarded and written whole again"
 
-# CODE (S4): an entry `check` (commonJS) wrote holds no unit; the next build
-# emits the dependencies and writes the entry again, larger, with its CODE —
-# the `.d.ts` in it although that build asked for none; the builds after read
-# it and write nothing, with or without `--typescript` — every output the
-# same bytes as `--cold`. (That a reading build emitted no dependency module
-# is `Stats.modules_code_read`, `cli/analysis_equivalence.zig`'s.)
+# The units (decision 1008 (2), which absorbed level B's CODE): `check`
+# (commonJS) writes an analysis entry and no unit; the next build reads that
+# entry — not rewritten — and writes shelf's unit entry; the build after reads
+# it and writes nothing; `--typescript` is another key, written once — every
+# output the same bytes as `--cold`. (That a reading build emitted no
+# dependency module is `UnitCache.Stats.units_read`,
+# `cli/analysis_equivalence.zig`'s.)
 code_failures=$failures
 cjs_entry="$ANALYSIS/commonJS/shelf.bpa"
+cjs_units="$WORK/.botopinkbuild/cache/unit/commonJS/shelf.bpu"
 build plain commonJS out-code-cold --cold || true
 build plain commonJS out-code-cold-ts --cold --typescript || true
-rm -rf "$ANALYSIS/commonJS"
+rm -rf "$ANALYSIS/commonJS" "$WORK/.botopinkbuild/cache/unit/commonJS"
 ( cd "$WORK/plain" && "$BP_BIN" check ) > "$WORK/check.log" 2>&1 || { fail "\`botopink check\` of plain failed"; sed 's/^/      /' "$WORK/check.log" >&2; }
+[[ ! -e "$cjs_units" ]] || fail "commonJS: \`check\` wrote a unit entry"
 if [[ -f "$cjs_entry" ]]; then
-  checked_inode="$(inode "$cjs_entry")"; checked_size="$(size "$cjs_entry")"
+  checked_inode="$(inode "$cjs_entry")"
   build plain commonJS out-code-first || true
-  [[ "$(inode "$cjs_entry")" != "$checked_inode" && "$(size "$cjs_entry")" -gt "$checked_size" ]] \
-    || fail "commonJS: the build after \`check\` did not write shelf's entry again with its CODE"
-  coded_inode="$(inode "$cjs_entry")"
+  [[ "$(inode "$cjs_entry")" == "$checked_inode" ]] || fail "commonJS: the build after \`check\` wrote shelf's analysis entry again"
+  [[ -f "$cjs_units" ]] || fail "commonJS: the build after \`check\` wrote no unit entry for shelf"
+  coded_inode="$(inode "$cjs_units" 2>/dev/null || echo none)"
   build plain commonJS out-code-second || true
+  [[ "$(inode "$cjs_units" 2>/dev/null || echo none)" == "$coded_inode" ]] || fail "commonJS: a build reading shelf's unit entry wrote it again"
   build plain commonJS out-code-second-ts --typescript || true
-  [[ "$(inode "$cjs_entry")" == "$coded_inode" ]] || fail "commonJS: a build reading shelf's entry with its CODE wrote it again"
-  for run in first second second-ts; do
+  ts_inode="$(inode "$cjs_units" 2>/dev/null || echo none)"
+  [[ "$ts_inode" != "$coded_inode" ]] || fail "commonJS: a --typescript build read the units of a build without it"
+  build plain commonJS out-code-third-ts --typescript || true
+  [[ "$(inode "$cjs_units" 2>/dev/null || echo none)" == "$ts_inode" ]] || fail "commonJS: a --typescript build reading its units wrote them again"
+  for run in first second second-ts third-ts; do
     cold="out-code-cold"; [[ "$run" == *-ts ]] && cold="out-code-cold-ts"
     diff -r "$WORK/plain/$cold" "$WORK/plain/out-code-$run" > "$WORK/diff.log" \
-      || { fail "commonJS: plain's $run build through CODE differs from its --cold build"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
+      || { fail "commonJS: plain's $run build through the unit cache differs from its --cold build"; head -20 "$WORK/diff.log" | sed 's/^/      /' >&2; }
   done
 else
   fail "commonJS: \`check\` wrote no shelf entry"
 fi
-[[ "$failures" -eq "$code_failures" ]] && echo "  ✓ an entry \`check\` wrote gets its CODE (the .d.ts in it) from the next build, once; reading it emits the same bytes, with or without --typescript"
+[[ "$failures" -eq "$code_failures" ]] && echo "  ✓ \`check\` writes no unit; the next build writes shelf's units, once per key (--typescript another); reading them emits the same bytes"
 
 if [[ "$failures" -ne 0 ]]; then
   echo "level B: $failures failure(s)" >&2

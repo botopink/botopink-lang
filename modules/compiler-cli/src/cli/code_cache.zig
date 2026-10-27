@@ -35,7 +35,9 @@
 /// **wasm and commonJS.** commonJS has no step after the codegen (`node` reads
 /// the emitted `.js`). wasm's module assembly runs inside the codegen and its
 /// output is one module for the whole program — the package under test inside
-/// it — so it has no dependency-only step to cache yet.
+/// it — so it has no dependency-only step to cache yet. A dependency's
+/// EMITTED units (every target's text, `.d.ts`, `.wasm`) are the unit
+/// cache's (`unit_cache.zig`, decision 1008 (2)).
 ///
 /// **`--cold`** (`cold`): `build`, `run` and `test` read nothing
 /// — neither level — and write what they ran.

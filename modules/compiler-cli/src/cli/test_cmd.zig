@@ -23,6 +23,7 @@ const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
+const unit_cache = @import("./unit_cache.zig");
 const run_cmd = @import("./run.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
@@ -346,7 +347,7 @@ pub fn run(
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
     const entry_target: code_cache.EntryTarget = .{ .target = target };
-    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj) };
+    var closure_keys: libs.ClosureKeys = .{ .arena = arena, .target = entry_target, .cache_root = analysis_store.root(proj), .want_runtime = true };
     const dep_modules = libs.loadDependenciesWith(gpa, io, proj, env_map, &closure_keys) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
@@ -381,11 +382,11 @@ pub fn run(
         return 1;
     }
 
-    // The code cache's level B (144 B-60): a dependency's analysis and its
-    // unit (CODE) are read from its entry when one reads back, as `build`
-    // reads them — a dependency has no test unit and its production unit
-    // does not depend on `test_mode` (decision 513). The package under test
-    // is always analysed and emitted, and never stored.
+    // The code cache's level B (144 B-60): a dependency's analysis is read
+    // from its entry when one reads back, as `build` reads it; its units come
+    // from the unit cache (decision 1008 (2)) — a dependency has no test unit
+    // and its production unit does not depend on `test_mode` (decision 513).
+    // The package under test is always analysed and emitted, and never stored.
     var level_b: analysis_store.Cache = undefined;
     try level_b.init(gpa, io, analysis_store.root(proj), entry_target, closure_keys.keys);
     level_b.logs = closure_keys.logs;
@@ -403,6 +404,10 @@ pub fn run(
     // location (below); every module that does compile still has its tests run.
     const modules = all_modules;
 
+    const packages = try libs.packagesOf(arena, proj, dep_modules);
+    var units: unit_cache.Cache = undefined;
+    try units.init(gpa, arena, io, analysis_store.root(proj), .{ .target = target, .host = proj.wasmHost() }, packages, &closure_keys.runtime, .{ .wasm_artifact = true, .typedef = false });
+
     // Build codegen config in test mode.
     const cfg = bp.codegen.Config{
         .targetSource = switch (target) {
@@ -415,8 +420,9 @@ pub fn run(
         .test_mode = true,
         .wasm_host = proj.wasmHost(),
         .wasm_artifact = true,
-        .packages = try libs.packagesOf(arena, proj, dep_modules),
+        .packages = packages,
         .analysis_store = &level_b.store,
+        .unit_cache = &units.iface,
     };
 
     // Emit only: each test module is run once, below, by its runner.

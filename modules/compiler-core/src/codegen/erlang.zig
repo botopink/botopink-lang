@@ -647,8 +647,8 @@ pub fn codegenEmit(
                     });
                     continue;
                 }
-                // 144 B-60 S4 — a dependency module whose level B entry
-                // holds its unit is not emitted again.
+                // Decision 1008 (2) — a dependency module whose unit the
+                // unit cache holds is not emitted again.
                 if (try config.cachedUnit(alloc, ct.name)) |unit| {
                     try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
                     continue;

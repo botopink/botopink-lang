@@ -1006,18 +1006,18 @@ pub fn readWith(comptime skips: []const Skip, arena: std.mem.Allocator, e: Entry
 // ── CODE (S4) ─────────────────────────────────────────────────────────────────
 //
 // A module's own unit on the target, as the emitter produced it in a build
-// (`codegen.generateWith`, `botopink test` too — decision 513): every
-// field of `GenerateResult` but what describes a failure or a run, encoded
-// generically like the rest — a field added to `GenerateResult` is stored
-// without anyone remembering to. On commonJS the `.d.ts` is always there
-// (the build that wrote it emitted it whether or not it asked for one).
-// What a consumer instantiates never is: a dependency's unit is the same
+// (`botopink test` too — decision 513): every field of `GenerateResult` but
+// what describes a failure or a run, encoded generically like the rest — a
+// field added to `GenerateResult` is stored without anyone remembering to.
+// The unit cache's entries hold it (decision 1008 (2), `codegen/unit_cache.zig`
+// and the CLI's `unit_cache.zig`, in this container: META the module names,
+// one CODE per module); a level B entry no longer carries any, though its
+// reader still accepts one. What a consumer instantiates never is: a dependency's unit is the same
 // under every consumer (the closure invariant, `test-closure-invariant`), and
 // a consumer's instantiations live in the consumer's own unit.
 //
 // A CODE section is self-contained — `STRINGS-length` (LEB128), its strings,
-// then the `CodeUnit` — so it is added to an entry read back (one written by
-// `check`, which emits no code) without encoding the rest again.
+// then the `CodeUnit`.
 
 const moduleOutput = @import("../codegen/moduleOutput.zig");
 

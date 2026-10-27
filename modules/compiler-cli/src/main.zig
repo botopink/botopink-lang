@@ -74,7 +74,7 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
     \\  --cold                       Read nothing from the code cache; write what is compiled; ignore the .bpr key and the target key and rewrite
-    \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
+    \\  --cache-root <dir>           File the code cache (levels A and B) and the unit cache under <dir>, not the project's or its workspace's
     \\  --json                       Stdout is JSON lines, one event each, stderr as without it: {"event":"targets","target":T,"targets":[…]},
     \\                               {"event":"build","text":L} (one per line a build body printed, in order),
     \\                               {"event":"refused","module":M,"message":E,"at":P|null,"label":S|null,"from":[…]},
@@ -97,7 +97,7 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache (the wasmtime cache included); write what is compiled; a fresh .bpr
     \\                               set and a matching target key are reused
-    \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
+    \\  --cache-root <dir>           File the code cache (levels A and B) and the unit cache under <dir>, not the project's or its workspace's
     \\  --workspace-out <dir>        A member's run from its workspace's one folder <dir> (the workspace root's `run --target` hands it)
     \\  --                           Pass remaining args to the program
     \\At a workspace root, `run --target <t>` builds and runs every member, each in its own process, over one --out folder
@@ -121,7 +121,10 @@ const HELP =
     \\
     \\The code cache (.botopinkbuild/cache/code/ under the workspace root, else the
     \\project): the compiled modules of a project's dependencies — std and the
-    \\libraries — by the bytes compiled and the tool's version. On erlang and beam a
+    \\libraries — by the bytes compiled and the tool's version. The unit cache
+    \\(.botopinkbuild/cache/unit/<target>/ beside it): each dependency's emitted units
+    \\(text, .d.ts, .wasm) by its .bpr key, the target and the emit options, taken
+    \\instead of emitting the dependency again. On erlang and beam a
     \\.beam in out/ is loaded as it is while its record (the source's hash, the
     \\compiler, the OTP release) matches.
     \\
@@ -129,7 +132,7 @@ const HELP =
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
     \\the `bpmp install` / `bpmp link` links under .botopinkbuild/deps/ (run
     \\either again after it) and every build cache (.botopinkbuild/cache/: the code
-    \\cache of the dependencies' compiled modules). In a
+    \\cache of the dependencies' compiled modules, the unit cache). In a
     \\workspace member, the workspace root's .botopinkbuild/cache/ and
     \\.botopinkbuild/analysis/ (the dependencies' analysis) go too.
     \\
@@ -613,6 +616,7 @@ test {
     _ = @import("./cli/run.zig");
     _ = @import("./cli/runtime_cache.zig");
     _ = @import("./cli/workspace_out.zig");
+    _ = @import("./cli/unit_cache.zig");
     _ = @import("./cli/scanner.zig");
     _ = @import("./cli/sources.zig");
     _ = @import("./cli/test_cmd.zig");
