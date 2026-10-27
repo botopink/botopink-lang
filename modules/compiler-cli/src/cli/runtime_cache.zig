@@ -92,8 +92,7 @@ pub fn removeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []c
 }
 
 /// Writes the key file once the set is written whole: the key, then each
-/// directory of a package the analysis loaded by name (`loadsOf`), one per
-/// line, relative to the package.
+/// package the analysis loaded by name (`loadsOf`'s lines), one per line.
 pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8, key: Key, loads: []const []const u8) !void {
     const kp = try keyPath(arena, dir, pkg);
     var text: std.ArrayListUnmanaged(u8) = .empty;
@@ -102,18 +101,23 @@ pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []co
     try analysis_store.write(arena, io, kp, text.items);
 }
 
-// ── The packages loaded by name (decisions 1006 (6) P5, 1030) ─────────────
+// ── The packages loaded by name (decisions 1006 (6) P5, 1030, 1039) ───────
 //
 // A `compiler.load(package: "<name>")` makes another package part of what
 // the analysis reads: its key covers that package's — the packages the last
 // analysis loaded by name, nested loads included, are kept in the key file
-// after the key (`loadsOf`), and the key is the package's own (`keyOf`)
-// combined with each one's key (`withLoads`), so a changed library makes its
-// loader stale. The loaded package's own set lives under the LOADING build's
-// cache root (`load_root`, decision 1030 (1)), analysed with its load
-// directory as `root` (1003 (2)), which its key holds: one set per load
-// directory, its directory named by that key (`loadedIdent`, `loadedDir`),
-// so two sets of one library never share a file name (`libs.zig`'s
+// after the key (`loadsOf`: each its directory, and the name and the
+// directory it was looked up from), and the key is the package's own
+// (`keyOf`) combined with each one's key and the directory its name resolves
+// to now (`withLoads`, `libs.keyWithNamedLoads`), so a changed library, or a
+// name resolving elsewhere, makes its loader stale (1039 (3)). The loaded
+// package's own set lives under the LOADING build's cache root (`load_root`,
+// decision 1030 (1)), analysed with its load directory as `root` (1003 (2)):
+// one set per load directory and wasm host, its directory named by a hash of
+// both (`loadedPlace`, `loadedDir`) and never by the library's content, which
+// its key file holds (`loadedIdent`) — so two sets of one library never share
+// a file name, and an edited library's set is written again in place, its
+// files no longer written removed (`pruneSet`, 1039 (2); `libs.zig`'s
 // `runtimeRead` / `runtimeWrite`).
 
 /// The cache root of the build that runs (`analysis_store.root` of its
@@ -137,11 +141,51 @@ pub fn loadedIdent(base: Key, root: []const u8, wasm_host: bp.ast.WasmHost) Key 
     return std.fmt.bytesToHex(digest, .lower);
 }
 
-/// `<cache root>/.botopinkbuild/runtime/<pkg>@<ident>`: the set of `pkg`
-/// loaded by name, named by its key. `@` is in no package name.
-pub fn loadedDir(arena: std.mem.Allocator, cache_root: []const u8, pkg: []const u8, ident: Key) ![]const u8 {
-    const leaf = try std.fmt.allocPrint(arena, "{s}@{s}", .{ pkg, &ident });
+/// Where a loaded package's set lives, without its content (decision 1039
+/// (2)): a hash of the directory it was loaded from and the wasm host — no
+/// path in the name.
+pub fn loadedPlace(root: []const u8, wasm_host: bp.ast.WasmHost) Key {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-runtime-loaded-place-1\x00");
+    h.update(root);
+    h.update(&.{0});
+    h.update(@tagName(wasm_host));
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// `<cache root>/.botopinkbuild/runtime/<pkg>@<place>`: the set of `pkg`
+/// loaded by name from one directory for one wasm host (`loadedPlace`). `@` is
+/// in no package name.
+pub fn loadedDir(arena: std.mem.Allocator, cache_root: []const u8, pkg: []const u8, place: Key) ![]const u8 {
+    const leaf = try std.fmt.allocPrint(arena, "{s}@{s}", .{ pkg, &place });
     return std.fs.path.join(arena, &.{ cache_root, DIR, leaf });
+}
+
+/// Removes every `.bpr` under `dir` that `written` does not name: a set
+/// written again in place keeps no file of the one before (decision 1039 (2)).
+pub fn pruneSet(arena: std.mem.Allocator, io: std.Io, dir: []const u8, written: []const Written) void {
+    pruneUnder(arena, io, dir, written) catch {};
+}
+
+fn pruneUnder(arena: std.mem.Allocator, io: std.Io, dir: []const u8, written: []const Written) !void {
+    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return;
+    defer d.close(io);
+    var it = d.iterate();
+    while (try it.next(io)) |e| {
+        const path = try std.fs.path.join(arena, &.{ dir, e.name });
+        switch (e.kind) {
+            .directory => try pruneUnder(arena, io, path, written),
+            .file => if (std.mem.endsWith(u8, e.name, runtime_file.EXT)) {
+                const kept = for (written) |w| {
+                    if (std.mem.eql(u8, w.path, path)) break true;
+                } else false;
+                if (!kept) std.Io.Dir.cwd().deleteFile(io, path) catch {};
+            },
+            else => {},
+        }
+    }
 }
 
 /// `build --cold` (`Options.rebuild`): a load reads no set either, and
@@ -157,9 +201,11 @@ pub fn bprStamp() runtime_file.Stamp {
     return out;
 }
 
-/// The directories the last analysis of `pkg` loaded by name, relative to
-/// the package — the key file's lines after the key; none when there is no
-/// key file.
+/// The packages the last analysis of `pkg` loaded by name — the key file's
+/// lines after the key, each `<dir>\t<name>\t<from>` (the package's
+/// directory, the name it was loaded by and the directory it was looked up
+/// from, both directories relative to `pkg`'s, `libs.relativeLoads`); none
+/// when there is no key file.
 pub fn loadsOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []const u8) []const []const u8 {
     const kp = keyPath(arena, dir, pkg) catch return &.{};
     const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(1 << 20)) catch return &.{};
@@ -170,8 +216,9 @@ pub fn loadsOf(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []con
     return out.items;
 }
 
-/// One package loaded by name: its directory relative to the loader and its
-/// current key.
+/// One package loaded by name: its key-file line as it reads now (its
+/// directory relative to the loader — where its name resolves now —, the name
+/// and the directory it was looked up from) and its current key.
 pub const LoadKey = struct { rel: []const u8, key: Key };
 
 /// `base` with the keys of the packages loaded by name: `base` itself when

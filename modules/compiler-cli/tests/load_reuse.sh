@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Decisions 1006 (6) P5, 1030 — the `.bpr` key covers `compiler.load(package:)`,
-# so a library loaded by name reuses its `.bpr`, over the fixture `load_reuse/`:
-# the program `app/` loads the library `greeter` by name (found through
-# `BOTOPINK_LIB_ROOTS`) and runs it. The library's set lives under the LOADING
-# build's cache root, one per load directory, named by its key
-# (`app/.botopinkbuild/runtime/greeter@<key>/`), never in the library's
-# directory (1030 (1), (2)):
+# Decisions 1006 (6) P5, 1030, 1039 — the `.bpr` key covers
+# `compiler.load(package:)`, so a library loaded by name reuses its `.bpr`, over
+# the fixture `load_reuse/`: the program `app/` loads the library `greeter` by
+# name (found through `BOTOPINK_LIB_ROOTS`) and runs it. The library's set lives
+# under the LOADING build's cache root, one per load directory and wasm host,
+# named by a hash of both and never by its content
+# (`app/.botopinkbuild/runtime/greeter@<place>/`), never in the library's
+# directory (1030 (1), (2), 1039 (2)):
 #   • the first run of the program writes the library's set there and nothing
 #     in the library; a later run whose program changed builds the program
 #     again and reuses the library's set — the `.bpr` the same file (its inode,
@@ -14,14 +15,17 @@
 #     `root` its comptime prints at build and the one its program prints at run
 #     are both that directory;
 #   • a changed byte of the library makes the program's set stale (its key
-#     covers the library's) and the library's set is written again, under a
-#     name of its own, the changed answer printed; the run after it reuses both;
+#     covers the library's) and the library's set is written again in place —
+#     the same directory, the same files, no other set left behind (1039 (2)) —,
+#     the changed answer printed; the run after it reuses both;
 #   • a bare `build` in the library's directory writes its own set under its
 #     own cache root and leaves the loader's alone; a load after it reuses the
 #     loader's set;
-#   • the same library loaded from another directory gets a set of its own
-#     (its load directory is part of the key), its `root` that directory, and
-#     the first directory's set is reused when the load goes back to it.
+#   • the name resolving to another directory (`BOTOPINK_LIB_ROOTS` changed,
+#     the program not) makes the program's set stale — where the name resolves
+#     is part of its key (1039 (3)) —; that directory's load gets a set of its
+#     own, its `root` that directory, and when the name resolves back the
+#     program is built again and the first directory's set reused.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -97,7 +101,7 @@ BPR="$SET/greeter.bpr"
 KEY="$SET/greeter.key"
 [[ -f "$BPR" ]] || fail "the load wrote no $BPR"
 [[ -s "$KEY" ]] || fail "the load wrote no key file $KEY"
-[[ "$(basename "$SET")" == "greeter@$(head -n1 "$KEY" 2>/dev/null)" ]] || fail "the set's directory is not named by its key"
+[[ "$(basename "$SET")" != "greeter@$(head -n1 "$KEY" 2>/dev/null)" ]] || fail "the set's directory is named by its content key"
 [[ -e "$LIB/.botopinkbuild" ]] && fail "the load wrote into the library's directory ($LIB/.botopinkbuild)"
 [[ -f "$BPR" ]] && ln "$BPR" "$WORK/pin"
 printf '\n// the program changed\n' >> "$APP/src/main.bp"
@@ -111,12 +115,16 @@ rm -f "$WORK/pin"
 
 # ── a changed library makes the loader stale ────────────────────────────────
 sets > "$WORK/seen"
+( cd "$SET" && find . -type f | sort ) > "$WORK/files_before"
+cp "$BPR" "$WORK/before" 2>/dev/null || : > "$WORK/before"
 sed -i 's/print("hello")/print("hello again")/' "$LIB/src/main.bp"
 bp "$APP" run --target commonJS || { fail "the run after the library changed failed"; show "$WORK/err"; }
 loaded "the run after the library changed (builds both)" "hello again" "$LIB" built
-SET="$(new_set)"
-[[ -n "$SET" && "$(printf '%s\n' "$SET" | wc -l)" -eq 1 ]] || { fail "the changed library's set was not written under a name of its own: [$SET]"; SET="$SETS/greeter@none"; }
-BPR="$SET/greeter.bpr"
+sets > "$WORK/now"
+cmp -s "$WORK/seen" "$WORK/now" || { fail "the changed library's set was not written in place (sets before and after differ)"; diff "$WORK/seen" "$WORK/now" | sed 's/^/      /' >&2 || true; }
+cmp -s "$BPR" "$WORK/before" && fail "the library's .bpr was not written again"
+( cd "$SET" && find . -type f | sort ) > "$WORK/files_after"
+cmp -s "$WORK/files_before" "$WORK/files_after" || { fail "the set written again left other files than before"; diff "$WORK/files_before" "$WORK/files_after" | sed 's/^/      /' >&2 || true; }
 [[ -f "$BPR" ]] && ln "$BPR" "$WORK/pin"
 bp "$APP" run --target commonJS || { fail "the run after it failed"; show "$WORK/err"; }
 loaded "the run after it (reuses both)" "hello again" "$LIB"
@@ -132,22 +140,19 @@ bp "$APP" run --target commonJS || { fail "the run after the bare build failed";
 loaded "a load after the bare build (reuses the loader's set)" "hello again" "$LIB" built
 same_file "$BPR" || fail "the load after the bare build wrote its .bpr again"
 
-# ── another load directory, another set ─────────────────────────────────────
+# ── a moved library: another load directory, another set ────────────────────
 mkdir -p "$W/other"
 cp -R "$LIB" "$W/other/greeter"
 rm -rf "$W/other/greeter/.botopinkbuild"
 sets > "$WORK/seen"
-# Where a name resolves is no input of the program's key: the program changes,
-# so it is built again and its load resolves anew.
+# The program does not change: only where its load's name resolves does.
 ROOTS="$W/other"
-printf '// the program changed for the other directory\n' >> "$APP/src/main.bp"
 bp "$APP" run --target commonJS || { fail "the run from the other directory failed"; show "$WORK/err"; }
-loaded "a load from another directory (its own set, its own root)" "hello again" "$W/other/greeter" built
+loaded "a load resolving to another directory (the program built again, its own set, its own root)" "hello again" "$W/other/greeter" built
 OTHER="$(new_set)"
 [[ -n "$OTHER" && "$(printf '%s\n' "$OTHER" | wc -l)" -eq 1 ]] || fail "the load from another directory wrote no set of its own: [$OTHER]"
 same_file "$BPR" || fail "the load from another directory wrote the first directory's .bpr"
 ROOTS="$W/libs"
-printf '// the program changed back\n' >> "$APP/src/main.bp"
 bp "$APP" run --target commonJS || { fail "the run back from the first directory failed"; show "$WORK/err"; }
 loaded "a load back from the first directory (reuses its set)" "hello again" "$LIB" built
 same_file "$BPR" || fail "the load back from the first directory wrote its .bpr again"

@@ -396,11 +396,12 @@ pub fn installLoadResolver(env_map: EnvMap) void {
     bp.load.resolver = .{ .resolve = resolveLoaded, .by_name = resolveByName, .runtime_read = runtimeRead, .runtime_write = runtimeWrite };
 }
 
-// ── A by-name load's `.bpr` set (decisions 1006 (6) P5, 1030) ───────────────
+// ── A by-name load's `.bpr` set (decisions 1006 (6) P5, 1030, 1039) ─────────
 
 /// A package a load resolved (`resolveLoaded`), as its `.bpr` set keys it.
 /// The set itself lives under the LOADING build's cache root
-/// (`runtime_cache.load_root`), one per load directory (`runtime_cache.loadedDir`).
+/// (`runtime_cache.load_root`), one per load directory and wasm host
+/// (`runtime_cache.loadedDir`).
 const LoadedSet = struct {
     /// The package's directory, absolute.
     pkg_dir: []const u8,
@@ -413,6 +414,21 @@ const LoadedSet = struct {
 /// By the directory `resolveLoaded` was handed. Under `loaded_mutex`.
 var loaded_sets: std.StringHashMapUnmanaged(LoadedSet) = .empty;
 
+/// One name a by-name load resolved this process (`resolveByName`, or a
+/// reused set's line): the name, the directory it was looked up from and the
+/// package's directory, both absolute. Under `loaded_mutex`.
+const Found = struct { name: []const u8, from: []const u8, dir: []const u8 };
+var found_names: std.ArrayListUnmanaged(Found) = .empty;
+
+/// Notes `name` found from `from` at `dir` (absolute). Holds `loaded_mutex`.
+fn noteFoundLocked(name: []const u8, from: []const u8, dir: []const u8) !void {
+    for (found_names.items) |f| {
+        if (std.mem.eql(u8, f.name, name) and std.mem.eql(u8, f.from, from) and std.mem.eql(u8, f.dir, dir)) return;
+    }
+    const a = loaded_arena.allocator();
+    try found_names.append(a, .{ .name = try a.dupe(u8, name), .from = try a.dupe(u8, from), .dir = try a.dupe(u8, dir) });
+}
+
 fn setOf(io: std.Io, dir: []const u8) ?LoadedSet {
     _ = resolveLoaded(null, io, dir) catch return null;
     while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
@@ -420,32 +436,89 @@ fn setOf(io: std.Io, dir: []const u8) ?LoadedSet {
     return loaded_sets.get(dir);
 }
 
-/// The directories `loads` (as the loader's reader roots them) relative to
-/// the package in `pkg_dir`, in `arena`.
-pub fn relativeLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, loads: []const []const u8) ![]const []const u8 {
+fn absolute(arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = buf[0..try std.process.currentPath(io, &buf)];
-    const from = try std.fs.path.resolve(arena, &.{ cwd, pkg_dir });
+    return std.fs.path.resolve(arena, &.{ cwd, path });
+}
+
+/// `to` relative to `from` (both absolute); `.` when they are one.
+fn relativeTo(arena: std.mem.Allocator, from: []const u8, to: []const u8) ![]const u8 {
+    if (std.mem.eql(u8, from, to)) return ".";
+    return std.fs.path.relative(arena, "/", null, from, to);
+}
+
+/// The key-file lines (`runtime_cache.loadsOf`) of the directories `loads`
+/// (as the loader's reader roots them) for the package in `pkg_dir`: each
+/// `<dir>\t<name>\t<from>` per name that resolved to it (`found_names`),
+/// both directories relative to the package; a directory no name noted is its
+/// relative path alone. In `arena`.
+pub fn relativeLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, loads: []const []const u8) ![]const []const u8 {
+    const from = try absolute(arena, io, pkg_dir);
     var out: std.ArrayListUnmanaged([]const u8) = .empty;
     for (loads) |l| {
-        const abs = try std.fs.path.resolve(arena, &.{ cwd, l });
+        const abs = try absolute(arena, io, l);
         if (std.mem.eql(u8, abs, from)) continue;
-        try out.append(arena, try std.fs.path.relative(arena, cwd, null, from, abs));
+        const rel = try relativeTo(arena, from, abs);
+        var any = false;
+        {
+            while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+            defer loaded_mutex.unlock();
+            for (found_names.items) |f| if (std.mem.eql(u8, f.dir, abs)) {
+                any = true;
+                const line = try std.fmt.allocPrint(arena, "{s}\t{s}\t{s}", .{ rel, f.name, try relativeTo(arena, from, f.from) });
+                const seen = for (out.items) |o| {
+                    if (std.mem.eql(u8, o, line)) break true;
+                } else false;
+                if (!seen) try out.append(arena, line);
+            };
+        }
+        if (!any) try out.append(arena, rel);
     }
     return out.items;
 }
 
-/// `base` (the key of the package in `pkg_dir`) combined with the key of each
-/// package it loads by name (`loads`, relative to it — every package its
-/// analysis loaded by name, nested loads included, `bp.load.namedLoadsSince`);
-/// null when one of them is no package now.
+/// One key-file line, read: its directory, and the name and the directory it
+/// was looked up from (null for a line of its directory alone).
+const LoadLine = struct { dir: []const u8, name: ?[]const u8 = null, from: []const u8 = "." };
+
+fn parseLoadLine(line: []const u8) LoadLine {
+    var parts = std.mem.splitScalar(u8, line, '\t');
+    const dir = parts.first();
+    const name = parts.next() orelse return .{ .dir = dir };
+    return .{ .dir = dir, .name = name, .from = parts.next() orelse "." };
+}
+
+/// Where `name` resolves now from `from` (absolute), as a by-name load would
+/// find it; null when it resolves to no package.
+fn resolvesNow(arena: std.mem.Allocator, io: std.Io, name: []const u8, from: []const u8) !?[]const u8 {
+    while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+    defer loaded_mutex.unlock();
+    return switch (try resolveByNameIn(arena, io, load_env, name, from)) {
+        .found => |f| f.dir,
+        else => null,
+    };
+}
+
+/// `base` (the key of the package in `pkg_dir`) combined with, for each
+/// package it loads by name (`loads`, its key-file lines — every package its
+/// analysis loaded by name, nested loads included, `bp.load.namedLoadsSince`),
+/// the directory its name resolves to NOW (decision 1039 (3)) and that
+/// package's own key; null when one of them is no package now.
 pub fn keyWithNamedLoads(arena: std.mem.Allocator, io: std.Io, pkg_dir: []const u8, base: runtime_cache.Key, loads: []const []const u8) !?runtime_cache.Key {
     if (loads.len == 0) return base;
+    const pkg = try absolute(arena, io, pkg_dir);
     var keys: std.ArrayListUnmanaged(runtime_cache.LoadKey) = .empty;
-    for (loads) |rel| {
-        const abs = try std.fs.path.resolve(arena, &.{ pkg_dir, rel });
+    for (loads) |line| {
+        const l = parseLoadLine(line);
+        var abs: []const u8 = try std.fs.path.resolve(arena, &.{ pkg, l.dir });
+        var shown = line;
+        if (l.name) |name| {
+            abs = (try resolvesNow(arena, io, name, try std.fs.path.resolve(arena, &.{ pkg, l.from }))) orelse return null;
+            shown = try std.fmt.allocPrint(arena, "{s}\t{s}\t{s}", .{ try relativeTo(arena, pkg, abs), name, l.from });
+        }
         const sub = setOf(io, abs) orelse return null;
-        try keys.append(arena, .{ .rel = rel, .key = sub.base });
+        try keys.append(arena, .{ .rel = shown, .key = sub.base });
     }
     return try runtime_cache.withLoads(arena, base, keys.items);
 }
@@ -457,36 +530,47 @@ fn setFor(dir: []const u8) ?LoadedSet {
 }
 
 /// `Resolver.runtime_read`: the fresh set's program, else null. A hit notes
-/// the loads its analysis made (`bp.load.noteNamedLoad`): the loader's key
-/// covers them though this compile does not run them again.
+/// the loads its analysis made (`bp.load.noteNamedLoad`, `found_names`): the
+/// loader's key covers them though this compile does not run them again.
 fn runtimeRead(_: ?*anyopaque, io: std.Io, arena: std.mem.Allocator, dir: []const u8, root: []const u8, wasm_host: bp.ast.WasmHost) anyerror!?[]const bp.codegen.ComptimeOutput {
     if (runtime_cache.rebuild) return null;
     const load_root = runtime_cache.load_root orelse return null;
     const set = setFor(dir) orelse return null;
-    const ident = runtime_cache.loadedIdent(set.base, root, wasm_host);
-    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, ident);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(root, wasm_host));
     const loads = runtime_cache.loadsOf(arena, io, set_dir, set.meta.root);
-    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, ident, loads)) orelse return null;
+    const key = (try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, root, wasm_host), loads)) orelse return null;
     if (!runtime_cache.isFresh(arena, io, set_dir, set.meta.root, key, runtime_cache.bprStamp())) return null;
     const program = (try runtime_cache.readProgram(arena, io, set_dir, set.meta.root)) orelse return null;
-    for (loads) |rel| try bp.load.noteNamedLoad(try std.fs.path.resolve(arena, &.{ set.pkg_dir, rel }));
+    const pkg = try absolute(arena, io, set.pkg_dir);
+    for (loads) |line| {
+        const l = parseLoadLine(line);
+        const abs = try std.fs.path.resolve(arena, &.{ pkg, l.dir });
+        if (l.name) |name| {
+            while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
+            defer loaded_mutex.unlock();
+            try noteFoundLocked(name, try std.fs.path.resolve(arena, &.{ pkg, l.from }), abs);
+        }
+        try bp.load.noteNamedLoad(abs);
+    }
     return program;
 }
 
-/// `Resolver.runtime_write`: the set written from the load's analysis.
+/// `Resolver.runtime_write`: the set written from the load's analysis, in
+/// place of the one before (decision 1039 (2)).
 fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, wasm_host: bp.ast.WasmHost, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8, loads: []const []const u8) anyerror!void {
     const load_root = runtime_cache.load_root orelse return;
     const set = setFor(dir) orelse return;
     var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const ident = runtime_cache.loadedIdent(set.base, root, wasm_host);
-    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, ident);
+    const set_dir = try runtime_cache.loadedDir(arena, load_root, set.meta.root, runtime_cache.loadedPlace(root, wasm_host));
     const rel = try relativeLoads(arena, io, set.pkg_dir, loads);
-    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, ident, rel);
+    const key = try keyWithNamedLoads(arena, io, set.pkg_dir, runtime_cache.loadedIdent(set.base, root, wasm_host), rel);
     var meta = set.meta;
     meta.wasm_host = wasm_host;
-    try runtime_cache.writeSet(std.heap.page_allocator, io, set_dir, meta, key, rel, outputs, readers, null, arena);
+    var written: std.ArrayListUnmanaged(runtime_cache.Written) = .empty;
+    try runtime_cache.writeSet(std.heap.page_allocator, io, set_dir, meta, key, rel, outputs, readers, &written, arena);
+    runtime_cache.pruneSet(arena, io, set_dir, written.items);
 }
 
 /// Decision 993 (2) — the directory of the package `name`, looked up as a
@@ -499,7 +583,11 @@ fn runtimeWrite(_: ?*anyopaque, io: std.Io, dir: []const u8, root: []const u8, w
 fn resolveByName(_: ?*anyopaque, io: std.Io, name: []const u8, from: []const u8) anyerror!bp.load.NameResolution {
     while (!loaded_mutex.tryLock()) std.atomic.spinLoopHint();
     defer loaded_mutex.unlock();
-    return resolveByNameIn(loaded_arena.allocator(), io, load_env, name, from);
+    const a = loaded_arena.allocator();
+    const r = try resolveByNameIn(a, io, load_env, name, from);
+    // What a set's key file names (`relativeLoads`, decision 1039 (3)).
+    if (r == .found) try noteFoundLocked(name, try absolute(a, io, from), r.found.dir);
+    return r;
 }
 
 fn resolveByNameIn(a: std.mem.Allocator, io: std.Io, env_map: EnvMap, name: []const u8, from: []const u8) anyerror!bp.load.NameResolution {
