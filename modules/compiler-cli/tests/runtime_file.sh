@@ -13,7 +13,8 @@
 #     the direct `run` prints, nothing of the build phase (the top-level block's
 #     `print`); on wasm the direct build, the build from `app.bpr` and the run
 #     write the entry's `main.wat` alone — a two-module program (decisions
-#     1008 (3), 1017 (5)) — and `wasmtime` runs the build's file to the run's answer;
+#     1008 (3), 1017 (5)), the run that builds the package's own set included
+#     (1006-b (5)) — and `wasmtime` runs the build's file to the run's answer;
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
 #   • the manifest's wasm host (decision 334 (2)) is in the root's `.bpr`: over
@@ -127,6 +128,11 @@ for target in commonJS erlang beam wasm; do
     else
       fail "wasmtime is not on PATH (decision 67: a missing runtime fails)"
     fi
+    # Decision 1006-b (5): the run that builds the set emits the entry's component alone too.
+    wats="$(cd "$WORK/run-direct-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
+    [[ "$wats" == "./main.wat " ]] || fail "wasm: the direct run (building the set) wrote ${wats:-no .wat}, not main.wat alone"
+    cmp -s "$WORK/run-direct-$target/main.wat" "$WORK/bpr-$target/main.wat" \
+      || fail "wasm: the direct run's main.wat differs from the build's"
     wats="$(cd "$WORK/run-bpr-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
     [[ "$wats" == "./main.wat " ]] || fail "wasm: the run from its own .bpr wrote ${wats:-no .wat}, not main.wat alone"
     cmp -s "$WORK/run-bpr-$target/main.wat" "$WORK/bpr-$target/main.wat" \
