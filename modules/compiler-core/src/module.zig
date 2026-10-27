@@ -74,6 +74,10 @@ pub const PackageFiles = struct {
     /// not there has none. Null for a reader that cannot list (an in-memory
     /// one): it then answers no file.
     list: ?*const fn (io: std.Io, arena: std.mem.Allocator, root: []const u8, rel: []const u8) ReadError![]const []const u8 = null,
+    /// Decision 1003 — the absolute directory of a package a by-name
+    /// `compiler.load` found outside the top-level package's tree (`root` is
+    /// then that directory, `dir` relative to it); empty inside the tree.
+    base: []const u8 = "",
 
     pub const ReadError = error{ FileNotFound, Unreadable, OutOfMemory };
 
@@ -115,6 +119,16 @@ pub const PackageFiles = struct {
             }
         }.lt);
         return out.items;
+    }
+
+    /// Decision 1003 — the `root` a source location of this package names:
+    /// `""` for the top-level package, else the directory it was loaded from,
+    /// relative to the top-level package (`dir`), or absolute for a by-name
+    /// load outside its tree (`base`, joined with `dir`).
+    pub fn shownRoot(self: PackageFiles, arena: std.mem.Allocator) error{OutOfMemory}![]const u8 {
+        if (self.base.len == 0) return self.dir;
+        if (self.dir.len == 0) return self.base;
+        return std.fs.path.join(arena, &.{ self.base, self.dir });
     }
 
     /// The reader of the package at `sub`, a directory of this one

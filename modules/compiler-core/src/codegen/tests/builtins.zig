@@ -676,7 +676,7 @@ test "erlang: src ---- run log" {
         \\}
         \\
         \\import {io.terminal.print, compiler} from "std";
-    , "2\n20 main\n", &.{ ", 2, 20, <<\"main\">>}", ", 3, 20, <<\"main\">>}", ", 3, 52, <<\"main\">>}" });
+    , "2\n20 main\n", &.{ ", 2, 20, <<\"main\">>, <<\"\">>}", ", 3, 20, <<\"main\">>, <<\"\">>}", ", 3, 52, <<\"main\">>, <<\"\">>}" });
 }
 
 test "js: unknown builtin ---- is refused" {

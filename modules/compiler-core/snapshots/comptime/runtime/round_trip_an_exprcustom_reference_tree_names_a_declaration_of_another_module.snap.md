@@ -687,9 +687,9 @@ import {compiler, compiler.Span, compiler.CustomNode} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"e">>,
 ;;     text => <<"select id from Item">>,
-;;     source => #{file => <<"main.bp">>, line => 9, col => 16},
+;;     source => #{file => <<"main.bp">>, line => 9, col => 16, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 9, col => 16},
+;;         source => #{file => <<"main.bp">>, line => 9, col => 16, root => <<"">>},
 ;;         text => <<"select id from Item">>,
 ;;         multiline => false
 ;;     },

@@ -362,9 +362,9 @@ import {compiler} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"t">>,
 ;;     text => <<"<Buttom/>">>,
-;;     source => #{file => <<"main.bp">>, line => 11, col => 14},
+;;     source => #{file => <<"main.bp">>, line => 11, col => 14, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 11, col => 14},
+;;         source => #{file => <<"main.bp">>, line => 11, col => 14, root => <<"">>},
 ;;         text => <<"<Buttom/>">>,
 ;;         multiline => false
 ;;     },

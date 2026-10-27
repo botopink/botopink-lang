@@ -176,9 +176,9 @@ import {compiler} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"cfg-0">>,
-;;     source => #{file => <<"main.bp">>, line => 6, col => 14},
+;;     source => #{file => <<"main.bp">>, line => 6, col => 14, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 6, col => 14},
+;;         source => #{file => <<"main.bp">>, line => 6, col => 14, root => <<"">>},
 ;;         text => <<"cfg-0">>,
 ;;         multiline => false
 ;;     },

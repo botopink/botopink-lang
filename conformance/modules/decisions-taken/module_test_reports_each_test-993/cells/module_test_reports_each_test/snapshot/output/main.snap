@@ -3,7 +3,7 @@ out == suite
 out cases 7
 out ok doubles src/main.bp:14 []  
 out ok prints src/main.bp:18 [printed 6
-out where packages/suite/src/main.bp prints
+out where src/main.bp in packages/suite prints
 out ]  
 out FAIL fails an assert src/main.bp:24 [before the assert
 out ] assertion failed: double(2) == 5 at src/main.bp:26:5 src/main.bp:24

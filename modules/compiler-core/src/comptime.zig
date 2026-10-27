@@ -605,7 +605,7 @@ fn withSourceRecordDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const
 /// The declaration `withSourceRecordDecl` splices; keep it in sync with
 /// `__Source` in `primitives.bp`.
 pub const source_record_decl_src =
-    \\type __Source(file: string, line: i32, col: i32)
+    \\type __Source(file: string, line: i32, col: i32, root: string = "")
 ;
 
 fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
@@ -656,10 +656,10 @@ pub const declared_decl_src =
 ;
 
 /// The declaration `withSourceLocationDecl` splices: private (the record is
-/// per-module — only its fields matter, never its identity), the same four
+/// per-module — only its fields matter, never its identity), the same five
 /// fields as the `decl_reflection_src` entry. Keep the two in sync.
 pub const source_location_decl_src =
-    \\type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+    \\type SourceLocation(file: string, line: i32, column: i32, fnName: string, root: string = "")
 ;
 
 /// Decision 519 — the builtin `Asset` record as a program declaration, when
@@ -2287,7 +2287,7 @@ fn isIdentChar(c: u8) bool {
 pub const decl_reflection_src =
     \\pub type __DeclKind { Type, Behavior, Fn, Method, Field, Val, Element, Component }
     \\pub type __Span(start: i32, end: i32, line: i32)
-    \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+    \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string, root: string = "")
     \\pub type Asset(path: string, bytes: bytes, size: i64, hash: string) {
     \\    pub declare fn text(self: Self) -> string;
     \\}
@@ -2343,7 +2343,7 @@ pub const decl_reflection_src =
     \\    pub declare fn compile(self: Self, executor: fn()) -> void;
     \\    pub declare fn implement(self: Self, source: Implementation) -> void;
     \\}
-    \\pub type __Source(file: string, line: i32, col: i32)
+    \\pub type __Source(file: string, line: i32, col: i32, root: string = "")
     \\pub type __ExprContext(source: __Source, text: string, multiline: bool)
     \\pub type __CustomNode(kind: string, span: __Span, label: string, ref: ?__Decl, children: __CustomNode[])
 ;

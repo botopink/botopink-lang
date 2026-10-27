@@ -16,7 +16,7 @@ import {io.terminal.print, compiler} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str))) (field $f4 (mut (ref null $str)))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -27,6 +27,7 @@ import {io.terminal.print, compiler} from "std";
     i32.const 2
     i32.const 21
     global.get $__s1
+    global.get $__s2
     struct.new $rec_SourceLocation
     return
   )
@@ -326,6 +327,8 @@ import {io.terminal.print, compiler} from "std";
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "locate")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (data $__d2 "")
+  (global $__s2 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -336,6 +339,10 @@ import {io.terminal.print, compiler} from "std";
     i32.const 6
     array.new_data $str $__d1
     global.set $__s1
+    i32.const 0
+    i32.const 0
+    array.new_data $str $__d2
+    global.set $__s2
   )
   (@custom "botopink.needs" "gc\0a")
 )

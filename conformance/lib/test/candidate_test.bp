@@ -2,11 +2,16 @@
 //// check's verdict.
 
 import {io.fs.readText, io.fs.mkdirRecursive} from "std";
-import {candidate.deliver, candidate.finish, candidate.CANDIDATE_PATH};
+import {candidate.deliver, candidate.finish, candidate.CANDIDATE_PATH, candidate.candidatePath};
 import {observe.Observed, observe.ranAnswer};
 
 test "the candidate's path is beside the accepted file" {
     assert CANDIDATE_PATH == "snapshot/main.snap.new";
+}
+
+test "a loaded module's candidate is under its root (decision 1003)" {
+    assert candidatePath("") == "snapshot/main.snap.new";
+    assert candidatePath("modules/array") == "modules/array/snapshot/main.snap.new";
 }
 
 fn verdictOf(r: Result<void, string>) -> string {

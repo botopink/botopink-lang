@@ -466,7 +466,7 @@ test "builtins: a mirrored field the declaration lacks is named" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "    fnName: string,\n)", "    fnName: string,\n    offset: i32,\n)");
+    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "    fnName: string,\n    root: string = \"\",\n)", "    fnName: string,\n    offset: i32,\n    root: string = \"\",\n)");
     const items = try typeDrift(a, &.{ changed, try stdFns(a) }, &type_mirrors);
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("SourceLocation", items[0].member.type_name);

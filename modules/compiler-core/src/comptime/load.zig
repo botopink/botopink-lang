@@ -324,23 +324,14 @@ pub fn testedEntry(arena: std.mem.Allocator, package: []const u8) !?Entry {
     return null;
 }
 
-/// Decision 993 (3) — `@src().file` inside a loaded package is prefixed by
-/// the directory it was loaded from: the path of the load whose package is
-/// `package`, or null for a package no load of this compile names.
-pub fn loadDirOf(arena: std.mem.Allocator, package: []const u8) !?[]const u8 {
-    if (!isLoadedPackage(package)) return null;
-    var it = state.entries.keyIterator();
-    while (it.next()) |p| if (std.mem.eql(u8, try packageName(arena, p.*), package)) return p.*;
-    return null;
-}
-
-/// `src_path` of a module of the loaded package `package` prefixed by its
-/// load directory (`loadDirOf`), the text kept for the process as the
-/// package's source is (`lasting`): an emitted literal slices it. Null for a
-/// package no load names.
-pub fn loadedSrcPath(arena: std.mem.Allocator, package: []const u8, src_path: []const u8) !?[]const u8 {
-    const dir = (try loadDirOf(arena, package)) orelse return null;
-    return try lasting(try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, src_path }));
+/// Decision 1003 — the `root` a source location written in the package
+/// `files` reads names (`PackageFiles.shownRoot`), the text kept for the
+/// process as the package's source is (`lasting`): an emitted literal slices
+/// it. `""` for the top-level package and a module with no reader.
+pub fn sourceRoot(arena: std.mem.Allocator, files: ?PackageFiles) ![]const u8 {
+    const f = files orelse return "";
+    const root = try f.shownRoot(arena);
+    return if (root.len == 0) "" else try lasting(root);
 }
 
 /// The name of the test `function` of module `module_path` was lowered from
@@ -1875,6 +1866,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
     const pkg_files = if (req.at) |dir| blk: {
         var f = req.files;
         f.root = try arena.dupe(u8, dir);
+        f.base = f.root;
         f.dir = "";
         f.log = null;
         break :blk f;
@@ -2013,7 +2005,7 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
         }
     }
     const ds = try remember(key, manifest.name, printed.items, refusals.items, own, own_dependencies, main_of, targets);
-    if (state.entries.getPtr(key)) |e| e.test_modules = try testSuite(stateArena(), pkg_files, targets, wasm_host);
+    if (state.entries.getPtr(key)) |e| e.test_modules = try testSuite(stateArena(), try keptFiles(stateArena(), pkg_files), targets, wasm_host);
     return .{ .diagnostics = ds };
 }
 
@@ -2021,6 +2013,17 @@ pub fn compileFile(arena: std.mem.Allocator, req: Request) !Answer {
 /// `.bp` file under `test/`, named by its path there without `.bp` (`a_test`,
 /// `nested/b_test`), its `@src().file` the package-relative path, in path
 /// order — the modules `botopink test` scans beside `src/`.
+/// `f` with its texts copied into `a`: a reader kept on an `Entry` outlives
+/// the compile that made it (decision 1003: `shownRoot` reads its `base` and
+/// `dir` at every later load).
+fn keptFiles(a: std.mem.Allocator, f: PackageFiles) !PackageFiles {
+    var kept = f;
+    kept.root = try a.dupe(u8, f.root);
+    kept.dir = try a.dupe(u8, f.dir);
+    kept.base = if (f.base.len == 0) "" else kept.root;
+    return kept;
+}
+
 fn testSuite(arena: std.mem.Allocator, files: PackageFiles, targets: ?moduleMod.Targets, wasm_host: ast.WasmHost) ![]const Module {
     const listed = files.listFiles(arena, "test") catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -2075,13 +2078,9 @@ fn remember(path: []const u8, name: []const u8, build_output: []const u8, ds: []
         // The reader's paths are the load's (`PackageFiles.under`, the
         // caller's arena): a later compile that reaches this package — the
         // build's second pass, after the arena of the first is gone — reads
-        // its own `compiler.load` files through them, so they are kept here.
-        .files = if (m.files) |f| blk: {
-            var kept = f;
-            kept.root = try a.dupe(u8, f.root);
-            kept.dir = try a.dupe(u8, f.dir);
-            break :blk kept;
-        } else null,
+        // its own `compiler.load` files through them, and `shownRoot` its
+        // `dir` and `base` (decision 1003), so they are kept here.
+        .files = if (m.files) |f| try keptFiles(a, f) else null,
     };
     const key = try a.dupe(u8, path);
     try state.entries.put(a, key, .{ .path = key, .name = try a.dupe(u8, name), .build_output = try a.dupe(u8, build_output), .diagnostics = dcopy, .modules = mcopy, .has_main = main_of.has, .main_result = main_of.result, .main_async = main_of.async_, .targets = targets, .dependencies = dependencies });

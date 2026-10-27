@@ -14,7 +14,7 @@ import {io.terminal.print, compiler} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+    (type $rec_SourceLocation (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i32)) (field $f2 (mut i32)) (field $f3 (mut (ref null $str))) (field $f4 (mut (ref null $str)))))
   )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
@@ -44,6 +44,7 @@ import {io.terminal.print, compiler} from "std";
     global.get $__s1
     i32.const 1
     i32.const 20
+    global.get $__s0
     global.get $__s0
     struct.new $rec_SourceLocation
     global.set $top

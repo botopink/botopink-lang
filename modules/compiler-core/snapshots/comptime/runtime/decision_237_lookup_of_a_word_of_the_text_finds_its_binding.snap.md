@@ -531,9 +531,9 @@ import {compiler} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"<Card title=\"x\"><Badge/></Card>">>,
-;;     source => #{file => <<"main.bp">>, line => 17, col => 12},
+;;     source => #{file => <<"main.bp">>, line => 17, col => 12, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 17, col => 12},
+;;         source => #{file => <<"main.bp">>, line => 17, col => 12, root => <<"">>},
 ;;         text => <<"<Card title=\"x\"><Badge/></Card>">>,
 ;;         multiline => false
 ;;     },

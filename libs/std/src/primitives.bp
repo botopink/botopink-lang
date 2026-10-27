@@ -2076,11 +2076,13 @@ pub type __Span(
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the file relative to the package root, as diagnostics print it
 // (`src/main.bp`), never the module path; `line`/`col` point at the template
-// literal's opening quote (1-based).
+// literal's opening quote (1-based); `root` the directory a loaded package was
+// loaded from, `""` in the top-level package (decision 1003).
 pub type __Source(
     file: string,
     line: i32,
     col: i32,
+    root: string = "",
 )
 
 // Everything a second-layer language (a DSL compiler running inside a template
@@ -2128,6 +2130,12 @@ pub type __CustomNode(
 //   fnName  — the enclosing fn's name; `Type.method` inside a method; the test
 //             name inside `test "…" { }` (`test_<idx>` for an anonymous
 //             block); `""` at module level. A lambda does not change it.
+//   root    — `""` in the top-level package; in a package `compiler.load`
+//             loaded, the directory it was loaded from — relative to the
+//             top-level package inside its tree (`packages/m/cases/c`),
+//             absolute for a by-name load outside it (decision 1003). `file`
+//             is the same text however the package is loaded; a library that
+//             opens a file beside its source joins `root + "/" + file`.
 //
 // `@src()` takes no arguments and no trailing lambda — `@src(x)` is
 // `error[src-takes-no-arguments]`. It is a value like any other, so
@@ -2141,6 +2149,7 @@ pub type SourceLocation(
     line: i32,
     column: i32,
     fnName: string,
+    root: string = "",
 )
 
 // ── Embedded file (`@embed`) ───────────────────────────────────────────────────

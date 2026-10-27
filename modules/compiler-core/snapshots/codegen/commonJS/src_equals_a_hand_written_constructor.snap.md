@@ -70,17 +70,18 @@ function __bp_print() {
 }
 
 class SourceLocation {
-    constructor(file, line, column, fnName) {
+    constructor(file, line, column, fnName, root) {
         this.file = file;
         this.line = line;
         this.column = column;
         this.fnName = fnName;
+        this.root = root;
     }
 }
 SourceLocation.prototype.__bp = "SourceLocation";
 
 function locate() {
-    return new SourceLocation("main.bp", 2, 21, "locate");
+    return new SourceLocation("main.bp", 2, 21, "locate", "");
 }
 
 function main() {

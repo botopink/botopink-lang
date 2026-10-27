@@ -16,10 +16,10 @@ import {io.terminal.print, compiler} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['__bp_priv__locate'/0, '__bp_priv__main'/0]).
 
-%% type SourceLocation: file, line, column, fnName
+%% type SourceLocation: file, line, column, fnName, root
 
 locate() ->
-    {test@main@@SourceLocation, <<"main.bp">>, 2, 21, <<"locate">>}.
+    {test@main@@SourceLocation, <<"main.bp">>, 2, 21, <<"locate">>, <<"">>}.
 
 main() ->
     '__bp_print'([erlang:element(5, locate())]).
@@ -66,9 +66,10 @@ main(_Args) ->
 '__bp_get'(V, file) -> erlang:element(2, V);
 '__bp_get'(V, line) -> erlang:element(3, V);
 '__bp_get'(V, column) -> erlang:element(4, V);
-'__bp_get'(V, fnName) -> erlang:element(5, V).
+'__bp_get'(V, fnName) -> erlang:element(5, V);
+'__bp_get'(V, root) -> erlang:element(6, V).
 
-'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}, {"root", erlang:element(6, V)}]}.
 ```
 
 ----- RUN LOG -----

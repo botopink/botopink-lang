@@ -225,9 +225,9 @@ import {compiler} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"hey">>,
-;;     source => #{file => <<"main.bp">>, line => 5, col => 15},
+;;     source => #{file => <<"main.bp">>, line => 5, col => 15, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 5, col => 15},
+;;         source => #{file => <<"main.bp">>, line => 5, col => 15, root => <<"">>},
 ;;         text => <<"hey">>,
 ;;         multiline => false
 ;;     },

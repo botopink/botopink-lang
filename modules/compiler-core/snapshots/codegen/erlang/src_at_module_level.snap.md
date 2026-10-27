@@ -15,11 +15,11 @@ import {io.terminal.print, compiler} from "std";
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0, '__bp_priv__top'/0, '__bp_priv__main'/0]).
 
-%% type SourceLocation: file, line, column, fnName
+%% type SourceLocation: file, line, column, fnName, root
 
 top() ->
     case persistent_term:get({test@main, top}, '__bp_unset') of
-        '__bp_unset' -> __BpV = {test@main@@SourceLocation, <<"main.bp">>, 1, 20, <<"">>}, persistent_term:put({test@main, top}, __BpV), __BpV;
+        '__bp_unset' -> __BpV = {test@main@@SourceLocation, <<"main.bp">>, 1, 20, <<"">>, <<"">>}, persistent_term:put({test@main, top}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
@@ -74,9 +74,10 @@ main(_Args) ->
 '__bp_get'(V, file) -> erlang:element(2, V);
 '__bp_get'(V, line) -> erlang:element(3, V);
 '__bp_get'(V, column) -> erlang:element(4, V);
-'__bp_get'(V, fnName) -> erlang:element(5, V).
+'__bp_get'(V, fnName) -> erlang:element(5, V);
+'__bp_get'(V, root) -> erlang:element(6, V).
 
-'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}, {"root", erlang:element(6, V)}]}.
 ```
 
 ----- RUN LOG -----

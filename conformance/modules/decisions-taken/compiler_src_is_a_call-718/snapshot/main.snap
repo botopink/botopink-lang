@@ -8,3 +8,4 @@ out second src/main.bp 14 31 main
 == src_location
 out src/main.bp 7 21 where
 out main
+out true

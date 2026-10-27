@@ -111,7 +111,7 @@ pub const DeclHandle = struct {
 
 /// A place in a file, 1-based (decision 734): the file relative to its
 /// package's root, as `@src().file` writes it.
-pub const SrcPoint = struct { file: []const u8, line: usize, column: usize };
+pub const SrcPoint = struct { file: []const u8, line: usize, column: usize, root: []const u8 = "" };
 
 /// What a `q.lookup` handle carries beside a declaration's (decision 415 (2)).
 /// `pending` (372's pattern): a declaration of the module whose `.hooks`
@@ -436,6 +436,7 @@ fn srcForm(b: Ast.Builder, at: SrcPoint) Ast.Builder.Error!Ast.Form {
         Ast.field("line", .{ .term = .{ .integer = @intCast(at.line) } }),
         Ast.field("column", .{ .term = .{ .integer = @intCast(at.column) } }),
         Ast.field("fnName", Ast.str("")),
+        Ast.field("root", Ast.str(at.root)),
     };
     return b.function("src", &.{}, &.{}, &.{try b.map(&fields)});
 }

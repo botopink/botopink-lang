@@ -159,6 +159,9 @@ pub const CapturedExpr = struct {
     /// (`src/main.bp`, decision 756): what `compiler.source(x).file` answers.
     /// Empty only in direct unit-test paths, which fall back to `modulePath`.
     srcFile: []const u8 = "",
+    /// Decision 1003 — the directory the caller's package was loaded from
+    /// (`compiler.source(x).root`), `""` in the top-level package.
+    srcRoot: []const u8 = "",
     /// Origin scope for `lookup`/`fail` resolution (V1: top-level decls +
     /// imports). Null only in direct unit-test paths that bypass
     /// `inferProgram*`.

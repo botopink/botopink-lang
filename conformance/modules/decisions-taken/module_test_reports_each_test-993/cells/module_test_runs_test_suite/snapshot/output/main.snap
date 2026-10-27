@@ -2,7 +2,7 @@ botopink-cell 1
 out cases 4
 out ok root: the root's own test runs first src/main.bp:6 [] 
 out ok deep: a file in a directory of test/ runs too test/nested/deep_test.bp:3 [] 
-out ok util: a suite file imports the package's modules test/util_test.bp:10 [from packages/my-lib/test/util_test.bp
+out ok util: a suite file imports the package's modules test/util_test.bp:10 [from test/util_test.bp in packages/my-lib
 out ] 
-out FAIL util: a failing suite test is a case, and the next runs test/util_test.bp:16 [] below the floor
+out FAIL util: a failing suite test is a case, and the next runs test/util_test.bp:17 [] below the floor
 out main

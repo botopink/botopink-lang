@@ -1,5 +1,5 @@
 // A builtin record every module sees:
-//   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+//   type SourceLocation(file: string, line: i32, column: i32, fnName: string, root: string = "")
 
 import {compiler, io.terminal.print} from "std";
 
@@ -16,4 +16,5 @@ pub fn main() -> void {
         loc.fnName,
     ); // src/main.bp 7 21 where
     print(comptime compiler.src().fnName); // main
+    print(loc.root.endsWith("cases/src_location")); // true: the directory its module loaded it from
 }

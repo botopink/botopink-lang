@@ -18,7 +18,7 @@ test "doubles" {
 test "prints" {
     print("printed", double(3));
     val at = comptime compiler.src();
-    print("where " + at.file + " " + at.fnName);
+    print("where " + at.file + " in " + at.root + " " + at.fnName);
 }
 
 test "fails an assert" {

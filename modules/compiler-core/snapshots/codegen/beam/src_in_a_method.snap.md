@@ -34,7 +34,7 @@ import {io.terminal.print, compiler} from "std";
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 5, {atom, test@main@@SourceLocation}]}.
+    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
     {get_tuple_element, {x, 0}, 4, {x, 0}}.
   {label, 8}.
     {move, {y, 1}, {x, 1}}.
@@ -42,7 +42,7 @@ import {io.terminal.print, compiler} from "std";
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 9}, [{x, 0}, 5, {atom, test@main@@SourceLocation}]}.
+    {test, is_tagged_tuple, {f, 9}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 9}.
     {move, {y, 1}, {x, 1}}.
@@ -50,7 +50,7 @@ import {io.terminal.print, compiler} from "std";
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 5, {atom, test@main@@SourceLocation}]}.
+    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 10}.
     {move, {y, 1}, {x, 1}}.
@@ -58,7 +58,7 @@ import {io.terminal.print, compiler} from "std";
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 5, {atom, test@main@@SourceLocation}]}.
+    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 11}.
     {move, {y, 1}, {x, 1}}.
@@ -347,7 +347,7 @@ import {io.terminal.print, compiler} from "std";
 {module, test@main@@SourceLocation}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 11}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
@@ -374,18 +374,29 @@ import {io.terminal.print, compiler} from "std";
     {move, {integer, 5}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
   {label, 7}.
+    {test, is_eq_exact, {f, 8}, [{x, 1}, {atom, root}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 8}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 9}.
-  {label, 8}.
+{function, '__bp_format', 1, 10}.
+  {label, 9}.
     {line, [{location, "test@main@@SourceLocation.erl", 1}]}.
     {func_info, {atom, test@main@@SourceLocation}, {atom, '__bp_format'}, 1}.
-  {label, 9}.
+  {label, 10}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {y, 1}}.
+    {move, {integer, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"root">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
     {move, {integer, 5}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
@@ -434,8 +445,10 @@ import {io.terminal.print, compiler} from "std";
     {move, {literal, <<"main.bp">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"Stub.where">>}, {x, 0}}.
-    {test_heap, 6, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 3}, {integer, 25}, {x, 0}]}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {test_heap, 7, 3}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@SourceLocation}, {x, 1}, {integer, 3}, {integer, 25}, {x, 2}, {x, 0}]}}.
     {deallocate, 1}.
     return.
 

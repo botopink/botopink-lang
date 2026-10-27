@@ -49,6 +49,10 @@ import {compiler} from "std";
           {
             "name": "fnName",
             "value": "string"
+          },
+          {
+            "name": "root",
+            "value": "string"
           }
         ],
         "return_type": "SourceLocation"

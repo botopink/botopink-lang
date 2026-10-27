@@ -15,11 +15,12 @@ import {io.terminal.print, compiler} from "std";
 ----- JAVASCRIPT -- main.js
 ```javascript
 class SourceLocation {
-    constructor(file, line, column, fnName) {
+    constructor(file, line, column, fnName, root) {
         this.file = file;
         this.line = line;
         this.column = column;
         this.fnName = fnName;
+        this.root = root;
     }
 }
 SourceLocation.prototype.__bp = "SourceLocation";
@@ -101,12 +102,12 @@ function __bp_print() {
 }
 
 async function __bp_test_0() {
-    const loc = new SourceLocation("main.bp", 3, 24, "src: in a test");
+    const loc = new SourceLocation("main.bp", 3, 24, "src: in a test", "");
     __bp_print(loc.file, loc.line, loc.column, loc.fnName);
 }
 
 async function __bp_test_1() {
-    __bp_print(new SourceLocation("main.bp", 7, 20, "test_1").fnName);
+    __bp_print(new SourceLocation("main.bp", 7, 20, "test_1", "").fnName);
 }
 
 const __bp_tests = [

@@ -117,7 +117,8 @@ test ".d.ts: a private type a public signature names is declared, not exported" 
             \\    readonly line: number;
             \\    readonly column: number;
             \\    readonly fnName: string;
-            \\    constructor(file: string, line: number, column: number, fnName: string);
+            \\    readonly root: string;
+            \\    constructor(file: string, line: number, column: number, fnName: string, root: string);
             \\}
             ,
             \\declare class Outer {

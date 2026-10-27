@@ -7077,7 +7077,8 @@ fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) Infe
         .templateText = a.templateText != null,
         .loc = at,
         .modulePath = env.modulePath,
-        .srcFile = try captureSrcFile(env),
+        .srcFile = env.srcPathOf(env.modulePath),
+        .srcRoot = try loadMod.sourceRoot(env.arena, env.packageFiles),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };
@@ -8341,14 +8342,6 @@ fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
 /// module's own, or the one the session recorded when `module` was analysed
 /// (`Reflection.srcPaths`), else `<module>.bp`. A decorator or template body
 /// run from another module is located in that file, so its diagnostic names it.
-/// The file a syntax capture's `compiler.source(…).file` names: the module's
-/// own, prefixed inside a loaded package by the directory it was loaded from,
-/// as `compiler.src()`'s is (decision 993 (3), B-168).
-fn captureSrcFile(env: *Env) ![]const u8 {
-    if (env.srcPath.len > 0) if (try loadMod.loadedSrcPath(env.arena, env.package, env.srcPath)) |p| return p;
-    return env.srcPathOf(env.modulePath);
-}
-
 fn srcPathOfModule(env: *Env, module: []const u8) []const u8 {
     return env.srcPathOf(module);
 }
@@ -8635,9 +8628,9 @@ fn withoutListed(arena: std.mem.Allocator, fns: []const ast.FnDecl, have: []cons
 
 /// Decision 734 — the place `compiler.src()` answers in a decorator of the
 /// declaration at `loc` of this module; null for a synthesised one.
-fn declSrc(env: *Env, loc: ast.Loc) ?decoratorEval.SrcPoint {
+fn declSrc(env: *Env, loc: ast.Loc) InferError!?decoratorEval.SrcPoint {
     if (loc.line == 0) return null;
-    return .{ .file = env.srcPath, .line = loc.line, .column = loc.col };
+    return .{ .file = env.srcPath, .line = loc.line, .column = loc.col, .root = try loadMod.sourceRoot(env.arena, env.packageFiles) };
 }
 
 fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) InferError!void {
@@ -8659,7 +8652,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .annotations = f.annotations,
                 .hooks = if (phase == .hooksReaders) try declHooksTerm(env, f) else &.{},
                 .params = try paramHandles(env, f.params),
-                .src = declSrc(env, if (f.startLoc.line > 0) f.startLoc else f.nameLoc),
+                .src = try declSrc(env, if (f.startLoc.line > 0) f.startLoc else f.nameLoc),
             };
             try runDeclDecorators(env, ctx, program, phase, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
@@ -8678,7 +8671,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .methods = &.{},
                 .returnType = if (v.typeAnnotation) |tr| try declTypeName(env.arena, tr) else "",
                 .annotations = v.annotations,
-                .src = declSrc(env, v.nameLoc),
+                .src = try declSrc(env, v.nameLoc),
             };
             runDeclDecorators(env, ctx, program, phase, v.annotations, h, null, .{ .kind = .val, .isPub = v.isPub }) catch |err| {
                 // Decision 788 — a top-level `comptime { … }`'s refusal names
@@ -8712,7 +8705,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                         .params = try paramHandles(env, m.params),
-                        .src = declSrc(env, m.nameLoc),
+                        .src = try declSrc(env, m.nameLoc),
                     };
                     try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
                 }
@@ -8723,7 +8716,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .methods = tdecl.methods,
                     .returnType = "",
                     .annotations = tdecl.annotations,
-                    .src = declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
+                    .src = try declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
                 };
                 try runDeclDecorators(env, ctx, program, phase, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.recordFields()) |fld| {
@@ -8753,7 +8746,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                         .params = try paramHandles(env, m.params),
-                        .src = declSrc(env, m.nameLoc),
+                        .src = try declSrc(env, m.nameLoc),
                     };
                     try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
                 }
@@ -8765,7 +8758,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .methods = tdecl.methods,
                     .returnType = "",
                     .annotations = tdecl.annotations,
-                    .src = declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
+                    .src = try declSrc(env, if (tdecl.startLoc.line > 0) tdecl.startLoc else tdecl.loc),
                 };
                 try runDeclDecorators(env, ctx, program, phase, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
             },
@@ -10296,7 +10289,8 @@ fn captureExprArg(
             .multiline = false,
             .loc = rawArg.getLoc(),
             .modulePath = env.modulePath,
-            .srcFile = try captureSrcFile(env),
+            .srcFile = env.srcPathOf(env.modulePath),
+        .srcRoot = try loadMod.sourceRoot(env.arena, env.packageFiles),
             .scope = env.scopeSnapshot,
         };
     }
@@ -10358,7 +10352,8 @@ fn captureExprArg(
         .templateText = templateText != null,
         .loc = litLoc,
         .modulePath = env.modulePath,
-        .srcFile = try captureSrcFile(env),
+        .srcFile = env.srcPathOf(env.modulePath),
+        .srcRoot = try loadMod.sourceRoot(env.arena, env.packageFiles),
         .scope = env.scopeSnapshot,
         .valueRead = valueRead,
     };
@@ -13229,16 +13224,17 @@ fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr 
             return node;
         }
     };
-    const args = try env.arena.alloc(ast.CallArg, 4);
-    // Decision 993 (3) — inside a loaded package the file is prefixed by the
-    // directory it was loaded from, and a test lowered to a function
-    // (`load.withTestFns`) is named by its test.
-    const file = (try loadMod.loadedSrcPath(env.arena, env.package, env.srcPath)) orelse env.srcPath;
+    const args = try env.arena.alloc(ast.CallArg, 5);
+    // Decision 1003 — `file` relative to its own package, however it is
+    // loaded; `root` the directory a loaded package was loaded from. Decision
+    // 993 (3) — a test lowered to a function (`load.withTestFns`) is named by
+    // its test.
     const fn_name = (try loadMod.testNameOf(env.arena, env.modulePath, env.currentFnName)) orelse env.currentFnName;
-    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, file) };
+    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, env.srcPath) };
     args[1] = .{ .label = "line", .value = try strLit.number(env, loc, loc.line) };
     args[2] = .{ .label = "column", .value = try strLit.number(env, loc, loc.col) };
     args[3] = .{ .label = "fnName", .value = try strLit.make(env, loc, fn_name) };
+    args[4] = .{ .label = "root", .value = try strLit.make(env, loc, try loadMod.sourceRoot(env.arena, env.packageFiles)) };
     const rewrite = try env.arena.create(ast.Expr);
     rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
         .receiver = null,

@@ -63,7 +63,7 @@ const prelude_records = [_]erlang.HostRecord{
     .{ .name = "Declared", .fields = &.{ "name", "module", "meta", "returnTypeName", "value", "typedMeta" } },
     .{ .name = "DeclaredMeta", .fields = &.{ "key", "value" } },
     .{ .name = "DeclaredTypedMeta", .fields = &.{ "key", "value" } },
-    .{ .name = "SourceLocation", .fields = &.{ "file", "line", "column", "fnName" } },
+    .{ .name = "SourceLocation", .fields = &.{ "file", "line", "column", "fnName", "root" } },
 };
 
 // ── values ───────────────────────────────────────────────────────────────────

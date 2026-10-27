@@ -77,13 +77,16 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   `captureToTerm` writes it into the `Source` record, falling back to `modulePath`
   only for a unit-test capture that has none. Cell `syntax_fn_source_file_is_path`.
 - **`@src()`** (1.0.10-beta decision 73) is a comptime builtin answering the
-  prelude record `SourceLocation(file, line, column, fnName)`: `infer.zig`
-  `inferSrcBuiltin` rewrites the call into the constructor call with four
+  prelude record `SourceLocation(file, line, column, fnName, root)`: `infer.zig`
+  `inferSrcBuiltin` rewrites the call into the constructor call with five
   literals (`env.srcRewrites`, spliced by `transform.zig`) and
   `comptime.zig` `withSourceLocationDecl` prepends the record's declaration to
   a program that names it, so no `src/codegen/*.zig` knows the builtin.
   `file` is `Module.srcPath` (package-relative, set by the CLI loaders) or
-  `<name>.bp`; `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
+  `<name>.bp`, however the package is loaded; `root` is `""` in the
+  top-level package, else the directory `compiler.load` loaded it from
+  (decision 1003, `PackageFiles.shownRoot` over its `dir` and `base`);
+  `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
   `unknown-builtin` now, not a silent `void`.
 - **`@embed(path)`** (decision 519) is a `Build` builtin answering the prelude
   record `Asset(path, bytes, size, hash)`: `infer.zig` `inferEmbedBuiltin`

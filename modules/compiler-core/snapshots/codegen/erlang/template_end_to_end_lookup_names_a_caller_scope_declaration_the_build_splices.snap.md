@@ -410,9 +410,9 @@ import {io.terminal.print} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"greeting">>,
-;;     source => #{file => <<"main.bp">>, line => 10, col => 15},
+;;     source => #{file => <<"main.bp">>, line => 10, col => 15, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 10, col => 15},
+;;         source => #{file => <<"main.bp">>, line => 10, col => 15, root => <<"">>},
 ;;         text => <<"greeting">>,
 ;;         multiline => false
 ;;     },

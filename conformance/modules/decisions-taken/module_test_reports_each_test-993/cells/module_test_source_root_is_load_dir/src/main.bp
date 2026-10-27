@@ -1,6 +1,7 @@
-//// Decision 993 (3) — inside a loaded package a syntax argument's `compiler.source(…).file` is
-//// prefixed by the directory the package was loaded from, as `compiler.src().file` is: `placed`'s
-//// test calls `where`, which prints the file of its argument, `packages/placed/src/main.bp`.
+//// Decision 1003 — inside a loaded package a source location's `file` is relative to the package,
+//// and `root` is the directory it was loaded from: `placed`'s test calls `where`, which prints its
+//// argument's `compiler.source(…)` (`src/main.bp` in `packages/placed`), then `shown`'s own
+//// `compiler.src()` (`src/mark.bp` in `packages/placed`).
 
 import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
 

@@ -7,8 +7,15 @@ import {records.diff};
 import {sections.SnapFile, sections.parseFile, sections.renderFile, sections.HEADER};
 import {observe.Observed, observe.assemble, observe.reds};
 
-/// Where the candidate goes, beside the accepted file.
+/// Where the candidate goes, beside the accepted file, relative to the module's package.
 pub val CANDIDATE_PATH: string = "snapshot/main.snap.new";
+
+/// The candidate's path from the process's directory (decision 1003): under the module's `root`
+/// — `(comptime compiler.src()).root`, the directory a loading package loaded it from — when it
+/// is not `""`, so a module run by the conformance root writes beside its own snapshot.
+pub fn candidatePath(root: string) -> string {
+    return if (root == "") CANDIDATE_PATH else root + "/" + CANDIDATE_PATH;
+}
 
 /// The accepted file's path.
 pub val ACCEPTED_PATH: string = "snapshot/main.snap";
@@ -23,9 +30,9 @@ pub fn deliver(path: string, text: string) -> Result<void, string> {
 }
 
 /// The whole check of a module: its observed answers against the accepted file's text. `Ok` when
-/// every case is green; else the candidate is delivered (a candidate when the text differs) and the
-/// `Error` names the red cases and the candidate.
-pub fn finish(accepted: string, observed: Observed[], target: string) -> Result<void, string> {
+/// every case is green; else the candidate is delivered (a candidate when the text differs) at
+/// `candidatePath(root)` and the `Error` names the red cases and the candidate.
+pub fn finish(accepted: string, observed: Observed[], target: string, root: string = "") -> Result<void, string> {
     val file = try parseFile(accepted) catch { m ->
         throw "snapshot/main.snap line " + m.line.toString() + ": " + m.reason;
     };
@@ -33,7 +40,7 @@ pub fn finish(accepted: string, observed: Observed[], target: string) -> Result<
     val text = assemble(file, observed, target);
     if (red.length == 0 && text == renderFile(file)) return;
     // The verdict names the red cases whether or not the candidate could be written.
-    val written = case deliver(CANDIDATE_PATH, text) {
+    val written = case deliver(candidatePath(root), text) {
         Ok(_) -> "";
         Error(m) -> "\n" + m;
     };

@@ -17,7 +17,7 @@ import {io.terminal.print, compiler} from "std";
 -module(test@main).
 -export(['__bp_priv__helper'/0]).
 
-%% type SourceLocation: file, line, column, fnName
+%% type SourceLocation: file, line, column, fnName, root
 
 helper() ->
     1.
@@ -35,9 +35,10 @@ helper() ->
 '__bp_get'(V, file) -> erlang:element(2, V);
 '__bp_get'(V, line) -> erlang:element(3, V);
 '__bp_get'(V, column) -> erlang:element(4, V);
-'__bp_get'(V, fnName) -> erlang:element(5, V).
+'__bp_get'(V, fnName) -> erlang:element(5, V);
+'__bp_get'(V, root) -> erlang:element(6, V).
 
-'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}, {"root", erlang:element(6, V)}]}.
 ```
 
 ----- ERLANG TEST UNIT -- __test__@test@main.erl
@@ -46,11 +47,11 @@ helper() ->
 -export([main/1]).
 
 '__bp_test_0'() ->
-    Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 24, <<"src: in a test">>},
+    Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 24, <<"src: in a test">>, <<"">>},
     '__bp_print'([erlang:element(2, Loc), erlang:element(3, Loc), erlang:element(4, Loc), erlang:element(5, Loc)]).
 
 '__bp_test_1'() ->
-    '__bp_print'([erlang:element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 20, <<"test_1">>})]).
+    '__bp_print'([erlang:element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 20, <<"test_1">>, <<"">>})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

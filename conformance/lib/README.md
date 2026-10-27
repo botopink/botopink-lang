@@ -26,7 +26,7 @@ target it runs on answers its plain section there.
 | `observe` | `reds(file, observed, target)` | the cases that differ, in module order |
 | `observe` | `assemble(file, observed, target)` | the module's whole candidate file: unchanged sections byte for byte, a changed case replaced in the section it answered on `target`, a new case appended, a vanished one dropped |
 | `candidate` | `deliver(path, text)` | `io.fs` writes `path`, on every target (decision 992) |
-| `candidate` | `finish(accepted, observed, target)` | the module's verdict: `Ok`, or the candidate delivered and an `Error` naming the red cases with a line diff. Never writes `snapshot/main.snap` (decision 67) |
+| `candidate` | `finish(accepted, observed, target, root)` | the module's verdict: `Ok`, or the candidate delivered at `candidatePath(root)` — `snapshot/main.snap.new` under the module's `root` (`(comptime compiler.src()).root`, decision 1003), `""` for a module run alone — and an `Error` naming the red cases with a line diff. Never writes `snapshot/main.snap` (decision 67) |
 | `adapter` | `target()`, `frames(d)`, `buildOutput(m)`, `ranOf(r)` | the features of 989 built in parallel, below |
 
 ## What waits on what

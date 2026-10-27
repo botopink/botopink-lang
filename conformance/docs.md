@@ -3953,7 +3953,8 @@ is called `matches(render(page))`: the argument is checked once, against the
 parameter's declared type (716), and is never executed at the call (720) — the
 compiler holds the code and evaluates it only where the answer splices it.
 `compiler.text(value)` is the expression as written, `compiler.source(value)`
-the call's `Source(file, line, col)`, so the body can write the caller's
+the call's `Source(file, line, col, root)` — `root` the directory the caller's package was loaded from, `""` in
+the top-level package (decision 1003) —, so the body can write the caller's
 location into the run-time call it answers while the caller writes nothing but
 the expression. The answer's code is spliced where the call stands and typed
 there (638):
@@ -3961,6 +3962,8 @@ there (638):
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cases/syntax_fn_expanded_at_call -->
 
 <!-- example: modules/decisions-taken/syntax_fn_expanded_at_call-719/cases/syntax_fn_text_of_expression -->
+
+<!-- example: modules/decisions-taken/syntax_fn_source_file_is_path-756/cells/syntax_fn_source_root -->
 
 A call through the module's name — `snap.matches(render(page))` after `import {snap} from "snap"`, `probe.matches(…)`
 for a `mod probe` of the package — is expanded as the bare call is:
@@ -4470,14 +4473,16 @@ a dependency's tests never run. `Error(RunFailure)` is only `.Refused` or `.Excl
 at `emit`, none of its tests run — or `.Abort` for a crash outside every test (its body runs anew at each
 ``test`()``), `output` what was written before. A package whose tests await makes ``test`()`` answer an `Async`,
 awaited. Each test runs with `BOTOPINK_TEST_NAME` holding its name and the run with `BOTOPINK_TEST_TMPDIR` naming a
-scratch directory of the call's own, as under `botopink test`. Inside a loaded package, `compiler.src().file` and a
-syntax argument's `compiler.source(…).file` are prefixed by the directory the package was loaded from.
+scratch directory of the call's own, as under `botopink test`. Inside a loaded package, a source location's `file` is
+relative to the package and its `root` is the directory the package was loaded from (decision 1003): relative to the
+top-level package inside its tree, absolute for a by-name load outside it, `""` in the top-level package; a library
+reaching a file beside its source joins `root + "/" + file`.
 
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_reports_each_test -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_refused_on_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_excluded_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_sets_test_env -->
-<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_source_names_loaded_file -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_source_root_is_load_dir -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_runs_test_suite -->
 
 `run-outside-init` names a place, never a receiver (decision 792 (4), (7)): a local alias of the captured

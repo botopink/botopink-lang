@@ -263,9 +263,9 @@ import {io.terminal.print} from "std";
 ;; Arg0 = #{
 ;;     '__bp_capture' => <<"q">>,
 ;;     text => <<"yaml">>,
-;;     source => #{file => <<"main.bp">>, line => 7, col => 16},
+;;     source => #{file => <<"main.bp">>, line => 7, col => 16, root => <<"">>},
 ;;     context => #{
-;;         source => #{file => <<"main.bp">>, line => 7, col => 16},
+;;         source => #{file => <<"main.bp">>, line => 7, col => 16, root => <<"">>},
 ;;         text => <<"yaml">>,
 ;;         multiline => false
 ;;     },

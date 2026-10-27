@@ -8,7 +8,8 @@ fn atLeast(n: i32, floor: i32) -> Result<void, string> {
 }
 
 test "util: a suite file imports the package's modules" {
-    print("from " + (comptime compiler.src()).file);
+    val here = comptime compiler.src();
+    print("from " + here.file + " in " + here.root);
     assert double(3) == 6;
     assert quadruple(1) == 4;
 }
