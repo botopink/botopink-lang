@@ -1,1 +1,1 @@
-{ "name": "task_result_rejects_with_error-432" }
+{"name": "task_result_rejects_with_error-432", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

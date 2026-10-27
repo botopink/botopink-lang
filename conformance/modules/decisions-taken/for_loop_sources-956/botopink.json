@@ -1,1 +1,1 @@
-{ "name": "for_loop_sources-956" }
+{"name": "for_loop_sources-956", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

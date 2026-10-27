@@ -1,0 +1,6 @@
+botopink-cell 2
+== wasm_host_async
+out raceOf b
+out race x
+out spawnAll one,two,three
+out 8

@@ -1,0 +1,56 @@
+botopink-cell 2
+== block_for_return_leaves_function
+out 700
+out -10
+out [abc]
+out <none>
+== block_partial_return
+out 3
+out 40
+== block_reassigns_enclosing_var
+out 6
+== block_return_leaves_function
+out high
+out low!
+out zero
+out other?
+out 50
+out 0
+out 101
+out inside
+out after
+== block_tail_value
+out 3 40 big
+== block_value_reassigns_enclosing_var
+out 11 ab 22
+out 6 big
+out 9 90
+== trailing_lambda_call
+out 11
+out 6
+out 5
+out 8
+out 9
+out 11
+== block_argument_not_function
+refused error: block-not-function: expected a function, got a block's value — missing `->`?
+at src/main.bp:11:17
+== block_builtin_removed
+refused error[removed-block-builtin]: `@block` was removed (decision 525)
+at src/main.bp:7:13
+label write the block `{ … }`
+== block_trailing_not_function
+refused error: block-not-function: expected a function, got a block's value — missing `->`?
+at src/main.bp:10:16
+== block_void_value_refused
+refused error: block-void-value: a block whose value is `void` is handed where a value is expected
+at src/main.bp:7:11
+== case_arm_no_value
+refused error: case-arm-no-value: this arm of a `case` used as a value answers nothing
+at src/main.bp:10:9
+== comptime_block_break_value
+refused error: block-break-value: a block's value is its last expression — `break <value>` does not give it
+at src/main.bp:10:5
+== async_block_tail_case
+out -1
+out 1940

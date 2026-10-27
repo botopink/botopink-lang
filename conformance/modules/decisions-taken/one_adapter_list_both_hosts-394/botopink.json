@@ -1,1 +1,1 @@
-{ "name": "one_adapter_list_both_hosts-394" }
+{"name": "one_adapter_list_both_hosts-394", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

@@ -1,1 +1,1 @@
-{ "name": "task_methods_withdrawn_async_block-523" }
+{"name": "task_methods_withdrawn_async_block-523", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

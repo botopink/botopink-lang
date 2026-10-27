@@ -1,0 +1,26 @@
+botopink-cell 2
+== prefixed_loop_break_value
+out 10 20 30 40
+out 4
+out 5 -1
+== prefixed_loop_forms
+out 2 4 6
+out 3 2 1
+out 2 4
+out 14
+== prefixed_loop_nearest_scope
+out 10 20 20 40
+out 2 4
+== prefixed_loop_result_item
+out try ok 1
+out try error negative -2
+out try done
+out throw ok 1
+out throw ok 2
+out throw error stop at 3
+out throw done
+== stream_loop_no_failure
+out 100
+out 200
+out 300
+out done

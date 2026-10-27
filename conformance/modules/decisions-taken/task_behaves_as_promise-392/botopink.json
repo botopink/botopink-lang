@@ -1,1 +1,1 @@
-{ "name": "task_behaves_as_promise-392" }
+{"name": "task_behaves_as_promise-392", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

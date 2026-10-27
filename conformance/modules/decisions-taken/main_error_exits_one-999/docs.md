@@ -2,5 +2,5 @@
 
 [cells/main_error_exits_one/src/main.bp](cells/main_error_exits_one/src/main.bp)
 [cells/main_async_error_exits_one/src/main.bp](cells/main_async_error_exits_one/src/main.bp)
-[cells/main_ok_exits_zero/src/main.bp](cells/main_ok_exits_zero/src/main.bp)
-[cells/main_async_ok_exits_zero/src/main.bp](cells/main_async_ok_exits_zero/src/main.bp)
+[cases/main_ok_exits_zero/src/main.bp](cases/main_ok_exits_zero/src/main.bp)
+[cases/main_async_ok_exits_zero/src/main.bp](cases/main_async_ok_exits_zero/src/main.bp)

@@ -1,0 +1,44 @@
+//// A module checking itself (decision 989): each case is a package under `cases/`, loaded at build,
+//// run in this program and compared with its section of `snapshot/main.snap`; a difference writes
+//// `snapshot/main.snap.new` and `main` answers `Error`. Nothing here accepts a candidate.
+
+import {compiler, io.terminal.print} from "std";
+import {adapter, candidate, observe, records} from "conformance-lib";
+
+/// The snapshot, read as a build input (decision 989 (5)).
+val accepted: string = @embed("snapshot/main.snap").text();
+
+/// What each case answered, in the order the cases ran.
+var answers: observe.Observed[] = [];
+
+/// One case, expanded where `main` calls it (decisions 808 (2), 998 (5)): a refused load answers
+/// its diagnostics, a loaded one runs and answers its output — awaited in `main`'s `async` body
+/// when the case's own `main` is `async` (`mainAsync()`, read at build).
+fn runCase(comptime name: string) -> void {
+    val loaded = try comptime compiler.load("cases/" + name) catch { r ->
+        compiler.init({ ->
+            var refusals: records.Refusal[] = [];
+            for (r.diagnostics) { d ->
+                refusals.push(observe.refusalOf(d.code, d.message, d.file, d.line, d.column, d.label, adapter.frames(d)));
+            }
+            answers.push(observe.refusedAnswer(name, adapter.buildOutput(r.module), refusals));
+        });
+        return;
+    };
+    if (comptime loaded.mainAsync())
+        compiler.init({ async ->
+            val ran = adapter.ranOf(await loaded.run());
+            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+        })
+    else
+        compiler.init({ ->
+            val ran = adapter.ranOf(loaded.run());
+            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+        });
+}
+
+pub async fn main() -> Async<Result<void, string>> {
+    runCase("decorator_member_type_same_name");
+    runCase("import_alias_beside_local_type");
+    return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
+}

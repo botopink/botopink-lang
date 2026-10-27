@@ -1,1 +1,1 @@
-{ "name": "attempt_task_form-494" }
+{"name": "attempt_task_form-494", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

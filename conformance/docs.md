@@ -428,7 +428,7 @@ std module's declaration is located in that module's file:
 
 <!-- example: modules/decisions-taken/aliased_same_named_types-310/cases/import_two_types_one_name_unaliased -->
 
-<!-- example: modules/decisions-taken/local_type_beside_aliased_import-603/cells/import_alias_beside_local_type -->
+<!-- example: modules/decisions-taken/local_type_beside_aliased_import-603/cases/import_alias_beside_local_type -->
 
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,
@@ -6077,8 +6077,8 @@ and the status above. Only the entry: a loaded package's `main` answers `run()`'
 
 <!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_error_exits_one -->
 <!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_async_error_exits_one -->
-<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_ok_exits_zero -->
-<!-- example: modules/decisions-taken/main_error_exits_one-999/cells/main_async_ok_exits_zero -->
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cases/main_ok_exits_zero -->
+<!-- example: modules/decisions-taken/main_error_exits_one-999/cases/main_async_ok_exits_zero -->
 
 A raise nothing marked is `crash` on commonJS too: a binding declared outside std without `result: true` has its
 raise marked `host` (546), so the raise of the program's own code — a method called on a value the binding

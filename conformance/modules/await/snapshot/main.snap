@@ -1,0 +1,10 @@
+botopink-cell 2
+== await_result_print
+out Ok(21)
+out Ok(5)
+out Error("negative")
+out Ok(Point(x: 1, y: 2))
+out 7
+out late 3
+out plain
+out late 3

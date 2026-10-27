@@ -1139,7 +1139,7 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   decorator's module neither declares nor imports keeps resolving in the
   annotated module; a type the annotated module holds under the same name
   from elsewhere is a second type (decision 603): the member names the hygiene
-  alias, the re-analysis holds the import under it (`modules/decisions-taken/local_type_beside_aliased_import-603/cells/decorator_member_type_same_name`). In an expression the
+  alias, the re-analysis holds the import under it (`modules/decisions-taken/local_type_beside_aliased_import-603/cases/decorator_member_type_same_name`). In an expression the
   member's type parameter is spelled as the annotated type
   (`@typeInfo(T)` → `@typeInfo(Conta)`, decision 395). The names a typed
   function expression reads are no support of the decorator

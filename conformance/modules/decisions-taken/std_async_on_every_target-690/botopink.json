@@ -1,1 +1,1 @@
-{ "name": "std_async_on_every_target-690" }
+{"name": "std_async_on_every_target-690", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}
