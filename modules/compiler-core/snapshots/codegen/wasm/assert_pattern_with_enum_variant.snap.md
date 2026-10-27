@@ -15,46 +15,59 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (array (mut i32)))
+    (type $arr_f64 (array (mut f64)))
+    (type $arr_any (sub (array (mut anyref))))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
+    (type $box_i32 (sub (struct (field $v i32))))
+    (type $box_i64 (struct (field $v i64)))
+    (type $box_f64 (struct (field $v f64)))
+    (type $box_bool (sub final $box_i32 (struct (field $v i32))))
+    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
+    (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
+    (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
+    (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+  )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data (i32.const 11696) "\1c\00\00\00assert pattern did not match")
-  (func $parse (result i32)
-    (local $_res0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $_res0
-    local.get $_res0
+  (func $parse (result (ref null $result))
     i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res0
     i32.const 42
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    struct.new $box_i32
+    struct.new $result
     return
   )
   (func $main
-    (local $result i32)
-    (local $__assert_0 i32)
+    (local $result (ref null $result))
+    (local $__assert_0 (ref null $result))
     (local $value i32)
     call $parse
     local.set $result
     local.get $result
     local.set $__assert_0
     local.get $__assert_0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    struct.get $result $tag
     i32.eqz
     i32.eqz
     (if
       (then
-    i32.const 11696
+    global.get $__s0
     call $__panic_fail
     unreachable
       )
     )
     local.get $__assert_0
-    i32.load offset=4
+    struct.get $result $payload
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
     local.set $value
     local.get $value
     call $__print_i32
@@ -302,7 +315,8 @@ import {io.terminal.print} from "std";
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -310,10 +324,35 @@ import {io.terminal.print} from "std";
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -321,19 +360,19 @@ import {io.terminal.print} from "std";
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (start $__bp_reserve)
-  (func $__bp_reserve
-    global.get $__heap_ptr
-    i32.const 11728
-    i32.lt_u
-    (if
-      (then
-      i32.const 11728
-      global.set $__heap_ptr
-      )
-    )
+  (data $__d0 "assert pattern did not match")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 28
+    array.new_data $str $__d0
+    global.set $__s0
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 
