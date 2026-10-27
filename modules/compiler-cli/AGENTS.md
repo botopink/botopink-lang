@@ -72,14 +72,16 @@ compiler-cli/
 │   │                          built with `--emit-runtime` writes `app.bpr`, `lib.bpr`
 │   │                          and `std/math.bpr`; on commonJS (+ `.d.ts`), erlang,
 │   │                          beam and wasm the build from `app.bpr` writes every
-│   │                          file of the direct build byte for byte, `run` from it
+│   │                          file of the direct build byte for byte, the run from
+│   │                          the package's own set (`run` takes no `.bpr` path,
+│   │                          decision 1009 — refused as an unexpected argument)
 │   │                          answers the direct run's without the build phase, a
 │   │                          dependency's `.bpr` is the same bytes from every build;
 │   │                          the refusals `runtime-target-required`,
 │   │                          `runtime-other-compiler`, `runtime-not-a-program`,
 │   │                          `runtime-missing`, `runtime-other-project` (the
 │   │                          directory's project is not the file's); `web` (a browser-host manifest)
-│   │                          built and run from its `.bpr` as directly (the
+│   │                          built from its `.bpr` and run from its own set as directly (the
 │   │                          loader included), and `cat` (`a` and `b` over one
 │   │                          `lib` whose module reads `@TypeInfo.all`) emitted
 │   │                          into one directory, `lib.bpr` holding no reader,
@@ -708,7 +710,7 @@ writing `snapshot/main.snap.new` and never accepting (decision 67). The suite's 
 `conformance/modules/` loads every module; `conformance/run.sh` builds it once with
 `build --emit-runtime` and runs its `.bpr` on each target (`../../conformance/AGENTS.md`). What the
 CLI keeps for it: `compiler.load` itself (compiler-core), `build --json` and its `refused` events
-(`cli/refusals.zig`), `--emit-runtime` / `run <file>.bpr` and `--cache-root`.
+(`cli/refusals.zig`), `--emit-runtime` / `build --target <t> <file>.bpr` and `--cache-root` (`run` takes no `.bpr` path, decision 1009).
 
 ## Tagging
 

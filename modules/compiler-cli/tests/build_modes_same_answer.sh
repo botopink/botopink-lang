@@ -7,7 +7,8 @@
 #   • on commonJS, erlang, beam and wasm, the program built directly (from
 #     its sources: the package's own `.bpr` set removed first, decision 1006) and the program built from its intermediate
 #     (`build --emit-runtime <dir>`, then `build` over `<dir>/app.bpr`) are
-#     the same files, byte for byte, and `run` from the intermediate prints
+#     the same files, byte for byte, and the run after the direct `run` (from the package's own `.bpr` set,
+#     decisions 1006, 1009) prints
 #     what the direct `run` prints, byte for byte;
 #   • refused: `--emit-runtime` / `--emit-resolved` with no directory — the
 #     flag last, the flag before another flag, an empty `=` value —, exit 1 and
@@ -68,10 +69,11 @@ for target in commonJS erlang beam wasm; do
     || { fail "$target: the direct run failed"; show "$WORK/run-direct.err"; continue; }
   grep -qx 'block,own' "$WORK/run-direct.out" || { fail "$target: the direct run did not run the executors"; show "$WORK/run-direct.out"; }
   grep -qx 'towns own 42' "$WORK/run-direct.out" || { fail "$target: the direct run did not read the member and the folded value"; show "$WORK/run-direct.out"; }
-  bp "$WORK/run-bpr.out" "$WORK/run-bpr.err" run --target "$target" --out "$WORK/run-bpr-$target" "$RT/app.bpr" \
-    || { fail "$target: the run from app.bpr failed"; show "$WORK/run-bpr.err"; continue; }
+  # The run after it: from the package's own `.bpr` set (decisions 1006, 1009).
+  bp "$WORK/run-bpr.out" "$WORK/run-bpr.err" run --target "$target" --out "$WORK/run-bpr-$target" \
+    || { fail "$target: the run from its own .bpr failed"; show "$WORK/run-bpr.err"; continue; }
   cmp -s "$WORK/run-direct.out" "$WORK/run-bpr.out" \
-    || { fail "$target: the run from app.bpr answers otherwise"; diff "$WORK/run-direct.out" "$WORK/run-bpr.out" | sed 's/^/      /' >&2 || true; }
+    || { fail "$target: the run from its own .bpr answers otherwise"; diff "$WORK/run-direct.out" "$WORK/run-bpr.out" | sed 's/^/      /' >&2 || true; }
 done
 
 # The directory is required (798 (3)).

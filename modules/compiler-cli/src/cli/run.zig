@@ -20,9 +20,6 @@ pub const Options = struct {
     /// `--cold`: the code cache is not read, and what ran is written
     /// (decision 509 (5)).
     cold: bool = false,
-    /// `botopink run --target <t> <file>.bpr`: the program read back from its
-    /// root package's `.bpr`, emitted with no comptime and run (decision 805 (3)).
-    runtime_input: ?[]const u8 = null,
     /// `--cache-root <dir>`: the cache root of levels A and B (as `build`'s).
     cache_root: ?[]const u8 = null,
 };
@@ -39,8 +36,6 @@ pub fn run(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     if (opts.cache_root) |r| code_cache.root_override = r;
-
-    if (opts.runtime_input) |file| return runRuntime(gpa, io, arena, opts, file, env_map);
 
     // Load config to determine target.
     const proj = config.load(arena, io) catch |err| {
@@ -67,29 +62,6 @@ pub fn run(
     for (opts.extra_args) |arg| try full.append(arena, arg);
 
     // Spawn and wait — stdio is inherited from the parent process.
-    return spawnWait(arena, io, full.items);
-}
-
-/// `run` over a `.bpr`: `build_cmd.runRuntime` writes the program into
-/// `out_dir`, which then runs as a build's does. The entry module's `fn main`
-/// is looked for in the tree the file holds (decision 517).
-fn runRuntime(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, opts: Options, file: []const u8, env_map: libs.EnvMap) !u8 {
-    const built = try build_cmd.runRuntime(gpa, io, arena, .{ .target = opts.target, .out_dir = opts.out_dir, .entry = opts.module }, file, env_map, opts.module, null);
-    if (built.exit != 0) return built.exit;
-    const target = opts.target.?;
-    if (!built.has_main) {
-        reporter.print("{s}\n", .{try refusalText(arena, file)});
-        return 1;
-    }
-    // The host the `.bpr` records (decision 334 (2)): a browser project runs through its loader.
-    const proj: config.ProjectConfig = .{ .name = built.root, .manifest = .{ .path = "botopink.json", .text = "", .kind = .package, .name = built.root, .wasm_host = switch (built.wasm_host) {
-        .wasi => .wasi,
-        .browser => .browser,
-    } } };
-    const argv = try programArgvFor(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
-    var full = std.ArrayListUnmanaged([]const u8).empty;
-    try full.appendSlice(arena, argv);
-    for (opts.extra_args) |arg| try full.append(arena, arg);
     return spawnWait(arena, io, full.items);
 }
 

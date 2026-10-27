@@ -8,16 +8,18 @@
 #     directory, each file named on stderr;
 #   • on commonJS (with the `.d.ts`), erlang, beam and wasm, the program built
 #     from `app.bpr` writes every file of the direct build, byte for byte, and
-#     `run` from it prints what the direct `run` prints, nothing of the build
-#     phase (the top-level block's `print`); on wasm the direct build, the build from
-#     `app.bpr` and the run write the entry's `main.wat` alone — a two-module program
-#     (decisions 1008 (3), 1017 (5)) — and `wasmtime` runs the build's file to the run's answer;
+#     the run after the direct `run` — from the package's own `.bpr` set, which
+#     `run` finds itself and takes no path to (decisions 1006, 1009) — prints what
+#     the direct `run` prints, nothing of the build phase (the top-level block's
+#     `print`); on wasm the direct build, the build from `app.bpr` and the run
+#     write the entry's `main.wat` alone — a two-module program (decisions
+#     1008 (3), 1017 (5)) — and `wasmtime` runs the build's file to the run's answer;
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
 #   • the manifest's wasm host (decision 334 (2)) is in the root's `.bpr`: over
 #     `web/`, a `"host": "browser"` project, the wasm build from the `.bpr` is
-#     the direct build byte for byte (the `.mjs` loader included) and `run` from
-#     it goes through the loader under node, answering the direct run;
+#     the direct build byte for byte (the `.mjs` loader included) and the run
+#     from its own set goes through the loader under node, answering the direct run;
 #   • a module reading `@TypeInfo.all` is filed in the root's `.bpr`, whatever
 #     its package (805 (1)): over `cat/`, two programs `a` and `b` over one
 #     `lib` whose module reads the catalogue, both emitted into one directory,
@@ -26,15 +28,16 @@
 #   • a module expanding a template that queries the catalogue is filed there too
 #     (805 (1)): over `tpl/`, programs `a` and `b` over one `mid` whose `card`
 #     module expands `looks`'s template, `mid.bpr` the same bytes after both and
-#     each program's run from its `.bpr` reading its own `#[theme]`;
-#   • refused: `build` / `run` over a `.bpr` without `--target`
+#     each program's run from its own set reading its own `#[theme]`;
+#   • `run` over a `.bpr` path is refused as any unexpected argument (decision 1009);
+#   • refused: `build` over a `.bpr` without `--target`
 #     (`runtime-target-required`), a `.bpr` of another compiler
 #     (`runtime-other-compiler`), a dependency's `.bpr` as the program
 #     (`runtime-not-a-program`), a package's `.bpr` missing beside the root's
 #     (`runtime-missing`), `--emit-runtime` without its directory;
 #   • a `.bpr` is built from the directory of the project that wrote it (decision
 #     838 (3)): `app.bpr` over a directory with no `botopink.json` or over `lib/`
-#     is `runtime-other-project`, naming both, for `build` and `run`.
+#     is `runtime-other-project`, naming both.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -106,12 +109,12 @@ for target in commonJS erlang beam wasm; do
   bp "$WORK/run-direct.out" run --target "$target" --out "$WORK/run-direct-$target" || fail "$target: the direct run failed"
   grep -v -e 'Compiling' -e 'Compiled' -e '^build a$' "$WORK/run-direct.out" > "$WORK/want.out"
   grep -q '^build a$' "$WORK/run-direct.out" || fail "$target: the direct run printed no build output"
-  # Any target from the `.bpr` the commonJS build wrote.
-  bp "$WORK/run-bpr.out" run --target "$target" --out "$WORK/run-bpr-$target" "$RT-commonJS/app.bpr" || fail "$target: the run from app.bpr failed"
+  # The run after it: from the package's own `.bpr` set (decisions 1006, 1009).
+  bp "$WORK/run-bpr.out" run --target "$target" --out "$WORK/run-bpr-$target" || fail "$target: the run from the package's own .bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
-    || { fail "$target: the run from app.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-  # Decisions 1008 (3), 1017 (5): on wasm the build, the build from a `.bpr` and the run emit
-  # only the entry's component, the same bytes.
+    || { fail "$target: the run from the package's own .bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+  # Decisions 1008 (3), 1017 (5): on wasm the build, the build from a `.bpr` and the run from the
+  # package's own `.bpr` emit only the entry's component, the same bytes.
   if [[ "$target" == wasm ]]; then
     for d in direct bpr; do
       wats="$(cd "$WORK/$d-$target" && find . -type f | sort | tr '\n' ' ')"
@@ -125,14 +128,19 @@ for target in commonJS erlang beam wasm; do
       fail "wasmtime is not on PATH (decision 67: a missing runtime fails)"
     fi
     wats="$(cd "$WORK/run-bpr-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
-    [[ "$wats" == "./main.wat " ]] || fail "wasm: the run from app.bpr wrote ${wats:-no .wat}, not main.wat alone"
+    [[ "$wats" == "./main.wat " ]] || fail "wasm: the run from its own .bpr wrote ${wats:-no .wat}, not main.wat alone"
     cmp -s "$WORK/run-bpr-$target/main.wat" "$WORK/bpr-$target/main.wat" \
       || fail "wasm: the run's main.wat differs from the build's"
   fi
 done
 
 refused "build over a .bpr without --target" runtime-target-required build "$RT-commonJS/app.bpr"
-refused "run over a .bpr without --target" runtime-target-required run "$RT-commonJS/app.bpr"
+# `run` takes no `.bpr` path (decision 1009): refused as any unexpected argument.
+if bp "$WORK/refused.log" run --target commonJS "$RT-commonJS/app.bpr"; then
+  fail "run over a .bpr path: exit 0"
+elif ! grep -qF "\`run\`: unexpected argument '$RT-commonJS/app.bpr'" "$WORK/refused.log"; then
+  fail "run over a .bpr path: not refused as an unexpected argument"; sed 's/^/      /' "$WORK/refused.log" >&2
+fi
 cp "$RT-commonJS/app.bpr" "$WORK/foreign.bpr"
 # The compiler's stamp: bytes 16–47 (after the two magics).
 printf '\xff\xff\xff\xff' | dd of="$WORK/foreign.bpr" bs=1 seek=20 conv=notrunc 2>/dev/null
@@ -143,7 +151,7 @@ refused "a package's .bpr missing beside the root's" runtime-missing build --tar
 # The project's directory (838 (3)): `app.bpr` from a directory with no manifest and from `lib/`.
 mkdir -p "$WORK/nowhere"
 for from in "$WORK/nowhere" "$WORK/lib"; do
-  for cmd in build run; do
+  for cmd in build; do
     if bpin "$from" "$WORK/other.log" "$cmd" --target commonJS --out "$WORK/o" "$RT-commonJS/app.bpr"; then
       fail "$cmd over app.bpr from ${from#$WORK/}: exit 0"
     elif ! grep -q 'error\[runtime-other-project\]' "$WORK/other.log" || ! grep -q '`app`' "$WORK/other.log"; then
@@ -170,9 +178,9 @@ else
   bpin "$WEB" "$WORK/run-direct.out" run --target wasm --out "$WORK/run-direct-web" || fail "web: the direct run failed"
   grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
   grep -q '^hello from the browser host$' "$WORK/want.out" || fail "web: the direct run printed no greeting"
-  bpin "$WEB" "$WORK/run-bpr.out" run --target wasm --out "$WORK/run-bpr-web" "$WORK/rt-web/web.bpr" || fail "web: the run from web.bpr failed"
+  bpin "$WEB" "$WORK/run-bpr.out" run --target wasm --out "$WORK/run-bpr-web" || fail "web: the run from its own .bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
-    || { fail "web: the run from web.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    || { fail "web: the run from its own .bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
 fi
 
 # A catalogue reader's file: two programs over one `lib` whose `catalog` reads
@@ -197,9 +205,9 @@ for prog in a b; do
     || { fail "cat/$prog: built from $prog.bpr differs from the direct build"; sed 's/^/      /' "$WORK/diff.log" >&2; }
   bpin "$CAT/$prog" "$WORK/run-direct.out" run --target commonJS --out "$WORK/run-direct-cat-$prog" || fail "cat/$prog: the direct run failed"
   grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
-  bpin "$CAT/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-cat-$prog" "$WORK/rt-cat/$prog.bpr" || fail "cat/$prog: the run from $prog.bpr failed"
+  bpin "$CAT/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-cat-$prog" || fail "cat/$prog: the run from its own .bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
-    || { fail "cat/$prog: the run from $prog.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    || { fail "cat/$prog: the run from its own .bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
 done
 
 # A template expansion's file: two programs over one `mid` whose `card` module
@@ -221,9 +229,9 @@ for prog in a b; do
   bpin "$TPL/$prog" "$WORK/run-direct.out" run --target commonJS --out "$WORK/run-direct-tpl-$prog" || fail "tpl/$prog: the direct run failed"
   grep -v -e 'Compiling' -e 'Compiled' "$WORK/run-direct.out" > "$WORK/want.out"
   grep -q "main\.${prog}theme" "$WORK/want.out" || fail "tpl/$prog: the direct run does not read its own #[theme]"
-  bpin "$TPL/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-tpl-$prog" "$WORK/rt-tpl/$prog.bpr" || fail "tpl/$prog: the run from $prog.bpr failed"
+  bpin "$TPL/$prog" "$WORK/run-bpr.out" run --target commonJS --out "$WORK/run-bpr-tpl-$prog" || fail "tpl/$prog: the run from its own .bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
-    || { fail "tpl/$prog: the run from $prog.bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    || { fail "tpl/$prog: the run from its own .bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
 done
 
 if (( failures > 0 )); then

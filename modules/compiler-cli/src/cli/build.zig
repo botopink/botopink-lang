@@ -368,7 +368,7 @@ fn runBuild(
     if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
         if (opts.target == null) return 0;
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
-        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, null, proj)).exit;
+        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj)).exit;
     }
 
     // The code cache's level B (144 B-60): a dependency whose analysis entry

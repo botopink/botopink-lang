@@ -92,7 +92,6 @@ const HELP =
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache; write what is compiled; a fresh .bpr set is reused
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
-    \\  [<file>.bpr]                 Run the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
     \\  --                           Pass remaining args to the program
     \\
     \\Options for `test`:
@@ -484,8 +483,7 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
             opts.cold = true;
         } else if (std.mem.eql(u8, flag.name, "--cache-root")) {
             opts.cache_root = try dirValue(args, &i, flag, diag);
-        } else if (isRuntimeFile(a) and opts.runtime_input == null) {
-            opts.runtime_input = a;
+            // No `.bpr` path (decision 1009): `run` finds its package's own set.
         } else return reject(a, diag);
     }
     opts.extra_args = try extra.toOwnedSlice(arena);
@@ -648,7 +646,7 @@ test "C11: an unsupported target is rejected with the token named" {
     try std.testing.expectEqualStrings("frobnicate", d.token);
 }
 
-test "B-163: build takes --emit-runtime <dir> and one .bpr to build; run takes one .bpr (decision 805 (1), (3))" {
+test "B-163: build takes --emit-runtime <dir> and one .bpr to build; run takes none (decisions 805 (1), (3), 1009)" {
     var d: ArgDiag = .{};
     try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{ "--emit-runtime", "rt" }), &d)).emit_runtime.?);
     try std.testing.expectEqualStrings("rt", (try parseBuildOpts(argv(&.{"--emit-runtime=rt"}), &d)).emit_runtime.?);
@@ -659,9 +657,8 @@ test "B-163: build takes --emit-runtime <dir> and one .bpr to build; run takes o
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "rt/app.bpr", "rt/lib.bpr" }), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "rt/app.bpr", "--emit-runtime", "x" }), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"src/main.bp"}), &d));
-    const r = try parseRunOpts(std.testing.allocator, argv(&.{ "rt/app.bpr", "--target", "beam" }), &d);
-    defer std.testing.allocator.free(r.extra_args);
-    try std.testing.expectEqualStrings("rt/app.bpr", r.runtime_input.?);
+    try std.testing.expectError(error.UnexpectedArgument, parseRunOpts(std.testing.allocator, argv(&.{ "rt/app.bpr", "--target", "beam" }), &d));
+    try std.testing.expectEqualStrings("rt/app.bpr", d.token);
 }
 
 test "C11: build and test reject positional arguments" {
