@@ -947,6 +947,12 @@ pub const HelperGroup = enum {
     /// Decision 999 — `$__main_fail(msg)`: an entry `main`'s `Error` text on
     /// stderr as `failed: <text>` (needs `assert_fail`'s `$__write_err`).
     main_fail,
+    /// Decision 992 — the file system's host functions, the `bp_fs` imports
+    /// (`wat_prelude.fs_imports`) a `.wat` leaf of std-wasm's `fs.wat` calls by
+    /// `$__fs_<name>`. The group holds no function: a module that calls such a
+    /// leaf gets the imports, and the `wasi` component its adapter over
+    /// `wasi:filesystem` (`wat_emitter.renderComponent`).
+    fs_host,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {

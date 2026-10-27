@@ -1,6 +1,6 @@
 //! Decision 518 — the host features a wasm program needs, as the program
 //! carries them: the custom section `botopink.needs`, the needs' names
-//! (`ast.WasmNeed`: `exceptions`, `http`, `gc`) one per line, which `wat.zig` writes
+//! (`ast.WasmNeed`: `exceptions`, `http`, `gc`, `filesystem`) one per line, which `wat.zig` writes
 //! from the `needs:` of the bindings the program reaches and links. The
 //! runners read it back — `needsOf` from the binary (`codegen/runtime.zig`'s
 //! RUN LOG), `needsOfText` from a `wasi` build's component text
@@ -14,12 +14,15 @@ const ast = @import("../../ast.zig");
 const Need = ast.WasmNeed;
 const Needs = ast.WasmNeeds;
 
-/// The most flags `wasmtimeArgs` answers: two per need.
-pub const max_args = 2 * std.enums.values(Need).len;
+/// The most flags `wasmtimeArgs` answers: two per need, `filesystem` four.
+pub const max_args = 2 * std.enums.values(Need).len + 2;
 
 /// `wasmtime run`'s flags for `needs`, in a fixed order: `-W exceptions=y`
 /// for `exceptions`, `-S http` for `http`, `-W gc=y` for `gc` (WasmGC, front
-/// 164 s2 — every program that emits GC types).
+/// 164 s2 — every program that emits GC types), and for `filesystem`
+/// (decision 992) `--dir /::/`, the root, and `--env TMPDIR`, the host's
+/// temporary directory when it names one. The working directory is the
+/// caller's to add (`cwdDirArg`): it is no static string.
 pub fn wasmtimeArgs(needs: Needs, buf: *[max_args][]const u8) []const []const u8 {
     var n: usize = 0;
     if (needs.contains(.exceptions)) {
@@ -37,7 +40,22 @@ pub fn wasmtimeArgs(needs: Needs, buf: *[max_args][]const u8) []const []const u8
         buf[n + 1] = "gc=y";
         n += 2;
     }
+    if (needs.contains(.filesystem)) {
+        buf[n] = "--dir";
+        buf[n + 1] = "/::/";
+        buf[n + 2] = "--env";
+        buf[n + 3] = "TMPDIR";
+        n += 4;
+    }
     return buf[0..n];
+}
+
+/// Decision 992 — the second preopen of a program that needs the `filesystem`:
+/// the working directory under its own absolute path (`wasmtime run --dir
+/// <cwd>::<cwd>`), so the program learns where a relative path begins from
+/// the name of the preopen. Owned by `alloc`.
+pub fn cwdDirArg(alloc: std.mem.Allocator, cwd: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(alloc, "{s}::{s}", .{ cwd, cwd });
 }
 
 /// Decision 518 — the custom section a wasm program names the host features
@@ -128,9 +146,13 @@ test "needs: the section read back from the binary and from the text" {
     try std.testing.expectEqual(@as(usize, 4), wasmtimeArgs(got, &buf).len);
     var all = Needs.initFull();
     const flags = wasmtimeArgs(all, &buf);
-    try std.testing.expectEqual(@as(usize, 6), flags.len);
+    try std.testing.expectEqual(@as(usize, 10), flags.len);
     try std.testing.expectEqualStrings("gc=y", flags[5]);
+    try std.testing.expectEqualStrings("--dir", flags[6]);
+    try std.testing.expectEqualStrings("/::/", flags[7]);
+    try std.testing.expectEqualStrings("TMPDIR", flags[9]);
     all.remove(.gc);
+    all.remove(.filesystem);
     try std.testing.expectEqual(@as(usize, 4), wasmtimeArgs(all, &buf).len);
     try std.testing.expectEqual(@as(usize, 0), wasmtimeArgs(Needs.initEmpty(), &buf).len);
 }

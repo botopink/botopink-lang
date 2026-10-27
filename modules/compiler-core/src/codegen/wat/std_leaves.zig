@@ -96,9 +96,30 @@ pub const PreludeName = struct { name: []const u8, group: ast.HelperGroup };
 /// leaf may name (decision 585 (i), (j)).
 pub const prelude_funcs = [_]PreludeName{
     .{ .name = "__wasi_random_f64", .group = .wasi_random_f64 },
+    // Decision 992: the file system leaves (`fs.wat`) reach linear memory through the
+    // marshal helpers and the allocator, and the host through `bp_fs`.
+    .{ .name = "__alloc", .group = .alloc },
+    .{ .name = "__gc_to_lin_str", .group = .std_marshal },
+    .{ .name = "__lin_to_gc_str", .group = .std_marshal },
+    .{ .name = "__fs_open", .group = .fs_host },
+    .{ .name = "__fs_close", .group = .fs_host },
+    .{ .name = "__fs_read", .group = .fs_host },
+    .{ .name = "__fs_write", .group = .fs_host },
+    .{ .name = "__fs_stat", .group = .fs_host },
+    .{ .name = "__fs_stat_at", .group = .fs_host },
+    .{ .name = "__fs_readdir_open", .group = .fs_host },
+    .{ .name = "__fs_readdir_next", .group = .fs_host },
+    .{ .name = "__fs_readdir_close", .group = .fs_host },
+    .{ .name = "__fs_mkdir", .group = .fs_host },
+    .{ .name = "__fs_rmdir", .group = .fs_host },
+    .{ .name = "__fs_unlink", .group = .fs_host },
+    .{ .name = "__fs_symlink", .group = .fs_host },
+    .{ .name = "__fs_getenv", .group = .fs_host },
+    .{ .name = "__fs_cwd", .group = .fs_host },
 };
 pub const prelude_globals = [_]PreludeName{
     .{ .name = "__random_state", .group = .random_state },
+    .{ .name = "__heap_ptr", .group = .alloc },
 };
 
 /// The helper group that declares the prelude function or global `name`, or

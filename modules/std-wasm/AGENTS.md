@@ -23,7 +23,7 @@ is `(func $<module>.<function> …)` over the codegen's GC types, named and neve
 (`codegen/wat/wat_reader.zig`, `std_leaves.zig`) into a WasmGC program that calls it, under the same
 `std:` cell. A `std:` name that is a leaf and still an export of `root.exports` is the leaf's in a
 WasmGC module and the export's in linear memory and at comptime, until nothing uses the export.
-Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`, `wat/random.wat`):
+Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`, `wat/random.wat`, `wat/fs.wat`, `wat/hash.wat`):
 
 | Leaf | Signature over the codegen's types | Answers |
 |---|---|---|
@@ -42,6 +42,8 @@ Today's leaves (`wat/text.wat`, `wat/number.wat`, `wat/bytes.wat`, `wat/random.w
 | `random.float` | `() -> f64` | the host's entropy: the prelude's `$__wasi_random_f64`, named and not declared (585 (j)) |
 | `random.seed` | `(i32) -> ()` | the stream restarts from the word's bits: `$__random_state` set |
 | `random.seededFloat` | `() -> f64` | the next Mulberry32 draw in `[0.0, 1.0)`, the host's entropy before any `seed` (451) |
+
+**`fs.wat` and `hash.wat` (decision 992).** `io.fs` on wasm is these leaves under `libs/std/src/io/fs.bp`'s botopink bodies. A leaf reads and writes linear memory (loads, stores, `memory.copy` / `memory.fill`; the reader admits an `offset=N`) and reaches the host through the prelude's `$__fs_<name>` imports (`bp_fs`, helper group `fs_host`, which the `wasi` component answers over `wasi:filesystem` in `wat_emitter.zig`), `$__alloc`, `$__heap_ptr` and the marshal helpers; what it allocates besides a handle block it puts back. `fs.cwd`, `fs.getenv`, `fs.open` (mode 0 read — a directory is `is-directory` —, 1 write created or truncated, 2 write created, 3 directory), `fs.openMem`, `fs.close`, `fs.isMem`, `fs.tell`, `fs.seek`, `fs.size`, `fs.read`, `fs.readAll`, `fs.readLine`, `fs.write`, `fs.statKind`, `fs.statSize`, `fs.statMtime`, `fs.list`, `fs.mkdir`, `fs.rmdir`, `fs.unlink`, `fs.symlink` answer a count, a handle or a size as `-(1 + code)` on failure (`code` the ordinal of `wasi:filesystem`'s `error-code`), a value as a `Result<_, i32>` holding the code; a path arrives relative to the preopened root (`fs.bp` joins a relative one to `fs.cwd`, the name of the working directory's preopen). The handle is a block in linear memory (kind, descriptor, position, length), so a file's position lives in the leaf. `hash.sha256Hex` is FIPS 180-4 over any bytes (`File.hash`). The `std:` cells declare `needs: [.Filesystem]`: the runner then gives the program `--dir /::/`, the working directory under its own path, and `--env TMPDIR`.
 
 `random.wat` keeps the stream's word in `$__random_state`, a mutable `i64` global the codegen declares in `wat_prelude` (helper group `random_state`, `-1` before any `seed`; 585 (i)) — a leaf names it as it names a type, and the `.wat` reader admits only the globals and prelude functions `std_leaves.zig` lists. The `bytes.*` leaves have no `std:` cell yet: the `.bp` half (`encoding`'s codecs over them, 585 (k)) waits for B-139 and s2 P5 (decision 566: no twin export — once P5 has deleted the linear lowering no module falls back).
 

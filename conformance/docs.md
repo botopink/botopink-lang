@@ -594,6 +594,10 @@ source; for `walk`, the root); `Other.message` is the host's text; a dangling li
 `already exists: <path>`, `not UTF-8: <path> at byte <offset>`, and `<path>: <message>` for `Other` — the same on
 every target; a library that carries an `io.fs` failure into a `string` writes `e.message()`, no `case` of its own.
 
+`io.fs` is the same on commonJS, erlang, beam and wasm (decision 992): on wasm the runner preopens the root and the working directory (`wasmtime run --dir`, no flag of the user's), a relative path is read against the working directory and an absolute one as it is, and the answers and the errors are the other targets'.
+
+<!-- example: modules/decisions-taken/io_fs_same_on_every_target-992/cells/io_fs_same_on_every_target -->
+
 <!-- example: modules/decisions-taken/fs_error_message_text-563/cells/fs_error_message -->
 
 **The whole-file shortcuts.** `readBytes`, `readText`, `writeBytes`, `writeText` (creating or

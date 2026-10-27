@@ -980,14 +980,26 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     // Decision 518 — the host is handed only the features the module's
     // `botopink.needs` section names (`-W exceptions=y` …); none, no flag.
     var flag_buf: [wasmNeeds.max_args][]const u8 = undefined;
-    const flags = wasmNeeds.wasmtimeArgs(if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code), &flag_buf);
-    var argv_buf: [3 + wasmNeeds.max_args][]const u8 = undefined;
+    const needs = if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code);
+    const flags = wasmNeeds.wasmtimeArgs(needs, &flag_buf);
+    var argv_buf: [5 + wasmNeeds.max_args][]const u8 = undefined;
     argv_buf[0] = "wasmtime";
     argv_buf[1] = "run";
     for (flags, 0..) |f, i| argv_buf[2 + i] = f;
-    argv_buf[2 + flags.len] = basename;
+    var argc = 2 + flags.len;
+    // Decision 992 — a program that reaches the file system is run in its scratch
+    // directory, which is its working directory: preopened under its own path.
+    const cwd_arg: ?[]const u8 = if (needs.contains(.filesystem) and std.fs.path.isAbsolute(tmp_dir)) try wasmNeeds.cwdDirArg(allocator, tmp_dir) else null;
+    defer if (cwd_arg) |a| allocator.free(a);
+    if (cwd_arg) |a| {
+        argv_buf[argc] = "--dir";
+        argv_buf[argc + 1] = a;
+        argc += 2;
+    }
+    argv_buf[argc] = basename;
+    argc += 1;
     const result = std.process.run(allocator, io, .{
-        .argv = argv_buf[0 .. 3 + flags.len],
+        .argv = argv_buf[0..argc],
         .cwd = .{ .path = tmp_dir },
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = RUNTIME_TIMEOUT_NS }, .clock = .real } },
     }) catch return allocator.dupe(u8, "");

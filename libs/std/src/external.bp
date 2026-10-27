@@ -31,13 +31,15 @@ import {compiler};
 // the needs of every binding a program reaches into the `.wasm`'s
 // `botopink.needs` custom section, and the runner hands the host only the
 // matching flags (wasmtime's `-W exceptions=y` for `Exceptions`, `-S http` for
-// `Http`, `-W gc=y` for `Gc`); `Gc` is also every program's that emits WasmGC
+// `Http`, `-W gc=y` for `Gc`, `--dir` for `Filesystem`: the root and the working
+// directory, decision 992); `Gc` is also every program's that emits WasmGC
 // types (decision 544). The compiler's copy is `ast.WasmNeed`, kept in step by
 // a test.
 pub type WasmNeed {
     Exceptions,
     Http,
     Gc,
+    Filesystem,
 }
 
 // The runtime a wasm binding serves (decision 334): a binding written without

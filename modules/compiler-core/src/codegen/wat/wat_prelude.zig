@@ -84,6 +84,9 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_shaped_unknown => &.{},
         .text_capture => &.{ .{ .global = cap_global }, .{ .func = cap_begin }, .{ .func = cap_end } },
         .random_state => &.{.{ .global = random_state_global }},
+        // Decision 992: the group is its imports (`fs_imports`), which `wat.zig` places
+        // ahead of the memory; no function.
+        .fs_host => &.{},
         .std_marshal => &.{ .{ .func = gc_to_lin_str }, .{ .func = lin_to_gc_str } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
@@ -2184,6 +2187,32 @@ pub const bp_host_delay_import = ast.Import{ .module = "bp_host", .name = "delay
 pub const bp_host_wait_import = ast.Import{ .module = "bp_host", .name = "wait", .func = "bp_host_wait", .type = .{ .params = &.{ .i32, .i32, .i32 }, .result = .i32 } };
 pub const bp_host_drop_import = ast.Import{ .module = "bp_host", .name = "drop", .func = "bp_host_drop", .type = .{ .params = &.{.i32} } };
 
+/// Decision 992 — the file system's host functions, the module `bp_fs` the `wasi` component
+/// answers over `wasi:filesystem` (`wat_emitter.zig`, § the file system's adapter). Every path is
+/// `(pointer, length)` in the program's memory, relative to the root the host preopens, no leading
+/// `/`; every answer is an `i32`, a count or a handle when it is not negative and `-(1 + code)`
+/// of `wasi:filesystem`'s `error-code` (its ordinal) when it is; `-100` is the end of a directory
+/// and an absent variable or working directory. `read` / `write` take the file offset; `stat`'s `out` is
+/// `[type: i32][pad: i32][size: i64][mtime in seconds: i64]`; a directory entry is
+/// `[type: i32][name]` at `ptr`, its length the answer.
+pub const fs_imports = [_]ast.Import{
+    .{ .module = "bp_fs", .name = "open", .func = "__fs_open", .type = .{ .params = &.{ .i32, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "close", .func = "__fs_close", .type = .{ .params = &.{.i32} } },
+    .{ .module = "bp_fs", .name = "read", .func = "__fs_read", .type = .{ .params = &.{ .i32, .i64, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "write", .func = "__fs_write", .type = .{ .params = &.{ .i32, .i64, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "stat", .func = "__fs_stat", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "stat_at", .func = "__fs_stat_at", .type = .{ .params = &.{ .i32, .i32, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "readdir_open", .func = "__fs_readdir_open", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "readdir_next", .func = "__fs_readdir_next", .type = .{ .params = &.{ .i32, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "readdir_close", .func = "__fs_readdir_close", .type = .{ .params = &.{.i32} } },
+    .{ .module = "bp_fs", .name = "mkdir", .func = "__fs_mkdir", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "rmdir", .func = "__fs_rmdir", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "unlink", .func = "__fs_unlink", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "symlink", .func = "__fs_symlink", .type = .{ .params = &.{ .i32, .i32, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "getenv", .func = "__fs_getenv", .type = .{ .params = &.{ .i32, .i32, .i32, .i32 }, .result = .i32 } },
+    .{ .module = "bp_fs", .name = "cwd", .func = "__fs_cwd", .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 } },
+};
+
 /// The `browser` host's loader calls this export when the event loop answers
 /// host task `h` (decision 394): the task settles and the ready tasks run.
 pub const bp_ready = ast.Func{
@@ -2905,7 +2934,7 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .std_marshal => items(.std_marshal),
         // The host's entropy and the seeded stream's word (front 164 s3 P2-e):
         // the `.wat` leaves of `random.wat` name both.
-        .wasi_random_f64, .random_state => items(g),
+        .wasi_random_f64, .random_state, .fs_host => items(g),
         // The shape walker and the tagged printer are generated per module
         // (`wat.zig`'s `gcPrinter`); the quoted string is the one shared piece.
         .print_shaped => &.{.{ .func = gc_print_quoted_raw }},

@@ -170,12 +170,24 @@ fn programArgvFor(
 
 /// Decision 518 — the `wasmtime run` flags a `wasi` build's component text at
 /// `path` asks for by its `botopink.needs` section (`-W exceptions=y`,
-/// `-S http`); none when it names no need or cannot be read (the run then
-/// reports the missing file itself).
+/// `-S http`, `--dir` for the file system); none when it names no need or
+/// cannot be read (the run then reports the missing file itself).
 pub fn wasmtimeFlags(arena: std.mem.Allocator, io: std.Io, path: []const u8) ![]const []const u8 {
     const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch return &.{};
+    const needs = bp.codegen.wasmNeeds.needsOfText(text);
     var buf: [bp.codegen.wasmNeeds.max_args][]const u8 = undefined;
-    return arena.dupe([]const u8, bp.codegen.wasmNeeds.wasmtimeArgs(bp.codegen.wasmNeeds.needsOfText(text), &buf));
+    const flags = bp.codegen.wasmNeeds.wasmtimeArgs(needs, &buf);
+    if (!needs.contains(.filesystem)) return arena.dupe([]const u8, flags);
+    // Decision 992 — a program that reaches the file system has the one a process
+    // of the user has: the root (in `flags`) and the working directory, under its
+    // own absolute path, as the host sees them.
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.process.currentPath(io, &cwd_buf) catch return arena.dupe([]const u8, flags);
+    const out = try arena.alloc([]const u8, flags.len + 2);
+    @memcpy(out[0..flags.len], flags);
+    out[flags.len] = "--dir";
+    out[flags.len + 1] = try bp.codegen.wasmNeeds.cwdDirArg(arena, cwd_buf[0..n]);
+    return out;
 }
 
 // ── no `fn main` ──────────────────────────────────────────────────────────────
