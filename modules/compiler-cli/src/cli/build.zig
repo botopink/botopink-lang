@@ -70,11 +70,14 @@ pub const Options = struct {
 const AnalysedSinks = struct {
     resolved: ?*ResolvedSink = null,
     runtime: ?*RuntimeSink = null,
+    /// The `.comptime` stage (decision 1058 (2)): it runs with the analysis.
+    comptime_units: ?*ComptimeSink = null,
 
     fn call(ctx: *anyopaque, outputs: []const bp.codegen.ComptimeOutput, readers: []const []const u8) anyerror!void {
         const self: *AnalysedSinks = @ptrCast(@alignCast(ctx));
         if (self.resolved) |r| try ResolvedSink.call(r, outputs, readers);
         if (self.runtime) |r| try RuntimeSink.call(r, outputs, readers);
+        if (self.comptime_units) |c| try c.call(outputs);
     }
 };
 
@@ -429,18 +432,18 @@ fn runBuild(
         runtime_sink.keep = j.arena;
     };
     sinks.runtime = &runtime_sink;
+    var comptime_sink: ComptimeSink = .{
+        .gpa = gpa,
+        .io = io,
+        .cfg = cfg,
+        .out_dir = opts.out_dir,
+        .wasmtime_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime"),
+        .unit_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "unit/comptime"),
+    };
+    sinks.comptime_units = &comptime_sink;
     const hook: bp.codegen.AnalysedHook = .{ .ctx = &sinks, .call = AnalysedSinks.call };
     if (opts.target == null) return analyseOnly(gpa, io, arena, modules, cfg, &sinks, &level_b, loaded.orphans.len, t0);
-    // Decisions 1033, 1035 (1), 1038 (4) — piece C1, the `.comptime` stage:
-    // the comptime units, whatever the target, behind the switch until the
-    // evaluators switch (C4).
-    const comptime_on = comptimeUnitsOn(env_map);
-    var comptime_units: std.ArrayListUnmanaged(bp.codegen.ModuleOutput) = .empty;
-    defer {
-        for (comptime_units.items) |*o| o.result.deinit(gpa);
-        comptime_units.deinit(gpa);
-    }
-    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false, .on_analysed = hook, .comptime_units = if (comptime_on) &comptime_units else null }) catch |err| {
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false, .on_analysed = hook }) catch |err| {
         reporter.errMsg("compilation failed");
         reporter.print("  {s}\n", .{@errorName(err)});
         return 1;
@@ -476,17 +479,6 @@ fn runBuild(
         else => return err,
     };
     removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
-    if (comptime_on) {
-        const comptime_failed = try diagnostics.failedOutputs(gpa, io, arena, &.{}, comptime_units.items, true);
-        if (comptime_failed.len > 0) {
-            diagnostics.reportFailedModules(arena, comptime_failed);
-            return 1;
-        }
-        writeComptimeUnits(gpa, io, arena, opts.out_dir, comptime_units.items, try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime")) catch |err| switch (err) {
-            error.ComptimeUnitRefused => return 1,
-            else => return err,
-        };
-    }
 
     // erlang: emitted text is not yet a program — the OTP compiler must accept
     // it. Every `.erl` this build wrote whose `.beam` record does not match is
@@ -1082,48 +1074,127 @@ fn writeRuntimeUnits(gpa: std.mem.Allocator, io: std.Io, out_dir: []const u8, bi
     for (try rt.closure(ar, im.units)) |u| try writeIfChanged(ar, io, out_dir, u.file_name, u.bytes);
 }
 
-/// Whether the `.comptime` stage runs (`wasmComptimeUnits.switch_env` is
-/// `1`): until the evaluators switch (C4) the Erlang path evaluates and the
-/// comptime units are only emitted.
-fn comptimeUnitsOn(env_map: libs.EnvMap) bool {
-    const m = env_map orelse return false;
-    const v = m.get(bp.codegen.wasmComptimeUnits.switch_env) orelse return false;
-    return std.mem.eql(u8, v, "1");
-}
+/// Decisions 1033, 1035 (1), (3), 1058 (2), (3) — the `.comptime` stage, run
+/// with every analysis (`AnalysedSinks`; a build from a fresh `.bpr` set
+/// analyses nothing and runs none): the comptime units
+/// (`bp.codegen.comptimeUnits`), each module's taken from the unit cache
+/// `<cache root>/.botopinkbuild/cache/unit/comptime/` when its key matches,
+/// written into `<out>/wasm-comptime/` (`write`). Until C4 a module the
+/// lowering refuses is recorded, not failed: `refused.txt` and the `--json`
+/// report's `comptime_refused` events, nothing on stderr.
+const ComptimeSink = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    cfg: bp.codegen.Config,
+    out_dir: []const u8,
+    /// The precompiled cache (decision 1034 (8)).
+    wasmtime_dir: []const u8,
+    /// The comptime units by key (decisions 1008 (2), 1058 (2)).
+    unit_dir: []const u8,
+    arena: std.mem.Allocator = undefined,
 
-/// Decisions 1033 (3), 1035 (1), (3) — `<out_dir>/wasm-comptime/`: each
-/// comptime unit `<pkg>@<path>.wasm` of `outputs` (`codegen.Options.comptime_units`),
-/// the runtime core and the std units they import — the same bytes as
-/// `out/wasm/`'s —, each written when it changed and compiled once into the
-/// precompiled cache `<cache_dir>/<sha256>.cwasm` (decision 1034 (8); one
-/// artifact for both folders, since the bytes and so the key are one).
-fn writeComptimeUnits(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, out_dir: []const u8, outputs: []const bp.codegen.ModuleOutput, cache_dir: []const u8) !void {
-    const cu = bp.codegen.wasmComptimeUnits;
-    const engine = bp.codegen.wasmEngine;
-    var units: std.ArrayListUnmanaged(cu.Unit) = .empty;
-    for (outputs) |o| {
-        const bin = o.result.wasm orelse continue;
-        const stems = try bp.codegen.wasmRuntimeUnit.unitsOf(arena, bin);
-        if (stems.len == 0) continue;
-        try units.append(arena, .{ .stem = stems[stems.len - 1], .bytes = bin });
+    fn call(self: *ComptimeSink, outputs: []const bp.codegen.ComptimeOutput) !void {
+        var arena_state = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena_state.deinit();
+        self.arena = arena_state.allocator();
+        const iface: bp.codegen.wasmComptimeUnits.Cache = .{ .ctx = self, .get = get, .put = put };
+        var units = try bp.codegen.comptimeUnits(self.gpa, outputs, self.cfg, iface);
+        defer {
+            for (units.items) |*o| o.result.deinit(self.gpa);
+            units.deinit(self.gpa);
+        }
+        try self.write(units.items);
     }
-    if (units.items.len == 0) return;
-    const dir = try std.fs.path.join(arena, &.{ out_dir, cu.folder });
-    for ([_][]const u8{ dir, cache_dir }) |d| std.Io.Dir.cwd().createDirPath(io, d) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-    for (try cu.files(arena, units.items)) |f| {
-        try writeIfChanged(arena, io, dir, f.name, f.bytes);
-        var failure: ?[]u8 = null;
-        const pc = (try engine.precompiled(gpa, io, cache_dir, f.bytes, .module, code_cache.cold, &failure)) orelse {
-            reporter.errMsg(try std.fmt.allocPrint(arena, "comptime unit {s}: {s}", .{ f.name, failure.? }));
-            gpa.free(failure.?);
-            return error.ComptimeUnitRefused;
+
+    /// The cache file of `key`: the compiler's identity is part of it.
+    fn path(self: *ComptimeSink, key: bp.codegen.wasmComptimeUnits.Key) ![]const u8 {
+        var h = std.crypto.hash.sha2.Sha256.init(.{});
+        h.update(build_stamp.source_hash);
+        h.update(&key);
+        return std.fmt.allocPrint(self.arena, "{s}/{s}.bpcu", .{ self.unit_dir, &std.fmt.bytesToHex(h.finalResult(), .lower) });
+    }
+
+    fn get(ctx: *anyopaque, key: bp.codegen.wasmComptimeUnits.Key) ?[]const u8 {
+        const self: *ComptimeSink = @ptrCast(@alignCast(ctx));
+        if (code_cache.cold) return null;
+        const p = self.path(key) catch return null;
+        return std.Io.Dir.cwd().readFileAlloc(self.io, p, self.arena, .unlimited) catch null;
+    }
+
+    fn put(ctx: *anyopaque, key: bp.codegen.wasmComptimeUnits.Key, bytes: []const u8) void {
+        const self: *ComptimeSink = @ptrCast(@alignCast(ctx));
+        std.Io.Dir.cwd().createDirPath(self.io, self.unit_dir) catch return;
+        const p = self.path(key) catch return;
+        analysis_store.write(self.arena, self.io, p, bytes) catch {};
+    }
+
+    /// `<out>/wasm-comptime/`: each unit, the core and the std units they
+    /// import (`out/wasm/`'s bytes), `refused.txt` when the lowering refused a
+    /// module; a file is written when its bytes changed and then compiled into
+    /// the precompiled cache; a file no longer the folder's is removed, and
+    /// `--cold` clears the folder first.
+    fn write(self: *ComptimeSink, outputs: []const bp.codegen.ModuleOutput) !void {
+        const cu = bp.codegen.wasmComptimeUnits;
+        const ar = self.arena;
+        const io = self.io;
+        const dir = try std.fs.path.join(ar, &.{ self.out_dir, cu.folder });
+        if (code_cache.cold) std.Io.Dir.cwd().deleteTree(io, dir) catch {};
+        var units: std.ArrayListUnmanaged(cu.Unit) = .empty;
+        var refused: std.ArrayListUnmanaged(u8) = .empty;
+        for (outputs) |o| {
+            if (cu.refusalOf(o.result)) |gap| {
+                try refused.print(ar, "{s}\t{s}\n", .{ o.name, gap });
+                if (json_state) |j| jsonLine(j.arena, j.io, .{ .event = "comptime_refused", .module = o.name, .gap = gap });
+                continue;
+            }
+            const bin = o.result.wasm orelse continue;
+            const stems = try bp.codegen.wasmRuntimeUnit.unitsOf(ar, bin);
+            if (stems.len == 0) continue;
+            try units.append(ar, .{ .stem = stems[stems.len - 1], .bytes = bin });
+        }
+        var keep: std.StringHashMapUnmanaged(void) = .empty;
+        if (units.items.len > 0 or refused.items.len > 0) {
+            std.Io.Dir.cwd().createDirPath(io, dir) catch |err| switch (err) {
+                error.PathAlreadyExists => {},
+                else => return err,
+            };
+        }
+        if (units.items.len > 0) for (try cu.files(ar, units.items)) |f| {
+            try keep.put(ar, f.name, {});
+            if (!try writeChanged(ar, io, dir, f.name, f.bytes)) continue;
+            std.Io.Dir.cwd().createDirPath(io, self.wasmtime_dir) catch {};
+            var failure: ?[]u8 = null;
+            const pc = (try bp.codegen.wasmEngine.precompiled(self.gpa, io, self.wasmtime_dir, f.bytes, .module, code_cache.cold, &failure)) orelse {
+                // Recorded as a refusal of the folder's, never on stderr (1058 (3)).
+                try refused.print(ar, "{s}\t{s}\n", .{ f.name, failure.? });
+                self.gpa.free(failure.?);
+                continue;
+            };
+            pc.code.deinit();
+            if (pc.path) |p| self.gpa.free(p);
         };
-        pc.code.deinit();
-        if (pc.path) |p| gpa.free(p);
+        if (refused.items.len > 0) {
+            try keep.put(ar, cu.refused_file, {});
+            _ = try writeChanged(ar, io, dir, cu.refused_file, refused.items);
+        }
+        // What an earlier analysis wrote and this one did not.
+        var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return;
+        defer d.close(io);
+        var stale: std.ArrayListUnmanaged([]const u8) = .empty;
+        var it = d.iterate();
+        while (it.next(io) catch null) |e| if (e.kind == .file and !keep.contains(e.name)) try stale.append(ar, try ar.dupe(u8, e.name));
+        for (stale.items) |n| d.deleteFile(io, n) catch {};
     }
+};
+
+/// `writeIfChanged`, answering whether it wrote.
+fn writeChanged(ar: std.mem.Allocator, io: std.Io, out_dir: []const u8, file: []const u8, bytes: []const u8) !bool {
+    const path = try std.fs.path.join(ar, &.{ out_dir, file });
+    if (std.Io.Dir.cwd().readFileAlloc(io, path, ar, .limited(bytes.len + 1))) |have| {
+        if (std.mem.eql(u8, have, bytes)) return false;
+    } else |_| {}
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = bytes });
+    return true;
 }
 
 fn writeIfChanged(ar: std.mem.Allocator, io: std.Io, out_dir: []const u8, file: []const u8, bytes: []const u8) !void {

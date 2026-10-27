@@ -35,8 +35,16 @@ pub const unitCache = @import("./codegen/unit_cache.zig");
 pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
 pub const wasmNeeds = @import("./codegen/wat/needs.zig");
 pub const wasmRuntimeUnit = @import("./codegen/wat/runtime_unit.zig");
-/// The comptime units' folder (decisions 1033 (3), 1035, piece C1).
+/// The comptime units' folder (decisions 1033 (3), 1035, 1058, piece C1).
 pub const wasmComptimeUnits = @import("./codegen/wat/comptime_units.zig");
+
+/// Decisions 1033, 1035 (1), 1058 (2) — the `.comptime` stage: the comptime
+/// units of an analysed program, whatever the target (`wat.comptimeUnits`).
+/// A driver runs it over every analysis (`Options.on_analysed`); each result
+/// is the caller's to `deinit`.
+pub fn comptimeUnits(allocator: std.mem.Allocator, outputs: []const ComptimeOutput, config: Config, cache: ?wasmComptimeUnits.Cache) !std.ArrayListUnmanaged(ModuleOutput) {
+    return wat.comptimeUnits(allocator, outputs, config, cache);
+}
 /// The embedded wasmtime engine and its `.cwasm` cache, and the in-process
 /// runner over it (decisions 1032, 1034); native builds only.
 pub const wasmEngine = if (@import("builtin").cpu.arch.isWasm()) struct {} else @import("./codegen/wat/engine.zig");
@@ -62,11 +70,9 @@ pub const Options = struct {
     /// (`<cache root>/.botopinkbuild/cache/wasmtime`); null, the working
     /// directory's own `.botopinkbuild` (decision 1008 (5)).
     wasmtime_cache_dir: ?[]const u8 = null,
-    /// Decisions 1033, 1035 (1), 1038 (4) — piece C1, the `.comptime`
-    /// stage: when set, the analysed program's comptime units
-    /// (`wasmComptimeUnits`, `wat.comptimeUnits`) are emitted into it,
-    /// whatever the target, before the program's own emit. Owned by the
-    /// caller (each `result.deinit`).
+    /// When set, the analysed program's comptime units (`comptimeUnits`, no
+    /// cache) are emitted into it before the program's own emit — a test's
+    /// way to the stage a driver runs from `on_analysed`. Owned by the caller.
     comptime_units: ?*std.ArrayListUnmanaged(ModuleOutput) = null,
 };
 
@@ -250,7 +256,7 @@ pub fn generateWith(
     var session = try analyse(allocator, modules, io, config);
     defer session.deinit(allocator);
     if (options.on_analysed) |hook| try hook.call(hook.ctx, session.outputs.items, session.readers);
-    if (options.comptime_units) |out| out.* = try wat.comptimeUnits(allocator, session.outputs.items, config);
+    if (options.comptime_units) |out| out.* = try wat.comptimeUnits(allocator, session.outputs.items, config, null);
     // The unit cache (decision 1008 (2)): a dependency module whose unit it
     // holds is not emitted again — never a module answering for the whole
     // program — and once the emit returned the store keeps what it will, while

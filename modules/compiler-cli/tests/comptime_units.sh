@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Decisions 1033 (3), 1035 (1), (3), 1038 (4) — piece C1, the `.comptime` stage, against the real
-# CLI, over `comptime_units/app` (`main` declares a decorator and imports `lib`):
-#   • with BOTOPINK_COMPTIME_UNITS=1, `build --target erlang` writes `out/wasm-comptime/`:
-#     `app@main.wasm` (the decorator's module), `app@lib.wasm` (the program unit it imports),
-#     the runtime core `std@__rt.wasm` and the std units they import — whatever the target;
-#   • each std file there is the bytes `zig build std-wasm` writes (`zig-out/lib/std-wasm/`),
-#     the ones `out/wasm/` holds;
-#   • every file of the folder is compiled into `.botopinkbuild/cache/wasmtime/<sha256>.cwasm`;
-#   • the program's own output is the build's without the switch, and without it no
-#     `wasm-comptime/` folder is written.
+# Decisions 1033 (3), 1035 (1), (3), 1038 (4), 1058 (2), (3) — piece C1, the `.comptime` stage,
+# against the real CLI, over `comptime_units/app` (`main` declares a decorator and imports `lib`;
+# `gap` writes a `comptime` the WasmGC generator refuses today):
+#   • always written: `build --target erlang` writes `out/wasm-comptime/` — `app@main.wasm`,
+#     `app@lib.wasm`, the runtime core `std@__rt.wasm` and the std units they import, each std
+#     file the bytes `zig build std-wasm` writes (`out/wasm/`'s) — whatever the target;
+#   • refusals recorded: `gap` is a `gap<TAB><the gap>` line of `refused.txt`, the build exits 0
+#     and nothing of the stage is on stderr; `build --json` reports it as a `comptime_refused` event;
+#   • every unit is compiled into `.botopinkbuild/cache/wasmtime/<sha256>.cwasm`;
+#   • a build from a fresh `.bpr` set evaluates nothing and writes no comptime unit;
+#   • `--cold` clears the folder and writes it again.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -36,16 +37,18 @@ APP="$WORK/app"
 failures=0
 fail() { echo "  ✗ $*" >&2; failures=$((failures + 1)); }
 
-bp() { # <log> <env…> -- <args…>: the CLI in `app`, its stdout and stderr to <log>
+bp() { # <log> <command…>: the command in `app`, its stdout and stderr to <log>
   local log="$1"; shift
   ( cd "$APP" && env "$@" ) > "$log" 2>&1
 }
 
-bp "$WORK/on.log" BOTOPINK_COMPTIME_UNITS=1 "$BP_BIN" build --target erlang --out "$WORK/out-on" || { fail "the build with the switch failed"; sed 's/^/      /' "$WORK/on.log" >&2; }
-CT="$WORK/out-on/wasm-comptime"
+( cd "$APP" && "$BP_BIN" build --target erlang --out "$WORK/out" ) > "$WORK/build.log" 2> "$WORK/build.err" || { fail "the build failed"; sed 's/^/      /' "$WORK/build.err" >&2; }
+grep -qi 'comptime\|wasm' "$WORK/build.err" && fail "the stage printed on stderr: $(cat "$WORK/build.err")"
+CT="$WORK/out/wasm-comptime"
 for f in app@main.wasm app@lib.wasm std@__rt.wasm; do
   [[ -f "$CT/$f" ]] || fail "out/wasm-comptime/$f was not written"
 done
+grep -q $'^gap\tthe comptime unit of `gap` needs a lowering' "$CT/refused.txt" 2>/dev/null || fail "refused.txt does not record gap: $(cat "$CT/refused.txt" 2>/dev/null)"
 for f in "$CT"/*.wasm; do
   name="$(basename "$f")"
   case "$name" in
@@ -54,16 +57,25 @@ for f in "$CT"/*.wasm; do
     *) fail "out/wasm-comptime/$name is no unit a comptime module reaches" ;;
   esac
 done
-# The stage runs where comptime runs: the build with the switch came first, from
-# nothing; this one emits from the `.bpr` set it left.
-bp "$WORK/off.log" "$BP_BIN" build --target erlang --out "$WORK/out-off" || { fail "the build without the switch failed"; sed 's/^/      /' "$WORK/off.log" >&2; }
-[[ ! -e "$WORK/out-off/wasm-comptime" ]] || fail "the build without the switch wrote out/wasm-comptime/"
-
 n_files="$(find "$CT" -name '*.wasm' | wc -l)"
 n_cwasm="$(find "$APP/.botopinkbuild/cache/wasmtime" -name '*.cwasm' 2>/dev/null | wc -l)"
 (( n_cwasm >= n_files )) || fail "$n_files comptime units, $n_cwasm precompiled artifacts"
 
-diff -r "$WORK/out-off/erlang" "$WORK/out-on/erlang" > /dev/null || fail "the switch changed the program's own output"
+# A build from the fresh `.bpr` set the first one left analyses nothing.
+rm -r "$CT"
+bp "$WORK/again.log" "$BP_BIN" build --target erlang --out "$WORK/out" || fail "the build from the .bpr set failed"
+[[ ! -e "$CT" ]] || fail "a build from a fresh .bpr set wrote out/wasm-comptime/"
+
+# `--cold` clears the folder: a stray file goes, the units come back.
+bp "$WORK/cold0.log" "$BP_BIN" build --target erlang --out "$WORK/out" --cold || fail "the cold build failed"
+echo stray > "$CT/stray.wasm"
+bp "$WORK/cold.log" "$BP_BIN" build --target erlang --out "$WORK/out" --cold || fail "the cold build failed"
+[[ ! -e "$CT/stray.wasm" ]] || fail "--cold left a stray file in out/wasm-comptime/"
+[[ -f "$CT/app@main.wasm" ]] || fail "--cold did not write app@main.wasm again"
+
+# The `--json` report names the refusal.
+bp "$WORK/json.log" "$BP_BIN" build --target erlang --out "$WORK/out-json" --cold --json || true
+grep -q '"event":"comptime_refused","module":"gap"' "$WORK/json.log" || fail "build --json reports no comptime_refused event for gap"
 
 if (( failures > 0 )); then
   echo "comptime_units: $failures failure(s)" >&2

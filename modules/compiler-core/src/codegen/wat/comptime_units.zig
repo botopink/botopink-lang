@@ -12,21 +12,89 @@
 //! bytes as `out/wasm/`'s, so one precompiled artifact serves both (1035 (3)).
 //! An evaluation instantiates units and compiles nothing (1035 (1)).
 //!
-//! `wat.comptimeUnits` emits the units (`codegen.Options.comptime_units`);
-//! this file decides which modules are comptime modules and which files the
-//! folder holds. Behind `switch_env` until the evaluators switch (C4): the
-//! Erlang path evaluates meanwhile.
+//! `wat.comptimeUnits` emits the units (`codegen.comptimeUnits`), run by
+//! the driver over every analysis (1058 (2)); this file decides which
+//! modules are comptime modules, the folder's files, the record of what the
+//! lowering refused (`refused_file`, 1058 (3): recorded, not failed, until
+//! C4), and the units' cache entries (`Cache`, `keyOf`).
 
 const std = @import("std");
 const lexerMod = @import("../../lexer.zig");
 const runtimeUnit = @import("runtime_unit.zig");
+const moduleOutput = @import("../moduleOutput.zig");
+const comptimeMod = @import("../../comptime.zig");
+const analysisEntry = @import("../../comptime/analysis_entry.zig");
 
 /// The folder beside `out/wasm/` (decision 1033 (3)).
 pub const folder = "wasm-comptime";
 
-/// The switch of the stage while the Erlang path is live (until C4): the
-/// CLI's build emits the comptime units when this variable is `1`.
-pub const switch_env = "BOTOPINK_COMPTIME_UNITS";
+/// The folder's record of the modules the lowering refused: one
+/// `<module>\t<gap>` line each (decision 1058 (3)).
+pub const refused_file = "refused.txt";
+
+/// A comptime unit's cache key (`keyOf`).
+pub const Key = [32]u8;
+
+/// Decisions 1008 (2), 1058 (2) — the store of comptime units by module key:
+/// the driver's (`compiler-cli` `build.zig`), which adds the compiler's
+/// identity to each key. `get` answers `stored`'s bytes, living as long as
+/// the store.
+pub const Cache = struct {
+    ctx: *anyopaque,
+    get: *const fn (ctx: *anyopaque, key: Key) ?[]const u8,
+    put: *const fn (ctx: *anyopaque, key: Key, bytes: []const u8) void,
+};
+
+/// The key of module `name`'s comptime unit: its analysis as the code
+/// cache's level B encodes it (what its lowering reads), and the keys of the
+/// program units it reaches, in order.
+pub fn keyOf(gpa: std.mem.Allocator, name: []const u8, src_path: []const u8, ok: comptimeMod.ComptimeOutput.OkData, deps: []const Key) !Key {
+    var enc = analysisEntry.Encoder(&analysisEntry.default_skips).init(gpa);
+    defer enc.deinit();
+    const a: analysisEntry.Analysis = .{ .name = name, .srcPath = src_path, .ok = ok };
+    try enc.encode(analysisEntry.Analysis, &a);
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink comptime unit 1\x00");
+    h.update(name);
+    h.update("\x00");
+    h.update(enc.out.items);
+    for (enc.strings.keys()) |str| {
+        h.update(str);
+        h.update("\x00");
+    }
+    for (deps) |d| h.update(&d);
+    return h.finalResult();
+}
+
+/// What the cache keeps of a module's comptime result: `U` and its unit's
+/// bytes, or `R` and the refusal's text; null for anything else.
+pub fn stored(ar: std.mem.Allocator, r: moduleOutput.GenerateResult) !?[]const u8 {
+    if (r.wasm) |bin| if (!r.failed()) return try std.mem.concat(ar, u8, &.{ "U", bin });
+    if (refusalOf(r)) |m| return try std.mem.concat(ar, u8, &.{ "R", m });
+    return null;
+}
+
+/// `stored`'s bytes as a result again, owned by `gpa`.
+pub fn restored(gpa: std.mem.Allocator, bytes: []const u8) !moduleOutput.GenerateResult {
+    var out: moduleOutput.GenerateResult = .{ .js = try gpa.dupe(u8, ""), .comptime_script = null };
+    errdefer out.deinit(gpa);
+    if (bytes.len > 0 and bytes[0] == 'U') {
+        out.wasm = try gpa.dupe(u8, bytes[1..]);
+    } else {
+        out.diagnostic = .{ .type = .{ .message = try gpa.dupe(u8, if (bytes.len > 0) bytes[1..] else ""), .loc = null } };
+    }
+    return out;
+}
+
+/// The text of the refusal `r` carries, or null.
+pub fn refusalOf(r: moduleOutput.GenerateResult) ?[]const u8 {
+    if (r.diagnostic) |d| return switch (d) {
+        .type => |t| t.message,
+        .syntax => "the module does not parse",
+    };
+    if (r.comptime_err != null) return "the module's comptime validation failed";
+    return null;
+}
 
 /// Whether the module source `src` declares comptime code: it writes
 /// `comptime` (an expression, a block, a `comptime` parameter) or a `syntax`

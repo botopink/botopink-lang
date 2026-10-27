@@ -5518,8 +5518,9 @@ test "wat: decision 1021 (10) ---- a method on a type imported under an alias is
 // the program unit it imports and nothing else; every unit passes the face
 // oracle (its index read from its bytes, every import an export of the unit
 // it names, typed alike) and compiles; the folder's core and std units are
-// the bytes a `wasi` build with the units writes into `out/wasm/`; and the
-// stage changes nothing of the program's own emit.
+// the bytes a `wasi` build with the units writes into `out/wasm/`; a second
+// stage over the same analysis takes every unit from the cache (1058 (2));
+// and the stage changes nothing of the program's own emit.
 test "wat: comptime units ---- a module declaring a decorator has its comptime unit, whatever the target" {
     const a = std.testing.allocator;
     const io = std.testing.io;
@@ -5556,20 +5557,59 @@ test "wat: comptime units ---- a module declaring a decorator has its comptime u
         },
     };
     const cfg = h.configs[1];
-    var units: std.ArrayListUnmanaged(ModuleOutput) = .empty;
-    defer {
-        for (units.items) |*o| o.result.deinit(a);
-        units.deinit(a);
-    }
-    var with = try codegen.generateWith(a, &modules, io, cfg, .{ .execute = false, .comptime_units = &units });
-    defer {
-        for (with.items) |*o| o.result.deinit(a);
-        with.deinit(a);
-    }
     var without = try codegen.generateWith(a, &modules, io, cfg, .{ .execute = false });
     defer {
         for (without.items) |*o| o.result.deinit(a);
         without.deinit(a);
+    }
+    var session = try codegen.analyse(a, &modules, io, cfg);
+    defer session.deinit(a);
+    // A store in memory: the first stage fills it, the second takes every
+    // unit from it and emits nothing.
+    const Store = struct {
+        map: std.AutoHashMapUnmanaged(cu.Key, []u8) = .empty,
+        gets: usize = 0,
+        hits: usize = 0,
+        fn get(ctx: *anyopaque, key: cu.Key) ?[]const u8 {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.gets += 1;
+            const v = self.map.get(key) orelse return null;
+            self.hits += 1;
+            return v;
+        }
+        fn put(ctx: *anyopaque, key: cu.Key, bytes: []const u8) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            const copy = std.testing.allocator.dupe(u8, bytes) catch return;
+            self.map.put(std.testing.allocator, key, copy) catch std.testing.allocator.free(copy);
+        }
+    };
+    var store: Store = .{};
+    defer {
+        var it = store.map.valueIterator();
+        while (it.next()) |v| a.free(v.*);
+        store.map.deinit(a);
+    }
+    const iface: cu.Cache = .{ .ctx = &store, .get = Store.get, .put = Store.put };
+    var units = try codegen.comptimeUnits(a, session.outputs.items, cfg, iface);
+    defer {
+        for (units.items) |*o| o.result.deinit(a);
+        units.deinit(a);
+    }
+    try std.testing.expectEqual(@as(usize, 0), store.hits);
+    try std.testing.expectEqual(units.items.len, store.map.count());
+    var again = try codegen.comptimeUnits(a, session.outputs.items, cfg, iface);
+    defer {
+        for (again.items) |*o| o.result.deinit(a);
+        again.deinit(a);
+    }
+    try std.testing.expectEqual(units.items.len, store.hits);
+    try std.testing.expectEqual(units.items.len, again.items.len);
+    for (units.items, again.items) |x, y| try std.testing.expectEqualSlices(u8, x.result.wasm.?, y.result.wasm.?);
+    // The stage changes nothing of the program's own emit.
+    var with = try codegen.emit(a, session.outputs.items, cfg);
+    defer {
+        for (with.items) |*o| o.result.deinit(a);
+        with.deinit(a);
     }
     try std.testing.expectEqual(without.items.len, with.items.len);
     for (with.items, without.items) |x, y| try std.testing.expectEqualStrings(y.result.js, x.result.js);

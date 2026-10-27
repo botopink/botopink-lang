@@ -24,7 +24,7 @@ wat/
 ├── needs.zig         ← decision 518: the `botopink.needs` custom section read back (binary, text); the runner gives a program the host services it names
 ├── std_wasm_link.zig ← decision 440 (2): std-wasm's program face (`std_wasm.wasm`) decoded into the model, linked into the program
 ├── runtime_unit.zig  ← decisions 1021 (2), 1026: the runtime core `std@__rt` (memory, heap, allocator, the panic tag, the WASI imports) and std's units `std@<path>`, cut from std-wasm, which a program imports; each unit's index (`Face`) and decision 1037's abstract boundary (wrappers, thunks, the one switch)
-├── comptime_units.zig ← decisions 1033 (3), 1035 (1), (3), 1038 (4) (piece C1): the comptime units' folder `out/wasm-comptime/` — which modules are comptime modules (`declaresComptime`), the folder's files (`files`: the core, std's units, the modules'); `wat.zig` `comptimeUnits` emits them (§ The comptime units)
+├── comptime_units.zig ← decisions 1033 (3), 1035 (1), (3), 1038 (4) (piece C1): the comptime units' folder `out/wasm-comptime/` — which modules are comptime modules (`declaresComptime`), the folder's files (`files`: the core, std's units, the modules'); `keyOf` / `Cache` / `stored` the units' cache entries, `refused_file`; `wat.zig` `comptimeUnits` emits them (§ The comptime units)
 ├── wat_reader.zig    ← front 164 s3: a `.wat` text read into the model — the compiler's own s-expression reader, no tool; type names resolved against the codegen's (549), a located error for a text that does not read
 ├── std_leaves.zig    ← front 164 s3: std-wasm's `.wat` leaves (`modules/std-wasm/wat/`, embedded), found by name, read into the GC module that calls one
 ├── scope_carry.zig   ← decision 504: each module's render-scope values typed by the checker's type the scope lowering carries
@@ -1289,27 +1289,33 @@ type registry (P4); `$__write_bytes` and the GC print helpers stay with the prog
 per-program capture state). `modules/compiler-cli/tests/wasm_runtime_unit.sh` and
 `wasm_std_unit_per_module.sh` (cell `wasm_std_unit_per_module`) are the oracles.
 
-### The comptime units (decisions 1033, 1035 (1), (3), 1038 (4), piece C1)
+### The comptime units (decisions 1033, 1035 (1), (3), 1038 (4), 1058 (2), (3), piece C1)
 
-Comptime goes through this generator one unit per module. `wat.zig` `comptimeUnits(alloc, outputs,
-config)` — the `.comptime` stage, `codegen.Options.comptime_units`, run over the analysed program
-whatever the build's target — emits the program as a `wasi` build with the units on
+Comptime goes through this generator one unit per module. The `.comptime` stage belongs to analysis
+(1058 (2)): a driver runs `codegen.comptimeUnits(alloc, outputs, config, cache)` (`wat.zig`
+`comptimeUnits`; a test may set `codegen.Options.comptime_units`, no cache) over every analysed program, whatever the build's target, and a build from a fresh
+`.bpr` set, which analyses nothing, runs none. It always runs; there is no switch (1058 (3)). The
+roots are the program or library modules whose source declares comptime code
+(`comptime_units.declaresComptime`: a `comptime` token, or a `syntax` parameter — a decorator's, a
+template's); with what they reach (`unitDeps`, the deps `unitOrder` orders by; an entry's frame
+counts only the modules with a body) they are emitted as a `wasi` build with the units on
 (`codegenEmit` with `wasm_artifact`, `wasm_units`, no `wasm_entry_only`, no unit cache) and
-`gc_only` set: `emitWat` lowers a module in `.gc` alone (`emitGcOnly`; the reached-only retry
-as `emitWat`'s), never in linear memory (1033 (1)), and a module that lowering refuses with no
-located refusal of its own is refused naming the gap. It keeps each program or library module
-whose source declares comptime code (`comptime_units.declaresComptime`: a `comptime` token, or a
-`syntax` parameter — a decorator's, a template's) and every program unit their `botopink.units`
-names; nothing else comes back. The CLI writes them as `out/wasm-comptime/<pkg>@<path>.wasm`
-beside the runtime core and the std units they import (`comptime_units.files`) — the bytes
-`out/wasm/` holds, so one precompiled artifact serves both (1035 (3)) — and compiles each into
-`.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (1034 (8)), behind `BOTOPINK_COMPTIME_UNITS=1`
-(`switch_env`) while the Erlang path evaluates (until C4). Not yet in a unit: the decorator and
-template bodies and the `comptime` expressions' and blocks' entries — a body reads its `syntax`
-handle and `compiler` (`std/compiler`'s `Compiler`), which the generator has no typed form of
-until C2; today a comptime unit holds its module's program code, so its bytes are the program
-unit's. `tests/wat.zig` `comptime units ----` and `modules/compiler-cli/tests/comptime_units.sh`
-are the oracles.
+`gc_only` set: `emitWat` lowers a module in `.gc` alone (`emitGcOnly`; the reached-only retry as
+`emitWat`'s), never in linear memory (1033 (1)), and a module that lowering refuses with no located
+refusal of its own is refused naming the first gap it met (`first_gap`). **The cache** (1008 (2),
+1058 (2)): each module's key is its analysis as level B encodes it and the keys of the units it
+reaches (`comptime_units.keyOf`); a module whose key the driver's store holds (`Cache`, the bytes
+`stored` writes: the unit, or the refusal's text) is not emitted (`emit_only`) unless a module that
+imports it is, since an importer is lowered against its units' exports — an unchanged program
+lowers nothing. The CLI writes `out/wasm-comptime/<pkg>@<path>.wasm` beside the runtime core and
+the std units they import (`comptime_units.files`) — the bytes `out/wasm/` holds, so one precompiled
+artifact serves both (1035 (3)) — and compiles each file it wrote into
+`.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (1034 (8)). Until C4 a refusal is recorded, not
+failed: `refused.txt` (`<module>\t<gap>`) and the `--json` report, nothing on stderr. Not yet in a
+unit: the decorator and template bodies and the `comptime` expressions' and blocks' entries (after
+P4a–c, decision 1055, with C2's `Decl`, 1058 (1)); today a comptime unit holds its module's program
+code. `tests/wat.zig` `comptime units ----` and `modules/compiler-cli/tests/comptime_units.sh` are
+the oracles.
 
 ### The abstract boundary (decision 1037)
 

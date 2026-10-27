@@ -406,6 +406,7 @@ pub fn codegenEmit(
 
     for (order) |oi| {
         const ct = &outputs[oi];
+        if (emit_only) |set| if (!set.contains(ct.name)) continue;
         switch (ct.outcome) {
             .parseError, .typeError => try results.append(alloc, try ModuleOutput.failedModule(alloc, ct.*)),
             .validationError => |verr| {
@@ -582,19 +583,26 @@ pub fn codegenEmit(
     return results;
 }
 
-/// Decisions 1033, 1035 (1), 1038 (4) — piece C1: the comptime units of the
-/// analysed program `outputs`, whatever the build's target. Each program or
-/// library module that declares comptime code (`comptimeUnitsMod.declaresComptime`)
-/// is emitted as its unit `<pkg>@<path>` by the program's generator — the
-/// units on, a `wasi` core module, `.gc` alone (`gc_only`) — together with
-/// every program unit its `botopink.units` names; nothing else comes back.
-/// A comptime module that did not compile comes back with its diagnostic.
-/// The folder's other files are `comptimeUnitsMod.files`'.
+/// Decisions 1033, 1035 (1), 1038 (4), 1058 (2), (3) — piece C1, the
+/// `.comptime` stage: the comptime units of the analysed program `outputs_in`,
+/// whatever the build's target. Each program or library module that declares
+/// comptime code (`comptimeUnitsMod.declaresComptime`) and every program unit
+/// it reaches (`unitDeps`) is a unit `<pkg>@<path>` of the program's
+/// generator — the units on, a `wasi` core module, `.gc` alone (`gc_only`).
+/// With a `cache`, each module's key is its analysis and its units' keys
+/// (`comptimeUnitsMod.keyOf`): a module whose key the cache holds is not
+/// emitted, unless a module that imports it is (its exports are what the
+/// importer is lowered against). What comes back, in dependency order: each
+/// unit (`result.wasm`), or a module the lowering refuses (`result.diagnostic`,
+/// recorded by the caller until C4, 1058 (3)).
 pub fn comptimeUnits(
     alloc: std.mem.Allocator,
-    outputs: []ComptimeOutput,
+    outputs_in: []const ComptimeOutput,
     config: configMod.Config,
+    cache: ?comptimeUnitsMod.Cache,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
+    // The emit reads the analysed modules; it changes nothing of them.
+    const outputs: []ComptimeOutput = @constCast(outputs_in);
     var cfg = config;
     cfg.targetSource = .wasm;
     cfg.typeDefLanguage = null;
@@ -604,44 +612,112 @@ pub fn comptimeUnits(
     cfg.wasm_entry_only = null;
     cfg.test_mode = false;
     cfg.unit_cache = null;
-    const outer = gc_only;
-    gc_only = true;
-    var all = codegenEmit(alloc, outputs, cfg) catch |err| {
-        gc_only = outer;
-        return err;
-    };
-    gc_only = outer;
-    defer all.deinit(alloc);
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     const ar = arena.allocator();
-    // The comptime modules, then every program unit their units name.
-    var want: std.StringHashMapUnmanaged(void) = .empty;
-    for (outputs) |*o| {
-        if (o.outcome != .ok or crossModule.isLoadedModule(o.name)) continue;
-        if (std.mem.eql(u8, cfg.packages.idOf(o.name).package, crossModule.EMBEDDED_PACKAGE)) continue;
-        if (try comptimeUnitsMod.declaresComptime(ar, o.src)) try want.put(ar, o.name, {});
-    }
-    var stems: std.StringHashMapUnmanaged(void) = .empty;
-    for (all.items) |o| {
-        if (!want.contains(o.name)) continue;
-        const bin = o.result.wasm orelse continue;
-        for (try runtimeUnit.unitsOf(ar, bin)) |s| try stems.put(ar, s, {});
-    }
     var kept: std.ArrayListUnmanaged(ModuleOutput) = .empty;
     errdefer {
         for (kept.items) |*o| o.result.deinit(alloc);
         kept.deinit(alloc);
     }
-    for (all.items) |*o| {
-        const stem: ?[]const u8 = if (o.result.wasm) |bin| blk: {
-            const s = try runtimeUnit.unitsOf(ar, bin);
-            break :blk if (s.len > 0) s[s.len - 1] else null;
-        } else null;
-        const keep = want.contains(o.name) or (if (stem) |s| stems.contains(s) else false);
-        if (keep) try kept.append(alloc, o.*) else o.result.deinit(alloc);
+    const n = outputs.len;
+    const root = try ar.alloc(bool, n);
+    var any = false;
+    for (outputs, root) |*o, *r| {
+        r.* = o.outcome == .ok and !crossModule.isLoadedModule(o.name) and
+            !std.mem.eql(u8, cfg.packages.idOf(o.name).package, crossModule.EMBEDDED_PACKAGE) and
+            try comptimeUnitsMod.declaresComptime(ar, o.src);
+        any = any or r.*;
     }
+    if (!any) return kept;
+
+    const outer_packages = build_packages;
+    build_packages = cfg.packages;
+    defer build_packages = outer_packages;
+    var cross = try crossModule.build(alloc, outputs);
+    defer cross.deinit();
+    var scopes = crossModule.Scopes.init(alloc, outputs, &cross, cfg.packages);
+    defer scopes.deinit();
+    const deps = try unitDeps(ar, outputs, &scopes, cfg);
+
+    // The roots and what they reach, each after its units.
+    const state = try ar.alloc(u8, n);
+    @memset(state, 0);
+    var order: std.ArrayListUnmanaged(usize) = .empty;
+    const Walk = struct {
+        fn visit(a: std.mem.Allocator, k: usize, ds: []const []const usize, st: []u8, o: *std.ArrayListUnmanaged(usize)) !void {
+            if (st[k] != 0) return;
+            st[k] = 1;
+            for (ds[k]) |j| try visit(a, j, ds, st, o);
+            st[k] = 2;
+            try o.append(a, k);
+        }
+    };
+    for (root, 0..) |r, k| if (r) try Walk.visit(ar, k, deps, state, &order);
+
+    // Each module's key, then what the cache holds of them.
+    const keys = try ar.alloc(?comptimeUnitsMod.Key, n);
+    @memset(keys, null);
+    const hits = try ar.alloc(?[]const u8, n);
+    @memset(hits, null);
+    var need: std.StringHashMapUnmanaged(void) = .empty;
+    for (order.items) |k| {
+        const o = &outputs[k];
+        if (o.outcome != .ok) continue;
+        var dep_keys: std.ArrayListUnmanaged(comptimeUnitsMod.Key) = .empty;
+        var keyed = true;
+        for (deps[k]) |d| if (keys[d]) |dk| try dep_keys.append(ar, dk) else {
+            keyed = false;
+        };
+        if (cache != null and keyed) keys[k] = try comptimeUnitsMod.keyOf(alloc, o.name, o.srcPath, o.outcome.ok, dep_keys.items);
+        if (keys[k]) |key| hits[k] = cache.?.get(cache.?.ctx, key);
+        if (hits[k] == null) try need.put(ar, o.name, {});
+    }
+    // A module emitted is lowered against its units' exports: they are emitted too.
+    var stack: std.ArrayListUnmanaged(usize) = .empty;
+    for (order.items) |k| if (need.contains(outputs[k].name)) try stack.append(ar, k);
+    while (stack.pop()) |k| for (deps[k]) |d| {
+        if (outputs[d].outcome != .ok or need.contains(outputs[d].name)) continue;
+        try need.put(ar, outputs[d].name, {});
+        try stack.append(ar, d);
+    };
+
+    const emitted = try ar.alloc(?ModuleOutput, n);
+    @memset(emitted, null);
+    if (need.count() > 0) {
+        const outer_gc = gc_only;
+        const outer_only = emit_only;
+        gc_only = true;
+        emit_only = &need;
+        defer {
+            gc_only = outer_gc;
+            emit_only = outer_only;
+        }
+        var all = try codegenEmit(alloc, outputs, cfg);
+        defer all.deinit(alloc);
+        for (all.items) |o| {
+            const k = for (outputs, 0..) |*q, i| {
+                if (std.mem.eql(u8, q.name, o.name)) break i;
+            } else n;
+            if (k < n and state[k] == 2) emitted[k] = o else {
+                var drop = o;
+                drop.result.deinit(alloc);
+            }
+        }
+    }
+    for (order.items) |k| {
+        const o = &outputs[k];
+        if (o.outcome != .ok) continue;
+        if (emitted[k]) |e| {
+            emitted[k] = null;
+            try kept.append(alloc, e);
+            if (keys[k]) |key| if (try comptimeUnitsMod.stored(ar, e.result)) |bytes| cache.?.put(cache.?.ctx, key, bytes);
+        } else if (hits[k]) |bytes| {
+            try kept.append(alloc, .{ .name = o.name, .src = o.src, .result = try comptimeUnitsMod.restored(alloc, bytes) });
+        }
+    }
+    for (emitted) |*e| if (e.*) |*o| o.result.deinit(alloc);
     return kept;
 }
 
@@ -650,6 +726,27 @@ pub fn comptimeUnits(
 /// modules whose bodies its frame runs (`unit_inits`), so a unit's
 /// `botopink.units` and imports are built from what those exported.
 fn unitOrder(ar: std.mem.Allocator, outputs: []ComptimeOutput, scopes: *crossModule.Scopes, config: configMod.Config) ![]usize {
+    const n = outputs.len;
+    const deps = try unitDeps(ar, outputs, scopes, config);
+    const state = try ar.alloc(u8, n);
+    @memset(state, 0);
+    var out: std.ArrayListUnmanaged(usize) = .empty;
+    const Walk = struct {
+        fn visit(a: std.mem.Allocator, k: usize, ds: []const []const usize, st: []u8, o: *std.ArrayListUnmanaged(usize)) !void {
+            if (st[k] != 0) return;
+            st[k] = 1;
+            for (ds[k]) |j| try visit(a, j, ds, st, o);
+            st[k] = 2;
+            try o.append(a, k);
+        }
+    };
+    for (0..n) |k| try Walk.visit(ar, k, deps, state, &out);
+    return out.items;
+}
+
+/// Each module's program units, by index into `outputs`: what it links and,
+/// for an entry, the modules whose bodies its frame runs (`unitOrder`).
+fn unitDeps(ar: std.mem.Allocator, outputs: []ComptimeOutput, scopes: *crossModule.Scopes, config: configMod.Config) ![]const []const usize {
     const n = outputs.len;
     const deps = try ar.alloc([]const usize, n);
     for (outputs, deps) |*o, *d| {
@@ -668,7 +765,8 @@ fn unitOrder(ar: std.mem.Allocator, outputs: []ComptimeOutput, scopes: *crossMod
         if (programEntry(ok.transformed, config.test_mode) != null) {
             var dep_mods: std.ArrayListUnmanaged(*const ComptimeOutput) = .empty;
             try crossModule.programModules(ar, scope.outputs, config.packages, o.name, &dep_mods);
-            for (dep_mods.items) |m| try names.append(ar, m.name);
+            // Only a module with a body is run by the entry's frame.
+            for (dep_mods.items) |m| if (m.outcome == .ok and erlangBackend.moduleHasInit(m.outcome.ok.transformed)) try names.append(ar, m.name);
         }
         var idx: std.ArrayListUnmanaged(usize) = .empty;
         for (names.items) |nm| {
@@ -680,20 +778,7 @@ fn unitOrder(ar: std.mem.Allocator, outputs: []ComptimeOutput, scopes: *crossMod
         }
         d.* = idx.items;
     }
-    const state = try ar.alloc(u8, n);
-    @memset(state, 0);
-    var out: std.ArrayListUnmanaged(usize) = .empty;
-    const Walk = struct {
-        fn visit(a: std.mem.Allocator, k: usize, ds: []const []const usize, st: []u8, o: *std.ArrayListUnmanaged(usize)) !void {
-            if (st[k] != 0) return;
-            st[k] = 1;
-            for (ds[k]) |j| try visit(a, j, ds, st, o);
-            st[k] = 2;
-            try o.append(a, k);
-        }
-    };
-    for (0..n) |k| try Walk.visit(ar, k, deps, state, &out);
-    return out.items;
+    return deps;
 }
 
 /// Decision 513 (1): the test unit's prefix (`__test__/<module path>`).
@@ -1844,6 +1929,12 @@ threadlocal var units_on_wasi: bool = false;
 /// lowered in `.gc` alone, never in linear memory; what the GC lowering
 /// refuses is the module's refusal (`emitGcOnly`).
 threadlocal var gc_only: bool = false;
+/// The comptime units (`comptimeUnits`): only these modules are emitted, the
+/// rest answered by the comptime unit cache or reached by no comptime module.
+threadlocal var emit_only: ?*const std.StringHashMapUnmanaged(void) = null;
+/// Under `gc_only`, the first gap the module being lowered met (a static
+/// text), named in its refusal (`emitGcOnly`).
+threadlocal var first_gap: ?[]const u8 = null;
 
 /// Decision 1032 (6) P4 — a program or library module emitted as a unit of
 /// its own: its `botopink.units` lines and the functions it exports, each by
@@ -1973,6 +2064,7 @@ fn emitGcOnly(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
+    first_gap = null;
     const first = emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
     const err = if (first) |gc| return gc else |e| e;
     if (err == error.OutOfMemory) return err;
@@ -1991,7 +2083,7 @@ fn emitGcOnly(
     const located = (if (missing) |m| m.* != null else false) or (if (refused) |r| r.* != null else false);
     if (!located) if (refused) |slot| {
         slot.* = .{
-            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory (decision 1033 (1))", .{ module_name, @errorName(err) }),
+            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory (decision 1033 (1))", .{ module_name, first_gap orelse @errorName(err) }),
             .loc = null,
         };
     };
@@ -6328,6 +6420,7 @@ const Emitter = struct {
         if (gc_debug and self.gc_gap == null) std.debug.print("GCGAP {s} at {d}:{d} in {s}\n", .{ why, if (self.stmt_loc) |l| l.line else 0, if (self.stmt_loc) |l| l.col else 0, self.module_name });
         if (gc_debug and self.gc_gap == null and std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{});
         if (self.gc_gap == null) self.gc_gap = why;
+        if (gc_only and first_gap == null) first_gap = why;
     }
 
     /// The neutral value of `r` a context pushes where it needs one: `0`, or

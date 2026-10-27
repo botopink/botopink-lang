@@ -140,15 +140,15 @@ compiler-cli/
 │   │                          memory and heap from `std@__rt`, carries none of
 │   │                          std-wasm's functions and is under 50 KB
 │   ├── comptime_units.sh    ← the `.comptime` stage (decisions 1033, 1035 (1), (3),
-│   │                          1038 (4), piece C1; run by hand — it reads
-│   │                          `zig build std-wasm`'s units): with
-│   │                          `BOTOPINK_COMPTIME_UNITS=1` an erlang build writes
-│   │                          `out/wasm-comptime/` — the decorator's module, the
-│   │                          unit it imports, the core and std's units, those
-│   │                          the bytes of `zig-out/lib/std-wasm/` — each compiled
-│   │                          into `.botopinkbuild/cache/wasmtime/`; the program's
-│   │                          own output unchanged; off, no folder
-│   ├── comptime_units/      ← its fixture: `app` (`main` with a decorator, `lib`)
+│   │                          1058 (2), (3), piece C1; run by hand — it reads
+│   │                          `zig build std-wasm`'s units): an erlang build always
+│   │                          writes `out/wasm-comptime/` — the decorator's module,
+│   │                          the unit it imports, the core and std's units (the
+│   │                          bytes of `zig-out/lib/std-wasm/`), each compiled into
+│   │                          `.botopinkbuild/cache/wasmtime/`; a refused module
+│   │                          recorded in `refused.txt` and `--json`, not on stderr;
+│   │                          none from a fresh `.bpr`; `--cold` clears the folder
+│   ├── comptime_units/      ← its fixture: `app` (`main` with a decorator, `lib`, `gap`)
 │   ├── wasm_runtime_unit/   ← its fixture: `hello`
 │   ├── wasm_std_unit_per_module.sh ← cell `wasm_std_unit_per_module` (decision 1026;
 │   │                          waits on the runner as above):

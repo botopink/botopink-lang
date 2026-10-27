@@ -1,0 +1,8 @@
+//// A comptime module the WasmGC generator refuses today: recorded in
+//// `out/wasm-comptime/refused.txt`, the build not failed (decision 1058 (3)).
+
+val five = comptime 2 + 3;
+
+pub fn pair(x: unknown) -> bool {
+    return x is #(i32, i32);
+}
