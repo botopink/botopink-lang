@@ -1,0 +1,3 @@
+//// The dependency's module tree: its `Person` lives in its module `shapes`, as the consumer's does.
+
+pub mod shapes;

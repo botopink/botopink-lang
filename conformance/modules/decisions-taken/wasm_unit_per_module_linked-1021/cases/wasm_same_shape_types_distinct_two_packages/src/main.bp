@@ -1,0 +1,21 @@
+//// Decision 1027 (2) — a same-named, same-shaped record declared in two packages, each in a module
+//// `shapes`, is two types on every target: the qualified names differ only in the package
+//// (`<pkg>@shapes.Person`), and `is`, `==` and print tell the two apart.
+
+import {shapes as theirShapes} from "kin";
+import {io.terminal.print} from "std";
+
+mod shapes;
+
+pub fn main() -> void {
+    val mine: unknown = shapes.mine("Ana", 30);
+    val theirs: unknown = theirShapes.theirs("Ana", 30);
+    print(shapes.isMine(mine));
+    print(shapes.isMine(theirs));
+    print(theirShapes.isTheirs(theirs));
+    print(theirShapes.isTheirs(mine));
+    print(mine == theirs);
+    print(mine == shapes.mine("Ana", 30));
+    print(mine);
+    print(theirs);
+}

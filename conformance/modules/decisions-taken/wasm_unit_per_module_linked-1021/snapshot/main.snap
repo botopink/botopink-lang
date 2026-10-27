@@ -77,3 +77,12 @@ out true
 out Person(name: "Ana", age: 30)
 out Vec(name: "Ana", age: 30)
 out Person(name: "Ana", age: 30)
+== wasm_same_shape_types_distinct_two_packages
+out true
+out false
+out true
+out false
+out false
+out true
+out Person(name: "Ana", age: 30)
+out Person(name: "Ana", age: 30)

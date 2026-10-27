@@ -1,0 +1,11 @@
+//// This package's `Person`, at the module path and of the shape the dependency's `Person` has.
+
+pub type Person(name: string, age: i32)
+
+pub fn mine(name: string, age: i32) -> unknown {
+    return Person(name: name, age: age);
+}
+
+pub fn isMine(v: unknown) -> bool {
+    return v is Person;
+}

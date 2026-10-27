@@ -45,5 +45,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("gc_string_ordering");
     runCase("gc_case_arm_assigns");
     runCase("wasm_same_shape_types_distinct");
+    runCase("wasm_same_shape_types_distinct_two_packages");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

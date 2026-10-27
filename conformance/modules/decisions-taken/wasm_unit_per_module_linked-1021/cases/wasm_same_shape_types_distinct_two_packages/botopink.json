@@ -1,0 +1,1 @@
+{ "name": "wasm_same_shape_types_distinct_two_packages", "dependencies": { "kin": { "path": "deps/kin" } } }
