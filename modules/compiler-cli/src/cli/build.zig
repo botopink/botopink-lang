@@ -63,6 +63,12 @@ pub const Options = struct {
     /// output directory, the member's own files written in place and each
     /// dependency's once per its key. Handed by the workspace root's command.
     workspace_out: ?[]const u8 = null,
+    /// `--jobs <n>`: at a workspace root, the members built at once (decision
+    /// 1006 (5), `fanout.zig`; default the CPUs bounded by memory).
+    jobs: ?usize = null,
+    /// `--timeout <s>`: at a workspace root, the seconds each member's process
+    /// is given (default 900).
+    timeout_s: ?u64 = null,
 };
 
 /// The hooks a build runs over its analysed session
@@ -228,12 +234,16 @@ pub fn run(
 ) !u8 {
     if (opts_in.cache_root) |r| code_cache.root_override = r;
     var opts = opts_in;
-    if (opts.workspace_out) |dir| opts.out_dir = dir;
+    if (opts.workspace_out) |dir| {
+        opts.out_dir = dir;
+        flat_wasm = true;
+    }
     // At a workspace root, `build --target <t>` lays the workspace's one
-    // folder, each member in its own process (decision 1015 (4)).
-    if (opts.target) |t| if (opts.workspace_out == null and opts.runtime_input == null) {
-        if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root }, env_map)) |code| return code;
-    };
+    // folder (decision 1015 (4)) and a bare `build` writes each member's
+    // `.bpr` set — each member in its own process (decision 1006 (5)).
+    if (opts.workspace_out == null and opts.runtime_input == null and opts.emit_runtime == null and opts.emit_resolved == null) {
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = opts.target, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .jobs = opts.jobs, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
+    }
     if (!opts.json) return runBuild(gpa, io, opts, env_map);
 
     // `--json`: the build runs as without it (stderr unchanged, tee'd into
@@ -885,7 +895,10 @@ fn erlPair(arena: std.mem.Allocator, src: []const u8) !beam_record.Pair {
 /// output compiles only the project's own modules); every refusal is printed as
 /// `<file>:<line>: <message>`; exit 1 when there is any. The own modules are
 /// compiled `deterministic` into their `.beam` beside the `.erl` (decision
-/// 1007 (2)), which a `run` then loads as it is; `deterministic` names a file
+/// 1007 (2)), which a `run` then loads as it is — compiled in memory and placed
+/// under a temporary name renamed over it (`CodePlace`), never through the OTP
+/// compiler's own fixed `<name>.bea#`, so members compiling one dependency side
+/// by side never see a `.beam` half written; `deterministic` names a file
 /// by its base name, so a refusal's file is given back as the path the job
 /// was handed (`Named`), the text it had.
 const ERLANG_CHECK_EVAL =
@@ -899,10 +912,13 @@ const ERLANG_CHECK_EVAL =
     \\Loc = fun({L, C}) -> io_lib:format("~p:~p", [L, C]); (none) -> "0"; (L) -> io_lib:format("~p", [L]) end,
     \\Compile = fun(F) ->
     \\    Named = fun(File) -> case File =:= filename:basename(F) of true -> F; false -> File end end,
-    \\    case catch compile:file(F, [deterministic, return_errors, {outdir, filename:dirname(F)}]) of
-    \\        {ok, _} -> [];
-    \\        {ok, _, _} -> [];
-    \\        {ok, _, _, _} -> [];
+    \\    Placed = fun(Bin) -> case CodePlace(filename:rootname(F) ++ ".beam", Bin) of
+    \\                          ok -> [];
+    \\                          E -> [io_lib:format("~ts: ~p~n", [F, E])]
+    \\                      end end,
+    \\    case catch compile:file(F, [binary, deterministic, return_errors]) of
+    \\        {ok, _, Bin} -> Placed(Bin);
+    \\        {ok, _, Bin, _} -> Placed(Bin);
     \\        {error, Errors, _} ->
     \\            [io_lib:format("~ts:~ts: ~ts~n", [Named(File), Loc(L), M:format_error(D)])
     \\             || {File, Items} <- Errors, {L, M, D} <- Items];
@@ -997,6 +1013,13 @@ pub fn targetSubdir(target: config.Target) []const u8 {
 /// `<out_dir>/<subdir><stem><ext>` for one module — the stem is the module's
 /// flat name for erlang, BEAM and commonJS (its package first, decisions 109,
 /// 1015), the module path for wasm. Caller owns it.
+/// Set by a member's build into its workspace's one folder (`--workspace-out`,
+/// decision 1015 (4)): a wasm module's files are named `<pkg>@<path>` there,
+/// as every other target's are, so two members' `main` never share one file
+/// when they build and run side by side (decision 1006 (5)); a package's own
+/// `out/wasm/` keeps the module path.
+pub var flat_wasm: bool = false;
+
 pub fn artifactPath(
     alloc: std.mem.Allocator,
     out_dir: []const u8,
@@ -1005,7 +1028,11 @@ pub fn artifactPath(
     module_name: []const u8,
     ext: []const u8,
 ) ![]u8 {
-    const stem = try bp.codegen.crossModule.outputStem(targetSource(target), alloc, packages.idOf(module_name));
+    const id = packages.idOf(module_name);
+    const stem = if (target == .wasm and flat_wasm)
+        try bp.codegen.crossModule.flatName(alloc, id)
+    else
+        try bp.codegen.crossModule.outputStem(targetSource(target), alloc, id);
     defer alloc.free(stem);
     return std.fmt.allocPrint(alloc, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), stem, ext });
 }
@@ -1073,6 +1100,21 @@ fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, packages: bp.codegen.c
 }
 
 // ── Output writer ─────────────────────────────────────────────────────────────
+
+/// The erlang / beam modules this process's build wrote into a workspace's
+/// one folder (`--workspace-out`), by their file's stem — the member's own,
+/// each dependency's (written now or found under its key) and their type
+/// units. `run` over that folder compiles these and the shipped host modules
+/// only, never another member's (decision 1006 (5): members run side by side,
+/// each writing only its own files). Null outside a workspace folder.
+pub var emitted_stems: ?std.StringHashMapUnmanaged(void) = null;
+var emitted_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+
+fn noteEmitted(path: []const u8) !void {
+    const a = emitted_arena.allocator();
+    if (emitted_stems == null) emitted_stems = .empty;
+    try emitted_stems.?.put(a, try a.dupe(u8, std.fs.path.stem(path)), {});
+}
 
 /// One module's files: written in place, or through the shared folder's
 /// writer when the build has one (`workspace_out.Once`).
@@ -1233,7 +1275,9 @@ fn writeIfChanged(ar: std.mem.Allocator, io: std.Io, out_dir: []const u8, file: 
     if (std.Io.Dir.cwd().readFileAlloc(io, path, ar, .limited(bytes.len + 1))) |have| {
         if (std.mem.eql(u8, have, bytes)) return;
     } else |_| {}
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = bytes });
+    // Staged and renamed: members of one workspace folder write these side by
+    // side (decision 1006 (5)), and a reader sees a whole unit or none.
+    try analysis_store.write(ar, io, path, bytes);
 }
 
 fn writeOutputs(
@@ -1271,6 +1315,10 @@ fn writeOutputs(
         if (o.result.failed()) {
             if (once) |*w| try w.markFailed(pkg);
             continue;
+        }
+        if (once != null and (target == .erlang or target == .beam)) {
+            try noteEmitted(try artifactPath(arena, out_dir, target, packages, o.name, ext));
+            for (o.result.units) |u| try noteEmitted(u.atom);
         }
         if (once) |*w| if (w.skips(pkg)) continue;
         var file: FileWriter = .{ .io = io, .once = if (once) |*w| w else null, .pkg = pkg };

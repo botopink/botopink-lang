@@ -83,10 +83,15 @@ const HELP =
     \\  --emit-runtime <dir>         The .bpr set's directory instead: each package's resolved tree to <dir>/<package>.bpr
     \\                               and the key to <dir>/<package>.key, to build any target from later
     \\  [<file>.bpr]                 Build the program a .bpr holds (no comptime; --target required; from the directory of the project that wrote it)
-    \\  --workspace-out <dir>        A member's build into its workspace's one folder <dir>: its own files in place, each
-    \\                               dependency's once per its key (the workspace root's `build --target` hands it)
+    \\  --workspace-out <dir>        A member's build into its workspace's one folder <dir>: each file staged and renamed,
+    \\                               each dependency's once per its key (the workspace root's `build --target` hands it)
     \\At a workspace root, `build --target <t>` builds every member, each in its own process, into one --out folder
-    \\holding each member and each dependency once; two packages of one name at two directories are refused
+    \\holding each member and each dependency once; two packages of one name at two directories are refused; a bare
+    \\`build` there writes each member's .bpr set, each in its own process. One line per member in the workspace's
+    \\order — `ok   <member>` or `FAIL <member> — <reason>`, its output indented —, then
+    \\`modules: N checked — P passed, F failed`; exit 1 on any red:
+    \\  --jobs <n>                   Members at once (default: one per CPU, bounded by available memory / 768 MiB)
+    \\  --timeout <s>                Seconds each member's process is given before it is stopped (default: 900)
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target (default: the manifest's); the .bpr set is
@@ -99,7 +104,8 @@ const HELP =
     \\  --cache-root <dir>           File the code cache (levels A and B) and the unit cache under <dir>, not the project's or its workspace's
     \\  --workspace-out <dir>        A member's run from its workspace's one folder <dir> (the workspace root's `run --target` hands it)
     \\  --                           Pass remaining args to the program
-    \\At a workspace root, `run --target <t>` builds and runs every member, each in its own process, over one --out folder
+    \\At a workspace root, `run --target <t>` builds and runs every member, each in its own process, over one --out folder,
+    \\with `build`'s lines, count, --jobs and --timeout
     \\
     \\Options for `test`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
@@ -401,6 +407,18 @@ fn dirValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgDi
     return v;
 }
 
+/// A positive count (`--jobs 4`, `--timeout 900`); anything else is the
+/// value refused as an unexpected argument.
+fn countValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgDiag) ArgError!u32 {
+    const v = try flagValue(args, i, flag, diag);
+    const n = std.fmt.parseInt(u32, v, 10) catch 0;
+    if (n == 0) {
+        diag.token = v;
+        return error.UnexpectedArgument;
+    }
+    return n;
+}
+
 fn targetValue(args: []const [:0]const u8, i: *usize, flag: FlagToken, diag: *ArgDiag) ArgError!cfg.Target {
     const v = try flagValue(args, i, flag, diag);
     return cfg.Target.fromString(v) orelse {
@@ -447,6 +465,10 @@ fn parseBuildOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!build_cmd
             opts.emit_runtime = try dirValue(args, &i, flag, diag);
         } else if (std.mem.eql(u8, flag.name, "--workspace-out")) {
             opts.workspace_out = try dirValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--jobs")) {
+            opts.jobs = try countValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--timeout")) {
+            opts.timeout_s = try countValue(args, &i, flag, diag);
         } else if (isRuntimeFile(args[i]) and opts.runtime_input == null) {
             opts.runtime_input = args[i];
         } else return reject(args[i], diag);
@@ -502,6 +524,10 @@ fn parseRunOpts(arena: std.mem.Allocator, args: []const [:0]const u8, diag: *Arg
             // No `.bpr` path (decision 1009): `run` finds its package's own set.
         } else if (std.mem.eql(u8, flag.name, "--workspace-out")) {
             opts.workspace_out = try dirValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--jobs")) {
+            opts.jobs = try countValue(args, &i, flag, diag);
+        } else if (std.mem.eql(u8, flag.name, "--timeout")) {
+            opts.timeout_s = try countValue(args, &i, flag, diag);
         } else return reject(a, diag);
     }
     opts.extra_args = try extra.toOwnedSlice(arena);
@@ -618,6 +644,7 @@ test {
     _ = @import("./cli/run.zig");
     _ = @import("./cli/runtime_cache.zig");
     _ = @import("./cli/workspace_out.zig");
+    _ = @import("./cli/fanout.zig");
     _ = @import("./cli/unit_cache.zig");
     _ = @import("./cli/scanner.zig");
     _ = @import("./cli/sources.zig");
@@ -707,6 +734,9 @@ test "build, run and test take --cold, which carries no value (decision 509 (5))
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
     try std.testing.expect((try parseRunOpts(arena_inst.allocator(), argv(&.{"--cold"}), &d)).cold);
+    try std.testing.expectEqual(@as(?usize, 4), (try parseBuildOpts(argv(&.{ "--jobs", "4" }), &d)).jobs);
+    try std.testing.expectEqual(@as(?u64, 30), (try parseRunOpts(arena_inst.allocator(), argv(&.{"--timeout=30"}), &d)).timeout_s);
+    try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{ "--jobs", "0" }), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseBuildOpts(argv(&.{"--cold=yes"}), &d));
 }
 

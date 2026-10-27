@@ -1912,7 +1912,7 @@ pub fn shipMjsSidecars(
                                 else => return err,
                             };
                         }
-                        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = embedded });
+                        try placeFile(arena, io, target, embedded);
                         continue;
                     }
                 }
@@ -1951,21 +1951,21 @@ pub fn shipMjsSidecars(
                     else => return err,
                 };
             }
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+            try placeFile(arena, io, target, data);
         }
 
         if (rewrites.items.len > 0) {
             // The file this run just wrote: failing to read it back is an I/O
             // error of the run, never a module left with its old `require`s.
             const emitted = try std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = try rewriteRequires(arena, emitted, rewrites.items, "") });
+            try placeFile(arena, io, emitted_rel, try rewriteRequires(arena, emitted, rewrites.items, ""));
             // `botopink test`'s unit (decision 513) sits one folder below and
             // spells each of the module's relative `require`s from there
             // (`commonJS.zig` `deeperRequires`: `../` before it).
             if (o.result.test_unit) |u| {
                 const unit_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, u.atom, ext });
                 const unit = try std.Io.Dir.cwd().readFileAlloc(io, unit_rel, arena, .unlimited);
-                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_rel, .data = try rewriteRequires(arena, unit, rewrites.items, "../") });
+                try placeFile(arena, io, unit_rel, try rewriteRequires(arena, unit, rewrites.items, "../"));
             }
         }
     }
@@ -2220,7 +2220,7 @@ pub fn shipErlSidecars(
                         else => return err,
                     };
                 }
-                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+                try placeFile(arena, io, target, data);
                 try shipped.put(arena, try arena.dupe(u8, atom), {});
             }
         }
@@ -2279,7 +2279,7 @@ pub fn shipErlSidecars(
                     else => return err,
                 };
             }
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+            try placeFile(arena, io, target, data);
             try shipped.put(arena, atom, {});
         }
         if (still.items.len == 0) return shipped.count();
@@ -2801,6 +2801,17 @@ test "resolveBpmpStoreRoot: null env_map yields null" {
 // Multi-root resolution. Each test materializes a synthetic tree under a unique
 // relative dir (resolved against the test cwd) and drives `rootsFrom` / `loadOne`
 // directly, so neither the process cwd nor the real repo layout is touched.
+
+/// A shipped file (a sidecar, a module whose `require`s were rewritten): left
+/// alone when it already holds `data`, else staged and renamed over it — the
+/// members of one workspace folder ship the same files side by side (decision
+/// 1006 (5)), and none reads one half written.
+fn placeFile(arena: std.mem.Allocator, io: std.Io, path: []const u8, data: []const u8) !void {
+    if (std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(data.len + 1))) |have| {
+        if (std.mem.eql(u8, have, data)) return;
+    } else |_| {}
+    try analysis_store.write(arena, io, path, data);
+}
 
 fn writeFileP(io: std.Io, path: []const u8, data: []const u8) !void {
     if (std.fs.path.dirname(path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);

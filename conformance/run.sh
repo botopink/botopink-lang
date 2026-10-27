@@ -46,15 +46,16 @@
 #               --cold` passes it
 #
 # Three kinds, every job in its own scratch directory:
-#   modules/           the root package (decisions 989, 990 (6)): `modules/botopink.json`
-#                      and `modules/src/main.bp`, one `runModule("<m>")` line per
-#                      self-checking module — `modules/<m>/` or
+#   modules/           the root package (decisions 989, 990 (6), 1006 (1)): `modules/botopink.json`,
+#                      a workspace whose members (`*`, `decisions-taken/*`) are the
+#                      self-checking modules — `modules/<m>/` or
 #                      `modules/decisions-taken/<d>/` holding `botopink.json`,
 #                      `src/main.bp` (its cases loaded from `cases/<case>/` at build,
 #                      run, compared with `snapshot/main.snap`) and `snapshot/main.snap`.
-#                      A bare `botopink build` writes its `.bpr` set once
-#                      (§ the root package); a job per target runs the package there
-#                      (`botopink run --target <t>`, reusing the set), and its printed verdicts —
+#                      A bare `botopink build` there writes each member's `.bpr` set once,
+#                      one process per member (§ the root package); a job per target runs the
+#                      workspace there (`botopink run --target <t>`, one process per member,
+#                      reusing the sets), and its printed verdicts —
 #                      `ok   <m>` or `FAIL <m> — …` and the lines under it, then
 #                      `modules: N checked — P passed, F failed` — are that target's
 #                      result per module. The report adds `target runs: <t> built N,
@@ -64,10 +65,9 @@
 #                      reach is a red. `reused M` counts reuse within one invocation
 #                      (a by-name set reached by a second target, decision 1046): a
 #                      warm `reused 0` is no regression, the output and each library's
-#                      directory being this run's own. The list is held to the tree: a module on
-#                      disk without its line, a line without its module, and a
+#                      directory being this run's own. The tree is the module list (1006 (1)): a
 #                      directory still in the old cell shape (`run/`, `refused/`,
-#                      `cells/` with no `snapshot/main.snap`) are reds of their own; a
+#                      `cells/` with no `snapshot/main.snap`) is a red of its own; a
 #                      front-166 draft (`docs.md` and `draft/` alone) is no module
 #                      until promoted (decision 1002 (a)).
 #   test/<name>.bp     `test "…" { … assert … }` blocks: `botopink test --target
@@ -271,8 +271,8 @@ self_test_tsc() {
 # ── § self-test ───────────────────────────────────────────────────────────────
 # § the targets of a test suite, shown firing. A synthetic suite — two project
 # suites whose narrowing the compiler backs with a host-binding refusal, one
-# of each way a narrowing is refused, and a root package of a green and a red
-# module beside a module still in the old cell shape and one with no line — is run
+# of each way a narrowing is refused, and a root workspace of a green and a red
+# module (and one under `decisions-taken/`) beside a module still in the old cell shape — is run
 # through this script (`--suite`), and the report it prints must hold exactly
 # these lines. A runner whose audit stopped refusing would print a green run
 # over a narrowed suite; this is what reds instead.
@@ -321,22 +321,19 @@ BP
     # Decision 536: a single file declares no narrowing — a `// targets:` line in it is a comment, and
     # the file runs on every target.
     printf '// targets: commonJS\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$suite/test/comment_is_no_narrowing.bp"
-    # The root package over two modules — `green`'s `main` answers `Ok`, `red`'s an `Error` —, the
-    # real root program with its `runModule` lines replaced; `unlisted` has no line, and `oldshape`
-    # is still a directory of cells: each a red of its own.
-    mkdir -p "$suite/modules/src"
-    printf '{ "name": "conformance", "version": "0.0.1" }\n' >"$suite/modules/botopink.json"
-    awk '/^comptime \{$/ { print; print "    runModule(\"green\");"; print "    runModule(\"red\");"; print "    runModule(\"leftover\");"; print "    runModule(\"coverage\");"; skip = 1; next }
-         skip && /^\}$/ { skip = 0 } !skip' "$here/modules/src/main.bp" >"$suite/modules/src/main.bp"
-    for c in green red unlisted leftover coverage; do
+    # The root workspace (decision 1006 (1)) over its members — `green`'s `main` answers `Ok`,
+    # `red`'s an `Error`, `decisions-taken/inside-1` is a member of the second glob (1052 (3)) —;
+    # `oldshape` is still a directory of cells: a red of its own.
+    cp "$here/modules/botopink.json" "$suite/modules/botopink.json"
+    for c in green red decisions-taken/inside-1 leftover coverage; do
         mkdir -p "$suite/modules/$c/src" "$suite/modules/$c/snapshot"
-        printf '{ "name": "%s", "version": "0.0.1" }\n' "$c" >"$suite/modules/$c/botopink.json"
+        printf '{ "name": "%s", "version": "0.0.1" }\n' "${c##*/}" >"$suite/modules/$c/botopink.json"
         printf 'botopink-cell 2\n' >"$suite/modules/$c/snapshot/main.snap"
     done
     # A module's `main` is `async` (decision 989 (9)).
     printf 'pub async fn main() -> Async<Result<void, string>> {\n    return;\n}\n' >"$suite/modules/green/src/main.bp"
     printf 'pub async fn main() -> Async<Result<void, string>> {\n    throw "1 red";\n}\n' >"$suite/modules/red/src/main.bp"
-    cp "$suite/modules/green/src/main.bp" "$suite/modules/unlisted/src/main.bp"
+    cp "$suite/modules/green/src/main.bp" "$suite/modules/decisions-taken/inside-1/src/main.bp"
     # Leftover cases (decisions 67, 989): `leftover` names `cells/covered` in a runCase and not `cells/uncovered`.
     printf 'fn runCase(comptime name: string) -> void {}\n\npub async fn main() -> Async<Result<void, string>> {\n    runCase("cells/covered");\n    return;\n}\n' >"$suite/modules/leftover/src/main.bp"
     mkdir -p "$suite/modules/leftover/cells/covered" "$suite/modules/leftover/cells/uncovered"
@@ -365,25 +362,24 @@ BP
 [beam] test/another_reason — excluded by test/another_reason/botopink.json "targets", and beam refuses it for another reason than a host binding
 [*] test/narrows_nothing — test/narrows_nothing/botopink.json "targets" names every target the suite runs on, so it narrows nothing
 [*] test/unknown_target — test/unknown_target/botopink.json "targets" names `jvm`, which is no target
-[commonJS] modules/red — red
-[erlang] modules/red — red
-[wasm] modules/red — red
-[beam] modules/red — red
-    1 red
-[*] modules/unlisted — a module with no `runModule("unlisted")` line in modules/src/main.bp
+[commonJS] modules/red — exit 1
+[erlang] modules/red — exit 1
+[wasm] modules/red — exit 1
+[beam] modules/red — exit 1
+    failed: 1 red
 [*] modules/coverage — case `cases/idle` is on disk and its main never runs it: no `runCase("idle")` in src/main.bp, decision 1011
 [*] modules/coverage — `runCase("ghost")` names a case with no directory (cases/ghost), decision 1011
 1 cases outside 989's shape (shrink-only)
 [*] modules/oldshape — not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion
 narrowings: 2 exclusions audited
-by target: commonJS 6/8 · erlang 6/8 · wasm 4/7 · beam 5/8 · * 0/6
-conformance: 21 passed, 16 failed
+by target: commonJS 7/9 · erlang 7/9 · wasm 5/8 · beam 6/9 · * 0/5
+conformance: 25 passed, 15 failed
 WANT
     # The backed suite ran where it said and nowhere else, and the green module
     # passed: no line may name them.
-    if grep -qE 'test/backed|modules/green|comment_is_no_narrowing|drafted-1' "$st/report.txt"; then
+    if grep -qE 'test/backed|modules/green|modules/decisions-taken/inside-1|comment_is_no_narrowing|drafted-1' "$st/report.txt"; then
         echo "self-test: a narrowing that stands on a host binding, or a green module, was reported:" >&2
-        grep -E 'test/backed|modules/green|drafted-1' "$st/report.txt" >&2
+        grep -E 'test/backed|modules/green|modules/decisions-taken/inside-1|drafted-1' "$st/report.txt" >&2
         missing=1
     fi
     # An abnormal end of `botopink test --json` is a red naming the suite and the target, whatever
@@ -611,20 +607,18 @@ reach_report() { # <target> <id> <stamp> <runtime dir> <out dir> <set stamp>
 }
 
 # ── § the root package ────────────────────────────────────────────────────────
-# `modules/` is one botopink package (decisions 989, 990 (6)): its `main` loads
-# every self-checking module at build (`compiler.load`), runs each in turn and
-# prints its verdicts. It is built ONCE, before the pool starts, by a bare
-# `botopink build` in `modules/` — the package's `.bpr` set and its key under
-# `modules/.botopinkbuild/runtime/conformance/`, target-independent (decisions
-# 798, 1006 (2)) —, and each target's job is `botopink run --target <t>` there,
-# which reuses that set while its key is fresh (1006 P3; `run` takes no `.bpr`
-# path, 1009) — the comptime compile, the whole cost of the suite (m2-0063's
-# ramp), is paid once for four targets, and not again on a later call while no
-# file of the package changed.
-# One process per target holds every module (989 (8)); a crash or a hang is that
-# target's run red whole.
+# `modules/` is a workspace (decisions 989, 990 (6), 1006 (1)) whose members are
+# the self-checking modules; at its root `build` and `run --target <t>` run one
+# process per member (1006 (5)) and print one verdict per member and the count.
+# It is built ONCE, before the pool starts, by a bare `botopink build` there —
+# each member's `.bpr` set and its key under `modules/.botopinkbuild/runtime/<m>/`,
+# target-independent (decisions 798, 1006 (2)) —, and each target's job is
+# `botopink run --target <t>` there, each member reusing its set while its key is
+# fresh (`run` takes no `.bpr` path, 1009): the comptime compile, the whole cost
+# of the suite, is paid once for four targets. A member's crash or hang is that
+# member's red alone (its process, under `--timeout`).
 #
-# The libraries are not lines of this program: one program per package per
+# The libraries are not members of this workspace: one program per package per
 # target beside it (§ the libraries, decision 1004 (1)).
 root_built=0     # 1 when the bare build wrote (or found fresh) the package's `.bpr` set
 root_refusal=""  # why the root package did not build
@@ -660,9 +654,10 @@ draft_only() { # <dir, relative to modules/>: `docs.md` and `draft/` alone
 in_shape() { # <module path, relative to modules/>
     [ -f "$here/modules/$1/botopink.json" ] && [ -f "$here/modules/$1/src/main.bp" ] && [ -f "$here/modules/$1/snapshot/main.snap" ]
 }
-# The modules the root's `main.bp` runs: its `runModule("<path>")` lines, in order.
+# The modules the root runs: the workspace's members (decision 1006 (1)) — each directory
+# of the tree holding a `botopink.json`, in path order; a draft holds none and is skipped.
 listed_modules() {
-    sed -nE 's/^[[:space:]]*runModule\("([^"]+)"\);[[:space:]]*$/\1/p' "$here/modules/src/main.bp" 2>/dev/null
+    module_dirs | while IFS= read -r d; do [ -f "$here/modules/$d/botopink.json" ] && printf '%s\n' "$d"; done
 }
 
 # The roster held to the tree: a red per module on disk not in 989's shape, per
@@ -717,16 +712,13 @@ roster_cases() { # <module>: decision 1011 (1) and (2) for one module in the sha
     done
 }
 roster() {
-    local d slug listed="$work/root-listed" l n
-    listed_modules >"$listed"
+    local d slug l n
     : >"$work/leftover-disk"; : >"$work/leftover-count"
     grep -vE '^[[:space:]]*(#|$)' "$here/leftover-cases.txt" 2>/dev/null >"$work/leftover-list" || : >"$work/leftover-list"
     while IFS= read -r d; do
         slug="$(printf '%s' "$d" | tr '/.' '__')"
         if ! in_shape "$d"; then
             printf '*\tmodules/%s\tfail\t%s\n' "$d" "not in decision 989's shape (no botopink.json, src/main.bp and snapshot/main.snap): 990 (6)'s conversion" >"$work/r-plan-$slug"
-        elif ! grep -qxF -- "$d" "$listed"; then
-            printf '*\tmodules/%s\tfail\t%s\n' "$d" "a module with no \`runModule(\"$d\")\` line in modules/src/main.bp" >"$work/r-plan-$slug"
         fi
         if in_shape "$d"; then roster_cases "$d"; fi
     done < <(module_dirs)
@@ -736,25 +728,21 @@ roster() {
         grep -qxF -- "$l" "$work/leftover-disk" \
             || printf '*\tconformance/leftover-cases.txt\tfail\t%s\n' "\`$l\` is on the list and no longer a case on disk: delete its line (shrink-only, decision 1011)" >"$work/r-plan-stale-$n"
     done <"$work/leftover-list"
-    while IFS= read -r d; do
-        in_shape "$d" && continue
-        slug="$(printf '%s' "$d" | tr '/.' '__')"
-        [ -f "$work/r-plan-$slug" ] && continue
-        printf '*\tmodules/%s\tfail\t%s\n' "$d" "modules/src/main.bp runs \`$d\`, which is no module in decision 989's shape" >"$work/r-plan-$slug"
-    done <"$listed"
 }
 
-# Build the root package once — a bare `botopink build`, its `.bpr` set reused
-# when fresh, rebuilt under `--cold` (decision 1006 (2), (4)): `root_built` 1, or
-# `root_refusal` what the build printed (its first error lines).
+# Build the root package once — a bare `botopink build` at the workspace root, each
+# member's `.bpr` set reused when fresh, rebuilt under `--cold` (decision 1006 (2), (4)),
+# one process per member on this run's jobs (1006 (5)): `root_built` 1 once the build
+# printed its count — a member that does not build is that member's red, its run on each
+# target says it —, or `root_refusal` what the build printed (its first error lines).
 build_root() {
     local dir="$work/root" code
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     touch "$work/stamp-root-build"
-    (cd "$here/modules" && with_timeout 7200 "$compiler" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
+    (cd "$here/modules" && with_timeout 7200 "$compiler" build --jobs "$jobs" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
-    if [ $code -eq 0 ]; then
+    if [ $code -eq 0 ] || strip <"$dir/o.txt" | grep -qE '^modules: [0-9]+ checked'; then
         root_built=1
     else
         root_refusal="the root package does not build (botopink build: exit $code): $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
@@ -910,7 +898,8 @@ run_root() { # <target> <out file>
     # The set `build_root` wrote is fresh: this run emits from it, no comptime (1006 P3).
     # `--cold` reads no code cache and still reuses the fresh set (1006 (4)).
     touch "$work/stamp-root-$t"
-    (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
+    # One process per member (1006 (5)) on this target's share of the run's jobs.
+    (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" --jobs "$ROOT_JOBS" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
     reach_report "$t" "root/modules" "$work/stamp-root-$t" "$here/modules/.botopinkbuild/runtime" "$dir/out" "$work/stamp-root-build"
     strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
@@ -1338,13 +1327,15 @@ fi
 # The root package (§ the root package) is held to the tree and built once
 # here, before the pool: its targets' jobs reuse its `.bpr` set.
 ROOT_BUILT=0; ROOT_REFUSAL=""; ROOT_LISTED=0
+# Each target's run of the root holds its share of the run's jobs (decision 1006 (5)).
+ROOT_JOBS=$(( jobs / ${#targets[@]} )); [ "$ROOT_JOBS" -ge 1 ] || ROOT_JOBS=1
 if grep -q '^modules	' "$jobs_list"; then
     roster
     build_root
     ROOT_BUILT="$root_built"; ROOT_REFUSAL="$root_refusal"
     ROOT_LISTED="$(listed_modules | grep -c . || true)"
 fi
-export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED
+export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED ROOT_JOBS
 # The libraries' programs are written inside the checkout (the name resolves by its walk-up), under
 # a directory of this run's own (§ the libraries); the disabled pairs are read once.
 LIB_RUN=""

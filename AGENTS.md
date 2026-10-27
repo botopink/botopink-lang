@@ -38,9 +38,9 @@ botopink-lang/                 ← language core (this project)
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
 │                                docs.md (the reference, the manifest schema included; every example a cell),
-│                                modules/ — the root package (decisions 989, 990 (6)) loading every self-checking module
-│                                (modules/<module>/ and modules/decisions-taken/<slug>-<N>/: cases/<case>/, snapshot/main.snap),
-│                                built once into its `.bpr` set and run per target —, lib/ (their shared library), test/ suites by
+│                                modules/ — the root package (decisions 989, 990 (6), 1006 (1)), a workspace whose members are
+│                                the self-checking modules (modules/<module>/ and modules/decisions-taken/<slug>-<N>/: cases/<case>/,
+│                                snapshot/main.snap), one process per member, built once into their `.bpr` sets and run per target —, lib/ (their shared library), test/ suites by
 │                                `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```

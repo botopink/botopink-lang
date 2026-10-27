@@ -2,7 +2,7 @@
 /// checked against the tool. It was the library test runner's `doc_quotes` check.
 ///
 /// A workspace root's documents (`*.md` directly in the workspace directory —
-/// its `AGENTS.md`, its `docs.md`) quote the refusal `botopink build` prints
+/// its `AGENTS.md`, its `docs.md`) quote the refusal `botopink check` prints
 /// there, and that refusal enumerates every member. An enumeration kept as
 /// prose is merged as prose: emilia front 39's merge took one side's copy of
 /// the member list whole and silently dropped the member the other side had

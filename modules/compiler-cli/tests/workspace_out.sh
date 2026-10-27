@@ -102,7 +102,7 @@ for target in erlang beam; do
 
   run_in "$WS" run --target "$target"
   [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "$target: the root's run (exit $CODE)"; }
-  grep -qx 'hello one' <<<"$OUT" && grep -qx 'hello two' <<<"$OUT" || { echo "$OUT" >&2; fail "$target: the root's run answers both members"; }
+  grep -qx '    hello one' <<<"$OUT" && grep -qx '    hello two' <<<"$OUT" || { echo "$OUT" >&2; fail "$target: the root's run answers both members"; }
   [[ "$(inode "$LIB")" == "$(inode "$WORK/pin-lib")" ]] || fail "$target: the root's run wrote lib's file again"
   ok "$target: the root's run answers each member over the one folder"
 

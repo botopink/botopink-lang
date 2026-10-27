@@ -3,12 +3,13 @@
 /// `<out>/` holding every member and every dependency once — the member's own
 /// files written by its own process, a dependency's written once per its key.
 ///
-/// **The pieces, one place.** `atRoot` is what the root's command does: it
-/// refuses two packages that would write one `<pkg>@<path>` (`refuseShared`)
-/// and then hands each member to its own `botopink <cmd> --target <t>
-/// --workspace-out <out>` process, in the workspace's order. The per-member
-/// fan-out of decision 1006 (5) (P2: jobs, timeouts, `ok` / `FAIL` lines)
-/// replaces the sequential loop in `fanOut` and keeps the rest.
+/// **The pieces, one place.** `atRoot` is what the root's command does: for
+/// a target it refuses two packages that would write one `<pkg>@<path>`
+/// (`refuseShared`), then hands each member to its own `botopink <cmd>
+/// [--target <t> --workspace-out <out>]` process — a bare `build` hands each
+/// member a bare `build` (its `.bpr` set, no `out/`) — through the fan-out of
+/// decision 1006 (5) (`fanout.zig`: in the workspace's order, on `--jobs`,
+/// each under `--timeout`, one `ok` / `FAIL` line per member and the count).
 ///
 /// **Written once** (`Once`): a member process given `--workspace-out` writes
 /// a dependency's files — every module of the package, its units, `.d.ts`,
@@ -18,6 +19,10 @@
 /// holding its key writes nothing of that package; `build --cold` reads no key
 /// and rewrites (1008 (4)). Concurrent writers of one key rename the same
 /// bytes (the closure invariant, 509 (2)), so a reader sees one whole file.
+/// The member's own files are staged and renamed too: members run side by
+/// side over one folder, and no process ever reads a file half written —
+/// what the OTP compile writes (a `.beam` and its record), the wasm runtime
+/// units and the sidecars included (`build.zig`, `run.zig`, `libs.zig`).
 /// The key (`depKey`): the package's `.bpr` key (1006 (3)) — none for std,
 /// whose bytes are the compiler's —, the target, the wasm host, whether
 /// `.d.ts` files are written, and the compiler's source stamp.
@@ -30,6 +35,7 @@ const libs = @import("./libs.zig");
 const reporter = @import("./reporter.zig");
 const analysis_store = @import("./analysis_store.zig");
 const code_cache = @import("./code_cache.zig");
+const fanout = @import("./fanout.zig");
 
 pub const Key = [code_cache.KEY_HEX]u8;
 
@@ -104,10 +110,11 @@ pub const Once = struct {
         return if (pkg) |p| self.present.contains(p) else false;
     }
 
-    /// `bytes` at `path`: the member's own file written in place, a
-    /// dependency's staged and renamed over it.
+    /// `bytes` at `path`, staged and renamed over it: the member's own file
+    /// and a dependency's alike, so a member running beside it never reads
+    /// one half written.
     pub fn write(self: *Once, pkg: ?[]const u8, path: []const u8, bytes: []const u8) !void {
-        if (pkg == null) return std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = bytes });
+        _ = pkg;
         try analysis_store.write(self.arena, self.io, path, bytes);
     }
 
@@ -129,16 +136,21 @@ pub const Once = struct {
 
 pub const RootOptions = struct {
     command: Command,
-    target: config.Target,
+    /// null: a bare `build` — each member's `.bpr` set, no `out/` (1006 (2)).
+    target: ?config.Target,
     out_dir: []const u8 = "out",
     cold: bool = false,
     cache_root: ?[]const u8 = null,
+    /// `--jobs`: members at once (default `fanout.defaultJobs`).
+    jobs: ?usize = null,
+    /// `--timeout`: seconds each member is given (default 900).
+    timeout_s: ?u64 = null,
 };
 
-/// The working directory's command when it is a workspace root and a target
-/// is named: the shared folder refused or laid, member by member; null when
-/// the working directory is no workspace root (the command goes on as a
-/// package's).
+/// The working directory's command when it is a workspace root: the shared
+/// folder refused or laid (a target named), or each member's bare `build`,
+/// one process per member; null when the working directory is no workspace
+/// root (the command goes on as a package's).
 pub fn atRoot(gpa: std.mem.Allocator, io: std.Io, opts: RootOptions, env_map: libs.EnvMap) !?u8 {
     if (!manifest.isWorkspaceDir(io, ".")) return null;
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
@@ -164,8 +176,8 @@ pub fn atRoot(gpa: std.mem.Allocator, io: std.Io, opts: RootOptions, env_map: li
 
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
-    if (try refuseShared(gpa, io, arena, cwd, ws, env_map)) return 1;
-    return try fanOut(arena, io, cwd, ws, opts);
+    if (opts.target != null) if (try refuseShared(gpa, io, arena, cwd, ws, env_map)) return 1;
+    return try fanOut(gpa, arena, io, cwd, ws, opts);
 }
 
 /// Decision 1015 (4), 1013 (2) — one `<pkg>@<path>` is one module of the
@@ -242,45 +254,33 @@ fn display(arena: std.mem.Allocator, cwd: []const u8, dir: []const u8) ![]const 
     return if (rel.len == 0) "." else rel;
 }
 
-/// Each member's own process, in the workspace's order (1006 P2 makes it
-/// parallel, bounded and timed): `botopink <cmd> --target <t>
-/// --workspace-out <root>/<out>` in the member's directory, its output its
-/// own. Exit 1 when any member's is not 0, naming them.
-fn fanOut(arena: std.mem.Allocator, io: std.Io, cwd: []const u8, ws: manifest.Workspace, opts: RootOptions) !u8 {
+/// Each member's own process (decision 1006 (5), `fanout.zig`): `botopink
+/// <cmd> --target <t> --workspace-out <root>/<out>` — or a bare `botopink
+/// build` — in the member's directory, `--cold` and `--cache-root` handed on;
+/// one line per member in the workspace's order, then the count, exit 1 on
+/// any red.
+fn fanOut(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io, cwd: []const u8, ws: manifest.Workspace, opts: RootOptions) !u8 {
     const self_exe = try std.process.executablePathAlloc(io, arena);
-    const out_abs = try std.fs.path.resolve(arena, &.{ cwd, opts.out_dir });
-    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (ws.members) |member| {
-        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-        try argv.appendSlice(arena, &.{ self_exe, @tagName(opts.command), "--target", opts.target.toString(), "--workspace-out", out_abs });
-        if (opts.cold) try argv.append(arena, "--cold");
-        if (opts.cache_root) |r| try argv.appendSlice(arena, &.{ "--cache-root", try std.fs.path.resolve(arena, &.{ cwd, r }) });
-        const member_dir = try std.fs.path.resolve(arena, &.{ cwd, member.dir });
-        var child = std.process.spawn(io, .{ .argv = argv.items, .cwd = .{ .path = member_dir } }) catch |e| {
-            reporter.errMsg(try std.fmt.allocPrint(arena, "cannot start the process of member `{s}` ({s})", .{ member.name, @errorName(e) }));
-            try failed.append(arena, member.name);
-            continue;
-        };
-        const term = child.wait(io) catch |e| {
-            child.kill(io);
-            reporter.errMsg(try std.fmt.allocPrint(arena, "member `{s}`: {s}", .{ member.name, @errorName(e) }));
-            try failed.append(arena, member.name);
-            continue;
-        };
-        const ok = switch (term) {
-            .exited => |code| code == 0,
-            else => false,
-        };
-        if (!ok) try failed.append(arena, member.name);
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    try argv.appendSlice(arena, &.{ self_exe, @tagName(opts.command) });
+    if (opts.target) |t| try argv.appendSlice(arena, &.{ "--target", t.toString(), "--workspace-out", try std.fs.path.resolve(arena, &.{ cwd, opts.out_dir }) });
+    if (opts.cold) try argv.append(arena, "--cold");
+    if (opts.cache_root) |r| try argv.appendSlice(arena, &.{ "--cache-root", try std.fs.path.resolve(arena, &.{ cwd, r }) });
+
+    const members = try arena.alloc(fanout.Member, ws.members.len);
+    for (ws.members, members) |member, *m| {
+        const dir = try std.fs.path.resolve(arena, &.{ cwd, member.dir });
+        m.* = .{ .name = try display(arena, cwd, dir), .dir = dir };
     }
-    if (failed.items.len == 0) return 0;
-    var list: std.ArrayListUnmanaged(u8) = .empty;
-    for (failed.items, 0..) |name, i| {
-        if (i > 0) try list.appendSlice(arena, ", ");
-        try list.appendSlice(arena, name);
-    }
-    reporter.errMsg(try std.fmt.allocPrint(arena, "{d} of {d} members failed: {s}", .{ failed.items.len, ws.members.len, list.items }));
-    return 1;
+    var rand: [8]u8 = undefined;
+    io.random(&rand);
+    const log_dir = try std.fmt.allocPrint(arena, "{s}/.botopinkbuild/tmp/fanout/{x}", .{ cwd, std.mem.readInt(u64, &rand, .little) });
+    return fanout.run(gpa, io, members, .{
+        .argv = argv.items,
+        .jobs = opts.jobs orelse fanout.defaultJobs(io),
+        .timeout_s = opts.timeout_s orelse fanout.DEFAULT_TIMEOUT_S,
+        .log_dir = log_dir,
+    });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -950,7 +950,9 @@ expect_out 'ships nothing: manifest has no "files"' "names the refusal"
 expect_out "botopink.json:2:3" "locates it on the member manifest"
 
 echo "==> a package command on the workspace itself is refused, listing the members"
-for cmd in build check test; do
+# `build` there runs each member in its own process (decision 1006 (5),
+# tests/workspace_run_one_process_per_member.sh); `check` and `test` keep refusing.
+for cmd in check test; do
   run "$WS" "$cmd"
   expect_code 1 "$cmd on the umbrella"
   expect_out "is a workspace, not a package — run this command inside one of its members: acme, acme-empty, acme-web, acme-app" "$cmd names the members"

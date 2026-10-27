@@ -66,7 +66,13 @@ pub fn writeAll(arena: std.mem.Allocator, io: std.Io, pairs: []const Pair) void 
         const src = cwd.readFileAlloc(io, p.src, arena, .unlimited) catch continue;
         const rec = text(arena, src) catch continue;
         const path = recordPath(arena, p.beam) catch continue;
-        cwd.writeFile(io, .{ .sub_path = path, .data = rec }) catch {};
+        // Staged and renamed: a member compiling beside this one (one
+        // workspace folder, decision 1006 (5)) reads a whole record or none.
+        var rand: [8]u8 = undefined;
+        io.random(&rand);
+        const tmp = std.fmt.allocPrint(arena, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &rand, .little) }) catch continue;
+        cwd.writeFile(io, .{ .sub_path = tmp, .data = rec }) catch continue;
+        std.Io.Dir.rename(cwd, tmp, cwd, path, io) catch cwd.deleteFile(io, tmp) catch {};
     }
 }
 

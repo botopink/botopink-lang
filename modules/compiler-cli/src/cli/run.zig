@@ -29,6 +29,10 @@ pub const Options = struct {
     /// `--workspace-out <dir>`: the member's run from its workspace's one
     /// output folder (decision 1015 (4), `build.Options.workspace_out`).
     workspace_out: ?[]const u8 = null,
+    /// `--jobs <n>` / `--timeout <s>`: at a workspace root, the members run at
+    /// once and the seconds each is given (decision 1006 (5), `fanout.zig`).
+    jobs: ?usize = null,
+    timeout_s: ?u64 = null,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -46,7 +50,7 @@ pub fn run(
     // At a workspace root, `run --target <t>` builds and runs each member in
     // its own process, over the workspace's one folder (decision 1015 (4)).
     if (opts.target) |t| if (opts.workspace_out == null) {
-        if (try workspace_out.atRoot(gpa, io, .{ .command = .run, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root }, env_map)) |code| return code;
+        if (try workspace_out.atRoot(gpa, io, .{ .command = .run, .target = t, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .jobs = opts.jobs, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
     };
     const out_dir = opts.workspace_out orelse opts.out_dir;
 
@@ -143,7 +147,11 @@ fn programArgvFor(
         // A dependency's module is linked from the code cache when it is there
         // (decision 509); every module whose `.beam` record matches is loaded
         // as it is (decision 1007).
-        const cache: Cache = .{ .dir = try code_cache.dir(arena, proj), .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name) };
+        const cache: Cache = .{
+            .dir = try code_cache.dir(arena, proj),
+            .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name),
+            .only = if (build_cmd.emitted_stems) |*m| m else null,
+        };
         return if (target == .erlang) erlangArgv(arena, io, out_dir, entry_atom, cache) else beamArgv(arena, io, out_dir, entry_atom, cache);
     }
 
@@ -329,6 +337,11 @@ test "refusalText: located at the entry module, one message for every target" {
 pub const Cache = struct {
     dir: []const u8,
     own_prefix: []const u8,
+    /// Over a workspace's one folder (`build.emitted_stems`, decision 1006
+    /// (5)): the modules of this member's program, by stem — any other
+    /// `<pkg>@…` file of the folder is another member's and is not compiled
+    /// here; a host module (no `@` in its name) still is. Null: every file.
+    only: ?*const std.StringHashMapUnmanaged(void) = null,
 };
 
 fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8, cache: Cache) !?[]const []const u8 {
@@ -419,6 +432,7 @@ pub fn compileInto(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: 
     var deps: std.ArrayListUnmanaged(beam_record.Pair) = .empty;
     for (files) |f| {
         const stem = std.fs.path.stem(f);
+        if (cache.only) |only| if (std.mem.indexOfScalar(u8, stem, '@') != null and !only.contains(stem)) continue;
         const pair: beam_record.Pair = .{ .src = f, .beam = try std.fmt.allocPrint(arena, "{s}/{s}.beam", .{ dir, stem }) };
         try (if (code_cache.isDependencyArtifact(f, cache.own_prefix)) &deps else &own).append(arena, pair);
     }
@@ -451,7 +465,7 @@ const COMPILE_EVAL =
     \\[OutDir, Mode, OwnListFile, DepListFile, CacheDir, CacheMode] = init:get_plain_arguments(),
 ++ arglist.READ_LIST("Own", "OwnListFile") ++ arglist.READ_LIST("Deps", "DepListFile") ++ code_cache.ERL_FUNS ++
     \\group_leader(whereis(standard_error), self()),
-    \\Opts = case Mode of "asm" -> [from_asm, report, {outdir, OutDir}]; _ -> [report, {outdir, OutDir}] end,
+    \\Opts = case Mode of "asm" -> [binary, from_asm, report]; _ -> [binary, report] end,
     \\Kind = case Mode of "asm" -> asm; _ -> erl end,
     \\Beam = fun(F) -> filename:join(OutDir, filename:rootname(filename:basename(F)) ++ ".beam") end,
     \\N = erlang:max(1, erlang:system_info(schedulers_online)),
@@ -464,7 +478,7 @@ const COMPILE_EVAL =
     \\            R
     \\        end || Part <- Parts],
     \\Left = lists:append([receive {R, Missed} -> Missed end || R <- Refs]),
-    \\Bad = [F || F <- Own ++ Left, case compile:file(F, Opts) of {ok, _} -> false; {ok, _, _} -> false; _ -> true end],
+    \\Bad = [F || F <- Own ++ Left, case compile:file(F, Opts) of {ok, _, Bin} -> CodePlace(Beam(F), Bin) =/= ok; {ok, _, Bin, _} -> CodePlace(Beam(F), Bin) =/= ok; _ -> true end],
     \\CodeReap(),
     \\halt(case Bad of [] -> 0; _ -> 1 end).
 ;
