@@ -32,7 +32,7 @@ import {io.terminal.print} from "std";
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.slice" (func $__std_text_slice (param i32 i32 i32) (result i32)))
-  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -310,6 +310,10 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $r
+  )
+  (func $__std_text_length (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_text_length
   )
   (data $__d0 "hello")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

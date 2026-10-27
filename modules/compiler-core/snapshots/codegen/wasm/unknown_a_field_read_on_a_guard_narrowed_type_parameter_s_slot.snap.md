@@ -46,7 +46,7 @@ import {io.terminal.print} from "std";
     (type $brand_var_Maybe_Some (struct (field i64) (field i64) (field f32) (field f64) (field f32) (field i32) (field f64) (field i64) (field f64) (field i32) (field i32) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field i64) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field f32) (field f32) (field i32) (field f32) (field i64) (field f32) (field f32) (field i64)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -607,6 +607,10 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (func $__std_text_length (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_text_length
   )
   (data $__d0 "integer overflow: - on i32 at main.bp:8:32")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

@@ -1117,7 +1117,17 @@ fn writeOutputs(
         // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS
         // `out/commonJS/<pkg>@<path>.js`, flat (decisions 1015, 1023). wasm:
         // `out/wasm/<module path><ext>`, so subdirectories may have to be created.
-        const sub_path = try artifactPath(gpa, out_dir, target, packages, o.name, ext);
+        // Decision 1032 — a `wasi` entry emitted with the units on is the
+        // unit `<pkg>@<path>`: `<stem>.wat` and `<stem>.wasm`, its stem the
+        // last line of its `botopink.units`.
+        const unit_stem: ?[]const u8 = if (target == .wasm and wasm_host == .wasi) if (o.result.wasm) |bin| blk: {
+            const stems = try bp.codegen.wasmRuntimeUnit.unitsOf(arena, bin);
+            break :blk if (stems.len > 0) stems[stems.len - 1] else null;
+        } else null else null;
+        const sub_path = if (unit_stem) |stem|
+            try std.fmt.allocPrint(gpa, "{s}{s}{s}", .{ folder, stem, ext })
+        else
+            try artifactPath(gpa, out_dir, target, packages, o.name, ext);
         defer gpa.free(sub_path);
 
         // Ensure parent directory exists.
@@ -1129,6 +1139,10 @@ fn writeOutputs(
         }
 
         try file.write(sub_path, o.result.js);
+        if (unit_stem) |stem| {
+            const wasm_path = try std.fmt.allocPrint(arena, "{s}{s}.wasm", .{ folder, stem });
+            try file.write(wasm_path, o.result.wasm.?);
+        }
 
         // Decision 334: a `browser` build is the module's binary and the
         // loader that instantiates it with a browser's imports (node runs it

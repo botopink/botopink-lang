@@ -46,8 +46,8 @@ import {io.terminal.print} from "std";
   (import "std@string" "std:text.split" (func $__std_text_split (param i32 i32) (result i32)))
   (import "std@string" "std:text.at" (func $__std_text_at (param i32 i32) (result i32)))
   (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
-  (import "std@number" "wat:number.i64ToString" (func $__std_number_i64ToString (param i64) (result (ref null $str))))
-  (import "std@number" "wat:number.u64ToString" (func $__std_number_u64ToString (param i64) (result (ref null $str))))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -878,6 +878,16 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $r
+  )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
   )
   (data $__d0 "hello")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

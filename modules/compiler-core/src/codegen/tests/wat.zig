@@ -53,9 +53,11 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, importe
         if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
     } else return error.ModuleDidNotCompile;
     const wat_text = o.result.js;
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.length\" (func $__std_text_length (param (ref null $str)) (result i32)))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.charCodeAt\" (func $__std_text_charCodeAt (param (ref null $str) i32) (result i32)))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "\n  (func $__std_text_length") == null);
+    // Decision 1037 — imported through the unit's abstract signature, called
+    // through a thunk of the module's concrete one.
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.length\" (func $__abi___std_text_length (param arrayref) (result i32)))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.charCodeAt\" (func $__abi___std_text_charCodeAt (param arrayref i32) (result i32)))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "\n  (func $__std_text_length (param $p0 (ref null $str)) (result i32)\n    local.get $p0\n    call $__abi___std_text_length\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, wat_text, "__gc_to_lin_str") == null);
     try std.testing.expectEqualStrings("9\n0\n233\n26412\n-1\n-1\n128512\n", o.result.run_output orelse "");
 }
@@ -5045,4 +5047,99 @@ test "wat: decision 1021 (10) ---- a method call on a value is never the module'
         \\    print(lookup(Registry(names: ["a"]), "z"));
         \\}
     , "email\n1\n1\n-1\n");
+}
+
+// Decision 1032 (piece P3/P4 step B) — with `Config.wasm_units` on, a `wasi`
+// build's entry is a core module holding only its own code: no unit's text,
+// `botopink.units` naming the core, the std units it reaches in dependency
+// order and the entry itself; every import it makes is an export of the unit
+// it names, with the same type (the units' index); and the frame compiled
+// from those units through the embedded engine runs it (decision 1034's
+// runner, R0) — the bytes the units' files hold.
+test "wat: units ---- a wasi entry with the units on imports them, names them in botopink.units, and the frame runs it" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const engine = @import("../wat/engine.zig");
+    const runner = @import("../wat/runner.zig");
+    const watEmitter = @import("../wat/wat_emitter.zig");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    var outputs = try h.generate(a, &.{.{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn main() -> void {
+        \\    print("hello, world");
+        \\    print("a,b".split(","));
+        \\}
+    }}, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    const bin = o.result.wasm orelse return error.ModuleDidNotCompile;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const rt = try ru.get();
+
+    // The entry is a core module, its text the module's (no component, no
+    // unit's text).
+    try std.testing.expect(std.mem.startsWith(u8, o.result.js, "(module"));
+    try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(component") == null);
+    const stems = try ru.unitsOf(ar, bin);
+    try std.testing.expect(stems.len >= 3);
+    try std.testing.expectEqualStrings(ru.name, stems[0]);
+    try std.testing.expectEqualStrings("test@main", stems[stems.len - 1]);
+    for (stems[1 .. stems.len - 1]) |s| try std.testing.expect(rt.unit(s) != null);
+
+    // Every import of the entry is an export of the unit it names, typed alike.
+    const face = try ru.faceOfBytes(ar, bin);
+    var lines = std.mem.tokenizeScalar(u8, face.text, '\n');
+    while (lines.next()) |l| {
+        const head = "    (import \"";
+        if (!std.mem.startsWith(u8, l, head)) continue;
+        const rest = l[head.len..];
+        const q = std.mem.indexOfScalar(u8, rest, '"').?;
+        const module = rest[0..q];
+        const unit_face = if (std.mem.eql(u8, module, ru.name)) rt.core_face else (rt.unit(module) orelse return error.TestUnexpectedResult).face;
+        const want = try std.fmt.allocPrint(ar, "    (export {s}", .{rest[q + 2 ..]});
+        try std.testing.expect(std.mem.indexOf(u8, unit_face.text, want[0 .. want.len - 1]) != null);
+    }
+
+    // The frame over the units' bytes, run through the runner.
+    var fw: std.Io.Writer.Allocating = .init(ar);
+    try watEmitter.frameOf(ar, &fw.writer, bin);
+    var failure: ?[]u8 = null;
+    const comp = (try engine.precompiled(a, io, null, fw.written(), .component, false, &failure)) orelse {
+        std.debug.print("\n=== frame refused: {s}\n", .{failure.?});
+        a.free(failure.?);
+        return error.TestUnexpectedResult;
+    };
+    defer comp.code.deinit();
+    var held: std.ArrayListUnmanaged(engine.Precompiled) = .empty;
+    defer {
+        for (held.items) |p| p.code.deinit();
+        held.deinit(a);
+    }
+    const units = try ar.alloc(runner.Unit, stems.len);
+    for (stems, units, 0..) |s, *u, k| {
+        const bytes = if (k == stems.len - 1) bin else if (std.mem.eql(u8, s, ru.name)) rt.core_bytes else rt.unit(s).?.bytes;
+        const pc = (try engine.precompiled(a, io, null, bytes, .module, false, &failure)) orelse {
+            std.debug.print("\n=== unit {s} refused: {s}\n", .{ s, failure.? });
+            a.free(failure.?);
+            return error.TestUnexpectedResult;
+        };
+        try held.append(a, pc);
+        u.* = .{ .name = try std.fmt.allocPrint(ar, "unit-{d}", .{k}), .module = pc.code.module };
+    }
+    const out = try runner.run(a, comp.code.component, units, .{ .capture_stdout = true });
+    defer out.deinit(a);
+    if (out.trap) |t| std.debug.print("\n=== trap: {s}\n", .{t});
+    try std.testing.expectEqual(@as(i32, 0), out.status);
+    try std.testing.expectEqualStrings("hello, world\n[\"a\", \"b\"]\n", out.stdout orelse "");
 }

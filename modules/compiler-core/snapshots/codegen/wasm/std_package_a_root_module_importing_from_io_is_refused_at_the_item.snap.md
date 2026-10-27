@@ -350,7 +350,7 @@ test "path.isInside treats a name starting with two dots as a name" {
   (import "std@string" "std:text.split" (func $__std_text_split (param i32 i32) (result i32)))
   (import "std@string" "std:text.startsWith" (func $__std_text_startsWith (param i32 i32) (result i32)))
   (import "std@string" "std:text.slice" (func $__std_text_slice (param i32 i32 i32) (result i32)))
-  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -2385,6 +2385,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (func $__std_text_length (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_text_length
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
@@ -8168,32 +8172,32 @@ test "fs answers PermissionDenied for an OS permission error" {
   (import "std@string" "std:text.chars" (func $__std_text_chars (param i32) (result i32)))
   (import "std@string" "std:text.endsWith" (func $__std_text_endsWith (param i32 i32) (result i32)))
   (import "std@io@random" "wat:random.float" (func $__std_random_float (result f64)))
-  (import "std@number" "wat:number.i64ToString" (func $__std_number_i64ToString (param i64) (result (ref null $str))))
-  (import "std@io@fs" "wat:fs.cwd" (func $__std_fs_cwd (result (ref null $str))))
-  (import "std@io@fs" "wat:fs.getenv" (func $__std_fs_getenv (param (ref null $str)) (result (ref null $str))))
-  (import "std@io@fs" "wat:fs.open" (func $__std_fs_open (param (ref null $str) i32) (result i32)))
-  (import "std@io@fs" "wat:fs.openMem" (func $__std_fs_openMem (param (ref null $str)) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@io@fs" "wat:fs.cwd" (func $__abi___std_fs_cwd (result arrayref)))
+  (import "std@io@fs" "wat:fs.getenv" (func $__abi___std_fs_getenv (param arrayref) (result arrayref)))
+  (import "std@io@fs" "wat:fs.open" (func $__abi___std_fs_open (param arrayref i32) (result i32)))
+  (import "std@io@fs" "wat:fs.openMem" (func $__abi___std_fs_openMem (param arrayref) (result i32)))
   (import "std@io@fs" "wat:fs.close" (func $__std_fs_close (param i32)))
   (import "std@io@fs" "wat:fs.isMem" (func $__std_fs_isMem (param i32) (result i32)))
   (import "std@io@fs" "wat:fs.tell" (func $__std_fs_tell (param i32) (result i64)))
   (import "std@io@fs" "wat:fs.seek" (func $__std_fs_seek (param i32 i64)))
-  (import "std@io@fs" "wat:fs.size" (func $__std_fs_size (param i32) (result (ref null $result))))
+  (import "std@io@fs" "wat:fs.size" (func $__abi___std_fs_size (param i32) (result structref)))
   (import "std@io@fs" "wat:fs.sizeRaw" (func $__std_fs_sizeRaw (param i32) (result i64)))
-  (import "std@io@fs" "wat:fs.read" (func $__std_fs_read (param i32 i32) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.readAll" (func $__std_fs_readAll (param i32) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.readLine" (func $__std_fs_readLine (param i32) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.write" (func $__std_fs_write (param i32 (ref null $str)) (result i32)))
-  (import "std@io@fs" "wat:fs.statKind" (func $__std_fs_statKind (param (ref null $str) i32) (result i32)))
-  (import "std@io@fs" "wat:fs.statSize" (func $__std_fs_statSize (param (ref null $str)) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.statMtime" (func $__std_fs_statMtime (param (ref null $str)) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.list" (func $__std_fs_list (param (ref null $str)) (result (ref null $result))))
-  (import "std@io@fs" "wat:fs.mkdir" (func $__std_fs_mkdir (param (ref null $str)) (result i32)))
-  (import "std@io@fs" "wat:fs.rmdir" (func $__std_fs_rmdir (param (ref null $str)) (result i32)))
-  (import "std@io@fs" "wat:fs.unlink" (func $__std_fs_unlink (param (ref null $str)) (result i32)))
-  (import "std@io@fs" "wat:fs.symlink" (func $__std_fs_symlink (param (ref null $str) (ref null $str)) (result i32)))
-  (import "std@bytes" "wat:bytes.at" (func $__std_bytes_at (param (ref null $str) i32) (result i32)))
-  (import "std@hash" "wat:hash.sha256Hex" (func $__std_hash_sha256Hex (param (ref null $str)) (result (ref null $str))))
-  (import "std@string" "wat:text.charCodeAt" (func $__std_text_charCodeAt (param (ref null $str) i32) (result i32)))
+  (import "std@io@fs" "wat:fs.read" (func $__abi___std_fs_read (param i32 i32) (result structref)))
+  (import "std@io@fs" "wat:fs.readAll" (func $__abi___std_fs_readAll (param i32) (result structref)))
+  (import "std@io@fs" "wat:fs.readLine" (func $__abi___std_fs_readLine (param i32) (result structref)))
+  (import "std@io@fs" "wat:fs.write" (func $__abi___std_fs_write (param i32 arrayref) (result i32)))
+  (import "std@io@fs" "wat:fs.statKind" (func $__abi___std_fs_statKind (param arrayref i32) (result i32)))
+  (import "std@io@fs" "wat:fs.statSize" (func $__abi___std_fs_statSize (param arrayref) (result structref)))
+  (import "std@io@fs" "wat:fs.statMtime" (func $__abi___std_fs_statMtime (param arrayref) (result structref)))
+  (import "std@io@fs" "wat:fs.list" (func $__abi___std_fs_list (param arrayref) (result structref)))
+  (import "std@io@fs" "wat:fs.mkdir" (func $__abi___std_fs_mkdir (param arrayref) (result i32)))
+  (import "std@io@fs" "wat:fs.rmdir" (func $__abi___std_fs_rmdir (param arrayref) (result i32)))
+  (import "std@io@fs" "wat:fs.unlink" (func $__abi___std_fs_unlink (param arrayref) (result i32)))
+  (import "std@io@fs" "wat:fs.symlink" (func $__abi___std_fs_symlink (param arrayref arrayref) (result i32)))
+  (import "std@bytes" "wat:bytes.at" (func $__abi___std_bytes_at (param arrayref i32) (result i32)))
+  (import "std@hash" "wat:hash.sha256Hex" (func $__abi___std_hash_sha256Hex (param arrayref) (result arrayref)))
+  (import "std@string" "wat:text.charCodeAt" (func $__abi___std_text_charCodeAt (param arrayref i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -18642,6 +18646,107 @@ test "fs answers PermissionDenied for an OS permission error" {
       )
     )
     local.get $b
+  )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_fs_cwd (result (ref null $str))
+    call $__abi___std_fs_cwd
+    ref.cast (ref null $str)
+  )
+  (func $__std_fs_getenv (param $p0 (ref null $str)) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_fs_getenv
+    ref.cast (ref null $str)
+  )
+  (func $__std_fs_open (param $p0 (ref null $str)) (param $p1 i32) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_fs_open
+  )
+  (func $__std_fs_openMem (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_fs_openMem
+  )
+  (func $__std_fs_size (param $p0 i32) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_size
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_read (param $p0 i32) (param $p1 i32) (result (ref null $result))
+    local.get $p0
+    local.get $p1
+    call $__abi___std_fs_read
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_readAll (param $p0 i32) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_readAll
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_readLine (param $p0 i32) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_readLine
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_write (param $p0 i32) (param $p1 (ref null $str)) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_fs_write
+  )
+  (func $__std_fs_statKind (param $p0 (ref null $str)) (param $p1 i32) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_fs_statKind
+  )
+  (func $__std_fs_statSize (param $p0 (ref null $str)) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_statSize
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_statMtime (param $p0 (ref null $str)) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_statMtime
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_list (param $p0 (ref null $str)) (result (ref null $result))
+    local.get $p0
+    call $__abi___std_fs_list
+    ref.cast (ref null $result)
+  )
+  (func $__std_fs_mkdir (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_fs_mkdir
+  )
+  (func $__std_fs_rmdir (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_fs_rmdir
+  )
+  (func $__std_fs_unlink (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_fs_unlink
+  )
+  (func $__std_fs_symlink (param $p0 (ref null $str)) (param $p1 (ref null $str)) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_fs_symlink
+  )
+  (func $__std_bytes_at (param $p0 (ref null $str)) (param $p1 i32) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_bytes_at
+  )
+  (func $__std_hash_sha256Hex (param $p0 (ref null $str)) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_hash_sha256Hex
+    ref.cast (ref null $str)
+  )
+  (func $__std_text_charCodeAt (param $p0 (ref null $str)) (param $p1 i32) (result i32)
+    local.get $p0
+    local.get $p1
+    call $__abi___std_text_charCodeAt
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

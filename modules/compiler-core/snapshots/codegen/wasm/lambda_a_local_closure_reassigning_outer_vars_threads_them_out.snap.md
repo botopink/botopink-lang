@@ -44,7 +44,7 @@ import {io.terminal.print} from "std";
     (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $str))) (field $c1 (mut i32)))))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (import "std@number" "wat:number.i32ToString" (func $__std_number_i32ToString (param i32) (result (ref null $str))))
+  (import "std@number" "wat:number.i32ToString" (func $__abi___std_number_i32ToString (param i32) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -724,6 +724,11 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (func $__std_number_i32ToString (param $p0 i32) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i32ToString
+    ref.cast (ref null $str)
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

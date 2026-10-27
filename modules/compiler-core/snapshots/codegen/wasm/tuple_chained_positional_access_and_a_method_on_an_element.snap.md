@@ -34,7 +34,7 @@ import {io.terminal.print} from "std";
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (import "std@number" "wat:number.i32ToString" (func $__std_number_i32ToString (param i32) (result (ref null $str))))
+  (import "std@number" "wat:number.i32ToString" (func $__abi___std_number_i32ToString (param i32) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -302,6 +302,11 @@ import {io.terminal.print} from "std";
     local.get $s
     call $__print_str_raw
     call $__print_nl
+  )
+  (func $__std_number_i32ToString (param $p0 i32) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i32ToString
+    ref.cast (ref null $str)
   )
   (data $__d0 "x")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

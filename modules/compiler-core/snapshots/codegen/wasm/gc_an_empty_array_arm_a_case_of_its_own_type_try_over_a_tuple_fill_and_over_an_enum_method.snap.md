@@ -106,10 +106,10 @@ import {io.terminal.print} from "std";
   (import "std@string" "std:text.toUpper" (func $__std_text_toUpper (param i32) (result i32)))
   (import "std@string" "std:text.contains" (func $__std_text_contains (param i32 i32) (result i32)))
   (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
-  (import "std@number" "wat:number.i32ToString" (func $__std_number_i32ToString (param i32) (result (ref null $str))))
-  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
-  (import "std@number" "wat:number.i64ToString" (func $__std_number_i64ToString (param i64) (result (ref null $str))))
-  (import "std@number" "wat:number.u64ToString" (func $__std_number_u64ToString (param i64) (result (ref null $str))))
+  (import "std@number" "wat:number.i32ToString" (func $__abi___std_number_i32ToString (param i32) (result arrayref)))
+  (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
+  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -1175,6 +1175,25 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $r
+  )
+  (func $__std_number_i32ToString (param $p0 i32) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i32ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_text_length (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_text_length
+  )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
+  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_u64ToString
+    ref.cast (ref null $str)
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

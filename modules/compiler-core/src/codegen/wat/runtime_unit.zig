@@ -46,6 +46,41 @@ pub const name = "std@__rt";
 /// The file the core is written to, beside the program's units.
 pub const file_name = name ++ ".wasm";
 
+/// Decision 1032 — the custom section of a `wasi` entry naming the units the
+/// component frame imports, one stem per line, in dependency order: the
+/// core first, the entry last. Line `k` is the frame's `unit-<k>`.
+pub const units_section = "botopink.units";
+
+/// The stems `botopink.units` names in the core module `bytes` (empty when
+/// it has none).
+pub fn unitsOf(ar: std.mem.Allocator, bytes: []const u8) ![]const []const u8 {
+    const body = customSection(bytes, units_section) orelse return &.{};
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = std.mem.tokenizeScalar(u8, body, '\n');
+    while (it.next()) |l| try out.append(ar, l);
+    return out.items;
+}
+
+/// The payload of the custom section `want` of the core module `bytes`.
+pub fn customSection(bytes: []const u8, want: []const u8) ?[]const u8 {
+    if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], "\x00asm")) return null;
+    var i: usize = 8;
+    while (i < bytes.len) {
+        const id = bytes[i];
+        i += 1;
+        const size = uleb(bytes, &i) orelse return null;
+        if (i + size > bytes.len) return null;
+        const body = bytes[i .. i + size];
+        i += size;
+        if (id != 0) continue;
+        var j: usize = 0;
+        const n = uleb(body, &j) orelse continue;
+        if (j + n > body.len) continue;
+        if (std.mem.eql(u8, body[j .. j + n], want)) return body[j + n ..];
+    }
+    return null;
+}
+
 /// The first byte std-wasm's data may take: below it, the print helpers'
 /// scratch (`wat_prelude.zig`'s header).
 pub const scratch_end: u32 = 256;
@@ -72,10 +107,110 @@ pub const Unit = struct {
     host_fs: bool,
     text: []const u8,
     bytes: []const u8,
+    /// Its index (decision 1032): what it imports and exports, with types.
+    face: Face,
 };
 
-/// A function a program imports: the unit, the export's name, its type.
+/// A function a program imports: the unit, the export's name, its type —
+/// the boundary's (`abstractType`): no type definition named in it.
 pub const Ref = struct { unit: []const u8, @"export": []const u8, type: ast.FuncType };
+
+// ── the abstract boundary (decision 1037) ────────────────────────────────────
+
+/// Decision 1037 (4) — THE switch of the unit boundary. On: a unit's function
+/// whose signature names a concrete GC type is exported by a thin wrapper
+/// typed only with abstract references (`structref` / `arrayref`), which
+/// `ref.cast`s each argument and calls the concrete function; an importer
+/// imports that signature and calls it through a concrete-typed thunk that
+/// casts the answer. Internal calls stay concrete. Off (once the pinned
+/// wasmtime compiles a component importing a core module whose type names a
+/// concrete GC type): every export and import is the concrete signature.
+pub const abstract_boundary = true;
+
+/// The prefix of a wrapper's and an imported abstract function's symbol.
+pub const abi_prefix = "__abi_";
+
+/// `t` as the boundary carries it: a `(ref null $k)` as the abstract top of
+/// its kind (`defs[k]` a struct → `structref`, an array → `arrayref`); any
+/// other type as it is.
+pub fn abstractOf(defs: []const ast.TypeDef, t: ast.ValType) ast.ValType {
+    if (!abstract_boundary) return t;
+    const k = t.defIndex() orelse return t;
+    return switch (defs[k].kind) {
+        .@"struct" => .structref,
+        .array => .arrayref,
+    };
+}
+
+/// Whether `ft` names a type definition (a `(ref null $k)`).
+pub fn namesTypeDef(ft: ast.FuncType) bool {
+    for (ft.params) |p| if (p.defIndex() != null) return true;
+    if (ft.result) |r| return r.defIndex() != null;
+    return false;
+}
+
+/// `ft` as the boundary carries it (`abstractOf`, every parameter and the
+/// result).
+pub fn abstractType(ar: std.mem.Allocator, defs: []const ast.TypeDef, ft: ast.FuncType) !ast.FuncType {
+    const params = try ar.alloc(ast.ValType, ft.params.len);
+    for (params, ft.params) |*p, q| p.* = abstractOf(defs, q);
+    return .{ .params = params, .result = if (ft.result) |r| abstractOf(defs, r) else null };
+}
+
+/// Whether a function of type `ft` crosses the boundary through a wrapper
+/// (the switch on and a type definition in its signature).
+pub fn crossesAbstract(ft: ast.FuncType) bool {
+    return abstract_boundary and namesTypeDef(ft);
+}
+
+/// The wrapper exporting `f` under `exports` (decision 1037 (2)):
+/// `$__abi_<f>`, its signature `abstractType`'s, each concrete argument
+/// `ref.cast` to `f`'s parameter type, then `call $<f>` — the answer a
+/// subtype of the abstract result, as it is.
+pub fn exportWrapper(ar: std.mem.Allocator, defs: []const ast.TypeDef, f: ast.Func, exports: []const []const u8) !ast.Func {
+    const params = try ar.alloc(ast.Param, f.params.len);
+    var lines: std.ArrayListUnmanaged(ast.Line) = .empty;
+    for (params, f.params) |*p, q| {
+        p.* = .{ .name = q.name, .ty = abstractOf(defs, q.ty) };
+        try lines.append(ar, .{ .instr = .{ .local_get = q.name } });
+        if (q.ty.defIndex() != null) try lines.append(ar, .{ .instr = .{ .ref_cast = q.ty } });
+    }
+    try lines.append(ar, .{ .instr = .{ .call = f.name } });
+    const result = if (f.result) |r| abstractOf(defs, r) else null;
+    return .{
+        .name = try std.fmt.allocPrint(ar, "{s}{s}", .{ abi_prefix, f.name }),
+        .exports = exports,
+        .params = params,
+        .result = result,
+        .body = .{ .lines = lines.items, .stack = if (result) |r| .{ .value = r } else .none },
+    };
+}
+
+/// The thunk an importer calls a wrapped function through (decision 1037
+/// (2)): `$<sym>` of the concrete type `ft`, calling the abstract import
+/// `$__abi_<sym>` with its arguments (each a subtype of the abstract
+/// parameter) and casting the answer back to `ft`'s result.
+pub fn importThunk(ar: std.mem.Allocator, sym: []const u8, ft: ast.FuncType) !ast.Func {
+    const params = try ar.alloc(ast.Param, ft.params.len);
+    var lines: std.ArrayListUnmanaged(ast.Line) = .empty;
+    for (params, ft.params, 0..) |*p, t, i| {
+        p.* = .{ .name = try std.fmt.allocPrint(ar, "p{d}", .{i}), .ty = t };
+        try lines.append(ar, .{ .instr = .{ .local_get = p.name } });
+    }
+    try lines.append(ar, .{ .instr = .{ .call = try abiSymbol(ar, sym) } });
+    if (ft.result) |r| if (r.defIndex() != null) try lines.append(ar, .{ .instr = .{ .ref_cast = r } });
+    return .{
+        .name = sym,
+        .params = params,
+        .result = ft.result,
+        .body = .{ .lines = lines.items, .stack = if (ft.result) |r| .{ .value = r } else .none },
+    };
+}
+
+/// `$__abi_<sym>`: the symbol an abstract import of `sym` is bound to.
+pub fn abiSymbol(ar: std.mem.Allocator, sym: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(ar, "{s}{s}", .{ abi_prefix, sym });
+}
 
 /// The core and std's units, built once per process.
 pub const Runtime = struct {
@@ -88,6 +223,8 @@ pub const Runtime = struct {
     pages: u32,
     core_text: []const u8,
     core_bytes: []const u8,
+    /// The core's index (decision 1032).
+    core_face: Face,
     /// In dependency order: each after the units it imports.
     units: []const Unit,
     /// Each std-wasm function by its program-face name (`text.length`).
@@ -363,7 +500,8 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
     var std_refs: std.StringHashMapUnmanaged(Ref) = .empty;
     var leaf_refs: std.StringHashMapUnmanaged(Ref) = .empty;
     for (nodes.items) |n| if (n.place) |p| for (n.names) |x| {
-        const ref: Ref = .{ .unit = p, .@"export" = try std.fmt.allocPrint(ar, "{s}{s}", .{ if (n.leaf) leaf_prefix else link.export_prefix, x }), .type = funcType(ar, n.func) catch return error.OutOfMemory };
+        const ft = funcType(ar, n.func) catch return error.OutOfMemory;
+        const ref: Ref = .{ .unit = p, .@"export" = try std.fmt.allocPrint(ar, "{s}{s}", .{ if (n.leaf) leaf_prefix else link.export_prefix, x }), .type = try abstractType(ar, &prelude.gc_prelude_defs, ft) };
         try (if (n.leaf) &leaf_refs else &std_refs).put(ar, x, ref);
     };
     var graph: std.ArrayListUnmanaged(u8) = .empty;
@@ -381,6 +519,7 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
             .host_fs = m.host_fs,
             .text = try renderText(ar, m.module),
             .bytes = try binary.encodeModule(ar, m.module),
+            .face = try faceOrFail(ar, m.module, diag),
         });
     }
     try graph.print(ar, "{s} ({d} shared functions)\n", .{ name, core_shared });
@@ -391,10 +530,21 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
         .pages = pages,
         .core_text = try renderText(ar, core_module),
         .core_bytes = try binary.encodeModule(ar, core_module),
+        .core_face = try faceOrFail(ar, core_module, diag),
         .units = units.items,
         .std_refs = std_refs,
         .leaf_refs = leaf_refs,
         .graph = graph.items,
+    };
+}
+
+fn faceOrFail(ar: std.mem.Allocator, m: ast.Module, diag: *link.Diag) Error!Face {
+    return faceOf(ar, m) catch |e| switch (e) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => {
+            diag.message = "a unit's boundary names a type definition (decision 1037)";
+            return error.Unsupported;
+        },
     };
 }
 
@@ -464,9 +614,16 @@ fn unitModule(
         .{ link.random_import, .{ .result = .f64 } },
     };
     for (core_types) |ct| if (core_funcs.contains(ct[0])) try items.append(ar, .{ .import = .{ .module = name, .name = if (std.mem.eql(u8, ct[0], "__alloc")) alloc_export else ct[0], .func = ct[0], .type = ct[1] } });
+    // Decision 1037 — a function of another unit whose signature names a
+    // type definition is imported abstract and called through a thunk.
+    var thunks: std.ArrayListUnmanaged(ast.Func) = .empty;
     for (foreign.keys()) |c| {
         const f = nodes[c].func;
-        try items.append(ar, .{ .import = .{ .module = nodes[c].place.?, .name = f.name, .func = f.name, .type = try funcType(ar, f) } });
+        const ft = try funcType(ar, f);
+        if (crossesAbstract(ft)) {
+            try items.append(ar, .{ .import = .{ .module = nodes[c].place.?, .name = f.name, .func = try abiSymbol(ar, f.name), .type = try abstractType(ar, &prelude.gc_prelude_defs, ft) } });
+            try thunks.append(ar, try importThunk(ar, f.name, ft));
+        } else try items.append(ar, .{ .import = .{ .module = nodes[c].place.?, .name = f.name, .func = f.name, .type = ft } });
     }
     if (host_fs) for (prelude.fs_imports) |im| try items.append(ar, .{ .import = im });
     try items.append(ar, .{ .memory = .{ .min_pages = 1, .import = .{ .module = name, .name = memory_export } } });
@@ -483,9 +640,20 @@ fn unitModule(
     }
     for (own.items) |k| {
         var f = nodes[k].func;
-        f.exports = try exportsOf(ar, nodes[k], called_from_outside.contains(k));
+        const exports = try exportsOf(ar, nodes[k], called_from_outside.contains(k));
+        // Decision 1037 (2) — exported through its wrapper when its
+        // signature names a type definition; the function itself stays
+        // concrete and unexported.
+        if (exports.len > 0 and crossesAbstract(try funcType(ar, f))) {
+            f.exports = &.{};
+            try items.append(ar, .{ .func = f });
+            try items.append(ar, .{ .func = try exportWrapper(ar, &prelude.gc_prelude_defs, f, exports) });
+            continue;
+        }
+        f.exports = exports;
         try items.append(ar, .{ .func = f });
     }
+    for (thunks.items) |t| try items.append(ar, .{ .func = t });
     if (has_leaf) try items.append(ar, .{ .custom = .{ .name = "botopink.needs", .bytes = try needsText(ar, &.{.gc}) } });
     return .{ .module = .{ .items = items.items }, .host_fs = host_fs, .funcs = own.items.len };
 }
@@ -608,7 +776,7 @@ fn forward(ar: std.mem.Allocator, im: ast.Import) !ast.Func {
 
 // ── the embedded runtime (decision 1032 (4)) ─────────────────────────────────
 
-const blob_magic = "BPRU1\n";
+const blob_magic = "BPRU2\n";
 
 /// `r` as the bytes `zig build` embeds: the core's and every unit's text and
 /// bytes, the dependency graph, and each `std:` / leaf reference with its
@@ -621,6 +789,7 @@ pub fn serialize(ar: std.mem.Allocator, r: *const Runtime) ![]const u8 {
     try putU32(ar, &o, r.pages);
     try putStr(ar, &o, r.core_text);
     try putStr(ar, &o, r.core_bytes);
+    try putFace(ar, &o, r.core_face);
     try putStr(ar, &o, r.graph);
     try putU32(ar, &o, @intCast(r.units.len));
     for (r.units) |u| {
@@ -631,6 +800,7 @@ pub fn serialize(ar: std.mem.Allocator, r: *const Runtime) ![]const u8 {
         try o.append(ar, @intFromBool(u.host_fs));
         try putStr(ar, &o, u.text);
         try putStr(ar, &o, u.bytes);
+        try putFace(ar, &o, u.face);
     }
     for ([_]*const std.StringHashMapUnmanaged(Ref){ &r.std_refs, &r.leaf_refs }) |refs| {
         const keys = try ar.alloc([]const u8, refs.count());
@@ -666,6 +836,7 @@ pub fn deserialize(ar: std.mem.Allocator, blob: []const u8) error{ OutOfMemory, 
     const pages = try rd.u32_();
     const core_text = try rd.str();
     const core_bytes = try rd.str();
+    const core_face = try rd.face(ar);
     const graph = try rd.str();
     const units = try ar.alloc(Unit, try rd.u32_());
     for (units) |*u| {
@@ -674,7 +845,7 @@ pub fn deserialize(ar: std.mem.Allocator, blob: []const u8) error{ OutOfMemory, 
         const deps = try ar.alloc([]const u8, try rd.u32_());
         for (deps) |*d| d.* = try rd.str();
         const host_fs = (try rd.byte()) != 0;
-        u.* = .{ .name = n, .file_name = file, .module = .{ .items = &.{} }, .deps = deps, .host_fs = host_fs, .text = try rd.str(), .bytes = try rd.str() };
+        u.* = .{ .name = n, .file_name = file, .module = .{ .items = &.{} }, .deps = deps, .host_fs = host_fs, .text = try rd.str(), .bytes = try rd.str(), .face = try rd.face(ar) };
     }
     var maps: [2]std.StringHashMapUnmanaged(Ref) = .{ .empty, .empty };
     for (&maps) |*m| {
@@ -697,6 +868,7 @@ pub fn deserialize(ar: std.mem.Allocator, blob: []const u8) error{ OutOfMemory, 
         .pages = pages,
         .core_text = core_text,
         .core_bytes = core_bytes,
+        .core_face = core_face,
         .units = units,
         .std_refs = maps[0],
         .leaf_refs = maps[1],
@@ -723,7 +895,20 @@ const BlobReader = struct {
         defer r.i += n;
         return r.b[r.i .. r.i + n];
     }
+    fn face(r: *BlobReader, ar: std.mem.Allocator) error{ OutOfMemory, BadBlob }!Face {
+        const text = try r.str();
+        const mods = try ar.alloc([]const u8, try r.u32_());
+        for (mods) |*m| m.* = try r.str();
+        return .{ .text = text, .modules = mods, .init = (try r.byte()) != 0 };
+    }
 };
+
+fn putFace(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), f: Face) !void {
+    try putStr(ar, o, f.text);
+    try putU32(ar, o, @intCast(f.modules.len));
+    for (f.modules) |m| try putStr(ar, o, m);
+    try o.append(ar, @intFromBool(f.init));
+}
 
 fn putU32(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: u32) !void {
     var b: [4]u8 = undefined;
@@ -792,6 +977,392 @@ fn putUleb(ar: std.mem.Allocator, o: *std.ArrayListUnmanaged(u8), v: usize) !voi
         try o.append(ar, b | 0x80);
     }
 }
+
+// ── a unit's face: the index the frame and the entry are emitted against ────
+
+/// Decision 1032 — what one unit imports and exports, each with its type:
+/// the core-module type the component frame declares for it
+/// (`(import "<m>" "<n>" <desc>)` and `(export "<n>" <desc>)` lines, the
+/// imports sorted, then the exports sorted), built from the model the unit is
+/// encoded from. `faceOfBytes` reads the same from a unit's file: the oracle
+/// that both agree byte for byte.
+pub const Face = struct {
+    /// The lines, each `    (import …)\n` / `    (export …)\n`.
+    text: []const u8,
+    /// The modules it imports from, sorted, each once.
+    modules: []const []const u8,
+    /// Whether it exports `__bp_init` (the frame calls it, in order).
+    init: bool,
+};
+
+pub const FaceError = error{
+    OutOfMemory,
+    /// A signature names a type definition: the boundary is concrete
+    /// (`abstract_boundary` off), which no core-module type can declare here.
+    ConcreteBoundary,
+    /// The bytes do not read as a core module.
+    BadModule,
+};
+
+const FaceBuilder = struct {
+    ar: std.mem.Allocator,
+    imports: std.ArrayListUnmanaged([]const u8) = .empty,
+    exports: std.ArrayListUnmanaged([]const u8) = .empty,
+    modules: std.StringArrayHashMapUnmanaged(void) = .empty,
+    init: bool = false,
+
+    fn import(b: *FaceBuilder, module: []const u8, n: []const u8, desc: []const u8) FaceError!void {
+        try b.imports.append(b.ar, try std.fmt.allocPrint(b.ar, "    (import {f} {f} {s})\n", .{ quoted(module), quoted(n), desc }));
+        try b.modules.put(b.ar, module, {});
+    }
+
+    fn @"export"(b: *FaceBuilder, n: []const u8, desc: []const u8) FaceError!void {
+        try b.exports.append(b.ar, try std.fmt.allocPrint(b.ar, "    (export {f} {s})\n", .{ quoted(n), desc }));
+        if (std.mem.eql(u8, n, ast.host_init_export)) b.init = true;
+    }
+
+    fn finish(b: *FaceBuilder) FaceError!Face {
+        for ([_][][]const u8{ b.imports.items, b.exports.items }) |lines| std.mem.sort([]const u8, lines, {}, struct {
+            fn lt(_: void, x: []const u8, y: []const u8) bool {
+                return std.mem.lessThan(u8, x, y);
+            }
+        }.lt);
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        for (b.imports.items) |l| try text.appendSlice(b.ar, l);
+        for (b.exports.items) |l| try text.appendSlice(b.ar, l);
+        const mods = try b.ar.dupe([]const u8, b.modules.keys());
+        std.mem.sort([]const u8, mods, {}, struct {
+            fn lt(_: void, x: []const u8, y: []const u8) bool {
+                return std.mem.lessThan(u8, x, y);
+            }
+        }.lt);
+        return .{ .text = text.items, .modules = mods, .init = b.init };
+    }
+};
+
+const Quoted = struct {
+    s: []const u8,
+    pub fn format(q: Quoted, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.writeByte('"');
+        for (q.s) |ch| {
+            if (ch < 0x20 or ch >= 0x7f or ch == '"' or ch == '\\') try w.print("\\{x:0>2}", .{ch}) else try w.writeByte(ch);
+        }
+        try w.writeByte('"');
+    }
+};
+
+fn quoted(s: []const u8) Quoted {
+    return .{ .s = s };
+}
+
+fn valText(t: ast.ValType) FaceError![]const u8 {
+    if (t.defIndex() != null) return error.ConcreteBoundary;
+    return t.text();
+}
+
+fn funcDesc(ar: std.mem.Allocator, ft: ast.FuncType) FaceError![]const u8 {
+    var o: std.ArrayListUnmanaged(u8) = .empty;
+    try o.appendSlice(ar, "(func");
+    if (ft.params.len > 0) {
+        try o.appendSlice(ar, " (param");
+        for (ft.params) |p| {
+            try o.append(ar, ' ');
+            try o.appendSlice(ar, try valText(p));
+        }
+        try o.append(ar, ')');
+    }
+    if (ft.result) |r| {
+        try o.appendSlice(ar, " (result ");
+        try o.appendSlice(ar, try valText(r));
+        try o.append(ar, ')');
+    }
+    try o.append(ar, ')');
+    return o.items;
+}
+
+fn memoryDesc(ar: std.mem.Allocator, min: u64, max: ?u64) FaceError![]const u8 {
+    if (max) |m| return std.fmt.allocPrint(ar, "(memory {d} {d})", .{ min, m });
+    return std.fmt.allocPrint(ar, "(memory {d})", .{min});
+}
+
+fn globalDesc(ar: std.mem.Allocator, t: ast.ValType, mutable: bool) FaceError![]const u8 {
+    const v = try valText(t);
+    return if (mutable) std.fmt.allocPrint(ar, "(global (mut {s}))", .{v}) else std.fmt.allocPrint(ar, "(global {s})", .{v});
+}
+
+fn tagDesc(ar: std.mem.Allocator, params: []const ast.ValType) FaceError![]const u8 {
+    const f = try funcDesc(ar, .{ .params = params });
+    return std.fmt.allocPrint(ar, "(tag{s}", .{f["(func".len..]});
+}
+
+/// The face of the module `m` (its model).
+pub fn faceOf(ar: std.mem.Allocator, m: ast.Module) FaceError!Face {
+    var b: FaceBuilder = .{ .ar = ar };
+    for (m.items) |it| switch (it) {
+        .import => |im| try b.import(im.module, im.name, try funcDesc(ar, im.type)),
+        .memory => |mem| {
+            const d = try memoryDesc(ar, mem.min_pages, if (mem.max_pages) |x| x else null);
+            if (mem.import) |im| try b.import(im.module, im.name, d);
+            if (mem.@"export") |x| try b.@"export"(x, d);
+        },
+        .global => |g| {
+            const d = try globalDesc(ar, g.ty, g.mutable);
+            if (g.import) |im| try b.import(im.module, im.name, d);
+            for (g.exports) |x| try b.@"export"(x, d);
+        },
+        .tag => |t| {
+            const d = try tagDesc(ar, t.params);
+            if (t.import) |im| try b.import(im.module, im.name, d);
+            for (t.exports) |x| try b.@"export"(x, d);
+        },
+        .func => |f| if (f.exports.len > 0) {
+            const params = try ar.alloc(ast.ValType, f.params.len);
+            for (params, f.params) |*p, q| p.* = q.ty;
+            const d = try funcDesc(ar, .{ .params = params, .result = f.result });
+            for (f.exports) |x| try b.@"export"(x, d);
+        },
+        else => {},
+    };
+    return b.finish();
+}
+
+/// The face of a core module's bytes: its import and export sections read,
+/// each function's type from the type and function sections, each tag's
+/// from the tag section.
+pub fn faceOfBytes(ar: std.mem.Allocator, bytes: []const u8) FaceError!Face {
+    if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], "\x00asm")) return error.BadModule;
+    var b: FaceBuilder = .{ .ar = ar };
+    // Type index → its function type (null for a struct or an array).
+    var types: std.ArrayListUnmanaged(?ast.FuncType) = .empty;
+    var funcs: std.ArrayListUnmanaged(u32) = .empty; // function index → type index
+    var memories: std.ArrayListUnmanaged([]const u8) = .empty;
+    // A global's type, rendered only when it crosses (an import, an export).
+    var globals: std.ArrayListUnmanaged(GlobalType) = .empty;
+    var tags: std.ArrayListUnmanaged(u32) = .empty;
+    var exports_at: ?[]const u8 = null;
+    var rd: ModReader = .{ .b = bytes, .i = 8 };
+    while (rd.i < bytes.len) {
+        const id = try rd.byte();
+        const len = try rd.leb();
+        if (rd.i + len > bytes.len) return error.BadModule;
+        var s: ModReader = .{ .b = bytes[0 .. rd.i + len], .i = rd.i };
+        rd.i += len;
+        switch (id) {
+            1 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) {
+                    if (s.peek() == 0x4e) {
+                        s.i += 1;
+                        var k = try s.leb();
+                        while (k > 0) : (k -= 1) try types.append(ar, try s.subType(ar));
+                    } else try types.append(ar, try s.subType(ar));
+                }
+            },
+            2 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) {
+                    const module = try s.name();
+                    const nm = try s.name();
+                    switch (try s.byte()) {
+                        0 => {
+                            const t = try s.leb();
+                            try funcs.append(ar, @intCast(t));
+                            try b.import(module, nm, try funcDesc(ar, try funcTypeAt(types.items, t)));
+                        },
+                        2 => {
+                            const d = try s.limits(ar);
+                            try memories.append(ar, d);
+                            try b.import(module, nm, d);
+                        },
+                        3 => {
+                            const g = try s.globalType();
+                            try globals.append(ar, g);
+                            try b.import(module, nm, try globalDesc(ar, g.t, g.mutable));
+                        },
+                        4 => {
+                            _ = try s.byte();
+                            const t = try s.leb();
+                            try tags.append(ar, @intCast(t));
+                            try b.import(module, nm, try tagDesc(ar, (try funcTypeAt(types.items, t)).params));
+                        },
+                        else => return error.BadModule,
+                    }
+                }
+            },
+            3 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) try funcs.append(ar, @intCast(try s.leb()));
+            },
+            5 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) try memories.append(ar, try s.limits(ar));
+            },
+            6 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) {
+                    try globals.append(ar, try s.globalType());
+                    try s.skipConstExpr();
+                }
+            },
+            7 => exports_at = bytes[s.i..rd.i],
+            13 => {
+                var n = try s.leb();
+                while (n > 0) : (n -= 1) {
+                    _ = try s.byte();
+                    try tags.append(ar, @intCast(try s.leb()));
+                }
+            },
+            else => {},
+        }
+    }
+    if (exports_at) |sec| {
+        var s: ModReader = .{ .b = sec, .i = 0 };
+        var n = try s.leb();
+        while (n > 0) : (n -= 1) {
+            const nm = try s.name();
+            const kind = try s.byte();
+            const k = try s.leb();
+            const d = switch (kind) {
+                0 => try funcDesc(ar, try funcTypeAt(types.items, if (k < funcs.items.len) funcs.items[k] else return error.BadModule)),
+                2 => if (k < memories.items.len) memories.items[k] else return error.BadModule,
+                3 => if (k < globals.items.len) try globalDesc(ar, globals.items[k].t, globals.items[k].mutable) else return error.BadModule,
+                4 => try tagDesc(ar, (try funcTypeAt(types.items, if (k < tags.items.len) tags.items[k] else return error.BadModule)).params),
+                else => return error.BadModule,
+            };
+            try b.@"export"(nm, d);
+        }
+    }
+    return b.finish();
+}
+
+fn funcTypeAt(types: []const ?ast.FuncType, k: usize) FaceError!ast.FuncType {
+    if (k >= types.len) return error.BadModule;
+    return types[k] orelse error.BadModule;
+}
+
+const GlobalType = struct { t: ast.ValType, mutable: bool };
+
+const ModReader = struct {
+    b: []const u8,
+    i: usize,
+
+    fn peek(r: *ModReader) u8 {
+        return if (r.i < r.b.len) r.b[r.i] else 0;
+    }
+    fn byte(r: *ModReader) FaceError!u8 {
+        if (r.i >= r.b.len) return error.BadModule;
+        r.i += 1;
+        return r.b[r.i - 1];
+    }
+    fn leb(r: *ModReader) FaceError!usize {
+        return uleb(r.b, &r.i) orelse error.BadModule;
+    }
+    /// A signed LEB (a heap type): its value.
+    fn sleb(r: *ModReader) FaceError!i64 {
+        var v: i64 = 0;
+        var shift: u6 = 0;
+        while (true) {
+            const x = try r.byte();
+            v |= @as(i64, x & 0x7f) << shift;
+            shift += 7;
+            if (x & 0x80 == 0) {
+                if (shift < 64 and x & 0x40 != 0) v |= @as(i64, -1) << shift;
+                return v;
+            }
+            if (shift >= 63) return error.BadModule;
+        }
+    }
+    fn name(r: *ModReader) FaceError![]const u8 {
+        const n = try r.leb();
+        if (r.i + n > r.b.len) return error.BadModule;
+        defer r.i += n;
+        return r.b[r.i .. r.i + n];
+    }
+    /// A value type: a number or an abstract reference by its byte; a
+    /// `(ref null $k)` / `(ref $k)` as `def(k)` (the face refuses it).
+    fn valType(r: *ModReader) FaceError!ast.ValType {
+        const x = try r.byte();
+        return switch (x) {
+            0x7F => .i32,
+            0x7E => .i64,
+            0x7D => .f32,
+            0x7C => .f64,
+            0x78 => .i8,
+            0x77 => .i16,
+            0x6E => .anyref,
+            0x6D => .eqref,
+            0x6C => .i31ref,
+            0x6B => .structref,
+            0x6A => .arrayref,
+            0x70 => .funcref,
+            0x6F => .externref,
+            0x63, 0x64 => {
+                const h = try r.sleb();
+                if (h < 0) return error.BadModule;
+                return ast.ValType.def(@intCast(h));
+            },
+            else => error.BadModule,
+        };
+    }
+    /// One subtype of the type section: a function type's signature, or null
+    /// for a struct or an array (read past).
+    fn subType(r: *ModReader, ar: std.mem.Allocator) FaceError!?ast.FuncType {
+        if (r.peek() == 0x50 or r.peek() == 0x4f) {
+            r.i += 1;
+            var n = try r.leb();
+            while (n > 0) : (n -= 1) _ = try r.leb();
+        }
+        switch (try r.byte()) {
+            0x60 => {
+                const params = try ar.alloc(ast.ValType, try r.leb());
+                for (params) |*p| p.* = try r.valType();
+                const nres = try r.leb();
+                if (nres > 1) return error.BadModule;
+                return .{ .params = params, .result = if (nres == 1) try r.valType() else null };
+            },
+            0x5f => {
+                var n = try r.leb();
+                while (n > 0) : (n -= 1) {
+                    _ = try r.valType();
+                    _ = try r.byte();
+                }
+                return null;
+            },
+            0x5e => {
+                _ = try r.valType();
+                _ = try r.byte();
+                return null;
+            },
+            else => return error.BadModule,
+        }
+    }
+    fn limits(r: *ModReader, ar: std.mem.Allocator) FaceError![]const u8 {
+        const flags = try r.byte();
+        const min = try r.leb();
+        const max: ?usize = if (flags & 1 != 0) try r.leb() else null;
+        return memoryDesc(ar, min, max);
+    }
+    fn globalType(r: *ModReader) FaceError!GlobalType {
+        const t = try r.valType();
+        return .{ .t = t, .mutable = (try r.byte()) == 1 };
+    }
+    /// A constant expression, up to its `end` (`0x0b`): the global
+    /// initialisers the backend writes (`i32.const`, `i64.const`,
+    /// `f64.const`, `ref.null`, `global.get`).
+    fn skipConstExpr(r: *ModReader) FaceError!void {
+        while (true) {
+            switch (try r.byte()) {
+                0x0b => return,
+                0x41, 0x42 => _ = try r.sleb(),
+                0x44 => r.i += 8,
+                0x43 => r.i += 4,
+                0xd0 => _ = try r.sleb(),
+                0x23 => _ = try r.leb(),
+                else => return error.BadModule,
+            }
+        }
+    }
+};
 
 // ── what a binary module imports ─────────────────────────────────────────────
 
@@ -933,4 +1504,55 @@ test "a core started with more pages is the model's, text and binary" {
     const got = try r.coreFor(ar, pages);
     try std.testing.expectEqualStrings(try renderText(ar, m), got.text);
     try std.testing.expectEqualSlices(u8, try binary.encodeModule(ar, m), got.bytes);
+}
+
+test "decision 1037: no unit's import or exported function names a type definition; a wrapper casts to the concrete one" {
+    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const r = try built();
+    var wrapped: usize = 0;
+    for (r.units) |u| for (u.module.items) |it| switch (it) {
+        .import => |im| try std.testing.expect(!namesTypeDef(im.type)),
+        .func => |f| if (f.exports.len > 0) {
+            try std.testing.expect(!namesTypeDef(try funcType(ar, f)));
+            if (std.mem.startsWith(u8, f.name, abi_prefix)) wrapped += 1;
+        },
+        else => {},
+    };
+    // std's string leaves answer `(ref null $str)`: some wrapper exists.
+    try std.testing.expect(wrapped > 0);
+    var it = r.leaf_refs.valueIterator();
+    while (it.next()) |ref| try std.testing.expect(!namesTypeDef(ref.type));
+
+    // The wrapper casts the argument and calls the concrete function; the
+    // thunk calls the abstract import and casts the answer.
+    const str = ast.ValType.def(@intFromEnum(prelude.GcPrelude.str));
+    const f: ast.Func = .{ .name = "len", .params = &.{.{ .name = "s", .ty = str }}, .result = str };
+    const w = try exportWrapper(ar, &prelude.gc_prelude_defs, f, &.{"wat:t.len"});
+    try std.testing.expectEqual(ast.ValType.arrayref, w.params[0].ty);
+    try std.testing.expectEqual(ast.ValType.arrayref, w.result.?);
+    try std.testing.expectEqual(str, w.body.lines[1].instr.ref_cast);
+    const t = try importThunk(ar, "len", .{ .params = &.{str}, .result = str });
+    try std.testing.expectEqualStrings("__abi_len", t.body.lines[1].instr.call);
+    try std.testing.expectEqual(str, t.body.lines[2].instr.ref_cast);
+}
+
+test "decision 1032: every unit file's imports and exports are its index, byte for byte" {
+    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const r = try get();
+    try std.testing.expectEqualStrings(r.core_face.text, (try faceOfBytes(ar, r.core_bytes)).text);
+    for (r.units) |u| {
+        const read = try faceOfBytes(ar, u.bytes);
+        try std.testing.expectEqualStrings(u.face.text, read.text);
+        try std.testing.expectEqual(u.face.modules.len, read.modules.len);
+        for (u.face.modules, read.modules) |x, y| try std.testing.expectEqualStrings(x, y);
+        try std.testing.expectEqual(u.face.init, read.init);
+    }
+    // The core imports WASI preview 1 only; it exports the memory.
+    try std.testing.expectEqual(@as(usize, 1), r.core_face.modules.len);
+    try std.testing.expectEqualStrings("wasi_snapshot_preview1", r.core_face.modules[0]);
+    try std.testing.expect(std.mem.indexOf(u8, r.core_face.text, "(export \"memory\" (memory ") != null);
 }

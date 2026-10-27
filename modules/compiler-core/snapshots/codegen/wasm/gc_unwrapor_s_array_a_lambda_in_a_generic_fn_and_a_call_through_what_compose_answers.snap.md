@@ -276,7 +276,7 @@ import {functions} from "std";
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.toUpper" (func $__std_text_toUpper (param i32) (result i32)))
-  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@string" "wat:text.length" (func $__abi___std_text_length (param arrayref) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -1450,6 +1450,10 @@ import {functions} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (func $__std_text_length (param $p0 (ref null $str)) (result i32)
+    local.get $p0
+    call $__abi___std_text_length
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

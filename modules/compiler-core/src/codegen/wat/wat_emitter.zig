@@ -114,38 +114,21 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     var has_start = false;
     var has_host = false;
     var has_fs = false;
-    var has_p1 = false;
-    // Decisions 1021 (1), (2), 1026 (3) — a module importing the runtime
-    // core is instantiated after it and after the std units it imports and
-    // theirs, in dependency order; the core holds the memory.
-    var has_rt = false;
-    var main_fs = false;
-    var rt_pages: u32 = 1;
-    var std_units: std.ArrayListUnmanaged([]const u8) = .empty;
-    const ar = arena_state.allocator();
+    // Decision 1037 (5) — a module importing the runtime core or a std unit
+    // is no one-module component: its units are composed by the frame
+    // (`renderFrame`), never embedded as text.
     for (m.items) |it| switch (it) {
-        .memory => |mem| if (mem.import) |im| {
-            if (std.mem.eql(u8, im.module, runtimeUnit.name)) {
-                has_rt = true;
-                rt_pages = mem.min_pages;
-            }
-        },
+        .memory => |mem| if (mem.import != null) return error.RuntimeUnitUnavailable,
         .import => |im| if (std.mem.eql(u8, im.module, "wasi_snapshot_preview1")) {
-            has_p1 = true;
             for (preview1_adapted) |n| {
                 if (std.mem.eql(u8, n, im.name)) break;
             } else return error.UnadaptedPreview1Import;
-        } else if (std.mem.eql(u8, im.module, runtimeUnit.name)) {
-            has_rt = true;
         } else if (std.mem.startsWith(u8, im.module, "std@")) {
-            for (std_units.items) |u| {
-                if (std.mem.eql(u8, u, im.module)) break;
-            } else try std_units.append(ar, im.module);
+            return error.RuntimeUnitUnavailable;
         } else if (std.mem.eql(u8, im.module, "bp_host")) {
             has_host = true;
         } else if (std.mem.eql(u8, im.module, "bp_fs")) {
             has_fs = true;
-            main_fs = true;
         },
         .func => |f| for (f.exports) |e| {
             if (std.mem.eql(u8, e, "_start")) has_start = true;
@@ -154,28 +137,9 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
         else => {},
     };
 
-    const rt = if (has_rt) runtimeUnit.get() catch return error.RuntimeUnitUnavailable else null;
-    const units: []const *const runtimeUnit.Unit = if (rt) |r| try r.closure(ar, std_units.items) else &.{};
-    for (units) |u| if (u.host_fs) {
-        has_fs = true;
-    };
-
     try w.writeAll(component_imports);
     if (has_host) try w.writeAll(component_host_imports);
     if (has_fs) try w.writeAll(component_fs_imports);
-    if (rt) |r| {
-        // The core's memory starts with the pages the program's data asks
-        // for (sized here, at link time).
-        const core = r.coreFor(ar, rt_pages) catch return error.RuntimeUnitUnavailable;
-        try w.writeAll("  (core module $rt\n");
-        try w.writeAll(core.text);
-        try w.writeAll("  )\n");
-        for (units) |u| {
-            try w.print("  (core module ${s}\n", .{u.name});
-            try w.writeAll(u.text);
-            try w.writeAll("  )\n");
-        }
-    }
     try w.writeAll("  (core module $main\n");
     const defs = ast.typesOf(m);
     for (m.items) |it| try renderItem(w, defs, it);
@@ -183,19 +147,10 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     try w.writeAll(component_adapter_head);
     if (has_host) try w.writeAll(component_host_shim);
     if (has_fs) try w.writeAll(component_fs_shim);
-    if (rt != null) try w.writeAll("  (core instance $rt (instantiate $rt (with \"wasi_snapshot_preview1\" (instance $shim))))\n");
-    for (units) |u| {
-        try w.print("  (core instance ${s} (instantiate ${s} (with \"{s}\" (instance $rt))", .{ u.name, u.name, runtimeUnit.name });
-        for (u.deps) |d| try w.print(" (with \"{s}\" (instance ${s}))", .{ d, d });
-        if (u.host_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
-        try w.writeAll("))\n");
-    }
     try w.writeAll("  (core instance $main (instantiate $main");
-    if (has_p1 or rt == null) try w.writeAll(" (with \"wasi_snapshot_preview1\" (instance $shim))");
-    if (rt != null) try w.print(" (with \"{s}\" (instance $rt))", .{runtimeUnit.name});
-    for (std_units.items) |d| try w.print(" (with \"{s}\" (instance ${s}))", .{ d, d });
+    try w.writeAll(" (with \"wasi_snapshot_preview1\" (instance $shim))");
     if (has_host) try w.writeAll(" (with \"bp_host\" (instance $bp_shim))");
-    if (main_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
+    if (has_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
     try w.writeAll("))\n");
     try w.writeAll(component_adapter_rest);
     if (has_init) try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
@@ -208,6 +163,121 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     if (has_fs) try w.writeAll(component_fs_adapter);
     if (has_start) try w.writeAll(component_run_export);
     try w.writeAll(")\n");
+}
+
+/// One core module the frame imports: its stem (`std@string`, `hello@main`)
+/// and its index (`runtime_unit.Face`).
+pub const FrameUnit = struct {
+    name: []const u8,
+    face: runtimeUnit.Face,
+};
+
+pub const FrameError = Error || std.mem.Allocator.Error || error{
+    /// A unit imports from a module that is neither an earlier unit nor a
+    /// host shim the frame provides.
+    UnknownUnitImport,
+    /// No unit, or the entry exports no `memory`.
+    NoEntry,
+};
+
+/// Decision 1032 — the component frame over `units` (`botopink.units`' order:
+/// the core first, the entry last). Each unit is a core module the component
+/// imports as `unit-<k>`, declared by its face; each is instantiated in order
+/// with the earlier units it imports (by stem), the preview 1 shim, `bp_fs`
+/// and `bp_host`; `wasi:cli/run`'s `run` calls every unit's `__bp_init` in
+/// order, then the entry's `_start`. The frame carries no unit's text.
+pub fn renderFrame(w: *Writer, units: []const FrameUnit) FrameError!void {
+    if (units.len == 0) return error.NoEntry;
+    const entry = units[units.len - 1];
+    var has_host = false;
+    var has_fs = false;
+    for (units) |u| for (u.face.modules) |m| {
+        if (std.mem.eql(u8, m, "bp_host")) has_host = true;
+        if (std.mem.eql(u8, m, "bp_fs")) has_fs = true;
+    };
+    const has_start = std.mem.indexOf(u8, entry.face.text, "(export \"_start\" ") != null;
+    if (std.mem.indexOf(u8, entry.face.text, "(export \"memory\" ") == null) return error.NoEntry;
+
+    try w.writeAll(component_imports);
+    if (has_host) try w.writeAll(component_host_imports);
+    if (has_fs) try w.writeAll(component_fs_imports);
+    for (units, 0..) |u, k| {
+        try w.print("  (import \"unit-{d}\" (core module $u{d}\n", .{ k, k });
+        try w.writeAll(u.face.text);
+        try w.writeAll("  ))\n");
+    }
+    try w.writeAll(component_adapter_head);
+    if (has_host) try w.writeAll(component_host_shim);
+    if (has_fs) try w.writeAll(component_fs_shim);
+    for (units, 0..) |u, k| {
+        try w.print("  (core instance $i{d} (instantiate $u{d}", .{ k, k });
+        for (u.face.modules) |m| {
+            if (std.mem.eql(u8, m, "wasi_snapshot_preview1")) {
+                try w.writeAll(" (with \"wasi_snapshot_preview1\" (instance $shim))");
+            } else if (std.mem.eql(u8, m, "bp_fs")) {
+                try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
+            } else if (std.mem.eql(u8, m, "bp_host")) {
+                try w.writeAll(" (with \"bp_host\" (instance $bp_shim))");
+            } else {
+                const j = for (units[0..k], 0..) |d, j| {
+                    if (std.mem.eql(u8, d.name, m)) break j;
+                } else return error.UnknownUnitImport;
+                try w.print(" (with \"{s}\" (instance $i{d}))", .{ m, j });
+            }
+        }
+        try w.writeAll("))\n");
+    }
+    // Every unit's `__bp_init`, in order, as one function.
+    try w.writeAll("  (core module $bp_inits_m\n");
+    for (units, 0..) |u, k| if (u.face.init) try w.print("    (import \"unit-{d}\" \"__bp_init\" (func $init{d}))\n", .{ k, k });
+    try w.writeAll("    (func (export \"__bp_init\")");
+    for (units, 0..) |u, k| if (u.face.init) try w.print(" call $init{d}", .{k});
+    try w.writeAll("))\n  (core instance $bp_inits (instantiate $bp_inits_m");
+    for (units, 0..) |u, k| if (u.face.init) try w.print(" (with \"unit-{d}\" (instance $i{d}))", .{ k, k });
+    try w.writeAll("))\n");
+    // `$main`, what the adapters read: the entry's memory, the inits, its start.
+    const e = units.len - 1;
+    try w.print("  (core instance $main (export \"memory\" (memory $i{d} \"memory\")) (export \"__bp_init\" (func $bp_inits \"__bp_init\"))", .{e});
+    if (has_start) try w.print(" (export \"_start\" (func $i{d} \"_start\"))", .{e});
+    try w.writeAll(")\n");
+    try w.writeAll(component_adapter_rest);
+    try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
+    if (has_start) try w.writeAll("    (import \"main\" \"_start\" (func $start))\n");
+    try w.writeAll(component_adapter_body);
+    try w.writeAll("      call $init\n");
+    if (has_start) try w.writeAll("      call $start\n");
+    try w.writeAll(component_adapter_tail);
+    if (has_host) try w.writeAll(component_host_adapter);
+    if (has_fs) try w.writeAll(component_fs_adapter);
+    if (has_start) try w.writeAll(component_run_export);
+    try w.writeAll(")\n");
+}
+
+/// The frame of a `wasi` entry whose units are the runtime's (the core and
+/// std's): `entry`'s bytes, its `botopink.units` read, each std unit's face
+/// the runtime's index, the entry's read from its bytes.
+pub fn frameOf(alloc: std.mem.Allocator, w: *Writer, entry: []const u8) (FrameError || runtimeUnit.FaceError || error{RuntimeUnitUnavailable})!void {
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const ar = arena_state.allocator();
+    const r = runtimeUnit.get() catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.RuntimeUnitUnavailable,
+    };
+    const stems = try runtimeUnit.unitsOf(ar, entry);
+    if (stems.len == 0) return error.NoEntry;
+    const units = try ar.alloc(FrameUnit, stems.len);
+    for (stems, units, 0..) |s, *u, k| {
+        if (k == stems.len - 1) {
+            u.* = .{ .name = s, .face = try runtimeUnit.faceOfBytes(ar, entry) };
+        } else if (std.mem.eql(u8, s, runtimeUnit.name)) {
+            u.* = .{ .name = s, .face = r.core_face };
+        } else {
+            const unit = r.unit(s) orelse return error.UnknownUnitImport;
+            u.* = .{ .name = s, .face = unit.face };
+        }
+    }
+    try renderFrame(w, units);
 }
 
 const component_imports =

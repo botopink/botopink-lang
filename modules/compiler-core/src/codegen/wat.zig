@@ -2369,14 +2369,23 @@ fn emitWatPass(
         }
         // The `.wat` leaves the module calls, likewise, typed as the module
         // reads them (its own type indices, which `finishGc` renumbers).
+        // Decision 1037 — a leaf whose signature names a type is imported
+        // with the unit's abstract signature (`ref.type`) and called through
+        // a thunk of the module's concrete one.
+        var thunks: std.ArrayListUnmanaged(Item) = .empty;
         for (em.std_leaves.keys(), em.std_leaves.values()) |name, leaf| {
             const ref = r.leaf_refs.get(name) orelse return em.refuse(null, "no std unit exports the leaf `{s}`", .{name});
             var calls: std.ArrayListUnmanaged([]const u8) = .empty;
             const f = try em.readLeaf(leaf, &calls);
             const params = try ar.alloc(ValType, f.params.len);
             for (params, f.params) |*pt, q| pt.* = q.ty;
-            try rt_imports.append(ar, .{ .import = .{ .module = ref.unit, .name = ref.@"export", .func = f.name, .type = .{ .params = params, .result = f.result } } });
+            const ft: wat.FuncType = .{ .params = params, .result = f.result };
+            if (runtimeUnit.crossesAbstract(ft)) {
+                try rt_imports.append(ar, .{ .import = .{ .module = ref.unit, .name = ref.@"export", .func = try runtimeUnit.abiSymbol(ar, f.name), .type = ref.type } });
+                try thunks.append(ar, .{ .func = try runtimeUnit.importThunk(ar, f.name, ft) });
+            } else try rt_imports.append(ar, .{ .import = .{ .module = ref.unit, .name = ref.@"export", .func = f.name, .type = ft } });
         }
+        try items.appendSlice(ar, thunks.items);
         try items.insertSlice(ar, 0, rt_imports.items);
         const n = rt_imports.items.len;
         memory_at += n;
@@ -2475,15 +2484,25 @@ fn emitWatPass(
         try items.append(ar, .{ .custom = .{ .name = wasmNeeds.section, .bytes = text.items } });
     }
 
+    // Decision 1032 — with the units on, a `wasi` build's entry is a core
+    // module of its own code alone: `botopink.units` names the units the
+    // component frame imports, in dependency order (the core first, the
+    // entry last; `wat_emitter.renderFrame`).
+    const units_entry = artifact == .component and rt != null;
+    if (units_entry) try items.append(ar, .{ .custom = .{
+        .name = runtimeUnit.units_section,
+        .bytes = try unitsLines(ar, rt.?, items.items, try entryStem(ar, module_name)),
+    } });
+
     // One model, two renderings: the text the snapshot records and the binary
     // an engine instantiates (`wasm_binary_emitter.zig`).
     const lowered: wat.Module = .{ .items = items.items };
     // The `browser` host's module: the start a host calls once the instance
     // exists (`wat_ast.startAsExport`, decision 334) — text and binary alike.
-    const module: wat.Module = if (artifact == .browser) try wat.startAsExport(em.arena(), lowered) else lowered;
+    const module: wat.Module = if (artifact == .browser or units_entry) try wat.startAsExport(em.arena(), lowered) else lowered;
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    switch (artifact) {
+    if (units_entry) try watEmitter.renderModule(&aw.writer, module) else switch (artifact) {
         .module, .browser => try watEmitter.renderModule(&aw.writer, module),
         .component => watEmitter.renderComponent(alloc, &aw.writer, module) catch |err| switch (err) {
             // Every preview 1 import the prelude emits is adapted
@@ -2496,6 +2515,28 @@ fn emitWatPass(
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
     return .{ .text = try aw.toOwnedSlice(), .binary = binary, .std_funcs = std_funcs };
+}
+
+/// The entry's unit stem (decision 1032): `<pkg>@<path>`, the module's atom
+/// (`myapp@main`); the module's path when no package names it.
+fn entryStem(ar: std.mem.Allocator, module_name: []const u8) ![]const u8 {
+    const pk = build_packages orelse return module_name;
+    return crossModule.outputStem(.erlang, ar, pk.idOf(module_name)) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => module_name,
+    };
+}
+
+/// `botopink.units`' text: the core, the std units the module imports and
+/// theirs in dependency order, then `entry` — one stem per line.
+fn unitsLines(ar: std.mem.Allocator, r: *const runtimeUnit.Runtime, items: []const Item, entry: []const u8) ![]const u8 {
+    var roots: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (items) |it| if (it == .import) try roots.append(ar, it.import.module);
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.print(ar, "{s}\n", .{runtimeUnit.name});
+    for (try r.closure(ar, roots.items)) |u| try text.print(ar, "{s}\n", .{u.name});
+    try text.print(ar, "{s}\n", .{entry});
+    return text.items;
 }
 
 /// `im` as a module importing the runtime unit names it: the WASI function
