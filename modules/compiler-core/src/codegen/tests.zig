@@ -19,6 +19,7 @@ test {
     _ = @import("tests/std_package.zig");
     _ = @import("tests/beam_memory.zig");
     _ = @import("tests/wat.zig");
+    _ = @import("tests/comptime_host_units.zig");
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/dts_compiler_types.zig");
     _ = @import("tests/runtime_scratch.zig");
