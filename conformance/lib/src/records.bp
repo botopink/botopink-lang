@@ -354,13 +354,11 @@ fn lcs(rows: i32[][], i: i32, j: i32) -> i32 {
 /// Parse the records of one section's body (no header; an empty body is the empty answer).
 /// A malformed body answers its 1-based line within the body and the reason.
 pub fn parseBody(body: string) -> Result<Snap, Malformed> {
-    val snap = try parse(HEADER + "\n" + body) catch { m ->
-        throw Malformed(line: if (m.line > 1)
-            m.line - 1
-        else
-            1, reason: m.reason);
+    // A `case`, not `try … catch { m -> … }`: wasm's GC lowering takes no catch binder yet.
+    return case parse(HEADER + "\n" + body) {
+        Ok(snap) -> snap;
+        Error(m) -> throw Malformed(line: if (m.line > 1) m.line - 1 else 1, reason: m.reason);
     };
-    return snap;
 }
 
 /// The one spelling of a section's body: `render` without the header line.

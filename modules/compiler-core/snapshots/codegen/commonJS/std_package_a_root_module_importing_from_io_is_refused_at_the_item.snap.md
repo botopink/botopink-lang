@@ -1432,6 +1432,1160 @@ export declare function attemptTask<T>(f: () => Promise<T>): Promise<T>;
 ```logs
 ```
 
+----- SOURCE CODE -- std/io/random.bp
+```botopink
+//// std/io/random — pseudo-random number primitives (cross-backend).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/  (the `Math.random` global)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/rand.html
+////
+//// `float()` returns a uniform `[0.0, 1.0)` sample on every backend.
+//// Higher-level helpers (`coin`/`pick`) compose `float()` — portable +
+//// no host call beyond the uniform sample. Seedable RNGs are deferred:
+//// Node has no built-in seedable PRNG behind `Math.random`, so any
+//// seed/state surface needs a userland PRNG; ship that in a follow-up
+//// once the test infra is ready for reproducible draws.
+////
+//// NOT A CSPRNG: everything above `secureToken` is `Math.random` /
+//// `rand:uniform`, predictable to anyone who sees enough draws. A token, a
+//// session id, a nonce or a UUID comes from `secureToken` / `uuidV4`, which
+//// read the host's cryptographic source (`crypto.randomBytes`,
+//// `crypto:strong_rand_bytes/1`) — or `crypto.randomBytes` for hex.
+
+import {compiler};
+
+#[compiler.external(.JavaScript("Math.random()"), .Erlang("rand:uniform()"), .Wasm(std: "random.float"))]
+pub declare fn float() -> f64;
+
+// Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
+// at `libs/std/src/sidecars/random.mjs`. After seeding, `seededFloat()`
+// draws from the reproducible stream. `float()` itself stays on
+// `Math.random`; explicit-stream callers opt into determinism by using
+// `seededFloat` after `seed`.
+// Node: `require('./sidecars/random.mjs').seed($0)` — the CLI's sidecar
+// shipper copies the `.mjs` next to the emitted module.
+// Erlang: `rand:seed/2` with the `exsplus` algorithm + a `{S, S, S}`
+// triple. `S` is folded to an integer via the i64 input.
+#[compiler.external(
+    .JavaScript("""require('./sidecars/random.mjs').seed($0)"""),
+    .Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)"""),
+    .Wasm(std: "random.seed"),
+)]
+pub declare fn seed(s: i32) -> void;
+
+// Draw from the seeded PRNG when a `seed` call has been made; otherwise
+// falls through to the unseeded `float()` baseline. Erlang's `rand`
+// module reads from the process dictionary's seed state directly, so
+// the same `rand:uniform/0` call after `seed` produces the reproducible
+// stream automatically.
+#[compiler.external(
+    .JavaScript("""require('./sidecars/random.mjs').seededFloat()"""),
+    .Erlang("rand:uniform()"),
+    .Wasm(std: "random.seededFloat"),
+)]
+pub declare fn seededFloat() -> f64;
+
+// 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
+// uniform sample — identically distributed on every backend that has
+// a uniform `float()`.
+pub fn coin() -> bool {
+    return float() >= 0.5;
+}
+
+// Random integer in the closed interval `[lo, hi]`. When `lo > hi` the
+// range is empty and the result is `lo` (a defensive default — the
+// alternative is to `panic`, which the @assert-style tests would
+// rather catch at the call site).
+pub fn intInRange(lo: i32, hi: i32) -> i32 {
+    if (lo >= hi) return lo;
+    val span = (hi - lo) + 1;
+    val product = float() * span;
+    val offset = floorWalk(0, 1.0, product, span);
+    return lo + offset;
+}
+
+// Pick a random element from a non-empty array. Returns `null` for the
+// empty array — the call site should default with `?? …` rather
+// than panic. Uses a walk-up integer floor (no `Math.floor` import) so
+// the body stays self-contained.
+pub fn pick<T>(xs: array<T>) -> ?T {
+    val n = xs.length;
+    if (n == 0) return null;
+    // `float() * n` mixes f64 × i32 — inference promotes to f64.
+    val product = float() * n;
+    val idx = floorWalk(0, 1.0, product, n);
+    return xs.at(idx);
+}
+
+// Internal: integer floor of a non-negative `product` < `upper`. Walks
+// `start` up from 0 while `threshold (= start + 1)` still fits below
+// `product`. O(upper) — fine for the small `array<T>` arities `pick`
+// targets in tests.
+fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
+    if (start + 1 > upper) return start;
+    if (threshold > product) return start;
+    return floorWalk(start + 1, threshold + 1.0, product, upper);
+}
+
+// Fisher-Yates shuffle. Returns a fresh array whose elements are a
+// permutation of `xs`. The pure-bp shape was deferred (the deferral
+// note used to live here) because `array<T>::at(i)` returns `?T` and
+// extracting T without a sentinel value of T is circular. Solution:
+// host-backed `pub declare fn shuffle<T>(xs)` — the host owns the
+// in-place swap; the bp side only declares the signature and the
+// per-target template.
+//
+// Node: classic Fisher-Yates over the input array, returning a fresh
+// copy (the input is not mutated — matches the immutable-by-default
+// botopink contract for return values). `random.seed` from this same
+// module seeds the sidecar PRNG; subsequent `shuffle` draws are
+// reproducible after `seed(s)`.
+//
+// Erlang: `[X || {_, X} <- lists:sort([{rand:uniform(), Y} || Y <- $0])]`
+// — the Schwartzian-transform shuffle: pair each element with a
+// random key, sort by key, strip the keys. Stable across `rand:seed`
+// state (the same `rand` server `seed/2` controls both `uniform/0`
+// here and `seededFloat()` above).
+//
+// Beam/wasm: out of scope at v1 (no `lists:sort` template, no
+// `Math.random` equivalent in wat3); the matrix will report
+// `MissingExternalTarget` on a `shuffle(...)` call from those backends
+// until the corresponding shim lands.
+#[compiler.external(
+    .JavaScript("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)"""),
+    .Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]"""),
+    .Wasm(body: shuffleBody),
+)]
+pub declare fn shuffle<T>(xs: array<T>) -> array<T>;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+//
+// The CSPRNG half. Everything ABOVE is `Math.random` / `rand:uniform` — fine
+// for a shuffle, wrong for anything an attacker must not guess. A token, a
+// session id, a nonce or a UUID comes from the two functions below, which
+// read the host's cryptographically strong source.
+
+// `bytes` strong random bytes as base64url without padding — URL-, cookie-
+// and header-safe. 32 bytes answer 43 characters.
+// Node: `crypto.randomBytes(n).toString('base64url')`.
+// Erlang: `crypto:strong_rand_bytes/1` + `base64:encode/2` in `urlsafe`
+// mode without padding (OTP 26+).
+#[compiler.external(
+    .JavaScript("""require('crypto').randomBytes($0).toString('base64url')"""),
+    .Erlang("""base64:encode(crypto:strong_rand_bytes($0), #{mode => urlsafe, padding => false})"""),
+    .Wasm(body: secureTokenBody),
+)]
+pub declare fn secureToken(bytes: i32) -> string;
+
+// A random (version 4) UUID, lowercase: 122 strong random bits with the
+// version nibble set to `4` and the variant bits to `10` (RFC 9562 §5.4).
+// Node: `crypto.randomUUID()`.
+// Erlang: 16 strong random bytes, the version/variant bits rewritten in the
+// binary pattern — the bit work lives in the template because botopink has
+// no bitwise operators (`language-gaps.md`).
+#[compiler.external(
+    .JavaScript("""require('crypto').randomUUID()"""),
+    .Erlang("""(fun() -> <<__A:32, __B:16, _:4, __C:12, _:2, __D:14, __E:48>> = crypto:strong_rand_bytes(16), iolist_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", [__A, __B, __C, __D bor 16#8000, __E])) end)()"""),
+    .Wasm(body: uuidV4Body),
+)]
+pub declare fn uuidV4() -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "random.float lies in [0.0, 1.0)" {
+    val r = float();
+    assert r >= 0.0;
+    assert r < 1.0;
+}
+
+test "random.coin draws either truth value" {
+    val b = coin();
+    assert b == true || b == false;
+}
+
+test "random.pick from non-empty array returns a member" {
+    val xs = [1, 2, 3];
+    val r = pick(xs) ?? 99;
+    assert r >= 1;
+    assert r <= 3;
+}
+
+test "random.pick from empty array returns null" {
+    val empty: array<i32> = [];
+    assert pick(empty) ?? 99 == 99;
+}
+
+test "random.intInRange yields a value in the closed interval" {
+    val r = intInRange(1, 6);
+    assert r >= 1;
+    assert r <= 6;
+}
+
+test "random.intInRange on a one-element range returns that element" {
+    assert intInRange(7, 7) == 7;
+}
+
+test "random.intInRange on an inverted range returns the low bound" {
+    assert intInRange(10, 5) == 10;
+}
+
+test "random.seed + seededFloat draws are reproducible" {
+    seed(42);
+    val a = seededFloat();
+    seed(42);
+    val b = seededFloat();
+    assert a == b;
+}
+
+test "random.seededFloat lies in [0.0, 1.0)" {
+    val r = seededFloat();
+    assert r >= 0.0;
+    assert r < 1.0;
+}
+
+test "random.shuffle preserves length" {
+    val xs = [1, 2, 3, 4, 5];
+    val ys = shuffle(xs);
+    assert ys.length == 5;
+}
+
+test "random.shuffle preserves the multiset (sum)" {
+    val xs = [1, 2, 3, 4, 5];
+    val ys = shuffle(xs);
+    // Sum is permutation-invariant — every element still appears once.
+    var s = 0;
+    ys.forEach({ y ->
+        s = s + y;
+    });
+    assert s == 15;
+}
+
+test "random.shuffle of an empty array is empty" {
+    val empty: array<i32> = [];
+    assert shuffle(empty).length == 0;
+}
+
+test "random.shuffle of a single-element array preserves it" {
+    val xs = [42];
+    val ys = shuffle(xs);
+    assert ys.length == 1;
+    assert ys.at(0) ?? 0 == 42;
+}
+
+test "random.secureToken(32) is 43 base64url characters" {
+    val t = secureToken(32);
+    assert t.length == 43;
+    assert t.contains("+").negate();
+    assert t.contains("/").negate();
+    assert t.contains("=").negate();
+}
+
+test "random.secureToken draws differ" {
+    assert secureToken(16) != secureToken(16);
+    assert secureToken(0) == "";
+}
+
+test "random.uuidV4 has the version 4 layout" {
+    val u = uuidV4();
+    val groups = u.split("-");
+    assert u.length == 36;
+    assert groups.length == 5;
+    assert (groups.at(0) ?? "").length == 8;
+    assert (groups.at(1) ?? "").length == 4;
+    assert (groups.at(2) ?? "").length == 4;
+    assert (groups.at(3) ?? "").length == 4;
+    assert (groups.at(4) ?? "").length == 12;
+    assert (groups.at(2) ?? "").startsWith("4");
+    val variant = (groups.at(3) ?? "").slice(0, 1);
+    assert "89ab".contains(variant);
+    assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length
+        == 36;
+    assert uuidV4() != u;
+}
+
+// ── randomBytes (was `crypto.randomBytes`) ───────────────────────────────────
+
+// `n` cryptographically-secure random bytes as a hex string of length
+// `2 * n` (each byte rendered as two lowercase hex chars). The hex shape
+// sidesteps the `array<u8>` cross-backend representation gap — Node
+// `Buffer` and Erlang `binary()` don't share a bp-side type. Callers
+// that need bytes parse the hex back themselves.
+// Node: `require('crypto').randomBytes(n).toString('hex')`.
+// Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
+// string used by the hashes above.
+#[compiler.external(
+    .JavaScript("""require('crypto').randomBytes($0).toString('hex')"""),
+    .Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])"""),
+    .Wasm(body: randomBytesBody),
+)]
+pub declare fn randomBytes(n: i32) -> string;
+
+test "random.randomBytes(16) returns 32 hex chars" {
+    val h = randomBytes(16);
+    assert h.length == 32;
+}
+
+test "random.randomBytes(0) is empty" {
+    val h = randomBytes(0);
+    assert h.length == 0;
+}
+
+// ── the wasm bodies (decision 238) ──────────────────────────────────────────
+// wasm has no host for these cells, so each names one of the private bodies
+// below with `#[compiler.external(.Wasm(fn: …))]`; commonJS and erlang call their
+// host. On wasm `float()` is `std: "random.float"` — 53 bits of WASI's
+// `random_get`, the host's cryptographic source — so the token, UUID and
+// byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a
+// 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are
+// std-wasm's seeded stream (decision 451, `std: "random.…"`), drawn as the
+// commonJS sidecar does (Mulberry32): the same draws after the same `seed`; a
+// draw before any seed is the host's (`float()`'s source). At comptime the
+// same cells answer, and a draw before any seed is refused — a build has no
+// entropy.
+
+// Selection shuffle: each step moves a uniformly drawn element of what is
+// left to the output — a uniform permutation, as the Node cell's
+// Fisher-Yates; the elements are moved as one-element slices, never read.
+fn shuffleBody<T>(xs: array<T>) -> array<T> {
+    var rest = xs;
+    var out = xs.slice(0, 0);
+    while (rest.length > 0) {
+        val j = wholeOf((float() * rest.length).floor());
+        out = out.append(rest.slice(j, j + 1));
+        rest = rest.slice(0, j).append(rest.slice(j + 1, rest.length));
+    }
+    return out;
+}
+
+fn secureTokenBody(bytes: i32) -> string {
+    return base64UrlOf(randomBytesOf(bytes));
+}
+
+// RFC 9562 §5.4: 16 random bytes, the version nibble 4, the variant `10`.
+fn uuidV4Body() -> string {
+    val b = randomBytesOf(16);
+    val version = 64 + b.at(6) ?? 0 % 16;
+    val variant = 128 + b.at(8) ?? 0 % 64;
+    return hexOf(b.slice(0, 4))
+        + "-"
+        + hexOf(b.slice(4, 6))
+        + "-"
+        + hexOf([version, b.at(7) ?? 0])
+        + "-"
+        + hexOf([variant, b.at(9) ?? 0])
+        + "-"
+        + hexOf(b.slice(10, 16));
+}
+
+fn randomBytesBody(n: i32) -> string {
+    return hexOf(randomBytesOf(n));
+}
+
+fn randomByte() -> i32 {
+    return wholeOf((float() * 256.0).floor());
+}
+
+fn randomBytesOf(n: i32) -> array<i32> {
+    var out: array<i32> = [];
+    var i = 0;
+    while (i < n) {
+        out = out.append([randomByte()]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn hexDigit(n: i32) -> string {
+    return "0123456789abcdef".at(n) ?? "";
+}
+
+fn hexOf(bytes: array<i32>) -> string {
+    return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
+}
+
+// RFC 4648 §5 base64url, unpadded.
+fn base64UrlOf(bytes: array<i32>) -> string {
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    var out = "";
+    var g = 0;
+    while (3 * g < bytes.length) {
+        val n = bytes.length - 3 * g;
+        val b0 = bytes.at(3 * g) ?? 0;
+        val b1 = if (n > 1) {
+            bytes.at(3 * g + 1) ?? 0;
+        } else 0;
+        val b2 = if (n > 2) {
+            bytes.at(3 * g + 2) ?? 0;
+        } else 0;
+        out = out
+            + alphabet.at(b0 / 4) ?? ""
+            + alphabet.at((b0 % 4) * 16 + b1 / 16) ?? "";
+        if (n > 1) out = out + alphabet.at((b1 % 16) * 4 + b2 / 64) ?? "";
+        if (n > 2) out = out + alphabet.at(b2 % 64) ?? "";
+        g = g + 1;
+    }
+    return out;
+}
+
+// A whole `v` in [0, 2^31) as an `i32`.
+fn wholeOf(v: f64) -> i32 {
+    var r = 0;
+    var rest = v;
+    var bit = 1073741824;
+    var weight = 1073741824.0;
+    while (bit > 0) {
+        if (rest >= weight) {
+            r = r + bit;
+            rest = rest - weight;
+        }
+        bit = bit / 2;
+        weight = weight / 2.0;
+    }
+    return r;
+}
+
+```
+
+----- JAVASCRIPT -- std/io/random.js
+```javascript
+const __bp_surrogate = /[\uD800-\uDFFF]/;
+const __bp_surrogate_k = new Array(64).fill("");
+const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
+function __bp_has_surrogate(s) {
+    const h = s.length & 63;
+    if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
+    const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
+    __bp_surrogate_k[h] = s;
+    __bp_surrogate_v[h] = p;
+    return p;
+}
+
+function __bp_str_count(s, u) {
+    let n = 0;
+    for (const c of s.substring(0, u)) { n += 1; }
+    return n;
+}
+
+function __bp_str_index_of(s, sub) {
+    const u = s.indexOf(sub);
+    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+}
+
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
+
+function __bp_eq(a, b, d) {
+    if (Object.is(a, b)) {
+        return true;
+    }
+    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+    }
+    const k = Object.keys(a);
+    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+}
+
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
+
+// behavior string
+//   fn length(...)
+//   fn split(...)
+//   fn toUpper(...)
+//   fn toLower(...)
+//   fn contains(...)
+//   fn startsWith(...)
+//   fn endsWith(...)
+//   fn trim(...)
+//   fn trimStart(...)
+//   fn trimEnd(...)
+//   fn replace(...)
+//   default fn slice(...)
+//   fn at(...)
+//   fn indexOf(...)
+//   default fn toString(...)
+//   fn fromCodepoint(...)
+//   fn padStart(...)
+//   fn padEnd(...)
+//   fn repeat(...)
+//   fn replaceAll(...)
+//   fn chars(...)
+//   fn lines(...)
+//   fn words(...)
+//   fn normalizeNewlines(...)
+//   fn trimTrailingNewlines(...)
+//   fn firstDifferingLine(...)
+//   fn charCodeAt(...)
+//   fn lastIndexOf(...)
+//   default fn parseInt(...)
+//   default fn parseFloat(...)
+String.prototype.slice = function(start, end) {
+    const self = this.valueOf();
+    if ((end != null)) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
+};
+String.prototype.chars = function() { return (Array.from(this.valueOf())); };
+String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
+String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
+String.prototype.normalizeNewlines = function() { return this.valueOf().replaceAll("\r\n", "\n"); };
+String.prototype.trimTrailingNewlines = function() { return this.valueOf().replace(/\n+$/, ""); };
+String.prototype.firstDifferingLine = function(other) { return ((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })(this.valueOf(), other); };
+String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
+String.prototype.parseInt = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const digits = (() => { if (signed) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
+    return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: 'parseInt: "' + self + '" is not an integer' }); } })();
+};
+String.prototype.parseFloat = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const start = (() => { if (signed) { return 1; } else { return 0; } })();
+    const lowerAt = __bp_str_index_of(self, "e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return __bp_str_index_of(self, "E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = __bp_str_index_of(self, ".");
+    const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
+    const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
+    return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: 'parseFloat: "' + self + '" is not a number' }); } })();
+};
+
+// behavior bool
+//   fn toString(...)
+//   default fn negate(...)
+//   default fn nor(...)
+//   default fn nand(...)
+//   default fn exclusiveOr(...)
+//   default fn exclusiveNor(...)
+Boolean.prototype.negate = function() {
+    const self = this.valueOf();
+    return (!self);
+};
+Boolean.prototype.nor = function(other) {
+    const self = this.valueOf();
+    return (!((self || other)));
+};
+Boolean.prototype.nand = function(other) {
+    const self = this.valueOf();
+    return (!((self && other)));
+};
+Boolean.prototype.exclusiveOr = function(other) {
+    const self = this.valueOf();
+    return (self !== other);
+};
+Boolean.prototype.exclusiveNor = function(other) {
+    const self = this.valueOf();
+    return (self === other);
+};
+
+// behavior array
+//   length: i32
+//   fn at(...)
+//   fn push(...)
+//   fn pop(...)
+//   default fn slice(...)
+//   fn join(...)
+//   fn reverse(...)
+//   fn indexOf(...)
+//   default fn lastIndexOf(...)
+//   fn forEach(...)
+//   fn map(...)
+//   fn filter(...)
+//   fn zip(...)
+//   fn range(...)
+//   fn repeat(...)
+//   default fn isEmpty(...)
+//   default fn contains(...)
+//   default fn first(...)
+//   default fn rest(...)
+//   default fn take(...)
+//   default fn drop(...)
+//   default fn fold(...)
+//   default fn find(...)
+//   default fn count(...)
+//   default fn all(...)
+//   default fn any(...)
+//   default fn append(...)
+//   default fn prepend(...)
+//   default fn flatten(...)
+//   default fn flatMap(...)
+//   default fn toList(...)
+//   default fn some(...)
+//   default fn every(...)
+//   default fn flat(...)
+//   default fn findIndex(...)
+//   default fn fill(...)
+//   default fn chunked(...)
+//   default fn sliding(...)
+//   default fn unique(...)
+Array.range = function(start, stop) { return ((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))(start, stop); };
+Array.repeat = function(value, times) { return ((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))(value, times); };
+Array.prototype.slice = function(start, end) {
+    if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); }
+};
+Array.prototype.indexOf = function(item) { return this.findIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.lastIndexOf = function(item) { return this.findLastIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.zip = function(other) { return this.map((__x, __i) => [__x, (other)[__i]]).slice(0, Math.min(this.length, (other).length)); };
+Array.prototype.isEmpty = function() {
+    return (this.length === 0);
+};
+Array.prototype.contains = function(x) {
+    return (this.indexOf(x) !== (-1));
+};
+Array.prototype.first = function() {
+    return __bp_array_at(this, 0);
+};
+Array.prototype.rest = function() {
+    return this.slice(1, this.length);
+};
+Array.prototype.take = function(n) {
+    return this.slice(0, n);
+};
+Array.prototype.drop = function(n) {
+    return this.slice(n, this.length);
+};
+Array.prototype.fold = function(initial, f) {
+    let acc = initial;
+    this.forEach((x) => {
+    acc = f(acc, x);
+});
+    return acc;
+};
+Array.prototype.count = function(pred) {
+    return this.filter(pred).length;
+};
+Array.prototype.all = function(pred) {
+    return (this.filter(pred).length === this.length);
+};
+Array.prototype.any = function(pred) {
+    return (this.filter(pred).length !== 0);
+};
+Array.prototype.prepend = function(item) {
+    let out = [item];
+    this.forEach((x) => {
+    return out.push(x);
+});
+    return out;
+};
+Array.prototype.flatten = function() {
+    let out = [];
+    this.forEach((inner) => {
+    out = out.concat(inner);
+});
+    return out;
+};
+Array.prototype.toList = function() {
+    return this;
+};
+Array.prototype.some = function(pred) {
+    return this.any(pred);
+};
+Array.prototype.every = function(pred) {
+    return this.all(pred);
+};
+Array.prototype.flat = function() {
+    return this.flatten();
+};
+Array.prototype.findIndex = function(pred) {
+    let out = (-1);
+    let i = 0;
+    this.forEach((x) => {
+    (() => { if ((out === (-1))) { return (() => { if (pred(x)) { return out = i; } })(); } })();
+    i = (i + 1);
+});
+    return out;
+};
+Array.prototype.fill = function(value) {
+    return Array.repeat(value, this.length);
+};
+Array.prototype.chunked = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const len = this.length;
+    for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
+    (() => { if ((((k % n) + 0) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
+}
+    return out;
+};
+Array.prototype.sliding = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const windows = ((this.length - n) + 1);
+    if ((windows <= 0)) { return out; }
+    for (const k of Array.from({length: Math.max(0, (windows) - (0))}, (_, __i) => (0) + __i)) {
+    out = out.concat([this.slice(k, (k + n))]);
+}
+    return out;
+};
+Array.prototype.unique = function() {
+    let out = [];
+    this.forEach((x) => {
+    return (() => { if ((!out.any((y) => {
+    return __bp_eq(y, x, 0);
+}))) { return out = out.concat([x]); } })();
+});
+    return out;
+};
+
+// behavior Float extends Number
+//   fn toString(...)
+//   fn abs(...)
+//   fn floor(...)
+//   fn ceil(...)
+//   fn round(...)
+//   fn squareRoot(...)
+BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)(this.valueOf()); };
+BigInt.prototype.floor = Number.prototype.floor = function() { return Math.floor(this.valueOf()); };
+BigInt.prototype.ceil = Number.prototype.ceil = function() { return Math.ceil(this.valueOf()); };
+BigInt.prototype.round = Number.prototype.round = function() { return Math.round(this.valueOf()); };
+BigInt.prototype.squareRoot = Number.prototype.squareRoot = function() { return Math.sqrt(this.valueOf()); };
+
+//// std/io/random — pseudo-random number primitives (cross-backend).
+
+//// 
+
+//// Reference:
+
+////   Node.js  — https://nodejs.org/api/  (the `Math.random` global)
+
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/rand.html
+
+//// 
+
+//// `float()` returns a uniform `[0.0, 1.0)` sample on every backend.
+
+//// Higher-level helpers (`coin`/`pick`) compose `float()` — portable +
+
+//// no host call beyond the uniform sample. Seedable RNGs are deferred:
+
+//// Node has no built-in seedable PRNG behind `Math.random`, so any
+
+//// seed/state surface needs a userland PRNG; ship that in a follow-up
+
+//// once the test infra is ready for reproducible draws.
+
+//// 
+
+//// NOT A CSPRNG: everything above `secureToken` is `Math.random` /
+
+//// `rand:uniform`, predictable to anyone who sees enough draws. A token, a
+
+//// session id, a nonce or a UUID comes from `secureToken` / `uuidV4`, which
+
+//// read the host's cryptographic source (`crypto.randomBytes`,
+
+//// `crypto:strong_rand_bytes/1`) — or `crypto.randomBytes` for hex.
+
+// float: per-call template (see annotation)
+function float() { return Math.random(); }
+exports.float = float;
+
+// Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
+
+// at `libs/std/src/sidecars/random.mjs`. After seeding, `seededFloat()`
+
+// draws from the reproducible stream. `float()` itself stays on
+
+// `Math.random`; explicit-stream callers opt into determinism by using
+
+// `seededFloat` after `seed`.
+
+// Node: `require('./sidecars/random.mjs').seed($0)` — the CLI's sidecar
+
+// shipper copies the `.mjs` next to the emitted module.
+
+// Erlang: `rand:seed/2` with the `exsplus` algorithm + a `{S, S, S}`
+
+// triple. `S` is folded to an integer via the i64 input.
+
+// seed: per-call template (see annotation)
+function seed(s) { return require('./sidecars/random.mjs').seed(s); }
+exports.seed = seed;
+
+// Draw from the seeded PRNG when a `seed` call has been made; otherwise
+
+// falls through to the unseeded `float()` baseline. Erlang's `rand`
+
+// module reads from the process dictionary's seed state directly, so
+
+// the same `rand:uniform/0` call after `seed` produces the reproducible
+
+// stream automatically.
+
+// seededFloat: per-call template (see annotation)
+function seededFloat() { return require('./sidecars/random.mjs').seededFloat(); }
+exports.seededFloat = seededFloat;
+
+// 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
+
+// uniform sample — identically distributed on every backend that has
+
+// a uniform `float()`.
+
+function coin() {
+    return (Math.random() >= 0.5);
+}
+exports.coin = coin;
+
+// Random integer in the closed interval `[lo, hi]`. When `lo > hi` the
+
+// range is empty and the result is `lo` (a defensive default — the
+
+// alternative is to `panic`, which the @assert-style tests would
+
+// rather catch at the call site).
+
+function intInRange(lo, hi) {
+    if ((lo >= hi)) { return lo; }
+    const span = __bp_int(((__bp_int((hi - lo), -2147483648, 2147483647, "- on i32 at src/io/random.bp:66:20")) + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:66:26");
+    const product = (Math.random() * span);
+    const offset = floorWalk(0, 1.0, product, span);
+    return __bp_int((lo + offset), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:69:15");
+}
+exports.intInRange = intInRange;
+
+// Pick a random element from a non-empty array. Returns `null` for the
+
+// empty array — the call site should default with `?? …` rather
+
+// than panic. Uses a walk-up integer floor (no `Math.floor` import) so
+
+// the body stays self-contained.
+
+function pick(xs) {
+    const n = xs.length;
+    if ((n === 0)) { return null; }
+    // `float() * n` mixes f64 × i32 — inference promotes to f64.;
+    const product = (Math.random() * n);
+    const idx = floorWalk(0, 1.0, product, n);
+    return __bp_array_at(xs, idx);
+}
+exports.pick = pick;
+
+// Internal: integer floor of a non-negative `product` < `upper`. Walks
+
+// `start` up from 0 while `threshold (= start + 1)` still fits below
+
+// `product`. O(upper) — fine for the small `array<T>` arities `pick`
+
+// targets in tests.
+
+function floorWalk(start, threshold, product, upper) {
+    while (true) {
+        if ((__bp_int((start + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:90:15") > upper)) { return start; }
+        if ((threshold > product)) { return start; }
+        { const __bp_tc0 = __bp_int((start + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:92:28"); const __bp_tc1 = (threshold + 1.0); start = __bp_tc0; threshold = __bp_tc1; continue; }
+    }
+}
+
+// Fisher-Yates shuffle. Returns a fresh array whose elements are a
+
+// permutation of `xs`. The pure-bp shape was deferred (the deferral
+
+// note used to live here) because `array<T>::at(i)` returns `?T` and
+
+// extracting T without a sentinel value of T is circular. Solution:
+
+// host-backed `pub declare fn shuffle<T>(xs)` — the host owns the
+
+// in-place swap; the bp side only declares the signature and the
+
+// per-target template.
+
+// 
+
+// Node: classic Fisher-Yates over the input array, returning a fresh
+
+// copy (the input is not mutated — matches the immutable-by-default
+
+// botopink contract for return values). `random.seed` from this same
+
+// module seeds the sidecar PRNG; subsequent `shuffle` draws are
+
+// reproducible after `seed(s)`.
+
+// 
+
+// Erlang: `[X || {_, X} <- lists:sort([{rand:uniform(), Y} || Y <- $0])]`
+
+// — the Schwartzian-transform shuffle: pair each element with a
+
+// random key, sort by key, strip the keys. Stable across `rand:seed`
+
+// state (the same `rand` server `seed/2` controls both `uniform/0`
+
+// here and `seededFloat()` above).
+
+// 
+
+// Beam/wasm: out of scope at v1 (no `lists:sort` template, no
+
+// `Math.random` equivalent in wat3); the matrix will report
+
+// `MissingExternalTarget` on a `shuffle(...)` call from those backends
+
+// until the corresponding shim lands.
+
+// shuffle: per-call template (see annotation)
+function shuffle(xs) { return (function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })(xs); }
+exports.shuffle = shuffle;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+
+// 
+
+// The CSPRNG half. Everything ABOVE is `Math.random` / `rand:uniform` — fine
+
+// for a shuffle, wrong for anything an attacker must not guess. A token, a
+
+// session id, a nonce or a UUID comes from the two functions below, which
+
+// read the host's cryptographically strong source.
+
+// `bytes` strong random bytes as base64url without padding — URL-, cookie-
+
+// and header-safe. 32 bytes answer 43 characters.
+
+// Node: `crypto.randomBytes(n).toString('base64url')`.
+
+// Erlang: `crypto:strong_rand_bytes/1` + `base64:encode/2` in `urlsafe`
+
+// mode without padding (OTP 26+).
+
+// secureToken: per-call template (see annotation)
+function secureToken(bytes) { return require('crypto').randomBytes(bytes).toString('base64url'); }
+exports.secureToken = secureToken;
+
+// A random (version 4) UUID, lowercase: 122 strong random bits with the
+
+// version nibble set to `4` and the variant bits to `10` (RFC 9562 §5.4).
+
+// Node: `crypto.randomUUID()`.
+
+// Erlang: 16 strong random bytes, the version/variant bits rewritten in the
+
+// binary pattern — the bit work lives in the template because botopink has
+
+// no bitwise operators (`language-gaps.md`).
+
+// uuidV4: per-call template (see annotation)
+function uuidV4() { return require('crypto').randomUUID(); }
+exports.uuidV4 = uuidV4;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+// ── randomBytes (was `crypto.randomBytes`) ───────────────────────────────────
+
+// `n` cryptographically-secure random bytes as a hex string of length
+
+// `2 * n` (each byte rendered as two lowercase hex chars). The hex shape
+
+// sidesteps the `array<u8>` cross-backend representation gap — Node
+
+// `Buffer` and Erlang `binary()` don't share a bp-side type. Callers
+
+// that need bytes parse the hex back themselves.
+
+// Node: `require('crypto').randomBytes(n).toString('hex')`.
+
+// Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
+
+// string used by the hashes above.
+
+// randomBytes: per-call template (see annotation)
+function randomBytes(n) { return require('crypto').randomBytes(n).toString('hex'); }
+exports.randomBytes = randomBytes;
+
+// ── the wasm bodies (decision 238) ──────────────────────────────────────────
+
+// wasm has no host for these cells, so each names one of the private bodies
+
+// below with `#[compiler.external(.Wasm(fn: …))]`; commonJS and erlang call their
+
+// host. On wasm `float()` is `std: "random.float"` — 53 bits of WASI's
+
+// `random_get`, the host's cryptographic source — so the token, UUID and
+
+// byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a
+
+// 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are
+
+// std-wasm's seeded stream (decision 451, `std: "random.…"`), drawn as the
+
+// commonJS sidecar does (Mulberry32): the same draws after the same `seed`; a
+
+// draw before any seed is the host's (`float()`'s source). At comptime the
+
+// same cells answer, and a draw before any seed is refused — a build has no
+
+// entropy.
+
+// Selection shuffle: each step moves a uniformly drawn element of what is
+
+// left to the output — a uniform permutation, as the Node cell's
+
+// Fisher-Yates; the elements are moved as one-element slices, never read.
+
+function shuffleBody(xs, __bp_ty_T) {
+    let rest = xs;
+    let out = xs.slice(0, 0);
+    while ((rest.length > 0)) {
+    const j = wholeOf(((Math.random() * rest.length)).floor());
+    out = out.concat(rest.slice(j, __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:319:42")));
+    rest = rest.slice(0, j).concat(rest.slice(__bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:320:53"), rest.length));
+}
+    return out;
+}
+
+function secureTokenBody(bytes) {
+    return base64UrlOf(randomBytesOf(bytes));
+}
+
+// RFC 9562 §5.4: 16 random bytes, the version nibble 4, the variant `10`.
+
+function uuidV4Body() {
+    const b = randomBytesOf(16);
+    const version = __bp_int((64 + __bp_int(((() => { const __bp_nullish = __bp_array_at(b, 6); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })() % 16), -2147483648, 2147483647, "% on i32 at src/io/random.bp:332:37")), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:332:22");
+    const variant = __bp_int((128 + __bp_int(((() => { const __bp_nullish = __bp_array_at(b, 8); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })() % 64), -2147483648, 2147483647, "% on i32 at src/io/random.bp:333:38")), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:333:23");
+    return ((((((((hexOf(b.slice(0, 4)) + "-") + hexOf(b.slice(4, 6))) + "-") + hexOf([version, (() => { const __bp_nullish = __bp_array_at(b, 7); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()])) + "-") + hexOf([variant, (() => { const __bp_nullish = __bp_array_at(b, 9); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()])) + "-") + hexOf(b.slice(10, 16)));
+}
+
+function randomBytesBody(n) {
+    return hexOf(randomBytesOf(n));
+}
+
+function randomByte() {
+    return wholeOf(((Math.random() * 256.0)).floor());
+}
+
+function randomBytesOf(n) {
+    let out = [];
+    let i = 0;
+    while ((i < n)) {
+    out = out.concat([randomByte()]);
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:358:15");
+}
+    return out;
+}
+
+function hexDigit(n) {
+    return (() => { const __bp_nullish = ("0123456789abcdef".at(n) ?? null); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+}
+
+function hexOf(bytes) {
+    return bytes.map((b) => {
+    return (hexDigit(__bp_int(Math.trunc((b / 16)), -2147483648, 2147483647, "/ on i32 at src/io/random.bp:368:40")) + hexDigit(__bp_int((b % 16), -2147483648, 2147483647, "% on i32 at src/io/random.bp:368:59")));
+}).join("");
+}
+
+// RFC 4648 §5 base64url, unpadded.
+
+function base64UrlOf(bytes) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let out = "";
+    let g = 0;
+    while ((__bp_int((3 * g), -2147483648, 2147483647, "* on i32 at src/io/random.bp:376:14") < bytes.length)) {
+    const n = __bp_int((bytes.length - __bp_int((3 * g), -2147483648, 2147483647, "* on i32 at src/io/random.bp:377:34")), -2147483648, 2147483647, "- on i32 at src/io/random.bp:377:30");
+    const b0 = (() => { const __bp_nullish = __bp_array_at(bytes, __bp_int((3 * g), -2147483648, 2147483647, "* on i32 at src/io/random.bp:378:29")); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })();
+    const b1 = (() => { if ((n > 1)) { return (() => { const __bp_nullish = __bp_array_at(bytes, __bp_int((__bp_int((3 * g), -2147483648, 2147483647, "* on i32 at src/io/random.bp:380:24") + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:380:28")); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })(); } else { return 0; } })();
+    const b2 = (() => { if ((n > 2)) { return (() => { const __bp_nullish = __bp_array_at(bytes, __bp_int((__bp_int((3 * g), -2147483648, 2147483647, "* on i32 at src/io/random.bp:383:24") + 2), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:383:28")); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })(); } else { return 0; } })();
+    out = ((out + (() => { const __bp_nullish = (alphabet.at(__bp_int(Math.trunc((b0 / 4)), -2147483648, 2147483647, "/ on i32 at src/io/random.bp:386:30")) ?? null); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) + (() => { const __bp_nullish = (alphabet.at(__bp_int((__bp_int(((__bp_int((b0 % 4), -2147483648, 2147483647, "% on i32 at src/io/random.bp:387:31")) * 16), -2147483648, 2147483647, "* on i32 at src/io/random.bp:387:36") + __bp_int(Math.trunc((b1 / 16)), -2147483648, 2147483647, "/ on i32 at src/io/random.bp:387:46")), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:387:41")) ?? null); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })());
+    (() => { if ((n > 1)) { return out = (out + (() => { const __bp_nullish = (alphabet.at(__bp_int((__bp_int(((__bp_int((b1 % 16), -2147483648, 2147483647, "% on i32 at src/io/random.bp:388:48")) * 4), -2147483648, 2147483647, "* on i32 at src/io/random.bp:388:54") + __bp_int(Math.trunc((b2 / 64)), -2147483648, 2147483647, "/ on i32 at src/io/random.bp:388:63")), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:388:58")) ?? null); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()); } })();
+    (() => { if ((n > 2)) { return out = (out + (() => { const __bp_nullish = (alphabet.at(__bp_int((b2 % 64), -2147483648, 2147483647, "% on i32 at src/io/random.bp:389:47")) ?? null); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()); } })();
+    g = __bp_int((g + 1), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:390:15");
+}
+    return out;
+}
+
+// A whole `v` in [0, 2^31) as an `i32`.
+
+function wholeOf(v) {
+    let r = 0;
+    let rest = v;
+    let bit = 1073741824;
+    let weight = 1073741824.0;
+    while ((bit > 0)) {
+    (() => { if ((rest >= weight)) { r = __bp_int((r + bit), -2147483648, 2147483647, "+ on i32 at src/io/random.bp:403:19"); return rest = (rest - weight); } })();
+    bit = __bp_int(Math.trunc((bit / 2)), -2147483648, 2147483647, "/ on i32 at src/io/random.bp:406:19");
+    weight = (weight / 2.0);
+}
+    return r;
+}
+
+Object.defineProperty(exports, "__bp_priv__", { value: { float, seed, seededFloat, coin, intInRange, pick, floorWalk, shuffle, secureToken, uuidV4, randomBytes, shuffleBody, secureTokenBody, uuidV4Body, randomBytesBody, randomByte, randomBytesOf, hexDigit, hexOf, base64UrlOf, wholeOf } });
+```
+
+----- TYPESCRIPT TYPEDEF -- std/io/random.d.ts
+```typescript
+export declare function float(): number;
+
+
+export declare function seed(s: number): void;
+
+
+export declare function seededFloat(): number;
+
+
+export declare function coin(): boolean;
+
+
+export declare function intInRange(lo: number, hi: number): number;
+
+
+export declare function pick<T>(xs: T[]): T | null;
+
+
+
+
+export declare function shuffle<T>(xs: T[]): T[];
+
+
+export declare function secureToken(bytes: number): string;
+
+
+export declare function uuidV4(): string;
+
+
+export declare function randomBytes(n: number): string;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- std/io/fs.bp
 ```botopink
 //// std/io/fs — the file system, cross-backend (decision 540).
@@ -1455,10 +2609,11 @@ export declare function attemptTask<T>(f: () => Promise<T>): Promise<T>;
 //// `Result<R, HostError>` — Node's `ENOENT: …`, erlang's `enoent` as its `message` —
 //// and `lift` reads that message as the `FsError` of the path the caller wrote
 //// (decision 486); no cell catches by hand. All operations are synchronous
-//// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
-//// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
+//// (`*Sync` on Node, blocking BIFs on Erlang, `wasi:filesystem` on wasm: the runner
+//// preopens the root and the working directory, decision 992), and a path is read as
+//// the process reads it — a relative one against the working directory — on every target.
 
-import {path.relative, failure, failure.HostError, compiler};
+import {path.relative, failure, failure.HostError, failure.HostErrorName, io.random, compiler};
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 // caller wrote (for `copy`, the source; for `walk`, the root).
@@ -1503,6 +2658,7 @@ pub type FileStat(
 #[compiler.external(
     .JavaScript("""(() => { return new Uint8Array(require('fs').readFileSync($0)) })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: readBytesWasm),
 )]
 declare fn rawReadBytes(path: string) -> Result<bytes, HostError>;
 
@@ -1511,6 +2667,7 @@ declare fn rawReadBytes(path: string) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeBytesWasm),
 )]
 declare fn rawWriteBytes(path: string, contents: bytes) -> Result<i32, HostError>;
 
@@ -1519,6 +2676,7 @@ declare fn rawWriteBytes(path: string, contents: bytes) -> Result<i32, HostError
 #[compiler.external(
     .JavaScript("""(() => { require('fs').appendFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C, [append]) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: appendTextWasm),
 )]
 declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostError>;
 
@@ -1529,6 +2687,7 @@ declare fn rawAppendText(path: string, contents: string) -> Result<i32, HostErro
 #[compiler.external(
     .JavaScript("""((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })($0)"""),
     .Erlang("""(fun(__B) -> case unicode:characters_to_binary(__B, utf8, utf8) of __S when is_binary(__S) -> -1; {error, __G, _} -> byte_size(__G); {incomplete, __G, _} -> byte_size(__G) end end)($0)"""),
+    .Wasm(body: utf8OffsetWasm),
 )]
 declare fn utf8Offset(bytes: bytes) -> i64;
 
@@ -1537,6 +2696,7 @@ declare fn utf8Offset(bytes: bytes) -> i64;
 #[compiler.external(
     .JavaScript("""((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })($0)"""),
     .Erlang("""(fun(__B) -> __N = byte_size(__B), if __N >= 2 -> case binary:part(__B, __N - 2, 2) of <<13, 10>> -> binary:part(__B, 0, __N - 2); <<_, 10>> -> binary:part(__B, 0, __N - 1); _ -> __B end; __N =:= 1 -> case __B of <<10>> -> <<>>; _ -> __B end; true -> __B end end)($0)"""),
+    .Wasm(body: stripEolWasm),
 )]
 declare fn stripEol(line: bytes) -> bytes;
 
@@ -1546,6 +2706,7 @@ declare fn stripEol(line: bytes) -> bytes;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = $0; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [read, binary, read_ahead]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: openWasm),
 )]
 declare fn rawOpen(path: string) -> Result<unknown, HostError>;
 
@@ -1553,6 +2714,7 @@ declare fn rawOpen(path: string) -> Result<unknown, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fd = require('fs').openSync($0, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:open(__P, [write, binary, raw]) of {ok, __F} -> {ok, __F}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: createWasm),
 )]
 declare fn rawCreate(path: string) -> Result<unknown, HostError>;
 
@@ -1561,6 +2723,7 @@ declare fn rawCreate(path: string) -> Result<unknown, HostError>;
 #[compiler.external(
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
+    .Wasm(body: memHandleWasm),
 )]
 declare fn memHandle(bytes: bytes) -> unknown;
 
@@ -1568,6 +2731,7 @@ declare fn memHandle(bytes: bytes) -> unknown;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()""", result: true),
     .Erlang("""(fun(__H, __P) -> case __H of {mem, __B, _} -> {ok, byte_size(__B)}; _ -> case file:read_file_info(__P) of {ok, __I} -> {ok, element(2, __I)}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+    .Wasm(body: sizeWasm),
 )]
 declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
 
@@ -1575,6 +2739,7 @@ declare fn rawSize(handle: unknown, path: string) -> Result<i64, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __n = $1; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()""", result: true),
     .Erlang("""(fun(__H, __N) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Len = min(__N, byte_size(__B) - __Pos), counters:add(__C, 1, __Len), {ok, binary:part(__B, __Pos, __Len)}; _ -> case file:read(__H, __N) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0, $1)""", result: true),
+    .Wasm(body: readWasm),
 )]
 declare fn rawRead(handle: unknown, n: i32) -> Result<bytes, HostError>;
 
@@ -1582,6 +2747,7 @@ declare fn rawRead(handle: unknown, n: i32) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), counters:add(__C, 1, byte_size(__B) - __Pos), {ok, binary:part(__B, __Pos, byte_size(__B) - __Pos)}; _ -> (fun __L(__Acc) -> case file:read(__H, 65536) of {ok, __D} -> __L([__Acc, __D]); eof -> {ok, iolist_to_binary(__Acc)}; {error, __R} -> {error, __R} end end)([]) end end)($0)""", result: true),
+    .Wasm(body: readAllWasm),
 )]
 declare fn rawReadAll(handle: unknown) -> Result<bytes, HostError>;
 
@@ -1589,6 +2755,7 @@ declare fn rawReadAll(handle: unknown) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = $0; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, __C} -> __Pos = counters:get(__C, 1), __Rest = binary:part(__B, __Pos, byte_size(__B) - __Pos), case binary:match(__Rest, <<10>>) of nomatch -> counters:add(__C, 1, byte_size(__Rest)), {ok, __Rest}; {__At, _} -> counters:add(__C, 1, __At + 1), {ok, binary:part(__Rest, 0, __At + 1)} end; _ -> case file:read_line(__H) of {ok, __D} -> {ok, __D}; eof -> {ok, <<>>}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: readLineWasm),
 )]
 declare fn rawReadLine(handle: unknown) -> Result<bytes, HostError>;
 
@@ -1598,6 +2765,7 @@ declare fn rawReadLine(handle: unknown) -> Result<bytes, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, __B, _} -> {ok, string:lowercase(binary:encode_hex(crypto:hash(sha256, __B)))}; _ -> {ok, __Cur} = file:position(__H, cur), __L = fun __Lp(__Pos, __Ctx) -> case file:pread(__H, __Pos, 65536) of {ok, __D} -> __Lp(__Pos + byte_size(__D), crypto:hash_update(__Ctx, __D)); eof -> crypto:hash_final(__Ctx); {error, __R} -> erlang:error(__R) end end, __Digest = __L(0, crypto:hash_init(sha256)), {ok, _} = file:position(__H, __Cur), {ok, string:lowercase(binary:encode_hex(__Digest))} end end)($0)""", result: true),
+    .Wasm(body: hashWasm),
 )]
 declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 
@@ -1605,6 +2773,7 @@ declare fn rawHash(handle: unknown) -> Result<string, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; const __b = $1; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()""", result: true),
     .Erlang("""(fun(__H, __B) -> case file:write(__H, __B) of ok -> {ok, byte_size(__B)}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeWasm),
 )]
 declare fn rawWrite(handle: unknown, bytes: bytes) -> Result<i32, HostError>;
 
@@ -1612,6 +2781,7 @@ declare fn rawWrite(handle: unknown, bytes: bytes) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __h = $0; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()""", result: true),
     .Erlang("""(fun(__H) -> case __H of {mem, _, _} -> {ok, 0}; _ -> case file:close(__H) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: closeWasm),
 )]
 declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
 
@@ -1622,6 +2792,7 @@ declare fn rawClose(handle: unknown) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').writeFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: writeTextWasm),
 )]
 declare fn rawWriteText(
     path: string,
@@ -1639,15 +2810,19 @@ declare fn rawWriteText(
 #[compiler.external(
     .JavaScript("""require('fs').existsSync($0)"""),
     .Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)"""),
+    .Wasm(body: existsWasm),
 )]
 pub declare fn exists(path: string) -> bool;
 
 // List the names of the directory entries at `path` (relative).
 // Node: `require('fs').readdirSync($0)`.
-// Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+// Erlang: `file:list_dir/1` returns `{ok, [string()]}`, in the directory's
+// order: sorted here by bytes (`lists:sort` on binaries), as `readdirSync` and
+// wasm's `listWasm` answer them, so every target lists one order (decision 992).
 #[compiler.external(
     .JavaScript("""(() => { return require('fs').readdirSync($0) })()""", result: true),
-    .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, lists:sort([list_to_binary(__N) || __N <- __L])}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: listWasm),
 )]
 declare fn rawList(path: string) -> Result<string[], HostError>;
 
@@ -1658,6 +2833,7 @@ declare fn rawList(path: string) -> Result<string[], HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').mkdirSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: mkdirWasm),
 )]
 declare fn rawMkdir(path: string) -> Result<i32, HostError>;
 
@@ -1670,6 +2846,7 @@ declare fn rawMkdir(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').mkdirSync($0, { recursive: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: mkdirRecursiveWasm),
 )]
 declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
 
@@ -1681,6 +2858,7 @@ declare fn rawMkdirRecursive(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').rmSync($0); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_link_info(__P) of {ok, __I} when element(3, __I) =:= directory -> {error, eisdir}; _ -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, __R} end end end)($0)""", result: true),
+    .Wasm(body: rmWasm),
 )]
 declare fn rawRm(path: string) -> Result<i32, HostError>;
 
@@ -1691,6 +2869,7 @@ declare fn rawRm(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { require('fs').copyFileSync($0, $1); return 0 })()""", result: true),
     .Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0, $1)""", result: true),
+    .Wasm(body: copyWasm),
 )]
 declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
 
@@ -1707,6 +2886,7 @@ declare fn rawCopy(src: string, dest: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })()""", result: true),
     .Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: statWasm),
 )]
 declare fn rawStat(path: string) -> Result<FileStat, HostError>;
 
@@ -1734,6 +2914,7 @@ declare fn rawStat(path: string) -> Result<FileStat, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })()""", result: true),
     .Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, case file:read_file_info(__Root) of {ok, _} -> enotdir; {error, __X0} -> __X0 end}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> erlang:error(__E); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> erlang:error(__X) end end, __Acc, __Names) end end, __Found = __Walk(__Root, [], []), {ok, #{files => lists:sort([__F || {file, __F} <- __Found]), dangling => lists:sort([__D || {dangling, __D} <- __Found])}} end end)($0)""", result: true),
+    .Wasm(body: walkWasm),
 )]
 declare fn rawWalk(root: string) -> Result<Walked, HostError>;
 
@@ -1762,6 +2943,7 @@ declare fn rawWalk(root: string) -> Result<Walked, HostError>;
 #[compiler.external(
     .JavaScript("""(() => { const __fs = require('fs'); const __p = require('path'); const __root = $1; const __pat = String($0); const __segs = __pat.split('/').filter(__s => __s !== '' && __s !== '.'); const __dirsOnly = __pat.endsWith('/'); const __lst = (__f) => { try { return __fs.lstatSync(__f, { throwIfNoEntry: false }) } catch (__e) { return undefined } }; const __realDir = (__f) => { const __s = __lst(__f); return __s !== undefined && __s.isDirectory() }; const __linkedDir = (__f) => { try { const __s = __fs.statSync(__f, { throwIfNoEntry: false }); return __s !== undefined && __s.isDirectory() } catch (__e) { return false } }; const __magic = (__s) => __s.includes('*') || __s.includes('?') || __s.includes('[') || __s.includes('{'); const __names = (__dir, __seg) => { let __all; try { __all = (__seg === '*' ? __fs.readdirSync(__dir) : __fs.globSync(__seg, { cwd: __dir })).map(String) } catch (__e) { __all = [] } return __all.filter(__n => !__n.startsWith('.') || __seg.startsWith('.')) }; const __join = (__rel, __n) => __rel === '' ? __n : __rel + '/' + __n; const __out = new Set(); const __walk = (__i, __dir, __rel) => { if (__i === __segs.length) { if (__rel !== '') __out.add(__rel); return } const __seg = __segs[__i]; const __last = __i === __segs.length - 1; if (__seg === '**') { if (!__last) __walk(__i + 1, __dir, __rel); for (const __n of __names(__dir, '*')) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); if (__realDir(__f)) __walk(__i, __f, __sub) } return } if (!__magic(__seg)) { const __f = __p.join(__dir, __seg); const __sub = __join(__rel, __seg); if (__last) { if (__lst(__f) !== undefined) __out.add(__sub) } else if (__linkedDir(__f)) __walk(__i + 1, __f, __sub); return } for (const __n of __names(__dir, __seg)) { const __f = __p.join(__dir, __n); const __sub = __join(__rel, __n); if (__last) __out.add(__sub); else if (__realDir(__f)) __walk(__i + 1, __f, __sub) } }; __walk(0, __root, ''); return Array.from(__out).filter(__r => !__dirsOnly || __realDir(__p.join(__root, __r))).sort() })()"""),
     .Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))] end)($0, $1)"""),
+    .Wasm(body: globWasm),
 )]
 declare fn rawGlob(pattern: string, root: string) -> string[];
 
@@ -1775,6 +2957,7 @@ declare fn rawGlob(pattern: string, root: string) -> string[];
 #[compiler.external(
     .JavaScript("""(() => { require('fs').rmSync($0, { recursive: true, force: true }); return 0 })()""", result: true),
     .Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Wasm(body: removeTreeWasm),
 )]
 declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
 
@@ -1785,6 +2968,7 @@ declare fn rawRemoveTree(path: string) -> Result<i32, HostError>;
 #[compiler.external(
     .JavaScript("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bp-std-fs-'))"""),
     .Erlang("""(fun() -> __T = case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, __D = filename:join(__T, "bp-std-fs-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), unicode:characters_to_binary(__D) end)()"""),
+    .Wasm(body: scratchDirWasm),
 )]
 declare fn scratchDir() -> string;
 
@@ -1793,12 +2977,14 @@ declare fn scratchDir() -> string;
 #[compiler.external(
     .JavaScript("process.cwd()"),
     .Erlang("""(fun() -> {ok, __D} = file:get_cwd(), unicode:characters_to_binary(__D) end)()"""),
+    .Wasm(body: workingDirWasm),
 )]
 declare fn workingDir() -> string;
 
 #[compiler.external(
     .JavaScript("""require('fs').symlinkSync($0, $1)"""),
     .Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)"""),
+    .Wasm(body: linkToWasm),
 )]
 declare fn linkTo(target: string, link: string) -> void;
 
@@ -1825,6 +3011,64 @@ fn lift<T>(path: string, r: Result<T, HostError>) -> Result<T, FsError> {
     }
 }
 
+// `lift` for each answer type: the generic one is the wasm backend's to specialise, and a
+// `bytes` or a handle it does not (decision 992).
+fn liftBytes(path: string, r: Result<bytes, HostError>) -> Result<bytes, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftI32(path: string, r: Result<i32, HostError>) -> Result<i32, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftI64(path: string, r: Result<i64, HostError>) -> Result<i64, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftString(path: string, r: Result<string, HostError>) -> Result<string, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftStrings(path: string, r: Result<string[], HostError>) -> Result<string[], FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftStat(path: string, r: Result<FileStat, HostError>) -> Result<FileStat, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftWalked(path: string, r: Result<Walked, HostError>) -> Result<Walked, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
+fn liftHandle(path: string, r: Result<unknown, HostError>) -> Result<unknown, FsError> {
+    case r {
+        Ok(v) -> return v;
+        Error(e) -> throw fsError(path, e);
+    }
+}
+
 // The text of `b`, or `InvalidUtf8` at the first invalid byte.
 fn decode(path: string, b: bytes) -> Result<string, FsError> {
     val offset = utf8Offset(b);
@@ -1843,6 +3087,7 @@ type Walked(
 #[compiler.external(
     .JavaScript("""(($0).mem != null)"""),
     .Erlang("""(case $0 of {mem, _, _} -> true; _ -> false end)"""),
+    .Wasm(body: readOnlyWasm),
 )]
 declare fn rawReadOnly(handle: unknown) -> bool;
 
@@ -1850,7 +3095,7 @@ declare fn rawReadOnly(handle: unknown) -> bool;
 
 // The file's bytes.
 pub fn readBytes(path: string) -> Result<bytes, FsError> {
-    val b = try lift(path, rawReadBytes(path));
+    val b = try liftBytes(path, rawReadBytes(path));
     return b;
 }
 
@@ -1864,60 +3109,60 @@ pub fn readText(path: string) -> Result<string, FsError> {
 
 // Write `contents` to `path`, creating or truncating.
 pub fn writeBytes(path: string, contents: bytes) -> Result<i32, FsError> {
-    val n = try lift(path, rawWriteBytes(path, contents));
+    val n = try liftI32(path, rawWriteBytes(path, contents));
     return n;
 }
 
 pub fn writeText(path: string, contents: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawWriteText(path, contents));
+    val n = try liftI32(path, rawWriteText(path, contents));
     return n;
 }
 
 // Append `contents`, creating the file when it is not there.
 pub fn appendText(path: string, contents: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawAppendText(path, contents));
+    val n = try liftI32(path, rawAppendText(path, contents));
     return n;
 }
 
 // ── metadata and directories ─────────────────────────────────────────────────
 
 pub fn stat(path: string) -> Result<FileStat, FsError> {
-    val s = try lift(path, rawStat(path));
+    val s = try liftStat(path, rawStat(path));
     return s;
 }
 
 pub fn list(path: string) -> Result<string[], FsError> {
-    val names = try lift(path, rawList(path));
+    val names = try liftStrings(path, rawList(path));
     return names;
 }
 
 pub fn mkdir(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawMkdir(path));
+    val n = try liftI32(path, rawMkdir(path));
     return n;
 }
 
 pub fn mkdirRecursive(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawMkdirRecursive(path));
+    val n = try liftI32(path, rawMkdirRecursive(path));
     return n;
 }
 
 pub fn rm(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawRm(path));
+    val n = try liftI32(path, rawRm(path));
     return n;
 }
 
 pub fn removeTree(path: string) -> Result<i32, FsError> {
-    val n = try lift(path, rawRemoveTree(path));
+    val n = try liftI32(path, rawRemoveTree(path));
     return n;
 }
 
 pub fn copy(src: string, dest: string) -> Result<i32, FsError> {
-    val n = try lift(src, rawCopy(src, dest));
+    val n = try liftI32(src, rawCopy(src, dest));
     return n;
 }
 
 pub fn walk(root: string) -> Result<string[], FsError> {
-    val found = try lift(root, rawWalk(root));
+    val found = try liftWalked(root, rawWalk(root));
     if (found.dangling.length > 0) {
         val first = found.dangling.at(0) ?? "";
         throw FsError.Other(path: root, message: ["fs.walk: dangling link \"", first, "\""].join(""));
@@ -1933,6 +3178,7 @@ pub fn glob(pattern: string, root: string) -> Result<string[], FsError> {
 #[compiler.external(
     .JavaScript("""({ fd: -1, mem: $0, pos: 0, buf: new Uint8Array(0) })"""),
     .Erlang("""{mem, $0, counters:new(1, [])}"""),
+    .Wasm(body: memHandleWasm),
 )]
 declare fn memoryHandle(bytes: bytes) -> unknown;
 
@@ -1949,20 +3195,20 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
     // The file's size in bytes.
     pub fn size(self: Self) -> Result<i64, FsError> {
-        val n = try lift(self.location, rawSize(self.handle, self.location));
+        val n = try liftI64(self.location, rawSize(self.handle, self.location));
         return n;
     }
 
     // Up to `n` bytes from the position; empty at the end of the file.
     pub fn read(self: Self, n: i32) -> Result<bytes, FsError> {
         if (n <= 0) return bytes.fromUtf8("");
-        val b = try lift(self.location, rawRead(self.handle, n));
+        val b = try liftBytes(self.location, rawRead(self.handle, n));
         return b;
     }
 
     // Every byte from the position to the end.
     pub fn bytes(self: Self) -> Result<bytes, FsError> {
-        val b = try lift(self.location, rawReadAll(self.handle));
+        val b = try liftBytes(self.location, rawReadAll(self.handle));
         return b;
     }
 
@@ -1986,24 +3232,24 @@ pub type File(location: string, handle: unknown) implement Closeable {
     // UTF-8 ends the stream with `InvalidUtf8`, its offset counted from the first
     // line this call read.
     pub async iter fn lines(self: Self) -> AsyncIter<Result<string, FsError>> {
-        var consumed = 0l;
+        var consumed = 0;
         while (true) {
-            val raw = try lift(self.location, rawReadLine(self.handle));
+            val raw = try liftBytes(self.location, rawReadLine(self.handle));
             if (raw.length == 0) break;
             val line = stripEol(raw);
             val offset = utf8Offset(line);
             if (offset >= 0l)
-                throw FsError.InvalidUtf8(path: self.location, offset: consumed
+                throw FsError.InvalidUtf8(path: self.location, offset: consumed.toI64()
                     + offset);
             val width: i32 = raw.length;
-            consumed = consumed + width.toI64();
+            consumed = consumed + width;
             yield line.toUtf8().unwrapOr("");
         }
     }
 
     // The SHA-256 of the whole file, lowercase hex.
     pub fn hash(self: Self) -> Result<string, FsError> {
-        val h = try lift(self.location, rawHash(self.handle));
+        val h = try liftString(self.location, rawHash(self.handle));
         return h;
     }
 
@@ -2011,7 +3257,7 @@ pub type File(location: string, handle: unknown) implement Closeable {
     pub fn write(self: Self, b: bytes) -> Result<i32, FsError> {
         if (rawReadOnly(self.handle))
             throw FsError.Other(path: self.location, message: "the file is open for reading");
-        val n = try lift(self.location, rawWrite(self.handle, b));
+        val n = try liftI32(self.location, rawWrite(self.handle, b));
         return n;
     }
 
@@ -2023,13 +3269,13 @@ pub type File(location: string, handle: unknown) implement Closeable {
 
 // Open the file at `path` for reading. A directory is `IsDirectory` on every target.
 pub fn open(path: string) -> Result<File, FsError> {
-    val h = try lift(path, rawOpen(path));
+    val h = try liftHandle(path, rawOpen(path));
     return File(location: path, handle: h);
 }
 
 // Open the file at `path` for writing: created, or truncated.
 pub fn create(path: string) -> Result<File, FsError> {
-    val h = try lift(path, rawCreate(path));
+    val h = try liftHandle(path, rawCreate(path));
     return File(location: path, handle: h);
 }
 
@@ -2038,6 +3284,902 @@ pub fn create(path: string) -> Result<File, FsError> {
 // closing it is a no-op.
 pub fn openAsset(asset: Asset) -> File {
     return File(location: asset.path, handle: memoryHandle(asset.bytes));
+}
+
+// ── the wasm bodies (decision 992) ───────────────────────────────────────────
+// `io.fs` on wasm answers what it answers on commonJS, erlang and beam: the same functions
+// over the file system of the process, the same paths (a relative one is read against the
+// working directory, an absolute one as it is), the same answers and the same errors. The
+// host is `wasi:filesystem`, reached through std-wasm's leaves (`modules/std-wasm/wat/fs.wat`;
+// the `wasi…` declarations below), which the runner serves with the root and the working
+// directory preopened (`needs: [.Filesystem]`, no flag). A leaf answers a host failure as
+// `-(1 + code)`, `code` the ordinal of `wasi:filesystem`'s `error-code`, or as the `Error`
+// of a `Result<_, i32>` holding the code; `wasiError` writes it as Node's text
+// (`ENOENT: …`), which `fsError` reads as it reads every target's.
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.cwd", needs: [.Filesystem]),
+)]
+declare fn wasiCwd() -> string;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.getenv", needs: [.Filesystem]),
+)]
+declare fn wasiGetenv(name: string) -> string;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.open", needs: [.Filesystem]),
+)]
+declare fn wasiOpen(path: string, mode: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.openMem", needs: [.Filesystem]),
+)]
+declare fn wasiOpenMem(data: bytes) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.close", needs: [.Filesystem]),
+)]
+declare fn wasiClose(block: i32) -> void;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.isMem", needs: [.Filesystem]),
+)]
+declare fn wasiIsMem(block: i32) -> bool;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.tell", needs: [.Filesystem]),
+)]
+declare fn wasiTell(block: i32) -> i64;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.seek", needs: [.Filesystem]),
+)]
+declare fn wasiSeek(block: i32, position: i64) -> void;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.size", needs: [.Filesystem]),
+)]
+declare fn wasiSize(block: i32) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.sizeRaw", needs: [.Filesystem]),
+)]
+declare fn wasiSizeRaw(block: i32) -> i64;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.read", needs: [.Filesystem]),
+)]
+declare fn wasiRead(block: i32, n: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.readAll", needs: [.Filesystem]),
+)]
+declare fn wasiReadAll(block: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.readLine", needs: [.Filesystem]),
+)]
+declare fn wasiReadLine(block: i32) -> Result<bytes, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.write", needs: [.Filesystem]),
+)]
+declare fn wasiWrite(block: i32, data: bytes) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statKind", needs: [.Filesystem]),
+)]
+declare fn wasiStatKind(path: string, follow: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statSize", needs: [.Filesystem]),
+)]
+declare fn wasiStatSize(path: string) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.statMtime", needs: [.Filesystem]),
+)]
+declare fn wasiStatMtime(path: string) -> Result<i64, i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.list", needs: [.Filesystem]),
+)]
+declare fn wasiList(path: string) -> Result<string[], i32>;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.mkdir", needs: [.Filesystem]),
+)]
+declare fn wasiMkdir(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.rmdir", needs: [.Filesystem]),
+)]
+declare fn wasiRmdir(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.unlink", needs: [.Filesystem]),
+)]
+declare fn wasiUnlink(path: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "fs.symlink", needs: [.Filesystem]),
+)]
+declare fn wasiSymlink(target: string, link: string) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "bytes.at"),
+)]
+declare fn wasiByteAt(data: bytes, index: i32) -> i32;
+
+#[compiler.external(
+    .JavaScript("""(() => { throw new Error('io.fs: a cell of the wasm build') })()"""),
+    .Erlang("""erlang:error(wasm_only)"""),
+    .Wasm(std: "hash.sha256Hex"),
+)]
+declare fn wasiSha256(data: bytes) -> string;
+
+// The POSIX name of the host's error `code`, and its text.
+fn wasiName(code: i32) -> string {
+    val names = [
+        "EACCES", "EAGAIN", "EALREADY", "EBADF", "EBUSY", "EDEADLK", "EDQUOT", "EEXIST",
+        "EFBIG", "EILSEQ", "EINPROGRESS", "EINTR", "EINVAL", "EIO", "EISDIR", "ELOOP",
+        "EMLINK", "EMSGSIZE", "ENAMETOOLONG", "ENODEV", "ENOENT", "ENOLCK", "ENOMEM",
+        "ENOSPC", "ENOTDIR", "ENOTEMPTY", "ENOTRECOVERABLE", "ENOTSUP", "ENOTTY",
+        "ENXIO", "EOVERFLOW", "EPERM", "EPIPE", "EROFS", "ESPIPE", "ETXTBSY", "EXDEV",
+    ];
+    return names.at(code) ?? "EIO";
+}
+
+fn wasiText(code: i32) -> string {
+    val texts = [
+        "permission denied", "resource temporarily unavailable",
+        "connection already in progress", "bad file descriptor", "resource busy or locked",
+        "resource deadlock avoided", "disk quota exceeded", "file already exists",
+        "file too large", "illegal byte sequence", "operation in progress",
+        "interrupted system call", "invalid argument", "i/o error",
+        "illegal operation on a directory", "too many symbolic links encountered",
+        "too many links", "message too long", "name too long", "no such device",
+        "no such file or directory", "no locks available", "not enough memory",
+        "no space left on device", "not a directory", "directory not empty",
+        "state not recoverable", "operation not supported",
+        "inappropriate ioctl for device", "no such device or address",
+        "value too large for defined data type", "operation not permitted", "broken pipe",
+        "read-only file system", "invalid seek", "text file busy",
+        "cross-device link not permitted",
+    ];
+    return texts.at(code) ?? "i/o error";
+}
+
+// The `HostError` of the host's error `code`: `ENOENT: no such file or directory`.
+fn wasiError(code: i32) -> HostError {
+    return HostError(
+        message: wasiName(code) + ": " + wasiText(code),
+        kind: "host",
+        name: HostErrorName.Error,
+        detail: null,
+    );
+}
+
+// The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
+fn okBytes(r: Result<bytes, i32>) -> Result<bytes, HostError> {
+    case r {
+        Ok(b) -> return b;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+fn okStrings(r: Result<string[], i32>) -> Result<string[], HostError> {
+    case r {
+        Ok(xs) -> return xs;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+fn okSize(r: Result<i64, i32>) -> Result<i64, HostError> {
+    case r {
+        Ok(n) -> return n;
+        Error(code) -> throw wasiError(code);
+    }
+}
+
+// `path` without the slashes it begins with: the host reads a path relative to the root it preopens.
+fn withoutRoot(path: string) -> string {
+    var p = path;
+    while (p.startsWith("/")) {
+        p = p.slice(1);
+    }
+    return p;
+}
+
+// `name` inside `dir`, `dir` empty being the root.
+fn joinPath(dir: string, name: string) -> string {
+    if (dir == "") return name;
+    return dir + "/" + name;
+}
+
+// `path` as the host reads it: absolute, as it is; relative, from the working directory. The empty
+// path is no file (`ENOENT`), as it is on every target.
+fn resolve(path: string) -> Result<string, HostError> {
+    if (path == "") throw wasiError(20);
+    if (path.startsWith("/")) return withoutRoot(path);
+    val cwd = wasiCwd();
+    if (cwd == "" || cwd == "/") return path;
+    return withoutRoot(cwd + "/" + path);
+}
+
+// The file a handle holds: the handle block `rawOpen`, `rawCreate` and `memHandle` answered.
+fn blockOf(handle: unknown) -> i32 {
+    var block = 0;
+    if (handle is i32) {
+        val b: i32 = handle;
+        block = b;
+    }
+    return block;
+}
+
+// Whether `a` sorts before `b` by the bytes of their UTF-8 (string `<` is not a wasm GC operation).
+fn bytesBefore(a: string, b: string) -> bool {
+    val x = bytes.fromUtf8(a);
+    val y = bytes.fromUtf8(b);
+    val nx = x.length();
+    val ny = y.length();
+    var i = 0;
+    while (i < nx && i < ny) {
+        val cx = wasiByteAt(x, i);
+        val cy = wasiByteAt(y, i);
+        if (cx != cy) return cx < cy;
+        i = i + 1;
+    }
+    return nx < ny;
+}
+
+// The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
+fn sortedStrings(xs: array<string>) -> array<string> {
+    var out: array<string> = [];
+    var i = 0;
+    while (i < xs.length) {
+        val x = xs.at(i) ?? "";
+        i = i + 1;
+        var j = 0;
+        while (j < out.length && bytesBefore(out.at(j) ?? "", x)) {
+            j = j + 1;
+        }
+        if (j < out.length && (out.at(j) ?? "") == x) continue;
+        out = out.slice(0, j).append([x]).append(out.slice(j));
+    }
+    return out;
+}
+
+fn readBytesWasm(path: string) -> Result<bytes, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 0);
+    if (h < 0) throw wasiError(-1 - h);
+    val r = wasiReadAll(h);
+    wasiClose(h);
+    val b = try okBytes(r);
+    return b;
+}
+
+fn writeBytesWasm(path: string, contents: bytes) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 1);
+    if (h < 0) throw wasiError(-1 - h);
+    val n = wasiWrite(h, contents);
+    wasiClose(h);
+    if (n < 0) throw wasiError(-1 - n);
+    return 0;
+}
+
+fn writeTextWasm(path: string, contents: string) -> Result<i32, HostError> {
+    val n = try writeBytesWasm(path, bytes.fromUtf8(contents));
+    return n;
+}
+
+fn appendTextWasm(path: string, contents: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 2);
+    if (h < 0) throw wasiError(-1 - h);
+    val at = wasiSizeRaw(h);
+    if (at < 0l) {
+        wasiClose(h);
+        throw wasiError(13);
+    }
+    wasiSeek(h, at);
+    val n = wasiWrite(h, bytes.fromUtf8(contents));
+    wasiClose(h);
+    if (n < 0) throw wasiError(-1 - n);
+    return 0;
+}
+
+// The offset of the first byte that starts a sequence that is not UTF-8, `-1` when there is none.
+fn utf8OffsetWasm(data: bytes) -> i64 {
+    val n = data.length();
+    var i = 0;
+    while (i < n) {
+        val c = wasiByteAt(data, i);
+        if (c < 128) {
+            i = i + 1;
+            continue;
+        }
+        var k = 0;
+        if (c >= 194 && c <= 223) {
+            k = 1;
+        } else if (c >= 224 && c <= 239) {
+            k = 2;
+        } else if (c >= 240 && c <= 244) {
+            k = 3;
+        } else {
+            return i.toI64();
+        }
+        if (i + k >= n) return i.toI64();
+        var lo = 128;
+        var hi = 191;
+        if (c == 224) {
+            lo = 160;
+        } else if (c == 237) {
+            hi = 159;
+        } else if (c == 240) {
+            lo = 144;
+        } else if (c == 244) {
+            hi = 143;
+        }
+        val d = wasiByteAt(data, i + 1);
+        if (d < lo || d > hi) return i.toI64();
+        var j = 2;
+        while (j <= k) {
+            val e = wasiByteAt(data, i + j);
+            if (e < 128 || e > 191) return i.toI64();
+            j = j + 1;
+        }
+        i = i + k + 1;
+    }
+    return -1l;
+}
+
+fn stripEolWasm(line: bytes) -> bytes {
+    var n = line.length();
+    if (n > 0 && wasiByteAt(line, n - 1) == 10) {
+        n = n - 1;
+        if (n > 0 && wasiByteAt(line, n - 1) == 13) n = n - 1;
+    }
+    return line.slice(0, n);
+}
+
+fn openWasm(path: string) -> Result<unknown, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 0);
+    if (h < 0) throw wasiError(-1 - h);
+    val handle: unknown = h;
+    return handle;
+}
+
+fn createWasm(path: string) -> Result<unknown, HostError> {
+    val p = try resolve(path);
+    val h = wasiOpen(p, 1);
+    if (h < 0) throw wasiError(-1 - h);
+    val handle: unknown = h;
+    return handle;
+}
+
+fn memHandleWasm(data: bytes) -> unknown {
+    val handle: unknown = wasiOpenMem(data);
+    return handle;
+}
+
+fn sizeWasm(handle: unknown, path: string) -> Result<i64, HostError> {
+    val n = try okSize(wasiSize(blockOf(handle)));
+    return n;
+}
+
+fn readWasm(handle: unknown, n: i32) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiRead(blockOf(handle), n));
+    return b;
+}
+
+fn readAllWasm(handle: unknown) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiReadAll(blockOf(handle)));
+    return b;
+}
+
+fn readLineWasm(handle: unknown) -> Result<bytes, HostError> {
+    val b = try okBytes(wasiReadLine(blockOf(handle)));
+    return b;
+}
+
+// The SHA-256 of the whole file, the position where it was.
+fn hashWasm(handle: unknown) -> Result<string, HostError> {
+    val block = blockOf(handle);
+    val at = wasiTell(block);
+    wasiSeek(block, 0l);
+    val r = wasiReadAll(block);
+    wasiSeek(block, at);
+    val b = try okBytes(r);
+    return wasiSha256(b);
+}
+
+fn writeWasm(handle: unknown, data: bytes) -> Result<i32, HostError> {
+    val n = wasiWrite(blockOf(handle), data);
+    if (n < 0) throw wasiError(-1 - n);
+    return n;
+}
+
+fn closeWasm(handle: unknown) -> Result<i32, HostError> {
+    wasiClose(blockOf(handle));
+    return 0;
+}
+
+fn readOnlyWasm(handle: unknown) -> bool {
+    return wasiIsMem(blockOf(handle));
+}
+
+fn existsWasm(path: string) -> bool {
+    return case resolve(path) {
+        Ok(p) -> wasiStatKind(p, 1) >= 0;
+        Error(_) -> false;
+    };
+}
+
+fn listWasm(path: string) -> Result<string[], HostError> {
+    val p = try resolve(path);
+    val names = try okStrings(wasiList(p));
+    return sortedStrings(names);
+}
+
+fn mkdirWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val r = wasiMkdir(p);
+    if (r < 0) throw wasiError(-1 - r);
+    return 0;
+}
+
+// The directory and every missing one above it. One that is there is `Ok`; a file in the way is
+// `EEXIST` when it is the directory asked for, `ENOTDIR` when it is above it.
+fn mkdirRecursiveWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    var parts: array<string> = [];
+    val pieces = p.split("/");
+    var i = 0;
+    while (i < pieces.length) {
+        val piece = pieces.at(i) ?? "";
+        i = i + 1;
+        if (piece != "" && piece != ".") parts = parts.append([piece]);
+    }
+    var prefix = "";
+    var k = 0;
+    while (k < parts.length) {
+        prefix = joinPath(prefix, parts.at(k) ?? "");
+        k = k + 1;
+        val kind = wasiStatKind(prefix, 1);
+        if (kind == 3) continue;
+        if (kind >= 0) {
+            if (k == parts.length) throw wasiError(7);
+            throw wasiError(24);
+        }
+        val made = wasiMkdir(prefix);
+        if (made < 0) throw wasiError(-1 - made);
+    }
+    return 0;
+}
+
+// The FILE at `path`: a directory is `EISDIR`, whatever it holds.
+fn rmWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val kind = wasiStatKind(p, 0);
+    if (kind < 0) throw wasiError(-1 - kind);
+    if (kind == 3) throw wasiError(14);
+    val r = wasiUnlink(p);
+    if (r < 0) throw wasiError(-1 - r);
+    return 0;
+}
+
+fn copyWasm(src: string, dest: string) -> Result<i32, HostError> {
+    val contents = try readBytesWasm(src);
+    val written = try writeBytesWasm(dest, contents);
+    return 0;
+}
+
+fn statWasm(path: string) -> Result<FileStat, HostError> {
+    val p = try resolve(path);
+    val kind = wasiStatKind(p, 1);
+    if (kind < 0) throw wasiError(-1 - kind);
+    val size = try okSize(wasiStatSize(p));
+    val seconds = try okSize(wasiStatMtime(p));
+    return FileStat(size: size, mtime: seconds * 1000l, isDir: kind == 3);
+}
+
+// The regular files under `root` and the links whose target is missing, as paths relative to it, in
+// directory order: a work list of directories, not a recursion (a recursive `try` is not lowered on wasm).
+fn walkWasm(root: string) -> Result<Walked, HostError> {
+    val p = try resolve(root);
+    val kind = wasiStatKind(p, 1);
+    if (kind < 0) throw wasiError(-1 - kind);
+    if (kind != 3) throw wasiError(24);
+    var dirs: array<string> = [p];
+    var rels: array<string> = [""];
+    var files: array<string> = [];
+    var dangling: array<string> = [];
+    var next = 0;
+    while (next < dirs.length) {
+        val dir = dirs.at(next) ?? "";
+        val rel = rels.at(next) ?? "";
+        next = next + 1;
+        val names = try okStrings(wasiList(dir));
+        var i = 0;
+        while (i < names.length) {
+            val name = names.at(i) ?? "";
+            i = i + 1;
+            val full = joinPath(dir, name);
+            val sub = joinPath(rel, name);
+            val entry = wasiStatKind(full, 1);
+            if (entry < 0 && entry != -21) throw wasiError(-1 - entry);
+            if (entry == 3) {
+                dirs = dirs.append([full]);
+                rels = rels.append([sub]);
+            }
+            if (entry == 6) files = files.append([sub]);
+            if (entry == -21) dangling = dangling.append([sub]);
+        }
+    }
+    return Walked(files: sortedStrings(files), dangling: sortedStrings(dangling));
+}
+
+// Whether the segment holds a wildcard.
+fn isMagic(seg: string) -> bool {
+    return seg.contains("*") || seg.contains("?") || seg.contains("[") || seg.contains("{");
+}
+
+// A segment with its `{a,b}` alternatives written out, nested ones too; one that is never closed is a name.
+fn expandBraces(seg: string) -> array<string> {
+    val cs = seg.chars();
+    var open = -1;
+    var i = 0;
+    while (i < cs.length) {
+        if ((cs.at(i) ?? "") == "{") {
+            open = i;
+            break;
+        }
+        i = i + 1;
+    }
+    if (open < 0) return [seg];
+    var depth = 0;
+    var close = -1;
+    var cuts: array<i32> = [];
+    var j = open;
+    var closed = false;
+    while (j < cs.length && !closed) {
+        val c = cs.at(j) ?? "";
+        // Separate `if`s, not an `else if` chain: wasm's GC lowering refuses
+        // an `if` nesting one beside an `else if` that appends (B-170).
+        if (c == "{") depth = depth + 1;
+        if (c == "}") depth = depth - 1;
+        if (c == "}" && depth == 0) {
+            close = j;
+            closed = true;
+        }
+        if (c == "," && depth == 1) cuts = cuts.append([j]);
+        j = j + 1;
+    }
+    if (close < 0) return [seg];
+    val head = cs.slice(0, open).join("");
+    val tail = cs.slice(close + 1).join("");
+    var out: array<string> = [];
+    var start = open + 1;
+    var k = 0;
+    while (k <= cuts.length) {
+        var stop = close;
+        if (k < cuts.length) stop = cuts.at(k) ?? close;
+        val alt = cs.slice(start, stop).join("");
+        out = out.append(expandBraces(head + alt + tail));
+        start = stop + 1;
+        k = k + 1;
+    }
+    return out;
+}
+
+// The `]` that closes the class opened at `at`, `-1` when there is none (the `[` is then a name).
+fn classEnd(pat: array<string>, at: i32) -> i32 {
+    var j = at + 1;
+    if (j < pat.length && ((pat.at(j) ?? "") == "!" || (pat.at(j) ?? "") == "^")) j = j + 1;
+    if (j < pat.length && (pat.at(j) ?? "") == "]") j = j + 1;
+    while (j < pat.length) {
+        if ((pat.at(j) ?? "") == "]") return j;
+        j = j + 1;
+    }
+    return -1;
+}
+
+// Whether `ch` is in the class written between `first` and `stop` (`!` or `^` first negates it, `a-z` is a range).
+fn classHas(pat: array<string>, first: i32, stop: i32, ch: string) -> bool {
+    var i = first;
+    var negate = false;
+    if (i < stop && ((pat.at(i) ?? "") == "!" || (pat.at(i) ?? "") == "^")) {
+        negate = true;
+        i = i + 1;
+    }
+    var found = false;
+    while (i < stop) {
+        val lo = pat.at(i) ?? "";
+        if (i + 2 < stop && (pat.at(i + 1) ?? "") == "-") {
+            val hi = pat.at(i + 2) ?? "";
+            // By code point: a class range is one character each side, and
+            // wasm lowers no ordering of strings (B-170).
+            val c = ch.charCodeAt(0);
+            if (lo.charCodeAt(0) <= c && c <= hi.charCodeAt(0)) found = true;
+            i = i + 3;
+        } else {
+            if (lo == ch) found = true;
+            i = i + 1;
+        }
+    }
+    return found != negate;
+}
+
+// `name` against one pattern without braces: `*`, `?`, `[…]`.
+fn globMatch(pat: array<string>, begin: i32, name: array<string>, offset: i32) -> bool {
+    var p = begin;
+    var n = offset;
+    while (p < pat.length) {
+        val c = pat.at(p) ?? "";
+        if (c == "*") {
+            while (p < pat.length && (pat.at(p) ?? "") == "*") {
+                p = p + 1;
+            }
+            if (p == pat.length) return true;
+            var k = n;
+            while (k <= name.length) {
+                if (globMatch(pat, p, name, k)) return true;
+                k = k + 1;
+            }
+            return false;
+        }
+        if (n >= name.length) return false;
+        val ch = name.at(n) ?? "";
+        if (c == "?") {
+            p = p + 1;
+            n = n + 1;
+        } else if (c == "[") {
+            val end = classEnd(pat, p);
+            if (end < 0) {
+                if (ch != "[") return false;
+                p = p + 1;
+                n = n + 1;
+            } else {
+                if (!classHas(pat, p + 1, end, ch)) return false;
+                p = end + 1;
+                n = n + 1;
+            }
+        } else {
+            if (c != ch) return false;
+            p = p + 1;
+            n = n + 1;
+        }
+    }
+    return n == name.length;
+}
+
+fn segmentMatches(seg: string, name: string) -> bool {
+    val alts = expandBraces(seg);
+    val chars = name.chars();
+    var i = 0;
+    while (i < alts.length) {
+        if (globMatch((alts.at(i) ?? "").chars(), 0, chars, 0)) return true;
+        i = i + 1;
+    }
+    return false;
+}
+
+// The names in `dir` the segment matches; a dot name only when the segment itself begins with the dot.
+fn globNames(dir: string, seg: string) -> array<string> {
+    val listed: array<string> = case wasiList(dir) {
+        Ok(xs) -> xs;
+        Error(_) -> [];
+    };
+    var out: array<string> = [];
+    var i = 0;
+    while (i < listed.length) {
+        val name = listed.at(i) ?? "";
+        i = i + 1;
+        if (name.startsWith(".") && !seg.startsWith(".")) continue;
+        if (seg == "*" || segmentMatches(seg, name)) out = out.append([name]);
+    }
+    return out;
+}
+
+// The entries `segs` from `i` match under `dir` (`rel` its path from the root of the glob), added to `out`. A
+// wildcard continues into real directories only; a name goes through a link.
+fn globWalk(segs: array<string>, i: i32, dir: string, rel: string, out: array<string>) -> array<string> {
+    var acc = out;
+    if (i == segs.length) {
+        if (rel != "") acc = acc.append([rel]);
+        return acc;
+    }
+    val seg = segs.at(i) ?? "";
+    val last = i == segs.length - 1;
+    if (seg == "**") {
+        if (!last) acc = globWalk(segs, i + 1, dir, rel, acc);
+        val names = globNames(dir, "*");
+        var k = 0;
+        while (k < names.length) {
+            val name = names.at(k) ?? "";
+            k = k + 1;
+            val full = joinPath(dir, name);
+            val sub = joinPath(rel, name);
+            if (last) acc = acc.append([sub]);
+            if (wasiStatKind(full, 0) == 3) acc = globWalk(segs, i, full, sub, acc);
+        }
+        return acc;
+    }
+    if (!isMagic(seg)) {
+        val full = joinPath(dir, seg);
+        val sub = joinPath(rel, seg);
+        if (last) {
+            if (wasiStatKind(full, 0) >= 0) acc = acc.append([sub]);
+        } else if (wasiStatKind(full, 1) == 3) {
+            acc = globWalk(segs, i + 1, full, sub, acc);
+        }
+        return acc;
+    }
+    val names = globNames(dir, seg);
+    var k = 0;
+    while (k < names.length) {
+        val name = names.at(k) ?? "";
+        k = k + 1;
+        val full = joinPath(dir, name);
+        val sub = joinPath(rel, name);
+        if (last) {
+            acc = acc.append([sub]);
+        } else if (wasiStatKind(full, 0) == 3) {
+            acc = globWalk(segs, i + 1, full, sub, acc);
+        }
+    }
+    return acc;
+}
+
+fn globWasm(pattern: string, root: string) -> string[] {
+    val resolved = resolve(root);
+    if (resolved.isError()) return [];
+    val base = resolved.unwrapOr("");
+    var segs: array<string> = [];
+    val pieces = pattern.split("/");
+    var i = 0;
+    while (i < pieces.length) {
+        val piece = pieces.at(i) ?? "";
+        i = i + 1;
+        if (piece != "" && piece != ".") segs = segs.append([piece]);
+    }
+    val found = globWalk(segs, 0, base, "", []);
+    var kept: array<string> = [];
+    var k = 0;
+    while (k < found.length) {
+        val entry = found.at(k) ?? "";
+        k = k + 1;
+        if (!pattern.endsWith("/") || wasiStatKind(joinPath(base, entry), 0) == 3) kept = kept.append([entry]);
+    }
+    return sortedStrings(kept);
+}
+
+// A path that is not there is `Ok`: the caller wanted it gone. A link is removed, never followed. The
+// directories are found first, then the files removed, then the directories from the deepest.
+fn removeTreeWasm(path: string) -> Result<i32, HostError> {
+    val p = try resolve(path);
+    val top = wasiStatKind(p, 0);
+    if (top == -21) return 0;
+    if (top < 0) throw wasiError(-1 - top);
+    if (top != 3) {
+        val r = wasiUnlink(p);
+        if (r < 0) throw wasiError(-1 - r);
+        return 0;
+    }
+    var dirs: array<string> = [p];
+    var next = 0;
+    while (next < dirs.length) {
+        val dir = dirs.at(next) ?? "";
+        next = next + 1;
+        val names = try okStrings(wasiList(dir));
+        var i = 0;
+        while (i < names.length) {
+            val full = joinPath(dir, names.at(i) ?? "");
+            i = i + 1;
+            val kind = wasiStatKind(full, 0);
+            if (kind < 0 && kind != -21) throw wasiError(-1 - kind);
+            if (kind == 3) dirs = dirs.append([full]);
+            if (kind >= 0 && kind != 3) {
+                val r = wasiUnlink(full);
+                if (r < 0) throw wasiError(-1 - r);
+            }
+        }
+    }
+    var k = dirs.length;
+    while (k > 0) {
+        k = k - 1;
+        val r = wasiRmdir(dirs.at(k) ?? "");
+        if (r < 0) throw wasiError(-1 - r);
+    }
+    return 0;
+}
+
+// A fresh, unique, empty directory under the host's temporary directory.
+fn scratchDirWasm() -> string {
+    var base = wasiGetenv("TMPDIR");
+    if (base == "") base = "/tmp";
+    var attempt = 0;
+    while (attempt < 100) {
+        val dir = base + "/bp-std-fs-" + random.randomBytes(6);
+        if (wasiMkdir(withoutRoot(dir)) == 0) return dir;
+        attempt = attempt + 1;
+    }
+    failure.panic("io.fs: no scratch directory could be made");
+    return base;
+}
+
+fn workingDirWasm() -> string {
+    val cwd = wasiCwd();
+    if (cwd == "") return "/";
+    return cwd;
+}
+
+fn linkToWasm(target: string, link: string) -> void {
+    val l = resolve(link);
+    if (l.isError()) failure.panic("io.fs: no link path");
+    val r = wasiSymlink(target, l.unwrapOr(""));
+    if (r < 0) failure.panic(wasiError(-1 - r).message);
+    return;
+}
+
+// A host without `chmod` denies this user nothing: the permission tests have nothing to check there.
+fn denyAllWasm(path: string) -> bool {
+    return false;
+}
+
+fn allowAllWasm(path: string) -> void {
+    return;
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -2453,12 +4595,14 @@ test "fs.File's hash leaves the position where it was" {
 #[compiler.external(
     .JavaScript("""(() => { require('fs').chmodSync($0, 0); return typeof process.getuid === 'function' ? process.getuid() !== 0 : false })()"""),
     .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 0), string:trim(os:cmd("id -u")) =/= "0" end)($0)"""),
+    .Wasm(body: denyAllWasm),
 )]
 declare fn denyAll(path: string) -> bool;
 
 #[compiler.external(
     .JavaScript("""require('fs').chmodSync($0, 0o700)"""),
     .Erlang("""(fun(__P) -> ok = file:change_mode(__P, 8#700), ok end)($0)"""),
+    .Wasm(body: allowAllWasm),
 )]
 declare fn allowAll(path: string) -> void;
 
@@ -2483,7 +4627,49 @@ test "fs answers PermissionDenied for an OS permission error" {
 
 ----- JAVASCRIPT -- std/io/fs.js
 ```javascript
+const __bp_surrogate = /[\uD800-\uDFFF]/;
+const __bp_surrogate_k = new Array(64).fill("");
+const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
+function __bp_has_surrogate(s) {
+    const h = s.length & 63;
+    if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
+    const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
+    __bp_surrogate_k[h] = s;
+    __bp_surrogate_v[h] = p;
+    return p;
+}
+
+function __bp_str_count(s, u) {
+    let n = 0;
+    for (const c of s.substring(0, u)) { n += 1; }
+    return n;
+}
+
+function __bp_str_index_of(s, sub) {
+    const u = s.indexOf(sub);
+    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+}
+
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
+
+function __bp_eq(a, b, d) {
+    if (Object.is(a, b)) {
+        return true;
+    }
+    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+    }
+    const k = Object.keys(a);
+    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+}
 
 function __bp_f64(v) {
     if (Number.isNaN(v)) { return "NaN"; }
@@ -2580,6 +4766,8 @@ function __bp_host_result(F, f) {
 
 function __bp_adopt(v, C, p) { return (v == null) ? v : (p === "") ? ((typeof v === "object" && !(v instanceof C)) ? Object.assign(Object.create(C.prototype), v) : v) : (p[0] === "a") ? (Array.isArray(v) ? v.map((e) => __bp_adopt(e, C, p.slice(1))) : v) : (p[0] === "r" && typeof v === "object" && "ok" in v) ? { ok: __bp_adopt(v.ok, C, p.slice(1)) } : v; }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw Object.defineProperty(new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what), "__bp_panic", { value: true }); }
+
 function __bp_wnorm(v, u, what) {
     if (u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)) { throw Object.defineProperty(new Error("integer overflow: " + what), "__bp_panic", { value: true }); }
     return (v >= -9007199254740991n && v <= 9007199254740991n) ? Number(v) : v;
@@ -2589,6 +4777,78 @@ function __bp_wadd(a, b, u, what) {
     if (typeof a === "number" && typeof b === "number") { const r = a + b + 0; if (Number.isSafeInteger(r) && (r >= 0 || !u)) { return r; } }
     return __bp_wnorm(BigInt(a) + BigInt(b), u, what);
 }
+
+function __bp_wmul(a, b, u, what) {
+    if (typeof a === "number" && typeof b === "number") { const r = a * b + 0; if (Number.isSafeInteger(r) && (r >= 0 || !u)) { return r; } }
+    return __bp_wnorm(BigInt(a) * BigInt(b), u, what);
+}
+
+// behavior string
+//   fn length(...)
+//   fn split(...)
+//   fn toUpper(...)
+//   fn toLower(...)
+//   fn contains(...)
+//   fn startsWith(...)
+//   fn endsWith(...)
+//   fn trim(...)
+//   fn trimStart(...)
+//   fn trimEnd(...)
+//   fn replace(...)
+//   default fn slice(...)
+//   fn at(...)
+//   fn indexOf(...)
+//   default fn toString(...)
+//   fn fromCodepoint(...)
+//   fn padStart(...)
+//   fn padEnd(...)
+//   fn repeat(...)
+//   fn replaceAll(...)
+//   fn chars(...)
+//   fn lines(...)
+//   fn words(...)
+//   fn normalizeNewlines(...)
+//   fn trimTrailingNewlines(...)
+//   fn firstDifferingLine(...)
+//   fn charCodeAt(...)
+//   fn lastIndexOf(...)
+//   default fn parseInt(...)
+//   default fn parseFloat(...)
+String.prototype.slice = function(start, end) {
+    const self = this.valueOf();
+    if ((end != null)) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
+};
+String.prototype.chars = function() { return (Array.from(this.valueOf())); };
+String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
+String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
+String.prototype.normalizeNewlines = function() { return this.valueOf().replaceAll("\r\n", "\n"); };
+String.prototype.trimTrailingNewlines = function() { return this.valueOf().replace(/\n+$/, ""); };
+String.prototype.firstDifferingLine = function(other) { return ((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })(this.valueOf(), other); };
+String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
+String.prototype.parseInt = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const digits = (() => { if (signed) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
+    return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: 'parseInt: "' + self + '" is not an integer' }); } })();
+};
+String.prototype.parseFloat = function() {
+    const self = this.valueOf();
+    const signed = (self.startsWith("-") || self.startsWith("+"));
+    const start = (() => { if (signed) { return 1; } else { return 0; } })();
+    const lowerAt = __bp_str_index_of(self, "e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return __bp_str_index_of(self, "E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = __bp_str_index_of(self, ".");
+    const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
+    const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
+    return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: 'parseFloat: "' + self + '" is not a number' }); } })();
+};
 
 // behavior bool
 //   fn toString(...)
@@ -2616,6 +4876,155 @@ Boolean.prototype.exclusiveOr = function(other) {
 Boolean.prototype.exclusiveNor = function(other) {
     const self = this.valueOf();
     return (self === other);
+};
+
+// behavior array
+//   length: i32
+//   fn at(...)
+//   fn push(...)
+//   fn pop(...)
+//   default fn slice(...)
+//   fn join(...)
+//   fn reverse(...)
+//   fn indexOf(...)
+//   default fn lastIndexOf(...)
+//   fn forEach(...)
+//   fn map(...)
+//   fn filter(...)
+//   fn zip(...)
+//   fn range(...)
+//   fn repeat(...)
+//   default fn isEmpty(...)
+//   default fn contains(...)
+//   default fn first(...)
+//   default fn rest(...)
+//   default fn take(...)
+//   default fn drop(...)
+//   default fn fold(...)
+//   default fn find(...)
+//   default fn count(...)
+//   default fn all(...)
+//   default fn any(...)
+//   default fn append(...)
+//   default fn prepend(...)
+//   default fn flatten(...)
+//   default fn flatMap(...)
+//   default fn toList(...)
+//   default fn some(...)
+//   default fn every(...)
+//   default fn flat(...)
+//   default fn findIndex(...)
+//   default fn fill(...)
+//   default fn chunked(...)
+//   default fn sliding(...)
+//   default fn unique(...)
+Array.range = function(start, stop) { return ((__a, __b) => Array.from({ length: Math.max(0, __b - __a) }, (_, __i) => __a + __i))(start, stop); };
+Array.repeat = function(value, times) { return ((__v, __n) => Array.from({ length: Math.max(0, __n) }, () => __v))(value, times); };
+Array.prototype.slice = function(start, end) {
+    if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); }
+};
+Array.prototype.indexOf = function(item) { return this.findIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.lastIndexOf = function(item) { return this.findLastIndex((__e) => __bp_eq(__e, item, 0)); };
+Array.prototype.zip = function(other) { return this.map((__x, __i) => [__x, (other)[__i]]).slice(0, Math.min(this.length, (other).length)); };
+Array.prototype.isEmpty = function() {
+    return (this.length === 0);
+};
+Array.prototype.contains = function(x) {
+    return (this.indexOf(x) !== (-1));
+};
+Array.prototype.first = function() {
+    return __bp_array_at(this, 0);
+};
+Array.prototype.rest = function() {
+    return this.slice(1, this.length);
+};
+Array.prototype.take = function(n) {
+    return this.slice(0, n);
+};
+Array.prototype.drop = function(n) {
+    return this.slice(n, this.length);
+};
+Array.prototype.fold = function(initial, f) {
+    let acc = initial;
+    this.forEach((x) => {
+    acc = f(acc, x);
+});
+    return acc;
+};
+Array.prototype.count = function(pred) {
+    return this.filter(pred).length;
+};
+Array.prototype.all = function(pred) {
+    return (this.filter(pred).length === this.length);
+};
+Array.prototype.any = function(pred) {
+    return (this.filter(pred).length !== 0);
+};
+Array.prototype.prepend = function(item) {
+    let out = [item];
+    this.forEach((x) => {
+    return out.push(x);
+});
+    return out;
+};
+Array.prototype.flatten = function() {
+    let out = [];
+    this.forEach((inner) => {
+    out = out.concat(inner);
+});
+    return out;
+};
+Array.prototype.toList = function() {
+    return this;
+};
+Array.prototype.some = function(pred) {
+    return this.any(pred);
+};
+Array.prototype.every = function(pred) {
+    return this.all(pred);
+};
+Array.prototype.flat = function() {
+    return this.flatten();
+};
+Array.prototype.findIndex = function(pred) {
+    let out = (-1);
+    let i = 0;
+    this.forEach((x) => {
+    (() => { if ((out === (-1))) { return (() => { if (pred(x)) { return out = i; } })(); } })();
+    i = (i + 1);
+});
+    return out;
+};
+Array.prototype.fill = function(value) {
+    return Array.repeat(value, this.length);
+};
+Array.prototype.chunked = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const len = this.length;
+    for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
+    (() => { if ((((k % n) + 0) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
+}
+    return out;
+};
+Array.prototype.sliding = function(n) {
+    let out = [];
+    if ((n <= 0)) { return out; }
+    const windows = ((this.length - n) + 1);
+    if ((windows <= 0)) { return out; }
+    for (const k of Array.from({length: Math.max(0, (windows) - (0))}, (_, __i) => (0) + __i)) {
+    out = out.concat([this.slice(k, (k + n))]);
+}
+    return out;
+};
+Array.prototype.unique = function() {
+    let out = [];
+    this.forEach((x) => {
+    return (() => { if ((!out.any((y) => {
+    return __bp_eq(y, x, 0);
+}))) { return out = out.concat([x]); } })();
+});
+    return out;
 };
 
 // behavior bytes
@@ -2695,12 +5104,15 @@ BigInt.prototype.toF64 = Number.prototype.toF64 = function() { return ((__v) => 
 
 //// (decision 486); no cell catches by hand. All operations are synchronous
 
-//// (`*Sync` on Node, blocking BIFs on Erlang); there is no wasm binding here
+//// (`*Sync` on Node, blocking BIFs on Erlang, `wasi:filesystem` on wasm: the runner
 
-//// (front 164: `wasi:filesystem` behind `needs: [.Filesystem]`).
+//// preopens the root and the working directory, decision 992), and a path is read as
 
+//// the process reads it — a relative one against the working directory — on every target.
+
+const random = require("../../std/io/random.js");
 const { relative } = require("../../std/path.js");
-const { HostError } = require("../../std/failure.js");
+const { HostError, HostErrorName } = require("../../std/failure.js");
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 
@@ -2994,7 +5406,11 @@ exports.exists = exists;
 
 // Node: `require('fs').readdirSync($0)`.
 
-// Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+// Erlang: `file:list_dir/1` returns `{ok, [string()]}`, in the directory's
+
+// order: sorted here by bytes (`lists:sort` on binaries), as `readdirSync` and
+
+// wasm's `listWasm` answer them, so every target lists one order (decision 992).
 
 function rawList(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { return require('fs').readdirSync(path) })()); }
 
@@ -3220,6 +5636,138 @@ function lift(path, r) {
     if (_case0 && _case0.__bp_return) return _case0.value;
 }
 
+// `lift` for each answer type: the generic one is the wasm backend's to specialise, and a
+
+// `bytes` or a handle it does not (decision 992).
+
+function liftBytes(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftI32(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftI64(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftString(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftStrings(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftStat(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftWalked(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function liftHandle(path, r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const v = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: v }) });
+        }
+        if ("error" in _s) {
+            const e = _s.error;
+            return ({ __bp_return: true, value: ({ error: fsError(path, e) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
 // The text of `b`, or `InvalidUtf8` at the first invalid byte.
 
 function decode(path, b) {
@@ -3249,7 +5797,7 @@ Walked.prototype.__bp = "Walked";
 // The file's bytes.
 
 function readBytes(path) {
-    const _try0 = lift(path, rawReadBytes(path));
+    const _try0 = liftBytes(path, rawReadBytes(path));
     if ("error" in _try0) return _try0;
     const b = _try0.ok;
     return ({ ok: b });
@@ -3274,7 +5822,7 @@ exports.readText = readText;
 // Write `contents` to `path`, creating or truncating.
 
 function writeBytes(path, contents) {
-    const _try0 = lift(path, rawWriteBytes(path, contents));
+    const _try0 = liftI32(path, rawWriteBytes(path, contents));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3282,7 +5830,7 @@ function writeBytes(path, contents) {
 exports.writeBytes = writeBytes;
 
 function writeText(path, contents) {
-    const _try0 = lift(path, rawWriteText(path, contents));
+    const _try0 = liftI32(path, rawWriteText(path, contents));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3292,7 +5840,7 @@ exports.writeText = writeText;
 // Append `contents`, creating the file when it is not there.
 
 function appendText(path, contents) {
-    const _try0 = lift(path, rawAppendText(path, contents));
+    const _try0 = liftI32(path, rawAppendText(path, contents));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3302,7 +5850,7 @@ exports.appendText = appendText;
 // ── metadata and directories ─────────────────────────────────────────────────
 
 function stat(path) {
-    const _try0 = lift(path, rawStat(path));
+    const _try0 = liftStat(path, rawStat(path));
     if ("error" in _try0) return _try0;
     const s = _try0.ok;
     return ({ ok: s });
@@ -3310,7 +5858,7 @@ function stat(path) {
 exports.stat = stat;
 
 function list(path) {
-    const _try0 = lift(path, rawList(path));
+    const _try0 = liftStrings(path, rawList(path));
     if ("error" in _try0) return _try0;
     const names = _try0.ok;
     return ({ ok: names });
@@ -3318,7 +5866,7 @@ function list(path) {
 exports.list = list;
 
 function mkdir(path) {
-    const _try0 = lift(path, rawMkdir(path));
+    const _try0 = liftI32(path, rawMkdir(path));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3326,7 +5874,7 @@ function mkdir(path) {
 exports.mkdir = mkdir;
 
 function mkdirRecursive(path) {
-    const _try0 = lift(path, rawMkdirRecursive(path));
+    const _try0 = liftI32(path, rawMkdirRecursive(path));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3334,7 +5882,7 @@ function mkdirRecursive(path) {
 exports.mkdirRecursive = mkdirRecursive;
 
 function rm(path) {
-    const _try0 = lift(path, rawRm(path));
+    const _try0 = liftI32(path, rawRm(path));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3342,7 +5890,7 @@ function rm(path) {
 exports.rm = rm;
 
 function removeTree(path) {
-    const _try0 = lift(path, rawRemoveTree(path));
+    const _try0 = liftI32(path, rawRemoveTree(path));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3350,7 +5898,7 @@ function removeTree(path) {
 exports.removeTree = removeTree;
 
 function copy(src, dest) {
-    const _try0 = lift(src, rawCopy(src, dest));
+    const _try0 = liftI32(src, rawCopy(src, dest));
     if ("error" in _try0) return _try0;
     const n = _try0.ok;
     return ({ ok: n });
@@ -3358,7 +5906,7 @@ function copy(src, dest) {
 exports.copy = copy;
 
 function walk(root) {
-    const _try0 = lift(root, rawWalk(root));
+    const _try0 = liftWalked(root, rawWalk(root));
     if ("error" in _try0) return _try0;
     const found = _try0.ok;
     if ((found.dangling.length > 0)) { const first = (() => { const __bp_nullish = __bp_array_at(found.dangling, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })(); return ({ error: FsError.Other(root, ["fs.walk: dangling link \"", first, "\""].join("")) }); }
@@ -3394,7 +5942,7 @@ class File {
     }
 
     size() {
-        const _try0 = lift(this.location, rawSize(this.handle, this.location));
+        const _try0 = liftI64(this.location, rawSize(this.handle, this.location));
         if ("error" in _try0) return _try0;
         const n = _try0.ok;
         return ({ ok: n });
@@ -3402,14 +5950,14 @@ class File {
 
     read(n) {
         if ((n <= 0)) { return ({ ok: (new TextEncoder().encode("")) }); }
-        const _try1 = lift(this.location, rawRead(this.handle, n));
+        const _try1 = liftBytes(this.location, rawRead(this.handle, n));
         if ("error" in _try1) return _try1;
         const b = _try1.ok;
         return ({ ok: b });
     }
 
     bytes() {
-        const _try2 = lift(this.location, rawReadAll(this.handle));
+        const _try2 = liftBytes(this.location, rawReadAll(this.handle));
         if ("error" in _try2) return _try2;
         const b = _try2.ok;
         return ({ ok: b });
@@ -3438,21 +5986,21 @@ class File {
     async *lines() {
         let consumed = 0;
         while (true) {
-    const _try6 = lift(this.location, rawReadLine(this.handle));
+    const _try6 = liftBytes(this.location, rawReadLine(this.handle));
         if ("error" in _try6) { yield _try6; return; }
         const raw = _try6.ok;
     if ((raw.length === 0)) { break; }
     const line = ((__b) => { let __n = __b.length; if (__n > 0 && __b[__n - 1] === 10) { __n--; if (__n > 0 && __b[__n - 1] === 13) __n-- } return __b.subarray(0, __n) })(raw);
     const offset = ((__b) => { const __n = __b.length; let __i = 0; while (__i < __n) { const __c = __b[__i]; if (__c < 128) { __i++; continue } let __k; if (__c >= 194 && __c <= 223) __k = 1; else if (__c >= 224 && __c <= 239) __k = 2; else if (__c >= 240 && __c <= 244) __k = 3; else return __i; if (__i + __k >= __n) return __i; let __lo = 128, __hi = 191; if (__c === 224) __lo = 160; else if (__c === 237) __hi = 159; else if (__c === 240) __lo = 144; else if (__c === 244) __hi = 143; const __d = __b[__i + 1]; if (__d < __lo || __d > __hi) return __i; for (let __j = 2; __j <= __k; __j++) { const __e = __b[__i + __j]; if (__e < 128 || __e > 191) return __i } __i += __k + 1 } return -1 })(line);
-    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed, offset, 0, "+ on i64 at src/io/fs.bp:561:21")) }); return; }
+    if ((offset >= 0)) { yield ({ error: FsError.InvalidUtf8(this.location, __bp_wadd(consumed.toI64(), offset, 0, "+ on i64 at src/io/fs.bp:653:21")) }); return; }
     const width = raw.length;
-    consumed = __bp_wadd(consumed, width.toI64(), 0, "+ on i64 at src/io/fs.bp:563:33");
+    consumed = __bp_int((consumed + width), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:655:33");
     yield ({ ok: ((_r) => "error" in _r ? ("") : _r.ok)(line.toUtf8()) });
 }
     }
 
     hash() {
-        const _try7 = lift(this.location, rawHash(this.handle));
+        const _try7 = liftString(this.location, rawHash(this.handle));
         if ("error" in _try7) return _try7;
         const h = _try7.ok;
         return ({ ok: h });
@@ -3460,7 +6008,7 @@ class File {
 
     write(b) {
         if (((this.handle).mem != null)) { return ({ error: FsError.Other(this.location, "the file is open for reading") }); }
-        const _try8 = lift(this.location, rawWrite(this.handle, b));
+        const _try8 = liftI32(this.location, rawWrite(this.handle, b));
         if ("error" in _try8) return _try8;
         const n = _try8.ok;
         return ({ ok: n });
@@ -3477,7 +6025,7 @@ exports.File = File;
 // Open the file at `path` for reading. A directory is `IsDirectory` on every target.
 
 function open(path) {
-    const _try0 = lift(path, rawOpen(path));
+    const _try0 = liftHandle(path, rawOpen(path));
     if ("error" in _try0) return _try0;
     const h = _try0.ok;
     return ({ ok: new File(path, h) });
@@ -3487,7 +6035,7 @@ exports.open = open;
 // Open the file at `path` for writing: created, or truncated.
 
 function create(path) {
-    const _try0 = lift(path, rawCreate(path));
+    const _try0 = liftHandle(path, rawCreate(path));
     if ("error" in _try0) return _try0;
     const h = _try0.ok;
     return ({ ok: new File(path, h) });
@@ -3504,6 +6052,781 @@ function openAsset(asset) {
     return new File(asset.path, ({ fd: -1, mem: asset.bytes, pos: 0, buf: new Uint8Array(0) }));
 }
 exports.openAsset = openAsset;
+
+// ── the wasm bodies (decision 992) ───────────────────────────────────────────
+
+// `io.fs` on wasm answers what it answers on commonJS, erlang and beam: the same functions
+
+// over the file system of the process, the same paths (a relative one is read against the
+
+// working directory, an absolute one as it is), the same answers and the same errors. The
+
+// host is `wasi:filesystem`, reached through std-wasm's leaves (`modules/std-wasm/wat/fs.wat`;
+
+// the `wasi…` declarations below), which the runner serves with the root and the working
+
+// directory preopened (`needs: [.Filesystem]`, no flag). A leaf answers a host failure as
+
+// `-(1 + code)`, `code` the ordinal of `wasi:filesystem`'s `error-code`, or as the `Error`
+
+// of a `Result<_, i32>` holding the code; `wasiError` writes it as Node's text
+
+// (`ENOENT: …`), which `fsError` reads as it reads every target's.
+
+// wasiCwd: per-call template (see annotation)
+
+// wasiGetenv: per-call template (see annotation)
+
+// wasiOpen: per-call template (see annotation)
+
+// wasiOpenMem: per-call template (see annotation)
+
+// wasiClose: per-call template (see annotation)
+
+// wasiIsMem: per-call template (see annotation)
+
+// wasiTell: per-call template (see annotation)
+
+// wasiSeek: per-call template (see annotation)
+
+// wasiSize: per-call template (see annotation)
+
+// wasiSizeRaw: per-call template (see annotation)
+
+// wasiRead: per-call template (see annotation)
+
+// wasiReadAll: per-call template (see annotation)
+
+// wasiReadLine: per-call template (see annotation)
+
+// wasiWrite: per-call template (see annotation)
+
+// wasiStatKind: per-call template (see annotation)
+
+// wasiStatSize: per-call template (see annotation)
+
+// wasiStatMtime: per-call template (see annotation)
+
+// wasiList: per-call template (see annotation)
+
+// wasiMkdir: per-call template (see annotation)
+
+// wasiRmdir: per-call template (see annotation)
+
+// wasiUnlink: per-call template (see annotation)
+
+// wasiSymlink: per-call template (see annotation)
+
+// wasiByteAt: per-call template (see annotation)
+
+// wasiSha256: per-call template (see annotation)
+
+// The POSIX name of the host's error `code`, and its text.
+
+function wasiName(code) {
+    const names = ["EACCES", "EAGAIN", "EALREADY", "EBADF", "EBUSY", "EDEADLK", "EDQUOT", "EEXIST", "EFBIG", "EILSEQ", "EINPROGRESS", "EINTR", "EINVAL", "EIO", "EISDIR", "ELOOP", "EMLINK", "EMSGSIZE", "ENAMETOOLONG", "ENODEV", "ENOENT", "ENOLCK", "ENOMEM", "ENOSPC", "ENOTDIR", "ENOTEMPTY", "ENOTRECOVERABLE", "ENOTSUP", "ENOTTY", "ENXIO", "EOVERFLOW", "EPERM", "EPIPE", "EROFS", "ESPIPE", "ETXTBSY", "EXDEV"];
+    return (() => { const __bp_nullish = __bp_array_at(names, code); if (__bp_nullish != null) { return __bp_nullish; } else { return "EIO"; } })();
+}
+
+function wasiText(code) {
+    const texts = ["permission denied", "resource temporarily unavailable", "connection already in progress", "bad file descriptor", "resource busy or locked", "resource deadlock avoided", "disk quota exceeded", "file already exists", "file too large", "illegal byte sequence", "operation in progress", "interrupted system call", "invalid argument", "i/o error", "illegal operation on a directory", "too many symbolic links encountered", "too many links", "message too long", "name too long", "no such device", "no such file or directory", "no locks available", "not enough memory", "no space left on device", "not a directory", "directory not empty", "state not recoverable", "operation not supported", "inappropriate ioctl for device", "no such device or address", "value too large for defined data type", "operation not permitted", "broken pipe", "read-only file system", "invalid seek", "text file busy", "cross-device link not permitted"];
+    return (() => { const __bp_nullish = __bp_array_at(texts, code); if (__bp_nullish != null) { return __bp_nullish; } else { return "i/o error"; } })();
+}
+
+// The `HostError` of the host's error `code`: `ENOENT: no such file or directory`.
+
+function wasiError(code) {
+    return new HostError(((wasiName(code) + ": ") + wasiText(code)), "host", HostErrorName.Error, null);
+}
+
+// The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
+
+function okBytes(r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const b = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: b }) });
+        }
+        if ("error" in _s) {
+            const code = _s.error;
+            return ({ __bp_return: true, value: ({ error: wasiError(code) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function okStrings(r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const xs = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: xs }) });
+        }
+        if ("error" in _s) {
+            const code = _s.error;
+            return ({ __bp_return: true, value: ({ error: wasiError(code) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+function okSize(r) {
+    const _case0 = (() => {
+        const _s = r;
+        if ("ok" in _s) {
+            const n = _s.ok;
+            return ({ __bp_return: true, value: ({ ok: n }) });
+        }
+        if ("error" in _s) {
+            const code = _s.error;
+            return ({ __bp_return: true, value: ({ error: wasiError(code) }) });
+        }
+        throw new Error("case_clause");
+    })();
+    if (_case0 && _case0.__bp_return) return _case0.value;
+}
+
+// `path` without the slashes it begins with: the host reads a path relative to the root it preopens.
+
+function withoutRoot(path) {
+    let p = path;
+    while (p.startsWith("/")) {
+    p = p.slice(1, null);
+}
+    return p;
+}
+
+// `name` inside `dir`, `dir` empty being the root.
+
+function joinPath(dir, name) {
+    if ((dir === "")) { return name; }
+    return ((dir + "/") + name);
+}
+
+// `path` as the host reads it: absolute, as it is; relative, from the working directory. The empty
+
+// path is no file (`ENOENT`), as it is on every target.
+
+function resolve(path) {
+    if ((path === "")) { return ({ error: wasiError(20) }); }
+    if (path.startsWith("/")) { return ({ ok: withoutRoot(path) }); }
+    const cwd = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if (((cwd === "") || (cwd === "/"))) { return ({ ok: path }); }
+    return ({ ok: withoutRoot(((cwd + "/") + path)) });
+}
+
+// The file a handle holds: the handle block `rawOpen`, `rawCreate` and `memHandle` answered.
+
+function blockOf(handle) {
+    let block = 0;
+    (() => { if (((_v) => (typeof _v === "number" && Number.isInteger(_v) && _v >= -2147483648 && _v <= 2147483647))(handle)) { const b = handle; return block = b; } })();
+    return block;
+}
+
+// Whether `a` sorts before `b` by the bytes of their UTF-8 (string `<` is not a wasm GC operation).
+
+function bytesBefore(a, b) {
+    const x = (new TextEncoder().encode(a));
+    const y = (new TextEncoder().encode(b));
+    const nx = x.length;
+    const ny = y.length;
+    let i = 0;
+    while (((i < nx) && (i < ny))) {
+    const cx = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    const cy = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((cx !== cy)) { return (cx < cy); }
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:988:15");
+}
+    return (nx < ny);
+}
+
+// The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
+
+function sortedStrings(xs) {
+    let out = [];
+    let i = 0;
+    while ((i < xs.length)) {
+    const x = (() => { const __bp_nullish = __bp_array_at(xs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:999:15");
+    let j = 0;
+    while (((j < out.length) && bytesBefore((() => { const __bp_nullish = __bp_array_at(out, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })(), x))) {
+    j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1002:19");
+}
+    if (((j < out.length) && __bp_eq(((() => { const __bp_nullish = __bp_array_at(out, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()), x, 0))) { continue; }
+    out = out.slice(0, j).concat([x]).concat(out.slice(j, null));
+}
+    return out;
+}
+
+function readBytesWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const h = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((h < 0)) { return ({ error: wasiError(__bp_int(((-1) - h), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1013:35")) }); }
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    const _try1 = okBytes(r);
+    if ("error" in _try1) return _try1;
+    const b = _try1.ok;
+    return ({ ok: b });
+}
+
+function writeBytesWasm(path, contents) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const h = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((h < 0)) { return ({ error: wasiError(__bp_int(((-1) - h), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1023:35")) }); }
+    const n = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((n < 0)) { return ({ error: wasiError(__bp_int(((-1) - n), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1026:35")) }); }
+    return ({ ok: 0 });
+}
+
+function writeTextWasm(path, contents) {
+    const _try0 = writeBytesWasm(path, (new TextEncoder().encode(contents)));
+    if ("error" in _try0) return _try0;
+    const n = _try0.ok;
+    return ({ ok: n });
+}
+
+function appendTextWasm(path, contents) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const h = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((h < 0)) { return ({ error: wasiError(__bp_int(((-1) - h), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1038:35")) }); }
+    const at = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((at < 0)) { (() => { throw new Error('io.fs: a cell of the wasm build') })(); return ({ error: wasiError(13) }); }
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    const n = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((n < 0)) { return ({ error: wasiError(__bp_int(((-1) - n), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1047:35")) }); }
+    return ({ ok: 0 });
+}
+
+// The offset of the first byte that starts a sequence that is not UTF-8, `-1` when there is none.
+
+function utf8OffsetWasm(data) {
+    const n = data.length;
+    let i = 0;
+    while ((i < n)) {
+    const c = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((c < 128)) { i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1058:19"); continue; }
+    let k = 0;
+    if (((c >= 194) && (c <= 223))) { k = 1; } else { if (((c >= 224) && (c <= 239))) { k = 2; } else { if (((c >= 240) && (c <= 244))) { k = 3; } else { return i.toI64(); } } }
+    if ((__bp_int((i + k), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1071:15") >= n)) { return i.toI64(); }
+    let lo = 128;
+    let hi = 191;
+    (() => { if ((c === 224)) { return lo = 160; } else { return (() => { if ((c === 237)) { return hi = 159; } else { return (() => { if ((c === 240)) { return lo = 144; } else { return (() => { if ((c === 244)) { return hi = 143; } })(); } })(); } })(); } })();
+    const d = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if (((d < lo) || (d > hi))) { return i.toI64(); }
+    let j = 2;
+    while ((j <= k)) {
+    const e = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if (((e < 128) || (e > 191))) { return i.toI64(); }
+    j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1089:19");
+}
+    i = __bp_int((__bp_int((i + k), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1091:15") + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1091:19");
+}
+    return (-1);
+}
+
+function stripEolWasm(line) {
+    let n = line.length;
+    (() => { if (((n > 0) && ((() => { throw new Error('io.fs: a cell of the wasm build') })() === 10))) { n = __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1099:15"); return (() => { if (((n > 0) && ((() => { throw new Error('io.fs: a cell of the wasm build') })() === 13))) { return n = __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1100:59"); } })(); } })();
+    return line.slice(0, n);
+}
+
+function openWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const h = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((h < 0)) { return ({ error: wasiError(__bp_int(((-1) - h), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1108:35")) }); }
+    const handle = h;
+    return ({ ok: handle });
+}
+
+function createWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const h = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((h < 0)) { return ({ error: wasiError(__bp_int(((-1) - h), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1116:35")) }); }
+    const handle = h;
+    return ({ ok: handle });
+}
+
+function memHandleWasm(data) {
+    const handle = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    return handle;
+}
+
+function sizeWasm(handle, path) {
+    const _try0 = okSize((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try0) return _try0;
+    const n = _try0.ok;
+    return ({ ok: n });
+}
+
+function readWasm(handle, n) {
+    const _try0 = okBytes((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try0) return _try0;
+    const b = _try0.ok;
+    return ({ ok: b });
+}
+
+function readAllWasm(handle) {
+    const _try0 = okBytes((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try0) return _try0;
+    const b = _try0.ok;
+    return ({ ok: b });
+}
+
+function readLineWasm(handle) {
+    const _try0 = okBytes((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try0) return _try0;
+    const b = _try0.ok;
+    return ({ ok: b });
+}
+
+// The SHA-256 of the whole file, the position where it was.
+
+function hashWasm(handle) {
+    const block = blockOf(handle);
+    const at = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    const _try0 = okBytes(r);
+    if ("error" in _try0) return _try0;
+    const b = _try0.ok;
+    return ({ ok: (() => { throw new Error('io.fs: a cell of the wasm build') })() });
+}
+
+function writeWasm(handle, data) {
+    const n = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((n < 0)) { return ({ error: wasiError(__bp_int(((-1) - n), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1159:35")) }); }
+    return ({ ok: n });
+}
+
+function closeWasm(handle) {
+    (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    return ({ ok: 0 });
+}
+
+function readOnlyWasm(handle) {
+    return (() => { throw new Error('io.fs: a cell of the wasm build') })();
+}
+
+function existsWasm(path) {
+    return (() => {
+        const _s = resolve(path);
+        if ("ok" in _s) {
+            const p = _s.ok;
+            return ((() => { throw new Error('io.fs: a cell of the wasm build') })() >= 0);
+        }
+        if ("error" in _s) {
+            return false;
+        }
+        throw new Error("case_clause");
+    })();
+}
+
+function listWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const _try1 = okStrings((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try1) return _try1;
+    const names = _try1.ok;
+    return ({ ok: sortedStrings(names) });
+}
+
+function mkdirWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((r < 0)) { return ({ error: wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1188:35")) }); }
+    return ({ ok: 0 });
+}
+
+// The directory and every missing one above it. One that is there is `Ok`; a file in the way is
+
+// `EEXIST` when it is the directory asked for, `ENOTDIR` when it is above it.
+
+function mkdirRecursiveWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    let parts = [];
+    const pieces = p.split("/");
+    let i = 0;
+    while ((i < pieces.length)) {
+    const piece = (() => { const __bp_nullish = __bp_array_at(pieces, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1201:15");
+    (() => { if (((piece !== "") && (piece !== "."))) { return parts = parts.concat([piece]); } })();
+}
+    let prefix = "";
+    let k = 0;
+    while ((k < parts.length)) {
+    prefix = joinPath(prefix, (() => { const __bp_nullish = __bp_array_at(parts, k); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })());
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1208:15");
+    const kind = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((kind === 3)) { continue; }
+    if ((kind >= 0)) { if ((k === parts.length)) { return ({ error: wasiError(7) }); } return ({ error: wasiError(24) }); }
+    const made = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((made < 0)) { return ({ error: wasiError(__bp_int(((-1) - made), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1216:42")) }); }
+}
+    return ({ ok: 0 });
+}
+
+// The FILE at `path`: a directory is `EISDIR`, whatever it holds.
+
+function rmWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const kind = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((kind < 0)) { return ({ error: wasiError(__bp_int(((-1) - kind), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1225:38")) }); }
+    if ((kind === 3)) { return ({ error: wasiError(14) }); }
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((r < 0)) { return ({ error: wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1228:35")) }); }
+    return ({ ok: 0 });
+}
+
+function copyWasm(src, dest) {
+    const _try0 = readBytesWasm(src);
+    if ("error" in _try0) return _try0;
+    const contents = _try0.ok;
+    const _try1 = writeBytesWasm(dest, contents);
+    if ("error" in _try1) return _try1;
+    const written = _try1.ok;
+    return ({ ok: 0 });
+}
+
+function statWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const kind = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((kind < 0)) { return ({ error: wasiError(__bp_int(((-1) - kind), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1241:38")) }); }
+    const _try1 = okSize((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try1) return _try1;
+    const size = _try1.ok;
+    const _try2 = okSize((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try2) return _try2;
+    const seconds = _try2.ok;
+    return ({ ok: new FileStat(size, __bp_wmul(seconds, 1000, 0, "* on i64 at src/io/fs.bp:1244:48"), (kind === 3)) });
+}
+
+// The regular files under `root` and the links whose target is missing, as paths relative to it, in
+
+// directory order: a work list of directories, not a recursion (a recursive `try` is not lowered on wasm).
+
+function walkWasm(root) {
+    const _try0 = resolve(root);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const kind = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((kind < 0)) { return ({ error: wasiError(__bp_int(((-1) - kind), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1252:38")) }); }
+    if ((kind !== 3)) { return ({ error: wasiError(24) }); }
+    let dirs = [p];
+    let rels = [""];
+    let files = [];
+    let dangling = [];
+    let next = 0;
+    while ((next < dirs.length)) {
+    const dir = (() => { const __bp_nullish = __bp_array_at(dirs, next); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    const rel = (() => { const __bp_nullish = __bp_array_at(rels, next); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    next = __bp_int((next + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1262:21");
+    const _try1 = okStrings((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try1) return _try1;
+    const names = _try1.ok;
+    let i = 0;
+    while ((i < names.length)) {
+    const name = (() => { const __bp_nullish = __bp_array_at(names, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1267:19");
+    const full = joinPath(dir, name);
+    const sub = joinPath(rel, name);
+    const entry = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if (((entry < 0) && (entry !== (-21)))) { return ({ error: wasiError(__bp_int(((-1) - entry), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1271:63")) }); }
+    (() => { if ((entry === 3)) { dirs = dirs.concat([full]); return rels = rels.concat([sub]); } })();
+    (() => { if ((entry === 6)) { return files = files.concat([sub]); } })();
+    (() => { if ((entry === (-21))) { return dangling = dangling.concat([sub]); } })();
+}
+}
+    return ({ ok: new Walked(sortedStrings(files), sortedStrings(dangling)) });
+}
+
+// Whether the segment holds a wildcard.
+
+function isMagic(seg) {
+    return (((seg.includes("*") || seg.includes("?")) || seg.includes("[")) || seg.includes("{"));
+}
+
+// A segment with its `{a,b}` alternatives written out, nested ones too; one that is never closed is a name.
+
+function expandBraces(seg) {
+    const cs = seg.chars();
+    let open = (-1);
+    let i = 0;
+    while ((i < cs.length)) {
+    if ((((() => { const __bp_nullish = __bp_array_at(cs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "{")) { open = i; break; }
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1298:15");
+}
+    if ((open < 0)) { return [seg]; }
+    let depth = 0;
+    let close = (-1);
+    let cuts = [];
+    let j = open;
+    let closed = false;
+    while (((j < cs.length) && (!closed))) {
+    const c = (() => { const __bp_nullish = __bp_array_at(cs, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    // Separate `if`s, not an `else if` chain: wasm's GC lowering refuses;
+    // an `if` nesting one beside an `else if` that appends (B-170).;
+    (() => { if ((c === "{")) { return depth = __bp_int((depth + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1310:37"); } })();
+    (() => { if ((c === "}")) { return depth = __bp_int((depth - 1), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1311:37"); } })();
+    (() => { if (((c === "}") && (depth === 0))) { close = j; return closed = true; } })();
+    (() => { if (((c === ",") && (depth === 1))) { return cuts = cuts.concat([j]); } })();
+    j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1317:15");
+}
+    if ((close < 0)) { return [seg]; }
+    const head = cs.slice(0, open).join("");
+    const tail = cs.slice(__bp_int((close + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1321:31"), null).join("");
+    let out = [];
+    let start = __bp_int((open + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1323:22");
+    let k = 0;
+    while ((k <= cuts.length)) {
+    let stop = close;
+    (() => { if ((k < cuts.length)) { return stop = (() => { const __bp_nullish = __bp_array_at(cuts, k); if (__bp_nullish != null) { return __bp_nullish; } else { return close; } })(); } })();
+    const alt = cs.slice(start, stop).join("");
+    out = out.concat(expandBraces(((head + alt) + tail)));
+    start = __bp_int((stop + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1330:22");
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1331:15");
+}
+    return out;
+}
+
+// The `]` that closes the class opened at `at`, `-1` when there is none (the `[` is then a name).
+
+function classEnd(pat, at) {
+    let j = __bp_int((at + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1338:16");
+    (() => { if (((j < pat.length) && (((((() => { const __bp_nullish = __bp_array_at(pat, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "!") || (((() => { const __bp_nullish = __bp_array_at(pat, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "^"))))) { return j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1339:89"); } })();
+    (() => { if (((j < pat.length) && (((() => { const __bp_nullish = __bp_array_at(pat, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "]"))) { return j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1340:59"); } })();
+    while ((j < pat.length)) {
+    if ((((() => { const __bp_nullish = __bp_array_at(pat, j); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "]")) { return j; }
+    j = __bp_int((j + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1343:15");
+}
+    return (-1);
+}
+
+// Whether `ch` is in the class written between `first` and `stop` (`!` or `^` first negates it, `a-z` is a range).
+
+function classHas(pat, first, stop, ch) {
+    let i = first;
+    let negate = false;
+    (() => { if (((i < stop) && (((((() => { const __bp_nullish = __bp_array_at(pat, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "!") || (((() => { const __bp_nullish = __bp_array_at(pat, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "^"))))) { negate = true; return i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1354:15"); } })();
+    let found = false;
+    while ((i < stop)) {
+    const lo = (() => { const __bp_nullish = __bp_array_at(pat, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    (() => { if (((__bp_int((i + 2), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1359:15") < stop) && (((() => { const __bp_nullish = __bp_array_at(pat, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1359:39")); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "-"))) { const hi = (() => { const __bp_nullish = __bp_array_at(pat, __bp_int((i + 2), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1360:31")); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })(); /* By code point: a class range is one character each side, and */ /* wasm lowers no ordering of strings (B-170). */ const c = ch.charCodeAt(0); (() => { if (((lo.charCodeAt(0) <= c) && (c <= hi.charCodeAt(0)))) { return found = true; } })(); return i = __bp_int((i + 3), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1365:19"); } else { (() => { if ((lo === ch)) { return found = true; } })(); return i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1368:19"); } })();
+}
+    return (found !== negate);
+}
+
+// `name` against one pattern without braces: `*`, `?`, `[…]`.
+
+function globMatch(pat, begin, name, offset) {
+    let p = begin;
+    let n = offset;
+    while ((p < pat.length)) {
+    const c = (() => { const __bp_nullish = __bp_array_at(pat, p); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    if ((c === "*")) { while (((p < pat.length) && (((() => { const __bp_nullish = __bp_array_at(pat, p); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()) === "*"))) {
+    p = __bp_int((p + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1382:23");
+} if ((p === pat.length)) { return true; } let k = n; while ((k <= name.length)) {
+    if (globMatch(pat, p, name, k)) { return true; }
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1388:23");
+} return false; }
+    if ((n >= name.length)) { return false; }
+    const ch = (() => { const __bp_nullish = __bp_array_at(name, n); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    if ((c === "?")) { p = __bp_int((p + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1395:19"); n = __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1396:19"); } else { if ((c === "[")) { const end = classEnd(pat, p); if ((end < 0)) { if ((ch !== "[")) { return false; } p = __bp_int((p + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1401:23"); n = __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1402:23"); } else { if ((!classHas(pat, __bp_int((p + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1404:38"), end, ch))) { return false; } p = __bp_int((end + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1405:25"); n = __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1406:23"); } } else { if ((!__bp_eq(c, ch, 0))) { return false; } p = __bp_int((p + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1410:19"); n = __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1411:19"); } }
+}
+    return (n === name.length);
+}
+
+function segmentMatches(seg, name) {
+    const alts = expandBraces(seg);
+    const chars = name.chars();
+    let i = 0;
+    while ((i < alts.length)) {
+    if (globMatch(((() => { const __bp_nullish = __bp_array_at(alts, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()).chars(), 0, chars, 0)) { return true; }
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1423:15");
+}
+    return false;
+}
+
+// The names in `dir` the segment matches; a dot name only when the segment itself begins with the dot.
+
+function globNames(dir, seg) {
+    const listed = (() => {
+        const _s = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+        if ("ok" in _s) {
+            const xs = _s.ok;
+            return xs;
+        }
+        if ("error" in _s) {
+            return [];
+        }
+        throw new Error("case_clause");
+    })();
+    let out = [];
+    let i = 0;
+    while ((i < listed.length)) {
+    const name = (() => { const __bp_nullish = __bp_array_at(listed, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1438:15");
+    if ((name.startsWith(".") && (!seg.startsWith(".")))) { continue; }
+    (() => { if (((seg === "*") || segmentMatches(seg, name))) { return out = out.concat([name]); } })();
+}
+    return out;
+}
+
+// The entries `segs` from `i` match under `dir` (`rel` its path from the root of the glob), added to `out`. A
+
+// wildcard continues into real directories only; a name goes through a link.
+
+function globWalk(segs, i, dir, rel, out) {
+    let acc = out;
+    if ((i === segs.length)) { (() => { if ((rel !== "")) { return acc = acc.concat([rel]); } })(); return acc; }
+    const seg = (() => { const __bp_nullish = __bp_array_at(segs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    const last = (i === __bp_int((segs.length - 1), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1454:33"));
+    if ((seg === "**")) { (() => { if ((!last)) { return acc = globWalk(segs, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1456:43"), dir, rel, acc); } })(); const names = globNames(dir, "*"); let k = 0; while ((k < names.length)) {
+    const name = (() => { const __bp_nullish = __bp_array_at(names, k); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1461:19");
+    const full = joinPath(dir, name);
+    const sub = joinPath(rel, name);
+    (() => { if (last) { return acc = acc.concat([sub]); } })();
+    (() => { if (((() => { throw new Error('io.fs: a cell of the wasm build') })() === 3)) { return acc = globWalk(segs, i, full, sub, acc); } })();
+} return acc; }
+    if ((!isMagic(seg))) { const full = joinPath(dir, seg); const sub = joinPath(rel, seg); (() => { if (last) { return (() => { if (((() => { throw new Error('io.fs: a cell of the wasm build') })() >= 0)) { return acc = acc.concat([sub]); } })(); } else { return (() => { if (((() => { throw new Error('io.fs: a cell of the wasm build') })() === 3)) { return acc = globWalk(segs, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1475:36"), full, sub, acc); } })(); } })(); return acc; }
+    const names = globNames(dir, seg);
+    let k = 0;
+    while ((k < names.length)) {
+    const name = (() => { const __bp_nullish = __bp_array_at(names, k); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1483:15");
+    const full = joinPath(dir, name);
+    const sub = joinPath(rel, name);
+    (() => { if (last) { return acc = acc.concat([sub]); } else { return (() => { if (((() => { throw new Error('io.fs: a cell of the wasm build') })() === 3)) { return acc = globWalk(segs, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1489:36"), full, sub, acc); } })(); } })();
+}
+    return acc;
+}
+
+function globWasm(pattern, root) {
+    const resolved = resolve(root);
+    if (((_r) => "error" in _r)(resolved)) { return []; }
+    const base = ((_r) => "error" in _r ? ("") : _r.ok)(resolved);
+    let segs = [];
+    const pieces = pattern.split("/");
+    let i = 0;
+    while ((i < pieces.length)) {
+    const piece = (() => { const __bp_nullish = __bp_array_at(pieces, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1504:15");
+    (() => { if (((piece !== "") && (piece !== "."))) { return segs = segs.concat([piece]); } })();
+}
+    const found = globWalk(segs, 0, base, "", []);
+    let kept = [];
+    let k = 0;
+    while ((k < found.length)) {
+    const entry = (() => { const __bp_nullish = __bp_array_at(found, k); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1512:15");
+    (() => { if (((!pattern.endsWith("/")) || ((() => { throw new Error('io.fs: a cell of the wasm build') })() === 3))) { return kept = kept.concat([entry]); } })();
+}
+    return sortedStrings(kept);
+}
+
+// A path that is not there is `Ok`: the caller wanted it gone. A link is removed, never followed. The
+
+// directories are found first, then the files removed, then the directories from the deepest.
+
+function removeTreeWasm(path) {
+    const _try0 = resolve(path);
+    if ("error" in _try0) return _try0;
+    const p = _try0.ok;
+    const top = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((top === (-21))) { return ({ ok: 0 }); }
+    if ((top < 0)) { return ({ error: wasiError(__bp_int(((-1) - top), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1524:37")) }); }
+    if ((top !== 3)) { const r = (() => { throw new Error('io.fs: a cell of the wasm build') })(); if ((r < 0)) { return ({ error: wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1527:39")) }); } return ({ ok: 0 }); }
+    let dirs = [p];
+    let next = 0;
+    while ((next < dirs.length)) {
+    const dir = (() => { const __bp_nullish = __bp_array_at(dirs, next); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    next = __bp_int((next + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1534:21");
+    const _try1 = okStrings((() => { throw new Error('io.fs: a cell of the wasm build') })());
+    if ("error" in _try1) return _try1;
+    const names = _try1.ok;
+    let i = 0;
+    while ((i < names.length)) {
+    const full = joinPath(dir, (() => { const __bp_nullish = __bp_array_at(names, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })());
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1539:19");
+    const kind = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if (((kind < 0) && (kind !== (-21)))) { return ({ error: wasiError(__bp_int(((-1) - kind), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1541:61")) }); }
+    (() => { if ((kind === 3)) { return dirs = dirs.concat([full]); } })();
+    if (((kind >= 0) && (kind !== 3))) { const r = (() => { throw new Error('io.fs: a cell of the wasm build') })(); if ((r < 0)) { return ({ error: wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1545:47")) }); } }
+}
+}
+    let k = dirs.length;
+    while ((k > 0)) {
+    k = __bp_int((k - 1), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1551:15");
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((r < 0)) { return ({ error: wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1553:39")) }); }
+}
+    return ({ ok: 0 });
+}
+
+// A fresh, unique, empty directory under the host's temporary directory.
+
+function scratchDirWasm() {
+    let base = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { if ((base === "")) { return base = "/tmp"; } })();
+    let attempt = 0;
+    while ((attempt < 100)) {
+    const dir = ((base + "/bp-std-fs-") + random.randomBytes(6));
+    if (((() => { throw new Error('io.fs: a cell of the wasm build') })() === 0)) { return dir; }
+    attempt = __bp_int((attempt + 1), -2147483648, 2147483647, "+ on i32 at src/io/fs.bp:1566:27");
+}
+    (() => { throw Object.defineProperty(new Error("io.fs: no scratch directory could be made"), '__bp_panic', { value: true }) })();
+    return base;
+}
+
+function workingDirWasm() {
+    const cwd = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    if ((cwd === "")) { return "/"; }
+    return cwd;
+}
+
+function linkToWasm(target, link) {
+    const l = resolve(link);
+    (() => { if (((_r) => "error" in _r)(l)) { return (() => { throw Object.defineProperty(new Error("io.fs: no link path"), '__bp_panic', { value: true }) })(); } })();
+    const r = (() => { throw new Error('io.fs: a cell of the wasm build') })();
+    (() => { if ((r < 0)) { return (() => { throw Object.defineProperty(new Error(wasiError(__bp_int(((-1) - r), -2147483648, 2147483647, "- on i32 at src/io/fs.bp:1582:43")).message), '__bp_panic', { value: true }) })(); } })();
+    return;
+}
+
+// A host without `chmod` denies this user nothing: the permission tests have nothing to check there.
+
+function denyAllWasm(path) {
+    return false;
+}
+
+function allowAllWasm(path) {
+    return;
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
@@ -3686,13 +7009,16 @@ function noFile() {
 
 // allowAll: per-call template (see annotation)
 
-Object.defineProperty(exports, "__bp_priv__", { value: { relative, HostError, FsError, FsError$NotFound, FsError$PermissionDenied, FsError$IsDirectory, FsError$NotDirectory, FsError$AlreadyExists, FsError$InvalidUtf8, FsError$Other, FileStat, rawReadBytes, rawWriteBytes, rawAppendText, rawOpen, rawCreate, rawSize, rawRead, rawReadAll, rawReadLine, rawHash, rawWrite, rawClose, rawWriteText, exists, rawList, rawMkdir, rawMkdirRecursive, rawRm, rawCopy, rawStat, rawWalk, rawRemoveTree, fsError, lift, decode, Walked, readBytes, readText, writeBytes, writeText, appendText, stat, list, mkdir, mkdirRecursive, rm, removeTree, copy, walk, glob, File, open, create, openAsset, statOr, makeFixtureTree, walkFixture, walkFixtureFromCwd, walkRefusal, describe, makeGlobTree, globbed, variantOf, noFile } });
+Object.defineProperty(exports, "__bp_priv__", { value: { random, relative, HostError, HostErrorName, FsError, FsError$NotFound, FsError$PermissionDenied, FsError$IsDirectory, FsError$NotDirectory, FsError$AlreadyExists, FsError$InvalidUtf8, FsError$Other, FileStat, rawReadBytes, rawWriteBytes, rawAppendText, rawOpen, rawCreate, rawSize, rawRead, rawReadAll, rawReadLine, rawHash, rawWrite, rawClose, rawWriteText, exists, rawList, rawMkdir, rawMkdirRecursive, rawRm, rawCopy, rawStat, rawWalk, rawRemoveTree, fsError, lift, liftBytes, liftI32, liftI64, liftString, liftStrings, liftStat, liftWalked, liftHandle, decode, Walked, readBytes, readText, writeBytes, writeText, appendText, stat, list, mkdir, mkdirRecursive, rm, removeTree, copy, walk, glob, File, open, create, openAsset, wasiName, wasiText, wasiError, okBytes, okStrings, okSize, withoutRoot, joinPath, resolve, blockOf, bytesBefore, sortedStrings, readBytesWasm, writeBytesWasm, writeTextWasm, appendTextWasm, utf8OffsetWasm, stripEolWasm, openWasm, createWasm, memHandleWasm, sizeWasm, readWasm, readAllWasm, readLineWasm, hashWasm, writeWasm, closeWasm, readOnlyWasm, existsWasm, listWasm, mkdirWasm, mkdirRecursiveWasm, rmWasm, copyWasm, statWasm, walkWasm, isMagic, expandBraces, classEnd, classHas, globMatch, segmentMatches, globNames, globWalk, globWasm, removeTreeWasm, scratchDirWasm, workingDirWasm, linkToWasm, denyAllWasm, allowAllWasm, statOr, makeFixtureTree, walkFixture, walkFixtureFromCwd, walkRefusal, describe, makeGlobTree, globbed, variantOf, noFile } });
 ```
 
 ----- TYPESCRIPT TYPEDEF -- std/io/fs.d.ts
 ```typescript
+import * as random from "../../std/io/random";
 import { relative } from "../../std/path";
-import { HostError } from "../../std/failure";
+import { HostError, HostErrorName } from "../../std/failure";
+
+
 
 
 
@@ -3751,6 +7077,22 @@ export declare class FileStat {
 
 
 export declare function exists(path: string): boolean;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3855,6 +7197,158 @@ export declare function create(path: string): { ok: File } | { error: FsError };
 
 
 export declare function openAsset(asset: { path: string; bytes: Uint8Array; size: number | bigint; hash: string; text: () => string }): File;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

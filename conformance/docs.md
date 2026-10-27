@@ -601,7 +601,7 @@ every target; a library that carries an `io.fs` failure into a `string` writes `
 
 `io.fs` is the same on commonJS, erlang, beam and wasm (decision 992): on wasm the runner preopens the root and the working directory (`wasmtime run --dir`, no flag of the user's), a relative path is read against the working directory and an absolute one as it is, and the answers and the errors are the other targets'.
 
-<!-- example: modules/decisions-taken/io_fs_same_on_every_target-992/cells/io_fs_same_on_every_target -->
+<!-- example: modules/decisions-taken/io_fs_same_on_every_target-992/cases/io_fs_same_on_every_target -->
 
 <!-- example: modules/decisions-taken/fs_error_message_text-563/cases/fs_error_message -->
 

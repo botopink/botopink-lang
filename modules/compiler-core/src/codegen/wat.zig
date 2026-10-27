@@ -1520,7 +1520,7 @@ fn pruneUnreached(
 /// (`GCGAP` — what it met —, `GCCONV` the conversion it refused, `GCTC` the
 /// type-check failure, `GCERR` the error, `GCWHY` the module; set `GCTRACE` for the stack of a refused
 /// conversion or gap). Off: flip it to measure which constructs still send modules to linear memory.
-const gc_debug = true;
+const gc_debug = false;
 
 /// The modules of the build this backend refused so far (`emitModules`):
 /// a GC pass that links one falls back (`emitWatPass`).
@@ -9465,8 +9465,11 @@ const Emitter = struct {
             // Front 164 s2 P4 — a function declaring no answer whose last
             // statement makes a task (`pub fn main() { run(); }`): the word
             // linear memory answered was the task's address, which nothing
-            // reads; here the task is dropped for the `0`.
-            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and tail_type.?.ref == .task and !self.cur_result.isRef() and prologue != null and ast.answersNothing(prologue.?.returnType);
+            // reads; here the task is dropped for the `0`. Any other
+            // reference such a last statement leaves — a call answering a
+            // `Result` the body ignores (`writeText(…)` closing a `-> void`
+            // fn, decision 992) — is dropped the same way.
+            const dropped_task = self.mode == .gc and tail_type != null and tail_type.? == .ref and !self.cur_result.isRef() and prologue != null and ast.answersNothing(prologue.?.returnType);
             if (dropped_task) {
                 try self.emit(.drop);
                 try self.emit(self.zeroOf(self.cur_result));

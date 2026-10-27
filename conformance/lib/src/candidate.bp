@@ -23,19 +23,29 @@ pub val ACCEPTED_PATH: string = "snapshot/main.snap";
 /// `text` written to the file at `path`, through `io.fs` on every target (decision 992: wasm's
 /// `io.fs` is the other targets'). `Error` when the file cannot be written.
 pub fn deliver(path: string, text: string) -> Result<void, string> {
-    val written = try writeText(path, text) catch { e ->
-        throw "cannot write " + path + ": ${e}";
-    };
-    return;
+    // A `case`, not `try … catch { e -> … }`: wasm's GC lowering takes no catch binder yet.
+    case writeText(path, text) {
+        Ok(_) -> return;
+        // The path alone: `e.message()` crashes on commonJS and `${e}` does not build on wasm's
+        // GC lowering (B-170).
+        Error(_) -> throw "cannot write " + path;
+    }
+}
+
+/// The accepted file parsed, or the line it is malformed at. Each arm answers for itself — wasm's
+/// GC lowering takes no `catch` binder, nor a `case` whose arm throws as its value.
+fn acceptedFile(accepted: string) -> Result<SnapFile, string> {
+    case parseFile(accepted) {
+        Ok(f) { return f; }
+        Error(m) { throw "snapshot/main.snap line " + m.line.toString() + ": " + m.reason; }
+    }
 }
 
 /// The whole check of a module: its observed answers against the accepted file's text. `Ok` when
 /// every case is green; else the candidate is delivered (a candidate when the text differs) at
 /// `candidatePath(root)` and the `Error` names the red cases and the candidate.
 pub fn finish(accepted: string, observed: Observed[], target: string, root: string = "") -> Result<void, string> {
-    val file = try parseFile(accepted) catch { m ->
-        throw "snapshot/main.snap line " + m.line.toString() + ": " + m.reason;
-    };
+    val file = try acceptedFile(accepted);
     val red = reds(file, observed, target);
     val text = assemble(file, observed, target);
     if (red.length == 0 && text == renderFile(file)) return;

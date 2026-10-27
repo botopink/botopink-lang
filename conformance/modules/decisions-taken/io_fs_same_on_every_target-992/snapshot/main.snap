@@ -1,0 +1,24 @@
+botopink-cell 2
+== io_fs_same_on_every_target
+out true
+out true
+out true
+out héllo, fs
+out true
+out relative
+out true
+out relative!
+out ?
+out not found: /tmp/bp-io-fs-same-992/missing.txt
+out is a directory: /tmp/bp-io-fs-same-992
+out not a directory: /tmp/bp-io-fs-same-992/note.txt
+out already exists: /tmp/bp-io-fs-same-992
+out inner,note.txt
+out 10
+out true
+out note.txt
+out note.txt
+out true
+out true
+out false
+out false

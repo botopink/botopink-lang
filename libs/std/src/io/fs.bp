@@ -226,10 +226,12 @@ pub declare fn exists(path: string) -> bool;
 
 // List the names of the directory entries at `path` (relative).
 // Node: `require('fs').readdirSync($0)`.
-// Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+// Erlang: `file:list_dir/1` returns `{ok, [string()]}`, in the directory's
+// order: sorted here by bytes (`lists:sort` on binaries), as `readdirSync` and
+// wasm's `listWasm` answer them, so every target lists one order (decision 992).
 #[compiler.external(
     .JavaScript("""(() => { return require('fs').readdirSync($0) })()""", result: true),
-    .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, __R} end end)($0)""", result: true),
+    .Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, lists:sort([list_to_binary(__N) || __N <- __L])}; {error, __R} -> {error, __R} end end)($0)""", result: true),
     .Wasm(body: listWasm),
 )]
 declare fn rawList(path: string) -> Result<string[], HostError>;
@@ -1303,17 +1305,15 @@ fn expandBraces(seg: string) -> array<string> {
     var closed = false;
     while (j < cs.length && !closed) {
         val c = cs.at(j) ?? "";
-        if (c == "{") {
-            depth = depth + 1;
-        } else if (c == "}") {
-            depth = depth - 1;
-            if (depth == 0) {
-                close = j;
-                closed = true;
-            }
-        } else if (c == "," && depth == 1) {
-            cuts = cuts.append([j]);
+        // Separate `if`s, not an `else if` chain: wasm's GC lowering refuses
+        // an `if` nesting one beside an `else if` that appends (B-170).
+        if (c == "{") depth = depth + 1;
+        if (c == "}") depth = depth - 1;
+        if (c == "}" && depth == 0) {
+            close = j;
+            closed = true;
         }
+        if (c == "," && depth == 1) cuts = cuts.append([j]);
         j = j + 1;
     }
     if (close < 0) return [seg];
@@ -1358,7 +1358,10 @@ fn classHas(pat: array<string>, first: i32, stop: i32, ch: string) -> bool {
         val lo = pat.at(i) ?? "";
         if (i + 2 < stop && (pat.at(i + 1) ?? "") == "-") {
             val hi = pat.at(i + 2) ?? "";
-            if (lo <= ch && ch <= hi) found = true;
+            // By code point: a class range is one character each side, and
+            // wasm lowers no ordering of strings (B-170).
+            val c = ch.charCodeAt(0);
+            if (lo.charCodeAt(0) <= c && c <= hi.charCodeAt(0)) found = true;
             i = i + 3;
         } else {
             if (lo == ch) found = true;
@@ -1577,6 +1580,7 @@ fn linkToWasm(target: string, link: string) -> void {
     if (l.isError()) failure.panic("io.fs: no link path");
     val r = wasiSymlink(target, l.unwrapOr(""));
     if (r < 0) failure.panic(wasiError(-1 - r).message);
+    return;
 }
 
 // A host without `chmod` denies this user nothing: the permission tests have nothing to check there.

@@ -20,13 +20,14 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+  )
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\07\00\00\00weekend")
-  (data (i32.const 268) "\07\00\00\00weekday")
-  (global $__heap_ptr (mut i32) (i32.const 280))
-  (func $classify (param $day i32) (result i32)
-    (local $kind i32)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $classify (param $day i32) (result (ref null $str))
+    (local $kind (ref null $str))
     (local $__case_0 i32)
     local.get $day
     local.set $__case_0
@@ -39,12 +40,12 @@ import {io.terminal.print} from "std";
     i32.const 7
     i32.eq
     i32.or
-    (if (result i32)
+    (if (result (ref null $str))
       (then
-    i32.const 256
+    global.get $__s0
       )
       (else
-    i32.const 268
+    global.get $__s1
       )
     )
     local.set $kind
@@ -62,6 +63,8 @@ import {io.terminal.print} from "std";
     drop
     i32.const 7
     call $classify
+    drop
+    i32.const 0
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -247,28 +250,111 @@ import {io.terminal.print} from "std";
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     local.get $s
-    i32.const 256
-    i32.lt_u
-    (if
-      (then
-        ;; a pointer below the data floor is not a string
-        unreachable
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
       )
     )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
+    local.get $p
+    local.get $n
     call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__print_str (param $s i32)
+  (func $__print_str (param $s (ref null $str))
     local.get $s
     call $__print_str_raw
     call $__print_nl
   )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32) (local $e i32)
+    global.get $__heap_ptr
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (data $__d0 "weekend")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (data $__d1 "weekday")
+  (global $__s1 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d0
+    global.set $__s0
+    i32.const 0
+    i32.const 7
+    array.new_data $str $__d1
+    global.set $__s1
+  )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

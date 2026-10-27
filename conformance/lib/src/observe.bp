@@ -17,10 +17,10 @@ pub fn refusalOf(code: string, message: string, file: string, line: i32, column:
         "error: " + message
     else
         "error[" + code + "]: " + message;
-    val at: ?string = if (file == "")
-        null
-    else
-        file + ":" + line.toString() + ":" + column.toString();
+    // Assigned, not an `if` answering `null` or a string: wasm's GC lowering types that `if` by
+    // its `null`.
+    var at: ?string = null;
+    if (file != "") at = file + ":" + line.toString() + ":" + column.toString();
     return Refusal(message: head, at: at, label: label, frames: frames);
 }
 
@@ -65,7 +65,12 @@ fn candidateBody(file: SnapFile, o: Observed, target: string) -> string {
     var kept: ?Snap = null;
     if (accepted) {
         a ->
-        kept = try parseBody(a.body) catch null;
+        // A `case` assigning, not `try … catch null`: wasm's GC lowering types that `catch` by its
+        // `null`.
+        case parseBody(a.body) {
+            Ok(snap) { kept = snap; }
+            Error(_) { kept = null; }
+        }
     }
     return renderBody(candidate(kept, o.snap, o.stderr));
 }

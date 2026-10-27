@@ -80,7 +80,9 @@ pub fn parseFile(text: string) -> Result<SnapFile, Malformed> {
             val head = line.slice(3);
             val on = head.indexOf(" on ");
             val caseName = if (on < 0) head else head.slice(0, on);
-            target = if (on < 0) null else head.slice(on + 4);
+            // Assigned, not an `if` answering `null` or a string (wasm's GC lowering, as observe's).
+            target = null;
+            if (on >= 0) target = head.slice(on + 4);
             if (caseName == "" || caseName.contains(" "))
                 return fail(n, "a section names one case: `== <case>` or `== <case> on <target>`");
             if (!(target == null || isTarget(target)))
