@@ -21,6 +21,7 @@ test {
     _ = @import("../wat/wat_reader.zig");
     _ = @import("../wat/std_leaves.zig");
     _ = @import("../wat/reach.zig");
+    _ = @import("../wat/comptime_units.zig");
 }
 
 // Front 164 s3 — `String.length` and `String.charCodeAt` are `.wat` leaves
@@ -5509,4 +5510,155 @@ test "wat: decision 1021 (10) ---- a method on a type imported under an alias is
         \\}
         },
     }, "a:5\nb:n\nfault 4\n");
+}
+
+// Decisions 1033, 1035 (1), (3), 1038 (4) — piece C1, the `.comptime` stage:
+// a module declaring a decorator has its comptime unit `<pkg>@<path>`, emitted
+// by the program's generator whatever the build's target (erlang here), with
+// the program unit it imports and nothing else; every unit passes the face
+// oracle (its index read from its bytes, every import an export of the unit
+// it names, typed alike) and compiles; the folder's core and std units are
+// the bytes a `wasi` build with the units writes into `out/wasm/`; and the
+// stage changes nothing of the program's own emit.
+test "wat: comptime units ---- a module declaring a decorator has its comptime unit, whatever the target" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const cu = @import("../wat/comptime_units.zig");
+    const engine = @import("../wat/engine.zig");
+    const modules = [_]codegen.Module{
+        .{ .path = "lib", .source =
+        \\pub fn twice(n: i32) -> i32 {
+        \\    return n * 2;
+        \\}
+        },
+        .{ .path = "plain", .source =
+        \\pub fn unused(n: i32) -> i32 {
+        \\    return n + 1;
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\import {twice} from "lib";
+        \\
+        \\fn label(syntax decl: unknown) -> void {
+        \\    compiler.addMember("pub fn label() -> string { return \"the " + compiler.name(decl)! + "\"; }");
+        \\}
+        \\
+        \\#[label]
+        \\type City(name: string)
+        \\
+        \\pub fn main() -> void {
+        \\    print(City.label());
+        \\    print(twice(21));
+        \\    print("a,b".split(","));
+        \\}
+        },
+    };
+    const cfg = h.configs[1];
+    var units: std.ArrayListUnmanaged(ModuleOutput) = .empty;
+    defer {
+        for (units.items) |*o| o.result.deinit(a);
+        units.deinit(a);
+    }
+    var with = try codegen.generateWith(a, &modules, io, cfg, .{ .execute = false, .comptime_units = &units });
+    defer {
+        for (with.items) |*o| o.result.deinit(a);
+        with.deinit(a);
+    }
+    var without = try codegen.generateWith(a, &modules, io, cfg, .{ .execute = false });
+    defer {
+        for (without.items) |*o| o.result.deinit(a);
+        without.deinit(a);
+    }
+    try std.testing.expectEqual(without.items.len, with.items.len);
+    for (with.items, without.items) |x, y| try std.testing.expectEqualStrings(y.result.js, x.result.js);
+
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const rt = try ru.get();
+    var program: std.ArrayListUnmanaged(cu.Unit) = .empty;
+    for (units.items) |o| {
+        if (o.result.failed()) {
+            std.debug.print("\n=== comptime unit of {s} refused\n", .{o.name});
+            return error.TestUnexpectedResult;
+        }
+        const bin = o.result.wasm orelse return error.TestUnexpectedResult;
+        const stems = try ru.unitsOf(ar, bin);
+        try program.append(ar, .{ .stem = stems[stems.len - 1], .bytes = bin });
+    }
+    // `main` declares the decorator; `lib` is the program unit it imports;
+    // `plain`, which no comptime module reaches, is not in the folder.
+    try std.testing.expectEqual(@as(usize, 2), program.items.len);
+    try std.testing.expectEqualStrings("test@lib", program.items[0].stem);
+    try std.testing.expectEqualStrings("test@main", program.items[1].stem);
+
+    // The face oracle over every comptime unit.
+    for (program.items) |p| {
+        const face = try ru.faceOfBytes(ar, p.bytes);
+        var lines = std.mem.tokenizeScalar(u8, face.text, '\n');
+        while (lines.next()) |l| {
+            const head = "    (import \"";
+            if (!std.mem.startsWith(u8, l, head)) continue;
+            const rest = l[head.len..];
+            const q = std.mem.indexOfScalar(u8, rest, '"').?;
+            const module = rest[0..q];
+            const unit_face = if (std.mem.eql(u8, module, ru.name)) rt.core_face else if (rt.unit(module)) |u| u.face else for (program.items) |o| {
+                if (std.mem.eql(u8, o.stem, module)) break try ru.faceOfBytes(ar, o.bytes);
+            } else {
+                std.debug.print("\n=== {s} imports {s}, no unit of the folder\n", .{ p.stem, module });
+                return error.TestUnexpectedResult;
+            };
+            const want = try std.fmt.allocPrint(ar, "    (export {s}", .{rest[q + 2 ..]});
+            if (std.mem.indexOf(u8, unit_face.text, want[0 .. want.len - 1]) == null) {
+                std.debug.print("\n=== {s}: no export for {s}\n", .{ p.stem, l });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+
+    // The folder's files: the core first, std's units, then the modules';
+    // each compiles.
+    const files = try cu.files(ar, program.items);
+    try std.testing.expectEqualStrings(ru.file_name, files[0].name);
+    try std.testing.expectEqualStrings("test@main.wasm", files[files.len - 1].name);
+    for (files) |f| {
+        var failure: ?[]u8 = null;
+        const pc = (try engine.precompiled(a, io, null, f.bytes, .module, false, &failure)) orelse {
+            std.debug.print("\n=== {s} refused: {s}\n", .{ f.name, failure.? });
+            a.free(failure.?);
+            return error.TestUnexpectedResult;
+        };
+        pc.code.deinit();
+    }
+
+    // The core and std units are `out/wasm/`'s bytes: what a `wasi` build
+    // with the units writes beside its entry (`build.zig` `writeRuntimeUnits`).
+    var wcfg = h.configs[3];
+    wcfg.wasm_artifact = true;
+    wcfg.wasm_units = true;
+    var wasm = try codegen.generateWith(a, &modules, io, wcfg, .{ .execute = false });
+    defer {
+        for (wasm.items) |*o| o.result.deinit(a);
+        wasm.deinit(a);
+    }
+    var out_wasm: std.StringHashMapUnmanaged([]const u8) = .empty;
+    try out_wasm.put(ar, ru.file_name, rt.core_bytes);
+    for (wasm.items) |o| {
+        const bin = o.result.wasm orelse continue;
+        if (!ru.importsRuntime(bin)) continue;
+        for (try rt.closure(ar, (try ru.importsOf(ar, bin)).units)) |u| try out_wasm.put(ar, u.file_name, u.bytes);
+    }
+    var shared: usize = 0;
+    for (files) |f| {
+        if (!std.mem.startsWith(u8, f.name, "std@")) continue;
+        const theirs = out_wasm.get(f.name) orelse {
+            std.debug.print("\n=== {s} is in out/wasm-comptime/ and not in out/wasm/\n", .{f.name});
+            return error.TestUnexpectedResult;
+        };
+        try std.testing.expectEqualSlices(u8, theirs, f.bytes);
+        shared += 1;
+    }
+    try std.testing.expect(shared >= 2);
 }

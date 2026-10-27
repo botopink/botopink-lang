@@ -1,0 +1,15 @@
+import {compiler, io.terminal.print} from "std";
+import {lib.twice};
+
+fn label(syntax decl: unknown) -> void {
+    compiler.addMember("pub fn label() -> string { return \"the " + compiler.name(decl)! + "\"; }");
+}
+
+#[label]
+type City(name: string)
+
+pub fn main() -> void {
+    print(City.label());
+    print(twice(21));
+    print("a,b".split(","));
+}

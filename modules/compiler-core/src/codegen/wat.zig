@@ -44,6 +44,7 @@ const hostBinding = @import("./wat/host_binding.zig");
 const stdWasmLink = @import("./wat/std_wasm_link.zig");
 const stdLeaves = @import("./wat/std_leaves.zig");
 const runtimeUnit = @import("./wat/runtime_unit.zig");
+const comptimeUnitsMod = @import("./wat/comptime_units.zig");
 const watReader = @import("./wat/wat_reader.zig");
 const stdWasm = @import("std_wasm");
 const hostFnBinding = @import("./hostFnBinding.zig");
@@ -579,6 +580,69 @@ pub fn codegenEmit(
 
     try relocateLinkedRefusals(alloc, results.items, &refusals, refused_links.items);
     return results;
+}
+
+/// Decisions 1033, 1035 (1), 1038 (4) — piece C1: the comptime units of the
+/// analysed program `outputs`, whatever the build's target. Each program or
+/// library module that declares comptime code (`comptimeUnitsMod.declaresComptime`)
+/// is emitted as its unit `<pkg>@<path>` by the program's generator — the
+/// units on, a `wasi` core module, `.gc` alone (`gc_only`) — together with
+/// every program unit its `botopink.units` names; nothing else comes back.
+/// A comptime module that did not compile comes back with its diagnostic.
+/// The folder's other files are `comptimeUnitsMod.files`'.
+pub fn comptimeUnits(
+    alloc: std.mem.Allocator,
+    outputs: []ComptimeOutput,
+    config: configMod.Config,
+) !std.ArrayListUnmanaged(ModuleOutput) {
+    var cfg = config;
+    cfg.targetSource = .wasm;
+    cfg.typeDefLanguage = null;
+    cfg.wasm_host = .wasi;
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    cfg.wasm_entry_only = null;
+    cfg.test_mode = false;
+    cfg.unit_cache = null;
+    const outer = gc_only;
+    gc_only = true;
+    var all = codegenEmit(alloc, outputs, cfg) catch |err| {
+        gc_only = outer;
+        return err;
+    };
+    gc_only = outer;
+    defer all.deinit(alloc);
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    // The comptime modules, then every program unit their units name.
+    var want: std.StringHashMapUnmanaged(void) = .empty;
+    for (outputs) |*o| {
+        if (o.outcome != .ok or crossModule.isLoadedModule(o.name)) continue;
+        if (std.mem.eql(u8, cfg.packages.idOf(o.name).package, crossModule.EMBEDDED_PACKAGE)) continue;
+        if (try comptimeUnitsMod.declaresComptime(ar, o.src)) try want.put(ar, o.name, {});
+    }
+    var stems: std.StringHashMapUnmanaged(void) = .empty;
+    for (all.items) |o| {
+        if (!want.contains(o.name)) continue;
+        const bin = o.result.wasm orelse continue;
+        for (try runtimeUnit.unitsOf(ar, bin)) |s| try stems.put(ar, s, {});
+    }
+    var kept: std.ArrayListUnmanaged(ModuleOutput) = .empty;
+    errdefer {
+        for (kept.items) |*o| o.result.deinit(alloc);
+        kept.deinit(alloc);
+    }
+    for (all.items) |*o| {
+        const stem: ?[]const u8 = if (o.result.wasm) |bin| blk: {
+            const s = try runtimeUnit.unitsOf(ar, bin);
+            break :blk if (s.len > 0) s[s.len - 1] else null;
+        } else null;
+        const keep = want.contains(o.name) or (if (stem) |s| stems.contains(s) else false);
+        if (keep) try kept.append(alloc, o.*) else o.result.deinit(alloc);
+    }
+    return kept;
 }
 
 /// Decision 1032 (6) P4 — the order the modules are emitted in with the units
@@ -1776,6 +1840,10 @@ threadlocal var refused_modules: ?*const std.StringHashMapUnmanaged([]const u8) 
 threadlocal var build_packages: ?crossModule.Packages = null;
 /// `Config.wasm_units` of the build being emitted.
 threadlocal var units_on_wasi: bool = false;
+/// Decision 1033 (1) — the comptime units (`comptimeUnits`): a module is
+/// lowered in `.gc` alone, never in linear memory; what the GC lowering
+/// refuses is the module's refusal (`emitGcOnly`).
+threadlocal var gc_only: bool = false;
 
 /// Decision 1032 (6) P4 — a program or library module emitted as a unit of
 /// its own: its `botopink.units` lines and the functions it exports, each by
@@ -1850,6 +1918,7 @@ fn emitWat(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
+    if (gc_only) return emitGcOnly(alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
     if (emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
         return gc;
     } else |err| switch (err) {
@@ -1884,6 +1953,49 @@ fn emitWat(
             return err;
         },
     }
+}
+
+/// Decision 1033 (1) — a comptime unit: the `.gc` lowering alone (then, as
+/// `emitWat` retries, only what the module reaches of its dependencies). A
+/// module it refuses with no located refusal of its own is refused naming
+/// the gap it met, never lowered in linear memory.
+fn emitGcOnly(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    src_path: []const u8,
+    own_program_in: ast.Program,
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    linked_in: []const Linked,
+    cross: ?*const CrossModule,
+    external_lookup: []const u8,
+    artifact: Artifact,
+    missing: ?*?moduleOutput.MissingExternal,
+    refused: ?*?Emitter.Refusal,
+) !Emitted {
+    const first = emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
+    const err = if (first) |gc| return gc else |e| e;
+    if (err == error.OutOfMemory) return err;
+    const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
+    if (linked_in.len > 0 or own_dependency) {
+        var retry_missing: ?moduleOutput.MissingExternal = null;
+        var retry_refused: ?Emitter.Refusal = null;
+        if (emitWatIn(.gc, true, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, &retry_missing, &retry_refused)) |gc| {
+            clearSlots(alloc, missing, refused);
+            return gc;
+        } else |e| {
+            if (retry_refused) |r| alloc.free(r.message);
+            if (e == error.OutOfMemory) return e;
+        }
+    }
+    const located = (if (missing) |m| m.* != null else false) or (if (refused) |r| r.* != null else false);
+    if (!located) if (refused) |slot| {
+        slot.* = .{
+            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory (decision 1033 (1))", .{ module_name, @errorName(err) }),
+            .loc = null,
+        };
+    };
+    return err;
 }
 
 /// The refusal slots of a lowering that a later one answered for.
