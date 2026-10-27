@@ -22,6 +22,7 @@ const config = @import("./config.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
 const libs = @import("./libs.zig");
+const build_stamp = @import("build_stamp");
 const runtime_file = bp.runtime_file;
 
 /// The directory under the cache root.
@@ -94,11 +95,113 @@ pub fn writeKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: []co
     try analysis_store.write(arena, io, kp, try std.fmt.allocPrint(arena, "{s}\n", .{&key}));
 }
 
+/// `<dir>/<target>.key`: the target key beside the `.bpr`'s (decision 1008 (1)).
+pub fn targetKeyPath(arena: std.mem.Allocator, dir: []const u8, target: config.Target) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ std.mem.trimEnd(u8, dir, "/"), @tagName(target), KEY_EXT });
+}
+
+/// What an emit's output depends on besides the `.bpr` set (decision 1008 (1)).
+pub const EmitInputs = struct {
+    /// The `.bpr` set's key (`keyOf`).
+    bpr_key: Key,
+    target: config.Target,
+    wasm_host: bp.ast.WasmHost,
+    /// The compiler's source stamp (805 (2)).
+    stamp: []const u8 = build_stamp.source_hash,
+    /// `--typescript` or the manifest's `"typings"`.
+    typings: bool,
+    /// `--out`, as given.
+    out_dir: []const u8,
+    /// The module `run` starts (wasm emits only its component).
+    entry: []const u8,
+    /// The OTP release the erlang / beam compile is for.
+    otp_release: []const u8 = bp.otp.RELEASE,
+};
+
+/// The target key of an emit (decision 1008 (1)): a hash of a tag, the `.bpr`
+/// set's key, the target and its wasm host, the compiler's stamp, the emit
+/// options and — for erlang and beam — the OTP release and the options the
+/// `.beam`s are compiled with.
+pub fn targetKey(in: EmitInputs) Key {
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update("botopink-target-1\x00");
+    h.update(&in.bpr_key);
+    h.update(&.{0});
+    h.update(@tagName(in.target));
+    h.update(&.{0});
+    h.update(@tagName(in.wasm_host));
+    h.update(&.{0});
+    h.update(in.stamp);
+    h.update(&.{0});
+    h.update(if (in.typings) "typings" else "no-typings");
+    h.update(&.{0});
+    h.update(in.out_dir);
+    h.update(&.{0});
+    h.update(in.entry);
+    h.update(&.{0});
+    if (in.target == .erlang or in.target == .beam) {
+        h.update(in.otp_release);
+        h.update(&.{0});
+        h.update("deterministic,binary,return_errors");
+        h.update(&.{0});
+    }
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    return std.fmt.bytesToHex(digest, .lower);
+}
+
+/// Whether the target key file in `dir` holds `key`.
+pub fn targetMatches(arena: std.mem.Allocator, io: std.Io, dir: []const u8, target: config.Target, key: Key) bool {
+    const kp = targetKeyPath(arena, dir, target) catch return false;
+    const held = std.Io.Dir.cwd().readFileAlloc(io, kp, arena, .limited(4096)) catch return false;
+    return std.mem.eql(u8, std.mem.trimEnd(u8, held, "\n"), &key);
+}
+
+/// Removes the target key before an emit, so one written in part never matches.
+pub fn removeTargetKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, target: config.Target) void {
+    const kp = targetKeyPath(arena, dir, target) catch return;
+    std.Io.Dir.cwd().deleteFile(io, kp) catch {};
+}
+
+/// Writes the target key once the emit succeeded, last.
+pub fn writeTargetKey(arena: std.mem.Allocator, io: std.Io, dir: []const u8, target: config.Target, key: Key) void {
+    const kp = targetKeyPath(arena, dir, target) catch return;
+    analysis_store.write(arena, io, kp, std.fmt.allocPrint(arena, "{s}\n", .{&key}) catch return) catch {};
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
 const test_scratch = @import("test_scratch");
 const manifest = @import("manifest");
+
+test "targetKey: the target, the host, the emit options and the .bpr key move it; the OTP release only for erlang and beam" {
+    const base: EmitInputs = .{ .bpr_key = @splat('a'), .target = .commonJS, .wasm_host = .wasi, .typings = false, .out_dir = "out", .entry = "main" };
+    const k0 = targetKey(base);
+    try testing.expectEqualSlices(u8, &k0, &targetKey(base));
+    var v = base;
+    v.target = .beam;
+    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
+    v = base;
+    v.bpr_key = @splat('b');
+    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
+    v = base;
+    v.typings = true;
+    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
+    v = base;
+    v.out_dir = "o2";
+    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
+    v = base;
+    v.stamp = "other";
+    try testing.expect(!std.mem.eql(u8, &k0, &targetKey(v)));
+    v = base;
+    v.otp_release = "99";
+    try testing.expectEqualSlices(u8, &k0, &targetKey(v));
+    v.target = .erlang;
+    var w = v;
+    w.otp_release = "98";
+    try testing.expect(!std.mem.eql(u8, &targetKey(v), &targetKey(w)));
+}
 
 test "insidePackage: an output directory inside the package, as a path from it" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);

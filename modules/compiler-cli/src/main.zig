@@ -73,7 +73,7 @@ const HELP =
     \\                               building it first in the same pass
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions (also on with "typings": true)
-    \\  --cold                       Read nothing from the code cache; write what is compiled; ignore the .bpr key and rebuild
+    \\  --cold                       Read nothing from the code cache; write what is compiled; ignore the .bpr key and the target key and rewrite
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
     \\  --json                       Stdout is JSON lines, one event each, stderr as without it: {"event":"targets","target":T,"targets":[…]},
     \\                               {"event":"build","text":L} (one per line a build body printed, in order),
@@ -91,10 +91,12 @@ const HELP =
     \\
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target (default: the manifest's); the .bpr set is
-    \\                               reused while its key is fresh, else built first
+    \\                               reused while its key is fresh, else built first; the output is left alone
+    \\                               while its target key matches (<cache root>/.botopinkbuild/runtime/<pkg>/<target>.key)
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
-    \\  --cold                       Read nothing from the code cache; write what is compiled; a fresh .bpr set is reused
+    \\  --cold                       Read nothing from the code cache (the wasmtime cache included); write what is compiled; a fresh .bpr
+    \\                               set and a matching target key are reused
     \\  --cache-root <dir>           File the code cache (levels A and B) under <dir>, not the project's or its workspace's
     \\  --workspace-out <dir>        A member's run from its workspace's one folder <dir> (the workspace root's `run --target` hands it)
     \\  --                           Pass remaining args to the program

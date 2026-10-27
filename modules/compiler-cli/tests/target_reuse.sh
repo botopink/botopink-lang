@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Decision 1008 (1), (4), (5) — each target's output folder carries a key, and a
+# matching one means `run --target <t>` only executes (the proof of the ledger
+# row: reuse is a property of two runs, which no cell expresses), over its
+# fixture `target_reuse/` (a package and one dependency), on erlang, beam and
+# commonJS, and on wasm when wasmtime is on PATH:
+#   • the second `run --target <t>` rewrites no file of the output folder (every
+#     file's inode and modification time the same) and answers the same;
+#   • a changed source file makes the next run emit again, and it answers the
+#     changed program;
+#   • `build --cold --target <t>` rewrites the output folder;
+#   • `run --cold --target <t>` reuses a fresh `.bpr` and a matching target key;
+#   • on wasm the compilation cache of wasmtime is
+#     `.botopinkbuild/cache/wasmtime/` and nothing goes under `$HOME/.cache`
+#     (HOME is a temporary directory); `--cold` deletes it.
+#
+# BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+FIXTURE="$SCRIPT_DIR/target_reuse"
+
+if [[ -z "${BOTOPINK_SKIP_BUILD:-}" && -z "${BOTOPINK_BIN:-}" ]]; then
+  echo "==> building botopink CLI"
+  ( cd "$REPO_ROOT" && zig build )
+fi
+BP_BIN="${BOTOPINK_BIN:-$REPO_ROOT/zig-out/bin/botopink}"
+if [[ ! -x "$BP_BIN" ]]; then
+  echo "error: CLI binary not found at $BP_BIN" >&2
+  exit 1
+fi
+
+tmp_root="${TMPDIR:-/tmp}"
+WORK="$(mktemp -d "${tmp_root%/}/botopink-target-reuse.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$WORK/home"
+
+failures=0
+fail() { echo "  ✗ $*" >&2; failures=$((failures + 1)); }
+show() { sed 's/^/      /' "$1" >&2; }
+
+# The CLI in <dir>, with a HOME of its own: stdout to $WORK/out, stderr to $WORK/err.
+bp() { # <dir> <args…>
+  local dir="$1"; shift
+  ( cd "$dir" && HOME="$WORK/home" "$BP_BIN" "$@" ) > "$WORK/out" 2> "$WORK/err"
+}
+says() { # <what> <line>
+  printf '%s\n' "$2" > "$WORK/want"
+  cmp -s "$WORK/want" "$WORK/out" || { fail "$1: stdout differs"; diff "$WORK/want" "$WORK/out" | sed 's/^/      /' >&2 || true; }
+}
+# Every file of <dir> with its inode and modification time (ns): the folder's state.
+listing() { ( cd "$1" && find . -type f -printf '%p %i %T@\n' | sort ); }
+
+C="$WORK/pkg"
+mkdir -p "$C"
+cp -R "$FIXTURE/app" "$FIXTURE/lib" "$C/"
+APP="$C/app"
+
+targets=(erlang beam commonJS)
+if command -v wasmtime > /dev/null 2>&1; then targets+=(wasm); else echo "  (wasmtime is not on PATH: wasm is skipped)"; fi
+
+for target in "${targets[@]}"; do
+  OUT="o-$target"
+  # The first run emits; the second only executes.
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the first run failed"; show "$WORK/err"; continue; }
+  says "$target: the first run" "answer 42"
+  listing "$APP/$OUT" > "$WORK/before"
+  [[ -s "$WORK/before" ]] || fail "$target: the first run wrote nothing under $OUT"
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the second run failed"; show "$WORK/err"; continue; }
+  says "$target: the second run (reuses)" "answer 42"
+  listing "$APP/$OUT" > "$WORK/after"
+  cmp -s "$WORK/before" "$WORK/after" || { fail "$target: the second run rewrote a file of $OUT"; diff "$WORK/before" "$WORK/after" | sed 's/^/      /' >&2 || true; }
+  [[ -s "$APP/.botopinkbuild/runtime/app/$target.key" ]] || fail "$target: no target key under .botopinkbuild/runtime/app/"
+
+  # `run --cold` reuses a fresh `.bpr` and a matching target key.
+  bp "$APP" run --cold --target "$target" --out "$OUT" || { fail "$target: run --cold failed"; show "$WORK/err"; continue; }
+  says "$target: run --cold (reuses)" "answer 42"
+  listing "$APP/$OUT" > "$WORK/after"
+  cmp -s "$WORK/before" "$WORK/after" || fail "$target: run --cold rewrote a file of $OUT"
+
+  # `build --cold` rewrites everything.
+  bp "$APP" build --cold --target "$target" --out "$OUT" || { fail "$target: build --cold failed"; show "$WORK/err"; continue; }
+  listing "$APP/$OUT" > "$WORK/after"
+  if cmp -s "$WORK/before" "$WORK/after"; then fail "$target: build --cold rewrote nothing"; fi
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the run after build --cold failed"; show "$WORK/err"; continue; }
+  says "$target: the run after build --cold" "answer 42"
+  listing "$APP/$OUT" > "$WORK/before"
+
+  # A changed source file: the next run emits again and answers the changed program.
+  sed -i 's/label("answer")/label("changed")/' "$APP/src/main.bp"
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the run after the edit failed"; show "$WORK/err"; }
+  says "$target: the run after the edit (emits)" "changed 42"
+  listing "$APP/$OUT" > "$WORK/after"
+  if cmp -s "$WORK/before" "$WORK/after"; then fail "$target: the run after the edit rewrote nothing"; fi
+  listing "$APP/$OUT" > "$WORK/before"
+  bp "$APP" run --target "$target" --out "$OUT" || { fail "$target: the run after it failed"; show "$WORK/err"; }
+  says "$target: the run after it (reuses)" "changed 42"
+  listing "$APP/$OUT" > "$WORK/after"
+  cmp -s "$WORK/before" "$WORK/after" || fail "$target: the run after the edit's rewrote a file of $OUT"
+  sed -i 's/label("changed")/label("answer")/' "$APP/src/main.bp"
+done
+
+# wasmtime's compilation cache is the build folder's (decision 1008 (5)).
+if command -v wasmtime > /dev/null 2>&1; then
+  WT="$APP/.botopinkbuild/cache/wasmtime"
+  [[ -d "$WT/store" ]] && [[ -n "$(find "$WT/store" -type f -print -quit)" ]] || fail "wasm: no wasmtime cache entry under .botopinkbuild/cache/wasmtime/store"
+  [[ ! -e "$WORK/home/.cache/wasmtime" ]] || fail "wasm: wasmtime wrote its cache under \$HOME/.cache"
+  if [[ -d "$WORK/home/.cache" ]] && [[ -n "$(find "$WORK/home/.cache" -type f -print -quit)" ]]; then
+    fail "wasm: something was written under \$HOME/.cache"
+  fi
+  # `--cold` deletes it with the rest.
+  mkdir -p "$WT/store" && : > "$WT/store/marker"
+  bp "$APP" run --cold --target wasm --out o-wasm || { fail "wasm: run --cold failed"; show "$WORK/err"; }
+  [[ ! -e "$WT/store/marker" ]] || fail "wasm: run --cold left the old wasmtime cache"
+fi
+
+if (( failures > 0 )); then
+  echo "target_reuse.sh: $failures failure(s)" >&2
+  exit 1
+fi
+echo "target_reuse.sh: every behaviour held"

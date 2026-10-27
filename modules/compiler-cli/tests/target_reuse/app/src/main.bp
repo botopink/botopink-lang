@@ -1,0 +1,9 @@
+//// The program `target_reuse.sh` runs on each target (decision 1008): the same answer
+//// from every run, its output folder rewritten by none after the first.
+
+import {io.terminal.print} from "std";
+import {tools.label} from "lib";
+
+pub fn main() -> void {
+    print(label("answer"));
+}

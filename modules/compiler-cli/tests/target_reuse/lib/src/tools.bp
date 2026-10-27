@@ -1,0 +1,5 @@
+//// The dependency of `target_reuse.sh`'s package: one function the program calls.
+
+pub fn label(name: string) -> string {
+    return name + " 42";
+}

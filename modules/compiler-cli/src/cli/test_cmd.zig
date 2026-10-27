@@ -647,6 +647,7 @@ pub fn run(
             // A WASI preview 2 component, handed the host features its
             // `botopink.needs` section names, as `run` does (decision 518).
             try argv.append(arena, "run");
+            try argv.appendSlice(arena, try run_cmd.wasmtimeCacheArgs(arena, io, proj));
             try argv.appendSlice(arena, try run_cmd.wasmtimeFlags(arena, io, sub_path));
             try argv.append(arena, sub_path);
         } else try argv.append(arena, sub_path);

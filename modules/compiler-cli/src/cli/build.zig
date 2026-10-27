@@ -382,10 +382,20 @@ fn runBuild(
     // A member's build into its workspace's one folder (decision 1015 (4)).
     const shared: ?workspace_out.Shared = if (opts.workspace_out != null) .{ .runtime = &closure_keys.runtime, .rebuild = opts.rebuild } else null;
     if (!opts.rebuild and opts.emit_resolved == null and runtime_cache.isFresh(arena, io, rt_dir, proj.name, rt_key, runtimeStamp())) {
-        if (opts.target == null) return 0;
+        const t = opts.target orelse return 0;
+        // Decision 1008 (1): the emit's own key matching and its entry artifact
+        // present, nothing is emitted or compiled; else emit from the set and
+        // write the key last.
+        const packages = try libs.packagesOf(arena, proj, dep_modules);
+        const tkey = targetKeyFor(proj, opts, t, rt_key);
+        if (shared == null and !opts.rebuild and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) return 0;
+        if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
-        return (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared)).exit;
+        const built = (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared)).exit;
+        if (built == 0 and shared == null) runtime_cache.writeTargetKey(arena, io, rt_dir, t, tkey);
+        return built;
     }
+    if (opts.target) |t| if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
 
     // The code cache's level B (144 B-60): a dependency whose analysis entry
     // reads back under its closure key is not analysed again; the entries
@@ -496,8 +506,38 @@ fn runBuild(
     }
     if (!erl_ok) return 1;
 
+    if (opts.target) |t| if (shared == null) runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, rt_key));
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
+}
+
+/// The target key of this emit (decision 1008 (1), `runtime_cache.targetKey`).
+fn targetKeyFor(proj: config.ProjectConfig, opts: Options, target: config.Target, bpr_key: runtime_cache.Key) runtime_cache.Key {
+    return runtime_cache.targetKey(.{
+        .bpr_key = bpr_key,
+        .target = target,
+        .wasm_host = proj.wasmHost(),
+        .typings = opts.typescript or proj.manifest.typings,
+        .out_dir = opts.out_dir,
+        .entry = opts.entry,
+    });
+}
+
+/// Whether the emit into `opts.out_dir` is already what `tkey` names: the
+/// target key file holds it and the entry's artifact is there (decision 1008 (1)).
+fn targetReused(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    rt_dir: []const u8,
+    opts: Options,
+    target: config.Target,
+    tkey: runtime_cache.Key,
+    packages: bp.codegen.crossModule.Packages,
+) bool {
+    if (!runtime_cache.targetMatches(arena, io, rt_dir, target, tkey)) return false;
+    const entry = artifactPath(arena, opts.out_dir, target, packages, opts.entry, artifactExt(target)) catch return false;
+    std.Io.Dir.cwd().access(io, entry, .{}) catch return false;
+    return true;
 }
 
 /// A bare `build` (decision 1006 (2)): the comptime pass alone, for no target
