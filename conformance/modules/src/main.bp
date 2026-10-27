@@ -87,6 +87,7 @@ comptime {
     runModule("assert");
     runModule("assoc");
     runModule("associated");
+    runModule("async");
     runModule("beam");
     runModule("behavior");
     runModule("bitwise");
@@ -114,6 +115,7 @@ comptime {
     runModule("decisions-taken/ast_fn_node_builds_mock_member-753");
     runModule("decisions-taken/ast_node_closed_union-751");
     runModule("decisions-taken/ast_tree_type_error_at_call-752");
+    runModule("decisions-taken/async_marked_by_hooks_list-375");
     runModule("decisions-taken/backtick_escaped_identifier-561");
     runModule("decisions-taken/bare_variant_expression_refused-587");
     runModule("decisions-taken/beam_memory_refused_off_beam-167");
@@ -123,6 +125,7 @@ comptime {
     runModule("decisions-taken/body_cell_botopink_body-610");
     runModule("decisions-taken/bodyless_declarations_two_only-604");
     runModule("decisions-taken/bodyless_type_method_is_host_binding-311");
+    runModule("decisions-taken/brace_without_arrow_is_block-525");
     runModule("decisions-taken/build_raise_located_with_frames-532");
     runModule("decisions-taken/build_runtime_binary_reused-805");
     runModule("decisions-taken/builtins_declared_in_d_bp-252");
@@ -143,6 +146,7 @@ comptime {
     runModule("decisions-taken/compiler_init_executor-615");
     runModule("decisions-taken/compiler_is_std_value-579");
     runModule("decisions-taken/compiler_load_answers_diagnostics-780");
+    runModule("decisions-taken/compiler_load_answers_module-786");
     runModule("decisions-taken/compiler_load_module_run-787");
     runModule("decisions-taken/compiler_load_takes_a_package-982");
     runModule("decisions-taken/compiler_load_try_catch-783");
@@ -238,6 +242,7 @@ comptime {
     runModule("decisions-taken/implement_signature_over_types-974");
     runModule("decisions-taken/import_alias_on_type_and_folder_namespace-110");
     runModule("decisions-taken/import_dotted_and_braced_paths_one_tree-107");
+    runModule("decisions-taken/init_async_executor_in_async_body-998");
     runModule("decisions-taken/inject_rides_context_tree-416");
     runModule("decisions-taken/inline_parameter_record_type-207");
     runModule("decisions-taken/integer_overflow_aborts-264");
@@ -282,6 +287,7 @@ comptime {
     runModule("decisions-taken/pattern_as_binding_refused-11");
     runModule("decisions-taken/persistent_term_var_write_atomic-903");
     runModule("decisions-taken/prelude_has_no_pair_or_function-738");
+    runModule("decisions-taken/prelude_is_primitives-606");
     runModule("decisions-taken/primitive_member_by_contract-799");
     runModule("decisions-taken/primitive_type_body_and_names-873");
     runModule("decisions-taken/primitive_type_redeclared_refused-639");
@@ -310,8 +316,12 @@ comptime {
     runModule("decisions-taken/string_from_codepoint-262");
     runModule("decisions-taken/string_index_counts_codepoints-320");
     runModule("decisions-taken/syntax_fn_expanded_at_call-719");
+    runModule("decisions-taken/syntax_fn_source_file_is_path-756");
     runModule("decisions-taken/syntax_fn_use_decides_kind-976");
     runModule("decisions-taken/tag_annotation_is_decorator-302");
+    runModule("decisions-taken/task_behaves_as_promise-392");
+    runModule("decisions-taken/task_methods_withdrawn_async_block-523");
+    runModule("decisions-taken/task_result_rejects_with_error-432");
     runModule("decisions-taken/template_call_expands_any_expression-425");
     runModule("decisions-taken/template_call_type_is_built_code-426");
     runModule("decisions-taken/template_called_with_raw_text-577");
@@ -424,8 +434,10 @@ comptime {
     runModule("sibling");
     runModule("smoke");
     runModule("static");
+    runModule("stream");
     runModule("string");
     runModule("tail");
+    runModule("task");
     runModule("template");
     runModule("terminal");
     runModule("ternary");
