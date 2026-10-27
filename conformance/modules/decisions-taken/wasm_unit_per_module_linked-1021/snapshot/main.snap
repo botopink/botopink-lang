@@ -1,0 +1,57 @@
+botopink-cell 2
+== gc_catch_binder
+out caught negative
+out 30
+out 7
+out fine
+out too big 9
+== gc_catch_null_into_optional
+out 30
+out -1
+out w2
+out none
+== gc_if_null_into_optional
+out 0
+out -1
+out 2
+out 1
+out -1
+out 0.5
+out -1.0
+out true
+out false
+out true
+out arm
+out 5
+out 1
+out -1
+== gc_bigint_values
+out 123456789012345678901234567891
+out -7
+out -370370367037037036703703703670
+out 123456789012345678901234567
+out 890
+out 15511210043330985984000000
+out -99999999999999999999
+out -1
+out zero
+out negative
+out true
+out true
+out [1, 123456789012345678901234567890]
+out true
+out 123456789012345678901234567890
+out true
+out 90000000000000000010
+out Account(owner: "Ana", balance: 90000000000000000010)
+out total 123456789012345678901234567890
+out 43
+== gc_string_ordering
+out true
+out true
+out true
+out false
+out fig
+out ab
+out true
+out after

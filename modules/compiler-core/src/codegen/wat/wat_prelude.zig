@@ -88,6 +88,8 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         // ahead of the memory; no function.
         .fs_host => &.{},
         .std_marshal => &.{ .{ .func = gc_to_lin_str }, .{ .func = lin_to_gc_str } },
+        // Decision 1021 (10): string ordering has a GC form only.
+        .str_cmp => &.{.{ .func = gc_str_cmp }},
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -2318,6 +2320,23 @@ const gc_str_eq = typedFunc("__str_eq", &.{ pref("a"), pref("b") }, .i32, i32s(&
     c32(1),
 });
 
+/// Decision 1021 (10) — `$__str_cmp(a, b)`: the order of two GC strings by
+/// their bytes, unsigned, a prefix first: `-1`, `0` or `1`.
+const gc_str_cmp = typedFunc("__str_cmp", &.{ pref("a"), pref("b") }, .i32, i32s(&.{ "i", "n", "an", "bn", "x", "y" }), &.{
+    get("a"),  str_len,   set("an"), get("b"),  str_len,    set("bn"),
+    get("an"), set("n"),  get("bn"), get("an"), op("lt_u"), when(&.{ get("bn"), set("n") }),
+    loop(&.{
+        get("i"), get("n"), op("ge_u"), brk,
+        get("a"), get("i"), str_get,    set("x"),
+        get("b"), get("i"), str_get,    set("y"),
+        get("x"), get("y"), op("ne"),   when(&.{ c32(1), c32(-1), get("x"), get("y"), op("gt_u"), .select, ret }),
+        get("i"), c32(1),   op("add"),  set("i"),
+        again,
+    }),
+    c32(1),    c32(-1),   get("an"), get("bn"), op("gt_u"), .select,
+    c32(0),    get("an"), get("bn"), op("ne"),  .select,
+});
+
 /// `$__write_bytes` of a GC module with `text_capture`: while `$__cap` holds a
 /// string, the bytes `[p, p + n)` are appended to a copy of it; otherwise they
 /// go to stdout.
@@ -2932,9 +2951,12 @@ pub fn gcItems(g: ast.HelperGroup, capture: bool) ?[]const ast.Item {
         .str_eq => &.{.{ .func = gc_str_eq }},
         .text_capture => &.{ .{ .global = gc_cap_global }, .{ .func = gc_cap_begin }, .{ .func = gc_cap_end } },
         .std_marshal => items(.std_marshal),
+        .str_cmp => items(.str_cmp),
         // The host's entropy and the seeded stream's word (front 164 s3 P2-e):
         // the `.wat` leaves of `random.wat` name both.
-        .wasi_random_f64, .random_state, .fs_host => items(g),
+        // Decision 1021 (10): `bigint`'s marker has no function in a GC
+        // module either (its values are byte arrays, `wat.zig`'s marshal).
+        .wasi_random_f64, .random_state, .fs_host, .bigint => items(g),
         // The shape walker and the tagged printer are generated per module
         // (`wat.zig`'s `gcPrinter`); the quoted string is the one shared piece.
         .print_shaped => &.{.{ .func = gc_print_quoted_raw }},

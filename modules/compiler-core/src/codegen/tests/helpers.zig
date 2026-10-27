@@ -831,6 +831,32 @@ pub fn assertWasmRunLog(allocator: Allocator, src: []const u8, expected: []const
     return error.ModuleDidNotCompile;
 }
 
+/// Decision 1021 (10) — `assertWasmRunLog` for a program the GC lowering
+/// answers for: the module is a WasmGC one (its `$str` is the GC byte array),
+/// never the linear fallback, and its RUN LOG equals `expected`.
+pub fn assertWasmGcRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
+    const io = std.testing.io;
+    var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        if (std.mem.indexOf(u8, o.result.js, "(type $str (array (mut i8)))") == null) {
+            std.debug.print("\n=== the module fell back to linear memory ===\n{s}\n", .{o.result.js});
+            return error.GcFallback;
+        }
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated WAT ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// `assertWasmRunLog` over several modules: the consumer is the one with the
 /// empty path (`main`); its RUN LOG under wasmtime is compared with `expected`,
 /// and a refusal of it is printed.

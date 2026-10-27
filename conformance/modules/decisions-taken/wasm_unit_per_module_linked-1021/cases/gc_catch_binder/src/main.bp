@@ -1,0 +1,36 @@
+//// Decision 1021 (10) — `try f() catch { e -> … }` binds the failure's error to `e` in the
+//// handler, on wasm in the GC lowering as on every target: a string error and a record error,
+//// the handler's value answering for the `try`, and the binder unseen where `f()` succeeds.
+
+import {io.terminal.print} from "std";
+
+pub type Fault(code: i32, why: string)
+
+fn parse(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negative";
+    return n * 10;
+}
+
+fn check(n: i32) -> Result<string, Fault> {
+    if (n > 5) throw Fault(code: n, why: "too big");
+    return "fine";
+}
+
+pub fn main() -> void {
+    val a = try parse(3) catch { e ->
+        print("never " + e);
+        0
+    };
+    val b = try parse(-1) catch { e ->
+        print("caught " + e);
+        7
+    };
+    print(a);
+    print(b);
+    print(try check(2) catch { f ->
+        f.why
+    });
+    print(try check(9) catch { f ->
+        f.why + " " + f.code.toString()
+    });
+}

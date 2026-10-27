@@ -103,9 +103,22 @@ generator handle, its body a resumable state machine (§ Generators as state mac
 and a `stream` loop (144 B-142). A `try` inside a generator machine whose item is a `@Result` (decision 122) answers
 the `Error` as the last item and ends the handle (`gcTryPropagate`); over any other item it is not lowered.
 
-Every other value — `bigint` — is still a word in
-linear memory (`alloc`, the bump heap, exhaustion a trap — decision 448 (4)), and a module holding one is
-lowered in `.linear`. The module's types are built once the module is lowered, in groups that depend only on declarations
+A `bigint` (decision 1021 (8), (10)) is its block's bytes, `[L][limbs…]`, in the string's byte array (`vtOf`
+gives `.bigint` the `$str` type): a literal is a GC string global of those bytes (`lowerBigintLiteral`), and every
+`bigint.*` call goes through a wrapper `$__gcstd_bigint_<fn>` (`gcStdWrapper`) that copies each block into the
+marshal arena (`$__gc_to_lin_big`: `$__gc_to_lin_str`, the block past its length word) and the answer out
+(`$__lin_to_gc_big`: `4 + |L|` bytes; the `opt` forms a `?bigint`'s null as `0`), so the equalities and printers
+written after the functions (`gcEqValues`, the shape `n` of `gcGenShapePrinter`) call one with no locals of the
+caller; `bigint.parse` answers a `$result` (`gcBigintParse`), a `?bigint` prints `null` or its digits. A `bigint`
+into an `unknown` slot falls back (`emitConvert`: it would read as a string). The other GC gaps decision 1021 (10)
+names are lowered too: a `catch { e -> … }` binder is the `$result`'s payload unboxed to the error's repr
+(`gcBindResultErr`), `try f() catch h` into a declared `?T` answers the optional's repr (`gcTryCatchInto`), an `if`
+answering `null` into a boxed optional boxes arm by arm (`gcOptIf`) and into a reference takes the other arm's repr
+(`ifValueType` skips the `null` arm, `branchLastStmt` answers the null reference), `<` / `>` / `<=` / `>=` over two
+strings is `$__str_cmp`'s sign (the `str_cmp` group, GC only), a `case` arm that assigns runs as a statement
+(`lowerArmBodyStmts`), and a `case` whose arms all answer one scalar in a function answering a reference answers
+that scalar (`gcCaseScalarArms`). Every other value is a word in
+linear memory (`alloc`, the bump heap, exhaustion a trap — decision 448 (4)). The module's types are built once the module is lowered, in groups that depend only on declarations
 (decision 1021 (9), `gcBuildTypes`): (i) the **prelude group**, `gc_prelude_defs`, emitted whole in every module that
 names a GC type at fixed indices (`GcPrelude`: `$str`, `$arr_i32`/`$arr_f64`/`$arr_any` (open), `$tuple`,
 `$box_i32` (open)/`$box_i64`/`$box_f64`/`$box_bool`, `$closure`, `$result`, `$exn`, `$task`, `$waiter`, `$hostn`,
@@ -170,7 +183,7 @@ its string or `0`, an `?i32` as its 4-byte box or `0`; the answer copied out the
 (`$__lin_to_gc_str`, `$__lin_to_gc_strs`, …); and `$__heap_ptr` put back after the call, so nothing
 std-wasm allocated outlives it (std-wasm never calls back). `gcStdSig` is the signature a call is marshalled
 by (a `std:` export's own, or the program face's), `GcStd` the types that have a marshal; an array's words
-(`array.*`) and a `bigint`'s have none — the array operations a GC module needs are its own functions
+(`array.*`) have none, and a `bigint`'s go through `gcStdWrapper` (above) — the array operations a GC module needs are its own functions
 (`gcArrOp`: `slice`, `reverse`, `concat`, `prepend`, `fill`, `indexOf`, `lastIndexOf`, `join`; P2b:
 `$__arr_unique_<class>` — std-wasm's three equalities, a word, a float by its bits, a string by content —,
 `$__arr_flatten_<class>`, `$__arr_chunked_<class>` / `$__arr_sliding_<class>` by std-wasm's counts and

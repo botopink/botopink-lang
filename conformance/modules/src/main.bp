@@ -290,6 +290,7 @@ comptime {
     runModule("decisions-taken/wasm_host_profiles_wasi_browser-334");
     runModule("decisions-taken/wasm_prints_std_wasm_text-441");
     runModule("decisions-taken/wasm_unicode_case_mapping-443");
+    runModule("decisions-taken/wasm_unit_per_module_linked-1021");
     runModule("decisions-taken/wat_prelude_representation_only-442");
     runModule("decorator");
     runModule("default");

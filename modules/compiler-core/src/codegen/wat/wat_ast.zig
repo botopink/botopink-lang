@@ -968,6 +968,9 @@ pub const HelperGroup = enum {
     /// leaf gets the imports, and the `wasi` component its adapter over
     /// `wasi:filesystem` (`wat_emitter.renderComponent`).
     fs_host,
+    /// Decision 1021 (10) — `$__str_cmp(a, b)`: the byte order of two GC
+    /// strings (`-1` / `0` / `1`), what `<`, `>`, `<=`, `>=` over strings read.
+    str_cmp,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -1151,6 +1154,7 @@ pub const Helper = enum {
     memo_cell_get,
     memo_cell_set,
     main_fail,
+    str_cmp,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

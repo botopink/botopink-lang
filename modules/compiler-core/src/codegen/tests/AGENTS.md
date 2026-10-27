@@ -102,6 +102,14 @@ record wasm's answer. `wat.zig`'s `String.at` fixture uses it for the other
 reason: the method already answers on the other three backends, so an
 all-backend fixture would move their snapshot directories, which front `05-wasm`
 does not own.
+`assertWasmGcRunLog(src, expected)` is `assertWasmRunLog` for a program the
+WasmGC lowering answers for (decision 1021 (10)): it fails when the module fell
+back to linear memory (no `(type $str (array (mut i8)))`). The `wat.zig` tests
+`decision 1021 (10) ---- …` run the programs of
+`conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/cases/`
+with it, their RUN LOG the cases' answers on the other targets (a wasm
+conformance module does not run yet); `a case arm that assigns …` has no case
+there (beam answers it wrong), its RUN LOG erlang's and commonJS's.
 
 `assertWasmRefusedAt(src, needle, line, col)` asserts the wasm backend
 REFUSES `src` — `codegen.generateWith` hands the module back with a

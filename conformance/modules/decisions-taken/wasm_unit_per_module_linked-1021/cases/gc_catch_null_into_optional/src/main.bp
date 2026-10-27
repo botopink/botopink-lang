@@ -1,0 +1,26 @@
+//// Decision 1021 (10) — `try f() catch null` into a declared `?T` is absent when `f()` fails and its `Ok`
+//// value when it does not, on wasm in the GC lowering as on every target: a scalar payload (boxed) and a
+//// string payload (its own nullable reference).
+
+import {io.terminal.print} from "std";
+
+fn parse(n: i32) -> Result<i32, string> {
+    if (n < 0) throw "negative";
+    return n * 10;
+}
+
+fn word(n: i32) -> Result<string, string> {
+    if (n < 0) throw "negative";
+    return "w" + n.toString();
+}
+
+pub fn main() -> void {
+    val a: ?i32 = try parse(3) catch null;
+    val b: ?i32 = try parse(-3) catch null;
+    val c: ?string = try word(2) catch null;
+    val d: ?string = try word(-2) catch null;
+    print(a ?? -1);
+    print(b ?? -1);
+    print(c ?? "none");
+    print(d ?? "none");
+}

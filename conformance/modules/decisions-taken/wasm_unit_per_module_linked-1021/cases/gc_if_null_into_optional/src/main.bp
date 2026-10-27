@@ -1,0 +1,47 @@
+//// Decision 1021 (10) — an `if` answering `null` or a value is an optional, on wasm in the GC lowering
+//// as on every target: a scalar payload boxed, a float, a bool, a record (its nullable reference), an
+//// `else if` chain, and an arm that runs statements before its value.
+
+import {io.terminal.print} from "std";
+
+pub type Point(x: i32, y: i32)
+
+fn pick(c: bool) -> ?i32 {
+    return if (c) 0 else null;
+}
+
+fn grade(n: i32) -> ?i32 {
+    return if (n > 10) 2 else if (n > 5) 1 else null;
+}
+
+fn half(c: bool) -> ?f64 {
+    return if (c) 0.5 else null;
+}
+
+fn flag(n: i32) -> ?bool {
+    return if (n == 0) null else n > 0;
+}
+
+fn at(c: bool) -> ?Point {
+    return if (c) Point(x: 1, y: 2) else null;
+}
+
+pub fn main() -> void {
+    print(pick(true) ?? -1);
+    print(pick(false) ?? -1);
+    print(grade(20) ?? -1);
+    print(grade(7) ?? -1);
+    print(grade(1) ?? -1);
+    print(half(true) ?? -1.0);
+    print(half(false) ?? -1.0);
+    print(flag(3) ?? false);
+    print(flag(-3) ?? true);
+    print(flag(0) ?? true);
+    val n: ?i32 = if (pick(true) != null) {
+        print("arm");
+        5;
+    } else null;
+    print(n ?? -1);
+    print(at(true)?.x ?? -1);
+    print(at(false)?.y ?? -1);
+}

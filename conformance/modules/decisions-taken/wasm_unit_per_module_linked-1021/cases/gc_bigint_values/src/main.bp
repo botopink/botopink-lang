@@ -1,0 +1,52 @@
+//// Decision 1021 (10) — a `bigint` has a GC form on wasm, its block's bytes in a byte array, marshalled to
+//// std-wasm's `bigint.*`: arithmetic, `bigint.of` / `parse`, a `case` on a literal, comparisons, an
+//// array, an optional, a record field, a template, `toI64` — the digits every target prints.
+
+import {io.terminal.print} from "std";
+
+type Account(owner: string, balance: bigint)
+
+fn grow(n: i64) -> bigint {
+    var acc = 1n;
+    var i = 2l;
+    while (i <= n) {
+        acc = acc * bigint.of(i);
+        i += 1l;
+    }
+    return acc;
+}
+
+fn sign(x: bigint) -> string {
+    return case x {
+        0n -> "zero";
+        _ -> if (x < 0n) "negative" else "positive";
+    };
+}
+
+pub fn main() -> void {
+    val big = 123456789012345678901234567890n;
+    print(big + 1n);
+    print(big - big - 7n);
+    print(-big * 3n);
+    print(big / 1000n);
+    print(big % 1000n);
+    print(grow(25));
+    print(bigint.parse("-99999999999999999999").unwrapOr(0n));
+    print(bigint.parse("x1").unwrapOr(-1n));
+    print(sign(0n));
+    print(sign(-5n));
+    print(big > 1n);
+    print(big == 123456789012345678901234567890n);
+    val xs: bigint[] = [1n, big];
+    print(xs);
+    print(xs[1] == big);
+    val maybe: ?bigint = if (big > 0n) big else null;
+    print(maybe);
+    print(maybe == big);
+    val a0 = Account(owner: "Ana", balance: 10n);
+    val a = Account(..a0, balance: a0.balance + 90000000000000000000n);
+    print(a.balance);
+    print(a);
+    print("total " + big.toString());
+    print(bigint.of(42l).toI64() + 1l);
+}

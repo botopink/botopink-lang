@@ -4414,3 +4414,216 @@ test "wat: executeWatIn ---- wasmtime's cache config sits under the given direct
     var f = try std.Io.Dir.cwd().openFile(io, toml, .{});
     f.close(io);
 }
+
+// Decision 1021 (10) — the GC lowering's gaps fixed in the lowering itself:
+// each program here built to a WasmGC module (no linear fallback) answers as
+// on erlang (its cell under `conformance/modules/decisions-taken/
+// wasm_unit_per_module_linked-1021/cases/`).
+
+test "wat: decision 1021 (10) ---- a catch binder is the Result's error payload in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub type Fault(code: i32, why: string)
+        \\
+        \\fn parse(n: i32) -> Result<i32, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return n * 10;
+        \\}
+        \\
+        \\fn check(n: i32) -> Result<string, Fault> {
+        \\    if (n > 5) throw Fault(code: n, why: "too big");
+        \\    return "fine";
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val a = try parse(3) catch { e ->
+        \\        print("never " + e);
+        \\        0
+        \\    };
+        \\    val b = try parse(-1) catch { e ->
+        \\        print("caught " + e);
+        \\        7
+        \\    };
+        \\    print(a);
+        \\    print(b);
+        \\    print(try check(2) catch { f -> f.why });
+        \\    print(try check(9) catch { f -> f.why + " " + f.code.toString() });
+        \\}
+    , "caught negative\n30\n7\nfine\ntoo big 9\n");
+}
+
+test "wat: decision 1021 (10) ---- `try f() catch null` into a declared optional is absent on failure in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn parse(n: i32) -> Result<i32, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return n * 10;
+        \\}
+        \\
+        \\fn word(n: i32) -> Result<string, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return "w" + n.toString();
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val a: ?i32 = try parse(3) catch null;
+        \\    val b: ?i32 = try parse(-3) catch null;
+        \\    val c: ?string = try word(2) catch null;
+        \\    val d: ?string = try word(-2) catch null;
+        \\    print(a ?? -1);
+        \\    print(b ?? -1);
+        \\    print(c ?? "none");
+        \\    print(d ?? "none");
+        \\}
+    , "30\n-1\nw2\nnone\n");
+}
+
+test "wat: decision 1021 (10) ---- an if answering null or a value is the optional in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub type Point(x: i32, y: i32)
+        \\
+        \\fn pick(c: bool) -> ?i32 {
+        \\    return if (c) 0 else null;
+        \\}
+        \\
+        \\fn grade(n: i32) -> ?i32 {
+        \\    return if (n > 10) 2 else if (n > 5) 1 else null;
+        \\}
+        \\
+        \\fn half(c: bool) -> ?f64 {
+        \\    return if (c) 0.5 else null;
+        \\}
+        \\
+        \\fn flag(n: i32) -> ?bool {
+        \\    return if (n == 0) null else n > 0;
+        \\}
+        \\
+        \\fn at(c: bool) -> ?Point {
+        \\    return if (c) Point(x: 1, y: 2) else null;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(pick(true) ?? -1);
+        \\    print(pick(false) ?? -1);
+        \\    print(grade(20) ?? -1);
+        \\    print(grade(7) ?? -1);
+        \\    print(grade(1) ?? -1);
+        \\    print(half(true) ?? -1.0);
+        \\    print(half(false) ?? -1.0);
+        \\    print(flag(3) ?? false);
+        \\    print(flag(-3) ?? true);
+        \\    print(flag(0) ?? true);
+        \\    val n: ?i32 = if (pick(true) != null) {
+        \\        print("arm");
+        \\        5;
+        \\    } else null;
+        \\    print(n ?? -1);
+        \\    print(at(true)?.x ?? -1);
+        \\    print(at(false)?.y ?? -1);
+        \\}
+    , "0\n-1\n2\n1\n-1\n0.5\n-1.0\ntrue\nfalse\ntrue\narm\n5\n1\n-1\n");
+}
+
+test "wat: decision 1021 (10) ---- a bigint is a byte array in the GC lowering, marshalled to std-wasm" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Account(owner: string, balance: bigint)
+        \\
+        \\fn grow(n: i64) -> bigint {
+        \\    var acc = 1n;
+        \\    var i = 2l;
+        \\    while (i <= n) {
+        \\        acc = acc * bigint.of(i);
+        \\        i += 1l;
+        \\    }
+        \\    return acc;
+        \\}
+        \\
+        \\fn sign(x: bigint) -> string {
+        \\    return case x {
+        \\        0n -> "zero";
+        \\        _ -> if (x < 0n) "negative" else "positive";
+        \\    };
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val big = 123456789012345678901234567890n;
+        \\    print(big + 1n);
+        \\    print(big - big - 7n);
+        \\    print(-big * 3n);
+        \\    print(big / 1000n);
+        \\    print(big % 1000n);
+        \\    print(grow(25));
+        \\    print(bigint.parse("-99999999999999999999").unwrapOr(0n));
+        \\    print(bigint.parse("x1").unwrapOr(-1n));
+        \\    print(sign(0n));
+        \\    print(sign(-5n));
+        \\    print(big > 1n);
+        \\    print(big == 123456789012345678901234567890n);
+        \\    val xs: bigint[] = [1n, big];
+        \\    print(xs);
+        \\    print(xs[1] == big);
+        \\    val maybe: ?bigint = if (big > 0n) big else null;
+        \\    print(maybe);
+        \\    print(maybe == big);
+        \\    val a0 = Account(owner: "Ana", balance: 10n);
+        \\    val a = Account(..a0, balance: a0.balance + 90000000000000000000n);
+        \\    print(a.balance);
+        \\    print(a);
+        \\    print("total " + big.toString());
+        \\    print(bigint.of(42l).toI64() + 1l);
+        \\}
+    , "123456789012345678901234567891\n-7\n-370370367037037036703703703670\n123456789012345678901234567\n890\n15511210043330985984000000\n-99999999999999999999\n-1\nzero\nnegative\ntrue\ntrue\n[1, 123456789012345678901234567890]\ntrue\n123456789012345678901234567890\ntrue\n90000000000000000010\nAccount(owner: \"Ana\", balance: 90000000000000000010)\ntotal 123456789012345678901234567890\n43\n");
+}
+
+test "wat: decision 1021 (10) ---- string ordering by bytes in the GC lowering ($__str_cmp)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn first(a: string, b: string) -> string {
+        \\    return if (a < b) a else b;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print("apple" < "banana");
+        \\    print("b" > "a");
+        \\    print("abc" <= "abd");
+        \\    print("abc" >= "abcd");
+        \\    print(first("pear", "fig"));
+        \\    print(first("ab", "abc"));
+        \\    print("é" > "z");
+        \\    val w = "kiwi";
+        \\    if (w > "date") print("after");
+        \\}
+    , "true\ntrue\ntrue\nfalse\nfig\nab\ntrue\nafter\n");
+}
+
+test "wat: decision 1021 (10) ---- a case arm that assigns runs as a statement in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn parse(n: i32) -> Result<string, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return "n" + n.toString();
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    var kept = "none";
+        \\    case parse(4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    }
+        \\    print(kept);
+        \\    case parse(-4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    }
+        \\    print(kept);
+        \\}
+    , "n4\nnegative\n");
+}

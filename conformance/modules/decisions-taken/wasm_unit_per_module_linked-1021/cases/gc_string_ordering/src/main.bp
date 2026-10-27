@@ -1,0 +1,20 @@
+//// Decision 1021 (10) — `<`, `>`, `<=`, `>=` over strings order them by their bytes, a prefix first, on
+//// wasm in the GC lowering (`$__str_cmp`) as on every target.
+
+import {io.terminal.print} from "std";
+
+fn first(a: string, b: string) -> string {
+    return if (a < b) a else b;
+}
+
+pub fn main() -> void {
+    print("apple" < "banana");
+    print("b" > "a");
+    print("abc" <= "abd");
+    print("abc" >= "abcd");
+    print(first("pear", "fig"));
+    print(first("ab", "abc"));
+    print("é" > "z");
+    val w = "kiwi";
+    if (w > "date") print("after");
+}

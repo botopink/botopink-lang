@@ -2175,7 +2175,7 @@ fn emitWatPass(
             // The groups whose GC form names `$str` need the type group, though
             // no local of the module is a string.
             switch (group) {
-                .print_str, .print_f64, .str_concat, .str_eq, .text_capture, .std_marshal, .panic_fail, .main_fail, .print_shaped, .print_i64, .print_u64 => em.gc_str_used = true,
+                .print_str, .print_f64, .str_concat, .str_eq, .str_cmp, .text_capture, .std_marshal, .panic_fail, .main_fail, .print_shaped, .print_i64, .print_u64 => em.gc_str_used = true,
                 else => {},
             }
             continue;
@@ -5460,7 +5460,9 @@ const Emitter = struct {
             .linear => r.num(),
             .gc => switch (r) {
                 .ref => |k| switch (k) {
-                    .str, .bytes => blk: {
+                    // Decision 1021 (10) — a `bigint` is its block's bytes
+                    // (`[L][limbs…]`) in the string's byte array.
+                    .str, .bytes, .bigint => blk: {
                         self.gc_str_used = true;
                         break :blk prelude.gc_str_ref;
                     },
@@ -5635,6 +5637,7 @@ const Emitter = struct {
                 if (isScalarName(n) or std.mem.eql(u8, n, "bool")) return null;
                 if (std.mem.eql(u8, n, "unknown")) return .{ .ref = .unknown };
                 if (std.mem.eql(u8, n, "bytes")) return .{ .ref = .bytes };
+                if (std.mem.eql(u8, n, "bigint")) return .{ .ref = .bigint };
                 const name = if (std.mem.eql(u8, n, "Self")) (self.self_type orelse self.sig_owner orelse return null) else n;
                 if (self.records.contains(name)) return .{ .ref = .{ .record = name } };
                 if (self.enums.get(name)) |vs| {
@@ -6367,6 +6370,7 @@ const Emitter = struct {
         if (self.optInfoOf(e)) |oi| if (self.gcOptPayload(oi)) |pr| return gcOptRepr(pr);
         if (e == .literal and e.literal.kind == .bytesLit) return .{ .ref = .bytes };
         if (self.typeRefOf(e)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "bytes")) return .{ .ref = .bytes };
+        if (self.isBigintExpr(e) or self.isOptBigintExpr(e)) return .{ .ref = .bigint };
         return null;
     }
 
@@ -6466,6 +6470,7 @@ const Emitter = struct {
             'f' => .f64,
             'l', 'u' => .i64,
             's' => Repr.string,
+            'n' => .{ .ref = .bigint },
             '[' => .{ .ref = .{ .arr = gcShapeClass(x[1..]) } },
             '(' => .{ .ref = .tuple },
             'R' => .{ .ref = .result },
@@ -6859,7 +6864,14 @@ const Emitter = struct {
         try self.emitC(.{ .struct_get = .{ .ty = rti, .field = 0 } }, result_tag);
         var then_c: Capture = .{};
         self.open(&then_c);
-        try self.lowerCoerced(tc.handler.*, pr);
+        {
+            const scope_mark = self.scopeMark();
+            defer self.scopeRestore(scope_mark);
+            // Decision 595 (3) — `catch { e -> … }` binds the error to `e`:
+            // the `$result`'s payload, unboxed to the error's repr.
+            if (tc.binder) |bn| try self.gcBindResultErr(bn, slot, sh.err orelse return self.gcFail("a catch binder over a Result of no known Error type"));
+            try self.lowerCoerced(tc.handler.*, pr);
+        }
         const then_seq = self.seal(&then_c, .{ .value = ty });
         var else_c: Capture = .{};
         self.open(&else_c);
@@ -6868,6 +6880,60 @@ const Emitter = struct {
         try self.gcUnbox(pr);
         const else_seq = self.seal(&else_c, .{ .value = ty });
         try self.emit(.{ .@"if" = .{ .result = ty, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
+    /// Decision 1021 (10) — `try r catch h` into an optional whose payload
+    /// is `pr` (`val n: ?i32 = try f() catch null`): the `if` answers the
+    /// optional's repr (`gcOptRepr`), the Ok payload boxed as the optional
+    /// holds it, a `null` handler the null reference, another its value boxed.
+    fn gcTryCatchInto(self: *Emitter, tc: anytype, pr: Repr) anyerror!void {
+        const sh = self.resultShapeOf(tc.expr.*) orelse return self.gcFail("a try over a Result of no known shape");
+        const rr: Repr = .{ .ref = .result };
+        const rti = self.gcTyIndex(.result);
+        const slot = try self.gcTemp(rr);
+        const ovt = self.vtOf(gcOptRepr(pr));
+        try self.lowerCoerced(tc.expr.*, rr);
+        try self.emit(.{ .local_set = slot });
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .struct_get = .{ .ty = rti, .field = 0 } }, result_tag);
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        {
+            const scope_mark = self.scopeMark();
+            defer self.scopeRestore(scope_mark);
+            if (tc.binder) |bn| try self.gcBindResultErr(bn, slot, sh.err orelse return self.gcFail("a catch binder over a Result of no known Error type"));
+            if (isNullLit(tc.handler.*)) {
+                try self.emit(.{ .ref_null = ovt });
+            } else {
+                try self.lowerCoerced(tc.handler.*, pr);
+                try self.gcBox(pr);
+            }
+        }
+        const then_seq = self.seal(&then_c, .{ .value = ovt });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .struct_get = .{ .ty = rti, .field = 1 } }, ok_payload);
+        try self.gcUnbox(pr);
+        try self.gcBox(pr);
+        const else_seq = self.seal(&else_c, .{ .value = ovt });
+        try self.emit(.{ .@"if" = .{ .result = ovt, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
+    /// Decision 595 (3) in a GC module — `name` bound, for the handler, to
+    /// the error payload of the `$result` in `slot`, typed `err_tr`.
+    fn gcBindResultErr(self: *Emitter, name: []const u8, slot: []const u8, err_tr: ast.TypeRef) anyerror!void {
+        const er = self.reprOf(err_tr);
+        const t = try self.bindTargetAs(name, er);
+        try self.declareLocal(t, er);
+        if (er.isStr()) try self.str_locals.put(t, {});
+        if (er == .bool) try self.bool_locals.put(t, {});
+        try self.noteTypedBinder(t, err_tr);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.result), .field = 1 } }, "the error payload");
+        try self.gcUnbox(er);
+        try self.emit(.{ .local_set = t });
+        self.installShadow(name, t);
     }
 
     /// The GC types a value of `x is T` / a `case` arm naming `T` can be: a
@@ -7769,6 +7835,11 @@ const Emitter = struct {
             .i64 => try self.emit(b.helper(if (optIsU64(oi)) .print_u64_raw else .print_i64_raw)),
             .ref => |k| switch (k) {
                 .str => try self.emit(b.helper(.print_str_raw)),
+                // Decision 1021 (10) — a present `bigint` prints its digits.
+                .bigint => {
+                    try self.emitStdCall("bigint.toString");
+                    try self.emit(b.helper(.print_str_raw));
+                },
                 .record => |rty| try self.emit(.{ .call = try self.gcDeclPrinter(rty, null) }),
                 .enum_ => {
                     self.gc_tagged_used = true;
@@ -8867,6 +8938,150 @@ const Emitter = struct {
         return name;
     }
 
+    /// Decision 1021 (10) — `$__gcstd_<module>_<fn>(…)`: the std-wasm
+    /// function `name` called with a GC module's own values, each marshalled
+    /// in (`emitStdCall`'s marshal, over the wrapper's parameters), the
+    /// answer marshalled out, the marshal arena given back.
+    fn gcStdWrapper(self: *Emitter, name: []const u8, params: []const GcStd, result: GcStd, call: Instr) anyerror![]const u8 {
+        const ar = self.arena();
+        const sym = try std.mem.replaceOwned(u8, ar, try std.fmt.allocPrint(ar, "__gcstd_{s}", .{name}), ".", "_");
+        if (!try self.gcHelperOnce(sym)) return sym;
+        var ps = try ar.alloc(wat.Param, params.len);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .global_get = heap_ptr });
+        try self.emit(.{ .local_set = "top" });
+        for (params, 0..) |t, k| {
+            const pn = try std.fmt.allocPrint(ar, "p{d}", .{k});
+            ps[k] = wat.Builder.param(pn, self.vtOf(try stdRepr(t)));
+            try self.emit(.{ .local_get = pn });
+            switch (t) {
+                .string => try self.emit(self.builder().helper(.gc_to_lin_str)),
+                .bigint, .opt_bigint => try self.emit(.{ .call = try self.gcMarshalBigint(true, t == .opt_bigint) }),
+                .i32, .i64, .f64 => {},
+                else => return self.gcFail("a std-wasm bigint function's parameter of another type"),
+            }
+        }
+        try self.emit(call);
+        switch (result) {
+            .string => try self.emit(self.builder().helper(.lin_to_gc_str)),
+            .bigint, .opt_bigint => try self.emit(.{ .call = try self.gcMarshalBigint(false, result == .opt_bigint) }),
+            .i32, .i64, .f64 => {},
+            else => return self.gcFail("a std-wasm bigint function's answer of another type"),
+        }
+        try self.emit(.{ .local_get = "top" });
+        try self.emit(.{ .global_set = heap_ptr });
+        const rvt = self.vtOf(try stdRepr(result));
+        const fbody = self.seal(&c, .{ .value = rvt });
+        try self.gc_marshal_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
+            .name = sym,
+            .params = ps,
+            .result = rvt,
+            .locals = try self.gcLocals(&.{.{ .name = "top", .ty = .i32 }}),
+            .body = fbody,
+        }) });
+        return sym;
+    }
+
+    /// Decision 1021 (10) — `__gc_to_lin_big(b)` / `__lin_to_gc_big(p)`: a
+    /// `bigint` between its GC form, the block's bytes (`[L][limbs…]`) in a
+    /// `$str`, and std-wasm's block at an address — copied into the marshal
+    /// arena (the address past the copy's length word), or out of it, `4 +
+    /// |L|` bytes. The `opt` forms are a `?bigint`'s: null is the word `0`.
+    fn gcMarshalBigint(self: *Emitter, to_linear: bool, opt: bool) anyerror![]const u8 {
+        const name: []const u8 = if (to_linear)
+            (if (opt) "__gc_to_lin_opt_big" else "__gc_to_lin_big")
+        else
+            (if (opt) "__lin_to_gc_opt_big" else "__lin_to_gc_big");
+        if (!try self.gcHelperOnce(name)) return name;
+        const sref = prelude.gc_str_ref;
+        self.gc_str_used = true;
+        const vt: ValType = if (to_linear) .i32 else sref;
+        var c: Capture = .{};
+        self.open(&c);
+        if (opt) {
+            var absent: Capture = .{};
+            self.open(&absent);
+            try self.emit(if (to_linear) zero else Instr{ .ref_null = sref });
+            const absent_seq = self.seal(&absent, .{ .value = vt });
+            var present: Capture = .{};
+            self.open(&present);
+            try self.gcBigintCopy(to_linear);
+            const present_seq = self.seal(&present, .{ .value = vt });
+            if (to_linear) {
+                try self.emit(.{ .local_get = "b" });
+                try self.emit(.ref_is_null);
+            } else {
+                try self.emit(.{ .local_get = "p" });
+                try self.emit(opOf(.i32, "eqz"));
+            }
+            try self.emit(.{ .@"if" = .{ .result = vt, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
+        } else try self.gcBigintCopy(to_linear);
+        const fbody = self.seal(&c, .{ .value = vt });
+        const locals: []const wat.Local = if (to_linear) &.{} else &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "r", .ty = sref } };
+        try self.gc_marshal_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
+            .name = name,
+            .params = if (to_linear) &.{wat.Builder.param("b", sref)} else &.{wat.Builder.param("p", .i32)},
+            .result = vt,
+            .locals = try self.gcLocals(locals),
+            .body = fbody,
+        }) });
+        return name;
+    }
+
+    /// The copy `gcMarshalBigint` makes of a present `bigint`: `$b` into the
+    /// marshal arena (answering the block's address), or the block at `$p`
+    /// into a new `$str` of `4 + |L|` bytes.
+    fn gcBigintCopy(self: *Emitter, to_linear: bool) anyerror!void {
+        if (to_linear) {
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(self.builder().helper(.gc_to_lin_str));
+            try self.emit(try self.constInt(4));
+            try self.emit(opOf(.i32, "add"));
+            return;
+        }
+        const si = prelude.gc_str_index;
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .local_get = "n" });
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(.{ .local_get = "r" });
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(.{ .local_get = "p" });
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .load = .{ .width = .byte } });
+        try self.emit(.{ .array_set = si });
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .local_set = "i" });
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        // `n` = 4 + |L|, `|L|` = `(L ^ s) - s` for `s` = `L >> 31`.
+        try self.emit(.{ .local_get = "p" });
+        try self.emit(gcLoadW(0));
+        try self.emit(.{ .local_tee = "n" });
+        try self.emit(.{ .local_get = "n" });
+        try self.emit(try self.constInt(31));
+        try self.emit(opOf(.i32, "shr_s"));
+        try self.emit(.{ .local_tee = "i" });
+        try self.emit(opOf(.i32, "xor"));
+        try self.emit(.{ .local_get = "i" });
+        try self.emit(opOf(.i32, "sub"));
+        try self.emit(try self.constInt(4));
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(.{ .local_tee = "n" });
+        try self.emit(.{ .array_new_default = si });
+        try self.emit(.{ .local_set = "r" });
+        try self.emit(zero);
+        try self.emit(.{ .local_set = "i" });
+        try self.gcLoop(loop_seq);
+        try self.emit(.{ .local_get = "r" });
+    }
+
     /// `__gc_to_lin_opt_i32(o)` / `__lin_to_gc_opt_i32(p)`: a `?i32` between its
     /// box in an `anyref` (or null) and std-wasm's 4-byte box (or `0`).
     fn gcMarshalOptI32(self: *Emitter, to_linear: bool) anyerror![]const u8 {
@@ -8977,7 +9192,7 @@ const Emitter = struct {
             'i', 'b', 'E' => return .i32,
             'f' => return .f64,
             'l', 'u' => return .i64,
-            's' => {
+            's', 'n' => {
                 self.gc_str_used = true;
                 return prelude.gc_str_ref;
             },
@@ -9080,6 +9295,12 @@ const Emitter = struct {
             's' => {
                 try self.emit(get_v);
                 try self.emit(b.helper(.print_quoted_raw));
+            },
+            // Decision 1021 (10) — a `bigint` prints its digits.
+            'n' => {
+                try self.emit(get_v);
+                try self.emitStdCall("bigint.toString");
+                try self.emit(b.helper(.print_str_raw));
             },
             'T' => {
                 self.gc_tagged_used = true;
@@ -10224,6 +10445,10 @@ const Emitter = struct {
         const call = try self.stdCallLinked(name);
         if (self.mode == .linear) return self.emit(call);
         const ex = gcStdSig(name) orelse return self.gcFail(name);
+        // Decision 1021 (10) — a `bigint` function is called through a
+        // wrapper of its own: the equalities and printers the module writes
+        // after its functions call one too, and have no locals to marshal in.
+        if (std.mem.startsWith(u8, name, "bigint.")) return self.emit(.{ .call = try self.gcStdWrapper(name, ex.params, ex.result, call) });
         const slots = try self.arena().alloc([]const u8, ex.params.len);
         var i = ex.params.len;
         while (i > 0) {
@@ -10254,6 +10479,7 @@ const Emitter = struct {
                     try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
                 },
                 .opt_i32 => try self.emit(.{ .call = try self.gcMarshalOptI32(true) }),
+                .bigint, .opt_bigint => try self.emit(.{ .call = try self.gcMarshalBigint(true, t == .opt_bigint) }),
                 .i32, .i64, .f64, .void => {},
             }
         }
@@ -10277,6 +10503,7 @@ const Emitter = struct {
                 try self.emit(.{ .@"if" = .{ .result = prelude.gc_str_ref, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
             },
             .opt_i32 => try self.emit(.{ .call = try self.gcMarshalOptI32(false) }),
+            .bigint, .opt_bigint => try self.emit(.{ .call = try self.gcMarshalBigint(false, ex.result == .opt_bigint) }),
             .i32, .i64, .f64, .void => {},
         }
         try self.emit(.{ .local_get = top });
@@ -10386,7 +10613,7 @@ const Emitter = struct {
 
     /// What crosses the std-wasm boundary in a GC module (the `stdWasm.Type`s
     /// that have a marshal).
-    const GcStd = enum { string, bytes, i32, i64, f64, void, string_array, opt_string, opt_bytes, opt_i32 };
+    const GcStd = enum { string, bytes, i32, i64, f64, void, string_array, opt_string, opt_bytes, opt_i32, bigint, opt_bigint };
 
     fn gcStdTy(t: stdWasm.Type) ?GcStd {
         return switch (t) {
@@ -10416,6 +10643,18 @@ const Emitter = struct {
             // `Bytes` is a string's layout.
             .{ "bytes.slice", &.{ .bytes, .i32, .i32 }, .bytes },
             .{ "bytes.isUtf8", &.{.bytes}, .i32 },
+            // Decision 1021 (10) — a `bigint` crosses as its block, copied.
+            .{ "bigint.add", &.{ .bigint, .bigint, .i32 }, .bigint },
+            .{ "bigint.negate", &.{.bigint}, .bigint },
+            .{ "bigint.multiply", &.{ .bigint, .bigint }, .bigint },
+            .{ "bigint.divmod", &.{ .bigint, .bigint, .i32 }, .bigint },
+            .{ "bigint.compare", &.{ .bigint, .bigint }, .i32 },
+            .{ "bigint.equalOptional", &.{ .opt_bigint, .opt_bigint }, .i32 },
+            .{ "bigint.ofI64", &.{.i64}, .bigint },
+            .{ "bigint.toI64", &.{.bigint}, .i64 },
+            .{ "bigint.toF64", &.{.bigint}, .f64 },
+            .{ "bigint.toString", &.{.bigint}, .string },
+            .{ "bigint.parse", &.{.string}, .opt_bigint },
         };
         for (sigs) |sig| if (std.mem.eql(u8, sig[0], name)) return .{ .params = sig[1], .result = sig[2] };
         if (stdWasm.find(name)) |e| {
@@ -10440,6 +10679,7 @@ const Emitter = struct {
             .f64 => .f64,
             .string_array => .{ .ref = .{ .arr = .any } },
             .opt_i32 => .{ .ref = .unknown },
+            .bigint, .opt_bigint => .{ .ref = .bigint },
             .void => error.GcFallback,
         };
     }
@@ -11699,6 +11939,7 @@ const Emitter = struct {
     fn globalValType(self: *Emitter, v: ast.ValDecl) Repr {
         if (v.typeAnnotation) |ta| return self.reprOf(ta);
         if (self.mode == .gc and self.isStringExpr(v.value.*)) return Repr.string;
+        if (self.mode == .gc and self.isBigintExpr(v.value.*)) return .{ .ref = .bigint };
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else .i32,
@@ -13335,7 +13576,6 @@ const Emitter = struct {
 
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
         if (tc.region) return self.lowerRegion(tc);
-        if (self.mode == .gc and tc.binder != null) return self.gcFail("a `catch { e -> … }` handler");
         if (self.mode == .gc) return self.gcTryCatch(tc);
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
@@ -13603,6 +13843,27 @@ const Emitter = struct {
         }
         // Decision 332 — a `bigint` prints its digits (std-wasm's `bigint.toString`); a
         // `?bigint` has no reader here yet.
+        if (self.isOptBigintExpr(arg) and self.mode == .gc) {
+            // Decision 1021 (10) — the block's bytes, or null for absence.
+            const br: Repr = .{ .ref = .bigint };
+            const tmp = try self.gcTemp(br);
+            try self.lowerCoerced(arg, br);
+            try self.emit(.{ .local_tee = tmp });
+            try self.emit(.ref_is_null);
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.gcPutStr("null");
+            const then_seq = self.seal(&then_c, .none);
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(.{ .local_get = tmp });
+            try self.emitStdCall("bigint.toString");
+            try self.emit(self.builder().helper(.print_str_raw));
+            const else_seq = self.seal(&else_c, .none);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+            if (last) try self.emit(self.builder().helper(.print_nl));
+            return;
+        }
         if (self.isOptBigintExpr(arg)) {
             // The block's address, or `0` for absence.
             const tmp = try self.declRes();
@@ -14855,6 +15116,13 @@ const Emitter = struct {
         const box_as = self.arm_box_as;
         self.arm_box_as = null;
         const lam = armLambda(body) orelse {
+            // Decision 1021 (10) — an arm that assigns (`Ok(s) -> kept = s;`)
+            // runs as a statement; the arm answers the neutral value.
+            if (self.mode == .gc and !box and body == .binding and body.binding.kind == .assign) {
+                _ = try self.emitStmt(.{ .expr = body }, false);
+                try self.emit(self.zeroOf(self.cur_result));
+                return;
+            }
             if (box and body != .jump) {
                 self.box_as = box_as;
                 try self.lowerAsUnknown(body);
@@ -17700,7 +17968,7 @@ const Emitter = struct {
             .array => try self.lowerArrayMethod(cc),
             .bytes => try self.lowerBytesMethod(cc),
             .bigint => {
-                try self.lowerCoerced(recv, .i32);
+                try self.lowerCoerced(recv, if (self.mode == .gc) Repr{ .ref = .bigint } else .i32);
                 try self.emitStdCall(if (eq(u8, name, "toString"))
                     "bigint.toString"
                 else if (eq(u8, name, "toI64"))
@@ -22212,6 +22480,15 @@ const Emitter = struct {
         // Whole `u32` limbs, none zero on top.
         while (bytes.items.len % 4 != 0) try bytes.append(self.arena(), 0);
         while (bytes.items.len >= 4 and std.mem.allEqual(u8, bytes.items[bytes.items.len - 4 ..], 0)) bytes.items.len -= 4;
+        if (self.mode == .gc) {
+            // Decision 1021 (10) — the block's bytes, `L` first, as a GC byte array.
+            var block: std.ArrayListUnmanaged(u8) = .empty;
+            var l: [4]u8 = undefined;
+            std.mem.writeInt(u32, &l, @intCast(bytes.items.len), .little);
+            try block.appendSlice(self.arena(), &l);
+            try block.appendSlice(self.arena(), bytes.items);
+            return self.emitStrLit(block.items);
+        }
         const seg = try self.internString(bytes.items);
         try self.emitCf(try self.constInt(seg.offset), "bigint {s}", .{digits});
     }
@@ -22260,6 +22537,7 @@ const Emitter = struct {
                 try self.emitStdCall("bigint.ofI64");
             },
             .parse => {
+                if (self.mode == .gc) return self.gcBigintParse(cc);
                 const text = try self.declRes();
                 const p = try self.declRes();
                 const out = try self.declRes();
@@ -22297,6 +22575,38 @@ const Emitter = struct {
                 try self.emit(.{ .local_get = out });
             },
         }
+    }
+
+    /// Decision 1021 (10) — `bigint.parse(text)` in a GC module: a `$result`,
+    /// `Ok` holding the block's bytes, or `Error` holding the text the other
+    /// targets write.
+    fn gcBigintParse(self: *Emitter, cc: anytype) anyerror!void {
+        const rti = self.gcTyIndex(.result);
+        const rvt = self.vtOf(.{ .ref = .result });
+        const text = try self.gcTemp(Repr.string);
+        const big = try self.gcTemp(.{ .ref = .bigint });
+        try self.lowerCoerced(callArg(cc, 0).?, Repr.string);
+        try self.emit(.{ .local_tee = text });
+        try self.emitStdCall("bigint.parse");
+        try self.emit(.{ .local_tee = big });
+        try self.emit(.ref_is_null);
+        var err_c: Capture = .{};
+        self.open(&err_c);
+        try self.emit(one);
+        try self.emitStrLit("bigint.parse: \"");
+        try self.emit(.{ .local_get = text });
+        try self.emit(self.builder().helper(.str_concat));
+        try self.emitStrLit("\" is not an integer");
+        try self.emit(self.builder().helper(.str_concat));
+        try self.emit(.{ .struct_new = rti });
+        const err_seq = self.seal(&err_c, .{ .value = rvt });
+        var ok_c: Capture = .{};
+        self.open(&ok_c);
+        try self.emit(zero);
+        try self.emit(.{ .local_get = big });
+        try self.emit(.{ .struct_new = rti });
+        const ok_seq = self.seal(&ok_c, .{ .value = rvt });
+        try self.emit(.{ .@"if" = .{ .result = rvt, .then = .{ .seq = err_seq }, .@"else" = .{ .seq = ok_seq } } });
     }
 
     /// Decision 262 — an associated host primitive of a prelude behavior,
@@ -24203,9 +24513,11 @@ const Emitter = struct {
                 if (!vr.isRef()) return self.gcFail("a union constructor of no reference");
                 return self.lowerCoerced(value, vr);
             }
-            if (value == .branch and armAnswersNull(value)) return self.gcFail("an if answering null into an optional");
             const oi = self.optInfoOfTypeRef(t) orelse return self.gcFail("a box into a type that is no optional");
             const pr = self.gcOptPayload(oi) orelse return self.gcFail("an optional of no known payload");
+            if (value == .branch and armAnswersNull(value)) return self.gcOptIf(value, pr);
+            if (value == .branch and value.branch.kind == .tryCatch and !value.branch.kind.tryCatch.region)
+                return self.gcTryCatchInto(value.branch.kind.tryCatch, pr);
             try self.lowerCoerced(value, pr);
             try self.gcBox(pr);
             return;
@@ -24311,6 +24623,55 @@ const Emitter = struct {
         } else {
             try self.lowerCoerced(last, if (self.mode == .gc) .{ .ref = .unknown } else .i32);
         }
+    }
+
+    /// Decision 1021 (10) — a value-form `if` answering `null` from an arm
+    /// (an `else if` chain followed) into an optional whose payload is `pr`,
+    /// in a GC module: the `if` answers the optional's own repr
+    /// (`gcOptRepr`), its `null` arm the null reference, a value arm the
+    /// payload boxed when it is a scalar.
+    fn gcOptIf(self: *Emitter, value: ast.Expr, pr: Repr) anyerror!void {
+        const i = value.branch.kind.if_;
+        const els = i.else_.?;
+        const ovt = self.vtOf(gcOptRepr(pr));
+        try self.lowerCondition(i.cond.*, null);
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, true, &then_names);
+        const then_marked = try self.applyNarrowing(then_names.items);
+        try self.gcOptArm(i.then_, pr);
+        self.dropNarrowing(then_marked);
+        const then_seq = self.seal(&then_c, .{ .value = ovt });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, false, &else_names);
+        const else_marked = try self.applyNarrowing(else_names.items);
+        try self.gcOptArm(els, pr);
+        self.dropNarrowing(else_marked);
+        const else_seq = self.seal(&else_c, .{ .value = ovt });
+        try self.emit(.{ .@"if" = .{ .result = ovt, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+    }
+
+    /// One arm of `gcOptIf`: its statements, then its tail as the optional.
+    fn gcOptArm(self: *Emitter, body: []const ast.Stmt, pr: Repr) anyerror!void {
+        if (hasDefer(body)) return self.gcFail("an arm with a defer of an if answering null");
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        for (body[0..ast.lastRealIndex(body)]) |stmt| _ = try self.emitStmt(stmt, false);
+        const last = body[ast.lastRealIndex(body)].expr;
+        if (isNullLit(last)) return self.emit(.{ .ref_null = self.vtOf(gcOptRepr(pr)) });
+        if (last == .branch and armAnswersNull(last)) return self.gcOptIf(last, pr);
+        try self.lowerCoerced(last, pr);
+        try self.gcBox(pr);
+    }
+
+    /// Whether an `if` arm's tail is the `null` literal.
+    fn armTailIsNull(body: ?[]const ast.Stmt) bool {
+        const b = body orelse return false;
+        if (b.len == 0) return false;
+        return isNullLit(b[ast.lastRealIndex(b)].expr);
     }
 
     /// Whether a value-form `if` answers `null` from one of its arms, an
@@ -25817,6 +26178,9 @@ const Emitter = struct {
                         defer self.unbindLambdaParamType(bound);
                         break :blk self.resultShapeOf(tail);
                     }
+                    // Decision 332 — `bigint.parse(text)` answers `@Result<bigint, string>`.
+                    if (self.bigintAssoc(cc)) |which| if (which == .parse)
+                        break :blk .{ .ok = .{ .named = "bigint" }, .err = .{ .named = "string" }, .err_str = true };
                     // Decision 346 — `b.toUtf8()` answers `@Result<string, string>`.
                     if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .bytes)
                         break :blk resultShapeOfTypeRef(self.typeRefOf(e) orelse break :blk null);
@@ -25941,6 +26305,7 @@ const Emitter = struct {
     /// _ -> false; }` in a function answering a string), or the other way
     /// round. Null keeps the function's result type.
     fn gcCaseArmsType(self: *Emitter, c: anytype) ?Repr {
+        if (self.cur_result.isRef()) if (self.gcCaseScalarArms(c)) |r| return r;
         var t: ?Repr = null;
         for (c.arms) |arm| {
             // A literal alone: an arm's binder (`Ok(v) -> v`) is typed only
@@ -25956,6 +26321,33 @@ const Emitter = struct {
         const have = t orelse return null;
         if (have.isRef() == self.cur_result.isRef()) return null;
         return have;
+    }
+
+    /// Decision 1021 (10) — a `case` in a function answering a reference
+    /// whose every arm answers one scalar (`val away = case mode { Up ->
+    /// true; _ -> half > 0 }` in a function answering a `bigint`) answers
+    /// that scalar, not the enclosing result. Null when an arm is a block, a
+    /// name no local or global holds yet (a pattern's binder), or answers a
+    /// reference.
+    fn gcCaseScalarArms(self: *Emitter, c: anytype) ?Repr {
+        var t: ?Repr = null;
+        for (c.arms) |arm| {
+            const body = arm.body;
+            if (body == .function) return null;
+            if (self.exprTail(body) == .terminated) continue;
+            if (isNullLit(body)) return null;
+            const bool_lit = if (plainIdentName(body)) |n| isBoolLitName(n) else false;
+            if (!bool_lit) if (plainIdentName(body)) |n| {
+                const r = self.resolveName(n);
+                if (!self.locals.contains(r) and !self.globals.contains(r)) return null;
+            };
+            const at: Repr = if (bool_lit) .i32 else self.wasmTypeOf(body);
+            if (at.isRef()) return null;
+            if (t) |have| {
+                if (!self.sameVal(have, at)) return null;
+            } else t = at;
+        }
+        return t;
     }
 
     /// Whether a `case` ARM answers a string. A BRACE arm — `case x { 5 {
@@ -28541,6 +28933,7 @@ const Emitter = struct {
         // A GC reference converts to nothing but itself: the lowering took a
         // value for another shape, which it has no GC form for yet.
         // A reference into an `unknown` slot is an upcast to `anyref`.
+        if (self.mode == .gc and from == .ref and from.ref == .bigint and to == .ref and to.ref == .unknown) return self.gcFail("a bigint into an unknown");
         if (self.mode == .gc and from.isRef() and to == .ref and to.ref == .unknown) return;
         // An `unknown` read as the type a test proved it (`if (x is Frame) { val f: Frame = x }`)
         // is a downcast: a cast that traps where the test was wrong.
@@ -29134,7 +29527,12 @@ const Emitter = struct {
             else => "",
         };
         if (std.mem.eql(u8, n, "string")) return self.emit(self.builder().helper(.str_eq));
-        if (std.mem.eql(u8, n, "bigint") or std.mem.eql(u8, n, "unknown")) return self.gcFail("an equality over bigint or unknown");
+        if (std.mem.eql(u8, n, "bigint")) {
+            // Decision 1021 (10) — equal when the values are, never by the blocks.
+            try self.emitStdCall("bigint.compare");
+            return self.emit(opOf(.i32, "eqz"));
+        }
+        if (std.mem.eql(u8, n, "unknown")) return self.gcFail("an equality over unknown");
         if (fieldCellOf(n) == .i64) return self.emit(opOf(.i64, "eq"));
         if (isFloatTypeName(n)) return self.emit(.{ .call = self.floatEqSym() });
         if (self.eqComposite(t)) return self.emit(.{ .call = try self.eqFnFor(t) });
@@ -29595,8 +29993,13 @@ const Emitter = struct {
         // them (or one and a `bigint`) are equal when both are absent or both
         // hold equal values (std-wasm's `bigint.equalOptional`), never by the addresses.
         if ((op == Op.eq or op == Op.ne) and (self.isOptBigintExpr(lhs) or self.isOptBigintExpr(rhs))) {
-            try self.lowerValue(lhs);
-            try self.lowerValue(rhs);
+            if (self.mode == .gc) {
+                try self.lowerCoerced(lhs, .{ .ref = .bigint });
+                try self.lowerCoerced(rhs, .{ .ref = .bigint });
+            } else {
+                try self.lowerValue(lhs);
+                try self.lowerValue(rhs);
+            }
             try self.emitStdCall("bigint.equalOptional");
             if (op == Op.ne) try self.emit(opOf(.i32, "eqz"));
             return;
@@ -29652,6 +30055,20 @@ const Emitter = struct {
             Op.add => return self.lowerStrConcat(lhs, rhs),
             Op.eq => return self.lowerStrEq(lhs, rhs, false),
             Op.ne => return self.lowerStrEq(lhs, rhs, true),
+            // Decision 1021 (10) — a GC module orders strings by their bytes
+            // (`$__str_cmp`'s sign), as the other targets do.
+            Op.lt, Op.gt, Op.lte, Op.gte => if (self.mode == .gc and self.isStringExpr(lhs) and self.isStringExpr(rhs)) {
+                try self.lowerCoerced(lhs, Repr.string);
+                try self.lowerCoerced(rhs, Repr.string);
+                try self.emit(self.builder().helper(.str_cmp));
+                try self.emit(zero);
+                return self.emit(opOf(.i32, switch (op) {
+                    Op.lt => "lt_s",
+                    Op.gt => "gt_s",
+                    Op.lte => "le_s",
+                    else => "ge_s",
+                }));
+            },
             else => {},
         };
         // Decision 210 — a composite compares by value through its type's
@@ -30161,7 +30578,11 @@ const Emitter = struct {
         // else { d }` in a function answering nothing was `(if (result i32)`
         // around two `f64`s — invalid code, the module refused.
         const ty: Repr = if (as_stmt) self.cur_result else if (link_box != null) .i32 else self.ifValueType(i);
-        const own_ty = !self.sameVal(ty, self.cur_result);
+        // Decision 1021 (10) — in a GC module an arm answering `null` into a
+        // reference is that reference's null (`branchLastStmt`), whatever
+        // the enclosing result.
+        const null_arm = self.mode == .gc and !as_stmt and link_box == null and ty.isRef() and (armTailIsNull(i.then_) or armTailIsNull(i.else_));
+        const own_ty = !self.sameVal(ty, self.cur_result) or null_arm;
         const result: ?ValType = if (as_stmt) null else self.vtOf(ty);
 
         var then_c: Capture = .{};
@@ -30290,6 +30711,9 @@ const Emitter = struct {
             // (`if (abs) [] else state.parts`): in a GC module it has no
             // representation of its own (front 164 s2).
             if (self.mode == .gc and isEmptyArrayLit(last)) continue;
+            // Decision 1021 (10) — a `null` arm answers the other arm's
+            // reference (its null reference, `zeroOf`).
+            if (self.mode == .gc and isNullLit(last)) continue;
             const lt = if (binder_read)
                 (if (self.optInfoOf(i.cond.*)) |oi| (if (self.mode == .gc) (self.gcOptPayload(oi) orelse self.wasmTypeOf(last)) else oi.cell.ty()) else self.wasmTypeOf(last))
             else
@@ -30334,6 +30758,12 @@ const Emitter = struct {
 
     /// The last statement of a branch answering `ty`.
     fn branchLastStmt(self: *Emitter, last: ast.Stmt, ty: Repr) anyerror!Tail {
+        // Decision 1021 (10) — a `null` arm of an `if` answering a reference
+        // is that reference's null (`ifValueType` took the other arm's).
+        if (self.mode == .gc and ty.isRef() and isNullLit(last.expr)) {
+            try self.emit(self.zeroOf(ty));
+            return .value;
+        }
         // An empty array literal answers the array the branch is asked for
         // (`o ?? []`, front 164 s2): in a GC module it has no type of its own.
         const empty_arr = self.mode == .gc and ty.isArrRef() and isEmptyArrayLit(last.expr);
