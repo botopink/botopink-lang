@@ -1,0 +1,11 @@
+//// Unit B: reads unit A's module `val` and calls unit A's methods.
+
+import {config.seed, config.Box, config.Named};
+
+pub fn total() -> i32 {
+    return seed + Box(v: seed).doubled();
+}
+
+pub fn label(n: Named) -> string {
+    return n.name();
+}

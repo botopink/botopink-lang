@@ -1980,7 +1980,107 @@ const ProgramUnit = struct {
     /// A unit the unit cache answered (decision 1008 (2)) is not lowered
     /// here: its exports are its face's lines (`runtimeUnit.faceOfBytes`).
     face: ?[]const u8 = null,
+    /// Decision 1055 (6) — each module-level `val` it declares, read by
+    /// another unit through its accessor `get_<name>` (and, a `var`, set
+    /// through `set_<name>`), with the type the boundary carries.
+    vals: std.StringHashMapUnmanaged(UnitVal) = .empty,
+
+    /// Whether the unit exports an accessor of its `val` `name` (`vals`, or,
+    /// a cached unit, its face), and whether it also sets it.
+    fn hasVal(pu: ProgramUnit, name: []const u8) ?struct { mutable: bool } {
+        if (pu.vals.get(name)) |v| return .{ .mutable = v.mutable };
+        const face = pu.face orelse return null;
+        var buf: [256]u8 = undefined;
+        const getter = std.fmt.bufPrint(&buf, "(export \"get_{s}\" ", .{name}) catch return null;
+        if (std.mem.indexOf(u8, face, getter) == null) return null;
+        const setter = std.fmt.bufPrint(&buf, "(export \"set_{s}\" ", .{name}) catch return null;
+        return .{ .mutable = std.mem.indexOf(u8, face, setter) != null };
+    }
 };
+
+/// A module-level `val`'s accessor as its unit exports it.
+const UnitVal = struct { ty: ValType, mutable: bool };
+
+/// Decision 1055 (6) — a `val` (or `_`-named statement) linked from another
+/// program unit (`Emitter.foreign_vals`): the unit's stem, the name it
+/// declares it under (null for a statement), and, once its declaration is
+/// met, the type this unit reads it as.
+const ForeignVal = struct {
+    /// The declaring module and its unit's stem.
+    stem_module: []const u8,
+    stem: []const u8,
+    bare: ?[]const u8,
+    ty: ValType = .i32,
+    mutable: bool = false,
+};
+
+/// Decision 1055 (8) — a function a type's, an `implement` or an `extend`
+/// block's declaration lowered to: its symbol, the module it came from (an
+/// index into `linked`, `linked.len` for the unit's own), and its member as
+/// the crossing check reads it (`memberCrosses`).
+const UnitMethod = struct { sym: []const u8, from: usize, member: Member };
+
+/// A member of a type, `implement` or `extend` declaration: its target (what
+/// `Self` means), its parameters and written return, and whether it is
+/// generic, marked (an effect) or bodyless.
+const Member = struct {
+    target: []const u8,
+    params: []const ast.Param,
+    returnType: ?ast.TypeRef,
+    /// No `-> R` written though the member answers one (an `implement`
+    /// block's member reads its behavior's): not checked, never crossing.
+    return_unwritten: bool = false,
+    generic: bool = false,
+    marked: bool = false,
+    bodyless: bool = false,
+};
+
+/// What `unitBoundary` reads beside the functions: the methods, the `val`s
+/// linked from other units, and where the unit's own `val`s' accessors go.
+const UnitExtras = struct {
+    methods: []const UnitMethod,
+    foreign_vals: *const std.StringArrayHashMapUnmanaged(ForeignVal),
+    vals: *std.StringHashMapUnmanaged(UnitVal),
+};
+
+/// `sym` without its module's `<module>/` mangling (`emitWat`).
+fn bareLinkedName(module: []const u8, sym: []const u8) []const u8 {
+    const n = module.len + 1;
+    return if (sym.len > n and std.mem.startsWith(u8, sym, module) and sym[module.len] == '/') sym[n..] else sym;
+}
+
+/// The member of a type, `implement` or `extend` declaration the function
+/// `sym` lowers (`<Target>_<member>`), or null — a function the
+/// declaration's lowering brought besides (a default it adopts, a helper).
+fn methodOf(decl: ast.DeclKind, sym: []const u8) ?Member {
+    const target: []const u8 = switch (decl) {
+        .type_ => |t| if (t.genericParams.len > 0) return null else t.name,
+        .implement => |im| if (im.targetArgs.len > 0 or im.genericParams.len > 0) return null else im.target,
+        .extend => |ex| if (ex.genericParams.len > 0) return null else ex.target,
+        else => return null,
+    };
+    if (sym.len <= target.len + 1 or !std.mem.startsWith(u8, sym, target) or sym[target.len] != '_') return null;
+    const member = sym[target.len + 1 ..];
+    switch (decl) {
+        .type_ => |t| for (t.methods) |m| if (std.mem.eql(u8, m.name, member)) return .{
+            .target = target,
+            .params = m.params,
+            .returnType = m.returnType,
+            .generic = m.genericParams.len > 0,
+            .marked = m.marker != null,
+            .bodyless = m.body == null or m.is_declare or m.isExternal(),
+        },
+        inline .implement, .extend => |b| for (b.methods) |m| if (std.mem.eql(u8, m.name, member)) return .{
+            .target = target,
+            .params = m.params,
+            .returnType = m.returnType,
+            .return_unwritten = m.returnType == null,
+            .marked = m.marker != null,
+        },
+        else => {},
+    }
+    return null;
+}
 
 /// With the units on (`codegenEmit`): every program unit emitted so far, by
 /// module name, and the allocator that outlives the build's modules.
@@ -2436,6 +2536,36 @@ fn emitWatPass(
     // what the module reaches, so it would not meet the refusal; the module is
     // lowered in linear memory, which links everything, as it always did.
     if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
+    // Decision 1055 (6) — with the units on, a `val` linked from another
+    // program unit is that unit's, read through its accessor: its initialiser
+    // is not lowered here (written with a scalar type, it is not even read,
+    // so what only it calls is not linked), and its `_`-named statements run
+    // in that unit alone.
+    if (artifact == .component and rt != null and plan.mode == .gc) if (program_units) |reg| {
+        var k: usize = 0;
+        while (k < decls.items.len) {
+            const from = owner.items[k];
+            const here = k;
+            k += 1;
+            if (from >= linked.len or decls.items[here] != .val) continue;
+            const pu = reg.get(linked[from].name) orelse continue;
+            const v = decls.items[here].val;
+            if (isSyntheticEntrypointVal(v)) {
+                _ = decls.orderedRemove(here);
+                _ = owner.orderedRemove(here);
+                k = here;
+                continue;
+            }
+            const bare = bareLinkedName(linked[from].name, v.name);
+            if (pu.hasVal(bare) == null) continue;
+            try em.foreign_vals.put(em.alloc, v.name, .{ .stem_module = linked[from].name, .stem = try entryStem(ar0, linked[from].name), .bare = bare });
+            if (v.typeAnnotation) |ta| if (ta == .named and isUnitScalarName(ta.named)) {
+                const zero_lit = try ar0.create(ast.Expr);
+                zero_lit.* = .{ .literal = .{ .loc = v.nameLoc, .kind = .{ .numberLit = "0" } } };
+                decls.items[here].val.value = zero_lit;
+            };
+        }
+    };
     const before_splice = decls.items.len;
     try spliceNamedRecords(ar0, &decls, &owner, linked.len);
     var spliced: std.StringHashMapUnmanaged(void) = .empty;
@@ -2524,6 +2654,11 @@ fn emitWatPass(
         else => {},
     };
 
+    const units_gc = artifact == .component and rt != null and em.mode == .gc;
+    // Decision 1055 (8) — the methods each declaration lowers to (a type's,
+    // an `implement` or `extend` block's): a program unit exports its own,
+    // an importer imports those another unit exports (`unitBoundary`).
+    var unit_methods: std.ArrayListUnmanaged(UnitMethod) = .empty;
     for (program.decls, owner.items) |decl, from| {
         em.rewrites = if (from < linked.len) linked[from].rewrites else rewrites;
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
@@ -2550,6 +2685,12 @@ fn emitWatPass(
             };
         };
         em.loaded_pkg = null;
+        if (units_gc) switch (decl) {
+            .type_, .implement, .extend => for (em.items.items[before..]) |it| if (it == .func) {
+                if (methodOf(decl, it.func.name)) |m| try unit_methods.append(ar0, .{ .sym = it.func.name, .from = from, .member = m });
+            },
+            else => {},
+        };
         // Front 164 s2 P2b — the functions a linked module's declarations
         // brought (`finishGc` may stub one nothing reaches).
         if (em.mode == .gc and from < linked.len) for (em.items.items[before..]) |it| if (it == .func) try em.gc_linked_fns.put(em.alloc, it.func.name, {});
@@ -2971,7 +3112,12 @@ fn emitWatPass(
     // with the type this one lowered it to (decision 1037's boundary).
     const units_entry = artifact == .component and rt != null;
     var unit_exports: std.StringHashMapUnmanaged(wat.FuncType) = .empty;
-    if (units_entry and em.mode == .gc) try unitBoundary(ar, &items, own_program, decls.items, owner.items, linked, &unit_exports);
+    var unit_vals: std.StringHashMapUnmanaged(UnitVal) = .empty;
+    if (units_entry and em.mode == .gc) try unitBoundary(ar, &items, own_program, decls.items, owner.items, linked, &unit_exports, .{
+        .methods = unit_methods.items,
+        .foreign_vals = &em.foreign_vals,
+        .vals = &unit_vals,
+    });
 
     // Decisions 1021 (2), 1032 — a module with data of its own holds it in
     // passive segments, and its start grows the core's memory to hold it,
@@ -3020,6 +3166,8 @@ fn emitWatPass(
                 .params = try pa.dupe(ValType, e.value_ptr.params),
                 .result = e.value_ptr.result,
             });
+            var vit = unit_vals.iterator();
+            while (vit.next()) |e| try pu.vals.put(pa, try pa.dupe(u8, e.key_ptr.*), e.value_ptr.*);
             try reg.put(pa, try pa.dupe(u8, module_name), pu);
         };
     }
@@ -3116,6 +3264,7 @@ fn unitBoundary(
     owner: []const usize,
     linked: []const Linked,
     exports: *std.StringHashMapUnmanaged(wat.FuncType),
+    extras: UnitExtras,
 ) !void {
     const defs = wat.typesOf(.{ .items = items.items });
     var wrappers: std.ArrayListUnmanaged(Item) = .empty;
@@ -3141,6 +3290,53 @@ fn unitBoundary(
             try exports.put(ar, f.name, ft);
         }
     }
+    // Decision 1055 (8) — the unit's own methods (a type's, an `implement`
+    // or `extend` block's) cross as its functions do, under their symbol;
+    // a generic one stays a template each importer instantiates.
+    for (extras.methods) |um| {
+        if (um.from != linked.len or !memberCrosses(um.member, own_program.decls)) continue;
+        const func = funcItem(items.items, um.sym) orelse continue;
+        const ft = try funcTypeOf(ar, func.*);
+        if (runtimeUnit.crossesAbstract(ft)) {
+            try wrappers.append(ar, .{ .func = try runtimeUnit.exportWrapper(ar, defs, func.*, try ar.dupe([]const u8, &.{um.sym})) });
+            try exports.put(ar, um.sym, try runtimeUnit.abstractType(ar, defs, ft));
+        } else {
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            try names.appendSlice(ar, func.exports);
+            try names.append(ar, um.sym);
+            func.exports = names.items;
+            try exports.put(ar, um.sym, ft);
+        }
+    }
+    // Decision 1055 (6) — each module-level `val` of the unit is set once,
+    // by its own `__bp_init`, and read by another unit through its accessor
+    // `get_<name>` (a `var` set through `set_<name>`): no global is exported.
+    for (own_program.decls) |d| {
+        if (d != .val or isSyntheticEntrypointVal(d.val)) continue;
+        const v = d.val;
+        const g = globalItem(items.items, v.name) orelse continue;
+        g.exports = &.{};
+        const getter: wat.Func = .{
+            .name = try std.fmt.allocPrint(ar, "__val_get_{s}", .{v.name}),
+            .result = g.ty,
+            .body = .{ .lines = try ar.dupe(wat.Line, &.{.{ .instr = .{ .global_get = v.name } }}), .stack = .{ .value = g.ty } },
+        };
+        const setter: ?wat.Func = if (v.mutable and g.mutable) .{
+            .name = try std.fmt.allocPrint(ar, "__val_set_{s}", .{v.name}),
+            .params = try ar.dupe(wat.Param, &.{.{ .name = "v", .ty = g.ty }}),
+            .body = .{ .lines = try ar.dupe(wat.Line, &.{ .{ .instr = .{ .local_get = "v" } }, .{ .instr = .{ .global_set = v.name } } }), .stack = .none },
+        } else null;
+        const get_name = try std.fmt.allocPrint(ar, "get_{s}", .{v.name});
+        const set_name = try std.fmt.allocPrint(ar, "set_{s}", .{v.name});
+        for ([_]?wat.Func{ getter, setter }, [_][]const u8{ get_name, set_name }) |maybe, name| {
+            var f = maybe orelse continue;
+            if (runtimeUnit.crossesAbstract(try funcTypeOf(ar, f))) {
+                try wrappers.append(ar, .{ .func = try runtimeUnit.exportWrapper(ar, defs, f, try ar.dupe([]const u8, &.{name})) });
+            } else f.exports = try ar.dupe([]const u8, &.{name});
+            try wrappers.append(ar, .{ .func = f });
+        }
+        try extras.vals.put(ar, v.name, .{ .ty = runtimeUnit.abstractOf(defs, g.ty), .mutable = setter != null });
+    }
     // Decision 1037 — no unit exports a function whose signature names a
     // type definition: one the lowering exported that cannot cross to an
     // importer (`crossesUnit`) is still exported through its wrapper, never
@@ -3156,13 +3352,17 @@ fn unitBoundary(
 
     const reg = program_units orelse return;
     var imports: std.ArrayListUnmanaged(Item) = .empty;
-    for (decls, owner) |d, from| {
-        if (from >= linked.len or d != .@"fn") continue;
+    // The functions linked from another program unit: its functions, then
+    // its methods (decision 1055 (8)).
+    var candidates: std.ArrayListUnmanaged(struct { sym: []const u8, from: usize }) = .empty;
+    for (decls, owner) |d, from| if (from < linked.len and d == .@"fn") try candidates.append(ar, .{ .sym = d.@"fn".name, .from = from });
+    for (extras.methods) |um| if (um.from < linked.len) try candidates.append(ar, .{ .sym = um.sym, .from = um.from });
+    for (candidates.items) |c| {
+        const from = c.from;
         const l = linked[from];
         const pu = reg.get(l.name) orelse continue;
-        const sym = d.@"fn".name;
-        const prefix_len = l.name.len + 1;
-        const bare = if (sym.len > prefix_len and std.mem.startsWith(u8, sym, l.name) and sym[l.name.len] == '/') sym[prefix_len..] else sym;
+        const sym = c.sym;
+        const bare = bareLinkedName(l.name, sym);
         const want = pu.exports.get(bare);
         if (want == null and pu.face == null) continue;
         const k = for (items.items, 0..) |it, k| {
@@ -3190,11 +3390,100 @@ fn unitBoundary(
             _ = items.orderedRemove(k);
         }
     }
+    // Decision 1055 (6) — a `val` of another program unit is read through
+    // its accessor (`$__val_<sym>`, a thunk casting the answer back when the
+    // boundary is abstract) and, a `var`, set through its setter: every
+    // `global.get` / `global.set` of it becomes that call.
+    var vit = extras.foreign_vals.iterator();
+    while (vit.next()) |e| {
+        const fv = e.value_ptr.*;
+        const bare = fv.bare orelse continue;
+        const sym = e.key_ptr.*;
+        const pu = reg.get(fv.stem_module) orelse continue;
+        const found = pu.hasVal(bare) orelse continue;
+        // The boundary's type as this unit reads the `val`: the unit's own
+        // record (`vals`) says the same, a cached unit's face carries it.
+        const uv: UnitVal = .{ .ty = runtimeUnit.abstractOf(defs, fv.ty), .mutable = found.mutable };
+        const getter = try std.fmt.allocPrint(ar, "__val_{s}", .{sym});
+        const setter = try std.fmt.allocPrint(ar, "__valset_{s}", .{sym});
+        const get_name = try std.fmt.allocPrint(ar, "get_{s}", .{bare});
+        if (fv.ty.defIndex() != null) {
+            try imports.append(ar, .{ .import = .{ .module = fv.stem, .name = get_name, .func = try runtimeUnit.abiSymbol(ar, getter), .type = .{ .result = uv.ty } } });
+            try items.append(ar, .{ .func = try runtimeUnit.importThunk(ar, getter, .{ .result = fv.ty }) });
+        } else try imports.append(ar, .{ .import = .{ .module = fv.stem, .name = get_name, .func = getter, .type = .{ .result = uv.ty } } });
+        if (uv.mutable) try imports.append(ar, .{ .import = .{
+            .module = fv.stem,
+            .name = try std.fmt.allocPrint(ar, "set_{s}", .{bare}),
+            .func = setter,
+            .type = .{ .params = try ar.dupe(ValType, &.{uv.ty}) },
+        } });
+        for (items.items) |*it| if (it.* == .func) {
+            it.func.body = try readThroughAccessor(ar, it.func.body, sym, getter, setter);
+        };
+        for (items.items, 0..) |it, k| if (it == .global and it.global.import == null and std.mem.eql(u8, it.global.name, sym)) {
+            _ = items.orderedRemove(k);
+            break;
+        };
+    }
     var at: usize = 0;
     for (items.items, 0..) |it, k| if (it == .import) {
         at = k + 1;
     };
     try items.insertSlice(ar, at, imports.items);
+}
+
+fn globalItem(items: []Item, name: []const u8) ?*wat.Global {
+    for (items) |*it| if (it.* == .global and it.global.import == null and std.mem.eql(u8, it.global.name, name)) return &it.global;
+    return null;
+}
+
+/// `s` with every `global.get $<global>` a `call $<getter>` and every
+/// `global.set $<global>` a `call $<setter>` (decision 1055 (6)).
+fn readThroughAccessor(ar: std.mem.Allocator, s: wat.Seq, global: []const u8, getter: []const u8, setter: []const u8) !wat.Seq {
+    var out: ?[]wat.Line = null;
+    for (s.lines, 0..) |l, i| {
+        var n = l;
+        switch (l.instr) {
+            .global_get => |g| if (std.mem.eql(u8, g, global)) {
+                n.instr = .{ .call = getter };
+            },
+            .global_set => |g| if (std.mem.eql(u8, g, global)) {
+                n.instr = .{ .call = setter };
+            },
+            .@"if" => |f| {
+                var g = f;
+                g.then.seq = try readThroughAccessor(ar, f.then.seq, global, getter, setter);
+                if (f.@"else") |e| {
+                    var arm = e;
+                    arm.seq = try readThroughAccessor(ar, e.seq, global, getter, setter);
+                    g.@"else" = arm;
+                }
+                n.instr = .{ .@"if" = g };
+            },
+            .block => |b| {
+                var c = b;
+                c.body = try readThroughAccessor(ar, b.body, global, getter, setter);
+                n.instr = .{ .block = c };
+            },
+            else => continue,
+        }
+        if (out == null) out = try ar.dupe(wat.Line, s.lines);
+        out.?[i] = n;
+    }
+    return .{ .lines = out orelse s.lines, .stack = s.stack };
+}
+
+/// Whether a member of a type, `implement` or `extend` declaration may cross
+/// into another unit (`crossesUnit`'s rule, `Self` its target).
+fn memberCrosses(m: Member, decls: []const ast.DeclKind) bool {
+    if (m.generic or m.marked or m.bodyless or m.return_unwritten) return false;
+    for (m.params) |p| if (!unitCrossable(selfAs(p.typeRef, m.target), decls, 0)) return false;
+    if (m.returnType) |r| if (!unitCrossable(selfAs(r, m.target), decls, 0)) return false;
+    return true;
+}
+
+fn selfAs(t: ast.TypeRef, target: []const u8) ast.TypeRef {
+    return if (t == .named and std.mem.eql(u8, t.named, "Self")) .{ .named = target } else t;
 }
 
 fn funcItem(items: []Item, name: []const u8) ?*wat.Func {
@@ -3809,6 +4098,13 @@ const Emitter = struct {
     /// The entries of `deferred_globals` that are `_`-named top-level
     /// statements: run for their effect in `$__init_globals`, stored nowhere.
     deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 1055 (6) — with the units on, each module-level `val` (and
+    /// `_`-named statement) linked from another program unit, by the symbol
+    /// it is linked under: that unit initialises it once in its own
+    /// `__bp_init`, so this one emits no global and no initialiser, and reads
+    /// it through the unit's accessor (`unitBoundary`). A statement's entry
+    /// has no accessor (`bare` null).
+    foreign_vals: std.StringArrayHashMapUnmanaged(ForeignVal) = .empty,
     /// `<module>\x00<name>` → `<module>/<name>`: a linked module-level `val`
     /// whose name an earlier declaration of the program already took
     /// (`emitWat`).
@@ -4392,6 +4688,7 @@ const Emitter = struct {
         self.reg_arena.deinit();
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
+        self.foreign_vals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
         self.deferred_pkg.deinit(self.alloc);
         self.loaded_inits_called.deinit(self.alloc);
@@ -4455,7 +4752,16 @@ const Emitter = struct {
             // erlang and beam hold by emitting every function.
             .@"fn" => |f| try self.emitFn(f),
             .val => |v| {
-                if (!isSyntheticEntrypointVal(v)) {
+                if (self.foreign_vals.getPtr(v.name)) |fv| {
+                    // Its global is declared, so the module's checks read the
+                    // reads' type, and set by nothing: `unitBoundary` turns
+                    // each read into a call of the accessor and drops it.
+                    if (fv.bare != null) {
+                        fv.ty = self.vtOf(self.globalValType(v));
+                        try self.item(.{ .global = .{ .name = v.name, .ty = fv.ty, .mutable = true, .init = "0" } });
+                    }
+                    fv.mutable = v.mutable;
+                } else if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
                 } else if (!isSyntheticMainCall(v)) {
                     // A `_`-named top-level statement runs at module load, in

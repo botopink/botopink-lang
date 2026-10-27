@@ -1,0 +1,24 @@
+//// Unit A: a module `val` whose initialiser prints, a type's own method and the method of a behavior it implements (decision 1055 (6), (8)).
+
+import {io.terminal.print} from "std";
+
+fn announce(n: i32) -> i32 {
+    print("config loaded");
+    return n;
+}
+
+pub val seed: i32 = announce(7);
+
+pub behavior Named {
+    fn name(self: Self) -> string;
+}
+
+pub type Box(v: i32) implement Named {
+    pub fn doubled(self: Self) -> i32 {
+        return self.v * 2;
+    }
+
+    fn name(self: Self) -> string {
+        return "box " + self.v.toString();
+    }
+}

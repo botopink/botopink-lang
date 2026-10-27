@@ -13,7 +13,7 @@ package alone (`wasm_same_shape_types_distinct_two_packages`, 1027 (2)). A funct
 of a program — made in one and called in the other, passed to `std@array`'s `map`, a type's method taken as a value, one
 capturing the other module's `val` (`wasm_closure_crosses_units`, decision 1055 (4)); a record, a variant and a `Display` type of one module print, compare,
 test with `is` and display in the other, alone and inside an array, a tuple and `unknown` (`wasm_foreign_type_prints`,
-decision 1055 (2), (3)). Each case answers on wasm as on the other
+decision 1055 (2), (3)); a module `val` whose initialiser prints, read from two other modules, runs its initialiser once, and a type's own method and the method of a behavior it implements are called from another module (`wasm_val_methods_cross_units`, decision 1055 (6), (8)). Each case answers on wasm as on the other
 targets; the wasm answers are also pinned by `modules/compiler-core`'s wasm codegen tests, a wasm conformance module not
 running yet.
 
@@ -33,3 +33,4 @@ running yet.
 [cases/gc_param_destructure/src/main.bp](cases/gc_param_destructure/src/main.bp)
 [cases/wasm_closure_crosses_units/src/main.bp](cases/wasm_closure_crosses_units/src/main.bp)
 [cases/wasm_foreign_type_prints/src/main.bp](cases/wasm_foreign_type_prints/src/main.bp)
+[cases/wasm_val_methods_cross_units/src/main.bp](cases/wasm_val_methods_cross_units/src/main.bp)

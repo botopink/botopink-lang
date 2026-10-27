@@ -6240,3 +6240,47 @@ test "wat: units ---- decision 1055 (2), (3): a foreign type prints, compares an
     const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
     try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_foreign_type_prints"), out);
 }
+
+// Decision 1055 (6), (8) — cell `wasm_val_methods_cross_units`, run through
+// the units' frame: `config` declares a module `val` whose initialiser
+// prints, a type's own method and the method of a behavior it implements;
+// `reader` and `main` both read the `val` — through `config`'s accessor,
+// never re-running its initialiser — and call the methods `config` exports,
+// never linking their bodies.
+test "wat: units ---- decision 1055 (6): a module val initialised once, methods called across units (cell wasm_val_methods_cross_units)" {
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    const case = "decisions-taken/wasm_unit_per_module_linked-1021/cases/wasm_val_methods_cross_units";
+    const srcs = try caseSources(ar, case, &.{ "config", "reader", "main" });
+    var outputs = try h.generate(a, srcs, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const pu = try programUnits(ar, &outputs, "main");
+    try expectUnitsLink(ar, pu.program);
+    // The `val` is `config`'s alone: `reader` and `main` read it through its
+    // accessor and call its methods, never linking their bodies.
+    const ru = @import("../wat/runtime_unit.zig");
+    for ([_][]const u8{ "reader", "main" }) |name| {
+        const bin = for (outputs.items) |o| {
+            if (std.mem.eql(u8, o.name, name)) break o.result.wasm.?;
+        } else return error.ModuleDidNotCompile;
+        const face = (try ru.faceOfBytes(ar, bin)).text;
+        for ([_][]const u8{ "\"get_seed\"", "\"Box_doubled\"", "\"Box_name\"" }) |x| {
+            const want = try std.fmt.allocPrint(ar, "(import \"test@config\" {s} ", .{x});
+            if (std.mem.indexOf(u8, face, want) == null) {
+                std.debug.print("\n=== {s}: no {s}\n", .{ name, want });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+    const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
+    const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
+    try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_val_methods_cross_units"), out);
+}

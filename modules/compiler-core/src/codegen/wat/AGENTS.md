@@ -1324,7 +1324,8 @@ closed, 1071 (2)); while the core's own capture is open at depth 0 each write al
 mirror); a unit's own capture (`text_capture`: a `Display` hole, a `run()`'s) is `unit_cap_items` over the imported
 `__cap`, one depth deeper, so the core mirrors none of it. `__ti_register(structref)` appends a unit's `$__tinfo` to the
 core's list (`__type_infos() -> arrayref`, typeinfo's and debugging's); `__print_decl(anyref)`, `__eq_decl(anyref,
-anyref) -> i32` and `__display_decl(anyref) -> i32` cast the value to `$__decl`, read its `$__tinfo`'s funcref, cast it to
+anyref) -> i32` and `__display_decl(anyref) -> i32` cast the value to `$__decl`, read its `$__tinfo` through
+`ref.as_non_null` (a null one traps there, decision 1076 (1)), read its funcref, cast it to
 `$__print_sig` / `$__eq_sig` and `call_ref` it. **A unit's type infos** (`gcTypeInfos`, `gcInitTypes`): per declared
 type the unit builds (a `struct.new` of it), `$__tip<k>(v)` (its printer, none for a record with a field written
 `array<T>`), `$__tie<k>(a, b)` (`0` for a `b` of another type; `$__eq_<T>` when every field is a scalar, a `bool` or a
@@ -1417,14 +1418,28 @@ names a type definition, and records the boundary's type (`ProgramUnit.exports`)
 the lowering exported whose type names a type definition is exported through its wrapper too (no unit's
 export is concrete, 1037) but not offered to importers; each function linked
 from another program unit that the unit exports with the same type is imported from it
-(`(import "<pkg>@<path>" "<name>" …)`, through a thunk when abstract) instead of defined — anything
-else (a generic function, a method, a linear module's) stays linked. `botopink.units` merges what the
+(`(import "<pkg>@<path>" "<name>" …)`, through a thunk when abstract) instead of defined. **Methods**
+(decision 1055 (8)): each function a non-generic type's, `implement` or `extend` block's member lowers
+to (`<Target>_<member>`, `methodOf`) crosses under that symbol by the same rule (`memberCrosses`, `Self`
+its target; an `implement` member with no written `-> R` does not), and an importer imports it as it
+imports a function. **Module `val`s** (decision 1055 (6)): each of the unit's own module-level `val`s
+(and `var`s) is set once, by its own `__bp_init`, and exported only through its accessor
+`get_<name>` (a `var` also `set_<name>`), through 1037's wrapper when its type names a type
+definition (`ProgramUnit.vals`); no global is exported. An importer emits no initialiser for a `val`
+linked from such a unit (`Emitter.foreign_vals`; written with a scalar type its initialiser is not even
+read, so what only it calls is not linked) and drops that unit's `_`-named statements; each
+`global.get` / `global.set` of it becomes a call of the imported accessor (`readThroughAccessor`, a
+thunk `$__val_<sym>` casting back when abstract). Anything else (a generic function or method, a
+linear module's) stays linked. Inside each unit's `__bp_init` the type infos are built before the
+`val`s, and the frame runs the units' in dependency order (the core, std's, the program's). `botopink.units` merges what the
 program units it links or runs name: the core, every std unit any of them imports, the program units in
 dependency order, the module itself. `tests/wat.zig` `units ---- each module of a program is a unit`
 holds the index oracle over every unit of a two-module program and runs its frame; `units ---- a pub fn
 answering Result` the same for a `Result`-answering export (wrapper, thunk, `runner.run`), and `units ---- an
 io.fs program's entry` checks that no std module is a unit, that every unit the entry lists imports only
-units listed before it, and that the frame builds. **The test entry**:
+units listed before it, and that the frame builds; `units ---- decision 1055 (6)` (cell
+`wasm_val_methods_cross_units`) that a `val` read from two units runs its initialiser once and that the
+methods are imported. **The test entry**:
 under `botopink test` (`Config.test_mode`) a module's test program is the unit `<pkg>@<module>.test`
 (`unit_stem_suffix`, the last line of its `botopink.units`), shaped as the module's unit and importing
 what its tests reach; its binary is `ModuleOutput.test_unit.wasm` (`units ---- a module's test entry`

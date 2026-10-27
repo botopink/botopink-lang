@@ -154,3 +154,10 @@ out $250
 out Secret(code: 9)
 out true
 out [Secret(code: 9), Shape.Square(side: 3)]
+== wasm_val_methods_cross_units
+out config loaded
+out 7
+out 21
+out 6
+out box 3
+out box 3

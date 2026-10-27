@@ -1,0 +1,16 @@
+//// Unit C: reads unit A's module `val` beside unit B, which reads it too — its initialiser runs once — and calls unit A's methods (decision 1055 (6), (8)).
+
+import {io.terminal.print} from "std";
+mod config;
+mod reader;
+import {config.seed, config.Box};
+import {reader.total, reader.label};
+
+pub fn main() -> void {
+    print(seed);
+    print(total());
+    val b = Box(v: 3);
+    print(b.doubled());
+    print(b.name());
+    print(label(b));
+}

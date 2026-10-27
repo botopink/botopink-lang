@@ -3239,23 +3239,25 @@ const core_ti_register = typedFunc("__ti_register", &.{.{ .name = "t", .ty = .st
 const core_type_infos = typedFunc("__type_infos", &.{}, .arrayref, &.{}, &.{.{ .global_get = "__types" }});
 
 /// `__print_decl(v)` — a declared type's value printed by its own `$__tinfo`'s
-/// `print` (1055 (3)): whatever unit declared it, no table, no key.
+/// `print` (1055 (3)): whatever unit declared it, no table, no key. Each of
+/// the three reads `info` through `ref.as_non_null` (decision 1076 (1)): a
+/// null one is a compiler defect, trapping there by name.
 const core_print_decl = typedFunc("__print_decl", &.{.{ .name = "v", .ty = .anyref }}, null, &.{}, &.{
-    get("v"), get("v"), pcast(.decl), pget(.decl, 0), pget(.tinfo, 1), pcast(.print_sig), .{ .call_ref = pi(.print_sig) },
+    get("v"), get("v"), pcast(.decl), pget(.decl, 0), .ref_as_non_null, pget(.tinfo, 1), pcast(.print_sig), .{ .call_ref = pi(.print_sig) },
 });
 
 /// `__eq_decl(a, b)` — `a == b` by `a`'s `$__tinfo`'s `eq` (`0` for a `b` of
 /// another type).
 const core_eq_decl = typedFunc("__eq_decl", &.{ .{ .name = "a", .ty = .anyref }, .{ .name = "b", .ty = .anyref } }, .i32, &.{}, &.{
-    get("a"), get("b"), get("a"), pcast(.decl), pget(.decl, 0), pget(.tinfo, 2), pcast(.eq_sig), .{ .call_ref = pi(.eq_sig) },
+    get("a"), get("b"), get("a"), pcast(.decl), pget(.decl, 0), .ref_as_non_null, pget(.tinfo, 2), pcast(.eq_sig), .{ .call_ref = pi(.eq_sig) },
 });
 
 /// `__display_decl(v)` — `1` after writing `v`'s `Display` text through its
 /// `$__tinfo`'s `display`, `0` (nothing written) for a type with none.
 const core_display_decl = typedFunc("__display_decl", &.{.{ .name = "v", .ty = .anyref }}, .i32, &.{.{ .name = "f", .ty = .funcref }}, &.{
-    get("v"),          pcast(.decl),                    pget(.decl, 0),          pget(.tinfo, 3), set("f"),
-    get("f"),          .ref_is_null,                    when(&.{ c32(0), ret }), get("v"),        get("f"),
-    pcast(.print_sig), .{ .call_ref = pi(.print_sig) }, c32(1),
+    get("v"),                        pcast(.decl), pget(.decl, 0),          .ref_as_non_null, pget(.tinfo, 3), set("f"),
+    get("f"),                        .ref_is_null, when(&.{ c32(0), ret }), get("v"),         get("f"),        pcast(.print_sig),
+    .{ .call_ref = pi(.print_sig) }, c32(1),
 });
 
 /// The core's GC items (decision 1055 (2), (3), (5)), each function exported
