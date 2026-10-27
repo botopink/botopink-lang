@@ -2269,7 +2269,8 @@ directory of the project that wrote it). One process per target holds every modu
 crash or a hang is that target's run red whole, and a run that ends without its summary, or with
 fewer verdicts than the root's lines, is a red of its own. Before the build `run.sh` holds the root's
 `runModule` lines to the tree (`roster`): a module on disk not in decision 989's shape, a module with
-no line, a line with no module — each a `*` red.
+no line, a line with no module — each a `*` red. A front-166 draft (`decisions-taken/<slug>-<N>/` holding
+`docs.md` and `draft/` alone) is no module until it is promoted (decision 1002 (a)): the roster skips it.
 
 A red module's `main` answers `Error` (its red cases and their line diff) and writes its candidate,
 `snapshot/main.snap.new`, through `io.fs`; the report prints, under its `FAIL` line, what the root
