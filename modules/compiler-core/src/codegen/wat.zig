@@ -1002,6 +1002,44 @@ fn linkRenames(
     };
 }
 
+/// The key `linkValueRenames` files a function named as a VALUE under.
+const value_rename_mark = "\x01";
+
+/// 144 B-171 — a linked module's function named as a VALUE (`val f = other`,
+/// `apply(other, 3)` for `import {lib.pick as other}`, or its own mangled
+/// `pick`) means what its calls mean (`linkRenames`): the linked module's
+/// `use` items never reach `registerSymbols`, so the alias was unbound there,
+/// and a mangled function's bare name read the other module's. Filed under
+/// `value_rename_mark ++ name` for `renameLinkedCalls`; a name any function,
+/// method or lambda of the module binds as a local or a parameter is left
+/// alone, so no local is renamed.
+fn linkValueRenames(ar: std.mem.Allocator, program: ast.Program, renames: *std.StringHashMapUnmanaged([]const u8)) !void {
+    if (renames.count() == 0) return;
+    var bound: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |f| {
+            for (f.params) |p| try bound.append(ar, p.name);
+            try ast.collectDeclaredNames(ar, f.body, &bound);
+        },
+        .type_ => |t| for (t.methods) |m| {
+            for (m.params) |p| try bound.append(ar, p.name);
+            if (m.body) |b| try ast.collectDeclaredNames(ar, b, &bound);
+        },
+        else => {},
+    };
+    var adds: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    var it = renames.iterator();
+    while (it.next()) |e| {
+        const k = e.key_ptr.*;
+        if (std.mem.indexOfScalar(u8, k, '.') != null or std.mem.startsWith(u8, k, "__bp_") or std.mem.eql(u8, k, e.value_ptr.*)) continue;
+        const hit = for (bound.items) |b| {
+            if (std.mem.eql(u8, b, k)) break true;
+        } else false;
+        if (!hit) try adds.append(ar, .{ try std.fmt.allocPrint(ar, value_rename_mark ++ "{s}", .{k}), e.value_ptr.* });
+    }
+    for (adds.items) |a| try renames.put(ar, a[0], a[1]);
+}
+
 /// 144 B-171 — the linked functions (`linkKey`) a linked module imports under
 /// an alias (a namespace call's `__bp_ns_shapes__mine`) while one of its own
 /// functions binds the declared name as a local or a parameter (`val mine =
@@ -1222,6 +1260,13 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
             // local spells one, so none is shadowed.
             if (comptime @hasField(T, "ident") and @hasField(T, "dotIdent") and @hasField(T, "identAccess")) {
                 if (value == .ident and std.mem.startsWith(u8, value.ident, "__bp_")) if (renames.get(value.ident)) |m| return .{ .ident = m };
+                // A function named as a value (`linkValueRenames`).
+                if (value == .ident) {
+                    var buf: [256]u8 = undefined;
+                    if (std.fmt.bufPrint(&buf, value_rename_mark ++ "{s}", .{value.ident})) |key| {
+                        if (renames.get(key)) |m| return .{ .ident = m };
+                    } else |_| {}
+                }
             }
             switch (value) {
                 inline else => |payload, tag| return @unionInit(T, @tagName(tag), try renameLinkedCalls(@TypeOf(payload), arena, payload, renames)),
@@ -2091,6 +2136,7 @@ fn emitWatPass(
             const mod_name = if (i < linked.len) linked[i].name else module_name;
             const prog = if (i < linked.len) linked[i].program else own_program;
             try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, i < linked.len, m);
+            if (i < linked.len) try linkValueRenames(ar0, prog, m);
         }
         for (decls.items, owner.items) |*d, from| {
             if (maps[from].count() == 0) continue;
@@ -2100,8 +2146,10 @@ fn emitWatPass(
     // The named types the same way: every module that declares or imports a
     // mangled `type`, `behavior`, `implement` or `extend` has its references
     // renamed in a copy of its declarations.
+    var type_maps: []const std.StringHashMapUnmanaged([]const u8) = &.{};
     if (em.link_mangled_types.count() > 0) {
         var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        type_maps = maps;
         for (maps, 0..) |*m, i| {
             m.* = .empty;
             const mod_name = if (i < linked.len) linked[i].name else module_name;
@@ -2228,6 +2276,7 @@ fn emitWatPass(
         em.rewrites = if (from < linked.len) linked[from].rewrites else rewrites;
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
         em.global_renames = if (val_maps.len > 0) &val_maps[from] else null;
+        em.type_renames = if (type_maps.len > 0) &type_maps[from] else null;
         em.foreign_origin = if (from < linked.len) linked[from].via else null;
         em.src_path = srcPathOf(linked, from, src_path);
         em.loaded_pkg = if (from < linked.len and crossModule.isLoadedModule(linked[from].name)) loadedPackageOf(linked[from].name) else null;
@@ -2256,6 +2305,7 @@ fn emitWatPass(
     em.foreign_origin = null;
     em.src_path = src_path;
     em.global_renames = null;
+    em.type_renames = null;
     em.rewrites = rewrites;
     em.instance_lowerings = own_instance_lowerings;
 
@@ -3447,6 +3497,12 @@ const Emitter = struct {
     /// While a declaration is emitted, its module's reads of a mangled `val`:
     /// local name → mangled global (`resolveName`).
     global_renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
+    /// While a declaration is emitted, its module's names of a renamed type
+    /// (`linkTypeRenames`): the AST is renamed before registration, but the
+    /// inference notes keyed by location (`instance_lowerings`) still name
+    /// the type as the module wrote it — `ShapeBox` for `import {shapes.Box
+    /// as ShapeBox}` (144 B-171, decision 603).
+    type_renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
     /// The `global_renames` each `deferred_globals` entry was declared under,
     /// so `$__init_globals` reads its initialiser in its own module.
     deferred_renames: std.ArrayListUnmanaged(?*const std.StringHashMapUnmanaged([]const u8)) = .empty,
@@ -25501,7 +25557,12 @@ const Emitter = struct {
         // `.length` on its result answered `0` at exit 0.
         const rec0 = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             // A type this module never imported is linked in all the same.
-            .type_, .unplaced_type => |r| r,
+            // Named as the module wrote it: its renamed type's name when the
+            // program linked it under another (`type_renames`) — the alias
+            // `ShapeBox` is `shapes`'s `Box`; `<alias>_<method>` matched no
+            // method, and a free fn of the method's name (another loaded
+            // package's `describe()`) was called without the receiver.
+            .type_, .unplaced_type => |r| if (self.type_renames) |m| m.get(r) orelse r else r,
             // A behavior-typed receiver is answered by the value's own type
             // (`lowerBehaviorDispatch`) whenever some type of the module
             // declares the method: a record recovered from the expression is

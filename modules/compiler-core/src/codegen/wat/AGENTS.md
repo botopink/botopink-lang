@@ -157,7 +157,9 @@ the module's own, or a reached one, sends the module to linear memory (P2b). The
 linear pass links everything, as it always did, unless the whole lowering refused the module: its retry
 lowers what is reached (`Plan.reached_only`, decision 531, below). A local name that means a mangled function
 (`linkRenames`) reaches it when it is read as a value too (`__bp_run(__bp_run__<pkg>)`, a self-checking module's
-second case): `pruneUnreached` follows the renames, which `renameLinkedCalls` applies only to calls. A record's
+second case): `pruneUnreached` follows the renames. In a linked module `renameLinkedCalls` also renames a function
+named as a value (`val f = other`, `apply(other, 3)` for `import {lib.pick as other}`, decision 107) to what its calls
+mean, unless a function, method or lambda of the module binds the name (`linkValueRenames`). A record's
 constructor pattern (`val assert Person(n, a) = p`) is renamed with its mangled type (`renameLinkedTypes`). A method
 call on a value is never the module's free function of its name (`fn at(c: bool) -> ?Point` beside `xs?.[0]`, written
 `n.at(0)`, or `m.at(key)` on an `Index`): `calleeSymbol` takes the free function only when it takes the receiver first
