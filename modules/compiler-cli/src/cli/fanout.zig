@@ -36,6 +36,7 @@
 /// so the libraries' jobs (decision 1004) can run on the same code.
 const std = @import("std");
 const builtin = @import("builtin");
+const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 
 pub const DEFAULT_TIMEOUT_S: u64 = 900;
@@ -144,7 +145,7 @@ fn runOne(sh: *Shared, i: usize) void {
     _ = sh.running.fetchAdd(1, .acq_rel);
     defer _ = sh.running.fetchSub(1, .acq_rel);
     slot.start_ns.store(nowNs(io), .release);
-    var child = std.process.spawn(io, .{
+    var child = bp.procgroup.spawnMember(io, .{
         .argv = sh.opts.argv,
         .cwd = .{ .path = sh.members[i].dir },
         .stdin = .ignore,
@@ -158,7 +159,7 @@ fn runOne(sh: *Shared, i: usize) void {
     };
     const pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id.?);
     slot.pid.store(pid, .release);
-    const term = child.wait(io) catch |e| {
+    const term = bp.procgroup.waitMember(io, &child) catch |e| {
         child.kill(io);
         slot.spawn_error = e;
         return;
