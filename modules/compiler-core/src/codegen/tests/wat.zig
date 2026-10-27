@@ -4810,3 +4810,35 @@ test "wat: gc ---- a behavior-typed value an implementer record or variant passe
         \\}
     );
 }
+
+test "wat: gc ---- f?.(x) over an optional function field answering a string, a word and a float" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Cfg(scoper: ?fn(string) -> string = null, count: ?fn(i32) -> i32 = null, half: ?fn(f64) -> f64 = null)
+        \\
+        \\fn shout(s: string) -> string {
+        \\    return s + "!";
+        \\}
+        \\
+        \\fn triple(n: i32) -> i32 {
+        \\    return n * 3;
+        \\}
+        \\
+        \\fn halve(x: f64) -> f64 {
+        \\    return x / 2.0;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val a = Cfg(scoper: shout);
+        \\    print(a.scoper?.("x") ?? "none");
+        \\    print(a.count?.(2) ?? -1);
+        \\    print(a.half?.(3.0) ?? 0.5);
+        \\    val b = Cfg(count: triple, half: halve);
+        \\    print(b.scoper?.("y") ?? "none");
+        \\    print(b.count?.(0) ?? -1);
+        \\    print(b.count?.(2) ?? -1);
+        \\    print(b.half?.(3.0) ?? 0.5);
+        \\}
+    );
+}

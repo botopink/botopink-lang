@@ -30754,7 +30754,10 @@ const Emitter = struct {
         // whatever the arms answered, so `val m = if (d < 0.0) { 0.0 - d }
         // else { d }` in a function answering nothing was `(if (result i32)`
         // around two `f64`s — invalid code, the module refused.
-        const ty: Repr = if (as_stmt) self.cur_result else if (link_box != null) .i32 else self.ifValueType(i);
+        // A GC module holds the boxed link as the optional of its payload:
+        // the payload's own nullable reference, a scalar's box.
+        const link_payload: ?Repr = if (self.mode == .gc) if (link_box) |bx| (self.gcOptPayload(bx) orelse return self.gcFail("an optional of no known payload")) else null else null;
+        const ty: Repr = if (as_stmt) self.cur_result else if (link_payload) |pr| gcOptRepr(pr) else if (link_box != null) .i32 else self.ifValueType(i);
         // Decision 1021 (10) — in a GC module an arm answering `null` into a
         // reference is that reference's null (`branchLastStmt`), whatever
         // the enclosing result.
@@ -30822,7 +30825,10 @@ const Emitter = struct {
         const rec_narrowed = try self.narrowRecordTest(i.cond.*, true);
         const then_tail: Tail = if (link_box) |bx| blk: {
             const tail = i.then_[0].expr;
-            if (bx.cell != .none) {
+            if (link_payload) |pr| {
+                try self.lowerCoerced(tail, pr);
+                try self.gcBox(pr);
+            } else if (bx.cell != .none) {
                 try self.lowerCellWord(tail, bx.cell);
             } else {
                 try self.lowerCoerced(tail, .i32);
@@ -30944,13 +30950,6 @@ const Emitter = struct {
         // An empty array literal answers the array the branch is asked for
         // (`o ?? []`, front 164 s2): in a GC module it has no type of its own.
         const empty_arr = self.mode == .gc and ty.isArrRef() and isEmptyArrayLit(last.expr);
-        // `null` answering a branch a GC module holds as a reference (the
-        // absent arm of `xs?.[k]`) is that reference's null: lowered as the
-        // word `0` it went in a box, which no read of the payload took.
-        if (self.mode == .gc and ty.isRef() and isNullLit(last.expr)) {
-            try self.emit(self.zeroOf(ty));
-            return .value;
-        }
         const prev_want = self.gc_want;
         if (empty_arr) self.gc_want = ty;
         defer self.gc_want = prev_want;
