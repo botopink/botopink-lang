@@ -439,6 +439,19 @@ pub fn codegenEmit(
                 // consumer links the dependency's bodies into ITS unit and
                 // lowers them there, so nothing of a consumer is in it.
                 if (try config.cachedUnit(alloc, ct.name)) |unit| {
+                    // With the units on, its importers import what it
+                    // exports, as from a unit emitted here (decision 1032 (6)).
+                    if (units_mode) if (unit.wasm) |bin| if (program_units) |reg| {
+                        const pa = program_units_alloc;
+                        const stems = try runtimeUnit.unitsOf(pa, bin);
+                        var lines: std.ArrayListUnmanaged(u8) = .empty;
+                        for (stems) |st| try lines.print(pa, "{s}\n", .{st});
+                        const face = runtimeUnit.faceOfBytes(pa, bin) catch |err| switch (err) {
+                            error.OutOfMemory => return error.OutOfMemory,
+                            else => null,
+                        };
+                        try reg.put(pa, try pa.dupe(u8, ct.name), .{ .lines = lines.items, .face = if (face) |f| f.text else null });
+                    };
                     try results.append(alloc, .{ .name = ct.name, .src = ct.src, .result = unit });
                     continue;
                 }
@@ -1964,6 +1977,9 @@ threadlocal var first_gap: ?[]const u8 = null;
 const ProgramUnit = struct {
     lines: []const u8,
     exports: std.StringHashMapUnmanaged(wat.FuncType) = .empty,
+    /// A unit the unit cache answered (decision 1008 (2)) is not lowered
+    /// here: its exports are its face's lines (`runtimeUnit.faceOfBytes`).
+    face: ?[]const u8 = null,
 };
 
 /// With the units on (`codegenEmit`): every program unit emitted so far, by
@@ -2198,6 +2214,16 @@ fn emitWatPass(
     em.module_name = module_name;
     em.src_path = src_path;
     em.external_lookup = external_lookup;
+    // Decision 1072 (2) — the inventory's shrink-only count: std's `.bp`
+    // functions linked into this entry instead of read from their std unit,
+    // zero once P4c-std makes each std module one unit.
+    if (gc_debug and units_on_wasi) {
+        var n: usize = 0;
+        for (linked_in) |l| if (std.mem.startsWith(u8, l.name, "std/")) for (l.program.decls) |d| if (d == .@"fn") {
+            n += 1;
+        };
+        std.debug.print("STDLINKED {s} :: std functions linked into an entry: {d}\n", .{ module_name, n });
+    }
     em.instance_lowerings = own_instance_lowerings;
 
     // Decision 504 — every module's render-scope values typed for this
@@ -3137,14 +3163,24 @@ fn unitBoundary(
         const sym = d.@"fn".name;
         const prefix_len = l.name.len + 1;
         const bare = if (sym.len > prefix_len and std.mem.startsWith(u8, sym, l.name) and sym[l.name.len] == '/') sym[prefix_len..] else sym;
-        const want = pu.exports.get(bare) orelse continue;
+        const want = pu.exports.get(bare);
+        if (want == null and pu.face == null) continue;
         const k = for (items.items, 0..) |it, k| {
             if (it == .func and std.mem.eql(u8, it.func.name, sym)) break k;
         } else continue;
         const ft = try funcTypeOf(ar, items.items[k].func);
         const crosses = runtimeUnit.crossesAbstract(ft);
         const have = if (crosses) try runtimeUnit.abstractType(ar, defs, ft) else ft;
-        if (!sameFuncType(have, want)) continue;
+        if (want) |w| {
+            if (!sameFuncType(have, w)) continue;
+        } else {
+            // A cached unit: the export line its face carries.
+            const line = runtimeUnit.exportLine(ar, bare, have) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => continue,
+            };
+            if (std.mem.indexOf(u8, pu.face.?, line) == null) continue;
+        }
         const stem = try entryStem(ar, l.name);
         if (crosses) {
             try imports.append(ar, .{ .import = .{ .module = stem, .name = bare, .func = try runtimeUnit.abiSymbol(ar, sym), .type = have } });

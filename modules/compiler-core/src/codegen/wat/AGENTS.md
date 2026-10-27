@@ -206,6 +206,10 @@ prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish/cases
 answers were addresses before. Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
+Decision 1072 (2): while std's `.bp` is linked into importers (until P4c-std), a `gc_debug` build prints, per
+entry emitted with `Config.wasm_units`, `STDLINKED <module> :: std functions linked into an entry: N` — the
+inventory's shrink-only count (the `fn` declarations of the std modules linked into it), zero at P4c-std.
+
 Decision 1021 (10), P2b: an extension block's method (`implement … for <T>`, `extend`) is typed by what it
 writes — `registerMethodSigs` and `emitExtensionMethods` through `extMethodRepr`, `Self` the block's target
 (`extSelfTypeRef`) —, where every parameter and answer was a word; an empty `[]` argument binds no type

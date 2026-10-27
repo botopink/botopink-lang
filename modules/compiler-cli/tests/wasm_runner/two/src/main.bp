@@ -1,0 +1,9 @@
+import {io.terminal.print} from "std";
+import {util.greet, util.shift, util.Point};
+
+fn main() -> void {
+    print(greet("bo"));
+    print("c,d,e".split(","));
+    val p = shift(Point(x: 1, y: 2), 3);
+    print(p.x);
+}

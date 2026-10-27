@@ -140,16 +140,28 @@ compiler-cli/
 │   │                          with its import; each piece's origin comment
 │   │                          (decision 798 (2)) over it
 │   ├── resolved_file/       ← its fixture: `app` and `lib`
+│   ├── wasm_runner.sh       ← the runner composing a `wasi` program from its unit
+│   │                          files, row 1032's proof (decisions 1032 (2), (3), (7),
+│   │                          1034, 1064), `wasmtime` off PATH: `one` and `two` (two
+│   │                          modules) reach `std@string` under one cache root (reuse
+│   │                          is per cache root, 1064 (2)), one `.cwasm` per unit and
+│   │                          frame, the second compiling only what the first did not
+│   │                          reach, a warm run compiling nothing; `files` (`io.fs`,
+│   │                          the io.fs half of `wasm_runner_keeps_wasi_p2`) and
+│   │                          `test --target wasm` through the runner; the http half
+│   │                          is the zig test `runner.runEntry` (1064 (1)). Not the
+│   │                          whole proof of `wasm_units_precompiled_once` until
+│   │                          P4c-std: std `.bp` is linked into importers until then
+│   │                          (decision 1072 (2))
+│   ├── wasm_runner/         ← its fixtures: `one`, `two`, `files`
 │   ├── wasm_runtime_unit.sh ← the wasm runtime core and std's units (decisions
-│   │                          1021 (2), 1026; not in `test-cli` until the C-API
-│   │                          runner composes units, decision 1037 (5)): a one-module `hello` builds to
-│   │                          `main.wat`, `std@__rt.wasm` and the units it reaches
-│   │                          (`std@number`, `std@string`), written once and the
-│   │                          same for another program; wasmtime answers what
-│   │                          erlang answers; the core exports no std function;
-│   │                          the entry imports std-wasm from its units, its
-│   │                          memory and heap from `std@__rt`, carries none of
-│   │                          std-wasm's functions and is under 50 KB
+│   │                          1021 (2), 1026, 1032 (1)): a one-module `hello` builds to
+│   │                          `hello@main.wasm` / `.wat`, `std@__rt.wasm` and the units
+│   │                          it reaches (`std@number`, `std@string`), named in its
+│   │                          `botopink.units`, written once and the same for another
+│   │                          program; `run` answers what erlang answers; the core
+│   │                          exports no std function; the entry imports std-wasm from
+│   │                          its units and its memory from `std@__rt`, and is under 50 KB
 │   ├── comptime_units.sh    ← the `.comptime` stage (decisions 1033, 1035 (1), (3),
 │   │                          1058 (2), (3), piece C1; run by hand — it reads
 │   │                          `zig build std-wasm`'s units): an erlang build
@@ -163,12 +175,12 @@ compiler-cli/
 │   │                          cache alone (1077 (5))
 │   ├── comptime_units/      ← its fixture: `app` (`main` with a decorator, `lib`, `gap`)
 │   ├── wasm_runtime_unit/   ← its fixture: `hello`
-│   ├── wasm_std_unit_per_module.sh ← cell `wasm_std_unit_per_module` (decision 1026;
-│   │                          waits on the runner as above):
+│   ├── wasm_std_unit_per_module.sh ← cell `wasm_std_unit_per_module` (decision 1026):
 │   │                          hello-world composes the core alone; a program
 │   │                          using `io.fs` adds `std@io@fs` and what it imports,
-│   │                          each before `$main` and after its imports; both
-│   │                          answer as on erlang
+│   │                          its `botopink.units` naming exactly the std units
+│   │                          the build wrote, the core first and the entry last;
+│   │                          both answer as on erlang through the runner
 │   ├── wasm_std_unit_per_module/ ← its fixtures: `hello`, `files` (also the browser column: `compiler-web/tests/smoke.js` composes them in the page, 1069 (5))
 │   ├── build_modes_same_answer.sh ← cell `build_modes_same_answer` as a CLI case
 │   │                          (decision 798 (5); the suite builds a package one

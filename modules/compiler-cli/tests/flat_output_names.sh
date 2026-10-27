@@ -8,7 +8,9 @@
 # `app@util.js`, each `.d.ts` beside its `.js`); a commonJS module requiring
 # another by its flat name (`require("./lib@util")`), its `.d.ts` importing
 # `"./lib@root"`; the entry keeping decision 870's `require.main === module`;
-# and the program answering alike on the three targets.
+# and the program answering alike on the three targets. On wasm (decisions
+# 1032 (1), 1065 (2)) every file of `out/wasm/` is `<pkg>@<path>`, the entry
+# `app@main.wasm`, and the program answers alike through the runner.
 #
 # Decision 1023 — the folder is named by the target, literally: a package's
 # `build --target <t>` lays exactly `out/<t>/` (`out/commonJS/`, `out/erlang/`,
@@ -125,13 +127,22 @@ for target in commonJS erlang beam; do
   [[ "$target" == commonJS ]] && cp -r "$WORK/app/out/commonJS" "$WORK/commonJS-out"
 done
 
-# wasm: the same one folder, `out/wasm/`, its entry component inside it; and
+# wasm: the same one folder, `out/wasm/`, the entry and its units inside it; and
 # on every target an `--out <dir>` is the base the target's folder goes under.
 rm -rf "$WORK/app/out"
 if (cd "$WORK/app" && "$BP_BIN" build --target wasm >/dev/null 2>"$WORK/build-wasm.log"); then
   laid="$(cd "$WORK/app/out" && ls -A)"
   [[ "$laid" == wasm ]] || fail "wasm: out/ holds '$(tr '\n' ' ' <<<"$laid")', not exactly wasm/"
-  [[ -n "$(find "$WORK/app/out/wasm" -maxdepth 1 -name '*.wat' | head -1)" ]] || fail "wasm: no .wat in out/wasm/"
+  # Decisions 1032 (1), 1065 (2): every file is `<pkg>@<path>` — the entry
+  # `app@main.wasm`, each own and dependency module's unit, the core and std's
+  # units — and no `main.wat`.
+  wnames="$(cd "$WORK/app/out/wasm" && ls | LC_ALL=C sort | tr '\n' ' ')"
+  [[ -f "$WORK/app/out/wasm/app@main.wasm" && -f "$WORK/app/out/wasm/app@main.wat" ]] || fail "wasm: no entry app@main.wasm / .wat in out/wasm/ ($wnames)"
+  for f in app@util app@models@user lib@root lib@util std@__rt; do
+    [[ -f "$WORK/app/out/wasm/$f.wasm" ]] || fail "wasm: no $f.wasm in out/wasm/ ($wnames)"
+  done
+  if ls "$WORK/app/out/wasm" | grep -qv '^[A-Za-z0-9_]*@[A-Za-z0-9_@]*\.\(wasm\|wat\)$'; then fail "wasm: a file not named <pkg>@<path>: $wnames"; fi
+  [[ ! -e "$WORK/app/out/wasm/main.wat" ]] || fail "wasm: main.wat is still written"
   answer="$(cd "$WORK/app" && "$BP_BIN" run --target wasm 2>/dev/null | grep -v '^\s*$' | grep -v 'Compil' || true)"
   [[ "$answer" == "$want_answer" ]] || fail "wasm: the program answered '$answer', not '$want_answer'"
 else

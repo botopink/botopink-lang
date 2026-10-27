@@ -146,7 +146,7 @@ fn main() {
         panes.run = target === "wasm" ? "" : "(only the wasm target runs in the page)";
         let ran = "";
         if (target === "wasm" && reply.status === 0 && modules[0] && modules[0].wasm) {
-          const r = (await ask({ op: "run", wasm: modules[0].wasm, runtime: reply.result.runtime })).run;
+          const r = (await ask({ op: "run", wasm: modules[0].wasm, runtime: reply.result.runtime, modules, entry: modules[0].name })).run;
           panes.run = r.stdout + r.stderr + (r.trap ? `\nRUNTIME TRAP: ${r.trap}\n` : "");
           ran = r.trap ? ", trapped" : ", ran";
         }

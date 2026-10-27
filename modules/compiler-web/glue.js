@@ -26,8 +26,9 @@
 //      protocol: `{ id, op: "load", wasm }` → `{ id, ok }`, then
 //      `{ id, op: "compile", sources: [{ path, source }], target, package }` →
 //      `{ id, ok, status, result, stdout, stderr, ms }`, and
-//      `{ id, op: "run", wasm, runtime }` (the entry module's base64 and the
-//      compile's `runtime`) → `{ id, ok, run, ms }`. The page
+//      `{ id, op: "run", wasm, runtime, modules?, entry? }` (the entry module's
+//      base64, the compile's `runtime`, and its `modules` whose units the entry
+//      links) → `{ id, ok, run, ms }`. The page
 //      keeps the compiler off the main thread, where synchronous
 //      instantiation of the target program's wasm output is not size-limited.
 //
@@ -631,16 +632,29 @@
 
   /// The units of a compile's program, in the order the page composes them
   /// (decisions 1026, 1069 (5)): the runtime core and the std units it
-  /// reaches (`result.runtime`), then the entry module's own (`entry`, else
-  /// the first module with a binary). Today the entry's binary holds the whole
-  /// program (R2's `Config.wasm_units` is off); once it is on, each module is a
-  /// unit of its own and the entry's `botopink.units` names their order.
+  /// reaches (`result.runtime`), then the program's own (`entry`, else the
+  /// first module with a binary): each module is a unit `<pkg>@<path>`
+  /// (decisions 1032, 1073 (2)) and the entry's `linked` — its
+  /// `botopink.units` — names their order, the core first and the entry last
+  /// (std `.bp` linked into importers until P4c-std, decision 1072 (2)).
   function programUnits(result, entry) {
-    const units = (result.runtime || []).map((u) => ({ name: u.name, bytes: wasmBytes(u.wasm) }));
+    const runtime = (result.runtime || []).map((u) => ({ name: u.name, bytes: wasmBytes(u.wasm) }));
     const main = result.modules.find((m) => m.name === entry && m.wasm) || result.modules.find((m) => m.wasm);
     if (!main) throw new Error("the compile answered no binary module to run");
-    units.push({ name: main.name, bytes: wasmBytes(main.wasm) });
-    return units;
+    // Decisions 1032, 1073 (2): a units entry names its units in order (its
+    // `linked`, the core first and itself last) — the runtime's, then the
+    // program's own `<pkg>@<path>` units the compile answered.
+    if (Array.isArray(main.linked) && main.linked.length > 0) {
+      return main.linked.map((stem) => {
+        const r = runtime.find((u) => u.name === stem);
+        if (r) return r;
+        const m = result.modules.find((x) => x.unit === stem && x.wasm);
+        if (!m) throw new Error(`the compile answered no unit ${stem}`);
+        return { name: stem, bytes: wasmBytes(m.wasm) };
+      });
+    }
+    runtime.push({ name: main.name, bytes: wasmBytes(main.wasm) });
+    return runtime;
   }
 
   /// Run a program the `wasm` target produced (decision 1069 (5)): `units`
@@ -714,7 +728,10 @@
           scope.postMessage({ id: msg.id, ok: true, status: result.status, result, stdout: compiler.stdout, stderr: compiler.stderr, ms });
         } else if (msg.op === "run") {
           const t0 = nowMs();
-          const result = run(programUnits({ runtime: msg.runtime, modules: [{ name: "main", wasm: msg.wasm }] }, "main"));
+          // With the compile's `modules`, the entry's own units come from them
+          // (decision 1073 (2)); else the entry's binary alone.
+          const modules = msg.modules || [{ name: "main", wasm: msg.wasm }];
+          const result = run(programUnits({ runtime: msg.runtime, modules }, msg.entry || modules[0].name));
           scope.postMessage({ id: msg.id, ok: true, run: result, ms: nowMs() - t0 });
         } else {
           throw new Error(`unknown op ${msg.op}`);

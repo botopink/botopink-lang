@@ -11,10 +11,10 @@
 #     the run after the direct `run` — from the package's own `.bpr` set, which
 #     `run` finds itself and takes no path to (decisions 1006, 1009) — prints what
 #     the direct `run` prints, nothing of the build phase (the top-level block's
-#     `print`); on wasm the direct build, the build from `app.bpr` and the run
-#     write the entry's `main.wat` alone — a two-module program (decisions
-#     1008 (3), 1017 (5)), the run that builds the package's own set included
-#     (1006-b (5)) — and `run` over the build's own folder (in process, decisions
+#     `print`); on wasm the direct build, the build from `app.bpr` and the runs
+#     write the same files, the entry `app@main.wasm` and its units, each
+#     `<pkg>@<path>` (decisions 1032 (1), 1065 (2)), the run that builds the
+#     package's own set included (1006-b (5)) — and `run` over the build's own folder (in process, decisions
 #     1032 (3), 1034) answers the run's answer and leaves the folder as it was;
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
@@ -113,29 +113,27 @@ for target in commonJS erlang beam wasm; do
   bp "$WORK/run-bpr.out" run --target "$target" --out "$WORK/run-bpr-$target" || fail "$target: the run from the package's own .bpr failed"
   diff "$WORK/want.out" "$WORK/run-bpr.out" > "$WORK/diff.log" \
     || { fail "$target: the run from the package's own .bpr answers otherwise"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-  # Decisions 1008 (3), 1017 (5): on wasm the build, the build from a `.bpr` and the run from the
-  # package's own `.bpr` emit only the entry's component, the same bytes.
+  # Decisions 1032 (1), 1065 (2): on wasm the build, the build from a `.bpr` and the runs write
+  # the entry `app@main.wasm` and its units, each `<pkg>@<path>`, the same files.
   if [[ "$target" == wasm ]]; then
     for d in direct bpr; do
-      wats="$(cd "$WORK/$d-$target" && find . -type f | sort | tr '\n' ' ')"
-      [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the $d build wrote ${wats:-nothing}, not main.wat alone"
+      files="$(cd "$WORK/$d-$target/wasm" && ls | LC_ALL=C sort | tr '\n' ' ')"
+      [[ -f "$WORK/$d-$target/wasm/app@main.wasm" ]] || fail "wasm: the $d build wrote no entry app@main.wasm ($files)"
+      [[ ! -e "$WORK/$d-$target/wasm/main.wat" ]] || fail "wasm: the $d build still wrote main.wat"
     done
     # The build's own folder run in process (decisions 1032 (3), 1034): `run` over it
     # rewrites nothing and answers the run's answer.
     bp "$WORK/run-built.out" run --target wasm --out "$WORK/direct-$target" || fail "wasm: the run over the build's folder failed"
     diff <(grep -v -e 'Compiling' -e 'Compiled' -e '^build a$' "$WORK/run-built.out") "$WORK/want.out" > "$WORK/diff.log" \
       || { fail "wasm: the build's folder answers otherwise when run"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-    diff -r "$WORK/direct-$target" "$WORK/bpr-$target" > "$WORK/diff.log" \
+    diff -r "$WORK/direct-$target/wasm" "$WORK/bpr-$target/wasm" > "$WORK/diff.log" \
       || { fail "wasm: the run over the build's folder changed it"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-    # Decision 1006-b (5): the run that builds the set emits the entry's component alone too.
-    wats="$(cd "$WORK/run-direct-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
-    [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the direct run (building the set) wrote ${wats:-no .wat}, not main.wat alone"
-    cmp -s "$WORK/run-direct-$target/wasm/main.wat" "$WORK/bpr-$target/wasm/main.wat" \
-      || fail "wasm: the direct run's main.wat differs from the build's"
-    wats="$(cd "$WORK/run-bpr-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
-    [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the run from its own .bpr wrote ${wats:-no .wat}, not main.wat alone"
-    cmp -s "$WORK/run-bpr-$target/wasm/main.wat" "$WORK/bpr-$target/wasm/main.wat" \
-      || fail "wasm: the run's main.wat differs from the build's"
+    # Decision 1006-b (5): the run that builds the set, and the run from its own `.bpr`,
+    # write the build's files.
+    for d in run-direct run-bpr; do
+      diff -r "$WORK/$d-$target/wasm" "$WORK/bpr-$target/wasm" > "$WORK/diff.log" \
+        || { fail "wasm: the $d run's files differ from the build's"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    done
   fi
 done
 

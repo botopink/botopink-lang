@@ -1042,9 +1042,10 @@ pub fn artifactPath(
 /// Decision 1032 — whether `build`, `run` and `test` emit a `wasi` program as
 /// separate units (`Config.wasm_units`), the runner composing them
 /// (`wasmRunner.runEntry`); off, the entry is one component, `<path>.wat`.
-/// Off until every unit P4 emits crosses the 1037 boundary abstractly and
-/// names in `botopink.units` each unit it imports.
-pub const wasm_units = false;
+/// On (decision 1065 (2): the files are `<pkg>@<path>`, the entry
+/// `<pkg>@main.wasm`); std `.bp` linked into importers until P4c-std
+/// (decision 1072 (2)).
+pub const wasm_units = true;
 
 /// The file a `wasi` build's entry `module` is (decision 1032): the unit
 /// `<out_dir>/wasm/<pkg>@<path>.wasm`, a core module of its own code whose

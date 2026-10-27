@@ -180,6 +180,21 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   assert(hello.runtime.map((u) => u.name).join(" ") === "std@__rt", `wasm_std_unit_per_module/hello: the page composes std@__rt and no std unit (got ${hello.runtime.map((u) => u.name).join(" ")})`);
   const helloRan = run(programUnits(hello, "main"));
   assert(helloRan.trap === null && helloRan.stdout === "hello, world\n", `wasm_std_unit_per_module/hello: runs in the page (got ${JSON.stringify(helloRan)})`);
+  // Decisions 1032, 1073 (2): each module is a unit `<pkg>@<path>`, the entry's
+  // `linked` naming them in order, the core first and the entry last.
+  const helloMain = hello.modules.find((m) => m.name === "main");
+  assert(helloMain.unit === "hello@main" && helloMain.linked.join(" ") === "std@__rt hello@main", `wasm_std_unit_per_module/hello: the entry is the unit hello@main linking std@__rt (got ${helloMain.unit}: ${helloMain.linked.join(" ")})`);
+  // A two-module program: its own `two@util` unit is composed before the entry.
+  compiler.reset();
+  compiler.setPackage("two");
+  compiler.addSource("util", "pub fn greet(name: string) -> string {\n    return \"hi, \" + name;\n}\n");
+  compiler.addSource("main", "import {io.terminal.print} from \"std\";\nimport {util.greet};\n\nfn main() -> void {\n    print(greet(\"bo\"));\n}\n");
+  const two = compiler.compile("wasm");
+  assert(two.status === 0, `two modules: compiles in the page (${two.modules.map((m) => m.diagnostic || "").join(" ")})`);
+  const twoMain = two.modules.find((m) => m.name === "main");
+  assert(twoMain.linked.slice(-2).join(" ") === "two@util two@main", `two modules: the entry links two@util before itself (got ${twoMain.linked.join(" ")})`);
+  const twoRan = run(programUnits(two, "main"));
+  assert(twoRan.trap === null && twoRan.stdout === "hi, bo\n", `two modules: runs in the page from its units (got ${JSON.stringify(twoRan)})`);
   // `files` reaches `std@io@fs`: each std unit composed after the units it
   // imports, the core first; the page serves no file system (334 (1)), so its
   // `bp_fs` imports are refused by name before a byte runs.
@@ -227,7 +242,7 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   const r = replies[1];
   assert(r.ok === true && r.status === 0 && r.result.modules[0].code.includes("(module"), "the Worker answers `compile` with the generated text");
   assert(typeof r.ms === "number" && r.ms >= 0, "the Worker reports the compile time");
-  await scope.onmessage({ data: { id: 4, op: "run", wasm: w.modules[0].wasm, runtime: w.runtime } });
+  await scope.onmessage({ data: { id: 4, op: "run", wasm: w.modules[0].wasm, runtime: w.runtime, modules: w.modules, entry: "main" } });
   assert(replies[2].ok === true && replies[2].run.trap === null && replies[2].run.stdout === "hello, web\n", "the Worker answers `run` with the program's output");
   await scope.onmessage({ data: { id: 3, op: "compile", target: "nope", sources: [] } });
   assert(replies[3].ok === false && /unknown target/.test(replies[3].error), "a failed request comes back as `ok: false` with the error");

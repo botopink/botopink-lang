@@ -17,12 +17,15 @@
 //!   bp_output_ptr() / bp_output_len()             the JSON of the last `bp_compile`
 //!
 //! The output is one JSON object: `{ "target", "modules": [ { "name", "code",
-//! "typedef", "units": [ { "atom", "code" } ], "wasm", "comptimeTrace", "diagnostic" } ],
+//! "typedef", "units": [ { "atom", "code" } ], "wasm", "unit", "linked", "comptimeTrace", "diagnostic" } ],
 //! "runtime": [ { "name", "wasm" } ] }`, `runtime` being the core and the std units the
 //! program reaches, in dependency order (base64; empty off the `wasm` target),
 //! where `wasm` is the base64 of the binary module on the `wasm` target (null
 //! on the others) — the bytes the page instantiates, rendered from the same
-//! model as `code`, the `.wat` text —
+//! model as `code`, the `.wat` text —, `unit` its unit stem `<pkg>@<path>` and
+//! `linked` its `botopink.units` (the core, std's units, the program units it
+//! imports, itself, in order; decisions 1032, 1073 (2); null / empty off wasm;
+//! std `.bp` linked into importers until P4c-std, decision 1072 (2)) —
 //! and `diagnostic` is the rendered text the CLI would print for a module
 //! that did not lex, parse, type-check or pass comptime validation, and null
 //! for one that compiled. The compiler never executes the program (the page
@@ -111,7 +114,10 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
     const arena = arena_state.allocator();
 
     const io = std.Io.Threaded.global_single_threaded.io();
-    const cfg = bp.codegen.Config{ .targetSource = target_source, .packages = .{ .root = root_package } };
+    // Decisions 1032, 1073 (2) — on wasm each module is a unit `<pkg>@<path>`
+    // (the CLI's `build.wasm_units`), the page composing the program from them.
+    const units = target_source == .wasm;
+    const cfg = bp.codegen.Config{ .targetSource = target_source, .packages = .{ .root = root_package }, .wasm_artifact = units, .wasm_units = units };
     var outputs = try bp.codegen.generateWith(gpa, sources.items, io, cfg, .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(gpa);
@@ -153,6 +159,13 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
             const b64 = try arena.alloc(u8, enc.calcSize(bin.len));
             try w.write(enc.encode(b64, bin));
         } else try w.write(null);
+        // Decision 1073 (2): the module's unit stem and its `botopink.units`
+        // (the core, std's units, the program units, itself), in order.
+        const linked: []const []const u8 = if (r.wasm) |bin| try bp.codegen.wasmRuntimeUnit.unitsOf(arena, bin) else &.{};
+        try w.objectField("unit");
+        try w.write(if (linked.len > 0) linked[linked.len - 1] else null);
+        try w.objectField("linked");
+        try w.write(linked);
         try w.objectField("comptimeTrace");
         try w.write(r.comptime_trace);
         try w.objectField("diagnostic");

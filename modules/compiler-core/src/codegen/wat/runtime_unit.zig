@@ -1031,6 +1031,12 @@ fn funcDesc(ar: std.mem.Allocator, ft: ast.FuncType) FaceError![]const u8 {
     return o.items;
 }
 
+/// The face line exporting the function `fn_name` of type `ft` (`Face.text`'s
+/// spelling): what a unit the unit cache answered is matched by.
+pub fn exportLine(ar: std.mem.Allocator, fn_name: []const u8, ft: ast.FuncType) FaceError![]const u8 {
+    return std.fmt.allocPrint(ar, "    (export {f} {s})\n", .{ quoted(fn_name), try funcDesc(ar, ft) });
+}
+
 fn memoryDesc(ar: std.mem.Allocator, min: u64, max: ?u64) FaceError![]const u8 {
     if (max) |m| return std.fmt.allocPrint(ar, "(memory {d} {d})", .{ min, m });
     return std.fmt.allocPrint(ar, "(memory {d})", .{min});
@@ -1290,7 +1296,7 @@ const ModReader = struct {
     fn limits(r: *ModReader, ar: std.mem.Allocator) FaceError![]const u8 {
         const flags = try r.byte();
         const min = try r.leb();
-        const max: ?usize = if (flags & 1 != 0) try r.leb() else null;
+        const max: ?u64 = if (flags & 1 != 0) @as(u64, try r.leb()) else null;
         return memoryDesc(ar, min, max);
     }
     fn globalType(r: *ModReader) FaceError!GlobalType {
