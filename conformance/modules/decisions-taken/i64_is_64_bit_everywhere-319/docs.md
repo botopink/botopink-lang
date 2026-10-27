@@ -20,4 +20,4 @@
 [cases/u64_record_field_print/src/main.bp](cases/u64_record_field_print/src/main.bp)
 [cases/wide_literal_past_js_safe_integer/src/main.bp](cases/wide_literal_past_js_safe_integer/src/main.bp)
 
-Proved also by [async_retry_policy](../task_result_rejects_with_error-432/cells/async_retry_policy/src/main.bp)
+Proved also by [async_retry_policy](../task_result_rejects_with_error-432/cases/async_retry_policy/src/main.bp)

@@ -2,4 +2,4 @@
 
 [cases/init_executor_reads_compiler/src/main.bp](cases/init_executor_reads_compiler/src/main.bp)
 
-Proved also by [init_executor_compiler_arg_at_run_time](../compiler_call_in_tree_evaluated_at_build-642/cells/init_executor_compiler_arg_at_run_time/src/main.bp)
+Proved also by [init_executor_compiler_arg_at_run_time](../compiler_call_in_tree_evaluated_at_build-642/cases/init_executor_compiler_arg_at_run_time/src/main.bp)

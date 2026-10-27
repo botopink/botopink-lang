@@ -15,5 +15,5 @@
 [cases/method_tail_in_void/src/main.bp](cases/method_tail_in_void/src/main.bp)
 [cases/method_tail_value/src/main.bp](cases/method_tail_value/src/main.bp)
 
-Proved also by [block_tail_value](../brace_without_arrow_is_block-525/run/src/cases/block_tail_value/mod.bp)
-Proved also by [lambda_last_statement_semicolon](../lambda_answers_last_expression-541/cells/lambda_last_statement_semicolon/src/main.bp)
+Proved also by [block_tail_value](../brace_without_arrow_is_block-525/cases/block_tail_value/src/main.bp)
+Proved also by [lambda_last_statement_semicolon](../lambda_answers_last_expression-541/cases/lambda_last_statement_semicolon/src/main.bp)

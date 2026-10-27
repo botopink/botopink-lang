@@ -6,4 +6,4 @@
 [cases/template_call_typed_by_expansion/src/main.bp](cases/template_call_typed_by_expansion/src/main.bp)
 [cases/template_note_on_mismatch/src/main.bp](cases/template_note_on_mismatch/src/main.bp)
 
-Proved also by [template_answer_component](../template_marked_by_syntax_text-578/cells/template_answer_component/src/main.bp)
+Proved also by [template_answer_component](../template_marked_by_syntax_text-578/cases/template_answer_component/src/main.bp)

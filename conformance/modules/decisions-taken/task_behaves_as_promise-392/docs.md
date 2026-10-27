@@ -5,4 +5,4 @@
 [cases/task_resumes_in_place/src/main.bp](cases/task_resumes_in_place/src/main.bp)
 [cells/task_starts_when_made/src/main.bp](cells/task_starts_when_made/src/main.bp)
 
-Proved also by [wasm_host_async](../one_adapter_list_both_hosts-394/cells/wasm_host_async/src/main.bp)
+Proved also by [wasm_host_async](../one_adapter_list_both_hosts-394/cases/wasm_host_async/src/main.bp)

@@ -10,7 +10,7 @@
 [cases/comptime_value_not_liftable/src/main.bp](cases/comptime_value_not_liftable/src/main.bp)
 [run/src/cases/comptime_wide_literal/mod.bp](run/src/cases/comptime_wide_literal/mod.bp)
 
-Proved also by [comptime_decorator_section_value](../comptime_parameter_is_expression-364/cells/comptime_decorator_section_value/src/main.bp)
-Proved also by [comptime_function_value_argument](../comptime_runs_on_wasm-434/run/src/cases/comptime_function_value_argument/mod.bp)
-Proved also by [comptime_primitives_at_build](../comptime_runs_on_wasm-434/run/src/cases/comptime_primitives_at_build/mod.bp)
-Proved also by [comptime_result_methods](../comptime_runs_on_wasm-434/run/src/cases/comptime_result_methods/mod.bp)
+Proved also by [comptime_decorator_section_value](../comptime_parameter_is_expression-364/cases/comptime_decorator_section_value/src/main.bp)
+Proved also by [comptime_function_value_argument](../comptime_runs_on_wasm-434/cases/comptime_function_value_argument/src/main.bp)
+Proved also by [comptime_primitives_at_build](../comptime_runs_on_wasm-434/cases/comptime_primitives_at_build/src/main.bp)
+Proved also by [comptime_result_methods](../comptime_runs_on_wasm-434/cases/comptime_result_methods/src/main.bp)

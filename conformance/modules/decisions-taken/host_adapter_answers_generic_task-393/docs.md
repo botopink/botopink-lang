@@ -2,4 +2,4 @@
 
 [cases/external_wasm_task_adapter_shape/src/main.bp](cases/external_wasm_task_adapter_shape/src/main.bp)
 
-Proved also by [wasm_host_async](../one_adapter_list_both_hosts-394/cells/wasm_host_async/src/main.bp)
+Proved also by [wasm_host_async](../one_adapter_list_both_hosts-394/cases/wasm_host_async/src/main.bp)

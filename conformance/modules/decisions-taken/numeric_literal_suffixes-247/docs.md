@@ -16,8 +16,8 @@
 [cases/numeric_literal_suffixes/src/main.bp](cases/numeric_literal_suffixes/src/main.bp)
 [cases/numeric_suffix_positions/src/main.bp](cases/numeric_suffix_positions/src/main.bp)
 
-Proved also by [array_literal_numeric_join](../mixed_literals_infer_union-150/run/src/cases/array_literal_numeric_join/mod.bp)
-Proved also by [bigint_plus_int_literal](../bigint_decimal_strict_json-332/refused/src/cases/bigint_plus_int_literal/mod.bp)
-Proved also by [bigint_unsuffixed_literal](../bigint_decimal_strict_json-332/refused/src/cases/bigint_unsuffixed_literal/mod.bp)
+Proved also by [array_literal_numeric_join](../mixed_literals_infer_union-150/cases/array_literal_numeric_join/src/main.bp)
+Proved also by [bigint_plus_int_literal](../bigint_decimal_strict_json-332/cases/bigint_plus_int_literal/src/main.bp)
+Proved also by [bigint_unsuffixed_literal](../bigint_decimal_strict_json-332/cases/bigint_unsuffixed_literal/src/main.bp)
 Proved also by [comptime_wide_literal](../comptime_runs_at_build-331/run/src/cases/comptime_wide_literal/mod.bp)
-Proved also by [wide_literal_past_js_safe_integer](../i64_is_64_bit_everywhere-319/run/src/cases/wide_literal_past_js_safe_integer/mod.bp)
+Proved also by [wide_literal_past_js_safe_integer](../i64_is_64_bit_everywhere-319/cases/wide_literal_past_js_safe_integer/src/main.bp)

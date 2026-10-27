@@ -2,4 +2,4 @@
 
 [cells/syntax_fn_source_file_is_path/src/main.bp](cells/syntax_fn_source_file_is_path/src/main.bp)
 
-Proved also by [syntax_fn_expanded_at_call](../syntax_fn_expanded_at_call-719/cells/syntax_fn_expanded_at_call/src/main.bp)
+Proved also by [syntax_fn_expanded_at_call](../syntax_fn_expanded_at_call-719/cases/syntax_fn_expanded_at_call/src/main.bp)

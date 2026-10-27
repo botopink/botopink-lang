@@ -5,5 +5,5 @@
 [cases/decorator_hooks_output_member_fn/src/main.bp](cases/decorator_hooks_output_member_fn/src/main.bp)
 [cases/typeinfo_all_hooks_reader/src/main.bp](cases/typeinfo_all_hooks_reader/src/main.bp)
 
-Proved also by [template_lookup_meta_hooks_pending](../query_template_assembled_at_build-415/refused/src/cases/template_lookup_meta_hooks_pending/mod.bp)
-Proved also by [template_lookup_meta_same_module](../query_template_assembled_at_build-415/run/src/cases/template_lookup_meta_same_module/mod.bp)
+Proved also by [template_lookup_meta_hooks_pending](../query_template_assembled_at_build-415/cases/template_lookup_meta_hooks_pending/src/main.bp)
+Proved also by [template_lookup_meta_same_module](../query_template_assembled_at_build-415/cases/template_lookup_meta_same_module/src/main.bp)

@@ -3,4 +3,4 @@
 [cases/type_empty_braces/src/main.bp](cases/type_empty_braces/src/main.bp)
 [cases/type_empty_record/src/main.bp](cases/type_empty_record/src/main.bp)
 
-Proved also by [namespace_type_self](../namespace_type_without_fields-329/refused/src/cases/namespace_type_self/mod.bp)
+Proved also by [namespace_type_self](../namespace_type_without_fields-329/cases/namespace_type_self/src/main.bp)

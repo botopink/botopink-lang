@@ -55,5 +55,5 @@
 [cases/yield_step_error_param/src/main.bp](cases/yield_step_error_param/src/main.bp)
 [cells/yield_step_next/src/main.bp](cells/yield_step_next/src/main.bp)
 
-Proved also by [prefixed_loop_result_item](../iter_prefix_makes_loop_an_iterator-125/run/src/cases/prefixed_loop_result_item/mod.bp)
-Proved also by [stream_loop_no_failure](../iter_prefix_makes_loop_an_iterator-125/run/src/cases/stream_loop_no_failure/mod.bp)
+Proved also by [prefixed_loop_result_item](../iter_prefix_makes_loop_an_iterator-125/cases/prefixed_loop_result_item/src/main.bp)
+Proved also by [stream_loop_no_failure](../iter_prefix_makes_loop_an_iterator-125/cases/stream_loop_no_failure/src/main.bp)

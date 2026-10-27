@@ -2,4 +2,4 @@
 
 [cells/std_host_error_variants/src/main.bp](cells/std_host_error_variants/src/main.bp)
 
-Proved also by [bytes_encoding_bridges](../bytes_primitive-346/cells/bytes_encoding_bridges/src/main.bp)
+Proved also by [bytes_encoding_bridges](../bytes_primitive-346/cases/bytes_encoding_bridges/src/main.bp)

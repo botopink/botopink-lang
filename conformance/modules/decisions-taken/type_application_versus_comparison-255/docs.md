@@ -10,4 +10,4 @@
 [cases/type_application_through_namespace_mismatch/src/main.bp](cases/type_application_through_namespace_mismatch/src/main.bp)
 [cases/type_application_variant_payload_mismatch/src/main.bp](cases/type_application_variant_payload_mismatch/src/main.bp)
 
-Proved also by [comptime_expression_static_call](../comptime_evaluated_and_lifted-266/run/src/cases/comptime_expression_static_call/mod.bp)
+Proved also by [comptime_expression_static_call](../comptime_evaluated_and_lifted-266/cases/comptime_expression_static_call/src/main.bp)

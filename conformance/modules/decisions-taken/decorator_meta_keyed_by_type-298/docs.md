@@ -12,4 +12,4 @@
 [cases/meta_typed/src/main.bp](cases/meta_typed/src/main.bp)
 [cells/meta_typed_catalogue/src/main.bp](cells/meta_typed_catalogue/src/main.bp)
 
-Proved also by [tag_annotation_reads_meta](../tag_annotation_is_decorator-302/refused/src/cases/tag_annotation_reads_meta/mod.bp)
+Proved also by [tag_annotation_reads_meta](../tag_annotation_is_decorator-302/cases/tag_annotation_reads_meta/src/main.bp)

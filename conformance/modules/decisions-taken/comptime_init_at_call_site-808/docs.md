@@ -22,4 +22,4 @@ from a decorator's body, from a template's body and under a `comptime` that answ
 [cases/init_at_call_from_template/src/main.bp](cases/init_at_call_from_template/src/main.bp)
 [cases/init_at_call_in_value_comptime/src/main.bp](cases/init_at_call_in_value_comptime/src/main.bp)
 
-Proved also by [block_calls_other_module_pub](../module_comptime_block_rules-793/cells/block_calls_other_module_pub/src/main.bp)
+Proved also by [block_calls_other_module_pub](../module_comptime_block_rules-793/cases/block_calls_other_module_pub/src/main.bp)

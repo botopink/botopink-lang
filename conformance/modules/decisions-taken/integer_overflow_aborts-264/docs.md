@@ -14,4 +14,4 @@ Proved also by [bigint_to_i64_aborts](../bigint_decimal_strict_json-332/cells/bi
 Proved also by [i64_full_range](../i64_is_64_bit_everywhere-319/cells/i64_full_range/src/main.bp)
 Proved also by [int_overflow_mul_i64](../i64_is_64_bit_everywhere-319/cells/int_overflow_mul_i64/src/main.bp)
 Proved also by [int_overflow_sub_i64_min](../i64_is_64_bit_everywhere-319/cells/int_overflow_sub_i64_min/src/main.bp)
-Proved also by [std_failure_attempt_abort_kinds](../failure_kinds-492/run/src/cases/std_failure_attempt_abort_kinds/mod.bp)
+Proved also by [std_failure_attempt_abort_kinds](../failure_kinds-492/cases/std_failure_attempt_abort_kinds/src/main.bp)

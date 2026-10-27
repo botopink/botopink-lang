@@ -6,4 +6,4 @@
 [cells/decl_hooks_async/src/main.bp](cells/decl_hooks_async/src/main.bp)
 [cells/decl_hooks_async_imported/src/main.bp](cells/decl_hooks_async_imported/src/main.bp)
 
-Proved also by [task_compose_by_async_block](../task_methods_withdrawn_async_block-523/cells/task_compose_by_async_block/src/main.bp)
+Proved also by [task_compose_by_async_block](../task_methods_withdrawn_async_block-523/cases/task_compose_by_async_block/src/main.bp)

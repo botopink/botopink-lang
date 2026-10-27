@@ -11,5 +11,5 @@
 [cases/shorthand_import_one_candidate/src/main.bp](cases/shorthand_import_one_candidate/src/main.bp)
 [cases/shorthand_import_several_candidates/src/main.bp](cases/shorthand_import_several_candidates/src/main.bp)
 
-Proved also by [declaration_named_like_module](../module_import_binds_namespace-582/cells/declaration_named_like_module/src/main.bp)
+Proved also by [declaration_named_like_module](../module_import_binds_namespace-582/cases/declaration_named_like_module/src/main.bp)
 Proved also by [mod_namespace_callable_default](../module_import_binds_namespace-582/cells/mod_namespace_callable_default/src/main.bp)

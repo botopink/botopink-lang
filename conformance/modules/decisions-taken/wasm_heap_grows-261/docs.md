@@ -2,4 +2,4 @@
 
 [cases/heap_grows_past_one_page/src/main.bp](cases/heap_grows_past_one_page/src/main.bp)
 
-Proved also by [std_hash_on_every_target](../content_hash_folds_codepoints-260/cells/std_hash_on_every_target/src/main.bp)
+Proved also by [std_hash_on_every_target](../content_hash_folds_codepoints-260/cases/std_hash_on_every_target/src/main.bp)

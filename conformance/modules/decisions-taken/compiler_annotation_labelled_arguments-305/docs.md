@@ -7,5 +7,5 @@
 [cases/external_prefixed_fn_refused/src/main.bp](cases/external_prefixed_fn_refused/src/main.bp)
 [cases/external_std_prefix_refused_everywhere/src/main.bp](cases/external_std_prefix_refused_everywhere/src/main.bp)
 
-Proved also by [external_fn_body_every_target](../body_cell_botopink_body-610/cells/external_fn_body_every_target/src/main.bp)
-Proved also by [external_node_prefixed_op_refused](../external_wasm_labelled_cells-481/refused/src/cases/external_node_prefixed_op_refused/mod.bp)
+Proved also by [external_fn_body_every_target](../body_cell_botopink_body-610/cases/external_fn_body_every_target/src/main.bp)
+Proved also by [external_node_prefixed_op_refused](../external_wasm_labelled_cells-481/cases/external_node_prefixed_op_refused/src/main.bp)
