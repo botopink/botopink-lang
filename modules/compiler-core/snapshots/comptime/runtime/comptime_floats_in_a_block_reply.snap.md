@@ -860,7 +860,7 @@ val f = comptime [half(3.0), half(0.2) + 0.2 + 0.0, 1e21, 1e-7, -0.0];
   local.get $t1
   i32.const 0
   global.get $__lit
-  i32.const 184
+  i32.const 192
   i32.add
   i32.const 14
   call $rt_atom
@@ -869,7 +869,7 @@ val f = comptime [half(3.0), half(0.2) + 0.2 + 0.0, 1e21, 1e-7, -0.0];
   local.get $t1
   i32.const 1
   global.get $__lit
-  i32.const 200
+  i32.const 208
   i32.add
   i32.const 16
   call $rt_bin

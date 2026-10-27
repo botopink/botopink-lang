@@ -1040,7 +1040,7 @@ val m = comptime {
   local.get $t1
   i32.const 0
   global.get $__lit
-  i32.const 184
+  i32.const 192
   i32.add
   i32.const 20
   call $rt_atom
