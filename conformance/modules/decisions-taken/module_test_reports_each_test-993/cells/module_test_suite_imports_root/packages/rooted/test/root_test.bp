@@ -1,0 +1,5 @@
+import {main.twice};
+
+test "suite: a test/ file imports the root" {
+    assert twice(3) == 6;
+}

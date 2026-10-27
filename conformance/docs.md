@@ -4486,6 +4486,7 @@ reaching a file beside its source joins `root + "/" + file`.
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_refused_on_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_excluded_target -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_sets_test_env -->
+<!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_suite_imports_root -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_source_root_is_load_dir -->
 <!-- example: modules/decisions-taken/module_test_reports_each_test-993/cells/module_test_runs_test_suite -->
 

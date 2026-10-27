@@ -267,7 +267,31 @@ pub fn apply(arena: std.mem.Allocator, outputs: []const ComptimeOutput, config: 
             root.outcome = .{ .ok = rok };
             try changed.put(arena, o.name, root);
             try replaced.append(arena, o.name);
-            for (outputs) |other| if (!std.mem.eql(u8, other.name, o.name) and std.mem.eql(u8, packageOf(other.name), pkg)) try dropped.put(arena, other.name, {});
+            for (outputs) |other| if (!std.mem.eql(u8, other.name, o.name) and std.mem.eql(u8, packageOf(other.name), pkg)) {
+                // A package with a `test/` suite answers its tests from
+                // `load.suites_module`: kept, holding only its
+                // `loaded_tests_fn`, which throws the same text.
+                if (std.mem.endsWith(u8, other.name, "/" ++ loadMod.suites_module)) switch (other.outcome) {
+                    .ok => |sok| if (findFn(sok.transformed, loadMod.loaded_tests_off_fn)) |tests_off| {
+                        if (try throwing(arena, tests_off, lexeme)) |thrown| {
+                            var tests_fn = thrown;
+                            tests_fn.name = loadMod.loaded_tests_fn;
+                            const sdecls = try arena.alloc(ast.DeclKind, 1);
+                            sdecls[0] = .{ .@"fn" = tests_fn };
+                            var suites = other;
+                            var srok = sok;
+                            srok.transformed.decls = sdecls;
+                            srok.std_host_calls = &.{};
+                            suites.outcome = .{ .ok = srok };
+                            try changed.put(arena, other.name, suites);
+                            try replaced.append(arena, other.name);
+                            continue;
+                        }
+                    },
+                    else => {},
+                };
+                try dropped.put(arena, other.name, {});
+            };
         } else if (!included) {
             // Refused where the package is run: each module importing its
             // `__bp_loaded_main` (`load.withRunImports`).

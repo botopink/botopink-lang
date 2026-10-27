@@ -1,0 +1,4 @@
+botopink-cell 1
+out ok root: its own test src/main.bp
+out ok suite: a test/ file imports the root test/root_test.bp
+out main

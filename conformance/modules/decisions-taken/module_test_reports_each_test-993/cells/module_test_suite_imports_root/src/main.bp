@@ -1,0 +1,31 @@
+//// Decision 993 (3) — a `test/` file may import the package's root module, as under
+//// `botopink test`: ``m.`test`()`` runs the root's test and the suite's, the suite importing the
+//// root's `twice`.
+
+import {compiler, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+fn show(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(report) {
+            for report.cases { c ->
+                val verdict = if (c.ok) "ok" else "FAIL";
+                print(verdict + " " + c.name + " " + c.file);
+            }
+        }
+        Error(r) -> print("error " + r.message);
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load("packages/rooted");
+    case loaded {
+        Ok(m) -> compiler.init({ -> show(m.`test`()) });
+        Error(refused) -> compiler.init({ ->
+            for refused.diagnostics { d -> print("load refused " + d.message); }
+        });
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

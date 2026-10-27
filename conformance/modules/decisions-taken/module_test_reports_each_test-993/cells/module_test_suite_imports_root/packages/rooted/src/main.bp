@@ -1,0 +1,7 @@
+pub fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+test "root: its own test" {
+    assert twice(1) == 2;
+}

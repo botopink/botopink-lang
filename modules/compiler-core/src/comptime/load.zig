@@ -1101,7 +1101,11 @@ pub fn withRunImports(arena: std.mem.Allocator, program: ast.Program, files: ?Pa
             if (std.mem.eql(u8, m.package, pkg)) break true;
         } else false;
         if (!present) continue;
-        try src.print(arena, "import {{" ++ loaded_tests_fn ++ " as {s}}} from \"{s}\";\n", .{ try testsAlias(arena, pkg), pkg });
+        const has_suite = if (try testedEntry(arena, pkg)) |e| e.test_modules.len > 0 else false;
+        if (has_suite)
+            try src.print(arena, "import {{" ++ suites_module ++ "." ++ loaded_tests_fn ++ " as {s}}} from \"{s}\";\n", .{ try testsAlias(arena, pkg), pkg })
+        else
+            try src.print(arena, "import {{" ++ loaded_tests_fn ++ " as {s}}} from \"{s}\";\n", .{ try testsAlias(arena, pkg), pkg });
     }
     if (!has_run_fn) try src.appendSlice(arena, run_fn_src);
     if (f.test_paths.items.len > 0) {
@@ -1132,6 +1136,10 @@ pub const loaded_tests_fn = "__bp_loaded_tests";
 /// The local name of the `k`-th `test/` suite module's `tests_fn` in a
 /// tested package's root (`withTestFns`).
 const suite_alias_prefix = "__bp_suite_";
+/// Decision 993 (3) — the module a package with a `test/` suite gains last
+/// (`packageModules`): its `loaded_tests_fn` lists the root's tests and each
+/// suite module's, so the root imports none of them.
+pub const suites_module = "__bp_suites";
 /// `loaded_tests_fn` of the root the emit puts in place of a package the
 /// target refuses (`codegen/loaded_targets.zig`, decision 989 (3)): it throws
 /// `off_marker` as `loaded_main_off_fn` does.
@@ -1414,16 +1422,11 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
         .mod => |m| try text.print(arena, ".append({s}." ++ tests_fn ++ "())", .{m.name}),
         else => {},
     };
-    // The package's `test/` suite after its `src/` tests, in path order, as
-    // `botopink test` runs it: each suite module's own registry.
-    var suite_imports: std.ArrayListUnmanaged(u8) = .empty;
-    if (is_root) for (entry.test_modules, 0..) |sm, s| {
-        const logical = try std.mem.replaceOwned(u8, arena, sm.path, "/", ".");
-        try suite_imports.print(arena, "import {{{s}." ++ tests_fn ++ " as " ++ suite_alias_prefix ++ "{d}}};\n", .{ logical, s });
-        try text.print(arena, ".append(" ++ suite_alias_prefix ++ "{d}())", .{s});
-    };
+    // A package with a `test/` suite lists it in `suites_module`, compiled
+    // after the root and the suite (`packageModules`): a suite file may
+    // import the root, so the root imports no suite.
     try text.appendSlice(arena, ";\n}\n");
-    if (is_root) try text.print(arena, "pub fn " ++ loaded_tests_fn ++ "() -> Result<{s}[], string> {{\n    return " ++ tests_fn ++ "();\n}}\n" ++
+    if (is_root and entry.test_modules.len == 0) try text.print(arena, "pub fn " ++ loaded_tests_fn ++ "() -> Result<{s}[], string> {{\n    return " ++ tests_fn ++ "();\n}}\n" ++
         "pub fn " ++ loaded_tests_off_fn ++ "() -> Result<{s}[], string> {{\n    throw \"\";\n}}\n", .{ entry_type, entry_type });
     // The text outlives the compile as a loaded package's source does
     // (`lasting`): an emitted literal slices it.
@@ -1432,14 +1435,9 @@ pub fn withTestFns(arena: std.mem.Allocator, program: ast.Program, mod: Module) 
         else => @panic("Module.test: the lowered tests do not parse"),
     };
 
-    const suite = if (suite_imports.items.len == 0) ast.Program{ .decls = &.{} } else parseShifted(arena, try lasting(suite_imports.items), helper_first_line + 200, null) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => @panic("Module.test: the test suite's imports do not parse"),
-    };
-    const decls = try arena.alloc(ast.DeclKind, suite.decls.len + program.decls.len + generated.decls.len - n_tests);
-    @memcpy(decls[0..suite.decls.len], suite.decls);
+    const decls = try arena.alloc(ast.DeclKind, program.decls.len + generated.decls.len - n_tests);
     var k: usize = 0;
-    var i: usize = suite.decls.len;
+    var i: usize = 0;
     for (program.decls) |d| {
         defer i += 1;
         decls[i] = switch (d) {
@@ -1544,12 +1542,34 @@ pub fn packageModules(arena: std.mem.Allocator, entry: Entry, targets: ?moduleMo
         .targets = targets,
         .files = m.files,
     };
-    // Each suite module imports the package's modules and the root imports
-    // each suite's registry: the suite compiles before the root.
+    // Each suite module may import any module of the package, the root
+    // included: the root, then the suite, then `suites_module`, which lists
+    // the root's registry and each suite module's, in path order, as
+    // `botopink test` runs them.
     var ordered: std.ArrayListUnmanaged(Module) = .empty;
-    for (entry.modules, out) |m, o| if (!m.root) try ordered.append(arena, o);
+    try ordered.appendSlice(arena, out);
     try ordered.appendSlice(arena, suite);
-    for (entry.modules, out) |m, o| if (m.root) try ordered.append(arena, o);
+    const entry_type = if (try testsAsync(entry)) test_entry_async else test_entry_sync;
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    var list: std.ArrayListUnmanaged(u8) = .empty;
+    for (entry.modules) |m| if (m.root) {
+        try text.print(arena, "import {{{s}." ++ tests_fn ++ " as " ++ suite_alias_prefix ++ "root}};\n", .{try std.mem.replaceOwned(u8, arena, m.path, "/", ".")});
+        try list.appendSlice(arena, suite_alias_prefix ++ "root()");
+    };
+    for (entry.test_modules, 0..) |sm, k| {
+        try text.print(arena, "import {{{s}." ++ tests_fn ++ " as " ++ suite_alias_prefix ++ "{d}}};\n", .{ try std.mem.replaceOwned(u8, arena, sm.path, "/", "."), k });
+        try list.print(arena, ".append(" ++ suite_alias_prefix ++ "{d}())", .{k});
+    }
+    try text.print(arena, "\npub fn " ++ loaded_tests_fn ++ "() -> Result<{s}[], string> {{\n    return {s};\n}}\n" ++
+        "pub fn " ++ loaded_tests_off_fn ++ "() -> Result<{s}[], string> {{\n    throw \"\";\n}}\n", .{ entry_type, list.items, entry_type });
+    try ordered.append(arena, .{
+        .path = try lasting(try std.mem.concat(arena, u8, &.{ pkg, "/", suites_module })),
+        .source = try lasting(text.items),
+        .srcPath = suites_module ++ ".bp",
+        .package = try lasting(pkg),
+        .targets = targets,
+        .files = if (entry.modules.len > 0) entry.modules[0].files else null,
+    });
     return ordered.items;
 }
 
