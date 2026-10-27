@@ -13366,7 +13366,11 @@ fn inferLoadBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     };
     const answered = try answerLoad(env, if (by_name) .{ .package = text } else .{ .path = text }, argLoc);
     try loadMod.noteLoadSite(env.modulePath, answered.path, loc);
-    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = answered.path }, answered.ds);
+    // The entry is kept under its key (`keyOf`): a package loaded by a loaded
+    // package (the root running a module running its cases) reads its own
+    // `buildOutput`, `name` and `mainAsync` there, as at depth 1 (792 (5)).
+    const key = try loadMod.keyOf(env.arena, env.packageFiles, answered.path);
+    const rewrite = try loadMod.rewrite(env.arena, loc, .{ .path = answered.path, .key = key }, answered.ds);
     try env.srcRewrites.put(loc, rewrite);
     return inferExprTyped(env, rewrite.*);
 }
@@ -20661,6 +20665,10 @@ fn nominalName(ty: *T.Type) ?[]const u8 {
 fn calleeParams(env: *Env, callee: []const u8) ?[]const ast.Param {
     if (env.fnParams.get(callee)) |ps| return ps;
     if (env.ctorParams.get(callee)) |ps| return ps;
+    // Decisions 110, 576 (13) — an imported type alias called as its
+    // constructor (`Source(…)` for std's `compiler.Source = __Source`) takes
+    // the declared type's parameters, defaults included (`root`, decision 1003).
+    if (importedTypeAliasTarget(env, callee)) |real| if (env.ctorParams.get(real)) |ps| return ps;
     if (env.stdlibFnDecls.get(callee)) |fd| return fd.params;
     return null;
 }

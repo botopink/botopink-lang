@@ -1,0 +1,46 @@
+//// Decision 792 (5) — a loaded package is a program of its own at any depth: `packages/inner`,
+//// loaded by this case (itself loaded by the module, and the module by the suite's root), answers
+//// its manifest's name, what its build printed and whether its `main` is `async`, as it would
+//// loaded by a top-level program; the `Source(file, line, col)` it builds takes `root`'s default.
+
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+fn printLines(prefix: string, text: string) -> void {
+    for (text.split("\n")) { l ->
+        if (l != "") print(prefix + l);
+    }
+}
+
+fn answer(ran: Result<string, RunFailure>) -> void {
+    case ran {
+        Ok(out) -> printLines("inner ", out);
+        Error(f) -> print("failed " + f.message);
+    }
+}
+
+/// Expanded where `main` calls it (decision 808 (2)): the load is read in a function body, as
+/// the suite's `runCase` reads its cases.
+fn loadInner(comptime path: string) -> void {
+    val loaded = try comptime compiler.load(path) catch { r ->
+        compiler.init({ ->
+            print("refused " + r.module.name());
+        });
+        return;
+    };
+    if (comptime loaded.mainAsync())
+        compiler.init({ async ->
+            print("async main of " + loaded.name());
+            printLines("build ", loaded.buildOutput());
+            answer(await loaded.run());
+        })
+    else
+        compiler.init({ ->
+            print("main of " + loaded.name());
+            printLines("build ", loaded.buildOutput());
+            answer(loaded.run());
+        });
+}
+
+pub async fn main() -> Async<void> {
+    loadInner("packages/inner");
+}

@@ -533,7 +533,7 @@ pub const Loaded = struct {
     /// is `async` (what `run()`'s type follows, 989 (2)); `false` before the
     /// load answered.
     pub fn mainAsync(self: Loaded) bool {
-        const e = entryOf(self.path) orelse return false;
+        const e = entryOf(self.key orelse self.path) orelse return false;
         return e.main_async;
     }
 };

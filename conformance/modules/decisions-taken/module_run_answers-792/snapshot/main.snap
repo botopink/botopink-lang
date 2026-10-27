@@ -18,3 +18,9 @@ out marked Box
 out bold
 == sibling_std_code_template
 out template hello, Bia
+== load_at_depth_two
+out async main of inner
+out build inner built
+out inner src/main.bp
+out inner 10
+out inner root []

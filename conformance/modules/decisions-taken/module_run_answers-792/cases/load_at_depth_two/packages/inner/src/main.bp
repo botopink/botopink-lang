@@ -1,0 +1,15 @@
+//// The package `load_at_depth_two` loads: its build prints, its `main` is `async`, and it builds a
+//// `Source` without `root`.
+
+import {compiler.Source, io.terminal.print} from "std";
+
+comptime {
+    print("inner built");
+}
+
+pub async fn main() -> Async<void> {
+    val s = Source(file: "src/main.bp", line: 3, col: 7);
+    print(s.file);
+    print(s.line + s.col);
+    print("root [" + s.root + "]");
+}

@@ -46,5 +46,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("sibling_decorator_named_all");
     runCase("sibling_declares_tok");
     runCase("sibling_std_code_template");
+    runCase("load_at_depth_two");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -11,7 +11,8 @@ on one `Module` runs `main` twice, in one package (`module_run_twice`). A `main`
 `Module` is answered by `compiler.load` alone: `Module(…)` written by hand is `opaque-construction`
 (`module_construction`; decision 811 (4) made std's `Module` an opaque type). Each refusal is located at the call. `run-outside-init` names a place: a local alias of
 the captured `Module` in the init body runs `main` (`run_on_module_alias`); a receiver traced to no load of the body
-is `run-module-untraced`.
+is `run-module-untraced`. A package a loaded package loads is a program of its own too: its name, its build's output,
+its `mainAsync()` and its constructors' defaults answer as they do one level up (`load_at_depth_two`).
 
 [cells/module_run_body_at_run/src/main.bp](cells/module_run_body_at_run/src/main.bp)
 [cells/module_run_twice/src/main.bp](cells/module_run_twice/src/main.bp)
@@ -24,3 +25,4 @@ is `run-module-untraced`.
 [cases/sibling_exports_all/src/main.bp](cases/sibling_exports_all/src/main.bp)
 [cases/sibling_exports_all_again/src/main.bp](cases/sibling_exports_all_again/src/main.bp)
 [cases/sibling_std_code_template/src/main.bp](cases/sibling_std_code_template/src/main.bp)
+[cases/load_at_depth_two/src/main.bp](cases/load_at_depth_two/src/main.bp)
