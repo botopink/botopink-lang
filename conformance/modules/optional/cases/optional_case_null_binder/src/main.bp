@@ -1,0 +1,14 @@
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val x: ?i32 = 5;
+    val a = case x {
+        null {
+            "absent"
+        }
+        _ {
+            "present " + x!.toString()
+        }
+    };
+    print(a);
+}

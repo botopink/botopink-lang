@@ -6,4 +6,4 @@ Two behaviors named `Shown` of two modules are two, a type implementing an impor
 declared behavior's mark, and a type implementing `Loud extends Shown` carries `Shown`'s mark too
 (`behavior_identity_by_module`).
 
-[run/src/cases/behavior_identity_by_module/mod.bp](run/src/cases/behavior_identity_by_module/mod.bp)
+[cases/behavior_identity_by_module/src/main.bp](cases/behavior_identity_by_module/src/main.bp)

@@ -38,6 +38,10 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("variant_name_ambiguous");
+    runCase("variant_leading_dot_expected");
+    runCase("variant_leading_dot_two_enums_case");
+    runCase("variant_name_collision");
+    runCase("variant_payload_wildcard_and_nested");
+    runCase("variant_positional_payload_same_name");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

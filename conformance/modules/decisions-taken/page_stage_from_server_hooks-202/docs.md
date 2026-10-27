@@ -2,6 +2,6 @@
 
 No page says when it renders. `#[page]` reads `compiler.hooks(decl)` — every function reachable from the page through calls of components, each with the hooks it `use`s — and asks whether any of those hooks carries `#[serverOnly]`, comparing each annotation's decorator with `compiler.same`. `Home` uses only `title`, so it is `S`: prerendered at build. `Account` uses `title` too, but its tree holds `Greeting`, which uses the `#[serverOnly]` hook `session`, so `Account` is `D`: rendered per request. The program prints `Home S` and `Account D`. There is no `prerender` value, no output key and no argument that forces a page reaching no server hook to render per request: the stage is a fact of the code, read where the decorator reads the page. The markers and `#[page]` are the framework's decorators; the compiler only publishes the hooks list.
 
-Cells in this repository that also bear on it: `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct`, `modules/decl/run/src/cases/decl_hooks_graph`, `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_all_nodes`.
+Cells in this repository that also bear on it: `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct`, `modules/decl/cases/decl_hooks_graph`, `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_all_nodes`.
 
 [draft/main.bp](draft/main.bp) · [draft/hooks.bp](draft/hooks.bp) · [draft/comptime/pages.bp](draft/comptime/pages.bp) · [draft/comptime/hooks.bp](draft/comptime/hooks.bp)

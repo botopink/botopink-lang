@@ -1,9 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.decorator_member_captures_handle.runCase();
-    cases.init_executor_handle_not_module_name.runCase();
-    cases.init_executor_handle_on_type.runCase();
-    cases.init_executor_handle_typed.runCase();
-    cases.member_decl_as_code.runCase();
-}

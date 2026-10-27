@@ -1,94 +1,68 @@
 botopink-cell 1
-out == await_in_result_generator
-out refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
-out at src/main.bp:13:13
-out == await_under_result
-out refused error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
-out at src/main.bp:12:13
-out == component_plain_return
-out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Widget' carries no `component` marker (it returns 'Element'): write `component fn`
-out at src/main.bp:14:13
-out == component_try_element
-out refused error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer of the return — this fn returns `Component<…>` with no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:15:13
-out == effect_wrapper_behind_alias
-out refused error: effect-wrapper-behind-alias: `throw` under an aliased return — the alias resolves to `Result<…>`, and an alias does not activate the effect
-out at src/main.bp:15:20
-out == for_await_future_generator_in_result
-out refused error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
-out at src/main.bp:14:5
-out == for_await_without_task
-out refused error: await-without-async: `await` needs a body marked `async`, `async iter` or `component` — this body carries no marker
-out at src/main.bp:16:5
-out == for_future_generator_without_await
-out refused error: for-over-stream: an `AsyncIter` suspends between items — iterate it with `for await`
-out at src/main.bp:16:5
-out == iter_await
-out refused error: iter-await: `await` does not exist in an `iter` body — its items are produced synchronously
-out at src/main.bp:12:11
-out == iter_mixed_yield_return
-out refused error: iter-mixed-yield-return: this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)
-out at src/main.bp:15:5
-out == iterator_throw_without_result
-out refused error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — the item of `Iter<T>` has to be `Result<T, E>` to use `throw` / `try`; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:10:5
-out == marker_lambda_type_mismatch
-out refused error: marker-type-mismatch: a lambda marked `iter` answers `Iter<…>`, and the function type it is written for returns `Async<i32>`
-out at src/main.bp:13:25
-out == marker_lambda_without_expected_type
-out refused error: marker-lambda-without-expected-type: a lambda marked `async` needs the function type it is written for
-out at src/main.bp:12:15
-out == marker_on_declaration
-out refused error[marker-on-declaration]: a declaration without a body takes no marker
-out at src/main.bp:9:5
-out label remove the marker
-out == marker_type_mismatch
-out refused error[marker-type-mismatch]: a body marker names its return type, and this function does not write it
-out at src/main.bp:7:1
-out label the return type does not match this marker
-out == marker_without_arrow
-out refused error[marker-without-arrow]: a marker inside `{` opens a lambda, which writes `->`
-out at src/main.bp:9:16
-out label no block form: write `iter loop { … }`, or `{ iter -> … }`
-out == result_hint_await
-out refused error: type mismatch: expected i32, got Result — `await` answers the `Result` the Async holds: write `try await t` to propagate its error, or handle it with `case` / `catch`
-out at src/main.bp:15:22
-out == result_hint_for_item
-out refused error: type mismatch: expected i32, got Result — a `for` over a sequence of `Result`s hands over each item as the `Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`
-out at src/main.bp:17:21
-out == result_hint_inferred_iter
-out refused error: type mismatch: expected i32, got Result — a `for` over a sequence of `Result`s hands over each item as the `Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`; it is a `Result` because of the `throw` at 11:28 in its own block
-out at src/main.bp:15:36
-out == task_throw_without_result
-out refused error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — this fn returns `Async<…>` with no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:12:16
-out == task_try_await_without_result
-out refused error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer of the return — this fn returns `Async<…>` with no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:13:13
-out == throw_in_generator
-out refused error: effect-try-without-fallible-channel: `throw` needs a `Result` in some layer of the return — the item of `Iter<T>` has to be `Result<T, E>` to use `throw` / `try`; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:9:5
-out == try_in_generator
-out refused error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer of the return — the item of `Iter<T>` has to be `Result<T, E>` to use `throw` / `try`; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:12:13
-out == try_in_plain_fn
-out refused error: effect-try-without-fallible-channel: `try` needs a `Result` in some layer of the return — this fn's return has no `Result` in it; `try … catch` handles the failure on the spot, and a host binding answers a `Result` with `result: true`
-out at src/main.bp:13:13
-out == use_of_component
-out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'errado' carries no `component` marker (it returns 'Element'): write `component fn`
-out at src/main.bp:13:12
-out == use_under_task
-out refused error: use-without-component: `use` needs a body marked `component` — the enclosing fn 'Page' carries no `component` marker (it returns 'Async<Element>'): write `component fn`
-out at src/main.bp:13:13
-out == yield_in_context
-out refused error: yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body is marked `component`
-out at src/main.bp:15:5
-out == yield_in_result
-out refused error: yield-without-iter: `yield` needs a body marked `iter` or `async iter` — this body carries no marker
-out at src/main.bp:11:5
-out == yield_step_error_param
-out refused error: generic-arg-count-exceeded: `YieldStep` takes at most 1 type argument, 2 given
-out at src/main.bp:9:16
-out == component_alias_answers_value
-out red@render
-out blue@outer
+out == component_call_awaited
+out page,title,wrap,title
+out == component_call_renders
+out div
+out node
+out component
+out == component_hook_and_component
+out clicks: 12
+out == component_result_try_await
+out tenant-of-r-7
+out error no request
+out == effect_alias_passes_value
+out 4
+out 0
+out == effect_chain
+out 42
+out 7
+out 42
+out == effect_context_await
+out 41
+out 41
+out 42
+out == generator_break_value
+out 0127
+out 1
+out 56
+out == marker_fn_forms
+out 0
+out 1
+out 2
+out 42
+out 0
+out 2
+out 4
+out > page
+out 10
+out 20
+out 6
+out == marker_lambda_async
+out 9
+out 10
+out 3
+out 4
+out 102
+out == marker_lambda_iter
+out 0
+out 1
+out 2
+out 22
+out 2
+out 4
+out == type_alias
+out 42
+out 3
+out a
+out 1
+out 8080
+out 7
+out == yield_step_next
+out yield 1
+out yield 2
+out done
+out done
+out yield 1;yield 2;done;
+out yield 2
+out yield 1
+out done

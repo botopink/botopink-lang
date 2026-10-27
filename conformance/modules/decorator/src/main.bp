@@ -38,7 +38,15 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("decorator_arguments_meta");
-    runCase("decorator_entity_table");
+    runCase("decorator_calls_imported_function");
+    runCase("decorator_calls_module_function");
+    runCase("decorator_emitted_proxies_dispatch");
+    runCase("decorator_imported_builds_private_record");
+    runCase("decorator_imported_calls_module_function");
+    runCase("decorator_lambda_many_locals");
+    runCase("decorator_member_record_update");
+    runCase("decorator_negative_argument");
+    runCase("decorator_random_seeded_commonjs");
+    runCase("decorator_same_refuses_mark");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

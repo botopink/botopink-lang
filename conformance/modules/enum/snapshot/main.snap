@@ -1,18 +1,43 @@
 botopink-cell 2
-== enum_section_ambiguous_path
-refused error: the path ".Color.Red.500" is carried by more than one enum — "Border" and "Token" — and nothing here says which (ES5 — enum-sections path ambiguity)
-at src/main.bp:21:13
-== enum_variant_duplicate
-refused error[enum-variant-duplicate]: this variant is already declared at this level of the enum
-at src/main.bp:7:26
-label this variant is already declared at this level of the enum
-== enum_declaration
-out red
-out 2.0
-== enum_section_path_by_expected_type
+== enum_implements_behavior
+out /a
+out /a
+out /b!
+== enum_payload_value_prints
+out Shape.Circle(radius: 2)
+out Shape.Circle(radius: 3)
+out Mode.Slow(n: 2)
+out Mode.Named(label: "x")
+out Mode.Slow(n: 2)
+out Mode.Slow(n: 5)
+out [Mode.Slow(n: 4), Mode.Fast]
+== enum_section_expected_type
 out token
-== enum_section_path_qualified
-out true
-out true
-== enum_sections
-out a colour
+out border
+out border
+out token
+out border
+out 1
+out token
+out 7
+== enum_section_leaf_beside_variant
+out after 1
+out after 0
+out after 2
+out layout
+out break-after
+out break-before
+== enum_section_qualified_path
+out token
+out border
+out token
+== enum_value_template_hole
+out Target.Top
+out at Target.Bottom!
+out Shape.Circle(radius: 2)
+out shape Shape.Named(label: "é") and Shape.Dot
+out t=Target.Bottom s=Shape.Named(label: "x")
+out picked Target.Top
+out mode Mode.Slow(n: 3) Mode.Fast
+out plus Target.Top Shape.Circle(radius: 2)
+out 23

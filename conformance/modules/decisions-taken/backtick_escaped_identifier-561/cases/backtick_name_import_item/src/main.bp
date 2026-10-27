@@ -1,0 +1,15 @@
+//// Decision 561 — an import item and its alias between backticks: a function
+//// named so, imported as written and under a plain alias; a plain function
+//// under a backtick alias; a record type named so.
+
+pub mod shapes;
+import {shapes.`area of`, shapes.`area of` as area, shapes.perimeter as `around it`, shapes.`Unit square`};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(`area of`(3));
+    print(area(4));
+    print(`around it`(5));
+    val u = `Unit square`(side: 2);
+    print(u.side);
+}

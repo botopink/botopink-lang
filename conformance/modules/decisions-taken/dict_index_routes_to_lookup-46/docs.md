@@ -8,6 +8,6 @@ method `at`, which `Dict` provides through the ambient `Index<K, V>`, so `stock[
 The key may be any expression of the key type: a computed `"pear"` reads the same entry.
 
 Cells in this repository that also bear on it: `modules/decisions-taken/negative_index_counts_from_end-139/cases/index_dict`,
-`modules/optional/run/src/cases/optional_chain_method_on_dict_field`.
+`modules/optional/cases/optional_chain_method_on_dict_field`.
 
 [draft/main.bp](draft/main.bp)

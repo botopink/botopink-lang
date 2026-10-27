@@ -1,0 +1,41 @@
+//// Decision 310 — two same-named ENUMS of two modules, each imported under
+//// an alias, are two types: each alias builds and matches its own variants,
+//// a function of each module answers its own, each prints as declared, and
+//// `is` tells them apart.
+
+pub mod a;
+pub mod b;
+import {a.e.Signal as Light, a.e.stop};
+import {b.e.Signal as Sound, b.e.quiet};
+import {io.terminal.print} from "std";
+
+fn light(s: Light) -> i32 {
+    return case s {
+        Light.Red -> 1;
+        Light.Blink(n) -> 100 + n;
+    };
+}
+
+fn sound(s: Sound) -> i32 {
+    return case s {
+        Sound.Low -> 0;
+        Sound.High(db) -> db;
+    };
+}
+
+fn kind(v: unknown) -> string {
+    if (v is Light) return "light";
+    if (v is Sound) return "sound";
+    return "other";
+}
+
+pub fn main() -> void {
+    print(light(Light.Blink(times: 3)));
+    print(light(stop()));
+    print(sound(Sound.High(db: 70)));
+    print(sound(quiet()));
+    print(Light.Red);
+    print(Sound.High(db: 2));
+    print(kind(Light.Red));
+    print(kind(Sound.Low));
+}

@@ -4,7 +4,7 @@ The example writes `await` in `total`, a function with no `async` marker. The ke
 
 `fetchCount` shows the form that is accepted: `async fn … -> Async<i32>` returns its value and the marker wraps it. A code that refuses something other than a missing marker keeps its own name. For example, an `await` inside an `iter` body is `iter-await`, and its hint names `async iter`.
 
-Cells in this repository that bear on it: `modules/use/cases/use_without_component`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_type_mismatch`.
+Cells in this repository that bear on it: `modules/use/cases/use_without_component`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_fn_forms`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/marker_type_mismatch`.
 
 [cases/await_without_marker_refused/src/main.bp](cases/await_without_marker_refused/src/main.bp)
 [cases/use_without_marker_refused/src/main.bp](cases/use_without_marker_refused/src/main.bp)

@@ -1,7 +1,8 @@
 botopink-cell 2
-== std_namespace_signature_names_shadowed_type
-refused error: ambiguous-import-use: `collections.lt` names std/collections's `Order`, and `Order` in this module is another declaration
-at src/main.bp:14:25
-== std_namespace_type_beside_own_type
-refused error: unknown type 'collections.Dict'
-at src/main.bp:9:14
+== std_namespace_beside_aliased_type
+out 5
+out 6
+out 1
+== std_namespace_beside_own_type
+out 5
+out -1

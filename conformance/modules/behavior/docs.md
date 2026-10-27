@@ -20,5 +20,5 @@
 [cases/behavior_method_result_typed/src/main.bp](cases/behavior_method_result_typed/src/main.bp)
 [run/src/cases/behavior_named_like_prelude_type/mod.bp](run/src/cases/behavior_named_like_prelude_type/mod.bp)
 [run/src/cases/behavior_named_like_prelude_value/mod.bp](run/src/cases/behavior_named_like_prelude_value/mod.bp)
-[cells/behavior_parameter/src/main.bp](cells/behavior_parameter/src/main.bp)
+[cases/behavior_parameter/src/main.bp](cases/behavior_parameter/src/main.bp)
 [run/src/cases/behavior_value_from_implementer/mod.bp](run/src/cases/behavior_value_from_implementer/mod.bp)

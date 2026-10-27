@@ -1,2 +1,0 @@
-pub mod std_namespace_beside_aliased_type;
-pub mod std_namespace_beside_own_type;

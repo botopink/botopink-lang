@@ -1,6 +1,0 @@
-botopink-cell 1
-out <div class="a x">hi</div> (element)
-out <Badge class="c Badge">new</Badge> (component)
-out badge
-out Card: b
-out section 1 no id, no component

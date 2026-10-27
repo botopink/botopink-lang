@@ -1,10 +1,24 @@
 botopink-cell 2
-== module_init_order
-out first
+== module_fn_named_like_bif
+out 4
+out k=v
+out 106
+out 8
+out 42
+out 4
+out 3
+out -1
+out 9
+out 0
+out Point(x: 3, y: 4)
+== module_var_self_registration
+out component
+out ["component"]
+out ["component", "second"]
 out second
-out main
-out 1
-out 1
-== module_main_called_from_package_main
-out package main
-out module main
+out ["component"]
+== module_val_reads_module_val
+out 5
+out 10
+out 21
+out 42

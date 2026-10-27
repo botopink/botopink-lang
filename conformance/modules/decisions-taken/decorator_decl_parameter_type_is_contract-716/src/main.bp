@@ -38,11 +38,11 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("decl_behavior_contract_refused");
-    runCase("decl_unknown_no_member");
-    runCase("decorator_decl_behavior_not_implemented");
-    runCase("init_executor_handle_mistyped");
-    runCase("init_executor_handle_on_type_as_value");
-    runCase("decl_behavior_member_typed");
+    runCase("decorator_member_captures_handle");
+    runCase("init_executor_handle_not_module_name");
+    runCase("init_executor_handle_on_type");
+    runCase("init_executor_handle_typed");
+    runCase("member_decl_as_code");
+    runCase("init_executor_handle_on_method");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,4 +1,0 @@
-pub mod type_alias_declarations;
-pub mod type_identity_print;
-pub mod type_name_collision;
-pub mod type_named_like_decl_kind;

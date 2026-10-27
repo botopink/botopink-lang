@@ -1,11 +1,51 @@
 botopink-cell 2
-== generic_fn_value_takes_shape
-out ["1.0", "2.5"]
+== float_text_at_run_time
+out 5.0
+out 1.0e21
+out 1.0e-7
+out 1.0e3 1.2e3 1.0e-5 1.0e20 123456.0
+out 9007199254740991.0 9.007199254740992e15 -9.007199254740992e15
+== float_text_everywhere
+out 5.0
+out 5.0
+out x2.0
+out 1.0e21
+out -3.0
+out 0.25
+out -0.5
+out v=5.0
+out 5.0
+out a5.0b
+out 1.0
+out x=1.0
+out x=1.0
 out 2.0
-out ["1", "2"]
-== tuple_in_type_parameter_slot
-out Box(value: #(1, 2))
-out #(3, "x")
-out Box(value: #(4, 5))
-out Box(value: [#(6, 7)])
-out Pair(t: #(8, 9))
+out [1.0, 2.5]
+out Pt(x: 1.0, n: 3)
+out 3.0
+out a=3.0
+== generic_float_text
+out 4.0
+out 4.0
+out v=4.0
+out 4.0
+out [4.0, 4.0]
+out [4.0, 4.0]
+out 1.0
+out 4.0
+out 4
+out v=s
+== optional_chain_string_text
+out [ ΟΔΟΣ ]
+out [ ΟΔΟΣ  ]
+out [ ΟΔΟΣ ]
+out  οδοσ  
+out  οδοσ 
+out STRASSE
+out absent
+out absent
+out 5.0
+== string_lower_final_sigma
+out οδοσ
+== string_trim_keeps_nbsp
+out [ x ]

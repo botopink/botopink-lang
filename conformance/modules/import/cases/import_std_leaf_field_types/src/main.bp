@@ -1,0 +1,32 @@
+//// A leaf import of a std type brings the types its fields name along, as
+//// types, as a leaf of the program's own module does: `HostError`'s `name`
+//// is a `HostErrorName`, written `.Error` where one is expected and matched
+//// by its variants, with `failure`'s module never imported whole.
+
+import {failure.HostError, io.terminal.print} from "std";
+
+fn describe(e: HostError) -> string {
+    case e.name {
+        Error -> return "error: " + e.message;
+        Throw -> return "throw: " + e.message;
+        Exit -> return "exit: " + e.message;
+    }
+}
+
+fn half(n: i32) -> Result<i32, HostError> {
+    if (n % 2 != 0)
+        throw HostError(message: "odd", kind: "host", name: .Throw, detail: null);
+    return n / 2;
+}
+
+pub fn main() -> void {
+    print(describe(HostError(message: "ENOENT", kind: "host", name: .Error, detail: null)));
+    case half(3) {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print(describe(e));
+    }
+    case half(4) {
+        Ok(v) -> print("ok", v);
+        Error(e) -> print(describe(e));
+    }
+}

@@ -1,0 +1,12 @@
+//// An anonymous default: no name in this module; its importer names it.
+
+import {deco.named};
+
+#[named]
+pub default fn (x: i32) -> i32 {
+    return x * 2;
+}
+
+pub fn reportName() -> string {
+    return doubleName();
+}

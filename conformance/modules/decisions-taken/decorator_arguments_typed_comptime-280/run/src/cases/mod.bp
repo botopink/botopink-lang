@@ -1,5 +1,0 @@
-pub mod decorator_argument_values;
-pub mod decorator_function_arguments;
-pub mod decorator_record_argument;
-pub mod decorator_type_argument;
-pub mod decorator_typed_arguments_import;

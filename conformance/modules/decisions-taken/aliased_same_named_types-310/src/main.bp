@@ -38,6 +38,10 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("import_two_types_one_name_unaliased");
+    runCase("import_std_type_beside_aliased_type");
+    runCase("import_two_enums_one_name");
+    runCase("import_two_types_one_name");
+    runCase("import_two_types_one_name_reached_indirectly");
+    runCase("std_private_type_beside_program_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

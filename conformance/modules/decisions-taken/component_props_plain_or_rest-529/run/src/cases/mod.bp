@@ -1,4 +1,0 @@
-pub mod record_param;
-pub mod record_param_across_modules;
-pub mod record_spread_beside_record_update;
-pub mod record_update_base_not_a_name;

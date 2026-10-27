@@ -1,7 +1,0 @@
-import {cases.module_var_self_registration.registry.register};
-
-val _registered = register("component");
-
-pub fn componentName() -> string {
-    return "component";
-}

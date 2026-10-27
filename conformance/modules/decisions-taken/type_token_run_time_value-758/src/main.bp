@@ -38,6 +38,10 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("is_type_parameter_refused");
+    runCase("type_token_handed_on_run_time");
+    runCase("type_token_run_time_value");
+    runCase("type_token_imported_type");
+    runCase("type_token_method_call");
+    runCase("type_token_labelled_field");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

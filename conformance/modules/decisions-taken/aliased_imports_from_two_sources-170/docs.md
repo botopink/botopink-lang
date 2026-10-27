@@ -1,7 +1,7 @@
 # Decision 170 — std takes the natural name and a library's copy goes (`clock.parseDuration`, `async.RetryPolicy`, `async.nextDelay`; rak
 
-[run/src/cases/std_namespace_beside_aliased_type/mod.bp](run/src/cases/std_namespace_beside_aliased_type/mod.bp)
-[run/src/cases/std_namespace_beside_own_type/mod.bp](run/src/cases/std_namespace_beside_own_type/mod.bp)
+[cases/std_namespace_beside_aliased_type/src/main.bp](cases/std_namespace_beside_aliased_type/src/main.bp)
+[cases/std_namespace_beside_own_type/src/main.bp](cases/std_namespace_beside_own_type/src/main.bp)
 [cases/std_namespace_signature_names_shadowed_type/src/main.bp](cases/std_namespace_signature_names_shadowed_type/src/main.bp)
 [cases/std_namespace_type_beside_own_type/src/main.bp](cases/std_namespace_type_beside_own_type/src/main.bp)
 [cells/typeinfo_all_type_also_imported/src/main.bp](cells/typeinfo_all_type_also_imported/src/main.bp)

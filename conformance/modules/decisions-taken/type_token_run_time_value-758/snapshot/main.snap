@@ -1,4 +1,30 @@
 botopink-cell 2
-== is_type_parameter_refused
-refused error: is-type-parameter: `is T` tests the type parameter `T`, which no target knows at run time — take the type as `comptime t: type<T>` or `t: type<T>` and test `v is t`
-at src/main.bp:11:14
+== type_token_handed_on_run_time
+out yes
+out no
+out yes
+== type_token_run_time_value
+out 2
+out 1
+out 2
+out true
+out true
+out true false true true false
+== type_token_imported_type
+out true
+out true
+out true
+out 2
+out 1
+== type_token_method_call
+out true
+out true
+out true
+out 2
+out 1
+== type_token_labelled_field
+out true
+out false
+out true
+out false
+out true

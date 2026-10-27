@@ -1,10 +1,27 @@
 botopink-cell 2
-== decorator_arguments_meta
-out state,name
-out 2
-out high
-== decorator_entity_table
+== decorator_calls_imported_function
+out <TICK> runs every minute
+out <TOCK>
+out 3
+== decorator_calls_module_function
+out Point: 2 fields
+out 1 run
+== decorator_emitted_proxies_dispatch
+out sec ledger status
+out sec runbook steps
+== decorator_imported_builds_private_record
 out cities
-out cities
-out City
-out n|p
+== decorator_imported_calls_module_function
+out tick runs every minute
+out 1
+== decorator_lambda_many_locals
+out 1450,1090,1450
+== decorator_member_record_update
+out Point(x: 1, y: 0, z: 3)
+out Point(x: 1, y: 2, z: 9)
+== decorator_negative_argument
+out 5
+== decorator_random_seeded_commonjs
+out Point 0.6011037519201636
+== decorator_same_refuses_mark
+out w

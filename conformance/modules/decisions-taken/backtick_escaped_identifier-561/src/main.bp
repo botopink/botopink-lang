@@ -38,8 +38,12 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("backtick_name_empty");
-    runCase("backtick_name_in_diagnostic");
-    runCase("backtick_name_line_break");
+    runCase("backtick_name_binding");
+    runCase("backtick_name_field");
+    runCase("backtick_name_function");
+    runCase("backtick_name_import_item");
+    runCase("backtick_name_module_segment");
+    runCase("backtick_name_parameter");
+    runCase("backtick_name_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,0 +1,14 @@
+//// Decision 561 — a module path's segment between backticks names the file
+//// its text spells: `` mod `my-utils`; `` is `my-utils.bp`, and
+//// `` `report-pages`.`not-found` `` is `report-pages/not-found.bp`, through
+//// the namespace and through an import.
+
+pub mod `my-utils`;
+pub mod `report-pages`;
+import {`report-pages`.`not-found`.code};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(`my-utils`.triple(4));
+    print(code());
+}

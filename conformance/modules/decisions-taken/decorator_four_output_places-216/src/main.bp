@@ -38,19 +38,11 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("decorator_add_member_duplicate");
-    runCase("decorator_add_member_not_one");
-    runCase("decorator_add_member_on_fn");
-    runCase("decorator_add_type_duplicate");
-    runCase("decorator_add_type_name");
-    runCase("decorator_add_type_not_one");
-    runCase("decorator_add_type_without_owner");
-    runCase("decorator_member_unknown");
-    runCase("decorator_meta_on_member");
-    runCase("typeinfo_all_arguments");
-    runCase("typeinfo_all_mixed");
-    runCase("typeinfo_all_needs_member");
-    runCase("typeinfo_unknown_declaration");
-    runCase("typeinfo_all_imported");
+    runCase("decorator_add_member");
+    runCase("decorator_add_member_import");
+    runCase("decorator_add_type");
+    runCase("decorator_add_type_import");
+    runCase("decorator_meta_import");
+    runCase("typeinfo_all_private");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

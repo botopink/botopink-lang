@@ -1,10 +1,35 @@
 botopink-cell 2
-== backtick_name_empty
-refused error: empty backtick identifier
-at src/main.bp:7:9
-== backtick_name_in_diagnostic
-refused error: unknown field '`y pos`' on type '`my point`'
-at src/main.bp:11:13
-== backtick_name_line_break
-refused error: unclosed backtick identifier
-at src/main.bp:8:9
+== backtick_name_binding
+out 41
+out 42
+out 42
+out 4
+out spaces!
+== backtick_name_field
+out 7
+out grid
+out Point(`x pos`: 3, `y-pos`: 4, `type`: "grid")
+== backtick_name_function
+out 42
+out yes
+out 3
+out 8
+out 10
+== backtick_name_import_item
+out 9
+out 16
+out 20
+out 2
+== backtick_name_module_segment
+out 12
+out 404
+== backtick_name_parameter
+out 12
+out 50
+out 42
+== backtick_name_type
+out 7
+out `my point`(x: 3, y: 4)
+out 6
+out 0
+out `Shape kind`.`Round one`(radius: 5)

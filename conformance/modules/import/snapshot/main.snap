@@ -1,11 +1,31 @@
 botopink-cell 2
-== import_same_name_twice_unaliased
-refused error: import-name-collision: `title` is already bound by the import of `title` from `app/page`; `title` from `app/blog/page` would bind it again
-at src/main.bp:12:9
-== import_std_groups
-out 0
-== import_tree_group
-out circle
+== import_behavior_named_like_prelude
+out <hi>
+out title
+== import_capitalised_fn
+out 104
+out 105
+out 20
+== import_nested_module_namespace
+out k:3
+== import_same_fn_name_by_module
+out app
+out blog
+out blog
+== import_same_fn_name_two_aliases
+out app
+out blog
+out app/blog
+== import_std_leaf_field_types
+out error: ENOENT
+out throw: odd
+out ok 2
+== import_type_alias
+out 8080
 out 7
-out 1
-out -1
+== import_type_closure
+out admin
+== import_module_paths
+out 12
+out circle
+out 1.0

@@ -1,0 +1,12 @@
+botopink-cell 2
+== decl_hooks_graph
+out Page/1 user/1 session/0
+== decl_type_name_spelled
+out a: array<string>
+out b: array<#(string, string)>
+out c: string[]
+out d: fn(i32) -> i32
+out e: #(string, string)
+out f: ?i32
+out g: string
+out pick(Self, i32[], ?string) -> array<i32>

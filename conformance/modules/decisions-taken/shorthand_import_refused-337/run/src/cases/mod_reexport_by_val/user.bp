@@ -1,5 +1,0 @@
-import {cases.mod_reexport_by_val.text.splitPath, cases.mod_reexport_by_val.text.join, cases.mod_reexport_by_val.text.Pair};
-
-pub fn run() -> string {
-    return join(Pair(a: splitPath("c/d"), b: "e"));
-}

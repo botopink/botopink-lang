@@ -1,7 +1,7 @@
 # Decision 110 — Import aliases reach types, and an imported folder is a namespace of its submodules
 
-[run/src/cases/import_alias_on_type/mod.bp](run/src/cases/import_alias_on_type/mod.bp)
-[run/src/cases/import_alias_static_call/mod.bp](run/src/cases/import_alias_static_call/mod.bp)
+[cases/import_alias_on_type/src/main.bp](cases/import_alias_on_type/src/main.bp)
+[cases/import_alias_static_call/src/main.bp](cases/import_alias_static_call/src/main.bp)
 [cells/import_std_folder_namespace/src/main.bp](cells/import_std_folder_namespace/src/main.bp)
 [cases/imported_type_alias_in_later_signature/src/main.bp](cases/imported_type_alias_in_later_signature/src/main.bp)
 

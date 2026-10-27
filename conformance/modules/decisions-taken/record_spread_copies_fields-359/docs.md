@@ -1,13 +1,13 @@
 # Decision 359 — A spread copies a record's fields — in a record's construction and on a tag alike, typed.
 
 [cases/call_spread/src/main.bp](cases/call_spread/src/main.bp)
-[run/src/cases/record_spread/mod.bp](run/src/cases/record_spread/mod.bp)
-[run/src/cases/record_spread_across_modules/mod.bp](run/src/cases/record_spread_across_modules/mod.bp)
-[run/src/cases/record_spread_call_source/mod.bp](run/src/cases/record_spread_call_source/mod.bp)
-[run/src/cases/record_spread_import_alias/mod.bp](run/src/cases/record_spread_import_alias/mod.bp)
+[cases/record_spread/src/main.bp](cases/record_spread/src/main.bp)
+[cases/record_spread_across_modules/src/main.bp](cases/record_spread_across_modules/src/main.bp)
+[cases/record_spread_call_source/src/main.bp](cases/record_spread_call_source/src/main.bp)
+[cases/record_spread_import_alias/src/main.bp](cases/record_spread_import_alias/src/main.bp)
 [cases/record_spread_label_twice/src/main.bp](cases/record_spread_label_twice/src/main.bp)
 [cases/record_spread_missing_field/src/main.bp](cases/record_spread_missing_field/src/main.bp)
-[run/src/cases/record_spread_nested/mod.bp](run/src/cases/record_spread_nested/mod.bp)
+[cases/record_spread_nested/src/main.bp](cases/record_spread_nested/src/main.bp)
 [cases/record_spread_optional/src/main.bp](cases/record_spread_optional/src/main.bp)
 [cases/record_spread_other_type/src/main.bp](cases/record_spread_other_type/src/main.bp)
 [cases/record_spread_overridden_label_type/src/main.bp](cases/record_spread_overridden_label_type/src/main.bp)

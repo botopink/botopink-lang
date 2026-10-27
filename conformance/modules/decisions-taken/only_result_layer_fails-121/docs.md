@@ -12,7 +12,7 @@ in `main`, whose `Async<void>` carries no `Result`: the `catch` handles the fail
 neither return holds a `Result`.
 
 Cells in this repository that also bear on it: `modules/decisions-taken/body_marker_whole_return_type-553/cells/task_await_result`,
-`modules/decisions-taken/body_marker_whole_return_type-553/cells/component_result_try_await`,
+`modules/decisions-taken/body_marker_whole_return_type-553/cases/component_result_try_await`,
 `modules/decisions-taken/body_marker_whole_return_type-553/run/src/cases/generator_result_items_lazy`.
 
 [draft/main.bp](draft/main.bp)

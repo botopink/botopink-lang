@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.variadic_across_modules.runCase();
-    cases.variadic_parameter.runCase();
-}

@@ -1,6 +1,0 @@
-pub mod enum_implements_behavior;
-pub mod enum_payload_value_prints;
-pub mod enum_section_expected_type;
-pub mod enum_section_leaf_beside_variant;
-pub mod enum_section_qualified_path;
-pub mod enum_value_template_hole;

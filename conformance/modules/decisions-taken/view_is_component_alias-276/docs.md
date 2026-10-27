@@ -7,6 +7,6 @@ how `rakun-bpp` declares it. So each spelling accepts the other: `Card` answers 
 keeps the full type, and a decorator that checks a component's return compares the resolved type, never the text.
 `run` renders each component from the root scope and prints `badge new` and `card home`.
 
-Cells that also bear on it: `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_run_root`, `modules/decisions-taken/body_marker_whole_return_type-553/cells/component_hook_and_component`.
+Cells that also bear on it: `modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/component_run_root`, `modules/decisions-taken/body_marker_whole_return_type-553/cases/component_hook_and_component`.
 
 [draft/main.bp](draft/main.bp)

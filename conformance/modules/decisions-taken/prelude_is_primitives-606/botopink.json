@@ -1,1 +1,1 @@
-{ "name": "prelude_is_primitives-606" }
+{"name": "prelude_is_primitives-606", "dependencies": {"conformance-lib": {"path": "../../../lib"}}}

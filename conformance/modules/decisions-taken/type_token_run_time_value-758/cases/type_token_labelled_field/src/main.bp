@@ -1,0 +1,27 @@
+//// Decision 758 — a record whose field is a run-time `t: type<T>` takes the
+//// type token labelled as it does positionally, in declaration order or not.
+
+import {io.terminal.print} from "std";
+
+pub type Book(pages: i32)
+
+pub type Pen(ink: i32)
+
+pub type Holder<T>(owner: type<T>, label: string)
+
+fn holds<T>(v: unknown, t: type<T>) -> bool {
+    return v is t;
+}
+
+pub fn main() -> void {
+    val b: unknown = Book(pages: 3);
+    val p: unknown = Pen(ink: 1);
+    val a = Holder(owner: Book, label: "a");
+    val c = Holder(label: "c", owner: Book);
+    val d = Holder(Book, "d");
+    print(holds(b, a.owner));
+    print(holds(p, a.owner));
+    print(holds(b, c.owner));
+    print(holds(p, c.owner));
+    print(holds(b, d.owner));
+}

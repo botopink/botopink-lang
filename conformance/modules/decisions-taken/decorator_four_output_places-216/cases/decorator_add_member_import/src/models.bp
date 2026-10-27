@@ -1,0 +1,7 @@
+//// `#[entity]` gives `City` its members here; every importer of `City` gets
+//// them with the type.
+
+import {orm.entity};
+
+#[entity("cities")]
+pub type City(name: string, size: i32)

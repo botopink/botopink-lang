@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.decl_hooks_graph.runCase();
-    cases.decl_type_name_spelled.runCase();
-}

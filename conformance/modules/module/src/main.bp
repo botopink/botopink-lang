@@ -38,7 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("module_init_order");
-    runCase("module_main_called_from_package_main");
+    runCase("module_fn_named_like_bif");
+    runCase("module_var_self_registration");
+    runCase("module_val_reads_module_val");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

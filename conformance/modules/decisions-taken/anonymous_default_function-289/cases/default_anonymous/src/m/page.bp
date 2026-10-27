@@ -1,0 +1,13 @@
+//// An anonymous default beside an imported decorator named like the file
+//// (a `.bpp` route's header, `import {page} from "jhonstart";`).
+
+import {deco.page};
+
+#[page]
+pub default fn () -> string {
+    return "page body";
+}
+
+pub fn reportPage() -> string {
+    return pageName();
+}

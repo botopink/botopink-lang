@@ -1,0 +1,28 @@
+botopink-cell 2
+== imported_enum_field
+out Anchor(href: "/x", target: Target.Top, place: Place.Here, fallback: Target.Bottom)
+out Target.Top
+out Place.Here
+out Target.Bottom
+out Anchor(href: "/y", target: Target.Bottom, place: Place.There(name: "q"), fallback: null)
+out Place.There(name: "w")
+out Pin(n: 1, at: Target.Bottom)
+out Target.Bottom
+== imported_fn_as_value
+out 4
+out 6
+out hi bo
+== imported_fn_field_call
+out > a
+out > b
+out file c
+== imported_variant_positional_payload
+out 12
+out 20
+out 6
+out 903
+out 11
+== imported_type_method_signature_resolves_in_owner
+out shop stall
+out shop stall of stall
+out shop corner of corner

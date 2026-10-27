@@ -1,9 +1,0 @@
-pub mod users;
-
-import {cases.import_type_closure.users.User, cases.import_type_closure.users.makeUser};
-import {io.terminal.print} from "std";
-
-pub fn runCase() -> void {
-    val u: User = makeUser();
-    print(u.roleName());
-}

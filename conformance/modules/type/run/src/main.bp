@@ -1,8 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.type_alias_declarations.runCase();
-    cases.type_identity_print.runCase();
-    cases.type_name_collision.runCase();
-    cases.type_named_like_decl_kind.runCase();
-}

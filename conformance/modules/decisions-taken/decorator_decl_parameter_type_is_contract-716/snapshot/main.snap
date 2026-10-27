@@ -1,20 +1,15 @@
 botopink-cell 2
-== decl_behavior_contract_refused
-refused error: `#[module]` needs a type implementing `Module` — `City` does not
-at src/main.bp:17:3
-== decl_unknown_no_member
-refused error: cannot call a method on an `unknown` value
-at src/main.bp:9:35
-== decorator_decl_behavior_not_implemented
-refused error: `#[module]` needs a type implementing `Module` — `City` does not
-at src/main.bp:17:3
-== init_executor_handle_mistyped
-refused error: `#[module]` expects a declaration of type `fn() -> string`, and `count` is `fn() -> i32`
-at src/main.bp:17:3
-== init_executor_handle_on_type_as_value
-refused error: `#[registered]` expects a declaration of type `fn() -> string`, and `Users` is a type
-at src/main.bp:12:3
-== decl_behavior_member_typed
-out users up
-out db up
-out main
+== decorator_member_captures_handle
+out Signup
+== init_executor_handle_not_module_name
+out make users made
+out module make
+== init_executor_handle_on_type
+out Users users made
+== init_executor_handle_typed
+out home singleton home
+out about scoped about home
+== member_decl_as_code
+out users!
+== init_executor_handle_on_method
+out make users made

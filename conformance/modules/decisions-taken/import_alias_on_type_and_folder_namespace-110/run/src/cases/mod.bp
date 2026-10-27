@@ -1,2 +1,0 @@
-pub mod import_alias_on_type;
-pub mod import_alias_static_call;

@@ -1,0 +1,17 @@
+//// 144 B-155 — a method call that continues a `?.` chain over a `Dict` field
+//// (`post?.params.at("slug")`) is the `Dict`'s `at` on every target. The parent's erlang and beam
+//// ran the untyped primitive shim and aborted with `bp_unsupported_method` at run time.
+
+import {collections.Dict, io.terminal.print} from "std";
+
+type Post(title: string, params: Dict<string, string>)
+
+fn slug(post: ?Post) -> string {
+    return post?.params.at("slug") ?? "none";
+}
+
+pub fn main() -> void {
+    val params: Dict<string, string> = Dict.empty().insert("slug", "hello");
+    print(slug(Post(title: "t", params: params)));
+    print(slug(null));
+}

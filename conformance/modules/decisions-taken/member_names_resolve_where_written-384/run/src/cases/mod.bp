@@ -1,2 +1,0 @@
-pub mod decorator_member_fn_imported_name;
-pub mod decorator_member_type_travels;

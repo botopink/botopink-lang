@@ -1,9 +1,0 @@
-botopink-cell 1
-out yield 1
-out yield 2
-out done
-out done
-out yield 1;yield 2;done;
-out yield 2
-out yield 1
-out done

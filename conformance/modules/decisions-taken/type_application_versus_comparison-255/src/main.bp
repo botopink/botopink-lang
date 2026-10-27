@@ -38,11 +38,8 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("comptime_expression_type_mismatch");
-    runCase("type_application_argument_count");
-    runCase("type_application_argument_mismatch");
-    runCase("type_application_on_a_field");
-    runCase("type_application_through_namespace_mismatch");
-    runCase("type_application_variant_payload_mismatch");
+    runCase("comptime_expression_is_block");
+    runCase("type_application_static_member");
+    runCase("type_application_through_namespace");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,0 +1,10 @@
+//// Decisions 443, 521: where the JS engine and OTP map case differently,
+//// std-wasm answers OTP's on every target — a word-final `Σ` lowers to `σ`.
+//// commonJS maps case through its helper (std-wasm's table), never the
+//// engine's `toLowerCase`, which answers `ς`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print("ΟΔΟΣ".toLower());
+}

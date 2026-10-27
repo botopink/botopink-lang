@@ -1,0 +1,27 @@
+//// Decisions 613, 716 — the splice names the annotated declaration, never
+//// what its bare name resolves to in the module: the method `Users.make` is
+//// registered, not the module's own `fn make` beside it.
+
+pub mod marks;
+pub mod registry;
+import {marks.registered};
+import {registry.all};
+import {io.terminal.print} from "std";
+
+pub fn make() -> string {
+    return "module make";
+}
+
+pub type Users() {
+    #[registered]
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() -> void {
+    for (all()) { e ->
+        print(e.name + " " + e.make());
+    }
+    print(make());
+}

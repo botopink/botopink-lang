@@ -1,5 +1,0 @@
-pub mod decorator_add_member;
-pub mod decorator_add_member_import;
-pub mod decorator_add_type;
-pub mod decorator_add_type_import;
-pub mod decorator_meta_import;

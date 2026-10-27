@@ -6,6 +6,6 @@ The first two `get`s print `fetch 1` then `hit 1`. After `revalidateTag("posts")
 
 The program prints `fetch 1`, `hit 1` and `fetch 2`.
 
-Cells in this repository that bear on it: `modules/decisions-taken/reported_surface_forms_all_parse-28/cases/module_var`, `modules/module/run/src/cases/module_var_self_registration`.
+Cells in this repository that bear on it: `modules/decisions-taken/reported_surface_forms_all_parse-28/cases/module_var`, `modules/module/cases/module_var_self_registration`.
 
 [draft/main.bp](draft/main.bp)

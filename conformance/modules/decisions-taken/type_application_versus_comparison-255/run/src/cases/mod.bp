@@ -1,3 +1,0 @@
-pub mod comptime_expression_is_block;
-pub mod type_application_static_member;
-pub mod type_application_through_namespace;

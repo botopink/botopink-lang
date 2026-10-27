@@ -1,0 +1,16 @@
+//// Decisions 359 (6), 529 (3) — the one spread `..` takes any expression as
+//// its source, a call included: it is evaluated once, however many fields it
+//// supplies (the update form of decision 37 refused a base that is no name).
+
+import {io.terminal.print} from "std";
+
+type Inner(v: i32, w: string)
+
+fn make() -> Inner {
+    return Inner(v: 1, w: "a");
+}
+
+pub fn main() -> void {
+    val i = Inner(..make(), w: "z");
+    print(i.v);
+}

@@ -1,0 +1,35 @@
+//// Decision 359 — any expression of the record's type, or of a type derived
+//// from it, is a spread's source: a method call, an associated function's
+//// call, a call chained on a call, a call answering a derived type. Each is
+//// evaluated once, however many fields it supplies.
+
+import {types.Type, io.terminal.print} from "std";
+
+type Pessoa(nome: string, email: string, idade: i32 = 30) {
+    fn mais(self: Self, anos: i32) -> Pessoa {
+        print("mais");
+        return Pessoa(..self, idade: self.idade + anos);
+    }
+
+    fn padrao() -> Pessoa {
+        print("padrao");
+        return Pessoa(nome: "Ana", email: "ana@a");
+    }
+}
+
+val Contato = Type.pick(Pessoa, .email, .idade);
+
+fn contatoDe(email: string) -> Contato {
+    print("contatoDe");
+    return Contato(email: email, idade: 20);
+}
+
+pub fn main() -> void {
+    val bia = Pessoa(nome: "Bia", email: "bia@a", idade: 40);
+    print(Pessoa(..bia.mais(1), nome: "Caio"));
+    print(Pessoa(..Pessoa.padrao(), idade: 33));
+    print(Pessoa(..Pessoa.padrao().mais(2)));
+    print(Pessoa(..contatoDe("d@a"), nome: "Duda"));
+    print(Pessoa(..contatoDe("e@a"), ..bia.mais(3), nome: "Edu"));
+    print(bia);
+}

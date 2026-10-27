@@ -1,0 +1,18 @@
+botopink-cell 2
+== type_alias_declarations
+out #("a", 1)
+== type_identity_print
+out Point(x: 1, y: 2)
+out Shape.Dot
+out Shape.Circle(radius: 4)
+out [Point(x: 1, y: 2), Point(x: 3, y: 4)]
+== type_name_collision
+out parser-tag
+out net-tag
+out parser-tag
+out net-tag
+out local-tag
+out local-note
+== type_named_like_decl_kind
+out 2
+out inner

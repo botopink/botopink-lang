@@ -704,7 +704,8 @@ def reshape(module, botopink):
             if os.path.exists(f):
                 os.remove(f)
         return "stays: " + why
-    git("rm", "-q", "-r", os.path.join(module, "snapshot", "output"))
+    # The piece-4 records go; a fold this run made never tracked them.
+    shutil.rmtree(os.path.join(module, "snapshot", "output"), ignore_errors=True)
     git("add", "-A", module)
     return "reshaped %d case(s)" % len(order)
 

@@ -10,6 +10,6 @@ The example is a package of five files, and each is a module named by its path: 
 
 The program prints `HOME! links /about`, `about links /` and `42`. A value needing itself across the two modules (`pub val base = home.visits + 1` in `about.bp`) would be the one order refusal, `dependency loop`, located.
 
-Cells in this repository that bear on it: `modules/modules/cells/modules`, `modules/two/run/src/cases/two_modules`, `modules/import/cells/import_module_paths`, `modules/module/cases/module_init_order`, `modules/pub/cells/pub_val_across_modules`, `modules/decisions-taken/shorthand_import_refused-337/cases/private_module_through_namespace`.
+Cells in this repository that bear on it: `modules/modules/cells/modules`, `modules/two/cases/two_modules`, `modules/import/cases/import_module_paths`, `modules/module/cases/module_init_order`, `modules/pub/cells/pub_val_across_modules`, `modules/decisions-taken/shorthand_import_refused-337/cases/private_module_through_namespace`.
 
 [draft/main.bp](draft/main.bp)

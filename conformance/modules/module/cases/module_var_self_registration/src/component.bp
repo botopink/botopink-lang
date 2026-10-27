@@ -1,0 +1,7 @@
+import {registry.register};
+
+val _registered = register("component");
+
+pub fn componentName() -> string {
+    return "component";
+}

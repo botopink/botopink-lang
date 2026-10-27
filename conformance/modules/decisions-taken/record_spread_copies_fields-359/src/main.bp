@@ -38,12 +38,10 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("call_spread");
-    runCase("record_spread_label_twice");
-    runCase("record_spread_missing_field");
-    runCase("record_spread_optional");
-    runCase("record_spread_other_type");
-    runCase("record_spread_overridden_label_type");
-    runCase("record_spread_positional_argument");
+    runCase("record_spread");
+    runCase("record_spread_across_modules");
+    runCase("record_spread_call_source");
+    runCase("record_spread_import_alias");
+    runCase("record_spread_nested");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

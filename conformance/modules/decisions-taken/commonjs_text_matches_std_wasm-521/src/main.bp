@@ -38,7 +38,11 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
-    runCase("generic_fn_value_takes_shape");
-    runCase("tuple_in_type_parameter_slot");
+    runCase("float_text_at_run_time");
+    runCase("float_text_everywhere");
+    runCase("generic_float_text");
+    runCase("optional_chain_string_text");
+    runCase("string_lower_final_sigma");
+    runCase("string_trim_keeps_nbsp");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

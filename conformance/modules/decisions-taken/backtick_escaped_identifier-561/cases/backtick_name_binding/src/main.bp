@@ -1,0 +1,21 @@
+//// Decision 561 — a name between backticks is an identifier: a `val` and a
+//// `var` bound under one, a keyword included (`` `fn` ``). `` `not-found` ``
+//// and `not - found` never meet, and `` `count` `` is `count`.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    val `not-found` = 41;
+    val not = 50;
+    val found = 8;
+    print(`not-found`);
+    print(not - found);
+    var `fn` = 1;
+    `fn` = `fn` + `not-found`;
+    print(`fn`);
+    val count = 2;
+    print(count + count);
+    val `a b c` = "spaces";
+    val `ção` = "!";
+    print(`a b c` + `ção`);
+}

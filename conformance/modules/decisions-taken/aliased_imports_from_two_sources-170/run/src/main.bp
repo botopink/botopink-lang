@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.std_namespace_beside_aliased_type.runCase();
-    cases.std_namespace_beside_own_type.runCase();
-}

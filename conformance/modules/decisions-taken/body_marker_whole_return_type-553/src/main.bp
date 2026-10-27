@@ -1,10 +1,27 @@
-//// The module's one package (decisions 789 (4), 982 (5)): each case is a package under `cases/`,
-//// loaded at build by `runCase`; a refused case prints its refusals, a running one runs its `main`.
+//// The module's one package (decisions 789 (4), 982 (5), 998 (5)): each case is a package under
+//// `cases/`, loaded at build by `runCase`; a refused case prints its refusals, a running one prints
+//// what its `main` wrote (989 (1)) — awaited in `main`'s `async` body when the case's own `main` is.
 
-import {compiler, io.terminal.print} from "std";
+import {compiler, compiler.RunFailure, io.terminal.print} from "std";
+
+/// What a case wrote, its final newline left to `print`.
+fn lines(text: string) -> string {
+    return if (text.endsWith("
+")) text.slice(0, text.length - 1) else text;
+}
+
+fn shown(name: string, ran: Result<string, RunFailure>) -> void {
+    print("== " + name);
+    case ran {
+        Ok(text) -> print(lines(text));
+        Error(f) {
+            if (f.output != "") print(lines(f.output));
+            print("abort " + f.message);
+        }
+    }
+}
 
 fn runCase(comptime name: string) -> void {
-    print("== " + name + " comptime");
     val loaded = try comptime compiler.load("cases/" + name) catch { r ->
         compiler.init({ ->
             print("== " + name);
@@ -17,43 +34,24 @@ fn runCase(comptime name: string) -> void {
         });
         return;
     };
-    compiler.init({ ->
-        print("== " + name);
-        try loaded.run() catch { f -> print("abort " + f.message) }
-    });
+    if (comptime loaded.mainAsync())
+        compiler.init({ async -> shown(name, await loaded.run()); })
+    else
+        compiler.init({ -> shown(name, loaded.run()); });
 }
 
-comptime {
-    runCase("await_in_result_generator");
-    runCase("await_under_result");
-    runCase("component_plain_return");
-    runCase("component_try_element");
-    runCase("effect_wrapper_behind_alias");
-    runCase("for_await_future_generator_in_result");
-    runCase("for_await_without_task");
-    runCase("for_future_generator_without_await");
-    runCase("iter_await");
-    runCase("iter_mixed_yield_return");
-    runCase("iterator_throw_without_result");
-    runCase("marker_lambda_type_mismatch");
-    runCase("marker_lambda_without_expected_type");
-    runCase("marker_on_declaration");
-    runCase("marker_type_mismatch");
-    runCase("marker_without_arrow");
-    runCase("result_hint_await");
-    runCase("result_hint_for_item");
-    runCase("result_hint_inferred_iter");
-    runCase("task_throw_without_result");
-    runCase("task_try_await_without_result");
-    runCase("throw_in_generator");
-    runCase("try_in_generator");
-    runCase("try_in_plain_fn");
-    runCase("use_of_component");
-    runCase("use_under_task");
-    runCase("yield_in_context");
-    runCase("yield_in_result");
-    runCase("yield_step_error_param");
-    runCase("component_alias_answers_value");
+pub async fn main() -> Async<void> {
+    runCase("component_call_awaited");
+    runCase("component_call_renders");
+    runCase("component_hook_and_component");
+    runCase("component_result_try_await");
+    runCase("effect_alias_passes_value");
+    runCase("effect_chain");
+    runCase("effect_context_await");
+    runCase("generator_break_value");
+    runCase("marker_fn_forms");
+    runCase("marker_lambda_async");
+    runCase("marker_lambda_iter");
+    runCase("type_alias");
+    runCase("yield_step_next");
 }
-
-pub fn main() -> void {}

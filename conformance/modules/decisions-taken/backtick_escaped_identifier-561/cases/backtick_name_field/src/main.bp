@@ -1,0 +1,13 @@
+//// Decision 561 — record fields named between backticks: constructed by
+//// label, read, and printed as written.
+
+import {io.terminal.print} from "std";
+
+type Point(`x pos`: i32, `y-pos`: i32, `type`: string)
+
+pub fn main() -> void {
+    val p = Point(`x pos`: 3, `y-pos`: 4, `type`: "grid");
+    print(p.`x pos` + p.`y-pos`);
+    print(p.`type`);
+    print(p);
+}

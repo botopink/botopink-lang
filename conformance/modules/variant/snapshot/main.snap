@@ -1,4 +1,32 @@
 botopink-cell 2
-== variant_name_ambiguous
-refused error: `Circle` is a variant of `Shape` and of `Hole`, and nothing here says which — write `Shape.Circle` or `Hole.Circle`
-at src/main.bp:25:13
+== variant_leading_dot_expected
+out hole-circle
+out shape-circle
+out shape-round
+out hole-round
+== variant_leading_dot_two_enums_case
+out cool red
+out warm red
+out cool red
+out warm red
+== variant_name_collision
+out hole-circle
+out shape-circle
+out hole-circle
+out shape-circle
+out hole-slot
+out shape-square
+== variant_payload_wildcard_and_nested
+out 4
+out -1
+out 0
+out 5
+out -2
+out 9
+out 2007
+out -8
+out 0
+== variant_positional_payload_same_name
+out first
+out 7
+out 1

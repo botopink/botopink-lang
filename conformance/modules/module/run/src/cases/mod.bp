@@ -1,2 +1,0 @@
-pub mod module_fn_named_like_bif;
-pub mod module_var_self_registration;

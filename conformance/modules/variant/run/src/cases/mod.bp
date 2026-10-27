@@ -1,5 +1,0 @@
-pub mod variant_leading_dot_expected;
-pub mod variant_leading_dot_two_enums_case;
-pub mod variant_name_collision;
-pub mod variant_payload_wildcard_and_nested;
-pub mod variant_positional_payload_same_name;

@@ -1,8 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.import_std_type_beside_aliased_type.runCase();
-    cases.import_two_enums_one_name.runCase();
-    cases.import_two_types_one_name.runCase();
-    cases.import_two_types_one_name_reached_indirectly.runCase();
-}
