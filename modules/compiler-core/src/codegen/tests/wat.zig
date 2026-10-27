@@ -4929,3 +4929,27 @@ test "wat: gc ---- a return written through an alias of a Result is the Result i
         \\}
     );
 }
+
+test "wat: decision 1021 (10) ---- a tuple parameter's destructuring binds each element at its type in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn second(#(_, s): #(i32, string)) -> string {
+        \\    return s;
+        \\}
+        \\
+        \\fn sum(#(a, b): #(i32, i32)) -> i32 {
+        \\    return a + b;
+        \\}
+        \\
+        \\fn label(#(name, score): #(string, f64)) -> string {
+        \\    return name + "=" + score.toString();
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(second(#(1, "x")));
+        \\    print(sum(#(2, 40)));
+        \\    print(label(#("ana", 2.5)));
+        \\}
+    , "x\n42\nana=2.5\n");
+}

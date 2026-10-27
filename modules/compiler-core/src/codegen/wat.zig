@@ -10106,6 +10106,14 @@ const Emitter = struct {
     /// bound name is an `i32.load` at the field's declared offset.
     fn bindParamDestructure(self: *Emitter, p: ast.Param, symbol: []const u8, loc: ast.Loc) !void {
         const d = p.destruct orelse return;
+        // A GC module reads the parameter's reference as `val <pattern> = p`
+        // does (`gcDestruct`): a record's fields, a tuple's elements unboxed.
+        // Read as words, `#(_, s): #(i32, string)` bound `s` as an `i32`.
+        if (self.mode == .gc) {
+            const value = try self.arena().create(ast.Expr);
+            value.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = symbol } } };
+            return self.gcDestruct(.{ .value = value, .pattern = d });
+        }
         const rty = self.resolveRecordName(typeRefName(p.typeRef));
         switch (d) {
             .names => |n| for (n.fields, 0..) |fld, i| {
