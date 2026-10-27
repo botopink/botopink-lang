@@ -1,0 +1,6 @@
+//// A library with no entry (`src/main.bp`): its load fails the program's build, `load-not-a-package`, instead of
+//// answering — red alone, since its program is its own process.
+
+pub fn two() -> i32 {
+    return 2;
+}

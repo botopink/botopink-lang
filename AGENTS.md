@@ -299,14 +299,14 @@ gate's time goes):
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
-8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
-9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with `botopink build --emit-runtime` and its one `.bpr` run on each target — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, after the runner's own `--self-test`);
+8. (the libraries' stage, `test-libs`, joined stage 9 — decision 996);
+9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with `botopink build --emit-runtime` and its one `.bpr` run on each target — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` —, every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, and every package `botopink packages --list` prints tested in process, one program per package per target, its own process on the pool (`libraries/<name>`, decisions 993, 995, 996, 1004; the pairs that did not run before are `conformance/disabled.txt`'s, shrink-only), after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
 **Step gate and full gate** (decision 460). The branch decides, never a flag or a
 variable (decision 67): on a `front/*` branch `gate.sh` runs the STEP gate — every
-stage, but the cells of `test-libs` and `test-conformance` are only those the step's
+stage, but the cells of `test-conformance` (the libraries included) are only those the step's
 change reaches by the backend partition (a change in one backend's files runs that
 target's cells; a change in any shared file, std included, runs every cell); on
 `feat`, `main`, a detached HEAD or any other branch it runs the FULL gate. The first
@@ -323,7 +323,7 @@ conformance after (`scripts/AGENTS.md` § Step gate and full gate).
 The side-by-side stages share one job budget: `gate.sh` computes it once
 (at most one per CPU, bounded by the stages' measured peak memory so the hook never leaves less than 3 GiB
 available, 144 B-129) and hands each stage its share through its `--jobs`
-flag — `test-libs` 50 %, `test-conformance` 30 %, `tsc-check` 10 %,
+flag — `test-conformance` 80 % (its library jobs counted at a library's peak), `tsc-check` 10 %,
 `test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
 
 No test result is cached (decision 510): every cell of stages 8 and 9 runs on every

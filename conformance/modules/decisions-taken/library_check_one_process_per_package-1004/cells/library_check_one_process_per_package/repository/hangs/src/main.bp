@@ -1,0 +1,10 @@
+//// A library whose test never ends: its process outlasts the check's bound and is stopped — red alone.
+
+pub fn three() -> i32 {
+    return 3;
+}
+
+test "never ends" {
+    while (true) { }
+    assert three() == 3;
+}

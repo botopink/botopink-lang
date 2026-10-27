@@ -1,0 +1,4 @@
+# The programs conformance/run.sh writes per package per target, and their builds (decisions 993 (2), 1004 (1)).
+/.run/
+/src/
+/.botopinkbuild/

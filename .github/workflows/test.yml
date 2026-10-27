@@ -24,7 +24,7 @@
 #              release, the backend partition audit, `zig build test`,
 #              `test-bpmp`, the beam export audit, `test-web`); starts at once.
 #   installed  one job per row that runs the installed binaries (`test-cli`,
-#              `test-libs`, `test-docs`, `tsc-check`, and `test-conformance` once
+#              `test-docs`, `tsc-check`, and `test-conformance` once
 #              per target, `--target <t>`, each row its own verdict); downloads
 #              `build`'s artifact and runs with `--prebuilt`, so nothing compiles
 #              the compiler again.
@@ -40,7 +40,7 @@
 # the toolchain downloads are cached (`.github/actions/ci-setup`), never anything
 # under `.botopinkbuild/` (decision 225). The toolchain — zig, the compiler's
 # Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and the sibling
-# libraries test-libs compiles and tests (`scripts/AGENTS.md` § test-libs.sh) —
+# libraries the conformance stage tests (decision 996, `conformance/AGENTS.md`) —
 # is `.github/actions/ci-setup`'s, one text for every job.
 
 name: test
@@ -143,7 +143,7 @@ jobs:
       matrix:
         row: ${{ fromJSON(needs.stages.outputs.installed) }}
     runs-on: ubuntu-22.04
-    # test-conformance's rows took 25–31 min whole before the split by target; test-libs ~28 min
+    # test-conformance took 25–31 min whole before the split by target; the libraries joined it (decision 996)
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5

@@ -15,7 +15,7 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, backend partition audit, test, test-bpmp, beam export audit, test-cli, test-libs, test-conformance, test-docs)
+├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, backend partition audit, test, test-bpmp, beam export audit, test-cli, test-conformance — the libraries included, decision 996 —, test-docs)
 ├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink-lib-test --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
@@ -164,10 +164,9 @@ on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), the backend par
 — the code cache of the dependencies' compiled modules, the cell durations,
 decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8 and 9, § Warm and cold),
-`zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
-test-libs` (every cell the manifests declare, and an audit of every target a
-manifest excludes — § test-libs.sh), `zig build test-conformance` (`conformance/`, a red cell fails
-it), `zig build test-docs`
+`zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build test-conformance`
+(`conformance/`, a red cell fails it; every package of `botopink packages --list` tested there, one program per
+package per target — decision 996 took the libraries' stage `test-libs` into it, `conformance/AGENTS.md`), `zig build test-docs`
 (`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
@@ -176,7 +175,7 @@ every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 install tests) would otherwise act on the committing repository.
 
 **Stages by name (decision 987).** `gate.sh --list-stages` prints the stage names in the order the
-gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-libs
+gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli
 test-conformance test-docs tsc-check test-web`; `--uses-binaries` prints the ones that run the
 installed binaries); `--list-rows` prints CI's rows (decision 1004 (2)) — `<stage>`, or `<stage>
 <target>` once per target for a stage split by target (`PER_TARGET_STAGES`: `test-conformance` on
@@ -239,13 +238,12 @@ binaries; a plain `zig build` puts Debug ones back.
 ### Stage times, the plan, the budget
 
 Every stage's `✓` line ends with its wall clock and CPU-seconds —
-`✓ zig build test-libs — 3m41s wall, 2210 CPU-s` — measured with bash's
+`✓ zig build test-conformance — 3m41s wall, 2210 CPU-s` — measured with bash's
 `time` keyword around the stage (the CPU of every child it waited for
-included). Before stages 4b–12 start, `scripts/test-libs.sh --list`,
-`conformance/run.sh --list` and `scripts/check-docs.sh --list` print the
-plan of stages 8, 9 and 10, and after each of the three its own tally is held
-to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
-`cell:*` and `audit` lines, `cells: <J> jobs — …, <A> audits` of the language
+included). Before stages 4b–12 start, `conformance/run.sh --list` (the libraries'
+`libraries/<name>` jobs among them, one per name of `botopink packages --list` per target)
+and `scripts/check-docs.sh --list` print the plan of stages 9 and 10, and after each its own
+tally is held to its plan: `cells: <J> jobs — …, <A> audits` of the language
 tests against the job lines, `docs: <N> references` against the reference lines. A
 stage that ran fewer than its plan fails the gate, green or not — a stage
 cannot be narrowed to win time. The last line is the total,
@@ -305,7 +303,7 @@ narrows a run is `--no-conformance` (decision 470, below). The first line
 of the run names the mode and why:
 
 ```text
-gate: step gate (branch front/x): reaches wasm only; test-conformance on wasm, test-libs skipped, no library cell reached
+gate: step gate (branch front/x): reaches wasm only; test-conformance on wasm
 gate: step gate (branch front/x): reaches every backend (shared file: modules/compiler-core/src/comptime/infer.zig)
 gate: full gate (branch feat): every stage, every cell, every library
 gate: full gate (detached HEAD): every stage, every cell, every library
@@ -313,7 +311,7 @@ gate: full gate (detached HEAD): every stage, every cell, every library
 
 | Branch | Mode | What runs |
 |---|---|---|
-| `front/*` | step gate | every stage of the full gate; only the cells of stage 8 (`test-libs`) and stage 9 (`test-conformance`) are the step's reach |
+| `front/*` | step gate | every stage of the full gate; only the cells of stage 9 (`test-conformance`, the libraries included) are the step's reach |
 | `feat`, `main`, a detached HEAD, any other branch | full gate | every stage, every cell, every library |
 
 **The reach** is computed by `scripts/lib/gate-mode.sh` from the step's change: the
@@ -336,9 +334,7 @@ not its last commit. Each file is mapped by
 - no changed file to measure, or no `origin/feat` ref → every cell. The doubt goes to
   the wider run.
 
-`test-libs` runs on commonJS and erlang only (`beam` and `wasm` are `NOT RUNNABLE` there,
-in the full gate too), so a reach of `wasm`/`beam` alone skips stage 8 and a reach of
-`commonJS` runs `--target commonJS`. The two `--list` plans that hold stages 8 and 9 to
+The libraries run inside stage 9, on its targets (decision 996). The `--list` plans that hold stages 9 and 10 to
 their counts (§ Stage times, the plan, the budget) are read with the same `--target`, so
 a narrowed stage is held to its narrowed plan (the root package's runs on the reached targets,
 its one build before them); the restriction audits stay in every plan. Every stage that is not a cell set — formatting,

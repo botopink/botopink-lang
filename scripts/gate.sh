@@ -28,11 +28,7 @@
 #                           function exported (needs erlc)
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
 #                           contract, test tooling, wasm --invoke main
-#   8. zig build test-libs  every `.bp` library the checkout can see, per target
-#                           (a library without tests is still compiled); the
-#                           manifests decide the cells — one that exists is
-#                           green or the stage fails — and every target a
-#                           member's "targets" list excludes is audited
+#   8. (the libraries' stage, test-libs, joined stage 9: decision 996)
 #   9. zig build test-conformance  conformance/ — the conformance suite
 #                           (decisions 457, 466, 989, 990 (6)): the root package
 #                           conformance/modules/ — every self-checking module,
@@ -40,7 +36,10 @@
 #                           `.bpr` (`botopink build --emit-runtime`) and run on
 #                           each target (`botopink run --target <t> <bpr>`),
 #                           every conformance/test/ suite by `botopink test
-#                           --json`; a red module fails the stage
+#                           --json`, and every package `botopink packages
+#                           --list` prints tested in process, one program per
+#                           package per target (decisions 993, 996, 1004);
+#                           a red module, suite or package fails the stage
 #  10. zig build test-docs  every `<!-- example: … -->` of the language reference
 #                           (conformance/docs.md, each cell's docs.md, README.md)
 #                           names a conformance cell or suite, and no
@@ -68,7 +67,7 @@
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
-# STEP gate runs every stage but narrows stages 8 and 9 to the cells the step's
+# STEP gate runs every stage but narrows stage 9 to the cells the step's
 # change reaches (the backend partition, decision 249); on `feat`, `main`, a
 # detached HEAD or any other branch the FULL gate runs every cell. The first
 # line the gate prints names the mode and why.
@@ -77,7 +76,7 @@
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
 #             the code cache of the dependencies' modules, the cell durations)
 #             under this checkout and each sibling library repository, naming
-#             each, and pass `--cold` to stages 8 and 9 (the code cache is not read
+#             each, and pass `--cold` to stage 9 (the code cache is not read
 #             there). Every test and every cell runs on every run (decision 510);
 #             `--cold` only drops the caches the compiler builds from.
 #             Required for the run that decides a merge: a stale cache entry can
@@ -107,7 +106,7 @@
 #             from this list: it keeps no list of stages of its own.
 #
 #             `--list-stages --uses-binaries` prints only the stages that run the
-#             installed binaries (test-cli, test-libs, test-conformance, test-docs,
+#             installed binaries (test-cli, test-conformance, test-docs,
 #             tsc-check): the jobs that need the build job's artifact.
 #
 #   --list-rows
@@ -135,7 +134,7 @@
 #
 #   --prebuilt
 #             the binaries are already in zig-out/bin (a CI job that downloaded
-#             them): the stages that run them (`test-cli`, `test-libs`,
+#             them): the stages that run them (`test-cli`,
 #             `test-conformance`, `test-docs`) pass `-Dprebuilt=true` to
 #             `zig build`, so no stage compiles or installs the compiler again
 #             (build.zig). The gate fails when zig-out/bin/botopink is missing.
@@ -153,7 +152,7 @@
 # runs stage 1 and stops: what the commit's diff can affect is nothing that
 # gate did not already run on the same bytes.
 #
-# Every stage's line ends with its wall clock and CPU-seconds, stages 8–10 are
+# Every stage's line ends with its wall clock and CPU-seconds, stages 9 and 10 are
 # held to the plan their runners' `--list` prints (§ counts), and the last line
 # is the run's total against the budget (§ budget).
 #
@@ -162,10 +161,10 @@ set -euo pipefail
 
 # § stage names — the stages in the order the gate runs them. `--list-stages`
 # prints this list; a CI job runs one name (`--stage`).
-STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-libs test-conformance test-docs tsc-check test-web)
+STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-conformance test-docs tsc-check test-web)
 # The stages that run the installed binaries (zig-out/bin) stage 2 builds; every other stage
 # (but `build` itself) reads sources only. `--list-stages --uses-binaries` prints these.
-BIN_STAGES=(test-cli test-libs test-conformance test-docs tsc-check)
+BIN_STAGES=(test-cli test-conformance test-docs tsc-check)
 # The stages a CI row runs one target at a time (`--list-rows`, `--target`; decision 1004 (2)),
 # and their targets, in the order the rows are listed.
 PER_TARGET_STAGES=(test-conformance)
@@ -306,8 +305,8 @@ tdir="$par"
 # ── § step gate and full gate ────────────────────────────────────────────────
 # Decision 460: the branch decides the mode, structurally — a flag, a variable
 # or a file a commit sets cannot (decision 67). On a `front/*` branch the gate is
-# the STEP gate: every stage runs, and the cells of stages 8 (test-libs) and 9
-# (test-conformance) are the ones the step's change reaches, by the backend
+# the STEP gate: every stage runs, and the cells of stage 9 (test-conformance,
+# the libraries included) are the ones the step's change reaches, by the backend
 # partition of decision 249 (scripts/lib/gate-mode.sh). On `feat`, `main`, a
 # detached HEAD or any other branch it is the FULL gate: every stage, every cell,
 # every library. The step's change is the working tree against the merge-base
@@ -320,9 +319,7 @@ tdir="$par"
 gate_branch="$(git symbolic-ref --short -q HEAD || true)"
 gate_kind="$(gate_mode "$gate_branch")"
 lang_args=()   # test-conformance's target subset (empty: every target)
-libs_args=()   # test-libs' target subset (empty: its default targets)
 run_lang=1
-run_libs=1
 if [ "$gate_kind" = step ]; then
     if gate_base="$(git merge-base HEAD refs/remotes/origin/feat 2>/dev/null)"; then
         gate_changed="$({ git diff --no-renames --name-only "$gate_base"; git ls-files --others --exclude-standard; } | sort -u)"
@@ -336,15 +333,9 @@ if [ "$gate_kind" = step ]; then
     if [ "$reach_all" -eq 1 ]; then
         printf 'gate: step gate (branch %s): reaches every backend (%s)\n' "$gate_branch" "$reach_why"
     else
-        lib_targets=""
-        for t in ${reach_targets//,/ }; do
-            case "$t" in commonJS|erlang) lib_targets="${lib_targets:+$lib_targets,}$t" ;; esac
-        done
         if [ -n "$reach_targets" ]; then lang_args=(--target "$reach_targets"); else run_lang=0; fi
-        if [ -n "$lib_targets" ]; then libs_args=(--target "$lib_targets"); else run_libs=0; fi
-        printf 'gate: step gate (branch %s): %s; test-conformance %s, test-libs %s\n' "$gate_branch" "$reach_why" \
-            "$([ "$no_conformance" -eq 1 ] && echo 'not run (--no-conformance)' || { [ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached'; })" \
-            "$([ "$run_libs" -eq 1 ] && echo "on $lib_targets" || echo 'skipped, no library cell reached')"
+        printf 'gate: step gate (branch %s): %s; test-conformance %s\n' "$gate_branch" "$reach_why" \
+            "$([ "$no_conformance" -eq 1 ] && echo 'not run (--no-conformance)' || { [ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached'; })"
     fi
 else
     if [ -n "$gate_branch" ]; then gate_where="branch $gate_branch"; else gate_where="detached HEAD"; fi
@@ -440,7 +431,7 @@ unset $(git rev-parse --local-env-vars)
 
 # ── § green-tree record ──────────────────────────────────────────────────────
 # What a gate reads: this checkout's working tree and every sibling library
-# checkout `test-libs` reaches (`<checkout root>/repository/*`), under one
+# checkout the conformance stage's libraries reach (`<checkout root>/repository/*`), under one
 # toolchain. `tree_key` hashes exactly that — each repository's working tree as
 # `git write-tree` would record it with every change added (a scratch index,
 # seeded from the real one so unchanged files are not re-read), plus the
@@ -540,7 +531,7 @@ if [ "$cold" -eq 1 ]; then
     rm -rf modules/compiler-core/.botopinkbuild/runtime-cache
     # Every build cache lives under a `.botopinkbuild/cache/` (decision 225):
     # the one of each cache root this gate reads — this checkout and each
-    # sibling library repository `test-libs` reaches — goes, so no stage
+    # sibling library repository the conformance stage reaches — goes, so no stage
     # answers an erlang verdict, a `.beam` or a cell's start order from a
     # previous run. Each deleted directory is named.
     cold_top="$root"
@@ -584,18 +575,13 @@ cat "$par/0.out"
 pass "zig build test — $(stage_time "$par/0.time")"
 fi
 
-# ── § the plan of stages 8–10 ────────────────────────────────────────────────
-# What stages 8, 9 and 10 must run, read from their own runners before they
+# ── § the plan of stages 9 and 10 ────────────────────────────────────────────
+# What stages 9 and 10 must run, read from their own runners before they
 # start: `--list` prints the plan and spawns nothing. After each stage, the
 # count it printed is held to its plan (§ counts), so a stage cannot be
 # narrowed to win time — a run that did fewer cells than the manifests and the
 # trees declare fails the gate, green or not.
-want test-libs || run_libs=0
 want test-conformance || run_lang=0
-if [ "$run_libs" -eq 1 ]; then
-    bash scripts/test-libs.sh --list ${libs_args[@]+"${libs_args[@]}"} >"$par/plan.libs" 2>"$par/plan.libs.err" ||
-        { cat "$par/plan.libs.err"; fail "scripts/test-libs.sh --list"; }
-fi
 if [ "$run_lang" -eq 1 ]; then
     bash conformance/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.conformance" 2>"$par/plan.conformance.err" ||
         { cat "$par/plan.conformance.err"; fail "conformance/run.sh --list"; }
@@ -611,7 +597,7 @@ fi
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
 # directories, stay one stage and run in order inside it. The pools inside
-# `test-libs` and `test-conformance` admit a job only while the
+# `test-conformance` and `tsc-check` admit a job only while the
 # machine's runnable threads are at most its CPUs, so running them together
 # shares the CPUs rather than multiplying the load.
 #
@@ -658,8 +644,11 @@ budget_reserve_mib=3072
 budget_web_mib=7700      # test-web 7.39 GiB, rounded up; counted only when test-web runs in this invocation
 budget_cli_mib=3500      # test-cli 3.45 GiB, rounded up; counted only when test-cli runs in this invocation
 budget_fixed_mib=$((budget_web_mib + budget_cli_mib)) # both, the whole gate's
-budget_libs_mib=3700     # a test-libs job (rakun-ssr 3.55 GiB)
-budget_conf_mib=1024     # a test-conformance job (0.89 GiB)
+# A test-conformance job is now also one library's program on one target (decision 996), so its
+# figure is a library's (rakun-ssr 3.55 GiB); pool.sh's libraries' slot names no stage any more and
+# takes nothing (`pool_budget_for` is given no test-libs, and the whole gate's 50 % goes to conformance).
+budget_libs_mib=3700
+budget_conf_mib=3700
 budget_tsc_mib=768       # a tsc-check job (0.62 GiB)
 # shellcheck source=lib/pool.sh
 . scripts/lib/pool.sh
@@ -679,21 +668,18 @@ share_alone=0
 if [ "${#selected[@]}" -gt 0 ]; then
     # A selected run splits the total among the pool stages it runs, not among the three.
     npools=0
-    for s in test-libs test-conformance tsc-check; do want "$s" && npools=$((npools + 1)); done
+    for s in test-conformance tsc-check; do want "$s" && npools=$((npools + 1)); done
     [ "$npools" -gt 0 ] && share_alone=$((100 / npools))
 fi
 share() { # <percent> — that part of the total, at least 1 (pool.sh)
     if [ "$share_alone" -gt 0 ]; then pool_share "$budget_total" "$share_alone"; else pool_share "$budget_total" "$1"; fi
 }
-echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), tsc-check $(share 10)"
+echo "gate: job budget $budget_total — test-conformance $(share 80), tsc-check $(share 10)"
 want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
-if [ "$run_libs" -eq 1 ]; then
-    launch 5 zig build test-libs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"} -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"}
-fi
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 conformance_cmd "$(share 30)" ${lang_args[@]+"${lang_args[@]}"}
+    launch 6 conformance_cmd "$(share 80)" ${lang_args[@]+"${lang_args[@]}"}
 fi
 want test-docs && launch 7 zig build test-docs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 want tsc-check && launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
@@ -710,17 +696,6 @@ counted() {
 check_counts() { # <n>
     local out="$par/$1.out" line p f n a x
     case "$1" in
-        5)  # test-libs: P + F + N cells, A + X audits (scripts/test-libs.sh)
-            line="$(plain "$out" | grep -E '^test-libs: [0-9]+ passed' | tail -1)"
-            p="$(sed -nE 's/^test-libs: ([0-9]+) passed.*/\1/p' <<<"$line")"
-            f="$(sed -nE 's/.* ([0-9]+) failed.*/\1/p' <<<"$line")"
-            n="$(sed -nE 's/.* ([0-9]+) without tests.*/\1/p' <<<"$line")"
-            a="$(sed -nE 's/.* ([0-9]+) restrictions audited.*/\1/p' <<<"$line")"
-            x="$(sed -nE 's/.* ([0-9]+) restrictions not structural.*/\1/p' <<<"$line")"
-            counted 5 "stage 8 (test-libs) cells" "$(( ${p:-0} + ${f:-0} + ${n:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -c '^cell:')"
-            counted 5 "stage 8 (test-libs) restriction audits" "$(( ${a:-0} + ${x:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -cx 'audit')"
-            echo "plan: $(( ${p:-0} + ${f:-0} + ${n:-0} )) cells and $(( ${a:-0} + ${x:-0} )) audits, as --list declares"
-            ;;
         6)  # test-conformance: `cells: <J> jobs — <R> run, <A> audits` (conformance/run.sh)
             line="$(plain "$out" | grep -E '^cells: [0-9]+ jobs' | tail -1)"
             counted 6 "stage 9 (test-conformance) jobs" "$(sed -nE 's/^cells: ([0-9]+) jobs.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.conformance")"
@@ -736,10 +711,10 @@ check_counts() { # <n>
 }
 
 report() { # <n> <stage title> <pass text> <fail text>
-    local names=(x x test-bpmp beam-export-audit test-cli test-libs test-conformance test-docs tsc-check test-web)
-    want "${names[$1]}" || return 0
+    local names=(x x test-bpmp beam-export-audit test-cli x test-conformance test-docs tsc-check test-web)
+    [ "${names[$1]}" != x ] && want "${names[$1]}" || return 0
     stage "$2"
-    if { [ "$1" = 5 ] && [ "$run_libs" -eq 0 ]; } || { [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; }; then
+    if [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; then
         echo "0 0 0" >"$par/$1.time"
         if [ "$1" = 6 ] && [ "$no_conformance" -eq 1 ]; then
             pass "$3 — not run: --no-conformance (decision 470)"
@@ -757,7 +732,6 @@ report 2 "zig build test-bpmp" "zig build test-bpmp" "zig build test-bpmp"
 report 3 "beam export audit" "beam export audit" \
     "scripts/beam_export_audit.sh (a REJECTED block above names the module, function and reason)"
 report 4 "zig build test-cli" "zig build test-cli" "zig build test-cli"
-report 5 "zig build test-libs" "zig build test-libs" "zig build test-libs"
 report 6 "zig build test-conformance" "zig build test-conformance" \
     "zig build test-conformance (a FAIL line above names the module or the suite; a red module's cases and their differences follow it)"
 report 7 "zig build test-docs" "zig build test-docs" \

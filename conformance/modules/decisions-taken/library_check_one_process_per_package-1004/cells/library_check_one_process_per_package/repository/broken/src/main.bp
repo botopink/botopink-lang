@@ -1,0 +1,5 @@
+//// A library whose manifest is refused (`"targets"` is no list): `not-a-package`, never loaded.
+
+pub fn four() -> i32 {
+    return 4;
+}

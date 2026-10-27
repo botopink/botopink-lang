@@ -1,0 +1,13 @@
+//// A library whose tests pass: the library check answers it `ok` on every target.
+
+pub fn one() -> i32 {
+    return 1;
+}
+
+test "one is one" {
+    assert one() == 1;
+}
+
+test "two is two" {
+    assert one() + one() == 2;
+}

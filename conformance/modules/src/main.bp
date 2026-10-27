@@ -7,8 +7,9 @@
 //// a line with no module, is a red). The modules' own dependency (`conformance-lib`) is declared
 //// here too: a loaded package reads the caller's modules for a dependency it names.
 ////
-//// Decision 996 (L5): the libraries and the workspace members join this program as more lines of
-//// their own kind (`runLibrary`), beside the modules; until then nothing of a library runs here.
+//// The libraries and the workspace members (decisions 993, 996, 1004) are not loaded here: `run.sh`
+//// runs one program per package per target beside this one (`conformance/libraries/`), so a package
+//// that fails its build or hangs is red alone.
 
 import {compiler, compiler.RunFailure, io.terminal.print} from "std";
 

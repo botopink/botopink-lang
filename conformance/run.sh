@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # run.sh — botopink-lang's conformance suite (decisions 457, 466, 989, 990 (6)):
 # the root package `modules/` — every self-checking module, loaded and run in one
-# program — built once into one `.bpr` and run on each target, and every `test/`
-# suite run by `botopink test --json` (`zig build test-conformance`, the gate's
-# conformance stage).
+# program — built once into one `.bpr` and run on each target, every `test/`
+# suite run by `botopink test --json`, and every library and workspace member of
+# the checkout tested in process, one program per package per target (decisions
+# 993, 995, 996, 1004) (`zig build test-conformance`, the gate's conformance
+# stage).
 #
 # Usage:
 #   conformance/run.sh [--target commonJS|erlang|wasm|beam|all|<t>,<t>…]
@@ -16,13 +18,14 @@
 #               a target (decision 67).
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
-#   --only      run the root package or one suite (modules, test/case_arms.bp,
-#               test/pub_val_in_a_test); may repeat. One module alone runs by
+#   --only      run the root package, the libraries or one suite (modules,
+#               libraries, test/case_arms.bp, test/pub_val_in_a_test); may repeat. One module alone runs by
 #               its own path: `cd modules/<m> && botopink run --target <t>`
 #   --jobs      parallel jobs; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel jobs below
 #   --list      print the plan and run nothing: one `<path>\t<target>\t<run|audit>`
-#               line per job (the root package's path is `modules`). A whole run ends with
+#               line per job (the root package's path is `modules`, a library's
+#               `libraries/<name>`). A whole run ends with
 #               `cells: <J> jobs — <R> run, <A> audits`, and `scripts/gate.sh`
 #               holds J to the number of lines `--list` prints: a run cannot
 #               do fewer jobs than the tree declares
@@ -34,6 +37,10 @@
 #               whole run of the suite (no --only) starts with it. (A loaded
 #               package's narrowing is the compiler's audit at `emit`, decision
 #               989 (3): `load-excluded-target-compiles`.)
+#   --lib-timeout <s>
+#               the wall-clock bound of one library's program on one target
+#               (default 900 s); a run past it is that pair's red. `--self-test`
+#               lowers it to show a hang caught; it never skips a pair
 #   --cold      each `botopink` the run spawns gets `--cold` — the code cache of the
 #               dependencies is not read (decision 509 (5)); `scripts/gate.sh
 #               --cold` passes it
@@ -62,6 +69,10 @@
 #                      --target <t> --json`, keyed <name>::<test>. `"targets"`
 #                      in its botopink.json narrows it, audited — § the targets
 #                      of a test suite
+#   libraries/<name>   every package `botopink packages --list` prints (decisions
+#                      993, 995, 996, 1004): one program per package per target,
+#                      its own process on the pool, loading the package by name
+#                      and running its tests (``m.`test`()``) — § the libraries
 #
 # Outcome rules: a job passes or it fails, and a run fails on any `FAIL`. There
 # is no list of known failures (decision 154): a red module is red until the
@@ -80,6 +91,7 @@ suite=""
 self_test=0
 cold=0
 list=0
+lib_timeout=900
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2 ;;
@@ -97,7 +109,9 @@ while [ $# -gt 0 ]; do
         --self-test) self_test=1; shift ;;
         --list) list=1; shift ;;
         --cold) cold=1; shift ;;
-        -h|--help) sed -n '2,66p' "$0"; exit 0 ;;
+        --lib-timeout) lib_timeout="$2"; shift 2 ;;
+        --lib-timeout=*) lib_timeout="${1#*=}"; shift ;;
+        -h|--help) sed -n '2,/^set -uo pipefail/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -191,8 +205,13 @@ compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
 [ -n "$lib_root" ] || lib_root="$(cd "$(dirname "$compiler")/../.." && pwd)/libs"
 command -v node >/dev/null || { echo "run.sh: node is required" >&2; exit 2; }
 
+case "$lib_timeout" in ''|*[!0-9]*|0) echo "run.sh: --lib-timeout must be a positive count of seconds (got '$lib_timeout')" >&2; exit 2 ;; esac
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/bp-conformance.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
+# A library's program is written inside the checkout (§ the libraries), under a
+# directory of this run's own, removed with the scratch.
+lib_run=""
+trap 'rm -rf "$work"; [ -z "$lib_run" ] || rm -rf "$lib_run"' EXIT
 
 # ── § self-test ───────────────────────────────────────────────────────────────
 # § the targets of a test suite, shown firing. A synthetic suite — two project
@@ -332,12 +351,49 @@ FAKE
                 || { echo "self-test: the stub run '$shape' did not name the suite and the target:" >&2; sed 's/^/    /' "$st/fake-$shape.txt" >&2; missing=1; }
         fi
     done
+    # The libraries (§ the libraries, decision 1004 (7)): a checkout of four packages — `good` answers, `hard`
+    # fails its program's build, `hangs` never ends, `broken`'s manifest is refused (`not-a-package`) — each its
+    # own process, so each is red alone and `good` answers; a disabled.txt line on a pair that passes, one
+    # on a target that runs, and one on a pair that fails.
+    local lsuite="$st/lib-suite" fixture="$here/modules/decisions-taken/library_check_one_process_per_package-1004/cells/library_check_one_process_per_package/repository"
+    mkdir -p "$lsuite/libraries"
+    cp "$here/libraries/botopink.json" "$lsuite/libraries/botopink.json"
+    cp -R "$fixture" "$lsuite/repository"
+    printf '%s\n' '# the self-test' 'good beam — decision 996' 'hard beam — decision 996' 'good commonJS — decision 996' >"$lsuite/disabled.txt"
+    bash "$runner" --suite "$lsuite" --only libraries --target commonJS,beam --compiler "$compiler" --lib-root "$lib_root" \
+        --jobs "$jobs" --lib-timeout 15 >"$st/lib-raw.txt" 2>&1
+    code=$?
+    strip <"$st/lib-raw.txt" >"$st/lib-report.txt"
+    [ $code -eq 1 ] || { echo "self-test: the synthetic libraries exited $code, expected 1" >&2; missing=1; }
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qF -- "$line" "$st/lib-report.txt" || { echo "self-test: the libraries' report lacks: $line" >&2; missing=1; }
+    done <<'WANT'
+[commonJS] libraries/hard — the program ended without its summary
+[commonJS] libraries/hangs — no answer within 15s (a hang): the run was stopped
+[beam] libraries/hangs — no answer within 15s (a hang): the run was stopped
+[commonJS] libraries/broken — not-a-package (botopink packages --list: repository/broken) — never loaded
+[beam] libraries/broken — not-a-package (botopink packages --list: repository/broken) — never loaded
+[beam] libraries/good — listed in conformance/disabled.txt, and it passes: delete its line (decision 996 (3))
+[*] conformance/disabled.txt — line 4 switches off good on commonJS, a pair that runs
+disabled [beam] libraries/hard
+libraries: 8 package × target pairs — 1 ok, 0 no tests, 0 excluded, 6 failed, 1 disabled
+2 disabled (shrink-only, decision 996)
+cells: 8 jobs — 8 run, 0 audits
+WANT
+    if grep -qE 'FAIL .*\[commonJS\] libraries/good|FAIL .*\[beam\] libraries/hard' "$st/lib-report.txt"; then
+        echo "self-test: a library that answers, or a disabled pair that fails, was reported red:" >&2
+        grep -E 'libraries/good|libraries/hard' "$st/lib-report.txt" >&2
+        missing=1
+    fi
     if [ $missing -ne 0 ]; then
         echo "self-test: FAILED — the synthetic suite's report was:" >&2
         sed 's/^/    /' "$st/report.txt" >&2
+        echo "self-test: the synthetic libraries' report was:" >&2
+        sed 's/^/    /' "$st/lib-report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -349,12 +405,14 @@ if [ ${#only[@]} -gt 0 ]; then
         f="${f%/}"
         case "$f" in
             modules/*) echo "run.sh: --only takes the root package (modules), not one module: run $f by its path (cd $f && botopink run --target <t>)" >&2; exit 2 ;;
+            libraries/*) echo "run.sh: --only takes the libraries whole (libraries), not one package: the plan is botopink packages --list's" >&2; exit 2 ;;
         esac
         files+=("$f")
     done
 else
     while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp 2>/dev/null; ls -d test/*/ 2>/dev/null | sed 's:/$::'; } | sort)
     [ ! -f "$here/modules/botopink.json" ] || files+=(modules)
+    [ ! -f "$here/libraries/botopink.json" ] || files+=(libraries)
 fi
 
 # ── one job → result lines in $work/results ──────────────────────────────────
@@ -428,9 +486,8 @@ test_project() { # <dir> <path> <target> <out>
 # One process per target holds every module (989 (8)); a crash or a hang is that
 # target's run red whole.
 #
-# Decision 996 (L5) joins the libraries and the workspace members here, as lines
-# of their own kind in the same program: `roster` then lists them beside the
-# modules, and nothing else of this section changes.
+# The libraries are not lines of this program: one program per package per
+# target beside it (§ the libraries, decision 1004 (1)).
 root_bpr=""      # the `.bpr` the build wrote, empty when it did not build
 root_refusal=""  # why the root package did not build
 
@@ -546,6 +603,224 @@ run_root() { # <target> <out file>
     '
 }
 
+# ── § the libraries ──────────────────────────────────────────────────────────
+# Decisions 993, 995, 996, 1004: every package of the checkout — each library and
+# workspace member `botopink packages --list` prints, run from `libraries/` — is
+# tested in process: one program per package per target, its own process
+# (`botopink run --target <t>`) on the pool, so a load that fails the build, a
+# crash or a hang is that package's answer on that target alone (1004 (1)). The
+# program is the package `libraries/` (its `botopink.json`) with a `src/main.bp`
+# written on every run from the list, never committed: it loads the package by
+# name (`compiler.load(package: …)`) and runs its tests (``m.`test`()``), one line
+# per test and a summary. Each package × target is one job of the plan
+# (`libraries/<name>`), its verdict one of
+#   ok          every test passed
+#   no tests    the package has none (it still loads and builds)
+#   excluded    its `"targets"` excludes the target and the compiler proves it
+#               (989 (3): `.Excluded`; an exclusion it does not prove refuses
+#               the build, `load-excluded-target-compiles`, a red)
+#   FAIL        a test failed, the load or the build refused, the run crashed,
+#               ended without its summary or outlasted `--lib-timeout`;
+#               `not-a-package` (packages --list) is given that verdict and
+#               never loaded
+#   disabled    the pair is listed in `disabled.txt` (decision 996) and failed
+# and the plan's count is the list's: one job per listed name per target.
+#
+# `disabled.txt` (decision 996, a one-time exception to 67): the pairs that did
+# not run when the libraries joined the suite (beam and wasm, which
+# `botopink-lib-test` never ran), one `<package> <target> — decision 996` line
+# each. Shrink-only: a line on another target, a line twice, a malformed line or
+# more lines than it was generated with (`DISABLED_GENERATED`) is a red; a listed
+# pair that passes, or is now excluded, is a red until its line is deleted; a
+# listed pair that fails is `disabled`, printed, and no red. Every run prints
+# `N disabled (shrink-only, decision 996)`.
+DISABLED_GENERATED=117 # the lines `disabled.txt` was generated with; it only goes down
+DISABLED_TARGETS="beam wasm"
+LIB_PROGRAM_TEMPLATE='import {compiler, compiler.Refused, compiler.RunFailure, compiler.TestReport, io.terminal.print} from "std";
+
+//// Written by conformance/run.sh on every run (decisions 993 (2), 1004 (1)): the package
+//// `@PACKAGE@`, loaded by name, its tests run in process on the target this program runs on;
+//// `async { m.`test`() }` is one `Async` whether the tests await or not (989 (2)).
+
+fn indent(text: string) -> string {
+    var out: string[] = [];
+    for (text.split("\n")) { l ->
+        if (l != "") out.push("    " + l);
+    }
+    return out.join("\n");
+}
+
+fn report(answer: Result<TestReport, RunFailure>) -> void {
+    case answer {
+        Ok(r) {
+            var red = 0;
+            for r.cases { c ->
+                if (c.ok) print("ok   " + c.name) else {
+                    red = red + 1;
+                    print("FAIL " + c.name + " — " + c.at + ": " + c.message);
+                    if (c.output != "") print(indent(c.output));
+                }
+            }
+            print("library: "
+                + r.cases.length.toString()
+                + " cases — "
+                + (r.cases.length - red).toString()
+                + " passed, "
+                + red.toString()
+                + " failed");
+        }
+        Error(f) {
+            val kind = case f.kind {
+                .Failed -> "failed";
+                .Abort -> "aborted";
+                .Refused -> "refused";
+                .Excluded -> "excluded";
+            };
+            print("library: " + kind + " — " + f.message);
+            if (f.output != "") print(indent(f.output));
+        }
+    }
+}
+
+fn refused(r: Refused) -> void {
+    print("library: refused at build — "
+        + r.diagnostics.length.toString()
+        + " diagnostics");
+    for (r.diagnostics) { d ->
+        print("    "
+            + d.file
+            + ":"
+            + d.line.toString()
+            + ":"
+            + d.column.toString()
+            + ": "
+            + d.message);
+    }
+}
+
+comptime {
+    val loaded = comptime compiler.load(package: "@PACKAGE@");
+    case loaded {
+        Ok(m) -> compiler.init({ ->
+            val settled = async {
+                val answer = async { m.`test`() };
+                report(await answer);
+            };
+        });
+        Error(r) -> compiler.init({ -> refused(r); });
+    }
+}
+
+pub fn main() -> void {}
+'
+
+# The packages of the checkout: `<name>\t<dir>\t<targets>\t<kind>`, as
+# `botopink packages --list` prints them from `libraries/` (its walk-up, not
+# `--lib-root`'s: std is the checkout's `libs/std`).
+libraries_list() {
+    (cd "$here/libraries" && env -u BOTOPINK_LIB_ROOTS "$compiler" packages --list)
+}
+
+# One package on one target: its program written under the run's own directory
+# inside `libraries/` (the name resolves by the checkout's walk-up), run as its
+# own process under `--lib-timeout`, its printed lines turned into one verdict.
+lib_one() { # <name> <target> <out file>
+    local name="$1" t="$2" out="$3" key="libraries/$1" slug dir code kind dirs logf
+    slug="$(printf '%s-%s' "$name" "$t" | tr '/.' '__')"
+    logf="$work/log-$t-$(printf '%s' "$key" | tr '/.' '__')"
+    kind="$(awk -F '\t' -v n="$name" '$1 == n { print $4 }' "$work/packages" | sort -u | tr '\n' ' ')"
+    dirs="$(awk -F '\t' -v n="$name" '$1 == n { print $2 }' "$work/packages" | tr '\n' ' ')"
+    local status detail
+    if [ "$kind" != "package " ]; then
+        status=fail
+        detail="not-a-package (botopink packages --list: ${dirs% }) — never loaded"
+    else
+        dir="$LIB_RUN/$slug"
+        mkdir -p "$dir/src"
+        cp "$here/libraries/botopink.json" "$dir/botopink.json"
+        printf '%s' "$LIB_PROGRAM_TEMPLATE" | sed "s/@PACKAGE@/$name/g" >"$dir/src/main.bp"
+        (unset BOTOPINK_LIB_ROOTS; cd "$dir" && with_timeout "$LIB_TIMEOUT" "$compiler" run --target "$t" ${cold_flag[@]+"${cold_flag[@]}"} >"$dir/o.txt" 2>"$dir/e.txt")
+        code=$?
+        strip <"$dir/o.txt" >"$dir/out.txt"
+        local summary
+        summary="$(grep -E '^library: ' "$dir/out.txt" | tail -1)"
+        case "$summary" in
+            "library: "*" cases — "*)
+                local n f
+                n="$(sed -nE 's/^library: ([0-9]+) cases.*/\1/p' <<<"$summary")"
+                f="$(sed -nE 's/.* ([0-9]+) failed$/\1/p' <<<"$summary")"
+                if [ "${f:-0}" -gt 0 ]; then
+                    status=fail; detail="$f of $n tests failed"
+                    grep -E '^FAIL |^    ' "$dir/out.txt" >"$logf"
+                elif [ "${n:-0}" -eq 0 ]; then
+                    status=notests; detail=""
+                else
+                    status=ok; detail=""
+                fi
+                if [ $code -ne 0 ] && [ "$status" != fail ]; then
+                    status=fail; detail="botopink run exited $code after its summary"
+                fi ;;
+            "library: excluded — "*) status=excluded; detail="${summary#library: excluded — }" ;;
+            "library: refused at build — "*)
+                status=fail; detail="the load refused (${summary#library: refused at build — })"
+                grep -E '^    ' "$dir/out.txt" >"$logf" ;;
+            "library: "*)
+                status=fail; detail="${summary#library: }"
+                grep -E '^    ' "$dir/out.txt" >"$logf" ;;
+            *)
+                status=fail
+                if [ $code -eq 124 ] || [ $code -eq 137 ]; then
+                    detail="no answer within ${LIB_TIMEOUT}s (a hang): the run was stopped"
+                else
+                    detail="the program ended without its summary (botopink run exited $code): $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
+                    strip <"$dir/e.txt" | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled|wrote) ' | head -n 40 | sed 's/^/    /;s/^    //' >"$logf"
+                fi ;;
+        esac
+        rm -rf "$dir"
+    fi
+    # Decision 996 (3): a listed pair that passes or is excluded leaves the list; one that fails is `disabled`.
+    if grep -qxF -- "$name $t" "$work/disabled-pairs" 2>/dev/null; then
+        case "$status" in
+            ok|notests) status=fail; detail="listed in conformance/disabled.txt, and it passes: delete its line (decision 996 (3))"; rm -f "$logf" ;;
+            excluded) status=fail; detail="listed in conformance/disabled.txt, and its \"targets\" excludes $t, proven: delete its line (decision 996 (3))" ;;
+            fail) status=disabled; rm -f "$logf" ;;
+        esac
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$t" "$key" "$status" "$detail" >"$out"
+}
+
+# `disabled.txt` read and held to its rule (decision 996 (3)): its pairs in
+# `$work/disabled-pairs` (`<package> <target>`), each line it breaks a `*` red.
+read_disabled() {
+    local f="$here/disabled.txt" n=0 line pkg tgt rest lineno=0
+    : >"$work/disabled-pairs"
+    [ -f "$f" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        lineno=$((lineno + 1))
+        case "$line" in ''|'#'*) continue ;; esac
+        read -r pkg tgt rest <<<"$line"
+        if [ "$rest" != "— decision 996" ] || [ -z "$pkg" ]; then
+            printf '*\tconformance/disabled.txt\tfail\t%s\n' "line $lineno is not \`<package> <target> — decision 996\`: $line" >"$work/r-plan-disabled-$lineno"
+            continue
+        fi
+        case " $DISABLED_TARGETS " in
+            *" $tgt "*) ;;
+            *) printf '*\tconformance/disabled.txt\tfail\t%s\n' "line $lineno switches off $pkg on $tgt, a pair that runs (decision 996 (3): only the pairs that did not run when the list was generated)" >"$work/r-plan-disabled-$lineno"; continue ;;
+        esac
+        if grep -qxF -- "$pkg $tgt" "$work/disabled-pairs"; then
+            printf '*\tconformance/disabled.txt\tfail\t%s\n' "line $lineno lists $pkg $tgt twice" >"$work/r-plan-disabled-$lineno"
+            continue
+        fi
+        printf '%s %s\n' "$pkg" "$tgt" >>"$work/disabled-pairs"
+        n=$((n + 1))
+    done <"$f"
+    if [ "$n" -gt "$DISABLED_GENERATED" ]; then
+        printf '*\tconformance/disabled.txt\tfail\t%s\n' "$n lines, more than the $DISABLED_GENERATED it was generated with: the list only shrinks (decision 996 (3))" >"$work/r-plan-disabled-count"
+    fi
+    DISABLED_COUNT="$n"
+}
+DISABLED_COUNT=0
+
 run_one() { # <path> <target>
     local path="$1" t="$2" slug dir out
     slug="$(printf '%s-%s' "$path" "$t" | tr '/.' '__')"
@@ -554,6 +829,7 @@ run_one() { # <path> <target>
     export BOTOPINK_LIB_ROOTS="$lib_root"
     case "$path" in
         modules) run_root "$t" "$out" ;;
+        libraries/*) lib_one "${path#libraries/}" "$t" "$out" ;;
         test/*.bp)
             project "$dir"
             cp "$here/$path" "$dir/test/$(basename "$path")"
@@ -599,8 +875,9 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f run_one run_root test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
-export here work compiler lib_root
+export -f run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export here work compiler lib_root LIB_PROGRAM_TEMPLATE
+export LIB_TIMEOUT="$lib_timeout"
 
 if [ $self_test -eq 1 ]; then
     self_test; exit $?
@@ -674,6 +951,13 @@ for f in "${files[@]}"; do
         # The root package: one job per target of the run, each running the one `.bpr`.
         modules)
             for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done ;;
+        # The libraries (§ the libraries): one job per package name `packages --list` prints, per target.
+        libraries)
+            libraries_list >"$work/packages" 2>"$work/packages.err" ||
+                { echo "run.sh: botopink packages --list failed in $here/libraries:" >&2; cat "$work/packages.err" >&2; exit 2; }
+            while IFS= read -r n; do
+                for t in "${targets[@]}"; do printf 'libraries/%s\t%s\trun\n' "$n" "$t" >>"$jobs_list"; done
+            done < <(cut -f1 "$work/packages" | LC_ALL=C sort -u) ;;
         test/*.bp|test/*)
             declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
             # Only a project suite narrows (decision 536): its manifest's "targets"; a single file declares nothing.
@@ -687,7 +971,7 @@ for f in "${files[@]}"; do
                     case " $TEST_TARGETS " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac
                 done
             fi ;;
-        *) echo "run.sh: not the root package or a suite (modules, test/<name>.bp, test/<project>): $f" >&2; exit 2 ;;
+        *) echo "run.sh: not the root package, the libraries or a suite (modules, libraries, test/<name>.bp, test/<project>): $f" >&2; exit 2 ;;
     esac
 done
 # `--list`: the plan is the answer — one line per job, nothing spawned.
@@ -710,6 +994,16 @@ if grep -q '^modules	' "$jobs_list"; then
     ROOT_LISTED="$(listed_modules | grep -c . || true)"
 fi
 export ROOT_BPR ROOT_REFUSAL ROOT_LISTED
+# The libraries' programs are written inside the checkout (the name resolves by its walk-up), under
+# a directory of this run's own (§ the libraries); the disabled pairs are read once.
+LIB_RUN=""
+if grep -q '^libraries/' "$jobs_list"; then
+    lib_run="$here/libraries/.run/$(basename "$work")"
+    mkdir -p "$lib_run"
+    LIB_RUN="$lib_run"
+fi
+read_disabled
+export LIB_RUN
 {
     while IFS=$'\t' read -r f t what; do
         case "$what" in
@@ -730,9 +1024,9 @@ jobs_audit="$(ls "$work" | grep -c '^r-audit-' || true)"
 jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vcE '^r-(narrowing|plan)-') ))"
 
 # ── report ────────────────────────────────────────────────────────────────────
-node - "$work/results" "$jobs_ran" "$jobs_audit" "$work" <<'EOF'
+node - "$work/results" "$jobs_ran" "$jobs_audit" "$work" "$DISABLED_COUNT" "$([ -f "$here/disabled.txt" ] && echo 1 || echo 0)" <<'EOF'
 const fs = require("fs");
-const [resultsPath, jobsRan, jobsAudit, work] = process.argv.slice(2);
+const [resultsPath, jobsRan, jobsAudit, work, disabledCount, hasDisabled] = process.argv.slice(2);
 const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 
 // <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
@@ -744,7 +1038,10 @@ const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 // agree on). A red module's FAIL line is followed by what the root program
 // printed under its verdict: the module's red cases and their differences.
 let fails = 0, oks = 0, audited = 0;
-const out = [];
+const out = [], disabled = [];
+// The libraries' verdicts per target (decisions 993 (6), 996): ok, no tests, excluded, FAIL, disabled.
+const libs = { ok: 0, notests: 0, excluded: 0, fail: 0, disabled: 0 };
+const isLib = (k) => k.startsWith("libraries/");
 const byTarget = new Map();
 const tally = (t, k) => {
   if (!byTarget.has(t)) byTarget.set(t, { ok: 0, fail: 0 });
@@ -753,8 +1050,11 @@ const tally = (t, k) => {
 for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
   if (!line) continue;
   const [t, key, status, detail] = line.split("\t");
-  if (status === "ok") { oks++; tally(t, "ok"); continue; }
+  if (isLib(key)) libs[status in libs ? status : "fail"]++;
+  if (status === "ok" || status === "notests") { oks++; tally(t, "ok"); continue; }
   if (status === "audit") { audited++; continue; }
+  if (status === "excluded") continue;
+  if (status === "disabled") { disabled.push(`disabled [${t}] ${key}`); continue; }
   out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${detail || ""}`);
   const log = `${work}/log-${t}-${key.replace(/[/.]/g, "_")}`;
   if (fs.existsSync(log)) {
@@ -765,6 +1065,10 @@ for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
 }
 for (const l of out) console.log(l);
 if (audited) console.log(`narrowings: ${audited} exclusion${audited === 1 ? "" : "s"} audited — each stands on a host binding the target does not have`);
+for (const l of disabled) console.log(l);
+const libTotal = Object.values(libs).reduce((a, b) => a + b, 0);
+if (libTotal) console.log(`libraries: ${libTotal} package × target pairs — ${libs.ok} ok, ${libs.notests} no tests, ${libs.excluded} excluded, ${libs.fail} failed, ${libs.disabled} disabled`);
+if (hasDisabled === "1") console.log(`${disabledCount} disabled (shrink-only, decision 996)`);
 const order = ["commonJS", "erlang", "wasm", "beam", "*"];
 const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
