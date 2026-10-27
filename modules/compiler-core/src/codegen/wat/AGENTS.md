@@ -1426,7 +1426,7 @@ to (`<Target>_<member>`, `methodOf`) crosses under that symbol by the same rule 
 its target; an `implement` member with no written `-> R` does not), and an importer imports it as it
 imports a function. **Module `val`s** (decision 1055 (6)): each of the unit's own module-level `val`s
 (and `var`s) is set once, by its own `__bp_init`, and exported only through its accessor
-`get_<name>` (a `var` also `set_<name>`), through 1037's wrapper when its type names a type
+`val:<name>` (a `var` also `set:<name>`; decision 1080, the `<class>:<name>` spelling no user identifier can clash with), through 1037's wrapper when its type names a type
 definition (`ProgramUnit.vals`); no global is exported. An importer emits no initialiser for a `val`
 linked from such a unit (`Emitter.foreign_vals`; written with a scalar type its initialiser is not even
 read, so what only it calls is not linked) and drops that unit's `_`-named statements; each

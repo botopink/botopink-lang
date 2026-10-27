@@ -1981,8 +1981,8 @@ const ProgramUnit = struct {
     /// here: its exports are its face's lines (`runtimeUnit.faceOfBytes`).
     face: ?[]const u8 = null,
     /// Decision 1055 (6) — each module-level `val` it declares, read by
-    /// another unit through its accessor `get_<name>` (and, a `var`, set
-    /// through `set_<name>`), with the type the boundary carries.
+    /// another unit through its accessor `val:<name>` (and, a `var`, set
+    /// through `set:<name>`), with the type the boundary carries.
     vals: std.StringHashMapUnmanaged(UnitVal) = .empty,
 
     /// Whether the unit exports an accessor of its `val` `name` (`vals`, or,
@@ -1991,9 +1991,9 @@ const ProgramUnit = struct {
         if (pu.vals.get(name)) |v| return .{ .mutable = v.mutable };
         const face = pu.face orelse return null;
         var buf: [256]u8 = undefined;
-        const getter = std.fmt.bufPrint(&buf, "(export \"get_{s}\" ", .{name}) catch return null;
+        const getter = std.fmt.bufPrint(&buf, "(export \"val:{s}\" ", .{name}) catch return null;
         if (std.mem.indexOf(u8, face, getter) == null) return null;
-        const setter = std.fmt.bufPrint(&buf, "(export \"set_{s}\" ", .{name}) catch return null;
+        const setter = std.fmt.bufPrint(&buf, "(export \"set:{s}\" ", .{name}) catch return null;
         return .{ .mutable = std.mem.indexOf(u8, face, setter) != null };
     }
 };
@@ -3314,7 +3314,7 @@ fn unitBoundary(
     }
     // Decision 1055 (6) — each module-level `val` of the unit is set once,
     // by its own `__bp_init`, and read by another unit through its accessor
-    // `get_<name>` (a `var` set through `set_<name>`): no global is exported.
+    // `val:<name>` (a `var` set through `set:<name>`): no global is exported.
     for (own_program.decls) |d| {
         if (d != .val or isSyntheticEntrypointVal(d.val)) continue;
         const v = d.val;
@@ -3330,8 +3330,8 @@ fn unitBoundary(
             .params = try ar.dupe(wat.Param, &.{.{ .name = "v", .ty = g.ty }}),
             .body = .{ .lines = try ar.dupe(wat.Line, &.{ .{ .instr = .{ .local_get = "v" } }, .{ .instr = .{ .global_set = v.name } } }), .stack = .none },
         } else null;
-        const get_name = try std.fmt.allocPrint(ar, "get_{s}", .{v.name});
-        const set_name = try std.fmt.allocPrint(ar, "set_{s}", .{v.name});
+        const get_name = try std.fmt.allocPrint(ar, "val:{s}", .{v.name});
+        const set_name = try std.fmt.allocPrint(ar, "set:{s}", .{v.name});
         for ([_]?wat.Func{ getter, setter }, [_][]const u8{ get_name, set_name }) |maybe, name| {
             var f = maybe orelse continue;
             if (runtimeUnit.crossesAbstract(try funcTypeOf(ar, f))) {
@@ -3410,14 +3410,14 @@ fn unitBoundary(
         const uv: UnitVal = .{ .ty = runtimeUnit.abstractOf(defs, fv.ty), .mutable = found.mutable };
         const getter = try std.fmt.allocPrint(ar, "__val_{s}", .{sym});
         const setter = try std.fmt.allocPrint(ar, "__valset_{s}", .{sym});
-        const get_name = try std.fmt.allocPrint(ar, "get_{s}", .{bare});
+        const get_name = try std.fmt.allocPrint(ar, "val:{s}", .{bare});
         if (fv.ty.defIndex() != null) {
             try imports.append(ar, .{ .import = .{ .module = fv.stem, .name = get_name, .func = try runtimeUnit.abiSymbol(ar, getter), .type = .{ .result = uv.ty } } });
             try items.append(ar, .{ .func = try runtimeUnit.importThunk(ar, getter, .{ .result = fv.ty }) });
         } else try imports.append(ar, .{ .import = .{ .module = fv.stem, .name = get_name, .func = getter, .type = .{ .result = uv.ty } } });
         if (uv.mutable) try imports.append(ar, .{ .import = .{
             .module = fv.stem,
-            .name = try std.fmt.allocPrint(ar, "set_{s}", .{bare}),
+            .name = try std.fmt.allocPrint(ar, "set:{s}", .{bare}),
             .func = setter,
             .type = .{ .params = try ar.dupe(ValType, &.{uv.ty}) },
         } });

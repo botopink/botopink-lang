@@ -6277,7 +6277,7 @@ test "wat: units ---- decision 1055 (6): a module val initialised once, methods 
             if (std.mem.eql(u8, o.name, name)) break o.result.wasm.?;
         } else return error.ModuleDidNotCompile;
         const face = (try ru.faceOfBytes(ar, bin)).text;
-        for ([_][]const u8{ "\"get_seed\"", "\"Box_doubled\"", "\"Box_name\"" }) |x| {
+        for ([_][]const u8{ "\"val:seed\"", "\"Box_doubled\"", "\"Box_name\"" }) |x| {
             const want = try std.fmt.allocPrint(ar, "(import \"test@config\" {s} ", .{x});
             if (std.mem.indexOf(u8, face, want) == null) {
                 std.debug.print("\n=== {s}: no {s}\n", .{ name, want });
