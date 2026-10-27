@@ -1,1 +1,1 @@
-{ "name": "array" }
+{ "name": "array", "dependencies": { "conformance-lib": { "path": "../../lib" } } }

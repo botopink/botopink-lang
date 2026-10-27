@@ -1,5 +1,5 @@
-botopink-cell 1
-out == array_fill
+botopink-cell 2
+== array_fill
 out [0, 0]
 out ["z", "z", "z"]
 out [true]
@@ -7,11 +7,11 @@ out [2.5, 2.5]
 out 1
 out 3
 out []
-out == array_fill_large
+== array_fill_large
 out 1024
 out 9216
 out q
-out == array_flat_forms
+== array_flat_forms
 out [1, 2, 3]
 out ["a", "b", "c"]
 out 3
@@ -21,20 +21,20 @@ out [[1], [2]]
 out [1, 10, 2, 20]
 out ["a", "b", "c"]
 out []
-out == array_last_index_of
+== array_last_index_of
 out 3
 out 4
 out -1
 out 1
 out 2
 out -1
-out == array_map_component_imported
+== array_map_component_imported
 out built
-out == array_pop_rebinds_var
+== array_pop_rebinds_var
 out [1, 2]
 out 2
 out [1]
-out == array_pop_removes
+== array_pop_removes
 out 3
 out [1, 2]
 out 2
@@ -43,12 +43,12 @@ out []
 out null
 out 654
 out ["a", "c"]
-out == array_push_rebinds_var
+== array_push_rebinds_var
 out ["a"]
 out ["a", "b"]
 out [1]
 out [1, 2]
-out == array_range_and_repeat
+== array_range_and_repeat
 out [0, 1, 2]
 out [2]
 out []
@@ -61,23 +61,23 @@ out []
 out [true, true]
 out [2.5, 2.5]
 out 1000
-out == array_reverse_answers_a_new_array
+== array_reverse_answers_a_new_array
 out 3,2,1
 out 1,2,3
 out 3,2,1
 out 1,2,3
-out == array_slice_reverse
+== array_slice_reverse
 out [2, 3]
 out [3, 2, 1]
 out [1, 2, 3]
-out == array_spread_literal
+== array_spread_literal
 out 4
 out 1
 out 4
 out 3
 out 40
 out 0
-out == array_windows
+== array_windows
 out [[1, 2], [3, 4], [5]]
 out [[1, 2, 3]]
 out []
