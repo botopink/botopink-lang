@@ -2266,6 +2266,8 @@ conformance/run.sh --compiler <botopink> --only modules    # the root package al
 conformance/run.sh --compiler <botopink> --only test/case_arms.bp
 conformance/run.sh --self-test                         # § Narrowing a cell — the runner's own audit
 conformance/run.sh --list                              # the plan: one `<path>\t<target>\t<run|audit>` line per job, nothing spawned
+conformance/run.sh --build-only                        # the root package's `.bpr` sets alone, nothing run (gate.sh's conformance-sets, 1006 (6) P4)
+conformance/run.sh --target wasm --prebuilt-sets       # a run over sets another job built (CI's artifact): none built again, or red
 cd conformance/modules/array && ../../../zig-out/bin/botopink run --target erlang   # one module, by its path
 ```
 

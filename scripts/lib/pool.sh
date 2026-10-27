@@ -87,7 +87,7 @@ pool_budget_for() {
             case "$s" in
                 test-web) fixed=$(( fixed + web )) ;;
                 test-cli) fixed=$(( fixed + cli )) ;;
-                test-conformance) pc=100 ;;
+                test-conformance|conformance-sets) pc=100 ;;
             esac
         done
     else

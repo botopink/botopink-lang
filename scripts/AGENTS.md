@@ -162,7 +162,9 @@ on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), the backend par
 — the code cache of the dependencies' compiled modules, the cell durations,
 decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8 and 9, § Warm and cold),
-`zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build test-conformance`
+`zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `conformance-sets` (the root package's
+`.bpr` sets built once, `conformance/run.sh --build-only`, before the side-by-side stages; decision 1006 (6) P4),
+`zig build test-conformance`
 (`conformance/`, a red cell fails it; every package of `botopink packages --list` tested there, one program per
 package per target — decision 996 took the libraries' stage into it, `conformance/AGENTS.md`), `zig build test-docs`
 (`check-docs.sh`), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
@@ -174,23 +176,29 @@ install tests) would otherwise act on the committing repository.
 
 **Stages by name (decision 987).** `gate.sh --list-stages` prints the stage names in the order the
 gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli
-test-conformance test-docs test-web`; `--uses-binaries` prints the ones that run the
+conformance-sets test-conformance test-docs test-web`; `--uses-binaries` prints the ones that run the
 installed binaries); `--list-rows` prints CI's rows (decision 1004 (2)) — `<stage>`, or `<stage>
 <target>` once per target for a stage split by target (`PER_TARGET_STAGES`: `test-conformance` on
-commonJS, erlang, beam and wasm) —, `--uses-binaries` again narrowing them; `--stage <name>`
+commonJS, erlang, beam and wasm) —, `--uses-binaries` again narrowing them, `--uses-sets` to the rows
+of the stages that read the sets `conformance-sets` builds (`SETS_STAGES`: `test-conformance`); `--stage <name>`
 (repeatable) runs only those, in the gate's order, and never reads or writes the green-tree record;
 `--target <t>` (repeatable) narrows the stages split by target to those targets (on the step gate, to
 those the step also reaches); no `--stage` runs every stage as before. `--prebuilt`
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
 `test-cli`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
+`--prebuilt-sets` says the root package's sets are already under `conformance/modules/.botopinkbuild/runtime/`
+(CI's `conformance` rows unpack the `sets` job's artifact there): `test-conformance` reads them
+(`run.sh --prebuilt-sets`, even under `--cold`) and a member whose set it built again is a red; a run
+that runs `conformance-sets` itself passes it on its own. The sets hold no absolute path (decision 1030 (3);
+`modules/compiler-cli/tests/runtime_portable.sh`), so they run where they are unpacked.
 `--test-shards <N>` makes the `test` stage run `zig build test -Dtest-shards=<N>` (build.zig's default is the CPUs, at most 8); CI's unit job passes 8 on its 4-CPU runners, the suite mostly waiting on node / erl / wasmtime.
 
 `--portable` builds for the baseline CPU (`-Dcpu=baseline` on every `zig build` of the gate): CI builds the
 binaries on one runner and runs them on others, where a native build dies of SIGILL (exit 132). The
 conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
 (`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name> [--target <t>]`, one job per row of
-`--list-rows`, and keeps no list.
+`--list-rows`, and keeps no list of stages but its own jobs' `build` and `conformance-sets`.
 
 ### The commonJS tree's tsc (decision 1013)
 

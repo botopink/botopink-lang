@@ -606,10 +606,18 @@ fn resolveByNameIn(a: std.mem.Allocator, io: std.Io, env_map: EnvMap, name: []co
     }
     const dir = try std.fs.path.resolve(a, &.{ cwd, found.dir });
     const under = try std.fmt.allocPrint(a, "{s}{c}", .{ abs_from, std.fs.path.sep });
-    return .{ .found = .{
-        .dir = dir,
-        .rel = if (std.mem.startsWith(u8, dir, under)) dir[under.len..] else null,
-    } };
+    const rel: ?[]const u8 = if (std.mem.startsWith(u8, dir, under)) dir[under.len..] else null;
+    // Decisions 1030 (3), 1006 P4 — outside the loader, the load is named by
+    // its directory relative to the loading build's cache root, never by its
+    // absolute path: the package's name, its group file in the `.bpr` set and
+    // `Module.path` carry no machine's path, so a set built in one checkout
+    // runs in another (CI's artifact). Its `root` stays the absolute
+    // directory (1003 (2)), read only by a program that asks for it.
+    const shown: ?[]const u8 = if (rel == null) if (runtime_cache.load_root) |lr|
+        try relativeTo(a, try std.fs.path.resolve(a, &.{ cwd, lr }), dir)
+    else
+        null else null;
+    return .{ .found = .{ .dir = dir, .rel = rel, .shown = shown } };
 }
 
 /// One resolution per package directory per process (decision 993 (1)): a

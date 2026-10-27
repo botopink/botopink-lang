@@ -29,6 +29,13 @@
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
 #                           contract, test tooling, wasm --invoke main
 #   8. (the libraries' stage, test-libs, joined stage 9: decision 996)
+#  8b. conformance-sets    the root package's `.bpr` sets built once (`conformance/run.sh
+#                           --build-only`: a bare `botopink build` in each member, decision
+#                           1006 (6) P4), before stage 9 starts; stage 9 then reads them
+#                           (`--prebuilt-sets`), so the comptime of the suite is paid once.
+#                           CI runs it in a job of its own and hands
+#                           `conformance/modules/.botopinkbuild/runtime/` to each
+#                           per-target row of stage 9 as an artifact (`--prebuilt-sets`)
 #   9. zig build test-conformance  conformance/ — the conformance suite
 #                           (decisions 457, 466, 989, 990 (6), 1066): the root
 #                           package conformance/modules/ — a workspace of the
@@ -58,9 +65,9 @@
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
 #                   [--stage <name>]… [--target <t>]… [--prebuilt] [--portable]
-#                   [--test-shards <N>]
+#                   [--test-shards <N>] [--prebuilt-sets]
 #   scripts/gate.sh --list-stages [--uses-binaries]
-#   scripts/gate.sh --list-rows [--uses-binaries]
+#   scripts/gate.sh --list-rows [--uses-binaries | --uses-sets]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
@@ -112,6 +119,9 @@
 #             today test-conformance: commonJS, erlang, beam, wasm). With
 #             `--uses-binaries`, only the rows of the stages that run the
 #             installed binaries. The CI workflow builds its matrices from it.
+#             With `--uses-sets`, only the rows of the stages that read the root
+#             package's `.bpr` sets `conformance-sets` builds (`SETS_STAGES`): CI
+#             runs them with that job's artifact and `--prebuilt-sets`.
 #
 #   --target <t>
 #             (repeatable; commonJS, erlang, beam or wasm) narrow the stages
@@ -134,6 +144,14 @@
 #             `test-conformance`, `test-docs`) pass `-Dprebuilt=true` to
 #             `zig build`, so no stage compiles or installs the compiler again
 #             (build.zig). The gate fails when zig-out/bin/botopink is missing.
+#
+#   --prebuilt-sets
+#             the root package's `.bpr` sets are already under
+#             `conformance/modules/.botopinkbuild/runtime/` (a CI row that downloaded the
+#             `conformance-sets` job's artifact): stage 9 reads them and holds each one to
+#             it — a member whose set it built again is a red (`conformance/run.sh
+#             --prebuilt-sets`, decision 1006 (6) P4). A run that also runs
+#             `conformance-sets` passes it by itself.
 #
 #   --portable
 #             every `zig build` of the gate targets the baseline CPU
@@ -162,13 +180,17 @@ set -euo pipefail
 
 # § stage names — the stages in the order the gate runs them. `--list-stages`
 # prints this list; a CI job runs one name (`--stage`).
-STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-conformance test-docs test-web)
+STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cli conformance-sets test-conformance test-docs test-web)
 # The stages that run the installed binaries (zig-out/bin) stage 2 builds; every other stage
 # (but `build` itself) reads sources only. `--list-stages --uses-binaries` prints these.
-BIN_STAGES=(test-cli test-conformance test-docs)
+BIN_STAGES=(test-cli conformance-sets test-conformance test-docs)
 # The stages a CI row runs one target at a time (`--list-rows`, `--target`; decision 1004 (2)),
 # and their targets, in the order the rows are listed.
 PER_TARGET_STAGES=(test-conformance)
+# The stages that read the root package's `.bpr` sets the `conformance-sets` stage builds
+# (`--list-rows --uses-sets`; decision 1006 (6) P4): a CI row of theirs downloads that job's artifact.
+SETS_STAGES=(test-conformance)
+only_sets=0
 TARGETS=(commonJS erlang beam wasm)
 list_rows=0
 target_sel=()
@@ -176,6 +198,7 @@ selected=()
 list_stages=0
 only_bin=0
 prebuilt=0
+prebuilt_sets=0
 portable=0
 test_shards=
 cold=0
@@ -196,11 +219,13 @@ while [ "$#" -gt 0 ]; do
             target_sel+=("$1"); shift ;;
         --target=*) target_sel+=("${a#--target=}") ;;
         --uses-binaries) only_bin=1 ;;
+        --uses-sets) only_sets=1 ;;
         --stage)
             [ "$#" -gt 0 ] || { echo "gate: --stage needs a name" >&2; exit 2; }
             selected+=("$1"); shift ;;
         --stage=*) selected+=("${a#--stage=}") ;;
         --prebuilt) prebuilt=1 ;;
+        --prebuilt-sets) prebuilt_sets=1 ;;
         --portable) portable=1 ;;
         --test-shards)
             [ "$#" -gt 0 ] || { echo "gate: --test-shards needs a count" >&2; exit 2; }
@@ -222,6 +247,9 @@ if [ "$list_rows" -eq 1 ]; then
     for s in "${STAGES[@]}"; do
         if [ "$only_bin" -eq 1 ]; then
             case " ${BIN_STAGES[*]} " in *" $s "*) ;; *) continue ;; esac
+        fi
+        if [ "$only_sets" -eq 1 ]; then
+            case " ${SETS_STAGES[*]} " in *" $s "*) ;; *) continue ;; esac
         fi
         case " ${PER_TARGET_STAGES[*]} " in
             *" $s "*) for t in "${TARGETS[@]}"; do printf '%s %s\n' "$s" "$t"; done ;;
@@ -613,6 +641,10 @@ fi
 # count it printed is held to its plan (§ counts), so a stage cannot be
 # narrowed to win time — a run that did fewer cells than the manifests and the
 # trees declare fails the gate, green or not.
+# § the root package's sets (stage 8b, decision 1006 (6) P4): built once, before stage 9, whenever
+# conformance runs in this invocation or the stage is selected alone (CI's job).
+run_sets=0
+if want conformance-sets && [ "$run_lang" -eq 1 ]; then run_sets=1; fi
 want test-conformance || run_lang=0
 if [ "$run_lang" -eq 1 ]; then
     bash conformance/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.conformance" 2>"$par/plan.conformance.err" ||
@@ -703,11 +735,21 @@ share() { # <percent> — that part of the total, at least 1 (pool.sh)
     if [ "$share_alone" -gt 0 ]; then pool_share "$budget_total" "$share_alone"; else pool_share "$budget_total" "$1"; fi
 }
 echo "gate: job budget $budget_total — test-conformance $(share 80)"
+# Stage 8b, before the side-by-side stages: the sets stage 9 reads, built once on the whole budget.
+if [ "$run_sets" -eq 1 ]; then
+    stage "conformance-sets (conformance/run.sh --build-only)"
+    timed "$tdir/sets.time" conformance_cmd "$budget_total" --build-only ||
+        fail "conformance/run.sh --build-only (a FAIL line above names the member whose set did not build)"
+    pass "conformance-sets — $(stage_time "$tdir/sets.time")"
+    prebuilt_sets=1
+fi
+sets_args=()
+[ "$prebuilt_sets" -eq 1 ] && sets_args=(--prebuilt-sets)
 want test-cli && launch 4 zig build test-cli "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
 if [ "$run_lang" -eq 1 ]; then
-    launch 6 conformance_cmd "$(share 80)" ${lang_args[@]+"${lang_args[@]}"}
+    launch 6 conformance_cmd "$(share 80)" ${lang_args[@]+"${lang_args[@]}"} ${sets_args[@]+"${sets_args[@]}"}
 fi
 want test-docs && launch 7 zig build test-docs "$opt" ${cpu[@]+"${cpu[@]}"} ${pre[@]+"${pre[@]}"}
 want test-web && launch 9 zig build test-web -j"$(share 10)"

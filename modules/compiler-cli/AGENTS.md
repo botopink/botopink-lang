@@ -210,6 +210,16 @@ compiler-cli/
 │   ├── load_reuse/          ← its fixture: `app` (loads `greeter` by name through
 │   │                          `BOTOPINK_LIB_ROOTS`), `libs/greeter` (the script edits
 │   │                          its `main.bp`)
+│   ├── runtime_portable.sh  ← a workspace's `.bpr` sets carry no absolute path (decisions
+│   │                          1006 (6) P4, 1030 (3)), its fixture written inline: a member
+│   │                          loading `greeter` by name from outside the workspace; a bare
+│   │                          `build` at the root writes sets whose file names and bytes never
+│   │                          name the checkout's directory (the loaded package named by its
+│   │                          directory relative to the workspace root); the sets packed,
+│   │                          unpacked into a copy of the sources at another path, and `run
+│   │                          --target` / `run --cold` there on the four targets reuse them (no
+│   │                          comptime, the `.bpr` the unpacked file) and answer as the first
+│   │                          checkout did — CI's artifact hand-off, simulated
 │   ├── beam_reuse.sh        ← a `.beam` loaded as it is (decision 1007; the proof of its
 │   │                          row), over `beam_reuse/`: a second
 │   │                          `run` on erlang and beam compiles no module (every
@@ -326,6 +336,7 @@ bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and 
 bash modules/compiler-cli/tests/runtime_reuse.sh     # the .bpr set reused while fresh, rebuilt when stale (1006)
 bash modules/compiler-cli/tests/target_reuse.sh      # an output folder left alone while its target key matches (1008)
 bash modules/compiler-cli/tests/load_reuse.sh        # a library loaded by name reuses its .bpr set (1006 (6) P5, 1030, 1039)
+bash modules/compiler-cli/tests/runtime_portable.sh  # a workspace's .bpr sets run unchanged at another path, no absolute path in them (1006 (6) P4, 1030 (3))
 bash modules/compiler-cli/tests/beam_reuse.sh        # a .beam loaded as it is while its source is unchanged (1007)
 bash modules/compiler-cli/tests/import_alias_refused.sh  # no import alias: an unresolved source, `alias` an unknown key (1050, 1048)
 bash modules/compiler-cli/tests/child_group_killed.sh  # no child of the compiler outlives it: timeout and SIGINT leave no beam.smp in the job's session (1061 (1)); build --timeout (1074 (1))

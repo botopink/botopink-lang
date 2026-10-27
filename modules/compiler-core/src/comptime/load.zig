@@ -1779,8 +1779,13 @@ pub fn namedLoadsSince(arena: std.mem.Allocator, mark: usize) ![]const []const u
 /// A `Resolver.by_name` answer.
 pub const NameResolution = union(enum) {
     /// The package's directory as the resolver found it (`dir`), and the same
-    /// directory relative to `from` when it is under it (`rel`).
-    found: struct { dir: []const u8, rel: ?[]const u8 = null },
+    /// directory relative to `from` when it is under it (`rel`). Outside
+    /// `from`, `shown` is the name the load is kept under in the program —
+    /// its package name, its key, `Module.path` — when the resolver has a
+    /// portable one: the directory relative to the loading build's cache root
+    /// (decision 1030 (3), 1006 P4: no absolute path in a `.bpr` set). Null:
+    /// `dir` itself.
+    found: struct { dir: []const u8, rel: ?[]const u8 = null, shown: ?[]const u8 = null },
     /// No library declares the name.
     unknown,
     /// The name resolves to no package: two libraries declare it, it names a
@@ -1793,7 +1798,8 @@ pub const NameResolution = union(enum) {
 pub const Named = union(enum) {
     /// Load the package at `path`: relative to the caller's package when it
     /// is under it (`at` null), else the directory the resolver answered
-    /// (`at`, and `path` the same text).
+    /// (`at`), `path` its portable name (`NameResolution.found.shown`) or the
+    /// same text.
     found: struct { path: []const u8, at: ?[]const u8 },
     no_resolver,
     unknown,
@@ -1809,7 +1815,7 @@ pub fn resolveName(arena: std.mem.Allocator, files: PackageFiles, io: std.Io, na
         .found => |f| if (f.rel) |rel|
             .{ .found = .{ .path = rel, .at = null } }
         else
-            .{ .found = .{ .path = f.dir, .at = f.dir } },
+            .{ .found = .{ .path = f.shown orelse f.dir, .at = f.dir } },
         .unknown => .unknown,
         .refused => |m| .{ .refused = m },
     };

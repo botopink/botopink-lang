@@ -44,6 +44,21 @@
 #   --cold      each `botopink` the run spawns gets `--cold` — the code cache of the
 #               dependencies is not read (decision 509 (5)); `scripts/gate.sh
 #               --cold` passes it
+#   --build-only
+#               build the root package's `.bpr` sets — a bare `botopink build` in each
+#               member (§ the root package), `--cold` rebuilding them — and run nothing:
+#               the members' verdicts, then `sets: N members built under
+#               modules/.botopinkbuild/runtime/`; exit 1 when a member did not build.
+#               `scripts/gate.sh --stage conformance-sets` runs it once, and CI hands
+#               that directory to every per-target row as an artifact (decision
+#               1006 (6) P4)
+#   --prebuilt-sets
+#               the root package's sets are already under `modules/.botopinkbuild/
+#               runtime/` (a `--build-only` run, CI's artifact): the bare build before
+#               the pool reads them under `--cold` too — a fresh set is a proven build
+#               output (1006 (4)) — and a member whose `.bpr` it wrote again is a red,
+#               `prebuilt sets: N reused, M built again` (the handed sets must run as
+#               they are: no absolute path in them, decision 1030 (3))
 #
 # Three kinds, every job in its own scratch directory:
 #   modules/           the root package (decisions 989, 990 (6), 1006 (1)): `modules/botopink.json`,
@@ -109,6 +124,8 @@ self_test=0
 cold=0
 list=0
 lib_timeout=900
+build_only=0
+prebuilt_sets=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2 ;;
@@ -126,6 +143,8 @@ while [ $# -gt 0 ]; do
         --self-test) self_test=1; shift ;;
         --list) list=1; shift ;;
         --cold) cold=1; shift ;;
+        --build-only) build_only=1; shift ;;
+        --prebuilt-sets) prebuilt_sets=1; shift ;;
         --lib-timeout) lib_timeout="$2"; shift 2 ;;
         --lib-timeout=*) lib_timeout="${1#*=}"; shift ;;
         -h|--help) sed -n '2,/^set -uo pipefail/p' "$0" | sed '$d'; exit 0 ;;
@@ -142,7 +161,7 @@ whole_suite=0
 if [ -n "$suite" ]; then
     [ -d "$suite" ] || { echo "run.sh: --suite is not a directory: $suite" >&2; exit 2; }
     here="$(cd "$suite" && pwd)"
-elif [ ${#only[@]} -eq 0 ] && [ $self_test -eq 0 ] && [ $list -eq 0 ]; then
+elif [ ${#only[@]} -eq 0 ] && [ $self_test -eq 0 ] && [ $list -eq 0 ] && [ $build_only -eq 0 ]; then
     whole_suite=1
 fi
 
@@ -508,6 +527,31 @@ WANT
         case "$cwd_" in "$lsuite"/*) left_="$left_ ${pid_#/proc/}" ;; esac
     done
     [ -z "$left_" ] || { echo "self-test: the hangs-beam run left a beam.smp alive (pid$left_)" >&2; missing=1; }
+    # Decision 1006 (6) P4: the sets `--build-only` writes, packed, unpacked into a copy of the suite at
+    # another path and handed to a run with `--prebuilt-sets`, are read as they are (no member built
+    # again); a member whose source changed after the build is built again, and that is a red naming it.
+    local ssuite="$st/sets-suite" moved="$st/sets-moved/elsewhere" scode
+    mkdir -p "$ssuite" "$moved"
+    (cd "$suite" && tar -cf - --exclude=.botopinkbuild --exclude=out modules leftover-cases.txt) | (cd "$ssuite" && tar -xf -)
+    bash "$runner" --suite "$ssuite" --build-only --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" >"$st/sets-build.raw" 2>&1
+    strip <"$st/sets-build.raw" >"$st/sets-build.txt"
+    grep -qxF 'sets: 5 members built under modules/.botopinkbuild/runtime/' "$st/sets-build.txt" \
+        || { echo "self-test: --build-only did not report its five members' sets:" >&2; sed 's/^/    /' "$st/sets-build.txt" >&2; missing=1; }
+    (cd "$ssuite" && tar -cf - --exclude=.botopinkbuild --exclude=out modules leftover-cases.txt) | (cd "$moved" && tar -xf -)
+    (cd "$ssuite/modules" && tar -cf - .botopinkbuild/runtime) | (cd "$moved/modules" && tar -xf -)
+    bash "$runner" --suite "$moved" --only modules --target commonJS --prebuilt-sets --compiler "$compiler" --lib-root "$lib_root" \
+        --jobs "$jobs" >"$st/sets-run.raw" 2>&1
+    strip <"$st/sets-run.raw" >"$st/sets-run.txt"
+    grep -qxF 'prebuilt sets: 5 reused, 0 built again' "$st/sets-run.txt" \
+        || { echo "self-test: the handed sets were not all reused at another path:" >&2; sed 's/^/    /' "$st/sets-run.txt" >&2; missing=1; }
+    printf '\n// changed after the build\n' >>"$moved/modules/green/src/main.bp"
+    bash "$runner" --suite "$moved" --only modules --target commonJS --prebuilt-sets --compiler "$compiler" --lib-root "$lib_root" \
+        --jobs "$jobs" >"$st/sets-stale.raw" 2>&1
+    scode=$?
+    strip <"$st/sets-stale.raw" >"$st/sets-stale.txt"
+    { [ $scode -eq 1 ] && grep -qF '[*] modules/green — its handed .bpr set was built again (--prebuilt-sets)' "$st/sets-stale.txt" \
+        && grep -qxF 'prebuilt sets: 4 reused, 1 built again' "$st/sets-stale.txt"; } \
+        || { echo "self-test: a handed set built again was not red and named (exit $scode):" >&2; sed 's/^/    /' "$st/sets-stale.txt" >&2; missing=1; }
     self_test_tsc || missing=1
     if [ $missing -ne 0 ]; then
         echo "self-test: FAILED — the synthetic suite's report was:" >&2
@@ -516,7 +560,7 @@ WANT
         sed 's/^/    /' "$st/lib-report.txt" >&2
         return 1
     fi
-    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996; --cold reaches a job only when given (decision 1006 P0); the commonJS tree's tsc once: a planted std .d.ts error reported once, a member's naming it, a node --check refusal, a duplicated .d.ts name (decision 1013 (5))"
+    echo "self-test: 4 malformed or unbacked narrowings refused, 1 backed one scheduled on its declared targets alone, a red module and two roster reds named, 4 abnormal ends of a run (a trap, no summary, fewer results, a bare non-zero exit) red; 4 libraries each answered alone (a build that fails, a hang, a refused manifest), 3 disabled.txt lines held to decision 996; --cold reaches a job only when given (decision 1006 P0); the commonJS tree's tsc once: a planted std .d.ts error reported once, a member's naming it, a node --check refusal, a duplicated .d.ts name (decision 1013 (5)); the sets --build-only writes reused at another path by --prebuilt-sets, one built again red (decision 1006 (6) P4)"
 }
 
 # ── collect the jobs' paths ───────────────────────────────────────────────────
@@ -803,12 +847,47 @@ build_root() {
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     touch "$work/stamp-root-build"
-    root_members "$dir/members" "$ROOT_BUILD_JOBS" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt"
+    # Handed sets (`--prebuilt-sets`) are read under `--cold` too: a fresh set is a proven build output
+    # (1006 (4)), and the build stage that wrote them ran cold.
+    local flag="$cold_flag"
+    [ "$prebuilt_sets" -eq 0 ] || flag=""
+    root_members "$dir/members" "$ROOT_BUILD_JOBS" build $flag >"$dir/o.txt" 2>"$dir/e.txt"
     if strip <"$dir/o.txt" | grep -qE '^modules: [0-9]+ checked'; then
         root_built=1
     else
         root_refusal="the root package's members did not build: $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
     fi
+}
+
+# `--prebuilt-sets` (decision 1006 (6) P4): every member's set was handed to this run, so the bare
+# build reads each one and writes none — a member whose `.bpr` it wrote again (another inode: a set
+# is written to a temporary file and renamed) is a red naming it; a member with no handed set (one
+# that did not build in the build stage) is neither, its run on each target says why. The count is
+# printed either way. `member_bprs` lists `<inode> <member>` before the build.
+member_bpr() { # <member, relative to modules/>: its root `.bpr` (the set is named by the manifest's name)
+    local name
+    name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$here/modules/$1/botopink.json" | head -n 1)"
+    printf '%s/modules/.botopinkbuild/runtime/%s/%s.bpr\n' "$here" "$name" "$name"
+}
+member_bprs() {
+    local m f
+    while IFS= read -r m; do
+        f="$(member_bpr "$m")"
+        [ -f "$f" ] && printf '%s %s\n' "$(stat -c %i "$f" 2>/dev/null || stat -f %i "$f")" "$m"
+    done < <(listed_modules)
+}
+prebuilt_report() { # <the `member_bprs` list taken before the build>
+    local m ino f reused=0 rebuilt=0
+    while read -r ino m; do
+        f="$(member_bpr "$m")"
+        if [ -f "$f" ] && [ "$(stat -c %i "$f" 2>/dev/null || stat -f %i "$f")" = "$ino" ]; then
+            reused=$((reused + 1))
+        else
+            rebuilt=$((rebuilt + 1))
+            printf '*\tmodules/%s\tfail\t%s\n' "$m" "its handed .bpr set was built again (--prebuilt-sets): a set must run where it is unpacked, decisions 1006 (6) P4, 1030 (3)" >"$work/r-plan-prebuilt-$(printf '%s' "$m" | tr '/.' '__')"
+        fi
+    done <"$1"
+    echo "prebuilt sets: $reused reused, $rebuilt built again"
 }
 
 # ── § the commonJS tree, checked once (decision 1013 (3)) ────────────────────
@@ -1286,6 +1365,19 @@ export LIB_TIMEOUT="$lib_timeout"
 if [ $self_test -eq 1 ]; then
     self_test; exit $?
 fi
+# `--build-only` (decision 1006 (6) P4): the root package's sets, built once, nothing run.
+if [ $build_only -eq 1 ]; then
+    build_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
+    [ -n "$build_avail_kb" ] || build_avail_kb=$(( 1 << 40 )) # no /proc/meminfo: the jobs bound alone
+    ROOT_BUILD_JOBS="$(pool_member_jobs "$build_avail_kb" "$jobs" build)"
+    build_root
+    strip <"$work/root/o.txt"
+    if [ "$root_built" != 1 ]; then echo "run.sh: $root_refusal" >&2; exit 1; fi
+    n="$(listed_modules | grep -c . || true)"
+    echo "sets: $n members built under modules/.botopinkbuild/runtime/"
+    strip <"$work/root/o.txt" | grep -q '^FAIL ' && exit 1
+    exit 0
+fi
 # A whole run of the suite proves its own audit first: a green run from a
 # runner that no longer refuses says nothing.
 if [ $whole_suite -eq 1 ]; then
@@ -1404,9 +1496,11 @@ for t in "${targets[@]}"; do
 done
 if grep -q '^modules	' "$jobs_list"; then
     roster
+    [ "$prebuilt_sets" -eq 0 ] || member_bprs >"$work/prebuilt-before"
     build_root
     ROOT_BUILT="$root_built"; ROOT_REFUSAL="$root_refusal"
     ROOT_LISTED="$(listed_modules | grep -c . || true)"
+    [ "$prebuilt_sets" -eq 0 ] || prebuilt_report "$work/prebuilt-before"
 fi
 export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED ROOT_JOBS ROOT_BUILD_JOBS
 # The libraries' programs are written inside the checkout (the name resolves by its walk-up), under

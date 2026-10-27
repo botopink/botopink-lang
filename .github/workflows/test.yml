@@ -23,11 +23,21 @@
 #   unit       one job per stage that reads sources only (zig fmt, the OTP
 #              release, the backend partition audit, `zig build test`,
 #              `test-bpmp`, the beam export audit, `test-web`); starts at once.
-#   installed  one job per row that runs the installed binaries (`test-cli`,
-#              `test-docs`, and `test-conformance` once
-#              per target, `--target <t>`, each row its own verdict); downloads
-#              `build`'s artifact and runs with `--prebuilt`, so nothing compiles
-#              the compiler again.
+#   installed  one job per row that runs the installed binaries and reads no
+#              `.bpr` set (`test-cli`, `test-docs`); downloads `build`'s artifact
+#              and runs with `--prebuilt`, so nothing compiles the compiler again.
+#   sets       the `conformance-sets` stage once (decision 1006 (6) P4): the
+#              root package's `.bpr` sets, a bare `botopink build` in each member
+#              of `conformance/modules/` with `build`'s binaries; uploads
+#              `conformance/modules/.botopinkbuild/runtime/` as an artifact. The
+#              sets hold no absolute path (decision 1030 (3)), so they run on
+#              another runner's checkout.
+#   conformance one job per row that reads those sets (`gate.sh --list-rows
+#              --uses-sets`: `test-conformance` once per target, `--target <t>`,
+#              each row its own verdict); downloads `build`'s and `sets`'
+#              artifacts and runs with `--prebuilt --prebuilt-sets`: the row only
+#              runs `run --target <t>`, no comptime, and a member whose handed set
+#              it built again is a red (`prebuilt sets: N reused, M built again`).
 #   gate       the run's one verdict: red when any job above is (a matrix job
 #              is red when any of its rows is).
 #
@@ -70,6 +80,7 @@ jobs:
     outputs:
       unit: ${{ steps.lists.outputs.unit }}
       installed: ${{ steps.lists.outputs.installed }}
+      conformance: ${{ steps.lists.outputs.conformance }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -80,15 +91,21 @@ jobs:
         run: |
           all="$(bash scripts/gate.sh --list-rows)"
           bins="$(bash scripts/gate.sh --list-rows --uses-binaries)"
+          sets="$(bash scripts/gate.sh --list-rows --uses-sets)"
           # each row `<stage>` or `<stage> <target>` → {"stage": …, "target": …} (target "" when whole)
           json() { jq -Rsc 'split("\n") | map(select(. != "") | split(" ") | {stage: .[0], target: (.[1] // "")})'; }
           # every row but `build` (its own job) and the ones that run the installed binaries
           unit="$(printf '%s\n' "$all" | grep -vxF build | grep -vxFf <(printf '%s\n' "$bins") | json)"
-          installed="$(printf '%s\n' "$bins" | json)"
+          # the rows that run the installed binaries, but `conformance-sets` (the `sets` job) and the rows
+          # that read its sets (the `conformance` job)
+          installed="$(printf '%s\n' "$bins" | grep -vxF conformance-sets | grep -vxFf <(printf '%s\n' "$sets") | json)"
+          conformance="$(printf '%s\n' "$sets" | json)"
           echo "unit=$unit" >> "$GITHUB_OUTPUT"
           echo "installed=$installed" >> "$GITHUB_OUTPUT"
+          echo "conformance=$conformance" >> "$GITHUB_OUTPUT"
           echo "unit: $unit"
           echo "installed: $installed"
+          echo "conformance: $conformance"
 
   build:
     name: build (scripts/gate.sh --stage build)
@@ -150,7 +167,6 @@ jobs:
       matrix:
         row: ${{ fromJSON(needs.stages.outputs.installed) }}
     runs-on: ubuntu-22.04
-    # test-conformance took 25–31 min whole before the split by target; the libraries joined it (decision 996)
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
@@ -174,11 +190,82 @@ jobs:
           TARGET: ${{ matrix.row.target }}
         run: bash scripts/gate.sh --cold --portable --prebuilt --stage "$STAGE" ${TARGET:+--target "$TARGET"}
 
+  # Decision 1006 (6) P4: the root package's `.bpr` sets, built once with `build`'s binaries and handed to
+  # every `conformance` row. The artifact lives for this run only (no botopink cache across runs, decision 225).
+  sets:
+    name: conformance-sets (scripts/gate.sh --stage conformance-sets)
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+      - uses: ./.github/actions/ci-setup
+        with:
+          zig-cache: 'true'
+          zig-cache-name: conformance-sets
+      - uses: actions/download-artifact@v4
+        with:
+          name: zig-out
+      - name: Unpack the binaries
+        shell: bash
+        run: tar -xzf zig-out.tgz
+      - name: scripts/gate.sh --cold --portable --prebuilt --stage conformance-sets
+        shell: bash
+        run: bash scripts/gate.sh --cold --portable --prebuilt --stage conformance-sets
+      - name: Pack the sets
+        shell: bash
+        run: tar -czf conformance-sets.tgz -C conformance/modules .botopinkbuild/runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-sets
+          path: conformance-sets.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  conformance:
+    name: ${{ matrix.row.target && format('{0} ({1})', matrix.row.stage, matrix.row.target) || matrix.row.stage }}
+    needs: [stages, build, sets]
+    strategy:
+      fail-fast: false
+      matrix:
+        row: ${{ fromJSON(needs.stages.outputs.conformance) }}
+    runs-on: ubuntu-22.04
+    # test-conformance took 25–31 min whole before the split by target; the libraries joined it (decision 996)
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+      - uses: ./.github/actions/ci-setup
+        with:
+          libs: 'true'
+          zig-cache: 'true'
+          zig-cache-name: ${{ matrix.row.stage }}${{ matrix.row.target && format('-{0}', matrix.row.target) || '' }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: zig-out
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-sets
+      - name: Unpack the binaries and the sets
+        shell: bash
+        run: |
+          tar -xzf zig-out.tgz
+          tar -xzf conformance-sets.tgz -C conformance/modules
+      - name: scripts/gate.sh --cold --portable --prebuilt --prebuilt-sets --stage ${{ matrix.row.stage }} ${{ matrix.row.target && format('--target {0}', matrix.row.target) || '' }}
+        shell: bash
+        env:
+          STAGE: ${{ matrix.row.stage }}
+          TARGET: ${{ matrix.row.target }}
+        run: bash scripts/gate.sh --cold --portable --prebuilt --prebuilt-sets --stage "$STAGE" ${TARGET:+--target "$TARGET"}
+
   # The run's one verdict, for a front's Conformance step (decision 477).
   gate:
     name: scripts/gate.sh
     if: always()
-    needs: [stages, build, unit, installed]
+    needs: [stages, build, unit, installed, sets, conformance]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
