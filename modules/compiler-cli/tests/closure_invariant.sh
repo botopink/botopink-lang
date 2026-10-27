@@ -20,8 +20,14 @@
 #                 from the module's closure, never the whole program).
 # `shelf`'s closure is the same in both builds, so on every target
 # (commonJS — `.js` and the `.d.ts` interface —, erlang, beam, wasm) every file
-# `shelf` emits is the same set of files with the same bytes. Each file that
-# differs is printed with its diff; the script fails when any does.
+# `shelf` emits, and its level B entry (`.botopinkbuild/analysis/<target>/shelf.bpa`:
+# its interface under its closure key, with its units' code where the build
+# emitted them), is the same set of files with the same bytes. A wasm build
+# writes only the program's entry, which links `shelf`'s bodies into the
+# consumer's own unit (decision 1017 (5)), until each unit is a file of its own
+# (1032 (1)): there `shelf`'s level B entry alone is compared, and its unit files
+# join it once they are written.
+# Each file that differs is printed with its diff; the script fails when any does.
 #
 # Exit 0 = the invariant held on every target.
 
@@ -44,10 +50,11 @@ WORK="$(mktemp -d "${tmp_root%/}/botopink-closure-invariant.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 cp -R "$SCRIPT_DIR/closure_invariant/." "$WORK/"
 
-# The library's files of one build: wasm writes a package's modules
-# under `wasm/<package>/`, commonJS, erlang and beam name each module `<package>@<path>`.
+# The library's files of one build, relative to the consumer: wasm writes a
+# package's modules under `wasm/<package>/`, commonJS, erlang and beam name each
+# module `<package>@<path>`; and its level B entry, written by every build.
 shelf_files() { # <consumer> <target>
-  ( cd "$WORK/$1/out-$2" && find . -type f \( -path '*/shelf/*' -o -name 'shelf@*' \) | sed 's|^\./||' | LC_ALL=C sort )
+  ( cd "$WORK/$1" && find "out-$2" ".botopinkbuild/analysis/$2" -type f \( -path '*/shelf/*' -o -name 'shelf@*' -o -path "*/analysis/$2/shelf.bpa" \) | LC_ALL=C sort )
 }
 
 # Compare `shelf`'s files of two consumers' builds of one target.
@@ -66,9 +73,9 @@ compare() { # <target> <a> <b>
     echo "  ✗ $target: $f is emitted under $b only" >&2; bad=$((bad + 1))
   done < <(comm -13 "$WORK/$a-$target.list" "$WORK/$b-$target.list")
   while read -r f; do
-    if ! cmp -s "$WORK/$a/out-$target/$f" "$WORK/$b/out-$target/$f"; then
+    if ! cmp -s "$WORK/$a/$f" "$WORK/$b/$f"; then
       echo "  ✗ $target: $f differs between $a and $b" >&2
-      diff "$WORK/$a/out-$target/$f" "$WORK/$b/out-$target/$f" | head -20 | sed 's/^/      /' >&2 || true
+      diff "$WORK/$a/$f" "$WORK/$b/$f" | head -20 | sed 's/^/      /' >&2 || true
       bad=$((bad + 1))
     fi
   done < <(comm -12 "$WORK/$a-$target.list" "$WORK/$b-$target.list")

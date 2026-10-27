@@ -34,7 +34,9 @@ compiler-cli/
 │   │                          `shelf` built under `plain` and under `crowded`
 │   │                          (a second dependency, its own module and std
 │   │                          declaring `shelf`'s names again), every file of
-│   │                          `shelf` — `.js`, `.d.ts`, `.erl`, `.S`, `.wat` —
+│   │                          `shelf` — `.js`, `.d.ts`, `.erl`, `.S`, `.wat`,
+│   │                          and its level B entry `shelf.bpa` (on wasm the
+│   │                          entry alone until 1032's unit files) —
 │   │                          compared byte for byte; and under `hosted`
 │   │                          (erlang, beam: a consumer binding a BEAM host
 │   │                          — `shelf/demo`'s entry point loads no sidecar
