@@ -2299,7 +2299,9 @@ decisions-pending 129 point 4 reversed by the maintainer).
 - **Backends.** `alias_erase.erase` runs on the transformed program (both `comptime.zig` sites):
   every `TypeRef` naming an alias becomes its target, except a declared return that ends at a
   builtin wrapper, which keeps the alias name (its arguments erased) so no backend lowers it as
-  an effect. The `.d.ts` emits a `pub` alias as `export declare type Name<T> = …;`.
+  an effect. `alias_erase.expandOuter` answers what such a kept name stands for: wasm's GC pass
+  reads a `-> Parser<i32>` over `@Result` as that `Result` (`codegen/wat.zig`
+  `gcExpandResultAliasReturns`). The `.d.ts` emits a `pub` alias as `export declare type Name<T> = …;`.
 
 ## Importing a type brings its type closure (01 R2)
 

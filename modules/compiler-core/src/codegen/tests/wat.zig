@@ -4891,3 +4891,41 @@ test "wat: gc ---- val assert over a variant, a record and a Result, its catch t
         \\}
     );
 }
+
+test "wat: gc ---- a return written through an alias of a Result is the Result it names" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type ParseError { Empty }
+        \\
+        \\pub type Parser<T> = Result<T, ParseError>;
+        \\
+        \\pub type Checked<T> = Result<T, string>;
+        \\
+        \\fn parsePort(s: string) -> Result<i32, ParseError> {
+        \\    if (s == "") throw ParseError.Empty;
+        \\    return 8080;
+        \\}
+        \\
+        \\fn port(s: string) -> Parser<i32> {
+        \\    return parsePort(s);
+        \\}
+        \\
+        \\fn check(n: i32) -> Result<i32, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return n;
+        \\}
+        \\
+        \\fn pass(r: Checked<i32>) -> Checked<i32> {
+        \\    return r;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(try port("x") catch 0);
+        \\    print(try port("") catch 7);
+        \\    print(pass(check(4)).unwrapOr(0));
+        \\    print(pass(check(-4)).unwrapOr(0));
+        \\    print(pass(check(-1)).isError());
+        \\}
+    );
+}

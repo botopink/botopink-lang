@@ -36,6 +36,18 @@ pub fn erase(arena: std.mem.Allocator, program: ast.Program, aliases: *const Ali
     return program;
 }
 
+/// The type a written `ref` stands for through every alias it names (its
+/// outer name only, arguments substituted), or null when it names none. A
+/// backend reads it where `erase` keeps the alias — a wrapper return
+/// (`-> Parser<i32>`) whose value it still has to represent.
+pub fn expandOuter(arena: std.mem.Allocator, ref: ast.TypeRef, aliases: *const Aliases) ?ast.TypeRef {
+    var ctx = Ctx{ .arena = arena, .aliases = aliases };
+    var cur = ref;
+    var depth: usize = 0;
+    while (depth < 32) : (depth += 1) cur = ctx.expand(cur) orelse break;
+    return if (depth == 0) null else cur;
+}
+
 const Ctx = struct {
     arena: std.mem.Allocator,
     aliases: *const Aliases,

@@ -26,6 +26,7 @@ fn isScopeReadFn(name: []const u8) bool {
 }
 
 const comptimeMod = @import("../comptime.zig");
+const aliasErase = @import("../comptime/alias_erase.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
@@ -754,6 +755,31 @@ fn isAmbientBehaviorName(name: []const u8) bool {
     const prog = preludeCache.builtins() orelse return false;
     for (prog.decls) |d| if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) return comptimeMod.isAmbientBehavior(d.behavior);
     return false;
+}
+
+/// Decision 118 — a function's return written through an alias of a
+/// `@Result` (`-> Parser<i32>`, `type Parser<T> = Result<T, ParseError>`)
+/// keeps the alias past `alias_erase` (it activates no effect): a GC module
+/// holds the value as the `$result` it is, so the return is read as the
+/// alias's target. As the word an unknown name is, `return parsePort(s)` was
+/// a refused conversion. The aliases are the module's and its linked ones'.
+fn gcExpandResultAliasReturns(ar: std.mem.Allocator, program: ast.Program, own: ast.Program, linked: []const Linked) !ast.Program {
+    var aliases: aliasErase.Aliases = .empty;
+    for (own.decls) |d| if (d == .typeAlias) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+    for (linked) |l| for (l.program.decls) |d| if (d == .typeAlias and !aliases.contains(d.typeAlias.name)) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+    if (aliases.count() == 0) return program;
+    var decls: ?[]ast.DeclKind = null;
+    for (program.decls, 0..) |d, i| {
+        if (d != .@"fn") continue;
+        const rt = d.@"fn".returnType orelse continue;
+        const x = aliasErase.expandOuter(ar, rt, &aliases) orelse continue;
+        if (Emitter.resultShapeOfTypeRef(x) == null) continue;
+        if (decls == null) decls = try ar.dupe(ast.DeclKind, program.decls);
+        decls.?[i].@"fn".returnType = x;
+    }
+    var out = program;
+    if (decls) |ds| out.decls = ds;
+    return out;
 }
 
 /// `primitives.bp`'s `String.<method>`, or null.
@@ -1714,9 +1740,13 @@ fn emitWatPass(
 
     // Decision 504 — every module's render-scope values typed for this
     // backend (`wat/scope_carry.zig`), before anything reads a declaration.
-    const own_program = try scopeCarry.carry(em.arena(), own_program_in);
+    var own_program = try scopeCarry.carry(em.arena(), own_program_in);
     const linked = try em.arena().dupe(Linked, linked_in);
     for (linked) |*l| l.program = try scopeCarry.carry(em.arena(), l.program);
+    if (plan.mode == .gc) {
+        own_program = try gcExpandResultAliasReturns(em.arena(), own_program, own_program, linked);
+        for (linked) |*l| l.program = try gcExpandResultAliasReturns(em.arena(), l.program, own_program, linked);
+    }
 
     // The linked modules' declarations come first, minus their entry point,
     // their tests and any name this module defines itself. `owner[i]` is the
