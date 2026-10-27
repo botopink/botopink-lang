@@ -32,6 +32,7 @@ fn runCase(comptime name: string) -> void {
 
 comptime {
     runCase("var_written_in_branch_read_after");
+    runCase("module_var_pushed_in_lambda_tail");
 }
 
 pub async fn main() -> Async<Result<void, string>> {

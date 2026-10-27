@@ -6819,6 +6819,11 @@ const Emitter = struct {
 
     /// Lower `e` so its value lives in `{x, 0}`, ready for `return.`.
     fn lowerExprIntoX0(self: *Emitter, e: ast.Expr) anyerror!void {
+        // `names.push(x)` on a module-level `var` (decision 28) writes it back
+        // wherever it stands — a statement, or the tail a lambda, a block or
+        // a kept `if (comptime …)` arm answers (an executor's last line,
+        // decision 998 (5)) —, never computing the grown list and dropping it.
+        if (self.moduleVarPush(e)) |mv| return self.emitMemoryWrite(mv.name, mv.mem, false, &e, e.getLoc());
         switch (e) {
             // `use` is a transparent prefix: lower the wrapped hook call. The
             // enclosing `val` moves the result into its y-slot.

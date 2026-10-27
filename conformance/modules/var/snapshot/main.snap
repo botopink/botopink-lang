@@ -13,3 +13,5 @@ out 217
 out 4
 out 11
 out 10
+== module_var_pushed_in_lambda_tail
+out lambda,arm,statement

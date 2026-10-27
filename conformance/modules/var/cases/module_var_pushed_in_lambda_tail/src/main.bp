@@ -1,0 +1,20 @@
+//// A module-level `var` grown by `push` as the last line of a lambda, and as the last line of a
+//// block a kept `if (comptime …)` arm answers, keeps what it was given: each push writes the
+//// `var` back (decision 28), wherever the statement stands.
+
+import {io.terminal.print} from "std";
+
+var names: string[] = [];
+
+fn apply(f: fn() -> void) -> void {
+    f();
+}
+
+pub fn main() -> void {
+    apply({ -> names.push("lambda"); });
+    if (comptime true) {
+        names.push("arm");
+    }
+    names.push("statement");
+    print(names.join(","));
+}
