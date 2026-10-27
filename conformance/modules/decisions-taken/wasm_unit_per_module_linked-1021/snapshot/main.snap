@@ -55,6 +55,9 @@ out fig
 out ab
 out true
 out after
+== gc_case_arm_assigns
+out n4
+out negative
 == wasm_same_shape_types_distinct
 out person - - -
 out - vec - -
