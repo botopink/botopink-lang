@@ -557,7 +557,7 @@ comptime {
 SELF_CHECK_TAIL = '''}
 
 pub async fn main() -> Async<Result<void, string>> {
-    return candidate.finish(accepted, answers, adapter.target());
+    return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }
 '''
 WORKSPACE = os.path.join(MODULES, "botopink.json")
