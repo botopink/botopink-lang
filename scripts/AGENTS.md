@@ -42,7 +42,7 @@ scripts/
 │   └── syntax_modifier.py       ← decision 616's migration: the parameter modifier `expr` → `syntax` (`expr decl: unknown` → `syntax decl: unknown`, `expr ..xs: T[]` too); in prose `` `expr` `` / `` `expr decl` `` / `-> expr T` follow, the article agreeing; `.bp`, `.md`, `.sh` and `.snap` in place, a `.zig` file's modifier only; `--check` lists each file and its count (`scripts/codemod/syntax_modifier.py libs conformance modules`)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
-│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh)
+│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh), and `pool_share`, a stage's part of the gate's one total of jobs (sourced by gate.sh); `pool_member_peak_mib` / `pool_member_jobs`, the job kind "member run per target" at its measured peak (decision 1074 (2)) that run.sh's member spawner sizes by
 │   └── backend-partition-audit.js ← audits codegen/backend-partition.txt (decision 249): a listed file used by a file of another target fails the gate (stage 3 of gate.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)

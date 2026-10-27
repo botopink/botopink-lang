@@ -91,7 +91,9 @@ const HELP =
     \\in its own process (running them side by side is the spawner's: `cd <member> && botopink run --target <t>`).
     \\One line per member — `ok   <member>` or `FAIL <member> — <reason>`, its whole output indented under it —,
     \\then `modules: N checked — P passed, F failed`; exit 1 on any red:
-    \\  --timeout <s>                Seconds the whole command is given, every member together (none when not passed): the
+    \\  --timeout <s>                Seconds the whole command is given (none when not passed). In a package the build is
+    \\                               stopped, its children killed, the previous .bpr, key and out/<t>/ left whole, exit 1
+    \\                               naming the bound. At a workspace root every member together: the
     \\                               running member is stopped, the rest reported not run, exit 1 naming the bound
     \\
     \\Options for `run`:

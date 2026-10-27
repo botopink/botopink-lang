@@ -794,7 +794,7 @@ root_members() { # <log dir> <jobs> <args…>
 }
 
 # Build the root package once — a bare `botopink build` in each member, its `.bpr` set reused
-# when fresh, rebuilt under `--cold` (decision 1006 (2), (4)), side by side on this run's jobs
+# when fresh, rebuilt under `--cold` (decision 1006 (2), (4)), side by side at the bare build's measured peak (`ROOT_BUILD_JOBS`, 1074 (2))
 # (`root_members`, 1066 (2)): `root_built` 1 once every member's line was printed — a member
 # that does not build is that member's red, its run on each target says it —, else
 # `root_refusal`.
@@ -803,7 +803,7 @@ build_root() {
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
     touch "$work/stamp-root-build"
-    root_members "$dir/members" "$jobs" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt"
+    root_members "$dir/members" "$ROOT_BUILD_JOBS" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt"
     if strip <"$dir/o.txt" | grep -qE '^modules: [0-9]+ checked'; then
         root_built=1
     else
@@ -960,9 +960,10 @@ run_root() { # <target> <out file>
     # The set `build_root` wrote is fresh: this run emits from it, no comptime (1006 P3).
     # `--cold` reads no code cache and still reuses the fresh set (1006 (4)).
     touch "$work/stamp-root-$t"
-    # One process per member, side by side on this target's share of the run's jobs (1066 (2)),
+    # One process per member, side by side on this target's share of the jobs and of the memory at its measured peak (1066 (2), 1074 (2)),
     # each over the workspace's one folder `$dir/out/<t>/` (1015 (4)).
-    root_members "$dir/members" "$ROOT_JOBS" run --target "$t" --workspace-out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt"
+    local rj="ROOT_JOBS_$t"
+    root_members "$dir/members" "${!rj:-1}" run --target "$t" --workspace-out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt"
     code=$?
     reach_report "$t" "root/modules" "$work/stamp-root-$t" "$here/modules/.botopinkbuild/runtime" "$dir/out" "$work/stamp-root-build"
     strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
@@ -1390,15 +1391,24 @@ fi
 # The root package (§ the root package) is held to the tree and built once
 # here, before the pool: its targets' jobs reuse its `.bpr` set.
 ROOT_BUILT=0; ROOT_REFUSAL=""; ROOT_LISTED=0
-# Each target's run of the root holds its share of the run's jobs (decision 1006 (5)).
+# Each target's run of the root holds its share of the run's jobs (decision 1066 (2)), and as many
+# members of it run side by side as its share of MemAvailable holds at the member's measured peak on
+# that target (decision 1074 (2), `pool_member_jobs`); the bare build, before the pool, the whole.
 ROOT_JOBS=$(( jobs / ${#targets[@]} )); [ "$ROOT_JOBS" -ge 1 ] || ROOT_JOBS=1
+root_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
+[ -n "$root_avail_kb" ] || root_avail_kb=$(( 1 << 40 )) # no /proc/meminfo: the jobs bound alone
+ROOT_BUILD_JOBS="$(pool_member_jobs "$root_avail_kb" "$jobs" build)"
+for t in "${targets[@]}"; do
+    printf -v "ROOT_JOBS_$t" '%s' "$(pool_member_jobs "$(( root_avail_kb / ${#targets[@]} ))" "$ROOT_JOBS" "$t")"
+    export "ROOT_JOBS_$t"
+done
 if grep -q '^modules	' "$jobs_list"; then
     roster
     build_root
     ROOT_BUILT="$root_built"; ROOT_REFUSAL="$root_refusal"
     ROOT_LISTED="$(listed_modules | grep -c . || true)"
 fi
-export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED ROOT_JOBS
+export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED ROOT_JOBS ROOT_BUILD_JOBS
 # The libraries' programs are written inside the checkout (the name resolves by its walk-up), under
 # a directory of this run's own (§ the libraries); the disabled pairs are read once.
 LIB_RUN=""

@@ -73,6 +73,8 @@ pub fn run(
     };
 
     // Build first, into the same directory the entry point is read from.
+    // The command's bound covers its build too (decision 1074 (1)).
+    if (opts.timeout_s) |s| build_cmd.armDeadline(io, s);
     const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = out_dir, .cold = opts.cold, .entry = opts.module, .workspace_out = opts.workspace_out }, env_map);
     if (build_exit != 0) return build_exit;
 

@@ -1473,6 +1473,14 @@ echo "  job budget on a ${RUNNER_GIB} GiB / ${RUNNER_CPUS}-CPU runner: whole gat
 [[ "$B_CONF" -ge 3 ]] && ok "--stage test-conformance on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_CONF)" || fail "stage budget on a 16 GB runner: test-conformance '$B_CONF', want >= 3"
 [[ "$B_CLI" -ge 3 ]] && ok "--stage test-cli on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_CLI)" || fail "--stage test-cli budget: got '$B_CLI', want >= 3"
 [[ "$(budget_for 14 4 test-web)" -ge "$(budget_for 14 4 test-web test-cli)" ]] && ok "a stage adds its own memory to the budget, never another's" || fail "pool_budget_for: test-web alone is below test-web + test-cli"
+# Decision 1074 (2): a conformance member's process is a job kind of its own, sized by its measured
+# peak per target; the spawner runs max(1, min(cap, memory / peak)) members side by side.
+member_jobs() { bash -c '. "$1"; pool_member_jobs "$2" "$3" "$4"' _ "$REPO_ROOT/scripts/lib/pool.sh" "$@"; }
+MJ="$(member_jobs $(( 9 * 1048576 )) 16 erlang) $(member_jobs $(( 9 * 1048576 )) 16 wasm) $(member_jobs $(( 9 * 1048576 )) 4 wasm) $(member_jobs 100 16 erlang) $(member_jobs $(( 9 * 1048576 )) 16 nosuchkind)"
+[[ "$MJ" == "10 16 4 1 10 " || "$MJ" == "10 16 4 1 10" ]] \
+  && ok "9 GiB: 10 erlang members (900 MiB each), 16 wasm (the cap), 4 under a cap of 4, 1 at the floor, an unknown kind at the largest peak" \
+  || fail "pool_member_jobs: got '$MJ', want '10 16 4 1 10'"
+
 gate_args() { # <want exit> <want text> <label> <arg>… — `gate.sh` refuses the arguments before it starts
   local want="$1" text="$2" label="$3"
   shift 3

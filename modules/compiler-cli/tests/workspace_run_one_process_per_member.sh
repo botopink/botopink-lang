@@ -143,7 +143,7 @@ echo "==> a package's run --timeout stops its program, wasm at the epoch deadlin
 for target in commonJS wasm; do
   rm -rf "$WS/zhang/out"
   run_in "$WS/zhang" run --target "$target" --timeout 20
-  [[ $CODE -eq 1 ]] && grep -q "the command's --timeout of 20 s was reached: the program was stopped" <<<"$OUT" \
+  [[ $CODE -eq 1 ]] && grep -q "the command's --timeout of 20 s was reached" <<<"$OUT" \
     || { echo "$OUT" >&2; fail "$target: zhang alone under --timeout 20 is stopped, the bound named (exit $CODE)"; }
   if pgrep -f -- "$WS/zhang/out" >/dev/null; then fail "$target: zhang's program outlived the command"; fi
 done

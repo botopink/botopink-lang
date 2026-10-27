@@ -60,11 +60,12 @@ pub const Options = struct {
     cache_root: ?[]const u8 = null,
     /// `--workspace-out <dir>`: the member's build into its workspace's one
     /// output folder (decision 1015 (4), `workspace_out.zig`) — `<dir>` is the
-    /// output directory, the member's own files written in place and each
-    /// dependency's once per its key. Handed by the workspace root's command.
+    /// output directory, every file staged and renamed, each dependency's once
+    /// per its key. Handed by the workspace root's command.
     workspace_out: ?[]const u8 = null,
-    /// `--timeout <s>`: at a workspace root, the seconds each member's process
-    /// is given (default 900).
+    /// `--timeout <s>`: the whole command's bound (decisions 1067, 1074 (1)) —
+    /// at a workspace root every member together, in a package its own
+    /// process (`armDeadline`); none when not passed.
     timeout_s: ?u64 = null,
 };
 
@@ -241,6 +242,8 @@ pub fn run(
     if (opts.workspace_out == null and opts.runtime_input == null and opts.emit_runtime == null and opts.emit_resolved == null) {
         if (try workspace_out.atRoot(gpa, io, .{ .command = .build, .target = opts.target, .out_dir = opts.out_dir, .cold = opts.cold, .cache_root = opts.cache_root, .timeout_s = opts.timeout_s }, env_map)) |code| return code;
     }
+    // A package's `--timeout` (decision 1074 (1)): the whole command bounded.
+    if (opts.timeout_s) |s| armDeadline(io, s);
     if (!opts.json) return runBuild(gpa, io, opts, env_map);
 
     // `--json`: the build runs as without it (stderr unchanged, tee'd into
@@ -1096,6 +1099,32 @@ fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, packages: bp.codegen.c
     }
 }
 
+// ── The command's bound ───────────────────────────────────────────────────────
+
+/// Decisions 1067, 1074 (1) — `--timeout <s>` bounds a package's whole
+/// command: a watchdog thread that, `s` seconds from now, kills every child
+/// group the compiler recorded (the erl session, erlc, node — decision 1061
+/// (1), `procgroup`), names the bound on stderr and ends the process with 1.
+/// Nothing half written stays behind: the `.bpr` set, its key, the target key
+/// and every file of `out/<t>/` are staged and renamed (the target key last,
+/// on success only), so a stopped build leaves the previous ones whole. Armed
+/// once per process (`run` arms it for its build and its program alike).
+pub fn armDeadline(io: std.Io, timeout_s: u64) void {
+    if (deadline_armed) return;
+    deadline_armed = true;
+    const t = std.Thread.spawn(.{}, deadlineWatch, .{ io, timeout_s }) catch return;
+    t.detach();
+}
+var deadline_armed = false;
+
+fn deadlineWatch(io: std.Io, timeout_s: u64) void {
+    io.sleep(.fromSeconds(@intCast(@min(timeout_s, std.math.maxInt(i64)))), .awake) catch return;
+    bp.procgroup.killAll();
+    var buf: [128]u8 = undefined;
+    reporter.errMsg(std.fmt.bufPrint(&buf, "the command's --timeout of {d} s was reached: it was stopped", .{timeout_s}) catch "the command's --timeout was reached: it was stopped");
+    std.process.exit(1);
+}
+
 // ── Output writer ─────────────────────────────────────────────────────────────
 
 /// The erlang / beam modules this process's build wrote into a workspace's
@@ -1122,7 +1151,11 @@ const FileWriter = struct {
 
     fn write(self: FileWriter, path: []const u8, bytes: []const u8) !void {
         if (self.once) |w| return w.write(self.pkg, path, bytes);
-        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = bytes });
+        // Staged and renamed: a build stopped midway (`--timeout`, a signal)
+        // leaves the previous file whole (decision 1074 (1)).
+        var arena_inst = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena_inst.deinit();
+        try analysis_store.write(arena_inst.allocator(), self.io, path, bytes);
     }
 };
 

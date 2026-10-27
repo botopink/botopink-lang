@@ -2280,7 +2280,9 @@ comptime compile (its cases loaded inside it) into its `.bpr` set and key under
 does not build is that member's red on each target. Each target of the run is one job: `botopink run
 --target <t> --workspace-out <out>` in each member — over one `<out>/<t>/` folder (1015 (4)), each
 reusing its set while its key is fresh (`run` takes no `.bpr` path, 1009) —, the job's share the run's
-jobs over its targets. `--cold` rebuilds the sets (`build --cold`) and the runs reuse them with no code
+jobs over its targets, and as many members of it side by side as its share of `MemAvailable` holds at
+the member's measured peak on that target (`pool_member_jobs`, `scripts/lib/pool.sh`, decision 1074 (2):
+erlang 900 MiB, beam 420, wasm 220, commonJS 170, a bare build 150). `--cold` rebuilds the sets (`build --cold`) and the runs reuse them with no code
 cache read (1006 (4)). A member's crash or hang is that member's red alone (its process group, under
 run.sh's own bound `MODULE_TIMEOUT`, 1067 (4)), and a run that ends without its summary, or with fewer
 verdicts than the members, is a red of its own. Before the build `run.sh`'s `roster` reds a member not in decision 989's

@@ -96,6 +96,34 @@ pool_budget_for() {
     pool_budget_jobs "$avail_kb" "$cpus" "$fixed" "$reserve" "$conf" "$pc"
 }
 
+# pool_member_peak_mib <kind> — the measured peak of one conformance member's process
+# (decision 1074 (2), a job kind of the compiler pool beside the B-129 stage budgets): the
+# summed resident memory of its session, cold, the largest of `modules/array` and
+# `modules/case` (39 cases), rounded up. `build` is a bare `botopink build` (comptime, the
+# `.bpr` set); a target is `botopink run --target <t>` (its build included). Measured input:
+# it falls as the compiler's memory falls (1061 (2) took erlang from 2.6 GiB to under 0.9).
+pool_member_peak_mib() {
+    case "$1" in
+        build) echo 150 ;;     # 134 MiB
+        erlang) echo 900 ;;    # 873 MiB (`case`), 756 (`array`)
+        beam) echo 420 ;;      # 403 MiB
+        commonJS) echo 170 ;;  # 164 MiB
+        wasm) echo 220 ;;      # 211 MiB
+        *) echo 900 ;;         # an unknown kind: the largest
+    esac
+}
+
+# pool_member_jobs <avail_kb> <cap> <kind> — how many members of one kind run side by side
+# (conformance/run.sh's spawner, decision 1066 (2)): max(1, min(<cap>, <avail_kb> / peak)),
+# <avail_kb> the memory this pool may use (its share of MemAvailable), <cap> its share of jobs.
+pool_member_jobs() {
+    local by_mem
+    by_mem=$(( $1 / 1024 / $(pool_member_peak_mib "$3") ))
+    [ "$by_mem" -lt "$2" ] || by_mem="$2"
+    [ "$by_mem" -ge 1 ] || by_mem=1
+    echo "$by_mem"
+}
+
 # pool_check_jobs <value> <who> — exit 2 unless a positive count
 pool_check_jobs() {
     case "$1" in
