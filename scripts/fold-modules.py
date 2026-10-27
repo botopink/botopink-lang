@@ -533,8 +533,9 @@ val accepted: string = @embed("snapshot/main.snap").text();
 /// What each case answered, in the order the cases ran.
 var answers: observe.Observed[] = [];
 
-/// One case, expanded where it is called (decision 808 (2)): a refused load answers its
-/// diagnostics, a loaded one runs and answers its output.
+/// One case, expanded where `main` calls it (decisions 808 (2), 998 (5)): a refused load answers
+/// its diagnostics, a loaded one runs and answers its output — awaited in `main`'s `async` body
+/// when the case's own `main` is `async` (`mainAsync()`, read at build).
 fn runCase(comptime name: string) -> void {
     val loaded = try comptime compiler.load("cases/" + name) catch { r ->
         compiler.init({ ->
@@ -546,18 +547,21 @@ fn runCase(comptime name: string) -> void {
         });
         return;
     };
-    compiler.init({ ->
-        val ran = adapter.ranOf(loaded.run());
-        answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
-    });
+    if (comptime loaded.mainAsync())
+        compiler.init({ async ->
+            val ran = adapter.ranOf(await loaded.run());
+            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+        })
+    else
+        compiler.init({ ->
+            val ran = adapter.ranOf(loaded.run());
+            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+        });
 }
 
-comptime {
-'''
-SELF_CHECK_TAIL = '''}
-
 pub async fn main() -> Async<Result<void, string>> {
-    return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
+'''
+SELF_CHECK_TAIL = '''    return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }
 '''
 WORKSPACE = os.path.join(MODULES, "botopink.json")
@@ -613,10 +617,15 @@ class Workspace:
     def __enter__(self):
         self.text = read(WORKSPACE)
         d = json.loads(self.text)
+        # Since piece 6 the root is a package with no `workspaces`: a module runs in place.
+        if "workspaces" not in d:
+            self.text = None
+            return
         d["workspaces"] = ["*/cases/*", "decisions-taken/*/cases/*"]
         write(WORKSPACE, json.dumps(d) + "\n")
     def __exit__(self, *a):
-        write(WORKSPACE, self.text)
+        if self.text is not None:
+            write(WORKSPACE, self.text)
 
 
 def run_in_place(botopink, module, target):
