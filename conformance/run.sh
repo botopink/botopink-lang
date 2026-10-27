@@ -137,7 +137,7 @@ fi
 # clock and nothing else: `--jobs 1` and the default print the same bytes and
 # exit with the same status.
 #
-# The pool is scripts/lib/pool.sh — `botopink-lib-test`'s rule: one job per
+# The pool is scripts/lib/pool.sh — the former library runner's rule: one job per
 # CPU, bounded by `MemAvailable / 768 MiB`, and a job admitted only while the
 # machine's runnable threads are at most the CPU count (other gates share it).
 # The root package is built once before the pool starts (§ the root package);
@@ -630,7 +630,7 @@ run_root() { # <target> <out file>
 #
 # `disabled.txt` (decision 996, a one-time exception to 67): the pairs that did
 # not run when the libraries joined the suite (beam and wasm, which
-# `botopink-lib-test` never ran), one `<package> <target> — decision 996` line
+# the former library runner never ran), one `<package> <target> — decision 996` line
 # each. Shrink-only: a line on another target, a line twice, a malformed line or
 # more lines than it was generated with (`DISABLED_GENERATED`) is a red; a listed
 # pair that passes, or is now excluded, is a red until its line is deleted; a
@@ -1004,7 +1004,7 @@ if grep -q '^libraries/' "$jobs_list"; then
     mkdir -p "$lib_run"
     LIB_RUN="$lib_run"
     # A workspace document that quotes the tool's member list is checked against the tool (decision 993 (7):
-    # the library runner's `doc_quotes`, now `botopink packages --check-docs`); a stale quote is a red of the plan.
+    # the former library runner's `doc_quotes`, now `botopink packages --check-docs`); a stale quote is a red of the plan.
     if ! docs_out="$(cd "$here/libraries" && env -u BOTOPINK_LIB_ROOTS "$compiler" packages --check-docs 2>&1)"; then
         printf '*\tbotopink packages --check-docs\tfail\t%s\n' "$(printf '%s' "$docs_out" | sed $'s/\x1b\\[[0-9;]*m//g' | tr '\n' ' ')" >"$work/r-plan-docs-quotes"
     fi

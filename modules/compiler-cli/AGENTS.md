@@ -45,16 +45,12 @@ compiler-cli/
 │   │                          (multi / none), assert message, a failing `try`, the
 │   │                          FAIL line's `src/main.bp:<line>` (commonJS + erlang),
 │   │                          mixed pass/fail exit, the `.snap.new` candidate list;
-│   │                          `botopink-lib-test` compiles a test-less library,
-│   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a test reads its module's private fn and `val` on
 │   │                          all four targets, a dependency's tests never run
 │   │                          (decision 513), and a second run reads the
 │   │                          dependency's level B entry with its CODE (not
 │   │                          rewritten) with the same results (144 B-60);
-│   │                          a `"targets"` exclusion is never run and is audited
-│   │                          (structural / builds / another error — runner and
-│   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
+│   │                          `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
 │   └── code_cache.sh        ← the code cache (decision 509) and the workspace a cell
@@ -206,7 +202,7 @@ bash modules/compiler-cli/tests/build_modes_same_answer.sh # built directly and 
 > `cli_contract.sh`, `test_tooling.sh`'s report (`--filter`, the totals, the FAIL
 > line's message and `src/main.bp:<line>`, the `*.snap.new` list),
 > and `backend_exec.sh`'s `wasm --invoke main`.
-> The `std` suite on erlang is covered by `zig build test-libs`, not a script.
+> The `std` suite on erlang is covered by the conformance stage's `libraries/std` job, not a script.
 
 ## External libs (generic loader)
 
@@ -353,9 +349,7 @@ no "files"` (decision 75).
 
 The same hook is mirrored in
 [`language-server/src/project_graph.zig`](../language-server/AGENTS.md#env)
-and
-[`lib-test-runner/src/discovery.zig:resolveRoots`](../lib-test-runner/AGENTS.md#env)
-so the CLI, the LSP, and the lib-test runner see the same root list.
+so the CLI and the LSP see the same root list.
 bpmp sets it when spawning the compiler (`bpmp run`).
 
 ## Command contract
@@ -369,7 +363,7 @@ What each command promises. A row the code does not meet yet is marked
 | `build [--target T] [--out D] [--typescript] [--cold]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts` on commonJS when `--typescript` or the manifest's `"typings": true` says so — either one turns it on, neither turns it off (decisions 619, 620; `Options.typescript or manifest.typings`), + `.mjs` sidecars on commonJS, + host `.erl` sidecars under `D/erl/` and `D/beam/`); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | the program is never run — `codegen.generateWith(…, .{ .execute = false })` emits only; on **erlang** one `erl` compiles every written `.erl` in memory with the OTP compiler (`checkErlang`), because a build that only transpiled proved nothing about erlang — a DEPENDENCY's module whose exact bytes the same OTP compiler already compiled is answered from the code cache `<cache root>/.botopinkbuild/cache/code/` and its `.beam` is materialised beside the `.erl` in `D/erl/`, as `run` links it (decisions 509 (4), 767; `src/cli/code_cache.zig`; the project's own modules are compiled every time, a refusal is compiled and printed every time; `--cold` reads nothing); on **erlang and BEAM** one `erl` asks the code path about the host modules no sidecar answers (`libs.absentFromCodePath`) | every module compiled, its artifact is on disk, and on erlang the OTP compiler accepted every emitted module | no project, unsupported target, unresolvable tree or dependency, **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` — or, on erlang, the OTP compiler refused an emitted module (each refusal printed `<file>:<line>:<col>: <message>`, then `the OTP compiler refused emitted erlang`) — or, on erlang and BEAM, a host module is neither shipped nor on the Erlang code path, a sidecar file is named like a module atom the build emits (located on the file, naming the module), or `erl` could not be run; over a `.bpr` (`build --target T <file>.bpr`, decisions 798, 805) the five `runtime-*` codes beside `std-unsupported-on-target` — `runtime-target-required`, `runtime-other-compiler`, `runtime-unreadable`, `runtime-missing`, `runtime-not-a-program`; a `.bpr` is built from its project's directory: the working directory's `botopink.json` must name the file's root, else `runtime-other-project` (naming both, decision 838 (3)) |
 | `run [--target T] [--module M] [--out D] [--cold] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** what `erlc -o D/erl` over every emitted `.erl` does — a job of the command's `erl` session (`cli/otp.zig`), the VM that answered the release and ran `build`'s check, reading the files from a list file, so no command line grows with the program (`cli/arglist.zig`) — and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (with `+sbwt none +sbwtdcpu none +sbwtdio none` first: no scheduler busy wait, the default scheduler count); on **beam** the same for `erlc +from_asm -o D/beam` over every emitted `.S`, and then `erl -noshell -pa D/beam -eval "'M':main([]), halt()."` — the entry's `'__bp_load_siblings'/0` compiles and loads the host `.erl` files the build shipped beside them | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
-| `test [--target T] [--filter S] [--json] [--cold]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `<id>.tmp` sibling is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR` and removed with it. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript` / `erl`, after one `erlc +from_asm` over the run's `.S` on beam) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
+| `test [--target T] [--filter S] [--json] [--cold]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `<id>.tmp` sibling is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR` and removed with it. Never the shared `test-out/` root: the library gate (then `botopink-lib-test`) ran every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript` / `erl`, after one `erlc +from_asm` over the run's `.S` on beam) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
 | `format [paths…]` | the files and directories named, else the current directory — every `.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a conformance cell's refused module: a `.bp` under a cell (a directory holding `snapshot/output/`, decisions 457, 475) whose `snapshot/output/<module>.snap` holds a `refused` record — a module every target refuses, written to be refused (every former `reject/` cell, and `conformance/modules/lexer/cells/lexer_error_in_imported_module/src/pattern.bp`); a refusal only a `snapshot/targets/<t>/` departure states, an answer, no snapshot or no cell leaves the file in the walk (144 B-29 step H; `format_cmd.zig`'s tests). The exemption is the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. No gate stage calls it: the formatter is applied by the commit hook, never checked (decision 524) |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
@@ -482,8 +476,8 @@ Cross-command rules:
 - **Two runs in one checkout do not empty each other's output.** `botopink test`
   writes to `.botopinkbuild/test-out/<target>/<id>/` — per target and per run,
   `id` being 64 random bits — and removes that directory when the run ends; the
-  shared `test-out/` root is never written to directly. `botopink-lib-test`
-  runs every cell with `cwd = <lib dir>`, so two gates over one library checkout
+  shared `test-out/` root is never written to directly. the library gate
+  (then `botopink-lib-test`) ran every cell with `cwd = <lib dir>`, so two gates over one library checkout
   (two worktrees, or a gate and a hand-run `botopink test`) used to empty each
   other's output mid-run and leave the loser reporting a library red owned by
   nobody: `Cannot find module …/x_test.js` under node, or an `{error,undef}`
@@ -521,7 +515,7 @@ Cross-command rules:
   every layout: a path relative to the library's checkout
   (`../../../botopink-lang/zig-out/bin/botopink`) exists in the meta workspace
   only, and a library's fixture-build tests would fail in CI's layout the day
-  CI ran them. Neither `botopink-lib-test` nor `scripts/test-libs.sh` sets the
+  CI ran them. The library gate does not set the
   variable. Pinned by the `[env]` rows of `tests/test_tooling.sh` (unset → the
   running binary; pre-set → the pre-set value; commonJS and erlang).
 - **The scaffold runs.** `botopink new` writes a program whose `main` calls
@@ -598,7 +592,7 @@ Cross-command rules:
 
 Each `test "name" { … }` block emits a fixed envelope (generated by the
 commonJS and erlang test runners in compiler-core codegen) so downstream
-tooling (lib-test-runner, `--json` consumers) can parse per-test outcomes:
+tooling (`--json` consumers) can parse per-test outcomes:
 
 ```
 TEST <file>:<line> <name>

@@ -11,14 +11,6 @@
 #   • a run lists every `*.snap.new` snapshot candidate it leaves
 #   • the LAST line of a run is its total, `total: <P> passed, <F> failed in
 #     <N> module(s)` — never the last module's own summary
-#   • botopink-lib-test compiles a library with no test block (`–` when it
-#     compiles, `✗` when it does not)
-#   • a target a member's `"targets"` list excludes is never run: there is no
-#     flag for it, and the exclusion is audited — structural when `botopink
-#     build` there is refused for a missing host binding, a failed run when
-#     the member builds there or fails for another reason
-#   • every `--lib` given runs, in the order given, in one report (decision
-#     258), and a `--lib` that names no library fails the run
 #   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
 #     caller set the variable
 #   • a module's tests are a unit of their own (decision 513): a test reads a
@@ -41,7 +33,7 @@
 # runtime-throwing construct (`arr[index]` is a compile error, no `@panic`); the
 # failing-assert case below already shows the runner catches a thrown assertion
 # and reports FAIL rather than crashing. wasm-target lib execution stays
-# skipped-unsupported (lib-test-runner runs commonJS/erlang only); `botopink
+# skipped-unsupported; `botopink
 # test --target wasm` runs a module's test unit, a failing assert trapping the
 # run (decision 513). See
 # front-c-runtime.md C1.
@@ -164,187 +156,8 @@ for t in commonJS erlang; do
   [[ "$(tail -1 <<<"$out")" == "total: 3 passed, 0 failed in 2 module(s)" ]] || fail "$t: the last line should be the run's total, got: $(tail -1 <<<"$out")"
 done
 
-# ── botopink-lib-test compiles a library that has no test block ──────────────
-echo "==> [libs] a test-less library is still compiled: – when it compiles, ✗ when it does not"
-LIB_TEST_BIN="$REPO_ROOT/zig-out/bin/botopink-lib-test"
-[[ -x "$LIB_TEST_BIN" ]] || fail "botopink-lib-test not found at $LIB_TEST_BIN"
 LIBWORK="$(mktemp -d)"
 trap 'rm -rf "$LIBWORK"' EXIT
-mkdir -p "$LIBWORK/root/quietok/src" "$LIBWORK/root/quietbad/src"
-for lib in quietok quietbad; do
-  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "files": ["%s.bp"] }\n' "$lib" "$lib" >"$LIBWORK/root/$lib/botopink.json"
-  printf 'pub mod %s;\n' "$lib" >"$LIBWORK/root/$lib/src/root.bp"
-done
-printf 'pub fn quiet() -> i32 {\n    return 1;\n}\n' >"$LIBWORK/root/quietok/src/quietok.bp"
-printf 'pub fn quiet() -> i32 {\n    return (1;\n}\n' >"$LIBWORK/root/quietbad/src/quietbad.bp"
-libtest() { # libtest <lib> — JSON run from a directory with no walk-up roots
-  set +e
-  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --target commonJS --lib "$1" 2>&1 )"
-  code=$?
-  set -e
-  echo "$out"
-}
-libtest quietok
-[[ $code -eq 0 ]] || fail "a test-less library that compiles must not fail test-libs (exit $code)"
-grep -q '"lib":"quietok","target":"commonJS","status":"no_tests"' <<<"$out" || fail "quietok should be no_tests"
-[[ -d "$LIBWORK/root/quietok/.botopinkbuild/lib-test-build/commonJS" ]] || fail "quietok was not compiled"
-# The compile's output is this run's own directory (`<target>/<id>`), removed
-# when the cell ends — two gates over one checkout never share it.
-[[ -z "$(ls -A "$LIBWORK/root/quietok/.botopinkbuild/lib-test-build/commonJS")" ]] || fail "the compile-only cell left its per-run output behind"
-libtest quietbad
-[[ $code -eq 1 ]] || fail "a test-less library that does not compile must fail test-libs (exit $code)"
-grep -q '"lib":"quietbad","target":"commonJS","status":"fail"' <<<"$out" || fail "quietbad should be fail"
-grep -q 'quietbad.bp' <<<"$out" || fail "the compile diagnostic should name quietbad.bp"
-
-# ── botopink-lib-test runs cells in parallel and prints them as --jobs 1 does ─
-# The pool changes when a cell runs, never what is printed: every cell is
-# emitted in discovery order by one thread, from the child's captured output.
-echo "==> [libs] --jobs 4 prints, byte for byte, what --jobs 1 prints"
-jobsrun() { # jobsrun <n> — every lib of the work root, both targets, merged streams
-  set +e
-  ( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --jobs "$1" 2>&1 ) |
-    sed -E 's/ in [0-9.]+m?s/ in <t>/'
-  set -e
-}
-serial="$(jobsrun 1)"
-pooled="$(jobsrun 4)"
-[[ -n "$serial" ]] || fail "the serial run printed nothing"
-[[ "$serial" == "$pooled" ]] || { diff <(echo "$serial") <(echo "$pooled"); fail "--jobs 4 printed something --jobs 1 did not"; }
-
-# ── the manifest decides the matrix; an exclusion is audited ────────────────
-# A member's `"targets"` list says which (member, target) pairs are cells. An
-# excluded target is never run — no flag lifts it — and the exclusion must be
-# STRUCTURAL: `botopink build --target <excluded>` refused, its first error the
-# missing host binding. A member that builds on the target it excludes, or
-# fails there for another reason, fails the run: a restriction may not hide a
-# cell that could run, or a red. The compiler's refusal carries no error id, so
-# these three builds are what hold its text and the runner's reading together.
-echo "==> [libs] an excluded target is audited: structural → ok; builds, or another error → the run fails"
-TEST_LIBS="$REPO_ROOT/scripts/test-libs.sh"
-AUDWORK="$LIBWORK/audit"
-mkaudit() { # mkaudit <lib> — an erlang-only member: `"targets": ["erlang"]`
-  mkdir -p "$AUDWORK/$1/src"
-  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "targets": ["erlang"], "files": ["cell.bp"] }\n' "$1" >"$AUDWORK/$1/botopink.json"
-  printf 'pub mod cell;\n' >"$AUDWORK/$1/src/root.bp"
-}
-# hostbound: its one host cell has an erlang binding and no node one.
-mkaudit hostbound
-cat >"$AUDWORK/hostbound/src/cell.bp" <<'BP'
-import {compiler} from "std";
-
-#[compiler.external(.Erlang("erlang:system_time()"))]
-declare fn now() -> i64;
-
-pub fn stamp() -> i64 {
-    return now();
-}
-BP
-# bothbound: the same cell, given a node binding too — it builds on commonJS.
-mkaudit bothbound
-cat >"$AUDWORK/bothbound/src/cell.bp" <<'BP'
-import {compiler} from "std";
-
-#[compiler.external(.Erlang("erlang:system_time()"), .JavaScript("Date.now()"))]
-declare fn now() -> i64;
-
-pub fn stamp() -> i64 {
-    return now();
-}
-BP
-# otherred: excluded from commonJS, and red there for a reason that is not a
-# host binding (it does not parse) — the exclusion would hide that red.
-mkaudit otherred
-printf 'pub fn stamp() -> i64 {\n    return (1;\n}\n' >"$AUDWORK/otherred/src/cell.bp"
-auditrun() { # auditrun <lib> [<runner args>…] — JSON run of one member, both targets
-  local lib="$1"; shift
-  set +e
-  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$AUDWORK" --lib "$lib" "$@" 2>&1 )"
-  code=$?
-  set -e
-  echo "$out"
-}
-auditrun hostbound
-[[ $code -eq 0 ]] || fail "a structural exclusion must not fail the run (exit $code)"
-grep -q '"event":"cell_summary","lib":"hostbound","target":"erlang","status":"no_tests"' <<<"$out" || fail "hostbound·erlang is a declared cell and should compile"
-! grep -q '"event":"cell_summary","lib":"hostbound","target":"commonJS"' <<<"$out" || fail "hostbound·commonJS is excluded by the manifest: it must not be a cell"
-grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","line":"error: `now` has no implementation for the node backend"' <<<"$out" ||
-  fail "the audit should accept hostbound's exclusion and quote the refusal"
-grep -q '"event":"run_summary","passed":0,"failed":0,"no_tests":1,"skipped":0,"audited":1,"not_structural":0' <<<"$out" || fail "the run summary should count one cell and one audit"
-auditrun bothbound
-[[ $code -eq 1 ]] || fail "a member that builds on the target it excludes must fail the run (exit $code)"
-grep -qF '"event":"restriction_audit","lib":"bothbound","target":"commonJS","status":"not_structural","line":"`botopink build --target commonJS` succeeds"' <<<"$out" ||
-  fail "the audit should refuse bothbound's exclusion: it builds on commonJS"
-grep -qF 'the restriction is not structural — `bothbound` excludes `commonJS` in its "targets"' <<<"$out" || fail "the refusal should name the member and the target"
-grep -q '"failed":0,"no_tests":1,"skipped":0,"audited":0,"not_structural":1' <<<"$out" || fail "no cell is red: the refused exclusion alone fails the run"
-auditrun otherred --target commonJS
-[[ $code -eq 1 ]] || fail "an exclusion that hides another red must fail the run (exit $code)"
-grep -q '"event":"restriction_audit","lib":"otherred","target":"commonJS","status":"not_structural","line":"error' <<<"$out" ||
-  fail "the audit should refuse otherred's exclusion and quote its first error"
-grep -q 'cell.bp' <<<"$out" || fail "the build's own diagnostic should be printed above the refusal"
-# There is no flag that runs an excluded target, in the runner or the wrapper.
-auditrun hostbound --include-unsupported
-[[ $code -eq 2 ]] || fail "--include-unsupported must be an unknown flag (exit $code)"
-! "$LIB_TEST_BIN" --help | grep -q -- "--include-unsupported" || fail "--help still documents --include-unsupported"
-# `--list` prints the plan and runs nothing: the cells are the manifest's.
-plan="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$AUDWORK" --list )"
-echo "$plan"
-[[ "$(grep -c $'\tcell:' <<<"$plan")" -eq 3 ]] || fail "--list should count 3 cells (each member's erlang)"
-[[ "$(grep -c $'\taudit$' <<<"$plan")" -eq 3 ]] || fail "--list should count 3 audits (each member's commonJS)"
-# The wrapper reports the same verdicts and reads no list and no variable that
-# could change one: the two variables that used to swap the ledgers do nothing.
-wraprun() { # wraprun <lib> — scripts/test-libs.sh over one member
-  set +e
-  out="$( BOTOPINK_KNOWN_RED_LIBS=/dev/null BOTOPINK_RESTRICTED_TARGETS=/dev/null bash "$TEST_LIBS" --lib-root "$AUDWORK" --lib "$1" 2>&1 )"
-  code=$?
-  set -e
-  echo "$out"
-}
-wraprun hostbound
-[[ $code -eq 0 ]] || fail "test-libs.sh: a structural exclusion must not fail the run (exit $code)"
-grep -qF 'hostbound · commonJS: excluded by "targets" — structural: error: `now` has no implementation for the node backend (src/cell.bp:' <<<"$out" ||
-  fail "test-libs.sh should print the refusal that proves the exclusion structural"
-grep -qx "test-libs: 0 passed, 0 failed, 1 without tests, 1 restrictions audited" <<<"$out" || fail "test-libs.sh: the summary line is not the one documented"
-wraprun bothbound
-[[ $code -eq 1 ]] || fail "test-libs.sh: a restriction that is not structural must fail the run (exit $code)"
-grep -qF 'bothbound · commonJS: NOT STRUCTURAL — excluded by "targets", and `botopink build --target commonJS` succeeds' <<<"$out" || fail "test-libs.sh should name the refused exclusion"
-grep -qx "test-libs: 0 passed, 0 failed, 1 without tests, 0 restrictions audited, 1 restrictions not structural" <<<"$out" || fail "test-libs.sh: the summary line should count the refused exclusion"
-grep -q "^test-libs: restrictions that are not structural .*: bothbound·commonJS$" <<<"$out" || fail "test-libs.sh should list the refused exclusions"
-# A pair `botopink test` cannot run is not a pass either: the wrapper fails it.
-set +e
-wrapbeam="$( bash "$TEST_LIBS" --lib-root "$AUDWORK" --lib hostbound --target beam 2>&1 )"
-code=$?
-set -e
-echo "$wrapbeam"
-[[ $code -eq 1 ]] || fail "test-libs.sh: a requested target botopink test cannot run must fail the run (exit $code)"
-grep -qF 'hostbound · beam: NOT RUNNABLE' <<<"$wrapbeam" || fail "test-libs.sh should name the pair that did not run"
-grep -qx "test-libs: 0 passed, 0 failed, 0 without tests, 0 restrictions audited, 1 not runnable by botopink test" <<<"$wrapbeam" || fail "test-libs.sh: the summary line should count the pair that did not run"
-# Every `--lib` runs, in the order given, in one report (decision 258) — it
-# used to run only the last one, silently. The plan lists the names in the
-# order given (by name it would be bothbound first), the wrapper reports both
-# cells of two libraries, and a name that matches no library fails the run.
-plan="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$AUDWORK" --lib hostbound --lib bothbound --list )"
-echo "$plan"
-[[ "$(cut -f1 <<<"$plan" | uniq | tr '\n' ' ')" == "hostbound bothbound " ]] || fail "--lib a --lib b should plan a then b"
-set +e
-wraptwo="$( bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietok --lib quietbad --target commonJS 2>&1 )"
-code=$?
-set -e
-echo "$wraptwo"
-[[ $code -eq 1 ]] || fail "test-libs.sh --lib quietok --lib quietbad: quietbad is red, the run must fail (exit $code)"
-grep -qF 'quietok · commonJS: no tests' <<<"$wraptwo" || fail "test-libs.sh should run the first --lib too"
-grep -qF 'quietbad · commonJS: FAIL' <<<"$wraptwo" || fail "test-libs.sh should run the second --lib"
-grep -qx "test-libs: 0 passed, 1 failed, 1 without tests, 0 restrictions audited" <<<"$wraptwo" || fail "test-libs.sh: two --lib are one report"
-set +e
-unknown="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$LIBWORK/root" --lib quietok --lib nosuchlib --target commonJS 2>&1 )"
-code=$?
-set -e
-[[ $code -eq 1 ]] || fail "a --lib that names no library must fail the run (exit $code)"
-grep -qF "no lib named 'nosuchlib'" <<<"$unknown" || fail "the unknown --lib should be named"
-# A red cell is red: nothing lists it away.
-wrapred="$( bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietbad --target commonJS 2>&1 )" && fail "test-libs.sh: a cell that does not compile must fail the run"
-echo "$wrapred"
-grep -qx "test-libs: 0 passed, 1 failed, 0 without tests, 0 restrictions audited" <<<"$wrapred" || fail "test-libs.sh: a red cell should be counted as failed"
-grep -q "^test-libs: FAILED cells: quietbad·commonJS$" <<<"$wrapred" || fail "test-libs.sh should name the failed cell"
 
 # ── `botopink test` names its own binary to the tests it runs ────────────────
 # A test that builds a fixture project spawns "the compiler running me". It
@@ -372,31 +185,6 @@ for t in "${binprobe_targets[@]}"; do
   grep -qxF "/caller/chose/this" <<<"$out" || fail "$t: a BOTOPINK_BIN the caller set must pass through untouched"
   ! grep -qxF "$BP_REAL" <<<"$out" || fail "$t: the caller's BOTOPINK_BIN was overwritten"
 done
-
-# ── a workspace document that quotes the tool is checked against it ─────────
-echo "==> [libs] a workspace AGENTS.md quoting a stale member list fails the run"
-mkdir -p "$LIBWORK/ws/umbrella/modules/um-core/src" "$LIBWORK/ws/umbrella/modules/um-extra/src"
-printf '{ "name": "umbrella", "workspaces": ["modules/*"] }\n' >"$LIBWORK/ws/umbrella/botopink.json"
-for m in um-core um-extra; do
-  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "files": ["um.bp"] }\n' "$m" >"$LIBWORK/ws/umbrella/modules/$m/botopink.json"
-  printf 'pub mod um;\n' >"$LIBWORK/ws/umbrella/modules/$m/src/root.bp"
-  printf 'pub fn one() -> i32 {\n    return 1;\n}\n' >"$LIBWORK/ws/umbrella/modules/$m/src/um.bp"
-done
-wsrun() {
-  set +e
-  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$LIBWORK/ws" --target commonJS 2>&1 )"
-  code=$?
-  set -e
-  echo "$out"
-}
-printf 'The refusal: `run this command inside one of its members: um-core,\num-extra`.\n' >"$LIBWORK/ws/umbrella/AGENTS.md"
-wsrun
-[[ $code -eq 0 ]] || fail "a quote that agrees with the tool must not fail the run (exit $code)"
-printf 'The refusal: `run this command inside one of its members: um-core`.\n' >"$LIBWORK/ws/umbrella/AGENTS.md"
-wsrun
-[[ $code -eq 1 ]] || fail "a quote that dropped a member must fail the run (exit $code)"
-grep -q "umbrella/AGENTS.md:1: the workspace refusal is quoted with the members \`um-core\`, but the tool prints \`um-core, um-extra\`" <<<"$out" ||
-  fail "the refusal should name the file, the quote and the tool's list"
 
 # ── a library ships its erlang host module ───────────────────────────────────
 # `#[@external(.Erlang("host:fn($0)"))]` lowers to `host:fn(…)`. `host` is a module

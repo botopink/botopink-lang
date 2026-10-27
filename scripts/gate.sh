@@ -19,8 +19,8 @@
 #                           binaries every later stage runs (§ build mode)
 #   3. backend partition    codegen/backend-partition.txt audited
 #                           (scripts/lib/backend-partition-audit.js, decision 249)
-#   4. zig build test       compiler-core + language-server + CLI +
-#                           lib-test-runner unit suites
+#   4. zig build test       compiler-core + language-server + CLI
+#                           unit suites
 #                           (--cold deletes the runtime cache and every
 #                           `.botopinkbuild/cache/` first)
 #   5. zig build test-bpmp  the package manager's unit suite
@@ -624,7 +624,7 @@ fi
 #
 # Measured peak resident memory (process tree, sampled every 0.1 s, ReleaseSafe,
 # 16 CPUs / 31 GB, one job of each run alone):
-#   test-libs job (one library: build and test, commonJS + erlang): 0.4–3.55 GiB —
+#   a library job of the former test-libs stage (one library: build and test, commonJS + erlang): 0.4–3.55 GiB —
 #       rakun-ssr 3.55, rakun-app 2.42, rakun-security 2.35, rakun-data 2.13,
 #       rakun-cli 1.80, onze-server 1.58, rakun 1.45, std 0.69, query 0.47;
 #   test-conformance job (one `botopink test` suite, or one target's run of the root

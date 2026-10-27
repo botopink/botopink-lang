@@ -1626,7 +1626,7 @@ The kind for what a single file cannot express: `pub mod`, `import … from "<mo
 (`shapes/mod.bp`), a private `mod` leaf, and `from "std"` used from a *user* project rather than from
 inside `libs/std`. The directory **is** the project; the runner copies it whole and compares its stdout
 with `snapshot/output/main.snap`. A cell that needs a **git** dependency is deliberately out of scope — that is
-`zig build test-libs`' job, and this suite must not need the network. A **local** dependency is in
+the libraries' job (`libraries/<name>`, decision 996), and this suite must not need the network. A **local** dependency is in
 scope since C-16 (front 12 step 4.2): a second project inside the cell, named by the manifest's
 object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the workspaces landing
 `aa80e30b` — an array `"dependencies"` is refused since then), resolves from disk relative to the
@@ -1767,7 +1767,7 @@ element — built, read, destructured, bound, compared, nested — was refused o
 
 Two cells of 1.0.10-beta's `00 · 02-erlang` (`fix/std-slice-shim`), and the reason they are a group
 rather than an addition to `std_erlang_node`: what they pin is a `libs/std` module compiled as a
-**dependency**, which is a different compile unit from the one `zig build test-libs` gives it.
+**dependency**, which is a different compile unit from the one the libraries' job gives it.
 
 `String.slice` and `Array.slice` are bodied instance `default fn`s of `libs/std/src/primitives.bp`,
 not bare-symbol prim-ops, so the erlang backend reaches them through
@@ -2290,7 +2290,7 @@ commonJS <passed>/<ran> · erlang … · beam … · * …`, a module counted on
 narrowing refused before any target ran or a roster red — and the total,
 `conformance: <passed> passed, <failed> failed`.
 
-Jobs run in parallel on `../scripts/lib/pool.sh` — `botopink-lib-test`'s rule: `--jobs`
+Jobs run in parallel on `../scripts/lib/pool.sh` — the library runner's former rule: `--jobs`
 defaults to one per CPU bounded by `MemAvailable / 768 MiB`, and a job is admitted only while
 `procs_running` ≤ CPUs when another job of the run is in flight (`run.sh` § parallel jobs). Every
 job writes its verdict to its own file and the verdicts are sorted before the report, so

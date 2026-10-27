@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/release-pack.sh <target> <version> <ext>
 #
-# Reads `zig-out/bin/{botopink,botopink-lsp,botopink-lib-test,bpmp}` (omits any
+# Reads `zig-out/bin/{botopink,botopink-lsp,bpmp}` (omits any
 # missing binary; `bpmp` lands later in v0.beta.18) and writes:
 #
 #   dist/<binary>-<version>-<target>.<ext>
@@ -58,7 +58,7 @@ sha256_hex() {
 }
 
 # `<binary>` files we attempt to pack. Order matters only for log output.
-binaries="botopink botopink-lsp botopink-lib-test bpmp"
+binaries="botopink botopink-lsp bpmp"
 
 windows_suffix=""
 case "$target" in

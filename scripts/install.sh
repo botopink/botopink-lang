@@ -1,8 +1,7 @@
 #!/bin/sh
 # botopink installer — POSIX, no bashisms.
 #
-# Bootstraps the toolchain (`botopink` + `botopink-lsp` + `botopink-lib-test`
-# + `bpmp`) under `$BPMP_HOME` (default `$HOME/.bpmp`). Detects OS/arch,
+# Bootstraps the toolchain (`botopink` + `botopink-lsp` + `bpmp`) under `$BPMP_HOME` (default `$HOME/.bpmp`). Detects OS/arch,
 # resolves the latest GitHub Release (or `$BOTOPINK_VERSION` if set),
 # downloads each archive + its sha256 sidecar, verifies the digest, extracts,
 # and lays out `$BPMP_HOME/bin/bpmp` as a stable shim.
@@ -208,7 +207,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 VERSION_DIR="$BPMP_HOME/botopink/versions/${VERSION}"
 mkdir -p "$VERSION_DIR" "$BPMP_HOME/bin" "$BPMP_HOME/botopink/versions"
 
-BINARIES="botopink botopink-lsp botopink-lib-test bpmp"
+BINARIES="botopink botopink-lsp bpmp"
 for bin in $BINARIES; do
     archive_name="${bin}-${VERSION}-${TARGET}.${EXT}"
     sha_name="${archive_name}.sha256"

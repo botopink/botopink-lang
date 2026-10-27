@@ -5,11 +5,10 @@
 
 The one reading of `botopink.json` every tool shares: the compiler CLI
 (`compiler-cli/src/cli/config.zig`, `libs.zig`), the language server
-(`language-server/src/project_graph.zig`), the lib-test runner
-(`lib-test-runner/src/discovery.zig`) and `bpmp` (`bpmp/src/manifest.zig`,
+(`language-server/src/project_graph.zig`), and `bpmp` (`bpmp/src/manifest.zig`,
 `dep/spec.zig`) import it as `@import("manifest")` (wired by the workspace
-`build.zig`). It depends on `std` only — no `compiler-core` — so the runner and
-`bpmp` keep their "no compiler-core" contract.
+`build.zig`). It depends on `std` only — no `compiler-core` — so
+`bpmp` keeps its "no compiler-core" contract.
 
 It implements decisions 75 (a `workspaces` manifest declares a library's
 members) and 76 (`dependencies` is the object form only) of 1.0.10-beta, and 512

@@ -28,8 +28,6 @@ modules/
 ├── language-server/         ← `botopink-lsp` LSP executable
 │   ├── src/                 ← JSON-RPC server + LSP features + tests
 │   └── snapshots/lsp/       ← LSP feature snapshots
-├── lib-test-runner/         ← `botopink-lib-test` — per-lib/per-backend test gate
-│   └── src/                 ← discovery + fan-out + matrix (self-contained)
 ├── manifest/                ← the shared `botopink.json` model (packages, workspaces, dependencies)
 │   ├── src/                 ← root.zig — parser, workspace expansion, discovery, resolution
 │   └── tests/fixtures/      ← the manifests its unit tests read
@@ -56,10 +54,9 @@ modules/
 | `compiler-core/` | library (lexer → codegen) | [`libs/std`](../libs/std/AGENTS.md) | [link](compiler-core/AGENTS.md) |
 | `compiler-web/` | `botopink.wasm` (wasm32-wasi) + `glue.js` + `index.html` | `compiler-core` | [link](compiler-web/AGENTS.md) |
 | `language-server/` | `botopink-lsp` executable | `compiler-core`, `manifest` | [link](language-server/AGENTS.md) |
-| `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
-| `source-stamp/` | library (`source_stamp` — the hash `build.zig` embeds in `botopink` and `botopink-lib-test`; a library run refuses a binary whose checkout moved) | `std` only | [link](source-stamp/AGENTS.md) |
+| `source-stamp/` | library (`source_stamp` — the hash `build.zig` embeds in `botopink`; a library run refuses a binary whose checkout moved) | `std` only | [link](source-stamp/AGENTS.md) |
 | `std-wasm/` | library (its tables: `exports`, `program`, the OTP table; `heap`, the heap per process) and `std_wasm.wasm` (a side module compiler-core embeds: the wasm codegen transpiles its `std:` exports into a program, the comptime runtime links its `rt_*` term library, `zig build std-wasm`) | `std` only | [link](std-wasm/AGENTS.md) |
 | `beam-to-wasm/` | library (`translateSet` / `translate`: `.beam` files → wasm functions over std-wasm's terms, a call between the modules given followed, an OTP call bound by std-wasm's OTP table; `refusalReaching`), imported by no other module (its own tests alone, `build.zig`) | `std` and `std-wasm` — nothing else, `build.zig` `requireStandalone` | [link](beam-to-wasm/AGENTS.md) |
 | `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
@@ -69,18 +66,17 @@ modules/
 ## Commands
 
 The workspace [`../build.zig`](../build.zig) builds every executable
-(`botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`) and owns the steps:
+(`botopink`, `botopink-lsp`, `bpmp`) and owns the steps:
 
 ```bash
-zig build                  # build all four executables into zig-out/bin/
+zig build                  # build all three executables into zig-out/bin/
 zig build run -- <args>    # build + run the botopink CLI
-zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
+zig build test             # compiler-core + language-server + compiler-cli + manifest + test-scratch tests
                            # (+ lib-agnostic grep gate over compiler-core/src)
                            # (+ scripts/check-test-scratch.sh — no cwd-anchored .botopinkbuild path in a test or a tests/ file)
 zig build test -Dtest-filter=<substr>
 zig build test -Dtest-shards=<n>   # compiler-core split across n processes (default: CPUs, at most 8; 1 = one process)
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)
-zig build test-libs        # every libs/ project per backend via botopink-lib-test
 zig build test-vscode      # VS Code extension unit tests (needs node/npm)
 zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
 zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp and every
@@ -92,8 +88,7 @@ zig build test-web         # its smoke test under node (needs node; not part of 
 No package carries a `build.zig` of its own (`bpmp` keeps only a `build.zig.zon`):
 every command runs from the workspace root, which derives the `std` module list
 from `libs/std/src/root.bp` (a second build graph once built a compiler with 5 of
-the std modules). The lib-test-runner's unit tests run under the workspace
-`zig build test` (root `src/main.zig`, cwd `modules/lib-test-runner`). See the root
+the std modules). See the root
 [`AGENTS.md`](../AGENTS.md) for top-level commands.
 
 ## Cross-package conventions

@@ -9,7 +9,6 @@
 /// │       ├── <ver>/
 /// │       │   ├── botopink
 /// │       │   ├── botopink-lsp
-/// │       │   ├── botopink-lib-test
 /// │       │   └── bpmp
 /// │       └── stable -> <ver>
 /// ├── packages/

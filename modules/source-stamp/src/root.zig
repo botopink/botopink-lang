@@ -7,8 +7,7 @@
 //! binary one commit behind its checkout compiles the library with yesterday's
 //! compiler and reports yesterday's reds — a measurement nobody can tell from
 //! a real one. `build.zig` computes `hash(<checkout>)` when it configures the
-//! build and embeds it (with the checkout's absolute path) in `botopink` and
-//! `botopink-lib-test`; a library run computes it again over the same files and
+//! build and embeds it (with the checkout's absolute path) in `botopink`; a library run computes it again over the same files and
 //! refuses to start when the two differ (`checkFresh`).
 //!
 //! ## Why a content hash and not a modification time
@@ -36,7 +35,6 @@ pub const ROOTS = [_][]const u8{
     "modules/compiler-cli/src",
     "modules/compiler-core/src",
     "modules/manifest/src",
-    "modules/lib-test-runner/src",
     "modules/source-stamp/src",
     "libs",
 };

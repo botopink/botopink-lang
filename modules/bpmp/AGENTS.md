@@ -5,7 +5,7 @@
 
 `bpmp` — Boto Pink Package Manager + toolchain manager. A self-contained Zig
 program. **No `compiler-core` import.** bpmp does not link the compiler; it
-*spawns* it (same pattern as `lib-test-runner`) with `BOTOPINK_LIB_ROOTS`
+*spawns* it with `BOTOPINK_LIB_ROOTS`
 pointing at its on-disk package store.
 
 bpmp reads / writes three files in a project:
@@ -115,7 +115,7 @@ $BPMP_HOME/                                  # default: $HOME/.bpmp  (Windows: %
 │   └── bpmp                                 # shim → active version's bpmp
 ├── botopink/
 │   └── versions/
-│       ├── <ver>/{botopink,botopink-lsp,botopink-lib-test,bpmp}
+│       ├── <ver>/{botopink,botopink-lsp,bpmp}
 │       ├── dev/dev.path                     # sentinel file → user-supplied tree
 │       └── stable                           # sentinel file containing the active <ver>
 ├── packages/
@@ -143,9 +143,9 @@ BOTOPINK_LIB_ROOTS  = <pkg_1_dir>:<pkg_2_dir>:…
                       POSIX ':' / Windows ';' separator
 ```
 
-The compiler, LSP and lib-test runner all honour `BOTOPINK_LIB_ROOTS` (see
+The compiler and LSP both honour `BOTOPINK_LIB_ROOTS` (see
 [`compiler-cli`](../compiler-cli/AGENTS.md#env)). bpmp is the producer; the
-three tools are the consumers.
+tools are the consumers.
 
 bpmp itself reads:
 

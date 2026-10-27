@@ -49,7 +49,7 @@ pub const Options = struct {
 /// when the run ends.
 ///
 /// Two runs used to share this one directory, and each emptied it on the way
-/// in. `botopink-lib-test` gives every cell `cwd = <lib dir>`, so two gates
+/// in. The library gate (then `botopink-lib-test`) gave every cell `cwd = <lib dir>`, so two gates
 /// over one library checkout — two worktrees, or one gate and a hand-run
 /// `botopink test` — wiped each other's artifacts mid-run. The loser reported
 /// a library red nobody owned: modules missing under `node` (`Cannot find
@@ -104,7 +104,7 @@ fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache: ru
 /// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
 /// random bits — the same shape the comptime runtime uses for its scratch dirs
 /// (`codegen/runtime.zig`, `makeScratchDir`), and the same per-target scoping
-/// `lib-test-build/<target>` already has in `lib-test-runner`.
+/// `lib-test-build/<target>` had in the former library test runner.
 ///
 /// Both halves earn their place. Per target, because the two targets of one
 /// library emit DIFFERENT file sets (`.js` vs `.erl`) into the same names — the
@@ -131,12 +131,12 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 ///
 /// A test that writes files — a fixture project it then compiles, a pid file,
 /// a certificate — needs a place no other process writes to. The library's own
-/// directory is not one: `botopink-lib-test` runs the commonJS and the erlang
+/// directory is not one: the library gate (then `botopink-lib-test`) ran the commonJS and the erlang
 /// cell of one library side by side with the same `cwd`, and two gates share a
 /// checkout. rakun's build tests wrote their fixture projects to
 /// `.botopinkbuild/tmp/<member>-fixtures/<name>` and `rm -rf`'d each one before
 /// writing it, so the erlang cell deleted the commonJS cell's fixture between
-/// its write and its compile: one full `zig build test-libs` measured
+/// its write and its compile: one full library run (`zig build test-libs`, now removed) measured
 /// `rakun-data·commonJS` at 6 failed, the next at 0, the next at 1. This run's
 /// directory is already unique per run and per target (`makeTestOutDir`), so
 /// its `.tmp` sibling is too, with nothing to reap.
@@ -631,7 +631,7 @@ pub fn run(
     var modules_nonzero: usize = 0;
     // Text mode: the run's total, summed from each module's own summary line,
     // printed LAST as `total: <P> passed, <F> failed in <N> module(s)` — the
-    // one line of the run a reader (or `botopink-lib-test`) may take as its
+    // one line of the run a reader (or a gate) may take as its
     // count. A module whose runner printed no summary line (it crashed before
     // its tests finished) is named and fails the run: its tests are in no
     // total, so a green-looking sum must not survive it.
@@ -885,7 +885,7 @@ const JsonCounts = struct { passed: usize, failed: usize };
 
 /// The first bytes of the run's total — the last line `botopink test` prints
 /// in text mode (`total: <P> passed, <F> failed in <N> module(s)`).
-/// `botopink-lib-test` reads a text-mode cell's count from this line.
+/// A gate reads a text-mode run's count from this line.
 pub const TOTAL_PREFIX = "total: ";
 
 /// A module runner's own summary line, `<P> passed, <F> failed` (the commonJS

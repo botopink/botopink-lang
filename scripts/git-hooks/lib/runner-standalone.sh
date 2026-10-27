@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # runner-standalone.sh — botopink-lang's pre-commit gate. Delegates to
 # scripts/gate.sh, the single definition of the gate (staged-file checks, zig
-# build, zig build test, test-bpmp, the beam export audit, test-cli, test-libs).
+# build, zig build test, test-bpmp, the beam export audit, test-cli, test-conformance).
 set -euo pipefail
 
 runStandaloneGate() {

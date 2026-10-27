@@ -1,9 +1,7 @@
 # pool.sh — the bounded worker pool the gate's shell runners share
 # (conformance/run.sh). Sourced, never run.
 #
-# The rule is `botopink-lib-test`'s ("Parallel cells" in
-# modules/lib-test-runner/AGENTS.md), so every pool of the gate sizes and
-# admits the same way:
+# The rule: every pool of the gate sizes and admits the same way:
 #
 #   pool_default_jobs   one job per CPU, bounded by `MemAvailable / 768 MiB`
 #                       (a compiler child plus its node/erl peaks at a few

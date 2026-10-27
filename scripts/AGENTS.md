@@ -3,8 +3,8 @@
 > Path: `scripts/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Installers, the release packaging helper, the gate, the lib-test and
-vscode-test wrappers, the snapshot audit tool, the user-docs fence checker, the comptime-path
+Installers, the release packaging helper, the gate, the
+vscode-test wrapper, the snapshot audit tool, the user-docs fence checker, the comptime-path
 benchmark, and the tracked git hooks.
 
 ## Tree
@@ -16,8 +16,7 @@ scripts/
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
 ├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, backend partition audit, test, test-bpmp, beam export audit, test-cli, test-conformance — the libraries included, decision 996 —, test-docs)
-├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink-lib-test --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
-├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
+├── check-packaging.sh ← the packaging rule across the library repositories (front 98 step 2): a README per example member, an `assert<Subject>(loc: SourceLocation, …)` per `-test` member, no `"git"` to an ecosystem library from an example, every member listed by `botopink packages --list`; each failing path named, exit 1. Not called by `gate.sh` (that call is the gate's)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell — `modules/<cell>`, `modules/<m>/cells/<c>` — or a case of a package, `modules/<m>/run/src/cases/<c>` / `refused/…` (decision 779; `modules/<m>/cases/<c>`, 765, while one remains) (`zig build test-docs`)
 ├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules (and `modules/*/cases/*`, decision 765) emits (gate stage 11)
@@ -63,7 +62,7 @@ Both scripts produce the **same** on-disk layout (see
 $BPMP_HOME/                                  # default: $HOME/.bpmp / %USERPROFILE%\.bpmp
 ├── bin/bpmp                                 # shim (symlink or copy)
 └── botopink/versions/
-    ├── <version>/{botopink, botopink-lsp, botopink-lib-test, bpmp}
+    ├── <version>/{botopink, botopink-lsp, bpmp}
     └── stable                               # symlink → <version>
 ```
 
@@ -76,7 +75,7 @@ https://github.com/botopink/botopink-lang/releases/download/<tag>/<file>
 
 `<file>` is `<binary>-<version>-<target>.<ext>` plus a `.sha256` sidecar (single
 line, 64 hex chars), matching `release-pack.sh` output. `<binary>` is one of
-`botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`; `<ext>` is `tar.gz`
+`botopink`, `botopink-lsp`, `bpmp`; `<ext>` is `tar.gz`
 (POSIX) or `zip` (Windows).
 
 ### Integrity model
@@ -131,7 +130,7 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 
 **Portability.** Every script runs under macOS's bash 3.2: a variable followed by a non-ASCII byte
 is written braced (`${lib}·${target}`) — bash 3.2 reads the first byte of `·` as part of the name
-under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14). macOS's `xargs` is BSD's:
+under `set -u` (`lib\xc2: unbound variable`, the former `test-libs.sh` on macos-14). macOS's `xargs` is BSD's:
 it drops an empty argument even under `-0`, so a NUL-separated record fed to `xargs -0 -n <k>`
 never holds an empty field — `conformance/run.sh` pads `run_one`'s unused 4th field with `-`
 (an empty one shifted every later group: `commonJS: command not found` on macos-14). A stock macOS has no GNU `timeout`: the runners call `with_timeout` (`scripts/lib/pool.sh` — `timeout`, else `gtimeout`, else perl's alarm), never `timeout` directly.
@@ -166,7 +165,7 @@ decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8 and 9, § Warm and cold),
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build test-conformance`
 (`conformance/`, a red cell fails it; every package of `botopink packages --list` tested there, one program per
-package per target — decision 996 took the libraries' stage `test-libs` into it, `conformance/AGENTS.md`), `zig build test-docs`
+package per target — decision 996 took the libraries' stage into it, `conformance/AGENTS.md`), `zig build test-docs`
 (`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
@@ -185,7 +184,7 @@ commonJS, erlang, beam and wasm) —, `--uses-binaries` again narrowing them; `-
 those the step also reaches); no `--stage` runs every stage as before. `--prebuilt`
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
-`test-cli`, `test-libs`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
+`test-cli`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
 `--portable` builds for the baseline CPU (`-Dcpu=baseline` on every `zig build` of the gate): CI builds the
 binaries on one runner and runs them on others, where a native build dies of SIGILL (exit 132). The
 conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
@@ -258,8 +257,8 @@ broken tree.
 ### Warm and cold
 
 Decision 510: no test result is cached. Every cell of stages 8 and 9 runs on every run — no
-verdict is stored, none is answered from a store, and neither `botopink-lib-test` nor
-`conformance/run.sh` takes `--cold` or `--store-root`. `gate.sh --cold` deletes the runtime
+verdict is stored, none is answered from a store, and `conformance/run.sh` takes neither
+`--cold` nor `--store-root`. `gate.sh --cold` deletes the runtime
 cache and every `.botopinkbuild/cache/` (the erlang verdicts, the `.beam` cache, the cell
 durations), naming each, so the run that decides a landing builds from nothing; it passes
 nothing to the stages. A gate is made fast by the code cache of its dependencies (decision 509)
@@ -397,7 +396,7 @@ gate's plans and counts are the ones `--list` printed before.
 ### Green-tree record
 
 `tree_key` hashes what a gate reads: this checkout's working tree and every
-sibling library checkout `test-libs` reaches (`<checkout root>/repository/*`),
+sibling library checkout the libraries' conformance jobs reach (`<checkout root>/repository/*`),
 each as `git write-tree` would record it with every change added (a scratch
 index seeded from the real one, so unchanged files are not re-read), plus
 `zig version`, the OTP release and `node --version`. A gate that passes writes
@@ -426,11 +425,10 @@ and on every CPU, never by running less:
 | Stage | What makes it fast | Where |
 |---|---|---|
 | `zig build test` | the compiler-core suite runs as `-Dtest-shards` processes (default: CPUs, at most 8), each the tests whose index is its own modulo the count; every test runs once and is reported by name, the summary's count is the unsharded one. The default runner is serial inside a process and the suite mostly waits on the node/erl/wasmtime its RUN LOGs spawn | [`../modules/test-shard/AGENTS.md`](../modules/test-shard/AGENTS.md) |
-| `test-libs` | cells run on a bounded worker pool (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs) and are emitted in discovery order, byte for byte what `--jobs 1` prints | [`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md) § Parallel cells |
-| `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
+| `botopink test --target erlang` | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
 | every stage that runs `botopink` | the binaries are ReleaseSafe (§ Build mode): ~12× less CPU per compile than Debug, the same output | § Build mode |
-| `test-libs` (tests that build fixtures) | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
-| `test-conformance` | the root package built once into one `.bpr` (decision 990 (6)), then jobs (one target's run of the `.bpr`; a test suite on one target) run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
+| tests that build fixtures | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
+| `test-conformance` | the root package built once into one `.bpr` (decision 990 (6)), then jobs (one target's run of the `.bpr`; a test suite on one target) run on `lib/pool.sh` — the former library runner's rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
 | `test-docs` | since 144 B-29 step I it compiles nothing: every example of the reference is a conformance cell, and the stage only checks that each reference names one (it was a `botopink check` per fence on `lib/pool.sh`, 8.5 s → 1.5 s) | § check-docs.sh below |
 
 ### One job budget (gate.sh § job budget)
@@ -486,7 +484,7 @@ a work-conserving share (a token directory every runner reads), not a better
 split.
 
 `zig build` in stage 2 builds every binary the later stages run; `zig build
-test-libs`, `test-conformance` and `test-docs` re-enter the build graph, find it
+test-conformance` and `test-docs` re-enter the build graph, find it
 up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.
 Measured numbers, before and after, are in the meta workspace's
 `specs/00-compiler-carry-over/11-tooling/README.md` § The gate's speed
@@ -496,7 +494,7 @@ and, per stage and per step, `specs/1.0.10-beta/00-compiler-carry-over/25-gate-p
 ## lib/pool.sh
 
 Sourced, never run. The one statement of the pool rule for the shell runners —
-`botopink-lib-test`'s (`../modules/lib-test-runner/AGENTS.md` § Parallel cells):
+the former library runner's:
 `pool_default_jobs` (one per CPU, bounded by `MemAvailable / 768 MiB`, at
 least 1), `pool_budget_jobs` (the gate's one total, bounded by the stages' measured peak memory; pure arithmetic over
 its arguments, held by `cli_contract.sh`; the measured peaks and the `budget_*_mib` constants are in `gate.sh` § job
@@ -641,66 +639,6 @@ is quoted verbatim by the `std_package_*` codegen snapshots and by two LSP snaps
 (`definition_std_module_member`, `completion_array_methods`), and a cell's `.snap` pins an
 `at <file>:<L>:<C>` — write such a file formatted (`botopink format <file>`) before recording
 what quotes it. `git commit --no-verify` skips the formatting with the gate.
-
-## test-libs.sh
-
-Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
-root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
-gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
-in `--json` mode — discovery is the runner's, workspace members included, so
-the script exports no root — and prints one line per (library, target) pair
-after that pair's diagnostics, and one summary line. Its arguments go to the
-runner as given: `--lib a --lib b` runs both, `a` first, in one report (decision
-258 — it used to run the last `--lib` alone, silently), and a `--lib` that names
-no library fails the run (`modules/compiler-cli/tests/test_tooling.sh` holds
-both).
-
-**The manifest decides the matrix.** A member runs on the targets its
-`botopink.json` declares and on no other: a target its `"targets"` list excludes
-is not a cell, and nothing runs it. **A cell that exists is green or the run
-fails** — there is no file that lists a red cell away or pins how many of its
-tests may fail, and **no flag or environment variable changes any of it**
-(decision 67; 1.0.11-beta gate-a). The two ledger files this script used to
-read, the variables that swapped them and the runner's flag that ran an excluded
-cell are deleted, not hidden.
-
-**A restriction is audited on every run** (gate-d). For each target a member
-excludes that `botopink test` can run, the runner spawns `botopink build
---target <excluded>` in the member and accepts the exclusion only when the build
-is refused and its first error is the missing host binding (`` `f` has no
-`#[@external(.<Target>(…))]` for the <backend> backend ``): the member structurally
-cannot run there. A member that builds on the target it excludes, or whose build
-fails there for any other reason, fails the run — the exclusion would hide a cell
-that could run, or a red that is somebody's to fix. The remedy is in the
-message: delete the `"targets"` line, or file the compiler row that makes the
-build refuse it. The rule is the runner's
-([`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md)
-§ The restriction audit); this script only prints its verdict.
-
-| Line | Meaning | Fails the run |
-|---|---|---|
-| `pass` | the library compiled and every test passed | no |
-| `FAIL` | a module did not compile or a test failed; the diagnostic is above the line | **yes** |
-| `no tests — …` | no `test` block; the `.bp` sources compiled (`botopink build`) — one that does not compile is a `FAIL` | no |
-| `excluded by "targets" — structural: <refusal> (<file>:<line>:<col>)` | not a cell; the audit quotes the refusal that proves the exclusion | no |
-| `NOT STRUCTURAL — excluded by "targets", and <what the audit found>` | not a cell; the audit refused the exclusion | **yes** |
-| `NOT RUNNABLE — …` | the target is one `botopink test` cannot run (beam, wasm); met only when such a target is asked for by name. Nothing ran, and a pair that did not run is never a pass | **yes** |
-
-The summary is `test-libs: <P> passed, <F> failed, <N> without tests, <A>
-restrictions audited`, with `, <X> restrictions not structural` and `, <S> not
-runnable by botopink test` appended when they are not zero (each fails the run); `<P> + <F> + <N>` is
-the number of cells the manifests declare for the requested targets, and
-`--list` prints that plan without running it (`cell:*` lines are cells, `audit`
-lines the excluded pairs). Exit `1` when a cell fails, an exclusion is not
-structural, a requested target is one `botopink test` cannot run, or a workspace document quotes the tool's member list and disagrees
-with it (`../modules/lib-test-runner/AGENTS.md` § Documents that quote the
-tool); otherwise the runner's own exit (`0`, or its error exit for bad arguments
-or no library root). An explicit `--json` or `--list` argument execs the runner
-raw: its output, not a verdict.
-
-The audit costs one `botopink build` per excluded (member, target) pair — the
-dependency-closure compile the cell would have cost, and no test run. The pairs
-run on the same worker pool as the cells.
 
 ## check-docs.sh
 

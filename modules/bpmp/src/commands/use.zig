@@ -18,7 +18,7 @@ const release_mod = @import("../release.zig");
 
 const BPMP_REPO_OWNER = "botopink";
 const BPMP_REPO_NAME = "botopink-lang";
-const TOOLCHAIN_BINS = [_][]const u8{ "botopink", "botopink-lsp", "botopink-lib-test", "bpmp" };
+const TOOLCHAIN_BINS = [_][]const u8{ "botopink", "botopink-lsp", "bpmp" };
 
 pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
     if (args.len < 2 or !std.mem.eql(u8, args[0], "botopink")) {

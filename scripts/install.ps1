@@ -121,7 +121,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $BpmpHome 'botopink\version
 
 $TmpDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "botopink-install-$([guid]::NewGuid().ToString('N'))")
 try {
-    $Binaries = @('botopink', 'botopink-lsp', 'botopink-lib-test', 'bpmp')
+    $Binaries = @('botopink', 'botopink-lsp', 'bpmp')
     foreach ($bin in $Binaries) {
         $archiveName = "$bin-$Version-$Target.$Ext"
         $shaName     = "$archiveName.sha256"

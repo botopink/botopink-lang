@@ -1,5 +1,5 @@
 # Decision 996 — the library pairs that did not run when the libraries joined the conformance suite (beam and
-# wasm: botopink-lib-test never ran them), switched off: generated once, from the pairs of that run that failed (a
+# wasm: the former library runner never ran them), switched off: generated once, from the pairs of that run that failed (a
 # pair that passed, or that its "targets" excludes with a proof, was no line of it). Shrink-only: delete a line when
 # its pair passes; conformance/run.sh refuses a new one. The list empty, this file goes (decision 996 (5)).
 blog beam — decision 996

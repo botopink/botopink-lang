@@ -1,7 +1,7 @@
 # The toolchain a scripts/gate.sh job runs on, shared by every job of test.yml
 # (one text, so the jobs install the same versions): zig, the compiler's
 # Erlang/OTP release (decisions 227, 228), wasmtime, node 22 and, on request, the
-# sibling libraries test-libs compiles and tests (`scripts/AGENTS.md` § test-libs.sh).
+# sibling libraries the conformance stage's `libraries/<name>` jobs load and test (`conformance/run.sh`).
 #
 # Caches (decisions 225, 509 (5), 739, 754): only Zig's own compile cache (`.zig-cache` in the
 # checkout and `~/.cache/zig`) and the wasmtime download, keyed on the toolchain version and,
@@ -123,8 +123,8 @@ runs:
         echo "zig version: $(zig version)"
         echo "git sha: $GITHUB_SHA"
 
-    # The libraries the gate's test-libs stage compiles and tests:
-    # `botopink-lib-test` discovers `<root>/libs` (std) and every project
+    # The libraries the conformance stage's `libraries/<name>` jobs load and test:
+    # `botopink packages --list` lists `<root>/libs` (std) and every project
     # under `<root>/repository/`, and `botopink` resolves a library's own
     # dependencies through the same roots. Decision 326: the shared libraries
     # are repositories of their own. Every library of the meta repository's

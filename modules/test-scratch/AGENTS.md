@@ -31,7 +31,6 @@ directly with its package directory as cwd):
 |---|---|---|---|
 | `compiler-cli` (89 tests) | 89/89 | 5/5 trials red | 5/5 trials red, up to 5 failed per process |
 | `language-server` (209) | 209/209 | — | 3/3 trials red |
-| `lib-test-runner` (48) | 48/48 | — | 3/3 trials red |
 
 It is the same root cause as `botopink test`'s old shared
 `.botopinkbuild/test-out/` ([`../compiler-cli/src/cli/test_cmd.zig`](../compiler-cli/src/cli/test_cmd.zig))
@@ -77,7 +76,7 @@ path that could escape the per-process root would put the shared path back.
 
 1. **It is not reachable from production code.** `build.zig` gives this module
    to the TEST modules only (`core_test_mod`, `lsp_test_mod`, `cli_test_mod`,
-   the lib-test-runner's and bpmp's test modules). A reference from outside a
+   bpmp's test modules). A reference from outside a
    `test` block is analysed by the executable build too, where the module does
    not exist — so it does not compile.
 2. **A test may not spell a cwd-anchored `.botopinkbuild` path by hand.**

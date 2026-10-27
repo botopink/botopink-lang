@@ -41,7 +41,6 @@ botopink-lang/
 │   ├── compiler-cli/      botopink CLI
 │   ├── compiler-core/     lexer, parser, type inference, comptime, codegen
 │   ├── language-server/   botopink-lsp
-│   ├── lib-test-runner/   cross-backend lib test runner
 │   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
 ├── conformance/           the language reference (docs.md) and its conformance suite — one case per behaviour, its root package built once and run on every target (`conformance/run.sh`)
@@ -54,8 +53,7 @@ botopink-lang/
 
 ```bash
 zig build              # compile everything
-zig build test         # compiler-core, language-server, CLI and lib-test-runner unit tests
-zig build test-libs    # cross-backend lib tests
+zig build test         # compiler-core, language-server and CLI unit tests
 zig build test-docs    # every example of conformance/docs.md names a conformance cell
 zig build run          # run the CLI
 ```

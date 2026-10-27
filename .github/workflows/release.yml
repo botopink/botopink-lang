@@ -1,5 +1,5 @@
-# Release pipeline: pushing a `v*` tag cross-builds four binaries
-# (`botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`) for five targets,
+# Release pipeline: pushing a `v*` tag cross-builds three binaries
+# (`botopink`, `botopink-lsp`, `bpmp`) for five targets,
 # writes per-archive sha256 sidecars, and uploads everything to a single
 # GitHub Release. Prerelease iff the tag carries a `-` (e.g. `v0.0.1-rc.1`).
 #

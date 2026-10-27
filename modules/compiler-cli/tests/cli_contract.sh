@@ -529,7 +529,7 @@ if have node; then
   # ── C3b — two runs in one checkout must not empty each other's output ──────
   # `botopink test` used to write to one `.botopinkbuild/test-out/` in the
   # project's own directory and empty it on the way in, while
-  # `botopink-lib-test` runs every cell with `cwd = <lib dir>`. Two gates over
+  # the library gate (then `botopink-lib-test`) ran every cell with `cwd = <lib dir>`. Two gates over
   # one library checkout therefore wiped each other's artifacts mid-run, and the
   # loser reported a library red owned by nobody: modules missing under node
   # (`Cannot find module …/x_test.js`), or an `{error,undef}` storm under

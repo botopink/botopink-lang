@@ -1,12 +1,11 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core, language-server, CLI, lib-test-runner and manifest unit test
+///   zig build test     → runs every compiler-core, language-server, CLI and manifest unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-closure-invariant → one library under two consumers, its output compared (decision 509 (2))
 ///   zig build test-analysis-equivalence → rakun, rakun-bpp and rakun-stylesheet consumers built cold and through level B, compared (144 B-60)
-///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
 const source_stamp = @import("modules/source-stamp/src/root.zig");
@@ -91,7 +90,7 @@ pub fn build(b: *std.Build) void {
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
     const std_prelude = stdPreludeModule(b, target, std_pkg_files, std_sidecar_files, pkg_table_file);
 
-    // `-Dprebuilt`: the stage steps that run the installed binaries (test-libs, test-conformance,
+    // `-Dprebuilt`: the stage steps that run the installed binaries (test-conformance,
     // test-docs, test-cli) do not depend on the install step, so a CI job that downloaded
     // `zig-out/` builds nothing (scripts/gate.sh --prebuilt).
     const prebuilt = b.option(bool, "prebuilt", "Run against the binaries already in zig-out/bin; install nothing (gate.sh --stage in a CI job)") orelse false;
@@ -125,10 +124,9 @@ pub fn build(b: *std.Build) void {
     run_test_scratch_tests.setCwd(b.path("modules/test-scratch"));
 
     // ── source_stamp (the stale-binary refusal) ───────────────────────────────
-    // The content hash of the sources `botopink` and `botopink-lib-test` are
+    // The content hash of the sources `botopink` is
     // built from, computed HERE, when the build is configured, and embedded
-    // with the checkout's absolute path. A library run (`botopink test`,
-    // `botopink-lib-test`) hashes the same files again and refuses to start
+    // with the checkout's absolute path. A library run (`botopink test`) hashes the same files again and refuses to start
     // when they differ: the binary is older than its sources, and would
     // measure the previous compiler. See `modules/source-stamp/src/root.zig`.
     const stamp_hash = source_stamp.hash(b.allocator, b.graph.io, b.build_root.handle) catch |err|
@@ -161,8 +159,8 @@ pub fn build(b: *std.Build) void {
 
     // ── manifest (shared `botopink.json` model) ───────────────────────────────
     // The one reading of the manifest — packages, workspaces, the dependency
-    // object — imported by the CLI, the LSP, the lib-test runner and bpmp.
-    // `std` only: the runner and bpmp keep their "no compiler-core" contract.
+    // object — imported by the CLI, the LSP and bpmp.
+    // `std` only: bpmp keeps its "no compiler-core" contract.
 
     const manifest_mod = b.addModule("manifest", .{
         .root_source_file = b.path("modules/manifest/src/root.zig"),
@@ -375,7 +373,7 @@ pub fn build(b: *std.Build) void {
 
     // Runs at the start of every test cycle so crashed-test leaks
     // never accumulate beyond a day.
-    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest, test-scratch, std-wasm, beam-to-wasm)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, manifest, test-scratch, std-wasm, beam-to-wasm)");
     for (core_shard_runs.items) |run_shard| {
         run_shard.step.dependOn(&clean_tmp_run.step);
         run_shard.step.dependOn(&clean_scratch_run.step);
@@ -529,49 +527,10 @@ pub fn build(b: *std.Build) void {
     linkWasmtime(b, lsp_exe);
     b.installArtifact(lsp_exe);
 
-    // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
-    // Fully self-contained orchestrator — shells out to the installed `botopink`
-    // binary, so it carries no `compiler-core` import (only the std-only
-    // `manifest` module, for the shared reading of `botopink.json`).
-
-    const lib_test_exe = b.addExecutable(.{
-        .name = "botopink-lib-test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "manifest", .module = manifest_mod },
-                .{ .name = "source_stamp", .module = source_stamp_mod },
-                .{ .name = "build_stamp", .module = stamp_options.createModule() },
-            },
-        }),
-    });
-
-    b.installArtifact(lib_test_exe);
-
-    // Its unit tests (args, discovery, matrix, runner) run with `zig build test`.
-    const lib_test_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
-            .target = target,
-            .imports = &.{
-                .{ .name = "manifest", .module = manifest_mod },
-                .{ .name = "test_scratch", .module = test_scratch_mod },
-                .{ .name = "source_stamp", .module = source_stamp_mod },
-                .{ .name = "build_stamp", .module = stamp_options.createModule() },
-            },
-        }),
-        .filters = test_filters,
-    });
-    const run_lib_test_tests = b.addRunArtifact(lib_test_tests);
-    run_lib_test_tests.setCwd(b.path("modules/lib-test-runner"));
-    test_step.dependOn(&run_lib_test_tests.step);
-
     // ── bpmp (Boto Pink Package Manager executable) ───────────────────────────
     // Self-contained — no `compiler-core` import. bpmp *spawns* `botopink`, it
-    // does not link it. Same idea as `lib-test-runner`: a thin orchestrator that
-    // calls out to the toolchain rather than embedding it.
+    // does not link it. A thin orchestrator that calls out to the
+    // toolchain rather than embedding it.
 
     const bpmp_mod = b.createModule(.{
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
@@ -584,7 +543,7 @@ pub fn build(b: *std.Build) void {
     const bpmp_exe = b.addExecutable(.{ .name = "bpmp", .root_module = bpmp_mod });
     b.installArtifact(bpmp_exe);
 
-    // `zig build test-bpmp` — run bpmp's unit tests. Like `test-libs`/
+    // `zig build test-bpmp` — run bpmp's unit tests. Like
     // `test-vscode`, kept OUT of `zig build test` until the suite stabilises
     // (the network surface needs hermetic-server fixtures that aren't in tree
     // yet). Pure-fn tests (semver, manifest, lockfile, sha256, storage, …) run
@@ -602,30 +561,6 @@ pub fn build(b: *std.Build) void {
     run_bpmp_tests.setCwd(b.path("modules/bpmp"));
     const test_bpmp_step = b.step("test-bpmp", "Run the bpmp unit tests");
     test_bpmp_step.dependOn(&run_bpmp_tests.step);
-
-    // `zig build test-libs` — run every lib's tests on each backend via the
-    // shipped `scripts/test-libs.sh` wrapper. The wrapper pre-flights
-    // node/escript/erlc/wasmtime (K1 of v0.beta.19 §K env deferreds) so a
-    // missing backend runtime surfaces as a clear warning before the runner
-    // bails. Forwards `--` args, e.g.
-    //   zig build test-libs -- --target erlang --lib rakun
-    // Depends on the `botopink` install so `zig-out/bin/botopink-lib-test`
-    // exists when the wrapper exec's it. Deliberately NOT wired into
-    // `zig build test`.
-    //
-    // Path note (ci-pipelines-green): the wrapper is shipped INSIDE the
-    // botopink-lang tree so `zig build test-libs` works in both the meta
-    // workspace layout (`<meta>/repository/botopink-lang/`) and the
-    // standalone lib-checkout layout (`<lib>/botopink-lang/`) without the
-    // sibling lib workflows needing extra steps to stage it.
-    const test_libs_run = b.addSystemCommand(&.{ "bash", "scripts/test-libs.sh" });
-    if (!prebuilt) test_libs_run.step.dependOn(b.getInstallStep());
-    test_libs_run.setCwd(b.path("."));
-    test_libs_run.has_side_effects = true; // spawns child compilers — never cache
-    if (b.args) |args| test_libs_run.addArgs(args);
-
-    const test_libs_step = b.step("test-libs", "Run every libs/ project's tests per backend");
-    test_libs_step.dependOn(&test_libs_run.step);
 
     // `zig build test-vscode` — run the VS Code extension's pure-function
     // unit suite (`npm test` → tsc typecheck + Node's built-in test runner)

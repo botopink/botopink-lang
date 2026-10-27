@@ -25,13 +25,12 @@ tell from a real one.
 
 - `build.zig` imports this file at **configure** time, hashes the checkout
   (`hash`) and embeds the hex digest and the checkout's absolute path in
-  `botopink` and `botopink-lib-test` as the `build_stamp` options module
+  `botopink` as the `build_stamp` options module
   (`source_root`, `source_hash`). The hash only changes when the bytes change,
-  and then `zig build` rebuilds both binaries.
-- `botopink test` (`compiler-cli/src/cli/test_cmd.zig`) and `botopink-lib-test`
-  (`lib-test-runner/src/main.zig`) call `checkFresh` before anything else: when
+  and then `zig build` rebuilds the binary.
+- `botopink test` (`compiler-cli/src/cli/test_cmd.zig`) calls `checkFresh` before anything else: when
   `source_root` still holds a checkout (`build.zig`) and its hash differs from
-  `source_hash`, they print `render`'s refusal — the checkout, both hashes, and
+  `source_hash`, it prints `render`'s refusal — the checkout, both hashes, and
   `run zig build there first` — and exit 1. An installed binary built on another
   machine has no checkout at `source_root` and is never refused.
 - **A content hash, not a modification time.** `zig build` caches by content:
@@ -40,7 +39,7 @@ tell from a real one.
   command that fixes it.
 - **The file set** (`ROOTS`, `SKIP_DIRS`): `build.zig`, `build.zig.zon` (the
   wasmtime library it pins), the `src/` trees of compiler-cli, compiler-core,
-  manifest, lib-test-runner and this module, and `libs/` — every regular file except `*.md`, skipping
+  manifest and this module, and `libs/` — every regular file except `*.md`, skipping
   hidden directories and `tests`, `test`, `snapshots`, `out`, `zig-out`,
   `node_modules`. Sorted, each hashed as `<path> NUL <bytes> NUL`.
 

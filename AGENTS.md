@@ -3,7 +3,7 @@
 `decisions-taken.md` is generated — from the meta repository's `specs/<milestone>/decisions-taken.md` by `scripts/decisions-split.py`; edit it there, never here.
 
 Guidance for AI agents working on the botopink **language core** — the CLI,
-the LSP, the compiler, the lib-test-runner, `bpmp`, and the bundled `std` lib.
+the LSP, the compiler, `bpmp`, and the bundled `std` lib.
 The libraries (rakun, a workspace of packages, and query) and the VS Code extension are
 **siblings** under `repository/` in the meta workspace — see
 [`../../AGENTS.md`](../../AGENTS.md) for the workspace overview and worktree
@@ -28,7 +28,6 @@ botopink-lang/                 ← language core (this project)
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
 │   ├── compiler-web/          ← the browser build of compiler-core: botopink.wasm + glue.js + the demo page
 │   ├── language-server/       ← `botopink-lsp` LSP server
-│   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
 │   ├── std-wasm/              ← botopink's wasm runtime in Zig: std's host functions (bound by `std:` cells), the Erlang terms with the OTP functions, and the heap per process (`heap.zig`, decisions 448, 449), compiled to `std_wasm.wasm` — a `--target wasm` program's and the comptime runtime's (decisions 434, 440, 450)
@@ -54,13 +53,12 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 ## Workspace commands
 
 ```bash
-zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
-zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch + std-wasm + beam-to-wasm tests
+zig build               # botopink + botopink-lsp + bpmp
+zig build test          # compiler-core + language-server + compiler-cli + manifest + test-scratch + std-wasm + beam-to-wasm tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, the wasm core module's --invoke main)
-zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
 zig build test-backends # the wasm core module's --invoke main (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-closure-invariant # one library built under two consumers, its files compared byte for byte on every target (modules/compiler-cli/tests/closure_invariant.sh, decision 509 (2)); alone — `test-cli` runs it too
 zig build test-bpmp     # bpmp unit tests
@@ -103,7 +101,7 @@ linked by LLD), so compiling spawns no `erl` and building the compiler runs no
 (OTP 28+) are needed for the erlang and beam **targets' own** tests: the codegen
 snapshot RUN LOGs and the beam export audit under `zig build test` and the gate,
 and `botopink build/run/test --target erlang|beam` (and so `test-cli`,
-`test-libs`, `test-conformance`), which needs exactly the release the
+`test-conformance`), which needs exactly the release the
 compiler emits for — `OTP_RELEASE` in `modules/manifest/src/root.zig`, printed by
 `botopink --version` — and refuses any other `erl` on `PATH` (decision 228,
 `modules/compiler-cli/src/cli/otp.zig`); codegen snapshot RUN LOGs also use
@@ -119,30 +117,17 @@ under `modules/<pkg>/.botopinkbuild/test-scratch/<id>/` — `<id>` per **process
 ([`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md)), which is
 the only way to name one. `zig build clean-tmp` reaps both at a 1-day TTL.
 
-`test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
-`botopink test --target <t>` in `libs/std` and in every sibling library the
-checkout can see (`<ancestor>/repository/*` of the enclosing checkout — the meta
-workspace or a worktree of it, or the repos CI checks out) and in every **member** of a workspace among them (a `botopink.json`
-with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
-diagnostic) or no tests — a library with
-no `test` block is still compiled (`botopink build --target <t>`), so it fails
-its cell when it does not compile. **A cell that exists is green or the run
-fails**: no file lists a red cell away or pins a failed count, and no flag or
-environment variable changes a verdict (decision 67). A workspace document that
-quotes the tool's member list is checked against the tool, and a stale
-`botopink` (its checkout's sources changed since it was built) is refused
-before any cell runs.
-
-**The manifest decides the matrix.** A member may exclude a backend with
-`"targets"` in its `botopink.json`; an excluded target is not a cell and is
-never run. The exclusion is **audited on every run** instead: `botopink build
---target <excluded>` must be refused, its first error the missing host binding
-(`has no implementation for the <target> backend`) — the member structurally cannot run there.
-A member that builds on the target it excludes, or fails there for any other
-reason, fails the run by name ([`scripts/AGENTS.md`](scripts/AGENTS.md)
-§ test-libs.sh). `zig build test-libs -- --list` prints the plan — cells and
-audits — without running it. `test-libs` is **not** part of `zig build
-test` — it needs host runtimes on `PATH`:
+**The libraries are checked by the conformance stage** (decisions 993, 995, 996, 1004): `zig build
+test-conformance` loads `libs/std`, every sibling library the checkout can see (`<ancestor>/repository/*`
+of the enclosing checkout — the meta workspace or a worktree of it, or the repos CI checks out) and every
+**member** of a workspace among them, as `botopink packages --list` prints them, and runs each package's
+tests in process, one program per package per target (`conformance/run.sh`, `libraries/<name>`); each is
+`pass`, `FAIL`, `no tests` or `excluded`, and a pair that did not run before is `conformance/disabled.txt`'s,
+shrink-only. **A package that exists is green or the run fails**: no flag or environment variable changes a
+verdict (decision 67). A member may exclude a backend with `"targets"` in its `botopink.json`; the compiler
+audits every exclusion (`load-excluded-target-compiles`, decision 989 (3)). A workspace document that
+quotes the tool's member list is checked against the tool by `botopink packages --check-docs`, which the
+same stage runs when the libraries are in the plan. The stage needs host runtimes on `PATH`:
 
 | Backend    | Tool                     | Install hint                                     |
 | ---------- | ------------------------ | ------------------------------------------------ |
@@ -151,10 +136,7 @@ test` — it needs host runtimes on `PATH`:
 | `beam`     | `escript` + `erlc` (OTP) | same as erlang                                   |
 | `wasm`     | `wasmtime`               | `curl https://wasmtime.dev/install.sh \| bash`   |
 
-The `scripts/test-libs.sh` wrapper warns about missing runtimes (advisory — the
-runner's per-target skip-or-fail decides) before starting the runner. Forward args via `--`, e.g.
-`zig build test-libs -- --target erlang --lib rakun`. See
-[`modules/lib-test-runner/AGENTS.md`](modules/lib-test-runner/AGENTS.md).
+See [`conformance/AGENTS.md`](conformance/AGENTS.md) and [`scripts/AGENTS.md`](scripts/AGENTS.md).
 
 ## AGENTS index
 
@@ -183,7 +165,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push to `main`, `feat` (no `pull_request`: the project lands by pushing, and a PR made each commit run twice) | jobs on ubuntu-22.04 (no macos row), hard, running `scripts/gate.sh --cold` WITH conformance (decisions 466, 470, 477) split by stage (decision 987): `stages` reads the rows from `scripts/gate.sh --list-rows` (and `--uses-binaries`): a stage, or a stage split by target once per target — `test-conformance` on commonJS, erlang, beam and wasm, each row its own verdict (decision 1004 (2)); `build` runs the `build` stage once and uploads `zig-out/`; `unit` runs one job per row that reads sources only; `installed` one per row that runs the installed binaries, from the artifact (`--prebuilt`); `gate` is the run's one verdict, red on any row, which a front's Conformance step reads. The workflow keeps no list of stages or targets of its own, each job runs `gate.sh --cold --stage <name> [--target <t>]`, and every job has a `timeout-minutes`. The toolchain is `.github/actions/ci-setup` (one text for every job): zig 0.16.0, the compiler's OTP release (decisions 227, 228: `OTP_RELEASE` read from `modules/manifest/src/root.zig`, `erlef/setup-beam`, then a step that fails the job unless `erl` reports that release), wasmtime, node 22, and every library — rakun/query/actions/http/log/routing/validation/css/snap/json/yaml/markdown — at `feat` into `repository/<name>/` for `test-libs`. Only Zig's own compile cache (`.zig-cache`, `~/.cache/zig`) and the wasmtime download are cached, never `.botopinkbuild/` or a botopink cache (decisions 225, 754). There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). |
+| `.github/workflows/test.yml` | push to `main`, `feat` (no `pull_request`: the project lands by pushing, and a PR made each commit run twice) | jobs on ubuntu-22.04 (no macos row), hard, running `scripts/gate.sh --cold` WITH conformance (decisions 466, 470, 477) split by stage (decision 987): `stages` reads the rows from `scripts/gate.sh --list-rows` (and `--uses-binaries`): a stage, or a stage split by target once per target — `test-conformance` on commonJS, erlang, beam and wasm, each row its own verdict (decision 1004 (2)); `build` runs the `build` stage once and uploads `zig-out/`; `unit` runs one job per row that reads sources only; `installed` one per row that runs the installed binaries, from the artifact (`--prebuilt`); `gate` is the run's one verdict, red on any row, which a front's Conformance step reads. The workflow keeps no list of stages or targets of its own, each job runs `gate.sh --cold --stage <name> [--target <t>]`, and every job has a `timeout-minutes`. The toolchain is `.github/actions/ci-setup` (one text for every job): zig 0.16.0, the compiler's OTP release (decisions 227, 228: `OTP_RELEASE` read from `modules/manifest/src/root.zig`, `erlef/setup-beam`, then a step that fails the job unless `erl` reports that release), wasmtime, node 22, and every library — rakun/query/actions/http/log/routing/validation/css/snap/json/yaml/markdown — at `feat` into `repository/<name>/` for the conformance stage's `libraries/<name>` jobs. Only Zig's own compile cache (`.zig-cache`, `~/.cache/zig`) and the wasmtime download are cached, never `.botopinkbuild/` or a botopink cache (decisions 225, 754). There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). |
 | `.github/workflows/release.yml` | tag push `v*` | No Erlang/OTP: building runs no `erlc` (decision 434). 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -193,7 +175,7 @@ Asset naming (the contract bpmp and the install scripts rely on):
 <binary>-<version>-<target>.<ext>.sha256   # single 64-hex-char line
 ```
 
-`<binary>` is one of `botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`;
+`<binary>` is one of `botopink`, `botopink-lsp`, `bpmp`;
 `release-pack.sh` skips binaries that are missing.
 
 ## Manifest
@@ -295,11 +277,11 @@ gate's time goes):
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
 3. `node scripts/lib/backend-partition-audit.js` (the backend partition, `codegen/backend-partition.txt`, audited — decision 249); no stage checks `botopink format` (decision 524: it is applied by the commit hook, never checked);
-4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
+4. `zig build test` (compiler-core, language-server, and CLI unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
-8. (the libraries' stage, `test-libs`, joined stage 9 — decision 996);
+8. (the libraries' stage joined stage 9 — decision 996);
 9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with `botopink build --emit-runtime` and its one `.bpr` run on each target — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` —, every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, and every package `botopink packages --list` prints tested in process, one program per package per target, its own process on the pool (`libraries/<name>`, decisions 993, 995, 996, 1004; the pairs that did not run before are `conformance/disabled.txt`'s, shrink-only), after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
@@ -419,8 +401,7 @@ Do not use `--no-verify`.
   copy) into the run's own output; the package under test is compiled every
   time. `--cold` reads nothing and writes what it compiled; `rm -rf
   .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each job
-  reaps one random shard (entries unused for 7 days). The cell durations of `test-libs`
-  (`cache/lib-test/`) live beside it; no build cache is outside a
+  reaps one random shard (entries unused for 7 days). No build cache is outside a
   `.botopinkbuild/`.
 
 ### General

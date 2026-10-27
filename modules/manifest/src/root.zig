@@ -1,12 +1,11 @@
 /// `botopink.json` — the one manifest model every tool reads.
 ///
 /// The CLI (`compiler-cli/src/cli/config.zig`, `libs.zig`), the language server
-/// (`language-server/src/project_graph.zig`), the lib-test runner
-/// (`lib-test-runner/src/discovery.zig`) and `bpmp` (`bpmp/src/manifest.zig`,
+/// (`language-server/src/project_graph.zig`), and `bpmp` (`bpmp/src/manifest.zig`,
 /// `dep/spec.zig`) each used to carry their own reading of the manifest, and the
 /// four readings disagreed (decisions 75 and 76 of 1.0.10-beta list how). This
-/// package is the seam they now share: it depends on `std` only, so the runner
-/// and `bpmp` keep their "no compiler-core" contract while reading the same
+/// package is the seam they now share: it depends on `std` only, so `bpmp`
+/// keeps its "no compiler-core" contract while reading the same
 /// fields, the same shapes and the same errors as the compiler.
 ///
 /// Two kinds of manifest (decision 75):
@@ -47,7 +46,7 @@ pub const OTP_RELEASE = "28";
 // ── Source files ───────────────────────────────────────────────────────────────
 
 /// Every extension a botopink module is written in — the one list the CLI,
-/// the lib-test runner, the language server and the formatter read (front 116
+/// `botopink packages`, the language server and the formatter read (front 116
 /// step 3), so no tool spells `.bp` alone and silently skips a `.bpp`. There
 /// is no declaration-file kind (decision 575 (1)): a name ending in `.d.bp` is
 /// a `.bp` module named `x.d`.
@@ -739,7 +738,7 @@ fn readWith(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Lo
 /// holds a `repository/` directory — the meta workspace (or a worktree of it
 /// under `.tasks/<name>`), or CI's `botopink-lang` checkout with the libraries
 /// cloned into `repository/<lib>`. The three root walk-ups (`compiler-cli`
-/// `libs.zig`, `lib-test-runner` `discovery.zig`, `language-server`
+/// `libs.zig`, `language-server`
 /// `project_graph.zig`) add this directory's roots and stop there: an ancestor
 /// of it belongs to another checkout. A worktree nested in the meta checkout
 /// used to see the main checkout's `repository/*` as well, and every library

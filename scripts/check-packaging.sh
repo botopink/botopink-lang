@@ -10,7 +10,7 @@
 #      `pub fn assert<Subject>(loc: SourceLocation, …)` under its `src/`;
 #   3. no example manifest names an ecosystem library by `"git"` (an example
 #      reaches its library by `{ "workspace": true }`);
-#   4. `botopink-lib-test --list` lists every member of every library.
+#   4. `botopink packages --list` lists every member of every library.
 #
 # The libraries are this checkout's siblings — `../<name>` in the meta checkout,
 # `repository/<name>` inside it on CI — every directory there holding a workspace
@@ -71,20 +71,20 @@ for lib in "${libraries[@]}"; do
     done
 done
 
-# 4 · the lib-test runner lists every member.
-runner="zig-out/bin/botopink-lib-test"
+# 4 · `botopink packages --list` lists every member (the libraries' conformance jobs are its lines).
+runner="zig-out/bin/botopink"
 [ -x "$runner" ] || runner="$runner.exe"
 if [ ! -x "$runner" ]; then
     red "$runner is not built (run: zig build) — the member list cannot be read"
 else
-    listed="$("$runner" --list 2>&1)" || { printf '%s\n' "$listed" >&2; red "$runner --list failed"; listed=""; }
+    listed="$("$runner" packages --list 2>&1 | cut -f1)" || { printf '%s\n' "$listed" >&2; red "$runner packages --list failed"; listed=""; }
     for lib in "${libraries[@]}"; do
         for glob in modules examples; do
             for mm in "$lib"/$glob/*/botopink.json; do
                 [ -e "$mm" ] || continue
                 name="$(sed -n 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$mm" | head -n 1)"
                 [ -n "$name" ] || { red "$mm: a member without a name"; continue; }
-                printf '%s\n' "$listed" | grep -qw -- "$name" || red "$(dirname "$mm"): member \"$name\" is not listed by botopink-lib-test --list"
+                printf '%s\n' "$listed" | grep -qxF -- "$name" || red "$(dirname "$mm"): member \"$name\" is not listed by botopink packages --list"
             done
         done
     done
