@@ -16,12 +16,13 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (data (i32.const 256) "\04\00\00\00zero")
-  (data (i32.const 264) "\09\00\00\00nonzero: ")
-  (data (i32.const 280) "\04\00\00\00null")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
+  (data (i32.const 11696) "\04\00\00\00zero")
+  (data (i32.const 11704) "\09\00\00\00nonzero: ")
+  (data (i32.const 11720) "\04\00\00\00null")
   (func $classify (param $x i32) (result i32)
     (local $__opt0 i32)
     (local $__opt1 i32)
@@ -41,7 +42,7 @@ import {io.terminal.print} from "std";
     )
     (if (result i32)
       (then
-    i32.const 256
+    i32.const 11696
     return
       )
       (else
@@ -61,7 +62,7 @@ import {io.terminal.print} from "std";
     i32.eqz
     (if (result i32)
       (then
-    i32.const 264
+    i32.const 11704
     call $__cap_begin
     local.set $_res0
     local.get $x
@@ -72,7 +73,7 @@ import {io.terminal.print} from "std";
     return
       )
       (else
-    i32.const 280
+    i32.const 11720
     return
       )
     )
@@ -411,54 +412,6 @@ import {io.terminal.print} from "std";
     memory.copy
     local.get $base
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
@@ -555,6 +508,18 @@ import {io.terminal.print} from "std";
     local.get $o
     global.set $__cap
     local.get $s
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11728
+    i32.lt_u
+    (if
+      (then
+      i32.const 11728
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

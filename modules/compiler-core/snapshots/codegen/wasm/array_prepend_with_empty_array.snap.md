@@ -25,9 +25,9 @@ val list1 = [1, ..[]];
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
-  (memory (export "memory") 1)
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (start $__init_globals)
-  (global $__heap_ptr (mut i32) (i32.const 256))
   (global $list1 (mut (ref null $arr_i32)) (ref.null $arr_i32))
   (func $__init_globals
     (local $__mem0 i32)

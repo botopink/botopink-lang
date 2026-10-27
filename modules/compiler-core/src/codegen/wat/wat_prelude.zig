@@ -3026,3 +3026,64 @@ const gc_print_items_capture = blk: {
     };
     break :blk out;
 };
+
+/// Decision 1021 (9) (i) — the prelude group: the GC lowering's shared
+/// vocabulary, emitted whole in every module that declares a GC type, at
+/// these indices, so every unit agrees on each of them (a std unit holding
+/// `.wat` leaves declares it alone, decision 1026).
+pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, closure, result, exn, task, waiter, hostn, gen, cell };
+
+pub fn gcPreludeRef(p: GcPrelude) ast.ValType {
+    return ast.ValType.def(@intFromEnum(p));
+}
+
+pub const gc_prelude_defs = [_]ast.TypeDef{
+    gc_str_def,
+    .{ .name = "arr_i32", .kind = .{ .array = .{ .ty = .i32, .mutable = true } } },
+    .{ .name = "arr_f64", .kind = .{ .array = .{ .ty = .f64, .mutable = true } } },
+    // Open: `$tuple` is its subtype.
+    .{ .name = "arr_any", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .final = false },
+    .{ .name = "tuple", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .super = @intFromEnum(GcPrelude.arr_any) },
+    // Open: `$box_bool` and an enum's box are its subtypes.
+    .{ .name = "box_i32", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .final = false },
+    .{ .name = "box_i64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i64 }} } },
+    .{ .name = "box_f64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .f64 }} } },
+    .{ .name = "box_bool", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .super = @intFromEnum(GcPrelude.box_i32) },
+    .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "idx", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
+    .{ .name = "result", .kind = .{ .@"struct" = &.{ .{ .name = "tag", .ty = .i32, .mutable = true }, .{ .name = "payload", .ty = .anyref, .mutable = true } } } },
+    .{ .name = "exn", .kind = .{ .@"struct" = &.{ .{ .name = "msg", .ty = gc_str_ref }, .{ .name = "print", .ty = .i32 } } } },
+    .{ .name = "task", .kind = .{ .@"struct" = &.{
+        .{ .name = "state", .ty = .i32, .mutable = true },
+        .{ .name = "waiters", .ty = gcPreludeRef(.waiter), .mutable = true },
+        .{ .name = "value", .ty = .anyref, .mutable = true },
+        .{ .name = "frame", .ty = .structref, .mutable = true },
+        .{ .name = "kind", .ty = .i32 },
+        .{ .name = "next", .ty = gcPreludeRef(.task), .mutable = true },
+        .{ .name = "aux", .ty = .anyref, .mutable = true },
+        .{ .name = "left", .ty = .i32, .mutable = true },
+    } } },
+    .{ .name = "waiter", .kind = .{ .@"struct" = &.{
+        .{ .name = "next", .ty = gcPreludeRef(.waiter), .mutable = true },
+        .{ .name = "kind", .ty = .i32 },
+        .{ .name = "target", .ty = gcPreludeRef(.task) },
+        .{ .name = "slot", .ty = .i32 },
+    } } },
+    .{ .name = "hostn", .kind = .{ .@"struct" = &.{
+        .{ .name = "next", .ty = gcPreludeRef(.hostn), .mutable = true },
+        .{ .name = "h", .ty = .i32 },
+        .{ .name = "t", .ty = gcPreludeRef(.task) },
+    } } },
+    .{ .name = "gen", .kind = .{ .@"struct" = &.{
+        .{ .name = "state", .ty = .i32, .mutable = true },
+        .{ .name = "kind", .ty = .i32 },
+        .{ .name = "frame", .ty = .structref, .mutable = true },
+        .{ .name = "value", .ty = .anyref, .mutable = true },
+        .{ .name = "src", .ty = gcPreludeRef(.gen), .mutable = true },
+        .{ .name = "aux", .ty = .anyref, .mutable = true },
+        .{ .name = "left", .ty = .i32, .mutable = true },
+    } } },
+    .{ .name = "cell", .kind = .{ .@"struct" = &.{
+        .{ .name = "filled", .ty = .i32, .mutable = true },
+        .{ .name = "value", .ty = .anyref, .mutable = true },
+    } } },
+};

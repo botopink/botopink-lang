@@ -34,6 +34,7 @@ pub const unitCache = @import("./codegen/unit_cache.zig");
 /// beside its `.wasm` (`botopink build`).
 pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
 pub const wasmNeeds = @import("./codegen/wat/needs.zig");
+pub const wasmRuntimeUnit = @import("./codegen/wat/runtime_unit.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {

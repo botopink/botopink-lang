@@ -45,9 +45,11 @@ import {io.terminal.print} from "std";
     (type $var_Maybe_Some (struct (field $f0 (mut anyref))))
     (type $brand_var_Maybe_Some (struct (field i64) (field i64) (field f32) (field f64) (field f32) (field i32) (field f64) (field i64) (field f64) (field i32) (field i32) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field i64) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field f32) (field f32) (field i32) (field f32) (field i64) (field f32) (field f32) (field i64)))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $innerLength (param $b anyref) (result i32)
     (local $v i32)
     (local $__case_0 anyref)
@@ -335,54 +337,6 @@ import {io.terminal.print} from "std";
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -653,39 +607,6 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
-  )
-  ;; std-wasm's .wat leaves (front 164 s3)
-  (func $__std_text_length (param $s (ref null $str)) (result i32)
-    (local $i i32)
-    (local $len i32)
-    (local $n i32)
-    local.get $s
-    array.len
-    local.set $len
-    (block $done
-      (loop $next
-        local.get $i
-        local.get $len
-        i32.ge_u
-        br_if $done
-        local.get $s
-        local.get $i
-        array.get_u $str
-        i32.const 0xC0
-        i32.and
-        i32.const 0x80
-        i32.ne
-        local.get $n
-        i32.add
-        local.set $n
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $next
-      )
-    )
-    local.get $n
   )
   (data $__d0 "integer overflow: - on i32 at main.bp:8:32")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

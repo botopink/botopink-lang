@@ -16,12 +16,13 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00a")
-  (data (i32.const 264) "\01\00\00\00b")
-  (data (i32.const 272) "\01\00\00\00z")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
+  (data (i32.const 11696) "\01\00\00\00a")
+  (data (i32.const 11704) "\01\00\00\00b")
+  (data (i32.const 11712) "\01\00\00\00z")
   (func $lookup (param $pairs i32) (param $key i32) (result i32)
     (local $__mem0 i32)
     (local $__iter0 i32)
@@ -122,7 +123,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 256
+    i32.const 11696
     i32.store
     local.get $__mem1
     i32.const 1
@@ -134,7 +135,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem2
     local.get $__mem2
-    i32.const 264
+    i32.const 11704
     i32.store
     local.get $__mem2
     i32.const 2
@@ -144,11 +145,11 @@ import {io.terminal.print} from "std";
     local.get $__mem0
     local.set $pairs
     local.get $pairs
-    i32.const 264
+    i32.const 11704
     call $lookup
     call $__print_opt_i32
     local.get $pairs
-    i32.const 272
+    i32.const 11712
     call $lookup
     i32.const 0
     i32.eq
@@ -464,54 +465,6 @@ import {io.terminal.print} from "std";
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__arr_new (param $n i32) (result i32)
     (local $p i32)
     local.get $n
@@ -599,6 +552,18 @@ import {io.terminal.print} from "std";
     local.get $s
     call $__print_opt_str_raw
     call $__print_nl
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11720
+    i32.lt_u
+    (if
+      (then
+      i32.const 11720
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

@@ -16,9 +16,9 @@ ct_0: val t = comptime { 2 + 22 } → 24
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (global $t i32 (i32.const 24))
   (func $main
     global.get $t

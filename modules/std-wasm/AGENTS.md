@@ -306,7 +306,15 @@ what layout a word typed by a type parameter has (the backend does not monomorph
     `text.replacedLength` / `replaceInto` replace; `number.signedText` writes an integer).
 - **Read by compiler-core** (`core_mod`, `core_test_mod`, the browser build's `web_core_mod`):
   `host_cells.zig`, `infer.zig` and `codegen/wat/host_binding.zig` read `exports`.
-- **Into a `--target wasm` program** (decision 440 (2)): `wasm.zig` is compiled to
+- **Into std's units** (decision 1026): on `--target wasm` (the `wasi` host) std-wasm is cut into the
+  runtime core `std@__rt` and one unit per std module, `std@<path>.wasm` — `root.units` names the std
+  module each std-wasm module's exports and `.wat` leaves belong to (`text` → `string`, `random` →
+  `io/random`, `fs` → `io/fs`, the others by their own name); compiler-core's
+  `codegen/wat/runtime_unit.zig` decodes the side module whole, places each export and leaf in its
+  unit and each shared helper in the core, and a program imports the units it reaches. `zig build
+  std-wasm` writes the core and every unit into `zig-out/lib/std-wasm/` (the side module stays the
+  build's intermediate, embedded in compiler-core). A new std-wasm module is a row of `root.units`.
+- **Into a `--target wasm` program** (decision 440 (2); the `browser` host's one module): `wasm.zig` is compiled to
   `std_wasm.wasm`, a position-independent side module (`zig build-lib -dynamic -fPIC`, MVP plus
   bulk memory, `dylink.0`), embedded in compiler-core as the anonymous import `std_wasm.wasm`.
   A Zig `var` (the integer workspace) is `.bss`: wasm-ld gives the side module a start

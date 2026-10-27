@@ -11,19 +11,19 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (data (i32.const 256) "\05\00\00\00hello")
-  (data (i32.const 268) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:17")
-  (global $__heap_ptr (mut i32) (i32.const 316))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
+  (data (i32.const 11696) "\05\00\00\00hello")
+  (data (i32.const 11708) "\2a\00\00\00integer overflow: + on i32 at main.bp:3:17")
   (func $main
     (local $s i32)
-    i32.const 256
+    i32.const 11696
     local.set $s
     local.get $s
     i32.load ;; string length
     i32.const 1
-    i32.const 268
+    i32.const 11708
     call $__i32_add_chk
     call $__print_i32
   )
@@ -452,6 +452,18 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11756
+    i32.lt_u
+    (if
+      (then
+      i32.const 11756
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

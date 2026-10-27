@@ -35,8 +35,8 @@ fn second(p: Point) -> i32 {
     (type $rec_Point (struct (field $f0 (mut i32)) (field $f1 (mut i32))))
     (type $brand_rec_Point (struct (field i64) (field i64) (field i64) (field f64) (field i64) (field f64) (field i64) (field i64) (field i32) (field f64) (field f32) (field f64) (field i32) (field i64) (field f32) (field f32) (field i64) (field i64) (field i64) (field i32) (field i32) (field f32) (field f64) (field f64) (field i32) (field i32) (field i32) (field f64) (field f32) (field f32) (field f32) (field f32)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $first (param $p (ref null $rec_Point)) (result i32)
     local.get $p
     struct.get $rec_Point $f0

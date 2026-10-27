@@ -36,9 +36,10 @@ import {io.terminal.print} from "std";
     (type $rec_User (struct (field $f0 (mut (ref null $str)))))
     (type $brand_rec_User (struct (field i32) (field i64) (field f64) (field f64) (field i32) (field i32) (field f64) (field f64) (field i32) (field f32) (field f32) (field f32) (field i32) (field f32) (field f32) (field i32) (field f64) (field f32) (field f64) (field f32) (field f32) (field f64) (field i32) (field i32) (field i32) (field f32) (field f32) (field f32) (field i32) (field f64) (field i32) (field i64)))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -297,54 +298,6 @@ import {io.terminal.print} from "std";
     local.get $s
     call $__print_str_raw
     call $__print_nl
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (data $__d0 "ana")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

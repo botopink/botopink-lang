@@ -767,6 +767,16 @@ pub fn runtimeExports(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Err
     return out.items;
 }
 
+/// Every program-face export of `bytes` (`std:<module>.<function>`), named
+/// as `link`'s `wanted` names one (`<module>.<function>`), in export order:
+/// what the runtime unit decodes whole (decision 1021 (2)).
+pub fn programExports(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error![]const []const u8 {
+    const m = try read(ar, bytes, &program_bindings, diag);
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (m.exports) |e| if (std.mem.startsWith(u8, e.name, export_prefix)) try out.append(ar, e.name[export_prefix.len..]);
+    return out.items;
+}
+
 /// `wanted` names an export either as `<module>.<function>` (a `std:`
 /// export) or by its runtime name (`rt_cons`).
 fn exportMatches(name: []const u8, w: []const u8) bool {
@@ -874,6 +884,63 @@ pub fn linkWith(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []cons
     var random = false;
     for (decoded.values()) |d| random = random or d.calls_random;
     return .{ .items = items.items, .end = top, .funcs = funcs.items, .random = random };
+}
+
+/// One function of `decodeWhole`: its symbol and body, the program-face names
+/// it is exported under (`text.length`, several when wasm-ld folded identical
+/// functions), and its label and hash for a snapshot (decision 446).
+pub const WholeFn = struct {
+    func: ast.Func,
+    exports: []const []const u8,
+    label: []const u8,
+    hash: [12]u8,
+};
+
+/// Every function std-wasm's program face reaches, decoded once, with the
+/// data and the stack they share: what the std units of decision 1026 are
+/// cut from (`runtime_unit.zig`).
+pub const Whole = struct {
+    /// In index order.
+    funcs: []const WholeFn,
+    /// std-wasm's raw data segments, placed at `base`.
+    data: []const ast.Item,
+    /// The stack-pointer global and its check, when a function uses it.
+    stack_global: ?ast.Global,
+    stack_check: ?ast.Func,
+    /// The first byte past the data and the stack.
+    end: u32,
+};
+
+/// Every program-face export of `bytes` and what it calls, decoded with the
+/// data placed at the first aligned address at or past `floor` and the stack
+/// sized for the deepest chain of all of them.
+pub fn decodeWhole(ar: std.mem.Allocator, bytes: []const u8, floor: u32, diag: *Diag) Error!Whole {
+    const wanted = try programExports(ar, bytes, diag);
+    const linked = try linkWith(ar, bytes, wanted, floor, .{ .export_wanted = true }, diag);
+    var funcs: std.ArrayListUnmanaged(WholeFn) = .empty;
+    var data: std.ArrayListUnmanaged(ast.Item) = .empty;
+    var stack_g: ?ast.Global = null;
+    var stack_fn: ?ast.Func = null;
+    var k: usize = 0;
+    for (linked.items) |it| switch (it) {
+        .global => |g| stack_g = g,
+        .data => try data.append(ar, it),
+        .func => |f| {
+            if (std.mem.eql(u8, f.name, stack_check)) {
+                stack_fn = f;
+                continue;
+            }
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (f.exports) |x| if (std.mem.startsWith(u8, x, export_prefix)) try names.append(ar, x[export_prefix.len..]);
+            var func = f;
+            func.exports = &.{};
+            const info = linked.funcs[k];
+            k += 1;
+            try funcs.append(ar, .{ .func = func, .exports = names.items, .label = info.label, .hash = info.hash });
+        },
+        else => {},
+    };
+    return .{ .funcs = funcs.items, .data = data.items, .stack_global = stack_g, .stack_check = stack_fn, .end = linked.end };
 }
 
 /// `$__std_sp_check(sp)` — `sp`, or a trap when it lies below `floor`, the

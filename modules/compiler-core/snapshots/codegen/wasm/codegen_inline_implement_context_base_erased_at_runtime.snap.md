@@ -32,8 +32,8 @@ fn render() -> Element {
     (type $rec_Element (struct))
     (type $brand_rec_Element (struct (field f32) (field i64) (field i32) (field f64) (field i64) (field i64) (field f32) (field i32) (field i64) (field i64) (field i64) (field f64) (field f64) (field i32) (field f64) (field i64) (field f64) (field f64) (field f64) (field f64) (field f32) (field i32) (field f32) (field i32) (field f32) (field f64) (field f64) (field f64) (field i64) (field f32) (field f32) (field i32)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $render (result (ref null $rec_Element))
     (local $__mem0 i32)
     struct.new $rec_Element

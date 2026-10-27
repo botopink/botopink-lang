@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
+const runtimeUnit = @import("runtime_unit.zig");
 
 const Writer = std.Io.Writer;
 
@@ -58,6 +59,15 @@ pub fn renderModule(w: *Writer, m: ast.Module) Error!void {
     try w.writeAll(")\n");
 }
 
+/// The items of `m`, each at a core module's indentation, with no
+/// `(module …)` around them: what a component frame embeds in a `(core
+/// module $<name> …)` (decision 1021 (1)).
+pub fn renderItemsOf(w: *Writer, m: ast.Module) Error!void {
+    try ast.validateModule(m);
+    const defs = ast.typesOf(m);
+    for (m.items) |it| try renderItem(w, defs, it);
+}
+
 // ── the WASI preview 2 component (decision 334, front `01-compiler/140`) ─────
 
 /// The preview 1 functions the component's adapter implements over WASI
@@ -67,7 +77,12 @@ pub fn renderModule(w: *Writer, m: ast.Module) Error!void {
 /// wrapped with the import left unsatisfied.
 pub const preview1_adapted = [_][]const u8{ "fd_write", "random_get" };
 
-pub const ComponentError = Error || std.mem.Allocator.Error || error{UnadaptedPreview1Import};
+pub const ComponentError = Error || std.mem.Allocator.Error || error{
+    UnadaptedPreview1Import,
+    /// The runtime unit (`runtime_unit.zig`) could not be built: a compiler
+    /// defect, never the program's.
+    RuntimeUnitUnavailable,
+};
 
 /// Render `m` as a WASI preview 2 component — what a wasm build for the
 /// `wasi` host writes, and what `wasmtime run` runs (decision 334).
@@ -99,15 +114,38 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     var has_start = false;
     var has_host = false;
     var has_fs = false;
+    var has_p1 = false;
+    // Decisions 1021 (1), (2), 1026 (3) — a module importing the runtime
+    // core is instantiated after it and after the std units it imports and
+    // theirs, in dependency order; the core holds the memory.
+    var has_rt = false;
+    var main_fs = false;
+    var rt_pages: u32 = 1;
+    var std_units: std.ArrayListUnmanaged([]const u8) = .empty;
+    const ar = arena_state.allocator();
     for (m.items) |it| switch (it) {
+        .memory => |mem| if (mem.import) |im| {
+            if (std.mem.eql(u8, im.module, runtimeUnit.name)) {
+                has_rt = true;
+                rt_pages = mem.min_pages;
+            }
+        },
         .import => |im| if (std.mem.eql(u8, im.module, "wasi_snapshot_preview1")) {
+            has_p1 = true;
             for (preview1_adapted) |n| {
                 if (std.mem.eql(u8, n, im.name)) break;
             } else return error.UnadaptedPreview1Import;
+        } else if (std.mem.eql(u8, im.module, runtimeUnit.name)) {
+            has_rt = true;
+        } else if (std.mem.startsWith(u8, im.module, "std@")) {
+            for (std_units.items) |u| {
+                if (std.mem.eql(u8, u, im.module)) break;
+            } else try std_units.append(ar, im.module);
         } else if (std.mem.eql(u8, im.module, "bp_host")) {
             has_host = true;
         } else if (std.mem.eql(u8, im.module, "bp_fs")) {
             has_fs = true;
+            main_fs = true;
         },
         .func => |f| for (f.exports) |e| {
             if (std.mem.eql(u8, e, "_start")) has_start = true;
@@ -116,9 +154,28 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
         else => {},
     };
 
+    const rt = if (has_rt) runtimeUnit.get() catch return error.RuntimeUnitUnavailable else null;
+    const units: []const *const runtimeUnit.Unit = if (rt) |r| try r.closure(ar, std_units.items) else &.{};
+    for (units) |u| if (u.host_fs) {
+        has_fs = true;
+    };
+
     try w.writeAll(component_imports);
     if (has_host) try w.writeAll(component_host_imports);
     if (has_fs) try w.writeAll(component_fs_imports);
+    if (rt) |r| {
+        // The core's memory starts with the pages the program's data asks
+        // for (sized here, at link time).
+        const core = r.coreFor(ar, rt_pages) catch return error.RuntimeUnitUnavailable;
+        try w.writeAll("  (core module $rt\n");
+        try w.writeAll(core.text);
+        try w.writeAll("  )\n");
+        for (units) |u| {
+            try w.print("  (core module ${s}\n", .{u.name});
+            try w.writeAll(u.text);
+            try w.writeAll("  )\n");
+        }
+    }
     try w.writeAll("  (core module $main\n");
     const defs = ast.typesOf(m);
     for (m.items) |it| try renderItem(w, defs, it);
@@ -126,9 +183,19 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     try w.writeAll(component_adapter_head);
     if (has_host) try w.writeAll(component_host_shim);
     if (has_fs) try w.writeAll(component_fs_shim);
-    try w.writeAll("  (core instance $main (instantiate $main (with \"wasi_snapshot_preview1\" (instance $shim))");
+    if (rt != null) try w.writeAll("  (core instance $rt (instantiate $rt (with \"wasi_snapshot_preview1\" (instance $shim))))\n");
+    for (units) |u| {
+        try w.print("  (core instance ${s} (instantiate ${s} (with \"{s}\" (instance $rt))", .{ u.name, u.name, runtimeUnit.name });
+        for (u.deps) |d| try w.print(" (with \"{s}\" (instance ${s}))", .{ d, d });
+        if (u.host_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
+        try w.writeAll("))\n");
+    }
+    try w.writeAll("  (core instance $main (instantiate $main");
+    if (has_p1 or rt == null) try w.writeAll(" (with \"wasi_snapshot_preview1\" (instance $shim))");
+    if (rt != null) try w.print(" (with \"{s}\" (instance $rt))", .{runtimeUnit.name});
+    for (std_units.items) |d| try w.print(" (with \"{s}\" (instance ${s}))", .{ d, d });
     if (has_host) try w.writeAll(" (with \"bp_host\" (instance $bp_shim))");
-    if (has_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
+    if (main_fs) try w.writeAll(" (with \"bp_fs\" (instance $fs_shim))");
     try w.writeAll("))\n");
     try w.writeAll(component_adapter_rest);
     if (has_init) try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
@@ -839,6 +906,8 @@ fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
         .comment => |text| try w.print("  ;; {s}\n", .{text}),
         .tag => |t| {
             try w.print("  (tag ${f}", .{id(t.name)});
+            for (t.exports) |e| try w.print(" (export \"{s}\")", .{e});
+            if (t.import) |im| try w.print(" (import \"{s}\" \"{s}\")", .{ im.module, im.name });
             if (t.params.len > 0) {
                 try w.writeAll(" (param");
                 for (t.params) |p| try typeText(w, defs, p, " ");
@@ -873,6 +942,7 @@ fn import(w: *Writer, defs: Defs, im: ast.Import) Error!void {
 fn memory(w: *Writer, mem: ast.Memory) Error!void {
     try w.writeAll("  (memory");
     if (mem.@"export") |e| try w.print(" (export \"{s}\")", .{e});
+    if (mem.import) |im| try w.print(" (import \"{s}\" \"{s}\")", .{ im.module, im.name });
     try w.print(" {d}", .{mem.min_pages});
     if (mem.max_pages) |max| try w.print(" {d}", .{max});
     try w.writeAll(")\n");
@@ -881,11 +951,14 @@ fn memory(w: *Writer, mem: ast.Memory) Error!void {
 fn global(w: *Writer, defs: Defs, g: ast.Global) Error!void {
     try w.print("  (global ${f}", .{id(g.name)});
     for (g.exports) |e| try w.print(" (export \"{s}\")", .{e});
+    if (g.import) |im| try w.print(" (import \"{s}\" \"{s}\")", .{ im.module, im.name });
     if (g.mutable) {
         try w.writeAll(" (mut");
         try typeText(w, defs, g.ty, " ");
         try w.writeAll(")");
     } else try typeText(w, defs, g.ty, " ");
+    // An imported global has no initialiser: the defining unit's.
+    if (g.import != null) return w.writeAll(")\n");
     // A reference global starts null (WasmGC); a number at its numeral.
     if (g.ty.isRef()) {
         try w.writeAll(" (ref.null");

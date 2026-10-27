@@ -180,6 +180,37 @@ pub const exports = [_]Export{
     .{ .name = "number.floatRefused", .params = &.{.string}, .result = .result_f64, .api = "string.parseFloat" },
 };
 
+/// Decision 1026 (2) — the std unit (`std@<path>.wasm`) a std-wasm module's
+/// functions belong to on `--target wasm`: its exports (`<module>.<function>`),
+/// the `.wat` leaves of `wat/<module>.wat`, and the helpers only they reach.
+/// `path` is the std module that declares them — `text` is `String`'s
+/// (`primitives.bp`), `random` is `io/random`'s, `fs` is `io/fs`'s; a module
+/// whose functions only the wasm codegen calls (`array`, `bigint`, `bytes`,
+/// `heap`) is a unit of its own name. Every module of `exports`, `program`
+/// and `wat/` is listed (a test of compiler-core's holds them to each other).
+pub const Unit = struct { module: []const u8, path: []const u8 };
+
+pub const units = [_]Unit{
+    .{ .module = "text", .path = "string" },
+    .{ .module = "number", .path = "number" },
+    .{ .module = "bytes", .path = "bytes" },
+    .{ .module = "array", .path = "array" },
+    .{ .module = "bigint", .path = "bigint" },
+    .{ .module = "heap", .path = "heap" },
+    .{ .module = "hash", .path = "hash" },
+    .{ .module = "encoding", .path = "encoding" },
+    .{ .module = "random", .path = "io/random" },
+    .{ .module = "fs", .path = "io/fs" },
+};
+
+/// The std module path of the unit `name`'s module (`text.length` → `string`),
+/// or null for a module `units` does not list.
+pub fn unitPath(name: []const u8) ?[]const u8 {
+    const dot = std.mem.indexOfScalar(u8, name, '.') orelse name.len;
+    for (units) |u| if (std.mem.eql(u8, u.module, name[0..dot])) return u.path;
+    return null;
+}
+
 /// A wasm value type a program function takes or answers.
 pub const Val = enum { i32, i64, f64 };
 

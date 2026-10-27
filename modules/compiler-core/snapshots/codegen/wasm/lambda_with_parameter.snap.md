@@ -27,9 +27,9 @@ fn apply(f: fn(x: i32) -> i32) -> i32 {
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
-  (memory (export "memory") 1)
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem))
-  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $apply (param $f (ref null $closure)) (result i32)
     (local $__fnv0 (ref null $closure))
     local.get $f

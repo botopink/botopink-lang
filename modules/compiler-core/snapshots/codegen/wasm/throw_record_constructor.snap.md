@@ -35,8 +35,8 @@ fn validate(x: i32) -> Result<void, AppError> {
     (type $rec_AppError (struct (field $f0 (mut i32)) (field $f1 (mut (ref null $str)))))
     (type $brand_rec_AppError (struct (field f32) (field f32) (field i32) (field i64) (field f64) (field i64) (field i64) (field i64) (field i64) (field i64) (field i32) (field f64) (field f32) (field i64) (field f64) (field f64) (field f32) (field i64) (field i64) (field i32) (field f32) (field f32) (field i64) (field i64) (field i64) (field i32) (field f64) (field f32) (field f64) (field i32) (field i32) (field f32)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $validate (param $x i32) (result (ref null $result))
     (local $__mem0 i32)
     local.get $x

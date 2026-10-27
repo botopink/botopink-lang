@@ -106,8 +106,8 @@ test "env.vars yields a non-empty pair list after env.write" {
 ----- WASM TEXT -- std/io/env.wat
 ```wasm
 (module
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   ;; std/io/env — process environment variables, cross-backend.
   ;; 
   ;; Reference:

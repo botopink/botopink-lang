@@ -24,10 +24,11 @@ test {
 }
 
 // Front 164 s3 — `String.length` and `String.charCodeAt` are `.wat` leaves
-// (`modules/std-wasm/wat/text.wat`): a WasmGC module calls each as its own
-// function over its `$str`, with no marshal into linear memory, and answers
-// what std-wasm's export answered.
-test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read into the GC module" {
+// (`modules/std-wasm/wat/text.wat`): a WasmGC module calls each over its
+// `$str`, with no marshal into linear memory, and answers what std-wasm's
+// export answered. Decision 1026 — the leaves are `std@string`'s: the module
+// imports them, typed over its prelude group.
+test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, imported from its std unit" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
@@ -52,8 +53,9 @@ test "wat: front 164 s3 ---- a std: cell naming a .wat leaf is the leaf, read in
         if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
     } else return error.ModuleDidNotCompile;
     const wat_text = o.result.js;
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_text_length (param $s (ref null $str)) (result i32)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_text_charCodeAt (param $s (ref null $str)) (param $i i32) (result i32)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.length\" (func $__std_text_length (param (ref null $str)) (result i32)))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@string\" \"wat:text.charCodeAt\" (func $__std_text_charCodeAt (param (ref null $str) i32) (result i32)))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "\n  (func $__std_text_length") == null);
     try std.testing.expect(std.mem.indexOf(u8, wat_text, "__gc_to_lin_str") == null);
     try std.testing.expectEqualStrings("9\n0\n233\n26412\n-1\n-1\n128512\n", o.result.run_output orelse "");
 }
@@ -317,8 +319,9 @@ test "wat: front 164 s3 ---- the bytes leaves answer in a GC module" {
 
 // Front 164 s3 P2-e — `random.*` as leaves: the stream's word is the prelude's
 // `$__random_state` global, the host's entropy the prelude's
-// `$__wasi_random_f64`, both named by the leaf and declared by the module
-// (decision 585 (i), (j)). The draws are the commonJS sidecar's Mulberry32,
+// `$__wasi_random_f64`, both named by the leaf (decision 585 (i), (j)) and,
+// since decision 1026, declared by the leaves' unit `std@io@random` (the
+// state) and the runtime core (the entropy), never by the module. The draws are the commonJS sidecar's Mulberry32,
 // bit for bit (`std-wasm/src/random.zig`'s test).
 test "wat: front 164 s3 ---- random.* leaves name the prelude's state and entropy" {
     const io = std.testing.io;
@@ -357,9 +360,12 @@ test "wat: front 164 s3 ---- random.* leaves name the prelude's state and entrop
         .syntax => {},
     };
     const wat_text = o.result.js;
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(global $__random_state (mut i64)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__wasi_random_f64 ") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $__std_random_seededFloat ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(import \"std@io@random\" \"wat:random.seededFloat\" (func $__std_random_seededFloat ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "$__random_state") == null);
+    const rt = try @import("../wat/runtime_unit.zig").get();
+    const unit = rt.unit("std@io@random").?;
+    try std.testing.expect(std.mem.indexOf(u8, unit.text, "(global $__random_state (mut i64)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, unit.text, "(import \"std@__rt\" \"__wasi_random_f64\" (func $__wasi_random_f64 ") != null);
     try std.testing.expectEqualStrings(
         "true\ntrue\n0.6011037519201636\n0.44829055899754167\n0.8524657934904099\n0.43306733411736786\n",
         o.result.run_output orelse "",

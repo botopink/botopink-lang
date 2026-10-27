@@ -435,8 +435,18 @@ pub const Global = struct {
     ty: ValType,
     mutable: bool = false,
     /// The constant initialiser's numeral, as spelled: rendered
-    /// `(<ty>.const <init>)`.
-    init: []const u8,
+    /// `(<ty>.const <init>)`. Unused for an imported global.
+    init: []const u8 = "0",
+    /// Decision 1021 (2) — the global another unit defines (the runtime unit's
+    /// `__heap_ptr`): no initialiser, the import's. An imported global precedes
+    /// every defined one in the module's items (the text format's rule).
+    import: ?ImportFrom = null,
+};
+
+/// Where an imported memory, global or tag comes from: `(import "<module>" "<name>")`.
+pub const ImportFrom = struct {
+    module: []const u8,
+    name: []const u8,
 };
 
 /// `(func (param i32 i32) (result i32))` — the *type* of an imported function.
@@ -457,6 +467,9 @@ pub const Import = struct {
 pub const Memory = struct {
     /// `(export "…")` on the memory itself.
     @"export": ?[]const u8 = null,
+    /// Decision 1021 (2) — the memory another unit defines (the runtime
+    /// unit's); `min_pages` is the least this module needs of it.
+    import: ?ImportFrom = null,
     min_pages: u32 = 1,
     /// The most pages it may grow to (`memory.grow` past it answers `-1`);
     /// none, the engine's limit.
@@ -510,6 +523,10 @@ pub const Item = union(enum) {
 pub const Tag = struct {
     name: []const u8,
     params: []const ValType = &.{},
+    exports: []const []const u8 = &.{},
+    /// Decision 1021 (2) — the tag another unit defines (the runtime unit's
+    /// `$__bp_panic`).
+    import: ?ImportFrom = null,
 };
 
 /// A custom section: its name and its bytes.

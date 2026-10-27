@@ -12,14 +12,15 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (data (i32.const 256) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (import "std@string" "std:text.slice" (func $__std_text_slice (param i32 i32 i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
+  (data (i32.const 11696) "\05\00\00\00hello")
   (func $main
     (local $s i32)
     (local $mid i32)
-    i32.const 256
+    i32.const 11696
     local.set $s
     local.get $s
     i32.const 1
@@ -213,70 +214,18 @@ import {io.terminal.print} from "std";
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
+  (start $__bp_reserve)
+  (func $__bp_reserve
     global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
+    i32.const 11708
     i32.lt_u
     (if
       (then
-        unreachable
+      i32.const 11708
+      global.set $__heap_ptr
       )
     )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 288))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 272
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f4 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; __std_f265 — from std_wasm.wasm (sha256 8097395f0640)
-  ;; __std_f267 — from std_wasm.wasm (sha256 5ac39cdc3016)
-  ;; __std_f268 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; std:text.slice — from std_wasm.wasm (sha256 051c966cf248)
 )
 ```
 

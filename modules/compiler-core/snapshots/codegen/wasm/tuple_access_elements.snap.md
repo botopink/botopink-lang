@@ -27,8 +27,8 @@ fn getFirst(t: #(i32, string)) -> i32 {
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $getFirst (param $t (ref null $arr_any)) (result i32)
     local.get $t
     i32.const 0

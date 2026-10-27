@@ -68,6 +68,7 @@ const std = @import("std");
 const moduleOutput = @import("./moduleOutput.zig");
 const crossModule = @import("./crossModule.zig");
 const wasmNeeds = @import("./wat/needs.zig");
+const runtimeUnit = @import("./wat/runtime_unit.zig");
 const otp = @import("../otp.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
@@ -1005,8 +1006,23 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
 pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binary: ?[]const u8, module_name: []const u8, cache_dir: ?[]const u8, io: anytype) ![]u8 {
     const code = wasm_binary orelse wat_code;
     const ext = if (wasm_binary != null) "wasm" else "wat";
+    // Decisions 1021 (2), 1026 (3) — a module importing the runtime core runs
+    // with the core instantiated first, then the std units it reaches in
+    // dependency order (`wasmtime run --preload std@__rt=std@__rt.wasm
+    // --preload std@string=std@string.wasm …`).
+    var units_arena = std.heap.ArenaAllocator.init(allocator);
+    defer units_arena.deinit();
+    const uar = units_arena.allocator();
+    var preload: std.ArrayListUnmanaged(AuxFile) = .empty;
+    if (wasm_binary) |b| if (runtimeUnit.importsRuntime(b)) {
+        const r = try runtimeUnit.get();
+        const im = try runtimeUnit.importsOf(uar, b);
+        const core = try r.coreFor(uar, im.pages);
+        try preload.append(uar, .{ .name = runtimeUnit.name, .code = core.bytes });
+        for (try r.closure(uar, im.units)) |u| try preload.append(uar, .{ .name = u.name, .code = u.bytes });
+    };
     var key: [64]u8 = undefined;
-    cacheKey(&key, ext, module_name, code, &.{});
+    cacheKey(&key, ext, module_name, code, preload.items);
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
     var dir_buf: [96]u8 = undefined;
@@ -1020,6 +1036,10 @@ pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_bin
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
     defer allocator.free(path);
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = code });
+    for (preload.items) |u| {
+        const u_path = try std.fmt.allocPrint(uar, "{s}/{s}.wasm", .{ tmp_dir, u.name });
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = u_path, .data = u.code });
+    }
 
     // stdout and stderr are concatenated as written, with no separator: a
     // module's stderr (an `assert` message) and wasmtime's error chain both
@@ -1027,12 +1047,16 @@ pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_bin
     // Decision 518 — the host is handed only the features the module's
     // `botopink.needs` section names (`-W exceptions=y` …); none, no flag.
     var flag_buf: [wasmNeeds.max_args][]const u8 = undefined;
-    const needs = if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code);
+    var needs = if (wasm_binary) |b| wasmNeeds.needsOf(b) else wasmNeeds.needsOfText(wat_code);
+    // The runtime's needs too (decision 1021 (2)): the program is all of it.
+    for (preload.items) |u| needs.setUnion(wasmNeeds.needsOf(u.code));
     const flags = wasmNeeds.wasmtimeArgs(needs, &flag_buf);
     var cache_arena = std.heap.ArenaAllocator.init(allocator);
     defer cache_arena.deinit();
     const cache_args = try wasmNeeds.cacheArgs(cache_arena.allocator(), io, cache_dir orelse wasmNeeds.DEFAULT_CACHE_DIR, false);
-    var argv_buf: [7 + wasmNeeds.max_args][]const u8 = undefined;
+    var argv_list: std.ArrayListUnmanaged([]const u8) = .empty;
+    try argv_list.resize(uar, 7 + wasmNeeds.max_args + 2 * preload.items.len);
+    const argv_buf = argv_list.items;
     argv_buf[0] = "wasmtime";
     argv_buf[1] = "run";
     var argc: usize = 2;
@@ -1051,6 +1075,11 @@ pub fn executeWatIn(allocator: std.mem.Allocator, wat_code: []const u8, wasm_bin
     if (cwd_arg) |a| {
         argv_buf[argc] = "--dir";
         argv_buf[argc + 1] = a;
+        argc += 2;
+    }
+    for (preload.items) |u| {
+        argv_buf[argc] = "--preload";
+        argv_buf[argc + 1] = try std.fmt.allocPrint(uar, "{s}={s}.wasm", .{ u.name, u.name });
         argc += 2;
     }
     argv_buf[argc] = basename;

@@ -22,14 +22,15 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (data (i32.const 256) "\0c\00\00\00R\03Ops\01\04stepi")
-  (data (i32.const 272) "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
-  (data (i32.const 320) "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
-  (data (i32.const 368) "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
-  (global $__heap_ptr (mut i32) (i32.const 416))
+  (data (i32.const 11696) "\0c\00\00\00R\03Ops\01\04stepi")
+  (data (i32.const 11712) "\2a\00\00\00integer overflow: * on i32 at main.bp:4:47")
+  (data (i32.const 11760) "\2b\00\00\00integer overflow: + on i32 at main.bp:11:34")
+  (data (i32.const 11808) "\2b\00\00\00integer overflow: - on i32 at main.bp:13:39")
   (func $mk (result i32)
     (local $__mem0 i32)
     (local $value i32)
@@ -112,7 +113,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem2
     local.get $__mem2
-    i32.const 260
+    i32.const 11700
     i32.store
     local.get $__mem2
     i32.const 4
@@ -140,21 +141,21 @@ import {io.terminal.print} from "std";
   (func $__lambda0 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 2
-    i32.const 272
+    i32.const 11712
     call $__i32_mul_chk
     return
   )
   (func $__lambda1 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 100
-    i32.const 320
+    i32.const 11760
     call $__i32_add_chk
     return
   )
   (func $__lambda2 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 1
-    i32.const 368
+    i32.const 11808
     call $__i32_sub_chk
     return
   )
@@ -340,54 +341,6 @@ import {io.terminal.print} from "std";
         br $loop
       )
     )
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -631,6 +584,18 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11856
+    i32.lt_u
+    (if
+      (then
+      i32.const 11856
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

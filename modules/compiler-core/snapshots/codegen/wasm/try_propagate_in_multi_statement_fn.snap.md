@@ -40,8 +40,8 @@ fn pipeline() -> Result<i32, IoError> {
     (type $rec_IoError (struct (field $f0 (mut (ref null $str)))))
     (type $brand_rec_IoError (struct (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field f32) (field f32) (field i32) (field i64) (field f64) (field f32) (field f32) (field i64) (field f64) (field i32) (field i32) (field i32) (field i64) (field f32) (field i64) (field i32) (field f32) (field f32) (field i32) (field f32) (field f64) (field f64) (field i64) (field f64) (field f32) (field i32)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $step1 (result (ref null $result))
     (local $__mem0 i32)
     i32.const 1

@@ -42,6 +42,7 @@ const reach = @import("./wat/reach.zig");
 const hostBinding = @import("./wat/host_binding.zig");
 const stdWasmLink = @import("./wat/std_wasm_link.zig");
 const stdLeaves = @import("./wat/std_leaves.zig");
+const runtimeUnit = @import("./wat/runtime_unit.zig");
 const watReader = @import("./wat/wat_reader.zig");
 const stdWasm = @import("std_wasm");
 const hostFnBinding = @import("./hostFnBinding.zig");
@@ -1671,6 +1672,17 @@ fn emitWatPass(
     defer em.deinit();
     em.mode = plan.mode;
     em.cross = cross;
+    // Decision 1021 (2) — a `wasi` program (and the module a snapshot runs)
+    // imports the runtime unit `std@__rt`: its memory, heap, allocator,
+    // std-wasm and host functions; the module's own data starts past the
+    // runtime unit's. The `browser` host's loader instantiates one module
+    // still (decision 1021's P6), which links std-wasm in.
+    const rt: ?*const runtimeUnit.Runtime = if (artifact == .browser) null else runtimeUnit.get() catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return em.refuse(null, "the runtime unit `{s}` cannot be built ({s}): {s}", .{ runtimeUnit.name, @errorName(err), runtimeUnit.failure() }),
+    };
+    if (rt) |r| em.next_data_offset = r.end;
+    em.rt = rt;
     errdefer if (gc_debug and plan.mode == .gc) std.debug.print("GCWHY {s} :: {s}\n", .{ module_name, em.gc_gap orelse "(none)" });
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
@@ -2033,9 +2045,11 @@ fn emitWatPass(
     // exception `attempt` catches in a module that has one, else written and
     // trapped; a `.gc` module with exceptions has no GC form of the raise.
     if (em.exceptions and em.b.helpers.has(.chk_fail)) em.b.helpers.require(.panic_raise);
-    if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
+    // Decision 1021 (2) — the runtime unit is the one unit importing the
+    // host's WASI functions; a module calls them through it.
+    if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = viaRuntime(rt, prelude.fd_write_import) });
     // Decision 238's `wasi:` adapters each bring the WASI call they make.
-    if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = prelude.random_get_import });
+    if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = viaRuntime(rt, prelude.random_get_import) });
     // Decision 992: the file system leaves call the `bp_fs` host functions.
     if (em.b.helpers.has(.fs_host)) for (prelude.fs_imports) |im| try items.append(ar, .{ .import = im });
     // Decision 393's host tasks: the host's timer, and on `wasi` its poll
@@ -2048,10 +2062,30 @@ fn emitWatPass(
     }
 
     var memory_at = items.items.len;
-    try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
+    // The runtime unit's memory, exported again under the module's own
+    // `memory` (what the component's adapters read).
+    try items.append(ar, .{ .memory = .{
+        .@"export" = "memory",
+        .min_pages = 1,
+        .import = if (rt != null) .{ .module = runtimeUnit.name, .name = runtimeUnit.memory_export } else null,
+    } });
+    // The runtime unit's heap pointer, imported: the text format takes every
+    // import ahead of the module's first definition (a tag, a table).
+    var heap_ptr_at = items.items.len;
+    if (rt != null) try items.append(ar, .{ .global = .{
+        .name = "__heap_ptr",
+        .ty = .i32,
+        .mutable = true,
+        .import = .{ .module = runtimeUnit.name, .name = runtimeUnit.heap_ptr_export },
+    } });
     // Decision 518 — the tag an abort is raised as, in a program that
-    // reaches a binding needing exceptions.
-    if (em.exceptions) try items.append(ar, .{ .tag = if (em.mode == .gc) prelude.gc_panic_tag else prelude.panic_tag });
+    // reaches a binding needing exceptions: in a GC module the runtime
+    // unit's (decision 1021 (2)).
+    if (em.exceptions) try items.append(ar, .{ .tag = if (em.mode == .gc) gc_tag: {
+        var t = prelude.gc_panic_tag;
+        if (rt != null) t.import = .{ .module = runtimeUnit.name, .name = runtimeUnit.panic_export };
+        break :gc_tag t;
+    } else prelude.panic_tag });
 
     // The function table a lambda value indexes into.
     if (em.lambdas.items.len > 0 or em.uses_table) {
@@ -2073,16 +2107,20 @@ fn emitWatPass(
         } });
     }
 
-    var heap_ptr_at = items.items.len;
-    try items.append(ar, .{ .global = .{
-        .name = "__heap_ptr",
-        .ty = .i32,
-        .mutable = true,
-        .init = try std.fmt.allocPrint(ar, "{d}", .{em.next_data_offset}),
-    } });
+    if (rt == null) {
+        heap_ptr_at = items.items.len;
+        try items.append(ar, .{ .global = .{
+            .name = "__heap_ptr",
+            .ty = .i32,
+            .mutable = true,
+            .init = try std.fmt.allocPrint(ar, "{d}", .{em.next_data_offset}),
+        } });
+    }
+    // Where the module's own data ends: past it, the heap.
+    const data_end = em.next_data_offset;
 
     // The functions the lowering wrote — what a GC module's checks read.
-    const program_lo = items.items.len;
+    var program_lo = items.items.len;
     try items.appendSlice(ar, em.items.items);
     // Decision 105 (144 B-128) — the step every generator consumer calls
     // and the module's dispatch over its generators.
@@ -2109,7 +2147,7 @@ fn emitWatPass(
         if (em.gc_arrs_used) try em.gcArrsPrinter();
         try items.appendSlice(ar, em.gc_pr_funcs.items);
     }
-    const program_hi = items.items.len;
+    var program_hi = items.items.len;
     if (em.mode == .gc) try items.appendSlice(ar, em.gc_marshal_funcs.items);
 
     // Decision 442 (1) — a print helper writes the text std-wasm makes of a
@@ -2125,8 +2163,9 @@ fn emitWatPass(
         }
         for (group.stdCalls()) |name| try em.std_exports.put(em.alloc, name, {});
     }
-    // Decision 440 (2) — std-wasm's functions call the program's allocator.
-    if (em.std_exports.count() > 0) em.b.helpers.require(.alloc);
+    // Decision 440 (2) — std-wasm's functions call the program's allocator
+    // (the runtime unit's own, decision 1021 (2)).
+    if (em.std_exports.count() > 0 and rt == null) em.b.helpers.require(.alloc);
     // A GC module's helpers copy strings through the marshal arena.
     if (em.mode == .gc) for (prelude.order) |group| {
         if (em.b.helpers.has(group)) for (prelude.gcDeps(group)) |d| em.b.helpers.require(d);
@@ -2134,7 +2173,7 @@ fn emitWatPass(
     // `$__alloc` is the marshal arena's bump and std-wasm's allocator: a GC
     // module whose only reason for it is `str_concat`'s static dependency (its
     // GC form copies arrays) has none.
-    if (em.mode == .gc and em.b.helpers.has(.alloc) and !em.gc_alloc_direct and em.std_exports.count() == 0) {
+    if (em.mode == .gc and em.b.helpers.has(.alloc) and !em.gc_alloc_direct and (rt != null or em.std_exports.count() == 0)) {
         var needed = false;
         for (prelude.order) |group| {
             if (group == .alloc or group == .str_concat or !em.b.helpers.has(group)) continue;
@@ -2147,8 +2186,15 @@ fn emitWatPass(
         }
         if (!needed) em.b.helpers.groups.remove(.alloc);
     }
+    // Decision 1021 (2) — what the module imports from the runtime unit
+    // instead of defining it: placed ahead of every definition.
+    var rt_imports: std.ArrayListUnmanaged(Item) = .empty;
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
+        if (rt != null and group == .alloc) {
+            try rt_imports.append(ar, .{ .import = .{ .module = runtimeUnit.name, .name = runtimeUnit.alloc_export, .func = "__alloc", .type = .{ .params = &.{.i32}, .result = .i32 } } });
+            continue;
+        }
         // Front 164 s2 — a GC module takes each group's GC form; a group
         // with none yet sends the module to linear memory.
         if (em.mode == .gc) {
@@ -2239,7 +2285,40 @@ fn emitWatPass(
         }
         if (std_funcs.len > 0) alloc.free(std_funcs);
     }
-    if (em.std_exports.count() > 0) {
+    if (rt) |r| {
+        // Decision 1021 (2) — the std-wasm functions the module calls are the
+        // runtime unit's, imported by their `std:` names.
+        // Decision 1026 — from the std unit of the std module declaring it.
+        for (em.std_exports.keys()) |name| {
+            const ref = r.std_refs.get(name) orelse return em.refuse(null, "no std unit exports `std:{s}`", .{name});
+            try rt_imports.append(ar, .{ .import = .{
+                .module = ref.unit,
+                .name = ref.@"export",
+                .func = try stdWasmLink.entryName(ar, name),
+                .type = ref.type,
+            } });
+        }
+        // The `.wat` leaves the module calls, likewise, typed as the module
+        // reads them (its own type indices, which `finishGc` renumbers).
+        for (em.std_leaves.keys(), em.std_leaves.values()) |name, leaf| {
+            const ref = r.leaf_refs.get(name) orelse return em.refuse(null, "no std unit exports the leaf `{s}`", .{name});
+            var calls: std.ArrayListUnmanaged([]const u8) = .empty;
+            const f = try em.readLeaf(leaf, &calls);
+            const params = try ar.alloc(ValType, f.params.len);
+            for (params, f.params) |*pt, q| pt.* = q.ty;
+            try rt_imports.append(ar, .{ .import = .{ .module = ref.unit, .name = ref.@"export", .func = f.name, .type = .{ .params = params, .result = f.result } } });
+        }
+        try items.insertSlice(ar, 0, rt_imports.items);
+        const n = rt_imports.items.len;
+        memory_at += n;
+        heap_ptr_at += n;
+        program_lo += n;
+        program_hi += n;
+        // The memory the module needs of the core's: up to the end of its
+        // data; the composition starts the core's memory with that many
+        // pages (`Runtime.coreFor`, sized at link time).
+        items.items[memory_at].memory.min_pages = @max(r.pages, (data_end + 65535) / 65536);
+    } else if (em.std_exports.count() > 0) {
         var diag: stdWasmLink.Diag = .{};
         const linked_std = stdWasmLink.link(ar, em.std_exports.keys(), @intCast(em.next_data_offset), &diag) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -2273,7 +2352,7 @@ fn emitWatPass(
 
     // Front 164 s3 — the `.wat` leaves the module calls, read against its GC
     // types, with the leaves they call.
-    if (em.std_leaves.count() > 0) {
+    if (rt == null and em.std_leaves.count() > 0) {
         try items.append(ar, .{ .comment = "std-wasm's .wat leaves (front 164 s3)" });
         for (try em.leafFuncs()) |f| try items.append(ar, .{ .func = f });
     }
@@ -2305,6 +2384,10 @@ fn emitWatPass(
     if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip, &program_range);
 
     if (em.mode == .gc) try em.finishGc(&items, program_range[0], program_range[1]);
+
+    // Decision 1021 (2) — a module with data of its own moves the runtime
+    // unit's heap past it when it starts, before anything allocates.
+    if (rt) |r| if (data_end > r.end) try reserveData(ar, &items, data_end);
 
     // WasmGC (front 164 s2, decision 544) — a module declaring GC types needs
     // the host's GC (`wasmtime run -W gc=y`), whatever its bindings name.
@@ -2344,6 +2427,41 @@ fn emitWatPass(
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
     return .{ .text = try aw.toOwnedSlice(), .binary = binary, .std_funcs = std_funcs };
+}
+
+/// `im` as a module importing the runtime unit names it: the WASI function
+/// through the runtime unit's export of the same name (decision 1021 (2)).
+fn viaRuntime(rt: ?*const runtimeUnit.Runtime, im: wat.Import) wat.Import {
+    if (rt == null) return im;
+    var out = im;
+    out.module = runtimeUnit.name;
+    return out;
+}
+
+/// `$__bp_reserve`, the module's start: the runtime unit's heap pointer
+/// moved past the module's data (`end`), then the start the module had.
+fn reserveData(ar: std.mem.Allocator, items: *std.ArrayListUnmanaged(Item), end: u32) !void {
+    const reserve = "__bp_reserve";
+    const end_text = try std.fmt.allocPrint(ar, "{d}", .{end});
+    const set = try ar.dupe(wat.Line, &.{
+        .{ .indent = 6, .instr = .{ .@"const" = .{ .ty = .i32, .text = end_text } } },
+        .{ .indent = 6, .instr = .{ .global_set = heap_ptr } },
+    });
+    var body: std.ArrayListUnmanaged(wat.Line) = .empty;
+    try body.appendSlice(ar, &.{
+        .{ .indent = 4, .instr = .{ .global_get = heap_ptr } },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = end_text } } },
+        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_u" } } },
+        .{ .indent = 4, .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = set, .stack = .none } } } } },
+    });
+    const start_at: ?usize = for (items.items, 0..) |it, i| {
+        if (it == .start) break i;
+    } else null;
+    if (start_at) |i| {
+        try body.append(ar, .{ .indent = 4, .instr = .{ .call = items.items[i].start } });
+        items.items[i] = .{ .start = reserve };
+    } else try items.append(ar, .{ .start = reserve });
+    try items.append(ar, .{ .func = .{ .name = reserve, .body = .{ .lines = body.items, .stack = .none } } });
 }
 
 /// Decision 440 (3) — the primitive methods `primitives.bp` binds with a
@@ -3092,6 +3210,9 @@ const Emitter = struct {
     /// name (`text.length`): `emitWat` reads each (`std_leaves.zig`) into the
     /// module, with the leaves it calls.
     std_leaves: std.StringArrayHashMapUnmanaged(stdLeaves.Leaf) = .empty,
+    /// Decisions 1021 (2), 1026 — the runtime core and std's units the
+    /// module imports (null for the `browser` host's one module).
+    rt: ?*const runtimeUnit.Runtime = null,
     /// Decision 392 — the state machine whose body is being lowered: an
     /// asynchronous function (`-> @Async<T>`, an `async { }` block) suspends
     /// at its `await`s (`lowerAwait`) and re-enters its statements by
@@ -5752,62 +5873,9 @@ const Emitter = struct {
     /// Decision 1021 (9) (i) — the prelude group: the GC lowering's shared
     /// vocabulary, emitted whole in every module that declares a GC type, at
     /// these indices, so every unit agrees on each of them.
-    const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, closure, result, exn, task, waiter, hostn, gen, cell };
-
-    fn gcPreludeRef(p: GcPrelude) ValType {
-        return ValType.def(@intFromEnum(p));
-    }
-
-    const gc_prelude_defs = [_]wat.TypeDef{
-        prelude.gc_str_def,
-        .{ .name = "arr_i32", .kind = .{ .array = .{ .ty = .i32, .mutable = true } } },
-        .{ .name = "arr_f64", .kind = .{ .array = .{ .ty = .f64, .mutable = true } } },
-        // Open: `$tuple` is its subtype.
-        .{ .name = "arr_any", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .final = false },
-        .{ .name = "tuple", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .super = @intFromEnum(GcPrelude.arr_any) },
-        // Open: `$box_bool` and an enum's box are its subtypes.
-        .{ .name = "box_i32", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .final = false },
-        .{ .name = "box_i64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i64 }} } },
-        .{ .name = "box_f64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .f64 }} } },
-        .{ .name = "box_bool", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .super = @intFromEnum(GcPrelude.box_i32) },
-        .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "idx", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
-        .{ .name = "result", .kind = .{ .@"struct" = &.{ .{ .name = "tag", .ty = .i32, .mutable = true }, .{ .name = "payload", .ty = .anyref, .mutable = true } } } },
-        .{ .name = "exn", .kind = .{ .@"struct" = &.{ .{ .name = "msg", .ty = prelude.gc_str_ref }, .{ .name = "print", .ty = .i32 } } } },
-        .{ .name = "task", .kind = .{ .@"struct" = &.{
-            .{ .name = "state", .ty = .i32, .mutable = true },
-            .{ .name = "waiters", .ty = gcPreludeRef(.waiter), .mutable = true },
-            .{ .name = "value", .ty = .anyref, .mutable = true },
-            .{ .name = "frame", .ty = .structref, .mutable = true },
-            .{ .name = "kind", .ty = .i32 },
-            .{ .name = "next", .ty = gcPreludeRef(.task), .mutable = true },
-            .{ .name = "aux", .ty = .anyref, .mutable = true },
-            .{ .name = "left", .ty = .i32, .mutable = true },
-        } } },
-        .{ .name = "waiter", .kind = .{ .@"struct" = &.{
-            .{ .name = "next", .ty = gcPreludeRef(.waiter), .mutable = true },
-            .{ .name = "kind", .ty = .i32 },
-            .{ .name = "target", .ty = gcPreludeRef(.task) },
-            .{ .name = "slot", .ty = .i32 },
-        } } },
-        .{ .name = "hostn", .kind = .{ .@"struct" = &.{
-            .{ .name = "next", .ty = gcPreludeRef(.hostn), .mutable = true },
-            .{ .name = "h", .ty = .i32 },
-            .{ .name = "t", .ty = gcPreludeRef(.task) },
-        } } },
-        .{ .name = "gen", .kind = .{ .@"struct" = &.{
-            .{ .name = "state", .ty = .i32, .mutable = true },
-            .{ .name = "kind", .ty = .i32 },
-            .{ .name = "frame", .ty = .structref, .mutable = true },
-            .{ .name = "value", .ty = .anyref, .mutable = true },
-            .{ .name = "src", .ty = gcPreludeRef(.gen), .mutable = true },
-            .{ .name = "aux", .ty = .anyref, .mutable = true },
-            .{ .name = "left", .ty = .i32, .mutable = true },
-        } } },
-        .{ .name = "cell", .kind = .{ .@"struct" = &.{
-            .{ .name = "filled", .ty = .i32, .mutable = true },
-            .{ .name = "value", .ty = .anyref, .mutable = true },
-        } } },
-    };
+    const GcPrelude = prelude.GcPrelude;
+    const gcPreludeRef = prelude.gcPreludeRef;
+    const gc_prelude_defs = prelude.gc_prelude_defs;
 
     comptime {
         std.debug.assert(gc_prelude_defs.len == @typeInfo(GcPrelude).@"enum".fields.len);
@@ -10540,6 +10608,9 @@ const Emitter = struct {
     fn noteLeaf(self: *Emitter, name: []const u8) anyerror!void {
         if (self.std_leaves.contains(name)) return;
         try self.std_leaves.put(self.alloc, name, stdLeaves.find(name).?);
+        // Decision 1026 — the leaf is its std unit's: what it names of the
+        // prelude is the unit's (or the core's), never the module's.
+        if (self.rt != null) return;
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         try self.requireLeafPrelude(name, &seen);
     }

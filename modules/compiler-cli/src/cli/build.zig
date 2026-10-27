@@ -1046,6 +1046,32 @@ const FileWriter = struct {
     }
 };
 
+/// `<out_dir>/std@__rt.wasm`, the runtime core, and `<out_dir>/std@<path>.wasm`
+/// for each std unit the program `bin` reaches (decisions 1021 (2), 1026), each
+/// left alone when the file already holds its bytes: they are the compiler's
+/// alone, the same for every program of one compiler build.
+fn writeRuntimeUnits(gpa: std.mem.Allocator, io: std.Io, out_dir: []const u8, bin: []const u8) !void {
+    const ru = bp.codegen.wasmRuntimeUnit;
+    const rt = ru.get() catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.RuntimeUnitUnavailable,
+    };
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const ar = arena_state.allocator();
+    try writeIfChanged(ar, io, out_dir, ru.file_name, rt.core_bytes);
+    const im = try ru.importsOf(ar, bin);
+    for (try rt.closure(ar, im.units)) |u| try writeIfChanged(ar, io, out_dir, u.file_name, u.bytes);
+}
+
+fn writeIfChanged(ar: std.mem.Allocator, io: std.Io, out_dir: []const u8, file: []const u8, bytes: []const u8) !void {
+    const path = try std.fs.path.join(ar, &.{ out_dir, file });
+    if (std.Io.Dir.cwd().readFileAlloc(io, path, ar, .limited(bytes.len + 1))) |have| {
+        if (std.mem.eql(u8, have, bytes)) return;
+    } else |_| {}
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = bytes });
+}
+
 fn writeOutputs(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -1134,6 +1160,15 @@ fn writeOutputs(
         }
     }
     if (once) |*w| try w.finish();
+
+    // Decisions 1021 (2), 1026 — a `wasi` program imports the runtime core
+    // and std's units: `std@__rt.wasm` and the units it reaches beside the
+    // program's, each written once per compiler build.
+    if (target == .wasm and wasm_host == .wasi) for (outputs) |o| {
+        const bin = o.result.wasm orelse continue;
+        if (o.result.failed() or !bp.codegen.wasmRuntimeUnit.importsRuntime(bin)) continue;
+        try writeRuntimeUnits(gpa, io, out_dir, bin);
+    };
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every
     // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — each flat beside the

@@ -35,9 +35,10 @@ async fn loadTwice(x: i32) -> Async<i32> {
     (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32))))
     (type $frame1 (struct (field $resume (mut i32)) (field $s0 (mut i32)) (field $s1 (mut i32)) (field $s2 (mut (ref null $task)))))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   ;; @Async — a state machine (decision 392)
   (func $fetch (param $x i32) (result (ref null $task))
     (local $__fr (ref null $frame0))
@@ -395,54 +396,6 @@ async fn loadTwice(x: i32) -> Async<i32> {
         br $loop
       )
     )
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0

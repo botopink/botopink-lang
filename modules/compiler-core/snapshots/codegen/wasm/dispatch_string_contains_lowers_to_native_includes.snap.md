@@ -30,9 +30,11 @@ import {io.terminal.print} from "std";
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 1328))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@string" "std:text.contains" (func $__std_text_contains (param i32 i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $main
     (local $hw (ref null $str))
     (local $__gc0 (ref null $str))
@@ -269,54 +271,6 @@ import {io.terminal.print} from "std";
       )
     )
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
     (local $n i32) (local $p i32) (local $i i32)
     local.get $s
@@ -382,22 +336,6 @@ import {io.terminal.print} from "std";
     )
     local.get $r
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 1328))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
-  ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
-  ;; __std_f122 — from std_wasm.wasm (sha256 889c7b5ca2dc)
-  ;; std:text.contains — from std_wasm.wasm (sha256 8f31d2bebba0)
   (data $__d0 "hello world")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "world")

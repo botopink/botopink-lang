@@ -1,0 +1,5 @@
+import {io.terminal.print} from "std";
+
+fn main() -> void {
+    print("hello, world");
+}

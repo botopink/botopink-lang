@@ -142,10 +142,11 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
   (rec
     (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut (ref null $closure))) (field $s1 (mut i32)) (field $s2 (mut i32)) (field $s3 (mut i32)) (field $s4 (mut (ref null $result))) (field $s5 (mut (ref null $task))) (field $s6 (mut (ref null $task))) (field $s7 (mut (ref null $str)))))
   )
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (tag $__bp_panic (param anyref))
   (table funcref (elem))
-  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; std/failure — the two records a failure that is not a typed error carries
   ;; (decisions 431, 492).
   ;; 
@@ -446,54 +447,6 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     local.get $__task
     local.get $__v
     call $__task_settle
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (global $__task_head (mut (ref null $task)) (ref.null $task))
   (global $__task_tail (mut (ref null $task)) (ref.null $task))
@@ -1492,10 +1445,14 @@ test "asserts: errorText answers the empty string for Ok" {
     (type $rec_Failure (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str)))))
     (type $brand_rec_Failure (struct (field f32) (field f64) (field i64) (field i64) (field i32) (field f32) (field f64) (field i32) (field i64) (field i64) (field f64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field f64) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field f64) (field i64)))
   )
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@string" "std:text.contains" (func $__std_text_contains (param i32 i32) (result i32)))
+  (import "std@string" "std:text.startsWith" (func $__std_text_startsWith (param i32 i32) (result i32)))
+  (import "std@string" "std:text.endsWith" (func $__std_text_endsWith (param i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (tag $__bp_panic (param anyref))
   (table funcref (elem))
-  (global $__heap_ptr (mut i32) (i32.const 1328))
   ;; declare fn panic — no wasm implementation (host-backed)
   ;; attempt — .Wasm(body: attemptOnWasm)
   (func $attempt (param $f (ref null $closure)) (result (ref null $result))
@@ -2931,54 +2888,6 @@ test "asserts: errorText answers the empty string for Ok" {
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__panic_raise (param $msg (ref null $str)) (param $print i32)
     local.get $msg
     local.get $print
@@ -3072,26 +2981,6 @@ test "asserts: errorText answers the empty string for Ok" {
     )
     local.get $r
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 1328))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
-  ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
-  ;; __std_f120 — from std_wasm.wasm (sha256 bd4cb38df48b)
-  ;; __std_f122 — from std_wasm.wasm (sha256 889c7b5ca2dc)
-  ;; __std_f312 — from std_wasm.wasm (sha256 fba83af40177)
-  ;; std:text.endsWith — from std_wasm.wasm (sha256 5bd7ccb223bc)
-  ;; std:text.startsWith — from std_wasm.wasm (sha256 322b10039271)
-  ;; std:text.contains — from std_wasm.wasm (sha256 8f31d2bebba0)
   (data $__d0 "panic")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "asserts.isTrue: condition was false")
@@ -3333,9 +3222,11 @@ import {testing.asserts} from "std";
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 1328))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@string" "std:text.contains" (func $__std_text_contains (param i32 i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $contains (param $actual (ref null $str)) (param $needle (ref null $str)) (result (ref null $result))
     (local $__gc0 (ref null $str))
     (local $__gc1 (ref null $str))
@@ -4469,54 +4360,6 @@ import {testing.asserts} from "std";
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__gc_to_lin_str (param $s (ref null $str)) (result i32)
     (local $n i32) (local $p i32) (local $i i32)
     local.get $s
@@ -4582,22 +4425,6 @@ import {testing.asserts} from "std";
     )
     local.get $r
   )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 1328))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f21 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f23 — from std_wasm.wasm (sha256 2448159130cb)
-  ;; __std_f91 — from std_wasm.wasm (sha256 18a947e25763)
-  ;; __std_f122 — from std_wasm.wasm (sha256 889c7b5ca2dc)
-  ;; std:text.contains — from std_wasm.wasm (sha256 8f31d2bebba0)
   (data $__d0 "asserts.contains: needle not in actual")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "asserts.isEmpty: array was not empty")

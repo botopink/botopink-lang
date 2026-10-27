@@ -200,9 +200,10 @@ fn frameParent(f: Frame) -> unknown {
     (type $rec_Rendered (struct (field $f0 (mut anyref)) (field $f1 (mut (ref null $rec_RenderScope)))))
     (type $brand_rec_Rendered (struct (field f32) (field f32) (field f64) (field i64) (field i64) (field i32) (field i64) (field i64) (field i32) (field f64) (field i64) (field i64) (field i64) (field i32) (field i32) (field f64) (field f32) (field f32) (field f64) (field i32) (field f64) (field i32) (field f64) (field f32) (field f32) (field i64) (field i32) (field i64) (field i32) (field i64) (field f64) (field f32)))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
   ;; above it, React's context in botopink's spelling.
   ;; 
@@ -655,54 +656,6 @@ fn frameParent(f: Frame) -> unknown {
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -852,28 +805,29 @@ component fn Widget() -> Component<Element> {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1))
-  (data (i32.const 256) "\18\00\00\00R\07Context\01\0ccontextValueG")
-  (data (i32.const 284) "\01\00\00\00i")
-  (data (i32.const 292) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data (i32.const 384) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
-  (data (i32.const 456) "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data (i32.const 484) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data (i32.const 516) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data (i32.const 548) "\0a\00\00\00R\07Element\00")
-  (global $__heap_ptr (mut i32) (i32.const 564))
+  (data (i32.const 11696) "\18\00\00\00R\07Context\01\0ccontextValueG")
+  (data (i32.const 11724) "\01\00\00\00i")
+  (data (i32.const 11732) "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
+  (data (i32.const 11824) "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
+  (data (i32.const 11896) "\16\00\00\00R\0bRenderScope\01\06framesi")
+  (data (i32.const 11924) "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
+  (data (i32.const 11956) "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
+  (data (i32.const 11988) "\0a\00\00\00R\07Element\00")
   (func $createContext (param $value i32) (result i32)
     (local $__mem0 i32)
     i32.const 12
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 260
+    i32.const 11700
     i32.store
     local.get $__mem0
-    i32.const 288
+    i32.const 11728
     i32.store offset=8
     local.get $__mem0
     local.get $value
@@ -884,19 +838,19 @@ component fn Widget() -> Component<Element> {
     return
   )
   (func $provide (param $ctx i32) (result i32)
-    i32.const 292
+    i32.const 11732
     call $__panic_fail
     unreachable
     i32.const 0
   )
   (func $context (param $ctx i32) (result i32)
-    i32.const 292
+    i32.const 11732
     call $__panic_fail
     unreachable
     i32.const 0
   )
   (func $inject (param $t i32) (result i32)
-    i32.const 384
+    i32.const 11824
     call $__panic_fail
     unreachable
     i32.const 0
@@ -907,7 +861,7 @@ component fn Widget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 460
+    i32.const 11900
     i32.store
     local.get $__mem0
     i32.const 0
@@ -924,14 +878,14 @@ component fn Widget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 460
+    i32.const 11900
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 488
+    i32.const 11928
     i32.store
     local.get $__mem1
     local.get $key
@@ -977,7 +931,7 @@ component fn Widget() -> Component<Element> {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 488
+    i32.const 11928
     i32.eq
     i32.and
     (if (result i32)
@@ -1009,7 +963,7 @@ component fn Widget() -> Component<Element> {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 488
+    i32.const 11928
     i32.store
     local.get $__mem1
     local.get $key
@@ -1039,10 +993,10 @@ component fn Widget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 520
+    i32.const 11960
     i32.store
     local.get $__mem0
-    i32.const 288
+    i32.const 11728
     i32.store offset=12
     local.get $__mem0
     local.get $value
@@ -1172,7 +1126,7 @@ component fn Widget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 552
+    i32.const 11992
     i32.store
     local.get $__mem0
     i32.const 4
@@ -1399,54 +1353,6 @@ component fn Widget() -> Component<Element> {
       )
     )
     i32.const 1
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -1825,6 +1731,18 @@ component fn Widget() -> Component<Element> {
   )
   (func $__task_host_poll (result i32)
     i32.const 0
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 12004
+    i32.lt_u
+    (if
+      (then
+      i32.const 12004
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

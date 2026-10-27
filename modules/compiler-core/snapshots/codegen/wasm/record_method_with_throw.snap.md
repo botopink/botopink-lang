@@ -39,8 +39,8 @@ val Invoice = type(
     (type $rec_Invoice (struct (field $f0 (mut f64)) (field $f1 (mut f64))))
     (type $brand_rec_Invoice (struct (field i32) (field i32) (field i64) (field f64) (field f32) (field f64) (field i64) (field i64) (field i64) (field f32) (field i64) (field i32) (field i64) (field i64) (field i32) (field i64) (field i64) (field f64) (field f32) (field f32) (field f32) (field i32) (field f64) (field f32) (field f64) (field f64) (field f32) (field i64) (field i64) (field i64) (field f64) (field f32)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $Invoice_total (param $self (ref null $rec_Invoice)) (result f64)
     local.get $self
     struct.get $rec_Invoice $f0

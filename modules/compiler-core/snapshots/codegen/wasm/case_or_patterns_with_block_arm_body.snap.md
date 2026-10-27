@@ -12,11 +12,11 @@ val parity = case 5 {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (memory (export "memory") 1)
-  (start $__init_globals)
-  (data (i32.const 256) "\04\00\00\00even")
-  (data (i32.const 264) "\03\00\00\00odd")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
+  (start $__bp_reserve)
+  (data (i32.const 11696) "\04\00\00\00even")
+  (data (i32.const 11704) "\03\00\00\00odd")
   (global $parity (mut i32) (i32.const 0))
   (func $__init_globals
     (local $__case_0 i32)
@@ -38,15 +38,27 @@ val parity = case 5 {
     i32.or
     (if (result i32)
       (then
-    i32.const 256
+    i32.const 11696
       )
       (else
-    i32.const 264
+    i32.const 11704
     local.set $value
     local.get $value
       )
     )
     global.set $parity
+  )
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11712
+    i32.lt_u
+    (if
+      (then
+      i32.const 11712
+      global.set $__heap_ptr
+      )
+    )
+    call $__init_globals
   )
 )
 ```

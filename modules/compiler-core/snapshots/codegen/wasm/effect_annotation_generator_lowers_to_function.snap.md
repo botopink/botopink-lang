@@ -31,8 +31,8 @@ iter fn range(a: i32, b: i32) -> Iter<i32> {
   (rec
     (type $frame0 (struct (field $resume (mut i32)) (field $s0 (mut i32)) (field $s1 (mut i32))))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   ;; @Iter — a generator state machine (decision 105)
   (func $range (param $a i32) (param $b i32) (result (ref null $gen))
     (local $__fr (ref null $frame0))

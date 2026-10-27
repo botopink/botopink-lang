@@ -16,11 +16,12 @@ import {io.terminal.print} from "std";
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0))
-  (data (i32.const 256) "\2a\00\00\00integer overflow: * on i32 at main.bp:3:47")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (data (i32.const 11696) "\2a\00\00\00integer overflow: * on i32 at main.bp:3:47")
   (func $mk (result i32)
     (local $__mem0 i32)
     (local $value i32)
@@ -66,7 +67,7 @@ import {io.terminal.print} from "std";
   (func $__lambda0 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 2
-    i32.const 256
+    i32.const 11696
     call $__i32_mul_chk
     return
   )
@@ -252,54 +253,6 @@ import {io.terminal.print} from "std";
         br $loop
       )
     )
-  )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
   )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
@@ -543,6 +496,18 @@ import {io.terminal.print} from "std";
     local.get $site
     call $__panic_fail
     unreachable
+  )
+  (start $__bp_reserve)
+  (func $__bp_reserve
+    global.get $__heap_ptr
+    i32.const 11744
+    i32.lt_u
+    (if
+      (then
+      i32.const 11744
+      global.set $__heap_ptr
+      )
+    )
   )
 )
 ```

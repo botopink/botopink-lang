@@ -113,16 +113,48 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     }
     try section(alloc, &out, 1, sec.items);
 
-    // import
-    if (e.n_imports > 0) {
+    // import: the functions, then (decision 1021 (2)) the memory, the
+    // globals and the tags another unit defines — each index space starts
+    // with its imports.
+    const memory_imported = if (e.memory) |mem| mem.import != null else false;
+    const n_all_imports = e.n_imports + @intFromBool(memory_imported) + e.n_global_imports + e.n_tag_imports;
+    if (n_all_imports > 0) {
         sec = .empty;
-        try uleb(ar, &sec, e.n_imports);
+        try uleb(ar, &sec, n_all_imports);
         for (m.items) |it| switch (it) {
             .import => |im| {
                 try name(ar, &sec, im.module);
                 try name(ar, &sec, im.name);
                 try sec.append(ar, 0x00);
                 try uleb(ar, &sec, try e.typeIndex(im.type));
+            },
+            else => {},
+        };
+        if (e.memory) |mem| if (mem.import) |im| {
+            try name(ar, &sec, im.module);
+            try name(ar, &sec, im.name);
+            try sec.append(ar, 0x02);
+            try sec.append(ar, if (mem.max_pages != null) 0x01 else 0x00);
+            try uleb(ar, &sec, mem.min_pages);
+            if (mem.max_pages) |max| try uleb(ar, &sec, max);
+        };
+        for (m.items) |it| switch (it) {
+            .global => |g| if (g.import) |im| {
+                try name(ar, &sec, im.module);
+                try name(ar, &sec, im.name);
+                try sec.append(ar, 0x03);
+                try valTypeInto(ar, &sec, g.ty);
+                try sec.append(ar, @intFromBool(g.mutable));
+            },
+            else => {},
+        };
+        for (m.items) |it| switch (it) {
+            .tag => |t| if (t.import) |im| {
+                try name(ar, &sec, im.module);
+                try name(ar, &sec, im.name);
+                try sec.append(ar, 0x04);
+                try sec.append(ar, 0x00);
+                try uleb(ar, &sec, try e.typeIndex(.{ .params = t.params }));
             },
             else => {},
         };
@@ -153,22 +185,22 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     }
 
     // memory
-    if (e.memory) |mem| {
+    if (e.memory) |mem| if (mem.import == null) {
         sec = .empty;
         try uleb(ar, &sec, 1);
         try sec.append(ar, if (mem.max_pages != null) 0x01 else 0x00);
         try uleb(ar, &sec, mem.min_pages);
         if (mem.max_pages) |max| try uleb(ar, &sec, max);
         try section(alloc, &out, 5, sec.items);
-    }
+    };
 
     // tag (decision 518 — wasm exception handling): attribute 0, the type
     // of the values it carries.
-    if (e.tags.items.len > 0) {
+    if (e.tags.items.len > e.n_tag_imports) {
         sec = .empty;
-        try uleb(ar, &sec, e.tags.items.len);
+        try uleb(ar, &sec, e.tags.items.len - e.n_tag_imports);
         for (m.items) |it| switch (it) {
-            .tag => |t| {
+            .tag => |t| if (t.import == null) {
                 try sec.append(ar, 0x00);
                 try uleb(ar, &sec, try e.typeIndex(.{ .params = t.params }));
             },
@@ -178,11 +210,11 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     }
 
     // global
-    if (e.globals.items.len > 0) {
+    if (e.globals.items.len > e.n_global_imports) {
         sec = .empty;
-        try uleb(ar, &sec, e.globals.items.len);
+        try uleb(ar, &sec, e.globals.items.len - e.n_global_imports);
         for (m.items) |it| switch (it) {
-            .global => |g| {
+            .global => |g| if (g.import == null) {
                 try valTypeInto(ar, &sec, g.ty);
                 try sec.append(ar, @intFromBool(g.mutable));
                 // A reference global starts null (WasmGC).
@@ -209,7 +241,6 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
             count += 1;
         };
         var fi: usize = e.n_imports;
-        var gi: usize = 0;
         for (m.items) |it| switch (it) {
             .func => |f| {
                 for (f.exports) |x| {
@@ -220,14 +251,17 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
                 }
                 fi += 1;
             },
-            .global => |g| {
-                for (g.exports) |x| {
-                    try name(ar, &body, x);
-                    try body.append(ar, 0x03);
-                    try uleb(ar, &body, gi);
-                    count += 1;
-                }
-                gi += 1;
+            .global => |g| for (g.exports) |x| {
+                try name(ar, &body, x);
+                try body.append(ar, 0x03);
+                try uleb(ar, &body, try e.globalIndex(g.name));
+                count += 1;
+            },
+            .tag => |t| for (t.exports) |x| {
+                try name(ar, &body, x);
+                try body.append(ar, 0x04);
+                try uleb(ar, &body, try e.tagIndex(t.name));
+                count += 1;
             },
             else => {},
         };
@@ -336,6 +370,10 @@ pub const Encoder = struct {
     /// The exception tags, by index (decision 518).
     tags: std.ArrayListUnmanaged([]const u8) = .empty,
     n_imports: usize = 0,
+    /// The globals and tags another unit defines (decision 1021 (2)): the
+    /// first indices of their spaces.
+    n_global_imports: usize = 0,
+    n_tag_imports: usize = 0,
     n_data: usize = 0,
     /// The passive data segments, by data index (`array.new_data`).
     data_names: std.ArrayListUnmanaged(?[]const u8) = .empty,
@@ -350,11 +388,19 @@ pub const Encoder = struct {
                 try e.funcs.append(e.ar, im.func);
                 e.n_imports += 1;
             },
+            .global => |g| if (g.import != null) {
+                try e.globals.append(e.ar, g.name);
+                e.n_global_imports += 1;
+            },
+            .tag => |t| if (t.import != null) {
+                try e.tags.append(e.ar, t.name);
+                e.n_tag_imports += 1;
+            },
             else => {},
         };
         for (e.m.items) |it| switch (it) {
             .func => |f| try e.funcs.append(e.ar, f.name),
-            .global => |g| try e.globals.append(e.ar, g.name),
+            .global => |g| if (g.import == null) try e.globals.append(e.ar, g.name),
             .memory => |mem| e.memory = mem,
             .table => |names| e.table = names,
             .start => |s| e.start = s,
@@ -363,7 +409,7 @@ pub const Encoder = struct {
                 try e.data_names.append(e.ar, d.passive);
                 if (d.passive != null) e.n_passive += 1;
             },
-            .tag => |t| try e.tags.append(e.ar, t.name),
+            .tag => |t| if (t.import == null) try e.tags.append(e.ar, t.name),
             .import, .comment, .custom, .types => {},
         };
     }

@@ -148,24 +148,29 @@ pub fn needsOf(bytes: []const u8) Needs {
 pub fn needsOfText(text: []const u8) Needs {
     var set = Needs.initEmpty();
     const head = "(@custom \"" ++ section ++ "\" \"";
-    const at = std.mem.indexOf(u8, text, head) orelse return set;
-    const rest = text[at + head.len ..];
-    const end = std.mem.indexOfScalar(u8, rest, '"') orelse return set;
-    // The text escapes each newline as `\0a`.
-    var buf: [256]u8 = undefined;
-    var n: usize = 0;
-    var k: usize = 0;
-    const raw = rest[0..end];
-    while (k < raw.len and n < buf.len) : (n += 1) {
-        if (raw[k] == '\\' and k + 2 < raw.len) {
-            buf[n] = std.fmt.parseInt(u8, raw[k + 1 .. k + 3], 16) catch return set;
-            k += 3;
-        } else {
-            buf[n] = raw[k];
-            k += 1;
+    // A component holds one section per core module (the runtime unit's and
+    // the program's, decision 1021): the program needs what any names.
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, text, from, head)) |at| {
+        const rest = text[at + head.len ..];
+        const end = std.mem.indexOfScalar(u8, rest, '"') orelse return set;
+        from = at + head.len + end;
+        // The text escapes each newline as `\0a`.
+        var buf: [256]u8 = undefined;
+        var n: usize = 0;
+        var k: usize = 0;
+        const raw = rest[0..end];
+        while (k < raw.len and n < buf.len) : (n += 1) {
+            if (raw[k] == '\\' and k + 2 < raw.len) {
+                buf[n] = std.fmt.parseInt(u8, raw[k + 1 .. k + 3], 16) catch return set;
+                k += 3;
+            } else {
+                buf[n] = raw[k];
+                k += 1;
+            }
         }
+        addNeeds(&set, buf[0..n]);
     }
-    addNeeds(&set, buf[0..n]);
     return set;
 }
 

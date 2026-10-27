@@ -93,9 +93,9 @@ test "functions.constant ignores its argument" {
     (type $env1 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
     (type $env2 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut anyref)))))
   )
-  (memory (export "memory") 1)
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (global $__heap_ptr (mut i32) (i32.const 256))
   ;; std/functions — combinators over function values (decision 738).
   ;; 
   ;; Plain functions of a std module, imported by path:
@@ -274,10 +274,13 @@ import {functions} from "std";
     (type $env9 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
     (type $env10 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut i32)))))
   )
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") 1)
+  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
+  (import "std@string" "std:text.toUpper" (func $__std_text_toUpper (param i32) (result i32)))
+  (import "std@string" "wat:text.length" (func $__std_text_length (param (ref null $str)) (result i32)))
+  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2 $__lambda3 $__lambda4 $__lambda5 $__lambda6 $__lambda7 $__lambda8 $__lambda9 $__lambda10))
-  (global $__heap_ptr (mut i32) (i32.const 304))
   (func $compose (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
     i32.const 0
     i32.const 0
@@ -1112,54 +1115,6 @@ import {functions} from "std";
     )
     i32.const 1
   )
-  (func $__alloc (param $n i32) (result i32)
-    (local $p i32) (local $e i32)
-    global.get $__heap_ptr
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.add
-    i32.const 3
-    i32.add
-    i32.const -4
-    i32.and
-    local.set $e
-    local.get $e
-    local.get $p
-    i32.lt_u
-    (if
-      (then
-        unreachable
-      )
-    )
-    local.get $e
-    memory.size
-    i32.const 16
-    i32.shl
-    i32.gt_u
-    (if
-      (then
-        local.get $e
-        i32.const 65535
-        i32.add
-        i32.const 16
-        i32.shr_u
-        memory.size
-        i32.sub
-        memory.grow
-        i32.const -1
-        i32.eq
-        (if
-          (then
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $e
-    global.set $__heap_ptr
-    local.get $p
-  )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -1495,59 +1450,6 @@ import {functions} from "std";
     local.get $site
     call $__panic_fail
     unreachable
-  )
-  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 304))
-  (func $__std_sp_check (param $sp i32) (result i32)
-    local.get $sp
-    i32.const 256
-    i32.lt_s
-    (if
-      (then unreachable)
-    )
-    local.get $sp
-  )
-  ;; __std_f129 — from std_wasm.wasm (sha256 67dbdd61ea9b)
-  ;; __std_f130 — from std_wasm.wasm (sha256 f15aa78ce6d6)
-  ;; __std_f131 — from std_wasm.wasm (sha256 2f81dc7302bb)
-  ;; __std_f132 — from std_wasm.wasm (sha256 38e98c1edeed)
-  ;; __std_f133 — from std_wasm.wasm (sha256 16c99e1a095a)
-  ;; __std_f134 — from std_wasm.wasm (sha256 30c514d3cfe8)
-  ;; __std_f434 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; __std_f500 — from std_wasm.wasm (sha256 6eed520bf8fe)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 72dc7de6cc0d)
-  ;; std-wasm's .wat leaves (front 164 s3)
-  (func $__std_text_length (param $s (ref null $str)) (result i32)
-    (local $i i32)
-    (local $len i32)
-    (local $n i32)
-    local.get $s
-    array.len
-    local.set $len
-    (block $done
-      (loop $next
-        local.get $i
-        local.get $len
-        i32.ge_u
-        br_if $done
-        local.get $s
-        local.get $i
-        array.get_u $str
-        i32.const 0xC0
-        i32.and
-        i32.const 0x80
-        i32.ne
-        local.get $n
-        i32.add
-        local.set $n
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $next
-      )
-    )
-    local.get $n
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))

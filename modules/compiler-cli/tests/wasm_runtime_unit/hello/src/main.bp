@@ -1,0 +1,8 @@
+import {io.terminal.print} from "std";
+
+fn main() -> void {
+    print("hello, world");
+    print(42);
+    print(1.5);
+    print("a,b".split(","));
+}

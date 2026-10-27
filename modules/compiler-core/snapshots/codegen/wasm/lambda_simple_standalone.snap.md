@@ -33,9 +33,9 @@ fn main() -> string {
   (rec
     (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32))))
   )
-  (memory (export "memory") 1)
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (table funcref (elem $__lambda0))
-  (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main (result (ref null $str))
     (local $func (ref null $closure))
     (local $__fnv0 (ref null $closure))

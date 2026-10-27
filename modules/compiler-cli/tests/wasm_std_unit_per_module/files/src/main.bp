@@ -1,0 +1,9 @@
+import {io.fs, io.terminal.print} from "std";
+
+pub fn main() -> void {
+    fs.removeTree("unit_dir");
+    fs.mkdirRecursive("unit_dir");
+    fs.writeText("unit_dir/a.txt", "read back from a file");
+    print(try fs.readText("unit_dir/a.txt") catch "failed");
+    fs.removeTree("unit_dir");
+}

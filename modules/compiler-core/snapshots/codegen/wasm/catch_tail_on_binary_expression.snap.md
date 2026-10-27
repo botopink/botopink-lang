@@ -36,8 +36,8 @@ fn compute() -> i32 {
     (type $rec_CalcError (struct (field $f0 (mut (ref null $str)))))
     (type $brand_rec_CalcError (struct (field i64) (field f64) (field i64) (field f32) (field f64) (field f32) (field f64) (field f32) (field f64) (field f32) (field i64) (field f64) (field i64) (field f32) (field i32) (field i32) (field f32) (field i32) (field i32) (field f32) (field f64) (field f64) (field f32) (field f32) (field i64) (field f64) (field f64) (field f64) (field i32) (field i32) (field i32) (field i64)))
   )
-  (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (memory (export "memory") (import "std@__rt" "memory") 1)
+  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $getA (result (ref null $result))
     (local $__mem0 i32)
     i32.const 1
