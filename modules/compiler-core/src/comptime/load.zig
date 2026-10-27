@@ -256,7 +256,7 @@ var load_sites: std.ArrayListUnmanaged(LoadSite) = .empty;
 var load_sites_lock: std.atomic.Mutex = .unlocked;
 
 fn lockSites() void {
-    while (!load_sites_lock.tryLock()) std.Thread.yield() catch {};
+    while (!load_sites_lock.tryLock()) std.atomic.spinLoopHint();
 }
 
 /// Note that `module` wrote `compiler.load(path)` at `loc`.
