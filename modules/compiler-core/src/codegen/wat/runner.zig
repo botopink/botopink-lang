@@ -36,6 +36,8 @@
 const std = @import("std");
 const engine_mod = @import("engine.zig");
 const ast = @import("../../ast.zig");
+const runtimeUnit = @import("runtime_unit.zig");
+const watEmitter = @import("wat_emitter.zig");
 const c = engine_mod.c;
 
 pub const Error = std.mem.Allocator.Error;
@@ -366,6 +368,90 @@ fn runHere(alloc: std.mem.Allocator, component: *const c.wasmtime_component_t, u
     if (result.kind == c.WASMTIME_COMPONENT_RESULT and !result.of.result.is_ok) status = 1;
     c.wasmtime_component_val_delete(&result);
     return s.finish(.{ .status = status });
+}
+
+/// Where `runEntry` reads the units its entry's `botopink.units` names:
+/// `<dir>/<stem>.wasm`, the files a build wrote beside the entry (decision
+/// 1032 (1)); with `runtime`, a core or std unit absent there is the
+/// compiler's own bytes (a test run's folder holds only the program's units).
+pub const UnitSource = struct {
+    dir: []const u8,
+    runtime: bool = false,
+};
+
+/// Decision 1032 (2), (3), 1034 (5), (8) — compose and run the `wasi` entry
+/// `entry` (a core module's binary, or its `.wat` text): each unit its
+/// `botopink.units` section names — the core, std's units, the program's own
+/// — is read from `units` and loaded through `load` (the `.cwasm` cache in
+/// `cache_dir`, keyed by the unit's bytes, so one unit is compiled once for
+/// every program that reaches it), linked as `unit-<k>`, and the component
+/// frame `wat_emitter.frameOf` builds over them, precompiled the same way,
+/// is run as `run` runs a component. An entry with no such section, a unit
+/// missing, or a load the engine refuses answers status 1 with the reason
+/// in `trap`.
+pub fn runEntry(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    cache_dir: ?[]const u8,
+    cold: bool,
+    entry: []const u8,
+    units: UnitSource,
+    opts: Options,
+) Error!Outcome {
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const ar = arena_state.allocator();
+    var failure: ?[]u8 = null;
+    const bin = (try engine_mod.binaryOf(ar, entry, &failure)) orelse return noRun(alloc, failure.?);
+    const stems = runtimeUnit.unitsOf(ar, bin) catch return noRun(alloc, "the entry's botopink.units section does not read");
+    if (stems.len == 0) return noRun(alloc, "the entry names no unit (no botopink.units section)");
+
+    // Every unit's bytes, the program's own kept for the frame's faces.
+    const all = try ar.alloc([]const u8, stems.len);
+    var program: std.ArrayListUnmanaged(watEmitter.UnitBytes) = .empty;
+    for (stems[0 .. stems.len - 1], all[0 .. stems.len - 1]) |stem, *bytes| {
+        const path = try std.fmt.allocPrint(ar, "{s}/{s}.wasm", .{ units.dir, stem });
+        const file: ?[]const u8 = std.Io.Dir.cwd().readFileAlloc(io, path, ar, .unlimited) catch null;
+        bytes.* = file orelse (if (units.runtime) runtimeBytes(stem) else null) orelse
+            return noRun(alloc, try std.fmt.allocPrint(ar, "no unit {s}.wasm beside the entry in {s}", .{ stem, units.dir }));
+        if (runtimeBytes(stem) == null) try program.append(ar, .{ .name = stem, .bytes = bytes.* });
+    }
+    all[stems.len - 1] = bin;
+
+    // A unit whose index does not read is named (decision 1037: a concrete
+    // GC type on its boundary is a compiler defect).
+    for (stems, all) |stem, bytes| if (runtimeBytes(stem) == null) {
+        _ = runtimeUnit.faceOfBytes(ar, bytes) catch |err| return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => noRun(alloc, try std.fmt.allocPrint(ar, "the unit {s}'s index does not read: {s}", .{ stem, @errorName(err) })),
+        };
+    };
+    var frame: std.Io.Writer.Allocating = .init(ar);
+    watEmitter.frameOf(ar, &frame.writer, bin, program.items) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => noRun(alloc, try std.fmt.allocPrint(ar, "the entry's component frame cannot be built: {s}", .{@errorName(err)})),
+    };
+
+    var held: std.ArrayListUnmanaged(engine_mod.Compiled) = .empty;
+    defer for (held.items) |h| h.deinit();
+    const linked = try ar.alloc(Unit, stems.len);
+    for (all, linked, 0..) |bytes, *u, k| {
+        const code = (try load(alloc, io, cache_dir, bytes, .module, cold, &failure)) orelse
+            return .{ .status = 1, .trap = failure };
+        try held.append(ar, code);
+        u.* = .{ .name = try std.fmt.allocPrint(ar, "unit-{d}", .{k}), .module = code.module };
+    }
+    const comp = (try load(alloc, io, cache_dir, frame.written(), .component, cold, &failure)) orelse
+        return .{ .status = 1, .trap = failure };
+    defer comp.deinit();
+    return run(alloc, comp.component, linked, opts);
+}
+
+/// The compiler's own bytes of the core or the std unit `stem`.
+fn runtimeBytes(stem: []const u8) ?[]const u8 {
+    const r = runtimeUnit.get() catch return null;
+    if (std.mem.eql(u8, stem, runtimeUnit.name)) return r.core_bytes;
+    return if (r.unit(stem)) |u| u.bytes else null;
 }
 
 /// Run a core module over WASI preview 1: instantiate it and call its

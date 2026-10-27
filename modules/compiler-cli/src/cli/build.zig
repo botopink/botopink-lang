@@ -360,7 +360,7 @@ fn runBuild(
         const tkey = targetKeyFor(proj, opts, t, rt_key.?);
         // `--cold` (run or build) reads no target key: its first reach of the
         // package on this target emits (decision 1043 (4)).
-        if (shared == null and !opts.rebuild and !opts.cold and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) return 0;
+        if (shared == null and !opts.rebuild and !opts.cold and targetReused(arena, io, proj, rt_dir, opts, t, tkey, packages)) return 0;
         if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
         const built = (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared, &closure_keys.runtime)).exit;
@@ -410,6 +410,9 @@ fn runBuild(
         // The file a wasm build writes is what its host runs: the WASI
         // preview 2 component on `wasi` (decision 334).
         .wasm_artifact = true,
+        // Decision 1032 — a `wasi` entry is a unit of its own code, the runner
+        // composing it with the units its `botopink.units` names.
+        .wasm_units = wasm_units,
         .analysis_store = &level_b.store,
         .unit_cache = &units.iface,
         // Decision 1017 (5) — on wasm only the entry's component is written (it links
@@ -518,6 +521,7 @@ fn targetKeyFor(proj: config.ProjectConfig, opts: Options, target: config.Target
 fn targetReused(
     arena: std.mem.Allocator,
     io: std.Io,
+    proj: config.ProjectConfig,
     rt_dir: []const u8,
     opts: Options,
     target: config.Target,
@@ -525,7 +529,10 @@ fn targetReused(
     packages: bp.codegen.crossModule.Packages,
 ) bool {
     if (!runtime_cache.targetMatches(arena, io, rt_dir, target, tkey)) return false;
-    const entry = artifactPath(arena, opts.out_dir, target, packages, opts.entry, artifactExt(target)) catch return false;
+    const entry = (if (wasm_units and target == .wasm and proj.wasmHost() == .wasi)
+        wasmEntryPath(arena, opts.out_dir, packages, opts.entry)
+    else
+        artifactPath(arena, opts.out_dir, target, packages, opts.entry, artifactExt(target))) catch return false;
     std.Io.Dir.cwd().access(io, entry, .{}) catch return false;
     return true;
 }
@@ -669,6 +676,8 @@ pub fn runRuntime(
         .packages = packages,
         .wasm_host = meta.wasm_host,
         .wasm_artifact = true,
+        // Decision 1032 — as `build`'s: the entry a unit, the runner composing it.
+        .wasm_units = wasm_units,
         // Decisions 1008 (3), 1017 (5) — only the entry's component is emitted on
         // wasm (`run` executes it alone); a program with no such module keeps every unit.
         .wasm_entry_only = if (target == .wasm) wasmEntry(outputs, entry orelse opts.entry) else null,
@@ -1001,6 +1010,28 @@ pub fn artifactPath(
     return std.fmt.allocPrint(alloc, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), stem, ext });
 }
 
+/// Decision 1032 — whether `build`, `run` and `test` emit a `wasi` program as
+/// separate units (`Config.wasm_units`), the runner composing them
+/// (`wasmRunner.runEntry`); off, the entry is one component, `<path>.wat`.
+/// Off until every unit P4 emits crosses the 1037 boundary abstractly and
+/// names in `botopink.units` each unit it imports.
+pub const wasm_units = false;
+
+/// The file a `wasi` build's entry `module` is (decision 1032): the unit
+/// `<out_dir>/wasm/<pkg>@<path>.wasm`, a core module of its own code whose
+/// `botopink.units` names the units the runner composes it with
+/// (`wasmRunner.runEntry`). Caller owns it.
+pub fn wasmEntryPath(
+    alloc: std.mem.Allocator,
+    out_dir: []const u8,
+    packages: bp.codegen.crossModule.Packages,
+    module: []const u8,
+) ![]u8 {
+    const stem = try bp.codegen.crossModule.outputStem(.erlang, alloc, packages.idOf(module));
+    defer alloc.free(stem);
+    return std.fmt.allocPrint(alloc, "{s}/{s}{s}.wasm", .{ out_dir, targetSubdir(.wasm), stem });
+}
+
 /// Delete the artifact (and `.d.ts`) of every module that failed — and, on
 /// erlang and BEAM, the per-`type` modules it wrote beside it when it last
 /// succeeded (policy 3 of `13-module-identity`). A failed module carries no
@@ -1312,7 +1343,7 @@ fn writeOutputs(
     if (target == .wasm and wasm_host == .wasi) for (outputs) |o| {
         const bin = o.result.wasm orelse continue;
         if (o.result.failed() or !bp.codegen.wasmRuntimeUnit.importsRuntime(bin)) continue;
-        try writeRuntimeUnits(gpa, io, out_dir, bin);
+        try writeRuntimeUnits(gpa, io, folder, bin);
     };
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every

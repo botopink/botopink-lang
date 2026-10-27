@@ -89,6 +89,18 @@ fn testUnitPath(arena: std.mem.Allocator, test_out: []const u8, target: config.T
     };
 }
 
+/// Where a module's wasm test entry is written: with the units on (decision
+/// 1032 (6) P4) the unit `<pkg>@<module>.test.wasm` in the run's folder,
+/// beside the program's units the runner composes it with; else its `.wat`
+/// text at `testUnitPath`.
+fn wasmTestEntry(arena: std.mem.Allocator, test_out: []const u8, name: []const u8, unit: bp.codegen.Unit) ![]const u8 {
+    if (unit.wasm) |bin| {
+        const stems = try bp.codegen.wasmRuntimeUnit.unitsOf(arena, bin);
+        if (stems.len > 0) return std.fmt.allocPrint(arena, "{s}/{s}.wasm", .{ test_out, stems[stems.len - 1] });
+    }
+    return testUnitPath(arena, test_out, .wasm, name, unit);
+}
+
 /// `erlc +from_asm -o <dir>` over every `.S` in `dir` — a job of the command's
 /// `erl` session (`run.compileInto`, a refusal printed as `erlc` prints it);
 /// its exit status. A dependency's module is linked from the code cache when
@@ -420,6 +432,9 @@ pub fn run(
         .test_mode = true,
         .wasm_host = proj.wasmHost(),
         .wasm_artifact = true,
+        // Decision 1032 — a test unit on `wasi` is a units entry, composed by
+        // the runner with the compiler's own core and std units.
+        .wasm_units = build_cmd.wasm_units,
         .packages = packages,
         .analysis_store = &level_b.store,
         .unit_cache = &units.iface,
@@ -485,10 +500,19 @@ pub fn run(
         if (o.result.failed()) continue;
         // wasm: a test unit is the whole program, linked; nothing else runs.
         if (target == .wasm) {
+            // Decision 1032 — each module is a unit the test units import:
+            // `<stem>.wasm` in the run's folder, where the runner reads it.
+            if (o.result.wasm) |bin| {
+                const stems = try bp.codegen.wasmRuntimeUnit.unitsOf(arena, bin);
+                if (stems.len > 0) try std.Io.Dir.cwd().writeFile(io, .{
+                    .sub_path = try std.fmt.allocPrint(arena, "{s}/{s}.wasm", .{ test_out, stems[stems.len - 1] }),
+                    .data = bin,
+                });
+            }
             if (o.result.test_unit) |u| {
-                const unit_path = try testUnitPath(arena, test_out, target, o.name, u);
+                const unit_path = try wasmTestEntry(arena, test_out, o.name, u);
                 if (std.fs.path.dirname(unit_path)) |parent| try std.Io.Dir.cwd().createDirPath(io, parent);
-                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.wasm orelse u.code });
             }
             continue;
         }
@@ -639,7 +663,7 @@ pub fn run(
         const unit = o.result.test_unit orelse continue;
         any_tests = true;
 
-        const sub_path = try testUnitPath(arena, test_out, target, o.name, unit);
+        const sub_path = if (target == .wasm) try wasmTestEntry(arena, test_out, o.name, unit) else try testUnitPath(arena, test_out, target, o.name, unit);
 
         // wasm: the test unit, a WASI preview 2 component, runs in this
         // process (decisions 1032 (3), 1034), handed the host services its
@@ -652,7 +676,7 @@ pub fn run(
                 modules_ran += 1;
                 reporter.stdout(io, try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name}));
             }
-            const ran = try run_cmd.runWasi(arena, io, proj, sub_path, args, .{ .stdout = if (opts.json) .capture else .tee, .env = child_env });
+            const ran = try run_cmd.runWasi(arena, io, proj, sub_path, args, .{ .stdout = if (opts.json) .capture else .tee, .env = child_env, .units_dir = test_out });
             if (ran.code == 130) return 130;
             const code = ran.code;
             if (opts.json) {

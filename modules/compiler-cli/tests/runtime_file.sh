@@ -14,7 +14,8 @@
 #     `print`); on wasm the direct build, the build from `app.bpr` and the run
 #     write the entry's `main.wat` alone — a two-module program (decisions
 #     1008 (3), 1017 (5)), the run that builds the package's own set included
-#     (1006-b (5)) — and `wasmtime` runs the build's file to the run's answer;
+#     (1006-b (5)) — and `run` over the build's own folder (in process, decisions
+#     1032 (3), 1034) answers the run's answer and leaves the folder as it was;
 #   • the `.bpr` one target's build wrote builds every other target;
 #   • a dependency's `.bpr` is the same bytes whichever build wrote it;
 #   • the manifest's wasm host (decision 334 (2)) is in the root's `.bpr`: over
@@ -119,13 +120,13 @@ for target in commonJS erlang beam wasm; do
       wats="$(cd "$WORK/$d-$target" && find . -type f | sort | tr '\n' ' ')"
       [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the $d build wrote ${wats:-nothing}, not main.wat alone"
     done
-    if command -v wasmtime >/dev/null 2>&1; then
-      wasmtime run -S http -W gc=y -W exceptions=y "$WORK/direct-$target/wasm/main.wat" > "$WORK/wt.out" 2>/dev/null || fail "wasm: wasmtime failed on the build's main.wat"
-      diff <(grep -v '^build a$' "$WORK/wt.out") "$WORK/want.out" > "$WORK/diff.log" \
-        || { fail "wasm: the build's main.wat answers otherwise under wasmtime"; sed 's/^/      /' "$WORK/diff.log" >&2; }
-    else
-      fail "wasmtime is not on PATH (decision 67: a missing runtime fails)"
-    fi
+    # The build's own folder run in process (decisions 1032 (3), 1034): `run` over it
+    # rewrites nothing and answers the run's answer.
+    bp "$WORK/run-built.out" run --target wasm --out "$WORK/direct-$target" || fail "wasm: the run over the build's folder failed"
+    diff <(grep -v -e 'Compiling' -e 'Compiled' -e '^build a$' "$WORK/run-built.out") "$WORK/want.out" > "$WORK/diff.log" \
+      || { fail "wasm: the build's folder answers otherwise when run"; sed 's/^/      /' "$WORK/diff.log" >&2; }
+    diff -r "$WORK/direct-$target" "$WORK/bpr-$target" > "$WORK/diff.log" \
+      || { fail "wasm: the run over the build's folder changed it"; sed 's/^/      /' "$WORK/diff.log" >&2; }
     # Decision 1006-b (5): the run that builds the set emits the entry's component alone too.
     wats="$(cd "$WORK/run-direct-$target" && find . -name '*.wat' | sort | tr '\n' ' ')"
     [[ "$wats" == "./wasm/main.wat " ]] || fail "wasm: the direct run (building the set) wrote ${wats:-no .wat}, not main.wat alone"

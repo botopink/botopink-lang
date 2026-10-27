@@ -5702,3 +5702,104 @@ test "wat: comptime units ---- a module declaring a decorator has its comptime u
     }
     try std.testing.expect(shared >= 2);
 }
+
+// Decision 1032 (2), (3), 1034 (5), (8) — piece R2: `runner.runEntry` composes
+// a program from its unit files (the entry's `botopink.units`: the core,
+// std's units, the program's own `test@lib`, the entry), each loaded through
+// the `.cwasm` cache by its bytes, the frame precompiled beside them; it
+// answers what the program prints, a missing unit is named, and a program
+// needing `http` is given `wasi:http`.
+test "wat: units ---- runner.runEntry composes a two-module program from its unit files through the .cwasm cache" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const ru = @import("../wat/runtime_unit.zig");
+    const runner = @import("../wat/runner.zig");
+    const test_scratch = @import("test_scratch");
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    var outputs = try h.generate(a, &.{
+        .{ .path = "lib", .source =
+        \\pub type Point(x: i32, y: i32)
+        \\
+        \\pub fn greet(name: string) -> string {
+        \\    return "hi, " + name;
+        \\}
+        \\
+        \\pub fn shift(p: Point, d: i32) -> Point {
+        \\    return Point(x: p.x + d, y: p.y);
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {greet, shift, Point} from "lib";
+        \\
+        \\fn main() -> void {
+        \\    print(greet("bo"));
+        \\    val p = shift(Point(x: 1, y: 2), 3);
+        \\    print(p.x);
+        \\}
+        },
+    }, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const dir = test_scratch.path(io, "codegen/run_entry/out");
+    const cache = test_scratch.path(io, "codegen/run_entry/cache");
+    const cwd = std.Io.Dir.cwd();
+    cwd.deleteTree(io, dir) catch {};
+    cwd.deleteTree(io, cache) catch {};
+    try cwd.createDirPath(io, dir);
+    // The files a build writes: each program unit, the core and std's units.
+    var entry: ?[]const u8 = null;
+    for (outputs.items) |o| {
+        const bin = o.result.wasm orelse continue;
+        const stems = try ru.unitsOf(ar, bin);
+        if (stems.len == 0) continue;
+        try cwd.writeFile(io, .{ .sub_path = try std.fmt.allocPrint(ar, "{s}/{s}.wasm", .{ dir, stems[stems.len - 1] }), .data = bin });
+        if (std.mem.eql(u8, o.name, "main")) entry = bin;
+    }
+    const bin = entry orelse return error.ModuleDidNotCompile;
+    const rt = try ru.get();
+    try cwd.writeFile(io, .{ .sub_path = try std.fmt.allocPrint(ar, "{s}/{s}", .{ dir, ru.file_name }), .data = rt.core_bytes });
+    for (try rt.closure(ar, try ru.unitsOf(ar, bin))) |u|
+        try cwd.writeFile(io, .{ .sub_path = try std.fmt.allocPrint(ar, "{s}/{s}", .{ dir, u.file_name }), .data = u.bytes });
+
+    const out = try runner.runEntry(a, io, cache, false, bin, .{ .dir = dir }, .{ .stdout = .capture });
+    defer out.deinit(a);
+    if (out.trap) |t| std.debug.print("\n=== runEntry: {s}\n", .{t});
+    try std.testing.expectEqual(@as(i32, 0), out.status);
+    try std.testing.expectEqualStrings("hi, bo\n4\n", out.stdout orelse "");
+
+    var n: usize = 0;
+    var d = try cwd.openDir(io, cache, .{ .iterate = true });
+    defer d.close(io);
+    var it = d.iterate();
+    while (try it.next(io)) |e| if (std.mem.endsWith(u8, e.name, ".cwasm")) {
+        n += 1;
+    };
+    // What this process loaded before (`load`'s LRU) is not written again:
+    // at most one file per unit and one for the frame (`tests/wasm_runner.sh`
+    // counts them exactly, a process per program).
+    try std.testing.expect(n >= 1 and n <= (try ru.unitsOf(ar, bin)).len + 1);
+
+    // Decision 1034 (6), (7) — a program needing `http` is given `wasi:http`
+    // beside WASI p2: the composed program links and answers the same.
+    var http_needs: bpAst.WasmNeeds = .initEmpty();
+    http_needs.insert(.http);
+    const with_http = try runner.runEntry(a, io, cache, false, bin, .{ .dir = dir }, .{ .stdout = .capture, .needs = http_needs });
+    defer with_http.deinit(a);
+    if (with_http.trap) |t| std.debug.print("\n=== runEntry (http): {s}\n", .{t});
+    try std.testing.expectEqual(@as(i32, 0), with_http.status);
+    try std.testing.expectEqualStrings("hi, bo\n4\n", with_http.stdout orelse "");
+
+    // A unit missing beside the entry is named, never run.
+    const missing = try runner.runEntry(a, io, cache, false, bin, .{ .dir = cache }, .{ .stdout = .capture });
+    defer missing.deinit(a);
+    try std.testing.expectEqual(@as(i32, 1), missing.status);
+    try std.testing.expect(std.mem.startsWith(u8, missing.trap orelse "", "no unit std@__rt.wasm beside the entry"));
+}

@@ -172,7 +172,7 @@ pub fn cachePath(alloc: std.mem.Allocator, dir: []const u8, kind: Kind, bytes: [
 /// `bytes` as wasm binary: itself when it starts with the `\0asm` magic, else
 /// the `.wat` text read by the engine's reader. Null with `failure` set when
 /// the text does not read. Free with `alloc` (a copy in both cases).
-fn binaryOf(alloc: std.mem.Allocator, bytes: []const u8, failure: *?[]u8) Error!?[]u8 {
+pub fn binaryOf(alloc: std.mem.Allocator, bytes: []const u8, failure: *?[]u8) Error!?[]u8 {
     if (std.mem.startsWith(u8, bytes, "\x00asm")) return try alloc.dupe(u8, bytes);
     var out: c.wasm_byte_vec_t = undefined;
     if (c.wasmtime_wat2wasm(bytes.ptr, bytes.len, &out)) |err| {

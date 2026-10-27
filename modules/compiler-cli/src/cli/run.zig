@@ -73,7 +73,12 @@ pub fn run(
     if (target == .wasm and proj.wasmHost() != .browser) {
         if (try refuseWithoutMain(arena, io, proj, opts.module)) return 1;
         const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
-        const entry_path = try build_cmd.artifactPath(arena, out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
+        // Decision 1032 — the entry is the unit `<pkg>@<path>.wasm`, composed
+        // with the units beside it.
+        const entry_path = if (build_cmd.wasm_units)
+            try build_cmd.wasmEntryPath(arena, out_dir, packages, opts.module)
+        else
+            try build_cmd.artifactPath(arena, out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
         const ran = try runWasi(arena, io, proj, entry_path, opts.extra_args, .{});
         return ran.code;
     }
@@ -167,6 +172,11 @@ pub const WasiRun = struct {
     stdout: bp.codegen.wasmRunner.Stdio = .inherit,
     /// The environment; null, the host process's own.
     env: ?*const std.process.Environ.Map = null,
+    /// Where a units entry's units are read (decision 1032): null, beside the
+    /// entry (`build`'s `out/wasm/`); a test run names its folder, which
+    /// holds only the program's units, the core and std's then the
+    /// compiler's own bytes.
+    units_dir: ?[]const u8 = null,
 };
 
 pub const WasiRan = struct {
@@ -177,10 +187,14 @@ pub const WasiRan = struct {
     stdout: []const u8 = "",
 };
 
-/// Run the `wasi` component at `path` (a build's `.wat` text) in this process
-/// (decisions 1032 (3), 1034): compiled through
-/// `<cache root>/.botopinkbuild/cache/wasmtime/<sha256>.cwasm` (`--cold`
-/// reads none and writes what it compiled), handed the host services its
+/// Run the `wasi` program at `path` in this process (decisions 1032 (3),
+/// 1034): a units entry (a core module, binary or text, whose
+/// `botopink.units` names its units) composed by `wasmRunner.runEntry` with
+/// the units beside it (or `how.units`), each unit and the frame compiled
+/// through `<cache root>/.botopinkbuild/cache/wasmtime/<sha256>.cwasm` — once
+/// for every program reaching it, decision 1032 (2) — and any other
+/// component or core module run as it is (`--cold` reads no `.cwasm` and
+/// writes what it compiled), handed the host services its
 /// `botopink.needs` section names (decision 1034 (7): `http` → `wasi:http`
 /// and the network; `filesystem` → the root and the working directory,
 /// decision 992), argv `<path> <args…>`, stdin and stderr inherited. A trap
@@ -193,14 +207,15 @@ pub fn runWasi(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig,
         return .{ .code = 1 };
     };
     const cache_dir = try manifest.cacheDir(arena, analysis_store.root(proj), "wasmtime");
+    const units_entry = isUnitsEntry(text);
     var failure: ?[]u8 = null;
-    const code = (try runner.load(arena, io, cache_dir, text, bp.codegen.wasmEngine.kindOf(text), code_cache.cold, &failure)) orelse {
+    const code: ?bp.codegen.wasmEngine.Compiled = if (units_entry) null else (try runner.load(arena, io, cache_dir, text, bp.codegen.wasmEngine.kindOf(text), code_cache.cold, &failure)) orelse {
         reporter.errMsg(failure.?);
         return .{ .code = 1 };
     };
-    defer code.deinit();
+    defer if (code) |cd| cd.deinit();
 
-    const needs = bp.codegen.wasmNeeds.needsOfText(text);
+    const needs = if (std.mem.startsWith(u8, text, "\x00asm")) bp.codegen.wasmNeeds.needsOf(text) else bp.codegen.wasmNeeds.needsOfText(text);
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd: ?[]const u8 = if (std.process.currentPath(io, &cwd_buf)) |n| cwd_buf[0..n] else |_| null;
     const argv = try arena.alloc([]const u8, args.len + 1);
@@ -213,15 +228,23 @@ pub fn runWasi(arena: std.mem.Allocator, io: std.Io, proj: config.ProjectConfig,
         env = .{ .list = list };
     }
     const opts: runner.Options = .{ .stdout = how.stdout, .stdin_inherit = true, .argv = argv, .env = env, .needs = needs, .cwd = cwd };
-    const ran = switch (code) {
+    const ran = if (code) |cd| switch (cd) {
         .component => |c| try runner.run(arena, c, &.{}, opts),
         .module => |m| try runner.runCore(arena, m, opts),
-    };
+    } else try runner.runEntry(arena, io, cache_dir, code_cache.cold, text, if (how.units_dir) |d| .{ .dir = d, .runtime = true } else .{ .dir = std.fs.path.dirname(path) orelse "." }, opts);
     if (ran.end == .interrupted) return .{ .code = 130, .stdout = ran.stdout orelse "" };
     if (ran.trap) |t| if (t.len > 0) {
         std.Io.File.stderr().writeStreamingAll(io, try std.fmt.allocPrint(arena, "{s}\n", .{t})) catch {};
     };
     return .{ .code = @intCast(std.math.clamp(ran.status, 0, 255)), .stdout = ran.stdout orelse "" };
+}
+
+/// Whether `bytes` is a units entry (decision 1032): a core module, binary or
+/// `.wat` text, carrying a `botopink.units` section.
+fn isUnitsEntry(bytes: []const u8) bool {
+    const ru = bp.codegen.wasmRuntimeUnit;
+    if (std.mem.startsWith(u8, bytes, "\x00asm")) return ru.customSection(bytes, ru.units_section) != null;
+    return bp.codegen.wasmEngine.kindOf(bytes) == .module and std.mem.indexOf(u8, bytes, "(@custom \"" ++ ru.units_section ++ "\"") != null;
 }
 
 // ── no `fn main` ──────────────────────────────────────────────────────────────
