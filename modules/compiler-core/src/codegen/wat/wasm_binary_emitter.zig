@@ -9,8 +9,9 @@
 //! Sections, in the order the format requires: type (1), import (2),
 //! function (3), table (4), memory (5), tag (13, decision 518's exception
 //! tag), global (6), export (7), start (8), element (9), code (10), data
-//! (11), then the module's custom sections (0 — `botopink.needs`, decision
-//! 518; names live in the text). One function type per distinct signature;
+//! (11), then a named unit's `name` section (decision 1063 (1): the module's
+//! stem, each function's symbol) and the module's custom sections (0 —
+//! `botopink.needs`, decision 518). One function type per distinct signature;
 //! LEB128 everywhere.
 //!
 //! The module is validated first (`wat_ast.validateModule`), as the text
@@ -361,6 +362,29 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
             else => {},
         };
         try section(alloc, &out, 11, sec.items);
+    }
+
+    // Decision 1063 (1) — the `name` section of a named unit: subsection 0
+    // the module's name (its stem), subsection 1 every function's symbol by
+    // its index, imports first, so a trap's frames read `<stem>.<fn>`.
+    if (m.name) |stem| {
+        sec = .empty;
+        try name(ar, &sec, "name");
+        var sub: Bytes = .empty;
+        try name(ar, &sub, stem);
+        try sec.append(ar, 0);
+        try uleb(ar, &sec, sub.items.len);
+        try sec.appendSlice(ar, sub.items);
+        sub = .empty;
+        try uleb(ar, &sub, e.funcs.items.len);
+        for (e.funcs.items, 0..) |f, i| {
+            try uleb(ar, &sub, i);
+            try name(ar, &sub, f);
+        }
+        try sec.append(ar, 1);
+        try uleb(ar, &sec, sub.items.len);
+        try sec.appendSlice(ar, sub.items);
+        try section(alloc, &out, 0, sec.items);
     }
 
     // custom sections (decision 518's `botopink.needs`), after every other.
@@ -1277,4 +1301,32 @@ test "a GC type nothing declares, a missing segment and a packed local are refus
         .{ .func = .{ .name = "f", .body = .{ .lines = &.{ .{ .instr = .{ .struct_new_default = 0 } }, .{ .instr = .drop } } } } },
     } };
     try std.testing.expectError(error.UndefinedType, encodeModule(alloc, wrong_kind));
+}
+
+test "a named unit carries a name section: the module's stem, then each function by its index (decision 1063 (1))" {
+    const alloc = std.testing.allocator;
+    // (module (import "env" "log" (func $log (param i32))) (func $now))
+    // named `std@io@clock`.
+    const m: ast.Module = .{ .name = "std@io@clock", .items = &.{
+        .{ .import = .{ .module = "env", .name = "log", .func = "log", .type = .{ .params = &.{.i32} } } },
+        .{ .func = .{ .name = "now" } },
+    } };
+    const bytes = try encodeModule(alloc, m);
+    defer alloc.free(bytes);
+    const want_tail = [_]u8{
+        // custom section 0, size 33, "name"
+        0x00, 0x21, 0x04, 'n',  'a',  'm',  'e',
+        // subsection 0 (module), size 13: "std@io@clock"
+        0x00, 0x0D, 0x0C, 's',  't',  'd',  '@',
+        'i',  'o',  '@',  'c',  'l',  'o',  'c',
+        'k',
+        // subsection 1 (functions), size 11: 2 names, 0 "log", 1 "now"
+         0x01, 0x0B, 0x02, 0x00, 0x03, 'l',
+        'o',  'g',  0x01, 0x03, 'n',  'o',  'w',
+    };
+    try std.testing.expect(std.mem.endsWith(u8, bytes, &want_tail));
+    // An unnamed module has none.
+    const plain = try encodeModule(alloc, .{ .items = m.items });
+    defer alloc.free(plain);
+    try std.testing.expect(std.mem.indexOf(u8, plain, "\x04name") == null);
 }

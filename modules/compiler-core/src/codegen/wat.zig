@@ -3174,7 +3174,11 @@ fn emitWatPass(
 
     // One model, two renderings: the text the snapshot records and the binary
     // an engine instantiates (`wasm_binary_emitter.zig`).
-    const lowered: wat.Module = .{ .items = items.items };
+    // A unit's binary names it and its functions (decision 1063 (1)).
+    const lowered: wat.Module = .{
+        .items = items.items,
+        .name = if (units_entry) try std.fmt.allocPrint(ar, "{s}{s}", .{ try entryStem(ar, module_name), unit_stem_suffix }) else null,
+    };
     // The `browser` host's module: the start a host calls once the instance
     // exists (`wat_ast.startAsExport`, decision 334) — text and binary alike.
     const module: wat.Module = if (artifact == .browser or units_entry) try wat.startAsExport(em.arena(), lowered) else lowered;

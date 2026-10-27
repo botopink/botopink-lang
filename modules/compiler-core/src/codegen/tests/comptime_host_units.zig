@@ -64,6 +64,14 @@ test "comptime host: C1's out/wasm-comptime units link, init in order and reach 
     const linked = try ar.alloc(host.Unit, files.len);
     for (files, linked) |f, *u| u.* = .{ .name = f.name[0 .. f.name.len - ".wasm".len], .bytes = f.bytes };
     try std.testing.expectEqualStrings(ru.name, linked[0].name);
+    // Every unit names itself in its `name` section (decision 1063 (1)): the
+    // module subsection holds its stem, so a trap's frames read
+    // `<pkg>@<path>.<fn>`.
+    for (linked) |u| {
+        const names = ru.customSection(u.bytes, "name") orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(@as(u8, 0), names[0]);
+        try std.testing.expectEqualStrings(u.name, names[3 .. 3 + names[2]]);
+    }
     try std.testing.expectEqualStrings("test@main", linked[linked.len - 1].name);
 
     const answer = try host.evaluate(a, io, linked, "test@main", "{}", .{});

@@ -501,7 +501,7 @@ fn build(ar: std.mem.Allocator, diag: *link.Diag) Error!Runtime {
         core_shared += 1;
     };
     try core.append(ar, .{ .custom = .{ .name = "botopink.needs", .bytes = try needsText(ar, &.{ .gc, .exceptions }) } });
-    const core_module: ast.Module = .{ .items = core.items };
+    const core_module: ast.Module = .{ .items = core.items, .name = name };
 
     // The units.
     var units: std.ArrayListUnmanaged(Unit) = .empty;
@@ -663,7 +663,7 @@ fn unitModule(
     }
     for (thunks.items) |t| try items.append(ar, .{ .func = t });
     if (has_leaf) try items.append(ar, .{ .custom = .{ .name = "botopink.needs", .bytes = try needsText(ar, &.{.gc}) } });
-    return .{ .module = .{ .items = items.items }, .host_fs = host_fs, .funcs = own.items.len };
+    return .{ .module = .{ .items = items.items, .name = u }, .host_fs = host_fs, .funcs = own.items.len };
 }
 
 fn topoOrder(ar: std.mem.Allocator, deps: *std.StringArrayHashMapUnmanaged(std.StringArrayHashMapUnmanaged(void)), diag: *link.Diag) Error![]const []const u8 {

@@ -562,6 +562,11 @@ pub const Custom = struct {
 
 pub const Module = struct {
     items: []const Item = &.{},
+    /// Decision 1063 (1) — the unit's stem (`<pkg>@<path>`, `std@string`,
+    /// `std@__rt`): the binary's `name` section names the module so and each
+    /// function by its symbol, so an engine's backtrace reads
+    /// `<pkg>@<path>.<fn>`. Null, no `name` section (the text names it all).
+    name: ?[]const u8 = null,
 };
 
 // ── invariants ───────────────────────────────────────────────────────────────
@@ -618,7 +623,7 @@ pub fn startAsExport(alloc: std.mem.Allocator, m: Module) std.mem.Allocator.Erro
         } else try items.append(alloc, it),
         else => try items.append(alloc, it),
     };
-    return .{ .items = try items.toOwnedSlice(alloc) };
+    return .{ .items = try items.toOwnedSlice(alloc), .name = m.name };
 }
 
 pub fn validateFunc(f: Func) Invalid!void {
