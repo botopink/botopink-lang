@@ -72,7 +72,9 @@
 #   libraries/<name>   every package `botopink packages --list` prints (decisions
 #                      993, 995, 996, 1004): one program per package per target,
 #                      its own process on the pool, loading the package by name
-#                      and running its tests (``m.`test`()``) — § the libraries
+#                      and running its tests (``m.`test`()``) — § the libraries;
+#                      the run also holds the workspace documents that quote the member list
+#                      to the tool (`botopink packages --check-docs`, decision 993 (7))
 #
 # Outcome rules: a job passes or it fails, and a run fails on any `FAIL`. There
 # is no list of known failures (decision 154): a red module is red until the
@@ -1001,6 +1003,11 @@ if grep -q '^libraries/' "$jobs_list"; then
     lib_run="$here/libraries/.run/$(basename "$work")"
     mkdir -p "$lib_run"
     LIB_RUN="$lib_run"
+    # A workspace document that quotes the tool's member list is checked against the tool (decision 993 (7):
+    # the library runner's `doc_quotes`, now `botopink packages --check-docs`); a stale quote is a red of the plan.
+    if ! docs_out="$(cd "$here/libraries" && env -u BOTOPINK_LIB_ROOTS "$compiler" packages --check-docs 2>&1)"; then
+        printf '*\tbotopink packages --check-docs\tfail\t%s\n' "$(printf '%s' "$docs_out" | sed $'s/\x1b\\[[0-9;]*m//g' | tr '\n' ' ')" >"$work/r-plan-docs-quotes"
+    fi
 fi
 read_disabled
 export LIB_RUN

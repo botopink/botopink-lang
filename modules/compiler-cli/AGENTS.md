@@ -99,11 +99,12 @@ compiler-cli/
 │   │                          located refusal (`refused` at `botopink.json`), `held`
 │   │                          (a dependency's targets, 770), `--emit-runtime`
 │   │                          (`runtime`), the cache filed under the directory given
-│   ├── packages_list.sh     ← `packages --list` (decision 993 (2)): a throwaway
+│   ├── packages_list.sh     ← `packages --list` and `--check-docs` (decisions 993 (2), (7)): a throwaway
 │   │                          checkout — a library, a workspace with a member
 │   │                          inheriting its targets and one declaring its own, a
 │   │                          directory with no manifest, a refused manifest, std —
-│   │                          the exact tab-separated output, the help, the usage errors
+│   │                          the exact tab-separated output, the help, the usage errors;
+│   │                          `--check-docs` green on an agreeing or elided quote, red on a stale one
 │   ├── resolved_file.sh     ← `--emit-resolved`'s files (decision 834, B-163): `app`
 │   │                          (modules `main`, `util`) over `lib` writes
 │   │                          `app/main.bp`, `app/util.bp`, `lib/root.bp`,

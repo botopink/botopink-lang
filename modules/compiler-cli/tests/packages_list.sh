@@ -8,7 +8,9 @@
 # `<name> <dir> <targets> <kind>`, sorted by name then dir; `all` when no
 # targets are declared; the umbrella and the manifest-less directory absent;
 # `not-a-package` for the refused manifest), the help, and the usage
-# errors.
+# errors. `packages --check-docs` (decision 993 (7), the old runner's doc_quotes): green on a workspace
+# document quoting the member list as the tool prints it (wrapped, or elided), red — exit 1, `<file>:<line>` — on
+# one that lost a member.
 #
 # BOTOPINK_BIN points the script at another binary. Exit 0 = every behaviour held.
 
@@ -67,8 +69,22 @@ got2="$(cd "$WORK/repository/alpha" && env -u BOTOPINK_LIB_ROOTS "$BP_BIN" packa
 "$BP_BIN" --help | grep -q '^  packages ' || fail "botopink --help does not list packages"
 "$BP_BIN" packages --help | grep -q 'Options for `packages`' || fail "packages --help does not describe it"
 
+# --check-docs: a workspace document that quotes the member list.
+QUOTE='run this command inside one of its members:'
+printf 'the refusal `botopink.json is a workspace — %s ws-one,\nws-two`, and later `%s …`.\n' "$QUOTE" "$QUOTE" > "$WORK/repository/ws/AGENTS.md"
+(cd "$WORK" && env -u BOTOPINK_LIB_ROOTS "$BP_BIN" packages --check-docs) || fail "packages --check-docs red on a document that agrees"
+printf 'intro\n`%s ws-one`\n' "$QUOTE" > "$WORK/repository/ws/AGENTS.md"
+if docs_err="$(cd "$WORK" && env -u BOTOPINK_LIB_ROOTS "$BP_BIN" packages --check-docs 2>&1)"; then
+  fail "packages --check-docs green on a document that lost a member"
+else
+  case "$docs_err" in
+    *"repository/ws/AGENTS.md:2: the workspace refusal is quoted with the members \`ws-one\`, but the tool prints \`ws-one, ws-two\`"*) ;;
+    *) fail "packages --check-docs did not name the stale quote: $docs_err" ;;
+  esac
+fi
+
 # Usage errors: no --list, an unknown flag, a stray argument.
-for args in "" "--nope" "--list x"; do
+for args in "" "--nope" "--list x" "--list --check-docs"; do
   # shellcheck disable=SC2086
   if "$BP_BIN" packages $args > /dev/null 2>&1; then fail "packages $args exited 0"; fi
 done

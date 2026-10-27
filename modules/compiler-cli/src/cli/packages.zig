@@ -1,8 +1,9 @@
-/// `botopink packages --list` — the packages of the checkout, one line each.
+/// `botopink packages --list` — the packages of the checkout, one line each; `--check-docs`
+/// (`packages_docs.zig`) checks the workspace documents that quote the member list.
 ///
 /// Decision 993 (2): the gate writes the in-process test program's `src/main.bp`
 /// from this list. The set is the one the library test runner discovers
-/// (`modules/lib-test-runner/src/discovery.zig`): the roots are `libs.resolveLibRoots`
+/// (the library test runner's, removed by decision 993 (7)): the roots are `libs.resolveLibRoots`
 /// (the same walk-up the runner does), the entries the shared `manifest.scanRoots`,
 /// and a workspace that expands contributes its members, never itself.
 ///

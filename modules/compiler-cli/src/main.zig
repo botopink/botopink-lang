@@ -23,6 +23,7 @@ const format_cmd = @import("./cli/format_cmd.zig");
 const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
 const packages_cmd = @import("./cli/packages.zig");
+const packages_docs = @import("./cli/packages_docs.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
@@ -120,11 +121,15 @@ const HELP =
     \\.botopinkbuild/analysis/ (the dependencies' analysis) go too.
     \\
     \\Options for `packages`:
+    \\  --check-docs                  Check the workspace documents (*.md directly in a workspace directory) that quote the
+    \\                               refusal's member list (`...run this command inside one of its members: <list>`)
+    \\                               against the list the tool prints; exit 1, each mismatch on stderr as
+    \\                               <file>:<line>. An elided quote is not checked.
     \\  --list                       One line per package of the checkout, tab-separated: <name>, <dir> (relative to the
     \\                               checkout root), <targets> (the manifest's "targets" joined by `,`, a workspace member's
     \\                               inheriting its workspace's; `all` when none), and `package` or `not-a-package`
     \\                               (a refused manifest, a workspace that does not expand, a name declared twice, a library
-    \\                               member with no `files`). The set is the library test runner's: every library under
+    \\                               member with no `files`). The set: every library under
     \\                               repository/, every workspace member, and std. Sorted by name, then dir.
     \\
     \\`botopink <command> --help` (or -h) prints this message.
@@ -258,8 +263,11 @@ fn dispatch(init: std.process.Init) !u8 {
     }
 
     if (std.mem.eql(u8, cmd, "packages")) {
-        parsePackagesOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
-        return packages_cmd.run(gpa, io, env_map);
+        const mode = parsePackagesOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
+        return switch (mode) {
+            .list => packages_cmd.run(gpa, io, env_map),
+            .check_docs => packages_docs.run(gpa, io, env_map),
+        };
     }
 
     // Unknown command.
@@ -536,16 +544,22 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
     if (args.len > 0) return reject(args[0], diag);
 }
 
-/// `packages --list`: the one form; no `--list` is a usage error.
-fn parsePackagesOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
-    var listed = false;
+const PackagesMode = enum { list, check_docs };
+
+/// `packages --list` or `packages --check-docs`: exactly one; neither is a usage error.
+fn parsePackagesOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!PackagesMode {
+    var mode: ?PackagesMode = null;
     for (args) |a| {
-        if (std.mem.eql(u8, a, "--list")) listed = true else return reject(a, diag);
+        if (std.mem.eql(u8, a, "--list") and mode == null) {
+            mode = .list;
+        } else if (std.mem.eql(u8, a, "--check-docs") and mode == null) {
+            mode = .check_docs;
+        } else return reject(a, diag);
     }
-    if (!listed) {
+    return mode orelse {
         diag.token = "--list";
         return error.MissingArgument;
-    }
+    };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -568,6 +582,7 @@ test {
     _ = @import("./cli/code_cache.zig");
     _ = @import("./cli/clean.zig");
     _ = @import("./cli/packages.zig");
+    _ = @import("./cli/packages_docs.zig");
     _ = @import("./cli/config.zig");
     _ = @import("./cli/diagnostics.zig");
     _ = @import("./cli/format_cmd.zig");
@@ -723,9 +738,11 @@ test "clean takes no arguments" {
     try std.testing.expectError(error.UnexpectedArgument, parseNoOpts(argv(&.{"out"}), &d));
 }
 
-test "packages takes --list and nothing else" {
+test "packages takes --list or --check-docs and nothing else" {
     var d: ArgDiag = .{};
-    try parsePackagesOpts(argv(&.{"--list"}), &d);
+    try std.testing.expectEqual(PackagesMode.list, try parsePackagesOpts(argv(&.{"--list"}), &d));
+    try std.testing.expectEqual(PackagesMode.check_docs, try parsePackagesOpts(argv(&.{"--check-docs"}), &d));
+    try std.testing.expectError(error.UnknownFlag, parsePackagesOpts(argv(&.{ "--list", "--check-docs" }), &d));
     try std.testing.expectError(error.MissingArgument, parsePackagesOpts(argv(&.{}), &d));
     try std.testing.expectError(error.UnknownFlag, parsePackagesOpts(argv(&.{ "--list", "--x" }), &d));
     try std.testing.expectError(error.UnexpectedArgument, parsePackagesOpts(argv(&.{ "--list", "x" }), &d));
