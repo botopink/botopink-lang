@@ -124,9 +124,9 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { label } = require("./models/user.js");
+const { label } = require("./test@models@user");
 
-const { tag } = require("./services/user.js");
+const { tag } = require("./test@services@user");
 
 function main() {
     __bp_print(label());
@@ -148,10 +148,10 @@ Object.defineProperty(exports, "__bp_priv__", { value: { label, tag, main } });
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { label } from "./models/user";
+import { label } from "./test@models@user";
 
 
-import { tag } from "./services/user";
+import { tag } from "./test@services@user";
 
 
 

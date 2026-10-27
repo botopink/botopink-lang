@@ -164,7 +164,6 @@ const Builder = struct {
     /// the `.js` spells it — at the top of the file.
     fn programImports(self: *Builder, decls: *std.ArrayListUnmanaged(js.TsDecl), bound: *std.StringHashMapUnmanaged(void), named: *const std.StringHashMapUnmanaged(void), program_decls: []const ast.DeclKind) Error!void {
         const xm = self.cross orelse return;
-        const prefix = try self.requirePrefix();
         var imports: std.ArrayListUnmanaged(js.TsDecl) = .empty;
         for (program_decls) |pd| {
             if (pd != .use) continue;
@@ -181,7 +180,7 @@ const Builder = struct {
                 names[0] = leaf;
                 try imports.append(self.b.arena, .{ .import = .{
                     .names = names,
-                    .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, module }),
+                    .source = try self.importOf(module),
                 } });
                 try bound.put(self.b.arena, leaf, {});
             }
@@ -198,7 +197,6 @@ const Builder = struct {
     /// declares it (`std/context`), as a type the owner's `.d.ts` exports.
     /// `Set` stays out: TypeScript's own `Set` is the name a signature means.
     fn stdTypeImports(self: *Builder, decls: *std.ArrayListUnmanaged(js.TsDecl), bound: *std.StringHashMapUnmanaged(void), named: *const std.StringHashMapUnmanaged(void)) Error!void {
-        const prefix = try self.requirePrefix();
         var imports: std.ArrayListUnmanaged(js.TsDecl) = .empty;
         var it = named.keyIterator();
         while (it.next()) |k| {
@@ -211,7 +209,7 @@ const Builder = struct {
             names[0] = name;
             try imports.append(self.b.arena, .{ .import = .{
                 .names = names,
-                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, owner }),
+                .source = try self.importOf(owner),
             } });
             try bound.put(self.b.arena, name, {});
         }
@@ -760,7 +758,7 @@ const Builder = struct {
     }
 
     /// An import, spelled the way the `.js` beside it spells its `require`
-    /// (`commonJS.zig` `buildUse`): relative to this module's own path, one
+    /// (`commonJS.zig` `buildUse`): a sibling's flat name (1015), one
     /// `import` per module that emits the names, and — from `"std"` — a whole
     /// module bound as a namespace. It used to write the `from` verbatim
     /// (`from "geometry"`, a bare specifier `tsc` resolves in `node_modules`)
@@ -771,7 +769,6 @@ const Builder = struct {
         for (self.seen_import_decls.items) |p| if (p == u.imports.ptr) return .none;
         try self.seen_import_decls.append(self.b.arena, u.imports.ptr);
 
-        const prefix = try self.requirePrefix();
         var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
 
         if (u.source == .module and std.mem.eql(u8, u.source.module, "std")) {
@@ -784,7 +781,7 @@ const Builder = struct {
                 if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
                     try decls.append(self.b.arena, .{ .import_namespace = .{
                         .name = imp.name(),
-                        .source = try std.fmt.allocPrint(self.b.arena, "{s}std/{s}", .{ prefix, whole }),
+                        .source = try self.importOf(try std.fmt.allocPrint(self.b.arena, "std/{s}", .{whole})),
                     } });
                     continue;
                 }
@@ -800,7 +797,7 @@ const Builder = struct {
             }
             for (mods.items, names.items) |mod, list| try decls.append(self.b.arena, .{ .import = .{
                 .names = list.items,
-                .source = try std.fmt.allocPrint(self.b.arena, "{s}std/{s}", .{ prefix, mod }),
+                .source = try self.importOf(try std.fmt.allocPrint(self.b.arena, "std/{s}", .{mod})),
             } });
             return group(decls.items);
         }
@@ -830,7 +827,7 @@ const Builder = struct {
             if (names.items.len == 0) continue;
             try decls.append(self.b.arena, .{ .import = .{
                 .names = names.items,
-                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, module }),
+                .source = try self.importOf(module),
             } });
         }
         return group(decls.items);
@@ -881,14 +878,11 @@ const Builder = struct {
         return true;
     }
 
-    /// `./` for a module at the output root, one `../` per path segment
-    /// otherwise — `commonJS.zig` `buildUse`'s `req_prefix`.
-    fn requirePrefix(self: *Builder) Error![]const u8 {
-        const depth = std.mem.count(u8, self.module_name, "/");
-        if (depth == 0) return "./";
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        for (0..depth) |_| try buf.appendSlice(self.b.arena, "../");
-        return buf.items;
+    /// `./<pkg>@<path>` — the module at `path` as its `.d.ts` beside this
+    /// one is named in the one flat folder (decision 1015), the `require` of
+    /// the `.js` (`commonJS.zig` `requireOf`).
+    fn importOf(self: *Builder, path: []const u8) Error![]const u8 {
+        return crossModule.flatRequire(self.b.arena, self.cross, path);
     }
 
     // ── params ───────────────────────────────────────────────────────────────

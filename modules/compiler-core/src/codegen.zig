@@ -25,8 +25,8 @@ pub const ComptimeOutput = comptimeMod.ComptimeOutput;
 pub const Config = configMod.Config;
 pub const TargetSource = configMod.TargetSource;
 /// The module-atom / output-stem rules a driver needs to name an artifact:
-/// `outputStem` (erlang and BEAM take the module ATOM, commonJS and wasm the
-/// module path) and `erlAtom` beside it.
+/// `outputStem` (erlang, BEAM and commonJS take the module's flat name — its
+/// ATOM, decision 1015 — wasm the module path) and `erlAtom` beside it.
 pub const crossModule = @import("./codegen/crossModule.zig");
 /// Decision 334 — the loader a wasm build for the `browser` host writes
 /// beside its `.wasm` (`botopink build`).

@@ -1,0 +1,14 @@
+//// Decision 1015 — two modules of this package and two of its dependency,
+//// each package with a module named `util`: every one is a file of the flat
+//// output, `<pkg>@<path>`, required by that name.
+
+pub mod util;
+
+import {util.shout};
+import {greet} from "flat_output_dep";
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(shout("app"));
+    print(greet("dep"));
+}

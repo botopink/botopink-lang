@@ -1534,16 +1534,17 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
 // relative `require` lands at a path the source `.mjs` was never copied to.
 //
 // `shipMjsSidecars` closes that gap generically (no lib names): for every emitted
-// module it scans the JS for relative `require("….mjs")`, resolves the path the
-// runtime will look up, and — when nothing is there yet — copies the source
-// `.mjs` (found under the owning lib's `src/`, or the project's own `src/`) into
-// place. Idempotent and lib-agnostic; a no-op when every `.mjs` already resolves.
+// module it scans the JS for relative `require("….mjs")` and — when nothing is
+// there yet — copies the source `.mjs` (found under the owning lib's `src/`, or
+// the project's own `src/`) into place. Idempotent and lib-agnostic.
 //
-// A `require` whose resolved path escapes `out_dir` (onze's `../../src/onze.mjs`
-// from `<out>/onze/onze.js` lands at `<out>/../src/onze.mjs`) is never shipped
-// outside the output: the sidecar goes to `<out>/<owner>/<base>` (a project-own
-// module: `<out>/<base>`) and the emitted module's `require` is rewritten to
-// reach it, so a build writes nothing beside `--out`.
+// Decision 1015 — the output is one flat folder, so a sidecar is a file of it
+// too, named after its package as a module is: `<pkg>@<base>` (std's
+// `./sidecars/random.mjs` ships as `std@random.mjs`, rakun-bpp's
+// `./form_runtime.mjs` as `rakun_bpp@form_runtime.mjs`). The emitted module's
+// `require` — and its test unit's, one folder below — is rewritten to reach
+// it, so two packages' sidecars of one basename never meet, and a `require`
+// that would escape the output (`../../src/onze.mjs`) writes nothing beside it.
 pub fn shipMjsSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -1564,14 +1565,14 @@ pub fn shipMjsSidecars(
     // where a refusal is located. Read on the same first require.
     var project: ProjectManifest = .{};
 
-    const out_norm = try std.fs.path.resolve(arena, &.{out_dir});
-
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        const emitted_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, o.name, ext });
+        const stem = try bp.codegen.crossModule.flatName(arena, packages.idOf(o.name));
+        const emitted_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, stem, ext });
+        // The sidecar's flat name starts with the module's package (`std@`).
+        const pkg_prefix = stem[0..(std.mem.indexOfScalar(u8, stem, '@') orelse stem.len)];
         // `require` paths of this module to rewrite once the scan is done.
         var rewrites: std.ArrayListUnmanaged([2][]const u8) = .empty;
-        const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
         // The owning lib is the package the build's module table gives the
         // module (`sidecarPackage`): `rakun/http` → `rakun`; a module in a
         // folder of the project's own tree (`io/random` under `libs/std`'s
@@ -1607,16 +1608,12 @@ pub fn shipMjsSidecars(
             if (!std.mem.startsWith(u8, req_path, ".")) continue;
 
             const base = std.fs.path.basename(req_path);
-            // Where the runtime will look for it (`..` collapsed). A path that
-            // escapes the output directory is relocated inside it.
-            const resolved = try std.fs.path.resolve(arena, &.{ emitted_dir, req_path });
-            const escapes = escapesDir(out_norm, resolved);
-            const target = if (escapes)
-                try std.fs.path.join(arena, if (owner) |lib| &.{ out_norm, lib, base } else &.{ out_norm, base })
-            else
-                resolved;
-            if (escapes) {
-                const new_req = try relocatedRequire(arena, o.name, owner, base);
+            // Decision 1015 — `<out>/<pkg>@<base>`, the module's `require`
+            // rewritten to the sibling.
+            const flat = try std.fmt.allocPrint(arena, "{s}@{s}", .{ pkg_prefix, base });
+            const target = try std.fs.path.join(arena, &.{ out_dir, flat });
+            const new_req = try std.fmt.allocPrint(arena, "./{s}", .{flat});
+            if (!std.mem.eql(u8, req_path, new_req)) {
                 var seen = false;
                 for (rewrites.items) |r| {
                     if (std.mem.eql(u8, r[0], req_path)) seen = true;
@@ -1692,15 +1689,15 @@ pub fn shipMjsSidecars(
             // The file this run just wrote: failing to read it back is an I/O
             // error of the run, never a module left with its old `require`s.
             const emitted = try std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited);
-            var text: []const u8 = emitted;
-            for (rewrites.items) |r| {
-                for ([_]u8{ '"', '\'' }) |q| {
-                    const from = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[0], q });
-                    const to = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[1], q });
-                    text = try std.mem.replaceOwned(u8, arena, text, from, to);
-                }
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = try rewriteRequires(arena, emitted, rewrites.items, "") });
+            // `botopink test`'s unit (decision 513) sits one folder below and
+            // spells each of the module's relative `require`s from there
+            // (`commonJS.zig` `deeperRequires`: `../` before it).
+            if (o.result.test_unit) |u| {
+                const unit_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, u.atom, ext });
+                const unit = try std.Io.Dir.cwd().readFileAlloc(io, unit_rel, arena, .unlimited);
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_rel, .data = try rewriteRequires(arena, unit, rewrites.items, "../") });
             }
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = text });
         }
     }
 }
@@ -1721,7 +1718,7 @@ test "shipMjsSidecars: std's sidecar ships from the compiler's own copy, not fro
     try env.put(ENV_VAR, test_scratch.path(io, "std-sidecar/roots"));
 
     const out_dir = test_scratch.path(io, "std-sidecar/out");
-    try writeFileP(io, try std.fs.path.join(arena, &.{ out_dir, "std/io/random.js" }), "const r = require('./sidecars/random.mjs');\n");
+    try writeFileP(io, try std.fs.path.join(arena, &.{ out_dir, "std@io@random.js" }), "const r = require('./sidecars/random.mjs');\n");
     var outputs = [_]bp.codegen.ModuleOutput{.{
         .name = "std/io/random",
         .src = "",
@@ -1729,8 +1726,11 @@ test "shipMjsSidecars: std's sidecar ships from the compiler's own copy, not fro
     }};
     try shipMjsSidecars(std.testing.allocator, io, &outputs, .{ .root = "app" }, out_dir, ".js", &env);
 
-    const shipped = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ out_dir, "std/io/sidecars/random.mjs" }), arena, .unlimited);
+    // Decision 1015 — flat, after its package, the module's `require` rewritten.
+    const shipped = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ out_dir, "std@random.mjs" }), arena, .unlimited);
     try std.testing.expectEqualStrings(bp.comptime_pipeline.stdSidecar("random.mjs").?, shipped);
+    const module = try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(arena, &.{ out_dir, "std@io@random.js" }), arena, .unlimited);
+    try std.testing.expectEqualStrings("const r = require('./std@random.mjs');\n", module);
 }
 
 // ── host `.erl` module shipping ────────────────────────────────────────────────
@@ -2411,29 +2411,18 @@ fn isAtomChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_' or c == '@';
 }
 
-/// Whether `path` lies outside `dir` (both already `..`-collapsed by `resolve`).
-fn escapesDir(dir: []const u8, path: []const u8) bool {
-    if (std.mem.eql(u8, dir, ".")) {
-        return std.mem.eql(u8, path, "..") or std.mem.startsWith(u8, path, "../") or std.fs.path.isAbsolute(path);
+/// `text` with each `require(<from>)` of `rewrites` — `up` before both paths —
+/// spelled `require(<to>)`, in either quote style.
+fn rewriteRequires(arena: std.mem.Allocator, text: []const u8, rewrites: []const [2][]const u8, up: []const u8) ![]const u8 {
+    var out = text;
+    for (rewrites) |r| {
+        for ([_]u8{ '"', '\'' }) |q| {
+            const from = try std.fmt.allocPrint(arena, "require({c}{s}{s}{c})", .{ q, up, r[0], q });
+            const to = try std.fmt.allocPrint(arena, "require({c}{s}{s}{c})", .{ q, up, r[1], q });
+            out = try std.mem.replaceOwned(u8, arena, out, from, to);
+        }
     }
-    if (!std.mem.startsWith(u8, path, dir)) return true;
-    return path.len > dir.len and path[dir.len] != '/';
-}
-
-/// The `require` path that reaches a relocated sidecar from module `name`:
-/// `<out>/<owner>/<base>` for a dependency, `<out>/<base>` for a project-own
-/// module; the module is emitted at `<out>/<name>.js`.
-fn relocatedRequire(arena: std.mem.Allocator, name: []const u8, owner: ?[]const u8, base: []const u8) ![]const u8 {
-    const depth = std.mem.count(u8, name, "/");
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    if (depth == 0) try buf.appendSlice(arena, "./");
-    for (0..depth) |_| try buf.appendSlice(arena, "../");
-    if (owner) |lib| {
-        try buf.appendSlice(arena, lib);
-        try buf.append(arena, '/');
-    }
-    try buf.appendSlice(arena, base);
-    return buf.items;
+    return out;
 }
 
 fn fileExists(io: std.Io, path: []const u8) bool {
@@ -2442,16 +2431,6 @@ fn fileExists(io: std.Io, path: []const u8) bool {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
-
-test "escapesDir: a path under the output stays; a parent path escapes" {
-    try std.testing.expect(!escapesDir("out", "out/onze/onze.mjs"));
-    try std.testing.expect(escapesDir("out", "src/onze.mjs"));
-    try std.testing.expect(escapesDir("out", "outer/x.mjs"));
-    try std.testing.expect(escapesDir("/tmp/w/out", "/tmp/w/src/onze.mjs"));
-    try std.testing.expect(!escapesDir("/tmp/w/out", "/tmp/w/out/rakun/runtime.mjs"));
-    try std.testing.expect(!escapesDir(".", "src/x.mjs"));
-    try std.testing.expect(escapesDir(".", "../src/x.mjs"));
-}
 
 test "QualifierIterator yields the module atom of every qualified call" {
     var it = QualifierIterator{ .text =
@@ -2491,13 +2470,13 @@ test "QualifierIterator reads a quoted function name after the module atom" {
     try std.testing.expectEqualStrings("myhost", a);
 }
 
-test "relocatedRequire reaches <out>/<owner>/<base> from the emitting module" {
+test "rewriteRequires spells a sidecar's flat name from the module and from its unit (1015)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    try std.testing.expectEqualStrings("../onze/onze.mjs", try relocatedRequire(a, "onze/onze", "onze", "onze.mjs"));
-    try std.testing.expectEqualStrings("../../onze/onze.mjs", try relocatedRequire(a, "onze/sub/mod", "onze", "onze.mjs"));
-    try std.testing.expectEqualStrings("./x.mjs", try relocatedRequire(a, "main", null, "x.mjs"));
+    const rw = [_][2][]const u8{.{ "../../src/onze.mjs", "./onze@onze.mjs" }};
+    try std.testing.expectEqualStrings("require('./onze@onze.mjs').f()", try rewriteRequires(a, "require('../../src/onze.mjs').f()", &rw, ""));
+    try std.testing.expectEqualStrings("require(\".././onze@onze.mjs\")", try rewriteRequires(a, "require(\"../../../src/onze.mjs\")", &rw, "../"));
 }
 
 test "stripSourceExt strips .bp; a .d.bp is the module x.d" {

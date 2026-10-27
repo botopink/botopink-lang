@@ -39,7 +39,7 @@ val port = PORT;
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { PORT, HOST } = require("./config.js");
+const { PORT, HOST } = require("./test@config");
 
 const addr = HOST;
 
@@ -50,7 +50,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { PORT, HOST, addr, port 
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { PORT, HOST } from "./config";
+import { PORT, HOST } from "./test@config";
 
 
 

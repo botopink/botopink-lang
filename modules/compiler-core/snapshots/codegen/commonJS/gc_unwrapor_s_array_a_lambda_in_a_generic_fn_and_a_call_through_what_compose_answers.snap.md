@@ -315,7 +315,7 @@ function main() {
 }
 exports.main = main;
 
-const functions = require("./std/functions.js");
+const functions = require("./std@functions");
 
 function _botopink_main() {
     main();

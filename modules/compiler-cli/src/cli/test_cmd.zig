@@ -57,12 +57,17 @@ pub const Options = struct {
 /// sibling `.erl` files it loads had been replaced by another target's `.js`.
 const TEST_OUT_ROOT = ".botopinkbuild/test-out";
 
-/// Where a module's test artifact goes: the mirrored `<module path><ext>`,
-/// except on beam, where it is `<module atom>.S` in the run's one directory
-/// (`erl -pa` loads by atom, and `erlc` names a `.beam` after its module).
+/// Where a module's test artifact goes: the mirrored `<module path><ext>` on
+/// erlang; on beam `<module atom>.S` in the run's one directory (`erl -pa`
+/// loads by atom, and `erlc` names a `.beam` after its module); on commonJS
+/// `<pkg>@<path>.js` in the run's one flat folder (decision 1015).
 fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, packages: bp.codegen.crossModule.Packages, name: []const u8, ext: []const u8) ![]const u8 {
-    if (target != .beam) return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, name, ext });
-    const stem = try bp.codegen.crossModule.outputStem(.beam, arena, packages.idOf(name));
+    const source: bp.codegen.TargetSource = switch (target) {
+        .beam => .beam,
+        .commonJS => .commonJS,
+        .erlang, .wasm => return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, name, ext }),
+    };
+    const stem = try bp.codegen.crossModule.outputStem(source, arena, packages.idOf(name));
     return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, stem, ext });
 }
 
@@ -70,7 +75,7 @@ fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Tar
 /// written: on erlang `<atom>.erl` in the directory of the module that
 /// declares it, as its type units (its runner loads that directory and
 /// below); on beam `<atom>.S` in the run's one directory; on commonJS
-/// `__test__/<module path>.js` under the run's root.
+/// `__test__/<pkg>@<path>.js` under the run's root.
 fn testUnitPath(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, name: []const u8, unit: bp.codegen.Unit) ![]const u8 {
     return switch (target) {
         .erlang => if (std.fs.path.dirname(name)) |d|
@@ -582,38 +587,15 @@ pub fn run(
             if (isTestModule(o.name, test_modules)) continue;
             if (o.result.failed()) continue;
             try agg.appendSlice(arena, ", require(\"./");
-            try agg.appendSlice(arena, o.name);
-            try agg.appendSlice(arena, ".js\")");
+            try agg.appendSlice(arena, try bp.codegen.crossModule.flatName(arena, cfg.packages.idOf(o.name)));
+            try agg.appendSlice(arena, "\")");
         }
         try agg.appendSlice(arena, ");\n");
         const agg_path = try std.fmt.allocPrint(arena, "{s}/module.js", .{test_out});
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = agg_path, .data = agg.items });
 
-        // Nested modules (a dependency's `jhonstart/hooks.js`) emit a flat
-        // `require("./module")` for their bare sibling imports, which would
-        // resolve next to themselves (`jhonstart/module.js`), not at the root
-        // aggregator. Drop a shim `module.js` in each such directory that points
-        // back up to the root one.
-        var seen_dirs = std.StringHashMap(void).init(arena);
-        for (outputs.items) |o| {
-            if (std.mem.startsWith(u8, o.name, "std/")) continue;
-            // A module that did not lex, parse or type-check is written nowhere.
-            if (o.result.diagnostic != null) continue;
-            const dir = std.fs.path.dirname(o.name) orelse continue; // null → top level
-            if (seen_dirs.contains(dir)) continue;
-            try seen_dirs.put(dir, {});
-
-            // One `../` per path segment in `dir` (segments = '/' count + 1).
-            const depth = std.mem.count(u8, dir, "/") + 1;
-            var shim = std.ArrayListUnmanaged(u8).empty;
-            defer shim.deinit(arena);
-            try shim.appendSlice(arena, "module.exports = require(\"");
-            for (0..depth) |_| try shim.appendSlice(arena, "../");
-            try shim.appendSlice(arena, "module\");\n");
-
-            const shim_path = try std.fmt.allocPrint(arena, "{s}/{s}/module.js", .{ test_out, dir });
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = shim_path, .data = shim.items });
-        }
+        // Every module sits beside the aggregator in the one flat folder
+        // (decision 1015), so its `require("./module")` reaches it.
     }
 
     var any_tests = false;

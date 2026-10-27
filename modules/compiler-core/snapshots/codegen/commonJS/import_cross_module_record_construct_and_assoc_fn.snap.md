@@ -133,7 +133,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Response, App } = require("./http.js");
+const { Response, App } = require("./test@http");
 
 function main() {
     const r = Response.ok("hi");
@@ -157,7 +157,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Response, App, main } }
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Response, App } from "./http";
+import { Response, App } from "./test@http";
 
 
 

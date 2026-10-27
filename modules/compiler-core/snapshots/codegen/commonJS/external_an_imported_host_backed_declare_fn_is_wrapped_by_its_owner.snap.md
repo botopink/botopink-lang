@@ -123,7 +123,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { hostKey, hostLen, nodeOnly } = require("./hostlib.js");
+const { hostKey, hostLen, nodeOnly } = require("./test@hostlib");
 
 function main() {
     __bp_print(hostKey(42));
@@ -146,7 +146,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { hostKey, hostLen, nodeO
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { hostKey, hostLen, nodeOnly } from "./hostlib";
+import { hostKey, hostLen, nodeOnly } from "./test@hostlib";
 
 
 

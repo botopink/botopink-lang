@@ -422,7 +422,7 @@ test "js: import ---- a sibling's path inside a dependency requires its own file
                 ,
             },
         },
-        &.{"require(\"../web/shapes.js\")"},
+        &.{"require(\"./test@web@shapes\")"},
         &.{"require(\"../module\")"},
     );
 }

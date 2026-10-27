@@ -25,9 +25,9 @@ function add(a, b) {
 Object.defineProperty(exports, "__bp_priv__", { value: { add } });
 ```
 
------ JAVASCRIPT TEST UNIT -- __test__/main.js
+----- JAVASCRIPT TEST UNIT -- __test__/test@main.js
 ```javascript
-const { add } = require("../main.js").__bp_priv__;
+const { add } = require("../test@main").__bp_priv__;
 function __bp_assert(cond, msg, loc, head, where) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");

@@ -35,7 +35,7 @@ val result = double(21);
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { double } = require("./math.js");
+const { double } = require("./test@math");
 
 const result = double(21);
 
@@ -44,7 +44,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { double, result } });
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { double } from "./math";
+import { double } from "./test@math";
 
 
 

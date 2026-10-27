@@ -101,7 +101,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { twice } = require("./a.js");
+const { twice } = require("./test@a");
 
 function quad(x) {
     return twice(twice(x));
@@ -128,7 +128,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { twice, quad, main } });
 
 ----- TYPESCRIPT TYPEDEF -- b.d.ts
 ```typescript
-import { twice } from "./a";
+import { twice } from "./test@a";
 
 
 export declare function quad(x: number): number;

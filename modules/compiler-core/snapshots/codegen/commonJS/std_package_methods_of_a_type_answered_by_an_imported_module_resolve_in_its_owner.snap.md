@@ -1354,7 +1354,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Dict } = require("./std/collections.js");
+const { Dict } = require("./std@collections");
 
 function main() {
     const d = Dict.empty().insert("a", 1);
@@ -1377,7 +1377,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Dict, main } });
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Dict } from "./std/collections";
+import { Dict } from "./std@collections";
 
 
 

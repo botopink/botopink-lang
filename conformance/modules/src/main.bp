@@ -186,6 +186,7 @@ comptime {
     runModule("decisions-taken/failure_kinds_exact_every_target-527");
     runModule("decisions-taken/field_has_runtime_form-631");
     runModule("decisions-taken/field_type_from_std_types-308");
+    runModule("decisions-taken/flat_output_one_name_scheme-1015");
     runModule("decisions-taken/fn_tail_value-409");
     runModule("decisions-taken/folder_import_refused-919");
     runModule("decisions-taken/format_applied_canonical_rewrites-524");

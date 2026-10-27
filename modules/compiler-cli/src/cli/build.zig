@@ -794,13 +794,13 @@ pub fn targetSource(target: config.Target) bp.codegen.TargetSource {
 
 /// Where a target's artifacts live under `out/`.
 ///
-/// `erlc` refuses a `-module` atom that differs from its file's basename, so an
-/// erlang or BEAM artifact is named by the module ATOM (`std/math` →
-/// `std@math.erl`) and the tree is FLAT — one directory per target, which is
-/// also the only shape `erl -pa <one directory>` can load a multi-module program
-/// from. commonJS, its `.d.ts` and wasm keep the mirrored module-path tree
-/// directly under `out/`: a `require` target and a wasm import segment ARE the
-/// module path, so flattening them would break every multi-module JS program.
+/// Decision 1015: every target's output is FLAT, each module once, named
+/// `<pkg>@<path>` (`crossModule.outputStem`). `erlc` refuses a `-module` atom
+/// that differs from its file's basename, so an erlang or BEAM artifact is
+/// named by the module ATOM (`std/math` → `std@math.erl`) — the only shape
+/// `erl -pa <one directory>` can load a multi-module program from; commonJS
+/// and its `.d.ts` take the same name (`std@math.js`, `std@math.d.ts`), each
+/// `require` naming a sibling. wasm keeps the module path.
 pub fn targetSubdir(target: config.Target) []const u8 {
     return switch (target) {
         .erlang => "erl/",
@@ -809,9 +809,9 @@ pub fn targetSubdir(target: config.Target) []const u8 {
     };
 }
 
-/// `<out_dir>/<subdir><stem><ext>` for one module — the stem is the module atom
-/// for erlang and BEAM (its package first, decision 109), the module path for
-/// commonJS and wasm. Caller owns it.
+/// `<out_dir>/<subdir><stem><ext>` for one module — the stem is the module's
+/// flat name for erlang, BEAM and commonJS (its package first, decisions 109,
+/// 1015), the module path for wasm. Caller owns it.
 pub fn artifactPath(
     alloc: std.mem.Allocator,
     out_dir: []const u8,
@@ -888,8 +888,9 @@ fn writeOutputs(
     for (outputs) |o| {
         // A validation error carries no artifact.
         if (o.result.failed()) continue;
-        // erlang/BEAM: `out/<target>/<atom><ext>`, flat. commonJS/wasm:
-        // `out/<module path><ext>`, so subdirectories may have to be created.
+        // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS `out/<pkg>@<path>.js`,
+        // flat (decision 1015). wasm: `out/<module path><ext>`, so
+        // subdirectories may have to be created.
         const sub_path = try artifactPath(gpa, out_dir, target, packages, o.name, ext);
         defer gpa.free(sub_path);
 
@@ -936,8 +937,8 @@ fn writeOutputs(
     }
 
     // Ship runtime `.mjs` sidecars (G2) so a built program resolves every
-    // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — including a dependency's, whose
-    // emitted module sits a directory deeper than in its own build.
+    // `#[@external(.JavaScript(…))]` `require("…/x.mjs")` — each flat beside the
+    // modules as `<pkg>@<base>` (decision 1015).
     if (target == .commonJS) {
         try libs.shipMjsSidecars(gpa, io, outputs, packages, out_dir, ext, env_map);
     }

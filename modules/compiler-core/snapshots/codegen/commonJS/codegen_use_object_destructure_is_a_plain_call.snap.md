@@ -509,7 +509,7 @@ component fn Counter() -> Component<Element> {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { push: bpScopePush__, find: bpScopeFind__, rendered: bpScopeRendered__, valueOf: bpScopeValue__, root: bpScopeRoot__ } = require("./std/context.js");
+const { push: bpScopePush__, find: bpScopeFind__, rendered: bpScopeRendered__, valueOf: bpScopeValue__, root: bpScopeRoot__ } = require("./std@context");
 
 class Element {
 }

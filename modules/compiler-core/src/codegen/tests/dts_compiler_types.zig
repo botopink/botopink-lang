@@ -46,7 +46,7 @@ test ".d.ts: a std Context named by an inferred type is imported" {
     try expectDts(
         \\import {context.createContext} from "std";
         \\pub val themeContext = comptime createContext("");
-    , &.{ "import { Context } from \"./std/context\"", "themeContext: Context<string>" }, &.{});
+    , &.{ "import { Context } from \"./std@context\"", "themeContext: Context<string>" }, &.{});
 }
 
 test ".d.ts: a payload-less variant of a generic enum names no class type parameter" {

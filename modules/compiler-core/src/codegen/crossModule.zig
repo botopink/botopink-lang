@@ -925,15 +925,46 @@ fn splitModule(alloc: std.mem.Allocator, module_half: []const u8) (std.mem.Alloc
 }
 
 /// The basename a module's artifact is written under, without its extension.
-/// The erlang and BEAM trees are FLAT and the filename is the atom, because
-/// `erlc` demands the two be equal; commonJS, its `.d.ts` and wasm keep the
-/// mirrored `<module path>` tree, because a `require` target and a wasm import
-/// segment ARE the path. Caller owns the result.
+/// Decision 1015: every target's output is one FLAT folder, each module named
+/// `<pkg>@<path>` — the erlang and BEAM file is the atom, because `erlc`
+/// demands the two be equal, and commonJS and its `.d.ts` take the same name
+/// (`flatName`: `std@math.js`, `std@math.d.ts`), every `require` naming it.
+/// wasm links one component per program and keeps the module path. Caller
+/// owns the result.
 pub fn outputStem(target: configMod.TargetSource, alloc: std.mem.Allocator, id: ModuleId) (std.mem.Allocator.Error || AtomError)![]u8 {
     return switch (target) {
         .erlang, .beam => try erlAtom(alloc, id),
-        .commonJS, .wasm => try alloc.dupe(u8, id.path),
+        .commonJS => try flatName(alloc, id),
+        .wasm => try alloc.dupe(u8, id.path),
     };
+}
+
+/// Decision 1015 — the flat name of a module's commonJS artifact and its
+/// `.d.ts`, and of every `require` / `import` naming it: the module's atom
+/// (`erlAtom`, decision 109: `std/math` → `std@math`, `main` of `myapp` →
+/// `myapp@main`). A module the atom cannot name — a standalone emit outside
+/// any `botopink.json`, which writes no file — keeps its path with each `/`
+/// as `@`, by the same sanitising. Caller owns the result.
+pub fn flatName(alloc: std.mem.Allocator, id: ModuleId) std.mem.Allocator.Error![]u8 {
+    return erlAtom(alloc, id) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            var out: std.ArrayListUnmanaged(u8) = .empty;
+            errdefer out.deinit(alloc);
+            try appendSanitised(alloc, &out, id.path);
+            return out.toOwnedSlice(alloc);
+        },
+    };
+}
+
+/// `./<flatName>` — how a commonJS module `require`s, and its `.d.ts`
+/// imports, the module at `path` (decision 1015): every module sits in the
+/// one flat folder, so the target is always a sibling. `cross` names the
+/// packages; without one (a standalone emit) the path has no package.
+pub fn flatRequire(alloc: std.mem.Allocator, cross: ?*const CrossModule, path: []const u8) std.mem.Allocator.Error![]u8 {
+    const name = try flatName(alloc, if (cross) |xc| xc.idOf(path) else ModuleId.of(path));
+    defer alloc.free(name);
+    return std.fmt.allocPrint(alloc, "./{s}", .{name});
 }
 
 /// Why a module's rendered atom cannot be used. The absence of this check is
@@ -1924,18 +1955,29 @@ test "decodeAtom: what erlDeclAtom wrote is what decodeAtom reads back" {
     try testing.expectEqualStrings("b7e4d5f83f1a9c02", d.hash);
 }
 
-test "outputStem: erlang and beam take the atom, commonJS and wasm the path" {
-    const cases = [_]struct { target: configMod.TargetSource, want: []const u8 }{
-        .{ .target = .erlang, .want = "std@math" },
-        .{ .target = .beam, .want = "std@math" },
-        .{ .target = .commonJS, .want = "std/math" },
-        .{ .target = .wasm, .want = "std/math" },
+test "outputStem: erlang, beam and commonJS take the flat atom, wasm the path (1015)" {
+    const cases = [_]struct { target: configMod.TargetSource, path: []const u8, want: []const u8 }{
+        .{ .target = .erlang, .path = "std/math", .want = "std@math" },
+        .{ .target = .beam, .path = "std/math", .want = "std@math" },
+        .{ .target = .commonJS, .path = "std/math", .want = "std@math" },
+        .{ .target = .commonJS, .path = "models/user", .want = "myapp@models@user" },
+        .{ .target = .commonJS, .path = "webkit/http", .want = "webkit@http" },
+        .{ .target = .wasm, .path = "std/math", .want = "std/math" },
     };
     for (cases) |c| {
-        const got = try outputStem(c.target, testing.allocator, app_packages.idOf("std/math"));
+        const got = try outputStem(c.target, testing.allocator, app_packages.idOf(c.path));
         defer testing.allocator.free(got);
         try testing.expectEqualStrings(c.want, got);
     }
+}
+
+test "flatRequire: a sibling of the one flat folder; no package keeps the path (1015)" {
+    const got = try flatRequire(testing.allocator, null, "io/fs");
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings("./io@fs", got);
+    const std_got = try flatRequire(testing.allocator, null, "std/math");
+    defer testing.allocator.free(std_got);
+    try testing.expectEqualStrings("./std@math", std_got);
 }
 
 fn syntaxFailed(name: []const u8) ComptimeOutput {

@@ -1187,8 +1187,8 @@ function __bp_eq(a, b, d) {
 
 //// same host, so key order agrees).
 
-const failure = require("../../std/failure.js");
-const { Failure } = require("../../std/failure.js");
+const failure = require("./std@failure");
+const { Failure } = require("./std@failure");
 
 // ── boolean ──────────────────────────────────────────────────────────────────
 
@@ -1575,8 +1575,8 @@ Object.defineProperty(exports, "__bp_priv__", { value: { failure, Failure, isTru
 
 ----- TYPESCRIPT TYPEDEF -- std/testing/asserts.d.ts
 ```typescript
-import * as failure from "../../std/failure";
-import { Failure } from "../../std/failure";
+import * as failure from "./std@failure";
+import { Failure } from "./std@failure";
 
 
 export declare function isTrue(condition: boolean): { ok: void } | { error: string };
@@ -1952,7 +1952,7 @@ function main() {
 }
 exports.main = main;
 
-const asserts = require("./std/testing/asserts.js");
+const asserts = require("./std@testing@asserts");
 
 function _botopink_main() {
     main();

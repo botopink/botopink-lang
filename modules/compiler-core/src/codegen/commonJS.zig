@@ -57,7 +57,9 @@ pub fn codegenEmit(
     // Cross-module link index: lets each module `require` the file that
     // actually emits an imported symbol, emit `new` for imported records, and
     // `exports.X` only for symbols consumed elsewhere.
-    var cross = try crossModule.build(alloc, outputs);
+    // Built under the program's packages: a module's flat name (decision
+    // 1015, `crossModule.flatName`) starts with its package.
+    var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     defer cross.deinit();
     // Each module is lowered against its own package's closure, never the
     // whole program (decision 509 (2)): `cross` answers only the program's
@@ -633,11 +635,8 @@ fn emitProgramOptsX(
     // module's exports copies it.
     try items.insertSlice(arena_alloc, 0, try em.reachedEnumRequires());
     if (has_main_0 or tests.items.len > 0) {
-        // Every `require` target is a path from the output root; node
-        // resolves it from the requiring file (`buildUse`'s prefix).
-        const depth = std.mem.count(u8, module_name, "/");
-        var prefix: std.ArrayListUnmanaged(u8) = .empty;
-        if (depth == 0) try prefix.appendSlice(arena_alloc, "./") else for (0..depth) |_| try prefix.appendSlice(arena_alloc, "../");
+        // Every `require` target is a sibling in the one flat folder
+        // (decision 1015, `Emitter.requireOf`).
         // A program entry (`fn main`) is required by nobody: its dependencies'
         // bodies run first (decision 660). Any other module is required by the
         // modules it names — a dependency that imports this one back is a
@@ -648,7 +647,7 @@ fn emitProgramOptsX(
         const front = has_main_0;
         for (dep_inits, 0..) |dep, i| {
             const stmt: js.Item = .{ .stmt = .{
-                .expr = try em.requireCall(try std.fmt.allocPrint(arena_alloc, "{s}{s}.js", .{ prefix.items, dep })),
+                .expr = try em.requireCall(try em.requireOf(dep)),
             } };
             if (front) try items.insert(arena_alloc, i, stmt) else try items.append(arena_alloc, stmt);
         }
@@ -793,7 +792,7 @@ fn deeperRequires(alloc: std.mem.Allocator, text: []const u8, prefix: []const u8
 /// binding of the module by name.
 pub const PRIV_EXPORT = "__bp_priv__";
 
-/// Decision 513 (1): the module's test unit, `__test__/<module path>.js` —
+/// Decision 513 (1): the module's test unit, `__test__/<pkg>@<path>.js` —
 /// it requires the production module, destructures its hidden export
 /// (`PRIV_EXPORT`), and holds the `test` blocks as `__bp_test_N`, the
 /// registry and the runner. The production module's helpers and equalities
@@ -810,10 +809,12 @@ fn emitTestUnit(alloc: std.mem.Allocator, em: *Emitter, arena_alloc: std.mem.All
         em.eq_fns = prod_eq;
         em.test_mode = false;
     }
-    const stem = if (module_name.len > 0) module_name else "main";
+    // Decision 1015 — the unit is `__test__/<pkg>@<path>.js`, one folder
+    // below the flat output the production module sits in.
+    const path = if (module_name.len > 0) module_name else "main";
+    const stem = try crossModule.flatName(arena_alloc, if (em.cross) |c| c.idOf(path) else .of(path));
+    const up = "../";
     var items: std.ArrayListUnmanaged(js.Item) = .empty;
-    var up: std.ArrayListUnmanaged(u8) = .empty;
-    for (0..std.mem.count(u8, stem, "/") + 1) |_| try up.appendSlice(arena_alloc, "../");
     try items.append(arena_alloc, .{ .runtime = assert_helper_source });
     const entries = try arena_alloc.alloc(js.Expr, tests.len);
     for (tests, 0..) |t, idx| {
@@ -855,16 +856,15 @@ fn emitTestUnit(alloc: std.mem.Allocator, em: *Emitter, arena_alloc: std.mem.All
     }
     const bound_names = wanted.items;
     const require_line = if (bound_names.len > 0)
-        try std.fmt.allocPrint(arena_alloc, "const {s} = require(\"{s}{s}.js\")." ++ PRIV_EXPORT ++ ";\n", .{ try nameList(arena_alloc, bound_names), up.items, stem })
+        try std.fmt.allocPrint(arena_alloc, "const {s} = require(\"{s}{s}\")." ++ PRIV_EXPORT ++ ";\n", .{ try nameList(arena_alloc, bound_names), up, stem })
     else
-        try std.fmt.allocPrint(arena_alloc, "require(\"{s}{s}.js\");\n", .{ up.items, stem });
+        try std.fmt.allocPrint(arena_alloc, "require(\"{s}{s}\");\n", .{ up, stem });
     try items.insert(arena_alloc, 0, .{ .runtime = require_line });
     try insertHelpers(em, arena_alloc, &items, 2);
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     try jsEmitter.writeProgram(&aw.writer, items.items);
-    const dir_prefix = if (std.fs.path.dirnamePosix(stem)) |d| try std.fmt.allocPrint(arena_alloc, "{s}{s}/", .{ up.items, d }) else up.items;
-    const code = try deeperRequires(alloc, aw.written(), dir_prefix);
+    const code = try deeperRequires(alloc, aw.written(), up);
     errdefer alloc.free(code);
     const atom = try std.fmt.allocPrint(alloc, "__test__/{s}", .{stem});
     return .{ .atom = atom, .code = code };
@@ -2503,19 +2503,16 @@ const Emitter = struct {
         return try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{type_name});
     }
 
-    /// `const { <Type>: __bp_enum_<Type> } = require("<owner>.js");` for each
+    /// `const { <Type>: __bp_enum_<Type> } = require("./<owner>");` for each
     /// enum `reached_enums` holds.
     fn reachedEnumRequires(self: *Emitter) ![]const js.Item {
-        const depth = std.mem.count(u8, self.module_name, "/");
-        var prefix: std.ArrayListUnmanaged(u8) = .empty;
-        if (depth == 0) try prefix.appendSlice(self.arena(), "./") else for (0..depth) |_| try prefix.appendSlice(self.arena(), "../");
         var out: std.ArrayListUnmanaged(js.Item) = .empty;
         for (self.reached_enums.keys(), self.reached_enums.values()) |name, module| {
             const props = try self.arena().alloc(js.ObjectPattern.Prop, 1);
             props[0] = .{ .key = name, .bind = try std.fmt.allocPrint(self.arena(), reached_enum_prefix ++ "{s}", .{name}) };
             try out.append(self.arena(), .{ .stmt = .{ .decl = .{
                 .pattern = .{ .object = .{ .props = props } },
-                .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ prefix.items, module })),
+                .value = try self.requireCall(try self.requireOf(module)),
             } } });
         }
         return out.items;
@@ -3037,28 +3034,25 @@ const Emitter = struct {
     fn wrapResult(self: *Emitter, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
         const task = isTaskOfResult(ret);
         const inner = if (task) value else try self.adoptHost(resultOkType(ret), value);
-        // `failure` is `std/failure` in a consumer's build and `failure` at the
-        // output root in std's own (its tests): the module that exports
-        // `HostError` says which.
+        // `failure` is `std/failure` in a consumer's build and `failure` in
+        // std's own (its tests): the module that exports `HostError` says
+        // which. Both are `std@failure` in the flat folder (decision 1015).
         const failure_mod: []const u8 = if (self.cross) |xc| blk: {
             const info = xc.picked("HostError", null, null) orelse break :blk "std/failure";
             break :blk if (std.mem.eql(u8, info.module, "failure")) "failure" else "std/failure";
         } else "std/failure";
-        const failure = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ try self.requirePrefix(), failure_mod }));
+        const failure = try self.requireCall(try self.requireOf(failure_mod));
         return self.b.call(self.helper(if (task) .host_result_task else .host_result), &.{
             failure,
             try self.b.arrowExpr(&.{}, inner),
         });
     }
 
-    /// The `./` or `../…` a `require` of an output-root path starts with from
-    /// this module (see `buildUse`).
-    fn requirePrefix(self: *Emitter) ![]const u8 {
-        const depth = std.mem.count(u8, self.module_name, "/");
-        if (depth == 0) return "./";
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        for (0..depth) |_| try buf.appendSlice(self.arena(), "../");
-        return buf.toOwnedSlice(self.arena());
+    /// `./<pkg>@<path>` — the `require` target of the module at `path`
+    /// (decision 1015): every module of the output sits in one flat folder,
+    /// named by its flat name (`crossModule.flatName`), so each is a sibling.
+    fn requireOf(self: *Emitter, path: []const u8) ![]const u8 {
+        return crossModule.flatRequire(self.arena(), self.cross, path);
     }
 
     /// `function name(params) { return <template>; }` for a `pub` template
@@ -4093,23 +4087,9 @@ const Emitter = struct {
         // Fallback activation `X*;` has no runtime binding — emit nothing.
         if (u.activationOnly) return self.b.group(&.{});
 
-        // All emitted `require` targets are module paths relative to the OUTPUT
-        // ROOT (`std/x`, `<dep>/<mod>`, …), but node resolves a `require` relative
-        // to the requiring FILE. A module nested under a package prefix (a
-        // dependency's `<dep>/<mod>`, depth 1) must therefore reach back up to the
-        // root with one `../` per path segment before descending — without this,
-        // `./<dep2>/<mod2>.js` required from `out/<dep>/<mod>.js` would resolve
-        // under `out/<dep>/`. A top-level module (depth 0) keeps the plain `./`.
-        const depth = std.mem.count(u8, self.module_name, "/");
-        const req_prefix: []const u8 = blk: {
-            var buf: std.ArrayListUnmanaged(u8) = .empty;
-            if (depth == 0) {
-                try buf.appendSlice(self.arena(), "./");
-            } else {
-                for (0..depth) |_| try buf.appendSlice(self.arena(), "../");
-            }
-            break :blk try buf.toOwnedSlice(self.arena());
-        };
+        // Every emitted `require` target is a sibling in the one flat output
+        // folder, named `<pkg>@<path>` (decision 1015, `requireOf`): node
+        // resolves it from the requiring file, which sits beside it.
         // `"std"` package import: each item binds a whole stdlib module
         // emitted alongside the project (`out/std/<mod>.js`), so qualified
         // calls (`bool.negate(x)`) resolve naturally at runtime.
@@ -4129,7 +4109,7 @@ const Emitter = struct {
                 if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
                     try stmts.append(self.arena(), .{ .decl = .{
                         .pattern = .{ .name = imp.name() },
-                        .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/{s}.js", .{ req_prefix, whole })),
+                        .value = try self.requireCall(try self.requireOf(try std.fmt.allocPrint(self.arena(), "std/{s}", .{whole}))),
                     } });
                     continue;
                 }
@@ -4148,7 +4128,7 @@ const Emitter = struct {
             for (symbol_mods.items, symbol_props.items) |mod, *props| {
                 try stmts.append(self.arena(), .{ .decl = .{
                     .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
-                    .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/{s}.js", .{ req_prefix, mod })),
+                    .value = try self.requireCall(try self.requireOf(try std.fmt.allocPrint(self.arena(), "std/{s}", .{mod}))),
                 } });
             }
             return self.b.group(try stmts.toOwnedSlice(self.arena()));
@@ -4197,7 +4177,8 @@ const Emitter = struct {
                 // runs at `run()`, just before its `main` (each name a function
                 // of no argument, `__bp_loaded_main`), and anew at every
                 // `run()` — the package's entries in node's `require` cache
-                // (its root's directory) are dropped first, so its `val`s,
+                // (its files: in the one flat folder of decision 1015, the
+                // siblings named `<pkg>@…`) are dropped first, so its `val`s,
                 // `var`s, body and executors run again. A module of the same
                 // loaded package (its `test/` suite, decision 993 (3)) imports
                 // it as any module of a package does.
@@ -4205,8 +4186,10 @@ const Emitter = struct {
                 const same_package = std.mem.startsWith(u8, self.module_name, loaded_pkg) and self.module_name.len > loaded_pkg.len and self.module_name[loaded_pkg.len] == '/';
                 if (@import("../comptime/load.zig").isLoadedPackage(info.module) and !same_package) {
                     for (props.items) |p| {
-                        const path = try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module });
-                        const text = try std.fmt.allocPrint(self.arena(), "() => {{ const __p = require.resolve(\"{s}\"); const __d = require(\"path\").dirname(__p) + require(\"path\").sep; for (const __k of Object.keys(require.cache)) {{ if (__k.startsWith(__d)) {{ delete require.cache[__k]; }} }} return require(__p).{s}(); }}", .{ path, p.key });
+                        const path = try self.requireOf(info.module);
+                        // `./<pkg>@<path>` → `<pkg>@`: every file of the package.
+                        const pkg_prefix = path[2 .. (std.mem.indexOfScalar(u8, path, '@') orelse path.len - 1) + 1];
+                        const text = try std.fmt.allocPrint(self.arena(), "() => {{ const __p = require.resolve(\"{s}\"); const __d = require(\"path\").dirname(__p) + require(\"path\").sep + \"{s}\"; for (const __k of Object.keys(require.cache)) {{ if (__k.startsWith(__d)) {{ delete require.cache[__k]; }} }} return require(__p).{s}(); }}", .{ path, pkg_prefix, p.key });
                         const parts = try self.arena().alloc(js.HostPart, 1);
                         parts[0] = .{ .text = text };
                         try stmts.append(self.arena(), .{ .decl = .{
@@ -4218,7 +4201,7 @@ const Emitter = struct {
                 }
                 try stmts.append(self.arena(), .{ .decl = .{
                     .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
-                    .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module })),
+                    .value = try self.requireCall(try self.requireOf(info.module)),
                 } });
             }
             // Namespace binding: when the import names the lib itself
@@ -4266,13 +4249,13 @@ const Emitter = struct {
                         }
                     }.lt);
                     const value: js.Expr = if (mods.items.len == 1)
-                        try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, mods.items[0] }))
+                        try self.requireCall(try self.requireOf(mods.items[0]))
                     else blk: {
                         var args: std.ArrayListUnmanaged(js.Expr) = .empty;
                         try args.append(self.arena(), .{ .object = .{} });
                         for (mods.items) |m| try args.append(
                             self.arena(),
-                            try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, m })),
+                            try self.requireCall(try self.requireOf(m)),
                         );
                         break :blk try self.b.call(
                             try self.b.member(.{ .name = "Object" }, "assign"),
@@ -4298,7 +4281,7 @@ const Emitter = struct {
         return .{ .decl = .{
             .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
             .value = try self.requireCall(switch (u.source) {
-                .root => try std.fmt.allocPrint(self.arena(), "{s}module", .{req_prefix}),
+                .root => "./module",
                 .module, .key => |name| name,
             }),
         } };

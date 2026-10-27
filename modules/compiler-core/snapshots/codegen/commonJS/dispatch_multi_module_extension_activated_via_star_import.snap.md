@@ -120,7 +120,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Pato, PatoNada } = require("./pond.js");
+const { Pato, PatoNada } = require("./test@pond");
 
 function main() {
     const donald = new Pato(2);
@@ -142,7 +142,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Pato, PatoNada, main } 
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Pato } from "./pond";
+import { Pato } from "./test@pond";
 
 
 

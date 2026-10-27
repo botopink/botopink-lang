@@ -5110,9 +5110,9 @@ BigInt.prototype.toF64 = Number.prototype.toF64 = function() { return ((__v) => 
 
 //// the process reads it — a relative one against the working directory — on every target.
 
-const random = require("../../std/io/random.js");
-const { relative } = require("../../std/path.js");
-const { HostError, HostErrorName } = require("../../std/failure.js");
+const random = require("./std@io@random");
+const { relative } = require("./std@path");
+const { HostError, HostErrorName } = require("./std@failure");
 
 // The error of every `io.fs` function (decision 540). `path` is the path the
 
@@ -5292,19 +5292,19 @@ exports.FileStat = FileStat;
 
 // Erlang: `file:read_file/1`.
 
-function rawReadBytes(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { return new Uint8Array(require('fs').readFileSync(path)) })()); }
+function rawReadBytes(path) { return __bp_host_result(require("./std@failure"), () => (() => { return new Uint8Array(require('fs').readFileSync(path)) })()); }
 
 // Write `contents` to `path`, creating or truncating.
 
 // Node: `writeFileSync($0, $1)`. Erlang: `file:write_file/2`.
 
-function rawWriteBytes(path, contents) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').writeFileSync(path, contents); return 0 })()); }
+function rawWriteBytes(path, contents) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').writeFileSync(path, contents); return 0 })()); }
 
 // Append `contents` to `path`, creating it when it is not there.
 
 // Node: `appendFileSync($0, $1)`. Erlang: `file:write_file/3` with `append`.
 
-function rawAppendText(path, contents) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').appendFileSync(path, contents); return 0 })()); }
+function rawAppendText(path, contents) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').appendFileSync(path, contents); return 0 })()); }
 
 // The offset of the first byte that starts a sequence that is not UTF-8 (a byte no sequence
 
@@ -5328,11 +5328,11 @@ function rawAppendText(path, contents) { return __bp_host_result(require("../../
 
 // mem, pos, buf }` object on Node, an io device on Erlang (a stream reads it in its own process).
 
-function rawOpen(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __fs = require('fs'); const __p = path; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()); }
+function rawOpen(path) { return __bp_host_result(require("./std@failure"), () => (() => { const __fs = require('fs'); const __p = path; const __fd = __fs.openSync(__p, 'r'); if (__fs.fstatSync(__fd).isDirectory()) { __fs.closeSync(__fd); throw new Error('EISDIR: illegal operation on a directory, open ' + JSON.stringify(__p)) } return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()); }
 
 // The handle of the file at `path`, open for writing: created, or truncated.
 
-function rawCreate(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __fd = require('fs').openSync(path, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()); }
+function rawCreate(path) { return __bp_host_result(require("./std@failure"), () => (() => { const __fd = require('fs').openSync(path, 'w'); return { fd: __fd, mem: null, pos: 0, buf: new Uint8Array(0) } })()); }
 
 // A handle over bytes held in memory — what an `Asset` opens as. The position is a field
 
@@ -5342,19 +5342,19 @@ function rawCreate(path) { return __bp_host_result(require("../../std/failure.js
 
 // The size of the file behind `handle`, in bytes. On Erlang it reads `path`.
 
-function rawSize(handle, path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()); }
+function rawSize(handle, path) { return __bp_host_result(require("./std@failure"), () => (() => { const __h = handle; return __h.mem ? __h.mem.length : require('fs').fstatSync(__h.fd).size })()); }
 
 // Up to `n` bytes (n > 0) from the handle's position; empty at the end.
 
-function rawRead(handle, n) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; const __n = n; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()); }
+function rawRead(handle, n) { return __bp_host_result(require("./std@failure"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; const __n = n; if (__h.buf.length > 0) { const __k = Math.min(__n, __h.buf.length); const __o = new Uint8Array(__h.buf.subarray(0, __k)); __h.buf = __h.buf.subarray(__k); return __o } return new Uint8Array(__more(__h, __n)) })()); }
 
 // Every byte from the handle's position to the end.
 
-function rawReadAll(handle) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()); }
+function rawReadAll(handle) { return __bp_host_result(require("./std@failure"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; const __parts = []; if (__h.buf.length > 0) { __parts.push(__h.buf); __h.buf = new Uint8Array(0) } for (;;) { const __r = __more(__h, 65536); if (__r.length === 0) break; __parts.push(new Uint8Array(__r)) } let __t = 0; for (const __x of __parts) __t += __x.length; const __o = new Uint8Array(__t); let __p = 0; for (const __x of __parts) { __o.set(__x, __p); __p += __x.length } return __o })()); }
 
 // The next line, terminator included; empty at the end.
 
-function rawReadLine(handle) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()); }
+function rawReadLine(handle) { return __bp_host_result(require("./std@failure"), () => (() => { const __more = (h, n) => { if (h.mem) { const r = h.mem.subarray(h.pos, h.pos + n); h.pos += r.length; return r } const b = new Uint8Array(n); const k = require('fs').readSync(h.fd, b, 0, n, null); return b.subarray(0, k) }; const __h = handle; for (;;) { const __i = __h.buf.indexOf(10); if (__i >= 0) { const __l = new Uint8Array(__h.buf.subarray(0, __i + 1)); __h.buf = __h.buf.subarray(__i + 1); return __l } const __r = __more(__h, 65536); if (__r.length === 0) { const __l = __h.buf; __h.buf = new Uint8Array(0); return __l } const __nb = new Uint8Array(__h.buf.length + __r.length); __nb.set(__h.buf, 0); __nb.set(__r, __h.buf.length); __h.buf = __nb } })()); }
 
 // The SHA-256 of the whole file behind the handle, lowercase hex — from its first byte,
 
@@ -5362,15 +5362,15 @@ function rawReadLine(handle) { return __bp_host_result(require("../../std/failur
 
 // position undefined (OTP moves it), so the position is read first and restored.
 
-function rawHash(handle) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()); }
+function rawHash(handle) { return __bp_host_result(require("./std@failure"), () => (() => { const __h = handle; const __hs = require('crypto').createHash('sha256'); if (__h.mem) { __hs.update(__h.mem) } else { const __b = new Uint8Array(65536); let __pos = 0; for (;;) { const __k = require('fs').readSync(__h.fd, __b, 0, 65536, __pos); if (__k === 0) break; __hs.update(__b.subarray(0, __k)); __pos += __k } } return __hs.digest('hex') })()); }
 
 // Write `bytes` at the handle's position; answers how many.
 
-function rawWrite(handle, bytes) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; const __b = bytes; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()); }
+function rawWrite(handle, bytes) { return __bp_host_result(require("./std@failure"), () => (() => { const __h = handle; const __b = bytes; let __o = 0; while (__o < __b.length) __o += require('fs').writeSync(__h.fd, __b, __o, __b.length - __o); return __b.length })()); }
 
 // Close the handle. A failure to close is not reported (a `Closeable`'s `close` answers nothing).
 
-function rawClose(handle) { return __bp_host_result(require("../../std/failure.js"), () => (() => { const __h = handle; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()); }
+function rawClose(handle) { return __bp_host_result(require("./std@failure"), () => (() => { const __h = handle; if (!__h.mem) require('fs').closeSync(__h.fd); return 0 })()); }
 
 // Write `contents` to `path`, creating or truncating. Reds with the
 
@@ -5380,7 +5380,7 @@ function rawClose(handle) { return __bp_host_result(require("../../std/failure.j
 
 // Erlang: `file:write_file/2`.
 
-function rawWriteText(path, contents) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').writeFileSync(path, contents); return 0 })()); }
+function rawWriteText(path, contents) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').writeFileSync(path, contents); return 0 })()); }
 
 // Whether a path exists, of any kind: a regular file, a directory, a
 
@@ -5412,7 +5412,7 @@ exports.exists = exists;
 
 // wasm's `listWasm` answer them, so every target lists one order (decision 992).
 
-function rawList(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { return require('fs').readdirSync(path) })()); }
+function rawList(path) { return __bp_host_result(require("./std@failure"), () => (() => { return require('fs').readdirSync(path) })()); }
 
 // Create directory at `path`. Use `mkdirRecursive` to create
 
@@ -5422,7 +5422,7 @@ function rawList(path) { return __bp_host_result(require("../../std/failure.js")
 
 // Erlang: `file:make_dir/1`.
 
-function rawMkdir(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').mkdirSync(path); return 0 })()); }
+function rawMkdir(path) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').mkdirSync(path); return 0 })()); }
 
 // Create the directory at `path` and every missing directory above it. A
 
@@ -5436,7 +5436,7 @@ function rawMkdir(path) { return __bp_host_result(require("../../std/failure.js"
 
 // Erlang: `filelib:ensure_path/1`.
 
-function rawMkdirRecursive(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').mkdirSync(path, { recursive: true }); return 0 })()); }
+function rawMkdirRecursive(path) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').mkdirSync(path, { recursive: true }); return 0 })()); }
 
 // Delete the FILE at `path`. A directory — empty or not — is `IsDirectory` on
 
@@ -5448,7 +5448,7 @@ function rawMkdirRecursive(path) { return __bp_host_result(require("../../std/fa
 
 // Erlang: `file:delete/1`.
 
-function rawRm(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').rmSync(path); return 0 })()); }
+function rawRm(path) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').rmSync(path); return 0 })()); }
 
 // Copy file from `src` to `dest`. Reds when `src` is missing or
 
@@ -5458,7 +5458,7 @@ function rawRm(path) { return __bp_host_result(require("../../std/failure.js"), 
 
 // Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
 
-function rawCopy(src, dest) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').copyFileSync(src, dest); return 0 })()); }
+function rawCopy(src, dest) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').copyFileSync(src, dest); return 0 })()); }
 
 // File metadata. Returns a `FileStat { size, mtime, isDir }` on
 
@@ -5480,7 +5480,7 @@ function rawCopy(src, dest) { return __bp_host_result(require("../../std/failure
 
 // whole seconds × 1000. One value on every target: whole seconds (decision 499).
 
-function rawStat(path) { return __bp_host_result(require("../../std/failure.js"), () => __bp_adopt((() => { const __s = require('fs').statSync(path, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })(), FileStat, "")); }
+function rawStat(path) { return __bp_host_result(require("./std@failure"), () => __bp_adopt((() => { const __s = require('fs').statSync(path, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { size: __c(__s.size), mtime: __c(((__ns - (((__ns % 1000000000n) + 1000000000n) % 1000000000n)) / 1000000000n) * 1000n), isDir: __s.isDirectory() } })(), FileStat, "")); }
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 
@@ -5522,7 +5522,7 @@ function rawStat(path) { return __bp_host_result(require("../../std/failure.js")
 
 // as written cut two characters too many when the root ended in `/.`.
 
-function rawWalk(root) { return __bp_host_result(require("../../std/failure.js"), () => __bp_adopt((() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync(root, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join(root, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })(), Walked, "")); }
+function rawWalk(root) { return __bp_host_result(require("./std@failure"), () => __bp_adopt((() => { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync(root, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; const __dng = []; for (const __f of __all) { const __s = __fs.statSync(__p.join(root, __f), { throwIfNoEntry: false }); if (__s === undefined) { __dng.push(__f); continue } if (__s.isFile()) __out.push(__f) } return { files: __out, dangling: __dng } })(), Walked, "")); }
 
 // The entries under `root` matching the glob `pattern`, as paths relative to
 
@@ -5584,7 +5584,7 @@ function rawWalk(root) { return __bp_host_result(require("../../std/failure.js")
 
 // Erlang: `file:del_dir_r/1`.
 
-function rawRemoveTree(path) { return __bp_host_result(require("../../std/failure.js"), () => (() => { require('fs').rmSync(path, { recursive: true, force: true }); return 0 })()); }
+function rawRemoveTree(path) { return __bp_host_result(require("./std@failure"), () => (() => { require('fs').rmSync(path, { recursive: true, force: true }); return 0 })()); }
 
 // Internal, test scaffolding: a fresh, unique, empty directory under the
 
@@ -7014,9 +7014,9 @@ Object.defineProperty(exports, "__bp_priv__", { value: { random, relative, HostE
 
 ----- TYPESCRIPT TYPEDEF -- std/io/fs.d.ts
 ```typescript
-import * as random from "../../std/io/random";
-import { relative } from "../../std/path";
-import { HostError, HostErrorName } from "../../std/failure";
+import * as random from "./std@io@random";
+import { relative } from "./std@path";
+import { HostError, HostErrorName } from "./std@failure";
 
 
 

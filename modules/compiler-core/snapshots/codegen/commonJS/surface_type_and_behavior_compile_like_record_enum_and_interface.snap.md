@@ -108,7 +108,7 @@ class Square {
     }
 }
 Square.prototype.__bp = "Square";
-Square.prototype["__bp_b_main@@Shape"] = true;
+Square.prototype["__bp_b_test@main@@Shape"] = true;
 
 class Size {
     static Large(n) {

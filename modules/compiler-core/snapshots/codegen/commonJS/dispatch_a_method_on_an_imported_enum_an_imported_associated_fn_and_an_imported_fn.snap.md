@@ -248,7 +248,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Counter, Shape, make } = require("./geometry.js");
+const { Counter, Shape, make } = require("./test@geometry");
 
 function main() {
     const c = Counter.zero();
@@ -272,7 +272,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Counter, Shape, make, m
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Counter, Shape, make } from "./geometry";
+import { Counter, Shape, make } from "./test@geometry";
 
 
 

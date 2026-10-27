@@ -149,8 +149,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { name: circleName, label: circleLabel } = require("./shapes/circle.js");
-const { seven, label } = require("./shapes/helpers.js");
+const { name: circleName, label: circleLabel } = require("./test@shapes@circle");
+const { seven, label } = require("./test@shapes@helpers");
 
 function main() {
     __bp_print(circleName());
@@ -174,8 +174,8 @@ Object.defineProperty(exports, "__bp_priv__", { value: { circleName, circleLabel
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { name as circleName, label as circleLabel } from "./shapes/circle";
-import { seven, label } from "./shapes/helpers";
+import { name as circleName, label as circleLabel } from "./test@shapes@circle";
+import { seven, label } from "./test@shapes@helpers";
 
 
 

@@ -119,7 +119,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Meter } = require("./hostlib.js");
+const { Meter } = require("./test@hostlib");
 
 function main() {
     __bp_print(new Meter(40).plus(2));
@@ -141,7 +141,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Meter, main } });
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Meter } from "./hostlib";
+import { Meter } from "./test@hostlib";
 
 
 export declare function main(): void;

@@ -35,9 +35,9 @@ function passing() {
 Object.defineProperty(exports, "__bp_priv__", { value: { failing, passing } });
 ```
 
------ JAVASCRIPT TEST UNIT -- __test__/main.js
+----- JAVASCRIPT TEST UNIT -- __test__/test@main.js
 ```javascript
-const { failing, passing } = require("../main.js").__bp_priv__;
+const { failing, passing } = require("../test@main").__bp_priv__;
 function __bp_assert(cond, msg, loc, head, where) {
     if (!cond) {
         const e = new Error(msg || "assertion failed");

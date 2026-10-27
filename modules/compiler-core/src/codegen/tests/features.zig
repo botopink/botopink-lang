@@ -621,7 +621,7 @@ test "js: import ---- disk-lib module named like the lib binds its namespace, no
         \\import {io.terminal.print} from "std";
         },
     }, &.{
-        "const { make, make: __bp_ns_qlib__make } = require(\"./qlib/qlib.js\");",
+        "const { make, make: __bp_ns_qlib__make } = require(\"./test@qlib@qlib\");",
         "__bp_ns_qlib__make(5)",
     }, &.{});
 }
@@ -658,7 +658,7 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         \\import {io.terminal.print} from "std";
         },
     }, &.{
-        "const mlib = Object.assign({}, require(\"./mlib/core.js\"), require(\"./mlib/extra.js\"));",
+        "const mlib = Object.assign({}, require(\"./test@mlib@core\"), require(\"./test@mlib@extra\"));",
         "mlib.make(1)",
         "mlib.twice(3)",
     }, &.{});
@@ -669,7 +669,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
     // literal word for an import with no `from`: `require("./module")` in a
     // project, `require("../module")` inside a dependency, which is how a
     // library's examples built and then died (04-js step 5). The path is the
-    // sibling's own, relative to the importing module, in both shapes; the
+    // sibling's flat name in the one output folder (decision 1015), in both shapes; the
     // RUN LOG is `conformance/modules/sibling/cells/sibling_import_in_a_dependency`'s.
     try h.assertConsumerJs(std.testing.allocator, &.{
         .{ .path = "leaf", .source = "pub type Leaf(v: i32)\n" },
@@ -682,7 +682,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\
         \\import {io.terminal.print} from "std";
         },
-    }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
+    }, &.{"const { Leaf } = require(\"./test@leaf\");"}, &.{"./module"});
     try h.assertModuleJs(std.testing.allocator, &.{
         .{ .path = "tree/leaf", .package = "tree", .source = "pub type Leaf(v: i32)\n" },
         .{ .path = "tree/api", .package = "tree", .source =
@@ -699,7 +699,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\
         \\import {io.terminal.print} from "std";
         },
-    }, "tree/api", &.{"const { Leaf } = require(\"../tree/leaf.js\");"});
+    }, "tree/api", &.{"const { Leaf } = require(\"./test@tree@leaf\");"});
 }
 
 test "js: pipeline ---- simple chain" {

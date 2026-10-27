@@ -1,0 +1,9 @@
+//// The dependency's root: it answers through its own `util`.
+
+pub mod util;
+
+import {util.wrap};
+
+pub fn greet(name: string) -> string {
+    return wrap(name);
+}

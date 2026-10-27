@@ -1354,7 +1354,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { Dict, gt, reverse, toInt: rank } = require("./std/collections.js");
+const { Dict, gt, reverse, toInt: rank } = require("./std@collections");
 
 function main() {
     const d = Dict.empty();
@@ -1377,7 +1377,7 @@ Object.defineProperty(exports, "__bp_priv__", { value: { Dict, gt, reverse, rank
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Dict, gt, reverse, toInt as rank } from "./std/collections";
+import { Dict, gt, reverse, toInt as rank } from "./std@collections";
 
 
 

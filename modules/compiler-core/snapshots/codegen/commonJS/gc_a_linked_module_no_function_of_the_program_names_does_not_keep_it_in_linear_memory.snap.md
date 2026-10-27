@@ -1352,7 +1352,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const collections = require("./std/collections.js");
+const collections = require("./std@collections");
 
 function main() {
     __bp_print("x");

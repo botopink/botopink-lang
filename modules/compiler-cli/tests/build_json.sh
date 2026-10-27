@@ -103,7 +103,7 @@ expect_eq "summary" '{"event": "summary", "exit": 0, "ok": true, "refused": 0}' 
 grep -q "Compiling" "$WORK/clean.err" && ok "stderr keeps the CLI's messages" || fail "stderr lost 'Compiling'"
 ( cd "$P" && "$BP_BIN" build --target commonJS --out "$WORK/plain-out" ) >"$WORK/plain.out" 2>"$WORK/plain.err"
 expect_eq "stdout without --json is the raw prints" $'first\nsecond' "$(cat "$WORK/plain.out")"
-[[ -e "$P/out/main.js" ]] && ok "the artifact is written" || fail "no out/main.js"
+[[ -e "$P/out/clean@main.js" ]] && ok "the artifact is written" || fail "no out/clean@main.js"
 
 # ── a refused build ───────────────────────────────────────────────────────────
 echo "==> a refused build: each refusal with its from lines"

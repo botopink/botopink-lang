@@ -402,8 +402,8 @@ fn auxAtom(allocator: std.mem.Allocator, a: AuxFile) ![]u8 {
 }
 
 /// Execute JavaScript code using Node.js and capture stdout/stderr.
-/// `aux` modules are written as `<scratch>/<name>.js` (subdirs created) so the
-/// entry's `require("./<name>.js")` calls resolve.
+/// `aux` modules are written flat as `<scratch>/<pkg>@<path>.js` (decision
+/// 1015, `auxAtom`) so the entry's `require("./<pkg>@<path>")` calls resolve.
 ///
 /// Fast path: when there are no aux modules, the script can run inside the
 /// persistent `node` runner's vm sandbox — ~1ms instead of ~30ms cold spawn.
@@ -450,9 +450,10 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tmp_path, .data = js_code });
     }
     for (aux) |a| {
-        const aux_path = try std.fmt.allocPrint(allocator, "{s}/{s}.js", .{ tmp_dir, a.name });
+        const flat = try auxAtom(allocator, a);
+        defer allocator.free(flat);
+        const aux_path = try std.fmt.allocPrint(allocator, "{s}/{s}.js", .{ tmp_dir, flat });
         defer allocator.free(aux_path);
-        if (std.fs.path.dirname(aux_path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = aux_path, .data = a.code });
     }
 
@@ -605,7 +606,9 @@ pub fn executeTestModule(allocator: std.mem.Allocator, io: anytype, target: Test
     defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
 
     const prod_name: []const u8 = switch (target) {
-        .commonJS => try allocator.dupe(u8, "main.js"),
+        // Decision 1015 — the unit `__test__/<pkg>@<path>` requires its module
+        // by that flat name, one folder up.
+        .commonJS => try std.fmt.allocPrint(allocator, "{s}.js", .{if (std.mem.startsWith(u8, unit.atom, "__test__/")) unit.atom["__test__/".len..] else unit.atom}),
         .erlang => blk: {
             const at = std.mem.indexOf(u8, code, "-module(") orelse return error.NoModuleForm;
             const close = std.mem.indexOfScalarPos(u8, code, at, ')') orelse return error.NoModuleForm;
