@@ -1,0 +1,9 @@
+botopink-cell 1
+out ok names: the first test reads its own name [name names: the first test reads its own name] 
+out ok names: the second test reads its own name [name names: the second test reads its own name] 
+out ok tmp: the call's scratch directory is absolute and exists 
+out ok suite: a test/ file's test reads its own name [name suite: a test/ file's test reads its own name] 
+out removed after the call true
+out name after the call none
+out tmp after the call none
+out main

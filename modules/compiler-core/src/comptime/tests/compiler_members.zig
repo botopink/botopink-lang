@@ -116,18 +116,24 @@ test "decision 786: the records `compiler.load` answers are std's `compiler.Modu
         // `pub` the lowering calls (`load.module_maker`), its fields read
         // through `pub fn name` / `pub fn path` / `pub fn buildOutput`; `pub fn run` (decision 806)
         // beside them, and the capture a lowered `run()` opens and closes
-        // (decision 989 (1), `load.capture_open` / `load.capture_close`),
-        // without `pub` as the maker.
+        // (decision 989 (1), `load.capture_open` / `load.capture_close`)
+        // and the test variables (decision 772, `load.tmp_open` …
+        // `load.name_close`), without `pub` as the maker.
         if (std.mem.eql(u8, r.name, "Module")) {
             try std.testing.expect(record.isOpaque);
             for (record.methods) |m| {
                 const lowering = std.mem.eql(u8, m.name, loadMod.module_maker) or
                     std.mem.eql(u8, m.name, loadMod.capture_open) or
-                    std.mem.eql(u8, m.name, loadMod.capture_close);
+                    std.mem.eql(u8, m.name, loadMod.capture_close) or
+                    std.mem.eql(u8, m.name, loadMod.tmp_open) or
+                    std.mem.eql(u8, m.name, loadMod.tmp_close) or
+                    std.mem.eql(u8, m.name, loadMod.name_open) or
+                    std.mem.eql(u8, m.name, loadMod.name_close);
                 try std.testing.expectEqual(!lowering, m.isPub);
             }
-            // `` pub fn `test` `` (decision 993 (3)) beside `run`.
-            try std.testing.expectEqual(@as(usize, 8), record.methods.len);
+            // `` pub fn `test` `` (decision 993 (3)) beside `run`, and the
+            // test variables a lowered `` `test`() `` sets (decision 772).
+            try std.testing.expectEqual(@as(usize, 12), record.methods.len);
         }
     }
     // Decision 993 (3) — what `` `test`() `` answers: the case record the
