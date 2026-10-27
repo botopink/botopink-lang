@@ -18,6 +18,7 @@ fn process(f: fn(x: i32) -> i32) -> i32 {
     (type $box_i64 (struct (field $v i64)))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
+    (type $box_big (struct (field $v (ref null $str))))
     (type $closure (sub (struct (field $idx i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))

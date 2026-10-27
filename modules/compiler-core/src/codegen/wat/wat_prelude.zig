@@ -3037,7 +3037,7 @@ const gc_print_items_capture = blk: {
 /// vocabulary, emitted whole in every module that declares a GC type, at
 /// these indices, so every unit agrees on each of them (a std unit holding
 /// `.wat` leaves declares it alone, decision 1026).
-pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, closure, result, exn, task, waiter, hostn, gen, cell };
+pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell };
 
 pub fn gcPreludeRef(p: GcPrelude) ast.ValType {
     return ast.ValType.def(@intFromEnum(p));
@@ -3055,6 +3055,10 @@ pub const gc_prelude_defs = [_]ast.TypeDef{
     .{ .name = "box_i64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i64 }} } },
     .{ .name = "box_f64", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .f64 }} } },
     .{ .name = "box_bool", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = .i32 }} }, .super = @intFromEnum(GcPrelude.box_i32) },
+    // Decision 1031 (2) — a `bigint` in an `anyref` slot (a union's member, a type
+    // parameter's slot): its block's bytes in a box of its own, so it is told from a
+    // string (`ref.test`), printed by its digits and compared by value. A leaf: final.
+    .{ .name = "box_big", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = gc_str_ref }} } },
     .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "idx", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
     .{ .name = "result", .kind = .{ .@"struct" = &.{ .{ .name = "tag", .ty = .i32, .mutable = true }, .{ .name = "payload", .ty = .anyref, .mutable = true } } } },
     .{ .name = "exn", .kind = .{ .@"struct" = &.{ .{ .name = "msg", .ty = gc_str_ref }, .{ .name = "print", .ty = .i32 } } } },

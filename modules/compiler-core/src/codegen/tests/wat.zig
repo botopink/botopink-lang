@@ -4645,6 +4645,36 @@ test "wat: decision 1021 (10) ---- a bigint is a byte array in the GC lowering, 
     , "123456789012345678901234567891\n-7\n-370370367037037036703703703670\n123456789012345678901234567\n890\n15511210043330985984000000\n-99999999999999999999\n-1\nzero\nnegative\ntrue\ntrue\n[1, 123456789012345678901234567890]\ntrue\n123456789012345678901234567890\ntrue\n90000000000000000010\nAccount(owner: \"Ana\", balance: 90000000000000000010)\ntotal 123456789012345678901234567890\n43\n");
 }
 
+test "wat: decision 1031 (2) ---- a bigint in an unknown slot is boxed in $box_big, printed and compared by value" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Box<T>(value: T)
+        \\
+        \\fn show(a: i32 | bigint) -> void {
+        \\    print(a);
+        \\}
+        \\
+        \\fn same(a: i32 | bigint, b: i32 | bigint) -> bool {
+        \\    return a == b;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val big = 123456789012345678901234567890n;
+        \\    show(5);
+        \\    show(big * 2n);
+        \\    print(same(big, 123456789012345678901234567890n));
+        \\    print(same(big, 5));
+        \\    print(same(5, 5));
+        \\    val b = Box(value: big + 1n);
+        \\    print(b);
+        \\    print(b.value + 1n);
+        \\    print(b == Box(value: 123456789012345678901234567891n));
+        \\    print(b == Box(value: 1n));
+        \\}
+    , "5\n246913578024691357802469135780\ntrue\nfalse\ntrue\nBox(value: 123456789012345678901234567891)\n123456789012345678901234567892\ntrue\nfalse\n");
+}
+
 test "wat: decision 1021 (10) ---- string ordering by bytes in the GC lowering ($__str_cmp)" {
     try h.assertWasmGcRunLog(std.testing.allocator,
         \\import {io.terminal.print} from "std";

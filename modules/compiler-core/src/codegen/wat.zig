@@ -5519,9 +5519,10 @@ const Emitter = struct {
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
         const hint = self.box_as;
         self.box_as = null;
-        // Decision 332 — a union's `bigint` member: the boxes here have no
-        // `bigint` kind yet (the checker keeps a `bigint` out of `unknown`).
-        if (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value))
+        // Decision 332 — a union's `bigint` member: linear memory's boxes have
+        // no `bigint` kind (the checker keeps a `bigint` out of `unknown`); a GC
+        // module boxes it in `$box_big` (decision 1031 (2), `gcAsUnknown`).
+        if (self.mode != .gc and (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value)))
             return self.refuse(value.getLoc(), "the wasm backend has no `bigint` in a union yet", .{});
         if (self.mode == .gc) return self.gcAsUnknown(value, hint);
         if (value == .call and value.call.kind == .call and self.callKind(value.call.kind.call) == .enum_ctor) {
@@ -6192,8 +6193,9 @@ const Emitter = struct {
         gen,
 
         /// A `bool` has a box of its own, so an `unknown` holding one prints
-        /// and compares as a `bool` (front 164 s2 P2b).
-        const Box = enum { i32, i64, f64, bool };
+        /// and compares as a `bool` (front 164 s2 P2b); so has a `bigint`
+        /// (`big`, decision 1031 (2)): its block's bytes, told from a string.
+        const Box = enum { i32, i64, f64, bool, big };
 
         fn eql(a: GcTy, b: GcTy) bool {
             if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
@@ -6632,6 +6634,7 @@ const Emitter = struct {
                 .i32, .bool => ValType.i32,
                 .i64 => ValType.i64,
                 .f64 => ValType.f64,
+                .big => prelude.gc_str_ref,
             }}),
             else => return &.{},
         }
@@ -6694,6 +6697,7 @@ const Emitter = struct {
                 .i64 => .box_i64,
                 .f64 => .box_f64,
                 .bool => .box_bool,
+                .big => .box_big,
             },
             .closure => .closure,
             .result => .result,
@@ -7077,12 +7081,14 @@ const Emitter = struct {
                         .i32, .bool => ValType.i32,
                         .i64 => ValType.i64,
                         .f64 => ValType.f64,
+                        .big => prelude.gc_str_ref,
                     } };
                     try defs.append(ar, .{ .name = switch (b) {
                         .i32 => "box_i32",
                         .i64 => "box_i64",
                         .f64 => "box_f64",
                         .bool => "box_bool",
+                        .big => "box_big",
                     }, .kind = .{ .@"struct" = fs }, .super = super, .final = final });
                 },
             }
@@ -7971,6 +7977,39 @@ const Emitter = struct {
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = seq } } });
     }
 
+    /// Decision 1031 (2) — the `bigint` on the stack (its block's bytes, a
+    /// `$str`) into an `anyref` slot: in `$box_big`.
+    fn gcBoxBig(self: *Emitter) !void {
+        try self.emit(.{ .struct_new = self.gcTyIndex(.{ .box = .big }) });
+    }
+
+    /// The `?bigint` on the stack (a nullable `$str`) into an `anyref` slot:
+    /// absent stays the null reference, present goes in `$box_big`.
+    fn gcBoxBigOpt(self: *Emitter) !void {
+        const t = try self.gcTemp(.{ .ref = .bigint });
+        try self.emit(.{ .local_set = t });
+        var nul: Capture = .{};
+        self.open(&nul);
+        try self.emit(.{ .ref_null = .anyref });
+        const nul_seq = self.seal(&nul, .{ .value = .anyref });
+        var box: Capture = .{};
+        self.open(&box);
+        try self.emit(.{ .local_get = t });
+        try self.gcBoxBig();
+        const box_seq = self.seal(&box, .{ .value = .anyref });
+        try self.emit(.{ .local_get = t });
+        try self.emit(.ref_is_null);
+        try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = nul_seq }, .@"else" = .{ .seq = box_seq } } });
+    }
+
+    /// The `unknown` on the stack holds a `bigint` (its type proved it): the
+    /// block out of its `$box_big`.
+    fn gcUnboxBig(self: *Emitter) !void {
+        const k = self.gcTyIndex(.{ .box = .big });
+        try self.emit(.{ .ref_cast = ValType.def(k) });
+        try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
+    }
+
     fn gcBoxVt(self: *Emitter, b: GcTy.Box) ValType {
         return ValType.def(self.gcTyIndex(.{ .box = b }));
     }
@@ -8199,7 +8238,12 @@ const Emitter = struct {
             switch (t) {
                 .arr => |e| try self.gcUnkEqArm(vt, try self.gcUnkEqElems(t), if (e == .any and has_tuple) self.gcTy(.tuple) else null),
                 .record, .variant, .result => try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
-                .box => |b| if (b == .i64) try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
+                .box => |b| switch (b) {
+                    .i64 => try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
+                    // Decision 1031 (2) — two boxed `bigint`s: equal when the values are.
+                    .big => try self.gcUnkEqArm(vt, try self.gcUnkEqBig(k), null),
+                    else => {},
+                },
                 else => {},
             }
         }
@@ -8296,6 +8340,24 @@ const Emitter = struct {
         try self.gcLoop(loop_seq);
         try self.emit(one);
         try self.gcHelperFunc(name, &.{ wat.Builder.param("a", vt), wat.Builder.param("b", vt) }, .i32, &.{.{ .name = "i", .ty = .i32 }}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// Decision 1031 (2) — `__unk_eq_big(a, b)`: two `$box_big`s, equal when
+    /// their values are (std-wasm's `bigint.compare`), never by the blocks.
+    fn gcUnkEqBig(self: *Emitter, k: u16) anyerror![]const u8 {
+        const name = "__unk_eq_big";
+        if (!try self.gcHelperOnce(name)) return name;
+        const vt = ValType.def(k);
+        var c: Capture = .{};
+        self.open(&c);
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
+        }
+        try self.emitStdCall("bigint.compare");
+        try self.emit(opOf(.i32, "eqz"));
+        try self.gcHelperFunc(name, &.{ wat.Builder.param("a", vt), wat.Builder.param("b", vt) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
         return name;
     }
 
@@ -8441,6 +8503,17 @@ const Emitter = struct {
             try self.emit(.{ .ref_null = .anyref });
             return;
         }
+        // Decision 1031 (2) — a `bigint` (a union's member) in its own box; a
+        // `?bigint` boxed when present, the null reference when absent.
+        if (self.isBigintExpr(value)) {
+            try self.lowerCoerced(value, .{ .ref = .bigint });
+            return self.gcBoxBig();
+        }
+        if (self.isOptBigintExpr(value)) {
+            try self.lowerCoerced(value, .{ .ref = .bigint });
+            return self.gcBoxBigOpt();
+        }
+        if (self.ifBigintArm(value)) return self.gcFail("an if answering a bigint boxed as an unknown");
         if (try self.lowerBoxedIf(.{ .named = ast.unknown_type_name }, value, true, hint)) return;
         if (isCaseExpr(value)) {
             self.pending_case_box = true;
@@ -10623,17 +10696,24 @@ const Emitter = struct {
         // A printer may declare more types: the list grows while it is walked.
         while (i < self.gc_types.items.len) : (i += 1) {
             const t = self.gc_types.items[i];
+            const vt = ValType.def(@intCast(i + 1));
+            // Decision 1031 (2) — a boxed `bigint` prints its digits.
+            const big = t == .box and t.box == .big;
             const sym = switch (t) {
                 .record => |n| try self.gcDeclPrinter(n, null),
                 .variant => |v| try self.gcDeclPrinter(v.en, v.name),
+                .box => |b| if (b == .big) "" else continue,
                 else => continue,
             };
-            const vt = ValType.def(@intCast(i + 1));
             var hit: Capture = .{};
             self.open(&hit);
             try self.emit(.{ .local_get = "v" });
             try self.emit(.{ .ref_cast = vt });
-            try self.emit(.{ .call = sym });
+            if (big) {
+                try self.emit(.{ .struct_get = .{ .ty = @intCast(i + 1), .field = 0 } });
+                try self.emitStdCall("bigint.toString");
+                try self.emit(self.builder().helper(.print_str_raw));
+            } else try self.emit(.{ .call = sym });
             try self.emit(.@"return");
             const hit_seq = self.seal(&hit, .terminated);
             try self.emit(.{ .local_get = "v" });
@@ -26138,6 +26218,11 @@ const Emitter = struct {
             return;
         }
         if (vr.isRef() and fr.isRef()) {
+            // Decision 1031 (2) — a `bigint` in a type parameter's slot: in its box.
+            if (fr.ref == .unknown and vr.ref == .bigint) {
+                try self.lowerCoerced(value, vr);
+                return self.gcBoxBig();
+            }
             if (vr.eql(fr) or (fr.ref == .unknown and vr.ref != .unknown and vr.ref != .bytes and vr.ref != .cell and vr.ref != .bigint)) {
                 // A reference slot of a type parameter: the value prints by
                 // what it is — a string quoted, a record or variant by its
@@ -26491,7 +26576,8 @@ const Emitter = struct {
             // receiver's type argument where it is known (unboxed, cast).
             if (self.gcGenericFieldDecl(rty, ia.member)) |dr| if (dr == .ref and dr.ref == .unknown) {
                 const want = self.wasmTypeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } });
-                if (!(want == .ref and want.ref == .unknown)) try self.gcUnbox(want);
+                // A `bigint` there is in its `$box_big` (decision 1031 (2), `gcGenericArg`).
+                if (want == .ref and want.ref == .bigint) try self.gcUnboxBig() else if (!(want == .ref and want.ref == .unknown)) try self.gcUnbox(want);
             };
             return;
         }
@@ -30033,7 +30119,10 @@ const Emitter = struct {
         // A GC reference converts to nothing but itself: the lowering took a
         // value for another shape, which it has no GC form for yet.
         // A reference into an `unknown` slot is an upcast to `anyref`.
-        if (self.mode == .gc and from == .ref and from.ref == .bigint and to == .ref and to.ref == .unknown) return self.gcFail("a bigint into an unknown");
+        // Decision 1031 (2) — a `bigint` into an `unknown` slot goes in its own
+        // box (`$box_big`), so it is told from a string; read out of one, unboxed.
+        if (self.mode == .gc and from == .ref and from.ref == .bigint and to == .ref and to.ref == .unknown) return self.gcBoxBig();
+        if (self.mode == .gc and from == .ref and from.ref == .unknown and to == .ref and to.ref == .bigint) return self.gcUnboxBig();
         if (self.mode == .gc and from.isRef() and to == .ref and to.ref == .unknown) return;
         // An `unknown` read as the type a test proved it (`if (x is Frame) { val f: Frame = x }`)
         // is a downcast: a cast that traps where the test was wrong.

@@ -117,7 +117,11 @@ marshal arena (`$__gc_to_lin_big`: `$__gc_to_lin_str`, the block past its length
 (`$__lin_to_gc_big`: `4 + |L|` bytes; the `opt` forms a `?bigint`'s null as `0`), so the equalities and printers
 written after the functions (`gcEqValues`, the shape `n` of `gcGenShapePrinter`) call one with no locals of the
 caller; `bigint.parse` answers a `$result` (`gcBigintParse`), a `?bigint` prints `null` or its digits. A `bigint`
-into an `unknown` slot falls back (`emitConvert`: it would read as a string). The other GC gaps decision 1021 (10)
+in an `anyref` slot — a union's member, a type parameter's slot (`gcGenericArg`), `emitConvert` into an `unknown` —
+goes in a box of its own, `$box_big` (decision 1031 (2); `gcBoxBig`, a `?bigint` boxed when present by
+`gcBoxBigOpt`), so it is told from a string: read back where its type is known by `gcUnboxBig`, printed by its digits
+(an arm of `$__print_tagged_raw`, which `$__unk_print_raw` / `_q` end in) and compared by value (`$__unk_eq_big`, an
+arm of `$__unk_eq_ref`); wasm test `decision 1031 (2)`. The other GC gaps decision 1021 (10)
 names are lowered too: a `catch { e -> … }` binder is the `$result`'s payload unboxed to the error's repr
 (`gcBindResultErr`), `try f() catch h` into a declared `?T` answers the optional's repr (`gcTryCatchInto`), an `if`
 answering `null` into a boxed optional boxes arm by arm (`gcOptIf`) and into a reference takes the other arm's repr
@@ -128,7 +132,7 @@ that scalar (`gcCaseScalarArms`). Every other value is a word in
 linear memory (`alloc`, the bump heap, exhaustion a trap — decision 448 (4)). The module's types are built once the module is lowered, in groups that depend only on declarations
 (decision 1021 (9), `gcBuildTypes`): (i) the **prelude group**, `gc_prelude_defs`, emitted whole in every module that
 names a GC type at fixed indices (`GcPrelude`: `$str`, `$arr_i32`/`$arr_f64`/`$arr_any` (open), `$tuple`,
-`$box_i32` (open)/`$box_i64`/`$box_f64`/`$box_bool`, `$closure`, `$result`, `$exn`, `$task`, `$waiter`, `$hostn`,
+`$box_i32` (open)/`$box_i64`/`$box_f64`/`$box_bool`/`$box_big`, `$closure`, `$result`, `$exn`, `$task`, `$waiter`, `$hostn`,
 `$gen`, `$cell`; the closure call signatures are function types after the groups, structural); (ii) one group per
 strongly connected component of the **declared** types — records and payload-enum variants, an edge a field naming
 another (an array, an optional, a tuple, a `Result` erase to prelude types, a type parameter's slot to `anyref`) —,
