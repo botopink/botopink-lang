@@ -215,6 +215,14 @@ enum with payloads read by `at` / `first` is that enum's nullable reference (`ar
 `pub behavior` imported (`declaresPubBehavior`), which no export index lists without an associated default, so a
 parameter typed by it is the implementer's reference. Tests `wat: decision 1021 (10) ---- an element of an enum
 with payloads …` and the three after it.
+A `Result` whose `Ok` type is a type parameter of the function that answered it (`failed(string, …)` over
+`comptime t: type<T>`) is read by `unwrapOr` at its default's repr (`isUnboundTypeParamName`); a call through a
+record's function field answers its declared type (`gcReprOfExpr` over `gcCalleeFnType`); an array literal
+argument is built at the element type the parameter writes when that is an `i64` or a float (`gc_want_elem`:
+`[3, 9, 4]` against `xs: i64[]`); a call on a behavior-typed value answers, and has the `Result` shape of, the
+implementers' method (`resolvedCallSym` in `gcReprOfExpr` and `resultShapeOf`); a tuple compared against a
+tuple literal is the other side's reference (`lowerTupleEqAgainst`). Test `wat: decision 1021 (10) ---- a Result
+of a type-token-bound parameter, …`.
 
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
 linear memory, so `emitStdCall` marshals a GC module's call — each string or `Bytes` argument copied into the

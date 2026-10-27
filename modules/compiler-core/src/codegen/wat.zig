@@ -3956,6 +3956,10 @@ const Emitter = struct {
     /// type: each element goes into its slot boxed (`lowerAsUnknown`), so a
     /// reader of the element tells `2` from `"b"` (decision 150).
     expected_union_array: bool = false,
+    /// Decision 1021 (10) — the element repr an array literal argument is
+    /// built at when the parameter writes it (`xs: i64[]` against `[3, 9]`,
+    /// an `i64` in each box rather than the `i32` the literal reads as).
+    gc_want_elem: ?Repr = null,
     /// Inside a lifted lambda: a captured name the body assigns → its slot in
     /// the environment cell, written back after every assignment (cleared per
     /// fn).
@@ -7344,10 +7348,20 @@ const Emitter = struct {
                             if (dr.isRef() and !(dr == .ref and dr.ref == .unknown)) return dr;
                         }
                     }
-                    // A call through a function value answers its declared type.
-                    if (!cc.is_builtin and (cc.calleeExpr != null or (cc.receiver == null and self.locals.contains(self.resolveName(cc.callee))))) {
+                    // A call through a function value answers its declared type
+                    // — a record's function field included (`m.make()` over
+                    // `make: fn() -> Component<View>`).
+                    if (!cc.is_builtin and (cc.calleeExpr != null or (cc.receiver == null and self.locals.contains(self.resolveName(cc.callee))) or
+                        (cc.receiver != null and self.gcCalleeFnType(cc) != null)))
+                    {
                         if (self.gcValueCallRepr(cc)) |r| if (r.isRef()) return r;
                     }
+                    // A call on a behavior-typed value answers what the
+                    // implementers' method answers, which the dispatcher
+                    // returns (`store.get(key)` over `-> Result<string, string>`).
+                    if (cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(c.loc)) if (self.resolvedCallSym(cc, c.loc)) |sym| {
+                        if (self.fn_sigs.get(sym)) |sig| if (sig.result) |r| if (r.isRef()) return r;
+                    };
                     // `xs.map(f)`: an array of the class of what `f` answers
                     // (`gcMapTail`, what `gcArrayHof` builds).
                     if (cc.receiver) |recv| if (std.mem.eql(u8, cc.callee, "map") and cc.args.len == 1) if (lambdaAt(cc, 0)) |lam| {
@@ -7680,7 +7694,13 @@ const Emitter = struct {
         }
         var cls: Repr.Elem = undefined;
         var er: Repr = .i32;
-        if (al.elems.len == 0) {
+        const want_elem = self.gc_want_elem;
+        self.gc_want_elem = null;
+        if (want_elem) |we| if (al.elems.len > 0) {
+            er = we;
+            cls = gcElemClassOf(er);
+        };
+        if (want_elem != null and al.elems.len > 0) {} else if (al.elems.len == 0) {
             const w = self.gc_want orelse self.gcSpreadOnlyType(al) orelse return self.gcFail("an empty array literal of no known type");
             cls = if (w.isArrRef()) w.ref.arr else return self.gcFail("an empty array literal of no known type");
         } else {
@@ -7890,7 +7910,12 @@ const Emitter = struct {
     fn gcResultUnwrapOr(self: *Emitter, recv: ast.Expr, dflt: ?*ast.Expr) anyerror!void {
         const d = dflt orelse return self.gcFail("an unwrapOr with no default");
         const sh = self.resultShapeOf(recv) orelse return self.gcFail("an unwrapOr over a Result of no known shape");
-        const pr = self.reprOf(sh.ok orelse return self.gcFail("a Result of no known Ok type"));
+        const ok = sh.ok orelse return self.gcFail("a Result of no known Ok type");
+        // An `Ok` type that is a type parameter of the function that answered
+        // the `Result` (`failed<T>(comptime t: type<T>, …) -> Result<T, string>`
+        // called as `failed(string, "gone")`): the default is of that type, and
+        // says which.
+        const pr = if (self.isUnboundTypeParamName(ok) and !isNullLit(d.*)) self.wasmTypeOf(d.*) else self.reprOf(ok);
         const rr: Repr = .{ .ref = .result };
         const rti = self.gcTyIndex(.result);
         const tmp = try self.gcTemp(rr);
@@ -18105,6 +18130,11 @@ const Emitter = struct {
                     self.expected_union_array = true;
                 };
                 defer self.expected_union_array = false;
+                if (self.mode == .gc) if (ptref) |pt| if (isArrayLit(arg.value.*)) if (arrayElemTypeRef(pt)) |et| {
+                    const er = self.reprOf(et);
+                    if (er.isI64() or er.isFloat()) self.gc_want_elem = er;
+                };
+                defer self.gc_want_elem = null;
                 // A lambda written as an argument is written against the
                 // parameter's declared function type: `{ n -> n.startsWith(p) }`
                 // for `gone: fn(name: string) -> bool` has a string `n`.
@@ -20455,6 +20485,15 @@ const Emitter = struct {
         const inner = try ar.create(ast.TypeRef);
         inner.* = .{ .generic = .{ .name = ast.union_type_name, .args = members.items, .is_builtin = false } };
         return .{ .array = inner };
+    }
+
+    /// The element type a `T[]` / `array<T>` type writes.
+    fn arrayElemTypeRef(t: ast.TypeRef) ?ast.TypeRef {
+        return switch (eagerTypeRef(t)) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array")) g.args[0] else null,
+            else => null,
+        };
     }
 
     /// The element shape a `T[]` / `Array<T>` type spells, when it is an array.
@@ -24895,6 +24934,22 @@ const Emitter = struct {
         };
     }
 
+    /// Whether `t` names no type this module knows and no type parameter in
+    /// scope: a type parameter of another function, leaked through the type
+    /// that function answers (`Result<T, string>`).
+    fn isUnboundTypeParamName(self: *Emitter, t: ast.TypeRef) bool {
+        const n = switch (t) {
+            .named => |x| x,
+            else => return false,
+        };
+        if (isScalarName(n) or primKindOfName(n) != null) return false;
+        for ([_][]const u8{ "bool", "string", "unknown", "bytes", "bigint", "void", "Self" }) |k| if (std.mem.eql(u8, n, k)) return false;
+        if (std.mem.indexOfAny(u8, n, "/.") != null) return false;
+        if (self.records.contains(n) or self.enums.contains(n) or self.behavior_decls.contains(n)) return false;
+        if (isGenericParamName(n, self.owner_tparams, self.fn_tparams)) return false;
+        return true;
+    }
+
     fn isGenericParamName(n: []const u8, a: []const ast.GenericParam, b: []const ast.GenericParam) bool {
         for (a) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
         for (b) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
@@ -27610,6 +27665,13 @@ const Emitter = struct {
                     // another module declares included (`Shop(…).num()`): the
                     // method's own declared shape.
                     if (cc.receiver != null and !cc.is_builtin) if (self.recordMethodSym(cc, c.loc)) |sym| {
+                        if (self.result_shape_fns.get(sym)) |sh| break :blk sh;
+                        if (self.fn_ret_typerefs.get(sym)) |t| if (resultShapeOfTypeRef(t)) |sh| break :blk sh;
+                    };
+                    // A GC module's call on a behavior-typed value: the
+                    // implementers' declared shape, which the dispatcher
+                    // answers (`store.get(key).unwrapOr("none")`).
+                    if (self.mode == .gc and cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(c.loc) and self.calleeSymbol(cc, c.loc) == null) if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.result_shape_fns.get(sym)) |sh| break :blk sh;
                         if (self.fn_ret_typerefs.get(sym)) |t| if (resultShapeOfTypeRef(t)) |sh| break :blk sh;
                     };
@@ -30408,7 +30470,7 @@ const Emitter = struct {
         // An array literal whose elements share no type (`[Bob(…), Ann(…)]`
         // into a `Greeter[]`) is built as the array asked for (`gcArrayLit`).
         const from0 = self.wasmTypeOf(e);
-        const from = if (self.mode == .gc and want.isArrRef() and !from0.isRef() and isArrayLit(e)) want else from0;
+        const from = if (self.mode == .gc and want.isArrRef() and isArrayLit(e) and (!from0.isRef() or (self.gc_want_elem != null and from0.isArrRef()))) want else from0;
         // Front 164 s2 — a GC module's `case` asked for as another kind than
         // the enclosing function's answer (`val kids: i32[] = case c { … }` in
         // a function answering a word): its arms are coerced to what is asked.
@@ -30806,11 +30868,13 @@ const Emitter = struct {
         const elems = t.tupleElems() orelse return false;
         if (elems.len != lit.len or tupleLitElems(if (lit_left) rhs else lhs) != null) return false;
         const sym = try self.eqFnFor(t);
+        // The other side is a tuple: in a GC module its reference.
+        const other: Repr = if (self.mode == .gc) self.reprOf(t) else .i32;
         if (lit_left) {
             try self.lowerTupleLitAs(.{ .elems = lit }, elems);
-            try self.lowerCoerced(rhs, .i32);
+            try self.lowerCoerced(rhs, other);
         } else {
-            try self.lowerCoerced(lhs, .i32);
+            try self.lowerCoerced(lhs, other);
             try self.lowerTupleLitAs(.{ .elems = lit }, elems);
         }
         try self.emit(.{ .call = sym });

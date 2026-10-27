@@ -6087,3 +6087,56 @@ fn snapSection(ar: std.mem.Allocator, text: []const u8, case: []const u8) ![]con
     }
     return out.items;
 }
+
+test "wat: decision 1021 (10) ---- a Result of a type-token-bound parameter, a record's function field, an i64[] argument, a dispatched Result and a tuple compared against a literal in the GC lowering" {
+    // Each was a value the GC lowering typed a word: `failed(string, …)`'s
+    // `Result<T, string>` read through `unwrapOr("fallback")`; `m.make()`
+    // through a field of a function type; `[3, 9, 4]` against `xs: i64[]`;
+    // `store.get(key)` dispatched to implementers answering a `Result`;
+    // `pair(5) == #(5, true)` against a `#(u64, bool)`.
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn failed<T>(comptime t: type<T>, message: string) -> Result<T, string> {
+        \\    throw message;
+        \\}
+        \\
+        \\type Maker(make: fn() -> fn() -> string)
+        \\
+        \\fn sizeOf(xs: i64[], extra: u32) -> i32 {
+        \\    return xs.length;
+        \\}
+        \\
+        \\behavior Store {
+        \\    fn get(self: Self, key: string) -> Result<string, string>;
+        \\}
+        \\
+        \\type Memory(prefix: string) implement Store {
+        \\    fn get(self: Self, key: string) -> Result<string, string> {
+        \\        if (key == "") throw "empty key";
+        \\        return self.prefix + key;
+        \\    }
+        \\}
+        \\
+        \\fn read(store: Store, key: string) -> string {
+        \\    return store.get(key).unwrapOr("none");
+        \\}
+        \\
+        \\fn pair(n: u64) -> #(u64, bool) {
+        \\    return #(n, true);
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val s = failed(string, "gone");
+        \\    print(s.unwrapOr("fallback").length);
+        \\    val m = Maker(make: { -> { -> "made" } });
+        \\    val f: fn() -> string = m.make();
+        \\    print(f());
+        \\    print(sizeOf([3, 9, 4], 1));
+        \\    print(read(Memory(prefix: "m:"), "a"));
+        \\    print(read(Memory(prefix: "m:"), ""));
+        \\    print(pair(5) == #(5, true));
+        \\    print(pair(5) != #(6, true));
+        \\}
+    , "8\nmade\n3\nm:a\nnone\ntrue\ntrue\n");
+}
