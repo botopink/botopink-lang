@@ -105,7 +105,7 @@ does not own.
 `assertWasmGcRunLog(src, expected)` is `assertWasmRunLog` for a program the
 WasmGC lowering answers for (decision 1021 (10)): it fails when the module fell
 back to linear memory (no `(type $str (array (mut i8)))`). The `wat.zig` tests
-`decision 1021 (10) ---- …` run the programs of
+`decision 1021 (10) ---- …` and `decision 1027 ---- …` run the programs of
 `conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/cases/`
 with it, their RUN LOG the cases' answers on the other targets (a wasm
 conformance module does not run yet); `a case arm that assigns …` has no case

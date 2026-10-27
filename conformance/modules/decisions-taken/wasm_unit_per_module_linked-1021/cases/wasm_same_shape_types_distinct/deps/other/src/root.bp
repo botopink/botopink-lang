@@ -1,0 +1,11 @@
+//// A `Person` of the dependency's own, of the shape the consumer's `Person` has.
+
+pub type Person(name: string, age: i32)
+
+pub fn theirs(name: string, age: i32) -> unknown {
+    return Person(name: name, age: age);
+}
+
+pub fn isTheirs(v: unknown) -> bool {
+    return v is Person;
+}

@@ -4627,3 +4627,65 @@ test "wat: decision 1021 (10) ---- a case arm that assigns runs as a statement i
         \\}
     , "n4\nnegative\n");
 }
+
+// Decision 1027 — the same-package half of the cell `wasm_same_shape_types_distinct` (its
+// package-qualified half needs a dependency, its conformance case's): each declared group's
+// brand keeps two declarations of one shape two types.
+test "wat: decision 1027 ---- declarations of one shape stay distinct types (the brand)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Person(name: string, age: i32)
+        \\
+        \\type Vec(name: string, age: i32)
+        \\
+        \\type Box<T>(value: T)
+        \\
+        \\type Maybe<T> {
+        \\    None,
+        \\    Some(value: T),
+        \\}
+        \\
+        \\fn kind(v: unknown) -> string {
+        \\    val p = if (v is Person) "person" else "-";
+        \\    val q = if (v is Vec) "vec" else "-";
+        \\    val b = if (v is Box<unknown>) "box" else "-";
+        \\    val s = if (v is Maybe<unknown>) "maybe" else "-";
+        \\    return p + " " + q + " " + b + " " + s;
+        \\}
+        \\
+        \\fn label(v: unknown) -> string {
+        \\    return case v {
+        \\        Person { x ->
+        \\            "a person"
+        \\        }
+        \\        Vec { x ->
+        \\            "a vec"
+        \\        }
+        \\        Box<unknown> { x ->
+        \\            "a box"
+        \\        }
+        \\        _ {
+        \\            "other"
+        \\        }
+        \\    };
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val mine: unknown = Person(name: "Ana", age: 30);
+        \\    val vec: unknown = Vec(name: "Ana", age: 30);
+        \\    print(kind(mine));
+        \\    print(kind(vec));
+        \\    print(kind(Box(value: 1)));
+        \\    print(kind(Maybe.Some(value: 1)));
+        \\    print(label(mine));
+        \\    print(label(vec));
+        \\    print(label(Box(value: 1)));
+        \\    print(label(Maybe.Some(value: 1)));
+        \\    print(mine == vec);
+        \\    print(mine == Person(name: "Ana", age: 30));
+        \\    print(mine);
+        \\    print(vec);
+        \\}
+    , "person - - -\n- vec - -\n- - box -\n- - - maybe\na person\na vec\na box\nother\nfalse\ntrue\nPerson(name: \"Ana\", age: 30)\nVec(name: \"Ana\", age: 30)\n");
+}

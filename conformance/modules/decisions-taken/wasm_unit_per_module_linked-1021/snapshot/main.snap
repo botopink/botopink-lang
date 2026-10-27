@@ -55,3 +55,22 @@ out fig
 out ab
 out true
 out after
+== wasm_same_shape_types_distinct
+out person - - -
+out - vec - -
+out - - box -
+out - - - maybe
+out - - - -
+out a person
+out a vec
+out a box
+out other
+out other
+out true
+out false
+out false
+out false
+out true
+out Person(name: "Ana", age: 30)
+out Vec(name: "Ana", age: 30)
+out Person(name: "Ana", age: 30)

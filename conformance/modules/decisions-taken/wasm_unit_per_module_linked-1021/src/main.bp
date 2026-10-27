@@ -43,5 +43,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("gc_if_null_into_optional");
     runCase("gc_bigint_values");
     runCase("gc_string_ordering");
+    runCase("wasm_same_shape_types_distinct");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

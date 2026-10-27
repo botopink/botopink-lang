@@ -1,0 +1,1 @@
+{ "name": "wasm_same_shape_types_distinct", "dependencies": { "other": { "path": "deps/other" } } }
