@@ -44,6 +44,11 @@
 ////   what `load` answers: `Module` — run by `m.run()` (decisions 787, 792),
 ////   its tests by `` m.`test`() `` (decision 993) —, `Refused`, `Diagnostic`,
 ////   and what `` `test`() `` answers, `TestReport` and `TestCase`.
+//// - The crossing (decisions 550, 1035 (4), 1038 (3)): what crosses into and
+////   out of a comptime evaluation as JSON — `Json`, `jsonRead`, `jsonText`,
+////   `jsonSorted`, `jsonPretty`; the values a body hands back, `BuildValue`;
+////   the three replies `DecoratorReply`, `TemplateReply`, `BlockReply` with
+////   their encoders and readers; an error reply's text, `raisedText`.
 ////
 //// `setBuiltin`, `embed`, `fields` over a type,
 //// `optional` and `required` join it with the steps that build them.
@@ -551,6 +556,1229 @@ pub type Method = __Decl__Method;
 pub type Variant = __Decl__Variant;
 
 pub type HookNode = __HookNode;
+
+// ── The crossing (decisions 550, 1035 (4), 1038 (3)) ───────────────────────
+// What crosses into and out of a comptime evaluation is JSON in the core
+// unit's memory, read and written by the botopink code below and compiled by
+// the program's generator; the reply each evaluation answers is the one the
+// Erlang path answers (434 (5)), byte for byte once the compiler's
+// `COMPTIME REPLY` rendering (keys sorted, indented by two) has read it.
+//
+// - `Json`: one JSON document. `jsonRead` reads one (an integer stays an
+//   `i64`, a number with a fraction or an exponent is an `f64`); `jsonText`
+//   writes it compact, members in their order, strings escaped as OTP's
+//   `json:encode` escapes them; `jsonSorted` orders every object's members by
+//   their names' bytes; `jsonPretty` is the `COMPTIME REPLY` section's text.
+// - `BuildValue`: a value a body computed at build, as the reply carries it —
+//   `null`, a boolean, an integer, a float, a string, an array, a tuple, a
+//   record, an enum variant without payload (an atom), a function value (its
+//   index among the body's function values) and a resource (its text).
+// - The three replies: `DecoratorReply` (`ok` / `fail` / `error`, each with the
+//   lines the body printed), `TemplateReply` (`code` / `ast` / `value` /
+//   `capture` / `custom` with the `build` index and the `notes`, `need`,
+//   `fail`, `error`) and `BlockReply` (`value` / `error`). A template's value
+//   writes a tuple as `{"$tuple": […]}` and a variant as its name; a block's
+//   lifts every kind into its own object (`{"tuple": …}`, `{"record": …}`,
+//   `{"atom": …}`, `{"float": …}`, `{"fn": …}`, `{"resource": …}`).
+// - `raisedText(class, reason)`: an error reply's `message`, the raise as
+//   `Class:Reason`'s `{Class,Reason}` term written by `~p` (std-wasm's
+//   `io_lib`, no line breaking) — what the compiler's matchers read
+//   (`{error,badarith}`, the division by zero, an unseeded draw,
+//   `run-in-build`). `divisionByZero`, `noMatch` and `badArith` are the
+//   reasons a GC body raises through an explicit check where its wasm
+//   instruction would trap (1038 (3)); an index out of range answers `null`,
+//   as `Array.at` does, and raises nothing.
+
+pub type Json {
+    JsonNull,
+    JsonBool(value: bool),
+    JsonInt(value: i64),
+    JsonFloat(value: f64),
+    JsonString(value: string),
+    JsonArray(items: Json[]),
+    JsonObject(fields: JsonField[]),
+}
+
+pub type JsonField(key: string, value: Json)
+
+pub type BuildValue {
+    NullValue,
+    BoolValue(value: bool),
+    IntValue(value: i64),
+    FloatValue(value: f64),
+    StringValue(value: string),
+    ArrayValue(items: BuildValue[]),
+    TupleValue(items: BuildValue[]),
+    RecordValue(fields: BuildField[]),
+    AtomValue(name: string),
+    FnValue(index: ?i64),
+    ResourceValue(text: string),
+}
+
+pub type BuildField(name: string, value: BuildValue)
+
+// One located call an error crossed (decision 532), innermost first.
+pub type Frame(file: string, line: i64, col: i64)
+
+// A decorator's outputs, in call order (decision 216): `kind` one of `emit`,
+// `member`, `memberFn`, `meta`, `assoc`, `typedMeta`, `compile`,
+// `implement`; the fields its kind writes, the others `null`.
+pub type Contribution(
+    kind: string,
+    source: ?string,
+    key: ?string,
+    value: ?string,
+    name: ?string,
+    index: ?i64,
+    data: ?Json,
+)
+
+// Where a decorator's `fail` points: nowhere, a `Span`, or the argument at
+// `index` (decision 364 (3)).
+pub type FailSpan {
+    NoSpan,
+    SpanAt(start: i64, end: i64, line: i64),
+    ArgAt(index: i64),
+}
+
+pub type DecoratorReply {
+    DecoratorOk(contributions: Contribution[], printed: ?string),
+    DecoratorFail(message: string, span: FailSpan, printed: ?string),
+    DecoratorError(message: string, frames: Frame[], printed: ?string),
+}
+
+// What a template's body returned: `build(src)` / `code(src)` (`code`),
+// `ast(node)`, `expr(v)` (`value`), the capture itself (`capture`), `custom`.
+pub type TemplateAnswer {
+    CodeAnswer(source: string),
+    AstAnswer(node: BuildValue),
+    ValueAnswer(value: BuildValue),
+    CaptureAnswer(param: string),
+    CustomAnswer(source: string, tree: BuildValue),
+}
+
+// A tag a template asks the compiler to run (decision 302): its kind, name,
+// attributes and the answer it is (`-1` for a fresh one).
+pub type TagRequest(kind: string, name: string, attrs: TagAttr[], answer: i64)
+
+pub type TagAttr(name: string, value: BuildValue)
+
+pub type TemplateReply {
+    TemplateDone(answer: TemplateAnswer, build: ?i64, notes: string[]),
+    TemplateNeed(request: TagRequest, span: BuildValue),
+    TemplateFail(message: string, param: ?string, span: BuildValue),
+    TemplateError(message: string, frames: ?Frame[]),
+}
+
+pub type BlockReply {
+    BlockValue(value: BuildValue, printed: ?string),
+    BlockError(message: string, frames: Frame[], printed: ?string),
+}
+
+// ── writing JSON ──────────────────────────────────────────────────────────────
+
+// `j` compact, members in their order: what the evaluation hands the
+// compiler.
+pub fn jsonText(j: Json) -> string {
+    return case j {
+        JsonNull -> "null";
+        JsonBool(value: b) -> boolText(b);
+        JsonInt(value: n) -> n.toString();
+        JsonFloat(value: x) -> x.toString();
+        JsonString(value: s) -> quoteJson(s, true);
+        JsonArray(items: _) -> arrayText(itemsOf(j));
+        JsonObject(fields: _) -> objectText(fieldsOf(j));
+    };
+}
+
+// `j` with every object's members ordered by their names' bytes, at every
+// depth (`comptime/runtime/reply_order.zig`).
+pub fn jsonSorted(j: Json) -> Json {
+    return case j {
+        JsonArray(items: _) -> Json.JsonArray(items: sortedItems(itemsOf(j)));
+        JsonObject(fields: _) -> Json.JsonObject(fields: sortFields(sortedMembers(fieldsOf(j))));
+        _ -> j;
+    };
+}
+
+// `j` as the `COMPTIME REPLY` section shows it: indented by two, one member
+// or item a line, an empty array `[]` and an empty object `{}`.
+pub fn jsonPretty(j: Json) -> string {
+    return prettyAt(j, "");
+}
+
+fn prettyAt(j: Json, indent: string) -> string {
+    return case j {
+        JsonArray(items: _) -> prettyArray(itemsOf(j), indent);
+        JsonObject(fields: _) -> prettyObject(fieldsOf(j), indent);
+        JsonString(value: s) -> quoteJson(s, false);
+        _ -> jsonText(j);
+    };
+}
+
+fn boolText(b: bool) -> string {
+    if (b) return "true";
+    return "false";
+}
+
+// A JSON string literal: `"` and `\` escaped, `\n` `\r` `\t` `\b` `\f`, any
+// other control character as `\u00XX` — upper-case hex as OTP's
+// `json:encode` writes it (`upper`), lower-case as the compiler's renderer
+// does — and every other code point as it is.
+fn quoteJson(s: string, upper: bool) -> string {
+    val cps = codePointsOf(s);
+    val texts = textsOf(s);
+    var out: string[] = ["\""];
+    var i = 0;
+    while (i < cps.length) {
+        out.push(jsonChar(cps.at(i) ?? 0, texts.at(i) ?? "", upper));
+        i = i + 1;
+    }
+    out.push("\"");
+    return out.join("");
+}
+
+fn jsonChar(c: i32, text: string, upper: bool) -> string {
+    if (c == 34) return "\\\"";
+    if (c == 92) return "\\\\";
+    if (c == 10) return "\\n";
+    if (c == 13) return "\\r";
+    if (c == 9) return "\\t";
+    if (c == 8) return "\\b";
+    if (c == 12) return "\\f";
+    if (c < 32)
+        return "\\u00" + hexDigit(c / 16, upper) + hexDigit(c % 16, upper);
+    return text;
+}
+
+fn hexDigit(d: i32, upper: bool) -> string {
+    val digits = if (upper) "0123456789ABCDEF" else "0123456789abcdef";
+    return textsOf(digits).at(d) ?? "";
+}
+
+// Insertion by name: the members of `fs` ordered by their names' code points,
+// which is their UTF-8 bytes' order; two of one name keep theirs.
+fn sortFields(fs: JsonField[]) -> JsonField[] {
+    var out: JsonField[] = [];
+    var i = 0;
+    while (i < fs.length) {
+        val f = fs.at(i) ?? JsonField(key: "", value: Json.JsonNull);
+        var next: JsonField[] = [];
+        var placed = false;
+        var k = 0;
+        while (k < out.length) {
+            val g = out.at(k) ?? f;
+            if (!placed && textBefore(f.key, g.key)) {
+                next.push(f);
+                placed = true;
+            }
+            next.push(g);
+            k = k + 1;
+        }
+        if (!placed) next.push(f);
+        out = next;
+        i = i + 1;
+    }
+    return out;
+}
+
+// Whether `a` sorts strictly before `b`, code point by code point.
+fn textBefore(a: string, b: string) -> bool {
+    val x = codePointsOf(a);
+    val y = codePointsOf(b);
+    var i = 0;
+    var answer = x.length < y.length;
+    var decided = false;
+    while (!decided && i < x.length && i < y.length) {
+        val p = x.at(i) ?? 0;
+        val q = y.at(i) ?? 0;
+        if (p != q) {
+            answer = p < q;
+            decided = true;
+        }
+        i = i + 1;
+    }
+    return answer;
+}
+
+// ── reading JSON ──────────────────────────────────────────────────────────────
+
+type Reading(cps: i32[], texts: string[])
+
+type ReadJson(value: Json, next: i32)
+
+type ReadText(text: string, next: i32)
+
+// One RFC 8259 document. An integer without a fraction or an exponent is a
+// `JsonInt`; any other number a `JsonFloat`. An error names the code point
+// index where reading stopped.
+pub fn jsonRead(text: string) -> Result<Json, string> {
+    val doc = Reading(cps: codePointsOf(text), texts: textsOf(text));
+    val read = try readJson(doc, skipSpace(doc, 0));
+    val end = skipSpace(doc, read.next);
+    if (end < doc.cps.length) throw readProblem(end, "text after the value");
+    return read.value;
+}
+
+fn cpAt(doc: Reading, i: i32) -> i32 {
+    return doc.cps.at(i) ?? (0 - 1);
+}
+
+fn skipSpace(doc: Reading, start: i32) -> i32 {
+    var i = start;
+    while (cpAt(doc, i) == 32
+        || cpAt(doc, i) == 9
+        || cpAt(doc, i) == 10
+        || cpAt(doc, i) == 13) {
+        i = i + 1;
+    }
+    return i;
+}
+
+fn readProblem(at: i32, what: string) -> string {
+    return ["compiler.jsonRead: ", what, " at ", at.toString()].join("");
+}
+
+fn readJson(doc: Reading, i: i32) -> Result<ReadJson, string> {
+    val c = cpAt(doc, i);
+    if (c == 123) return try readObject(doc, skipSpace(doc, i + 1));
+    if (c == 91) return try readArray(doc, skipSpace(doc, i + 1));
+    if (c == 34) {
+        val s = try readString(doc, i);
+        return ReadJson(value: Json.JsonString(value: s.text), next: s.next);
+    }
+    if (c == 116)
+        return try readWord(doc, i, "true", Json.JsonBool(value: true));
+    if (c == 102)
+        return try readWord(doc, i, "false", Json.JsonBool(value: false));
+    if (c == 110) return try readWord(doc, i, "null", Json.JsonNull);
+    if (c == 45 || (c >= 48 && c <= 57)) return try readNumber(doc, i);
+    throw readProblem(i, "no JSON value");
+}
+
+fn readWord(doc: Reading, i: i32, word: string, value: Json) -> Result<ReadJson, string> {
+    val want = textsOf(word);
+    var ok = true;
+    var k = 0;
+    while (k < want.length) {
+        if ((doc.texts.at(i + k) ?? "") != (want.at(k) ?? "")) ok = false;
+        k = k + 1;
+    }
+    if (!ok) throw readProblem(i, "no JSON value");
+    return ReadJson(value: value, next: i + want.length);
+}
+
+fn readNumber(doc: Reading, i: i32) -> Result<ReadJson, string> {
+    var k = i;
+    var whole = true;
+    var go = true;
+    while (go) {
+        val c = cpAt(doc, k);
+        if (c >= 48 && c <= 57 || c == 45 && k == i) k = k + 1 else if (c == 46
+            || c == 101
+            || c == 69
+            || c == 43
+            || c == 45) {
+            whole = false;
+            k = k + 1;
+        } else go = false;
+    }
+    val numeral = doc.texts.slice(i, k).join("");
+    if (whole) {
+        val n = numeral.parseInt();
+        if (n.isError()) throw readProblem(i, "a number out of range");
+        return ReadJson(value: Json.JsonInt(value: n.unwrapOr(noInt())), next: k);
+    }
+    val x = numeral.parseFloat();
+    if (x.isError()) throw readProblem(i, "a malformed number");
+    return ReadJson(value: Json.JsonFloat(value: x.unwrapOr(0.0)), next: k);
+}
+
+fn readString(doc: Reading, i: i32) -> Result<ReadText, string> {
+    var out: string[] = [];
+    var k = i + 1;
+    var problem = "";
+    var done = false;
+    while (!done) {
+        val c = cpAt(doc, k);
+        if (c < 0) {
+            problem = readProblem(k, "an unterminated string");
+            done = true;
+        } else if (c == 34) done = true else if (c == 92) {
+            val e = cpAt(doc, k + 1);
+            if (e == 117) {
+                out.push(codepointText(hexValue(doc, k + 2)));
+                k = k + 6;
+            } else {
+                out.push(escapedChar(e));
+                k = k + 2;
+            }
+        } else {
+            out.push(doc.texts.at(k) ?? "");
+            k = k + 1;
+        }
+    }
+    if (problem != "") throw problem;
+    return ReadText(text: out.join(""), next: k + 1);
+}
+
+fn escapedChar(e: i32) -> string {
+    if (e == 110) return "\n";
+    if (e == 114) return "\r";
+    if (e == 116) return "\t";
+    if (e == 98) return codepointText(8);
+    if (e == 102) return codepointText(12);
+    return codepointText(e);
+}
+
+// The four hex digits at `i`, as a code point (no surrogate pair: a reply's
+// `\u` escapes are control characters).
+fn hexValue(doc: Reading, i: i32) -> i32 {
+    var v = 0;
+    var k = 0;
+    while (k < 4) {
+        val c = cpAt(doc, i + k);
+        val d = if (c >= 97) c - 87 else if (c >= 65) c - 55 else c - 48;
+        v = v * 16 + d;
+        k = k + 1;
+    }
+    return v;
+}
+
+fn readArray(doc: Reading, start: i32) -> Result<ReadJson, string> {
+    var items: Json[] = [];
+    var i = start;
+    if (cpAt(doc, i) == 93)
+        return ReadJson(value: Json.JsonArray(items: items), next: i + 1);
+    var more = true;
+    while (more) {
+        val item = readJson(doc, i);
+        if (item.isError()) {
+            more = false;
+            i = 0 - 1;
+        } else {
+            val r = item.unwrapOr(ReadJson(value: Json.JsonNull, next: 0));
+            items.push(r.value);
+            val after = skipSpace(doc, r.next);
+            if (cpAt(doc, after) == 44) i = skipSpace(doc, after + 1) else {
+                more = false;
+                i = if (cpAt(doc, after) == 93) after + 1 else 0 - 1 - after;
+            }
+        }
+    }
+    if (i < 0) throw readProblem(0 - 1 - i, "a malformed array");
+    return ReadJson(value: Json.JsonArray(items: items), next: i);
+}
+
+fn readObject(doc: Reading, start: i32) -> Result<ReadJson, string> {
+    var fields: JsonField[] = [];
+    var i = start;
+    if (cpAt(doc, i) == 125)
+        return ReadJson(value: Json.JsonObject(fields: fields), next: i + 1);
+    var more = true;
+    while (more) {
+        val member = readMember(doc, i);
+        if (member.isError()) {
+            more = false;
+            i = 0 - 1;
+        } else {
+            val r = member.unwrapOr(ReadMember(field: JsonField(key: "", value: Json.JsonNull), next: 0));
+            fields.push(r.field);
+            val after = skipSpace(doc, r.next);
+            if (cpAt(doc, after) == 44) i = skipSpace(doc, after + 1) else {
+                more = false;
+                i = if (cpAt(doc, after) == 125) after + 1 else 0 - 1 - after;
+            }
+        }
+    }
+    if (i < 0) throw readProblem(0 - 1 - i, "a malformed object");
+    return ReadJson(value: Json.JsonObject(fields: fields), next: i);
+}
+
+type ReadMember(field: JsonField, next: i32)
+
+fn readMember(doc: Reading, i: i32) -> Result<ReadMember, string> {
+    if (cpAt(doc, i) != 34) throw readProblem(i, "a member without a name");
+    val key = try readString(doc, i);
+    val colon = skipSpace(doc, key.next);
+    if (cpAt(doc, colon) != 58)
+        throw readProblem(colon, "a member without `:`");
+    val value = try readJson(doc, skipSpace(doc, colon + 1));
+    return ReadMember(field: JsonField(key: key.text, value: value.value), next: value.next);
+}
+
+// ── reading a decoded document ────────────────────────────────────────────────
+
+// The member `key` of an object, `null` when there is none.
+pub fn jsonField(j: Json, key: string) -> ?Json {
+    val fs = fieldsOf(j);
+    var hit: ?Json = null;
+    var i = fs.length - 1;
+    while (i >= 0) {
+        val f = fs.at(i) ?? JsonField(key: "", value: Json.JsonNull);
+        if (f.key == key) hit = f.value;
+        i = i - 1;
+    }
+    return hit;
+}
+
+fn textField(j: Json, key: string) -> ?string {
+    val v = jsonField(j, key) ?? Json.JsonNull;
+    return case v {
+        JsonString(value: s) -> s;
+        _ -> null;
+    };
+}
+
+fn intField(j: Json, key: string) -> ?i64 {
+    val v = jsonField(j, key) ?? Json.JsonNull;
+    return case v {
+        JsonInt(value: n) -> n;
+        _ -> null;
+    };
+}
+
+fn itemsOf(j: Json) -> Json[] {
+    return case j {
+        JsonArray(items: xs) -> xs;
+        _ -> [];
+    };
+}
+
+fn fieldsOf(j: Json) -> JsonField[] {
+    return case j {
+        JsonObject(fields: fs) -> fs;
+        _ -> [];
+    };
+}
+
+// ── build values ──────────────────────────────────────────────────────────────
+
+// `v` as a template's reply writes it (`'__bp_json'/1`): `null`, a tuple as
+// `{"$tuple": […]}`, a record as an object, a variant as its name.
+pub fn templateValueJson(v: BuildValue) -> Json {
+    return case v {
+        NullValue -> Json.JsonNull;
+        BoolValue(value: b) -> Json.JsonBool(value: b);
+        IntValue(value: n) -> Json.JsonInt(value: n);
+        FloatValue(value: x) -> Json.JsonFloat(value: x);
+        StringValue(value: s) -> Json.JsonString(value: s);
+        ArrayValue(items: _) -> Json.JsonArray(items: templateItems(valueItems(v)));
+        TupleValue(items: _) -> tagged("$tuple", Json.JsonArray(items: templateItems(valueItems(v))));
+        RecordValue(fields: _) -> Json.JsonObject(fields: templateFields(valueFields(v)));
+        AtomValue(name: a) -> Json.JsonString(value: a);
+        FnValue(index: _) -> Json.JsonNull;
+        ResourceValue(text: t) -> Json.JsonString(value: t);
+    };
+}
+
+// The template reading of a reply's JSON value: an object holding only
+// `$tuple` is a tuple, any other object a record, a string a string.
+pub fn templateValueOf(j: Json) -> BuildValue {
+    return case j {
+        JsonNull -> BuildValue.NullValue;
+        JsonBool(value: b) -> BuildValue.BoolValue(value: b);
+        JsonInt(value: n) -> BuildValue.IntValue(value: n);
+        JsonFloat(value: x) -> BuildValue.FloatValue(value: x);
+        JsonString(value: s) -> BuildValue.StringValue(value: s);
+        JsonArray(items: _) -> BuildValue.ArrayValue(items: templateValuesOf(itemsOf(j)));
+        JsonObject(fields: _) -> templateObjectOf(fieldsOf(j));
+    };
+}
+
+fn templateObjectOf(fs: JsonField[]) -> BuildValue {
+    val only = fs.at(0) ?? JsonField(key: "", value: Json.JsonNull);
+    if (fs.length == 1 && only.key == "$tuple")
+        return BuildValue.TupleValue(items: itemsOf(only.value).map({ x -> templateValueOf(x) }));
+    return BuildValue.RecordValue(fields: fs.map({ f -> BuildField(name: f.key, value: templateValueOf(f.value)) }));
+}
+
+// Whether `v` holds a function value anywhere: OTP's `json:encode` refuses
+// one, so a template that answers one replies with that refusal.
+fn holdsFn(v: BuildValue) -> bool {
+    return case v {
+        FnValue(index: _) -> true;
+        ArrayValue(items: _) -> anyHoldsFn(valueItems(v));
+        TupleValue(items: _) -> anyHoldsFn(valueItems(v));
+        RecordValue(fields: _) -> anyHoldsFn(valueFields(v).map({ f -> f.value }));
+        _ -> false;
+    };
+}
+
+// `v` as a block's reply lifts it (`'__bp_lift'/2`): every kind JSON has no
+// form for in an object of its own.
+pub fn blockValueJson(v: BuildValue) -> Json {
+    return case v {
+        NullValue -> Json.JsonNull;
+        BoolValue(value: b) -> Json.JsonBool(value: b);
+        IntValue(value: n) -> Json.JsonInt(value: n);
+        FloatValue(value: x) -> tagged("float", Json.JsonFloat(value: x));
+        StringValue(value: s) -> Json.JsonString(value: s);
+        ArrayValue(items: _) -> Json.JsonArray(items: blockItems(valueItems(v)));
+        TupleValue(items: _) -> tagged("tuple", Json.JsonArray(items: blockItems(valueItems(v))));
+        RecordValue(fields: _) -> tagged("record", Json.JsonObject(fields: blockFields(valueFields(v))));
+        AtomValue(name: a) -> tagged("atom", Json.JsonString(value: a));
+        FnValue(index: i) -> tagged("fn", optionalInt(i));
+        ResourceValue(text: t) -> tagged("resource", Json.JsonString(value: t));
+    };
+}
+
+// The block reading of a reply's JSON value (`block_eval.readValue`).
+pub fn blockValueOf(j: Json) -> BuildValue {
+    return case j {
+        JsonNull -> BuildValue.NullValue;
+        JsonBool(value: b) -> BuildValue.BoolValue(value: b);
+        JsonInt(value: n) -> BuildValue.IntValue(value: n);
+        JsonFloat(value: x) -> BuildValue.FloatValue(value: x);
+        JsonString(value: s) -> BuildValue.StringValue(value: s);
+        JsonArray(items: _) -> BuildValue.ArrayValue(items: blockValuesOf(itemsOf(j)));
+        JsonObject(fields: _) -> blockObjectOf(fieldsOf(j));
+    };
+}
+
+fn blockObjectOf(fs: JsonField[]) -> BuildValue {
+    val only = fs.at(0) ?? JsonField(key: "", value: Json.JsonNull);
+    val inner = only.value;
+    if (only.key == "float")
+        return BuildValue.FloatValue(value: floatOf(inner));
+    if (only.key == "tuple")
+        return BuildValue.TupleValue(items: itemsOf(inner).map({ x -> blockValueOf(x) }));
+    if (only.key == "record")
+        return BuildValue.RecordValue(fields: fieldsOf(inner).map({ f -> BuildField(name: f.key, value: blockValueOf(f.value)) }));
+    if (only.key == "atom") return BuildValue.AtomValue(name: stringOf(inner));
+    if (only.key == "fn") return BuildValue.FnValue(index: intOf(inner));
+    return BuildValue.ResourceValue(text: stringOf(inner));
+}
+
+fn tagged(tag: string, value: Json) -> Json {
+    return Json.JsonObject(fields: [JsonField(key: tag, value: value)]);
+}
+
+// The `i64` zero an absent integer reads as.
+fn noInt() -> i64 {
+    return 0;
+}
+
+fn optionalInt(n: ?i64) -> Json {
+    if (n != null) return Json.JsonInt(value: n);
+    return Json.JsonNull;
+}
+
+fn optionalText(s: ?string) -> Json {
+    if (s != null) return Json.JsonString(value: s);
+    return Json.JsonNull;
+}
+
+fn floatOf(j: Json) -> f64 {
+    return case j {
+        JsonFloat(value: x) -> x;
+        JsonInt(value: n) -> n.toF64();
+        _ -> 0.0;
+    };
+}
+
+fn stringOf(j: Json) -> string {
+    return case j {
+        JsonString(value: s) -> s;
+        _ -> "";
+    };
+}
+
+fn intOf(j: Json) -> ?i64 {
+    return case j {
+        JsonInt(value: n) -> n;
+        _ -> null;
+    };
+}
+
+// ── the replies ───────────────────────────────────────────────────────────────
+
+// An object of the members whose value is not absent, ordered by name.
+fn replyObject(fields: JsonField[]) -> Json {
+    return jsonSorted(Json.JsonObject(fields: fields));
+}
+
+fn withPrinted(fields: JsonField[], printed: ?string) -> JsonField[] {
+    var out: JsonField[] = fields.map({ f -> f });
+    if (printed != null)
+        out.push(JsonField(key: "printed", value: Json.JsonString(value: printed)));
+    return out;
+}
+
+fn framesJson(frames: Frame[]) -> Json {
+    return Json.JsonArray(items: frames.map({ f -> Json.JsonArray(items: [Json.JsonString(value: f.file), Json.JsonInt(value: f.line), Json.JsonInt(value: f.col)]) }));
+}
+
+fn framesOf(j: Json) -> Frame[] {
+    return itemsOf(j).map({ f -> frameOf(itemsOf(f)) });
+}
+
+fn frameOf(parts: Json[]) -> Frame {
+    return Frame(file: stringOf(parts.at(0) ?? Json.JsonNull), line: wholeOf(parts.at(1) ?? Json.JsonNull), col: wholeOf(parts.at(2) ?? Json.JsonNull));
+}
+
+// An integer's value, `0` for any other kind.
+fn wholeOf(j: Json) -> i64 {
+    return case j {
+        JsonInt(value: n) -> n;
+        _ -> noInt();
+    };
+}
+
+pub fn decoratorReplyJson(r: DecoratorReply) -> Json {
+    return case r {
+        DecoratorOk(contributions: _, printed: p) -> replyObject(withPrinted([
+            JsonField(key: "kind", value: Json.JsonString(value: "ok")),
+            JsonField(key: "contributions", value: Json.JsonArray(items: contributionsJson(decoratorContributions(r)))),
+        ], p));
+        DecoratorFail(message: m, span: s, printed: p) -> replyObject(withPrinted([
+            JsonField(key: "kind", value: Json.JsonString(value: "fail")),
+            JsonField(key: "message", value: Json.JsonString(value: m)),
+            JsonField(key: "span", value: failSpanJson(s)),
+        ], p));
+        DecoratorError(message: m, frames: _, printed: p) -> replyObject(withPrinted([
+            JsonField(key: "kind", value: Json.JsonString(value: "error")),
+            JsonField(key: "message", value: Json.JsonString(value: m)),
+            JsonField(key: "frames", value: framesJson(decoratorFrames(r))),
+        ], p));
+    };
+}
+
+fn contributionsJson(cs: Contribution[]) -> Json[] {
+    return cs.map({ c -> contributionJson(c) });
+}
+
+fn contributionJson(c: Contribution) -> Json {
+    var fs: JsonField[] = [JsonField(key: "kind", value: Json.JsonString(value: c.kind))];
+    if (c.source != null)
+        fs.push(JsonField(key: "source", value: optionalText(c.source)));
+    if (c.key != null)
+        fs.push(JsonField(key: "key", value: optionalText(c.key)));
+    if (c.value != null)
+        fs.push(JsonField(key: "value", value: optionalText(c.value)));
+    if (c.name != null)
+        fs.push(JsonField(key: "name", value: optionalText(c.name)));
+    if (c.index != null)
+        fs.push(JsonField(key: "index", value: optionalInt(c.index)));
+    if (c.data != null)
+        fs.push(JsonField(key: "data", value: c.data ?? Json.JsonNull));
+    return replyObject(fs);
+}
+
+fn failSpanJson(s: FailSpan) -> Json {
+    return case s {
+        NoSpan -> Json.JsonNull;
+        SpanAt(start: a, end: b, line: l) -> replyObject([
+            JsonField(key: "start", value: Json.JsonInt(value: a)),
+            JsonField(key: "end", value: Json.JsonInt(value: b)),
+            JsonField(key: "line", value: Json.JsonInt(value: l)),
+        ]);
+        ArgAt(index: i) -> replyObject([JsonField(key: "arg", value: Json.JsonInt(value: i))]);
+    };
+}
+
+pub fn decoratorReplyOf(j: Json) -> DecoratorReply {
+    val kind = textField(j, "kind") ?? "";
+    val printed = textField(j, "printed");
+    if (kind == "ok")
+        return DecoratorReply.DecoratorOk(contributions: itemsOf(jsonField(j, "contributions") ?? Json.JsonNull).map({ c -> contributionOf(c) }), printed: printed);
+    if (kind == "fail")
+        return DecoratorReply.DecoratorFail(message: textField(j, "message") ?? "", span: failSpanOf(jsonField(j, "span") ?? Json.JsonNull), printed: printed);
+    return DecoratorReply.DecoratorError(message: textField(j, "message") ?? "", frames: framesOf(jsonField(j, "frames") ?? Json.JsonNull), printed: printed);
+}
+
+fn contributionOf(j: Json) -> Contribution {
+    return Contribution(
+        kind: textField(j, "kind") ?? "",
+        source: textField(j, "source"),
+        key: textField(j, "key"),
+        value: textField(j, "value"),
+        name: textField(j, "name"),
+        index: intField(j, "index"),
+        data: jsonField(j, "data"),
+    );
+}
+
+fn failSpanOf(j: Json) -> FailSpan {
+    val arg = intField(j, "arg");
+    if (arg != null) return FailSpan.ArgAt(index: arg);
+    val start = intField(j, "start");
+    if (start != null)
+        return FailSpan.SpanAt(start: start, end: wholeOf(jsonField(j, "end") ?? Json.JsonNull), line: wholeOf(jsonField(j, "line") ?? Json.JsonNull));
+    return FailSpan.NoSpan;
+}
+
+pub fn templateReplyJson(r: TemplateReply) -> Json {
+    return case r {
+        TemplateDone(answer: a, build: b, notes: _) -> templateDoneJson(a, b, templateNotes(r));
+        TemplateNeed(request: q, span: s) -> replyObject([
+            JsonField(key: "kind", value: Json.JsonString(value: "need")),
+            JsonField(key: "decl", value: tagRequestJson(q)),
+            JsonField(key: "span", value: templateValueJson(s)),
+        ]);
+        TemplateFail(message: m, param: p, span: s) -> replyObject([
+            JsonField(key: "kind", value: Json.JsonString(value: "fail")),
+            JsonField(key: "message", value: Json.JsonString(value: m)),
+            JsonField(key: "param", value: optionalText(p)),
+            JsonField(key: "span", value: templateValueJson(s)),
+        ]);
+        TemplateError(message: m, frames: _) -> replyObject(errorFields(m, templateFrames(r)));
+    };
+}
+
+fn errorFields(message: string, frames: ?Frame[]) -> JsonField[] {
+    var out: JsonField[] = [
+        JsonField(key: "kind", value: Json.JsonString(value: "error")),
+        JsonField(key: "message", value: Json.JsonString(value: message)),
+    ];
+    if (frames != null)
+        out.push(JsonField(key: "frames", value: framesJson(frames)));
+    return out;
+}
+
+fn templateDoneJson(a: TemplateAnswer, build: ?i64, notes: string[]) -> Json {
+    val unsupported = case a {
+        ValueAnswer(value: v) -> holdsFn(v);
+        AstAnswer(node: v) -> holdsFn(v);
+        CustomAnswer(source: _, tree: v) -> holdsFn(v);
+        _ -> false;
+    };
+    if (unsupported)
+        return replyObject(errorFields(raisedText("error", BuildValue.TupleValue(items: [BuildValue.AtomValue(name: "unsupported_type"), BuildValue.FnValue(index: null)])), null));
+    var fs = case a {
+        CodeAnswer(source: s) -> [JsonField(key: "kind", value: Json.JsonString(value: "code")), JsonField(key: "source", value: Json.JsonString(value: s))];
+        AstAnswer(node: v) -> [JsonField(key: "kind", value: Json.JsonString(value: "ast")), JsonField(key: "node", value: templateValueJson(v))];
+        ValueAnswer(value: v) -> [JsonField(key: "kind", value: Json.JsonString(value: "value")), JsonField(key: "value", value: templateValueJson(v))];
+        CaptureAnswer(param: p) -> [JsonField(key: "kind", value: Json.JsonString(value: "capture")), JsonField(key: "param", value: Json.JsonString(value: p))];
+        CustomAnswer(source: s, tree: v) -> [JsonField(key: "kind", value: Json.JsonString(value: "custom")), JsonField(key: "source", value: Json.JsonString(value: s)), JsonField(key: "ast", value: templateValueJson(v))];
+    };
+    if (build != null)
+        fs.push(JsonField(key: "build", value: optionalInt(build)));
+    if (notes.length > 0)
+        fs.push(JsonField(key: "notes", value: Json.JsonArray(items: notes.map({ n -> Json.JsonString(value: n) }))));
+    return replyObject(fs);
+}
+
+fn tagRequestJson(q: TagRequest) -> Json {
+    return replyObject([
+        JsonField(key: "kind", value: Json.JsonString(value: q.kind)),
+        JsonField(key: "name", value: Json.JsonString(value: q.name)),
+        JsonField(key: "attrs", value: Json.JsonArray(items: q.attrs.map({ a -> templateValueJson(BuildValue.TupleValue(items: [BuildValue.StringValue(value: a.name), a.value])) }))),
+        JsonField(key: "answer", value: Json.JsonInt(value: q.answer)),
+    ]);
+}
+
+pub fn templateReplyOf(j: Json) -> TemplateReply {
+    val kind = textField(j, "kind") ?? "";
+    if (kind == "need") {
+        val d = jsonField(j, "decl") ?? Json.JsonNull;
+        return TemplateReply.TemplateNeed(
+            request: TagRequest(
+                kind: textField(d, "kind") ?? "",
+                name: textField(d, "name") ?? "",
+                attrs: itemsOf(jsonField(d, "attrs") ?? Json.JsonNull).map({ a -> tagAttrOf(templateValueOf(a)) }),
+                answer: wholeOf(jsonField(d, "answer") ?? Json.JsonNull),
+            ),
+            span: templateValueOf(jsonField(j, "span") ?? Json.JsonNull),
+        );
+    }
+    if (kind == "fail")
+        return TemplateReply.TemplateFail(message: textField(j, "message") ?? "", param: textField(j, "param"), span: templateValueOf(jsonField(j, "span") ?? Json.JsonNull));
+    if (kind == "error") {
+        val frames = jsonField(j, "frames");
+        val read: ?Frame[] = if (frames == null) null else framesOf(frames);
+        return TemplateReply.TemplateError(message: textField(j, "message") ?? "", frames: read);
+    }
+    val notes = itemsOf(jsonField(j, "notes") ?? Json.JsonNull).map({ n -> stringOf(n) });
+    return TemplateReply.TemplateDone(answer: templateAnswerOf(kind, j), build: intField(j, "build"), notes: notes);
+}
+
+fn templateAnswerOf(kind: string, j: Json) -> TemplateAnswer {
+    if (kind == "ast")
+        return TemplateAnswer.AstAnswer(node: templateValueOf(jsonField(j, "node") ?? Json.JsonNull));
+    if (kind == "value")
+        return TemplateAnswer.ValueAnswer(value: templateValueOf(jsonField(j, "value") ?? Json.JsonNull));
+    if (kind == "capture")
+        return TemplateAnswer.CaptureAnswer(param: textField(j, "param") ?? "");
+    if (kind == "custom")
+        return TemplateAnswer.CustomAnswer(source: textField(j, "source") ?? "", tree: templateValueOf(jsonField(j, "ast") ?? Json.JsonNull));
+    return TemplateAnswer.CodeAnswer(source: textField(j, "source") ?? "");
+}
+
+fn tagAttrOf(v: BuildValue) -> TagAttr {
+    val items = case v {
+        TupleValue(items: xs) -> xs;
+        _ -> [];
+    };
+    val name = case items.at(0) ?? BuildValue.NullValue {
+        StringValue(value: s) -> s;
+        _ -> "";
+    };
+    return TagAttr(name: name, value: items.at(1) ?? BuildValue.NullValue);
+}
+
+pub fn blockReplyJson(r: BlockReply) -> Json {
+    return case r {
+        BlockValue(value: v, printed: p) -> replyObject(withPrinted([
+            JsonField(key: "kind", value: Json.JsonString(value: "value")),
+            JsonField(key: "value", value: blockValueJson(v)),
+        ], p));
+        BlockError(message: m, frames: _, printed: p) -> replyObject(withPrinted(errorFields(m, blockFrames(r)), p));
+    };
+}
+
+pub fn blockReplyOf(j: Json) -> BlockReply {
+    val printed = textField(j, "printed");
+    if ((textField(j, "kind") ?? "") == "error")
+        return BlockReply.BlockError(message: textField(j, "message") ?? "", frames: framesOf(jsonField(j, "frames") ?? Json.JsonNull), printed: printed);
+    return BlockReply.BlockValue(value: blockValueOf(jsonField(j, "value") ?? Json.JsonNull), printed: printed);
+}
+
+// ── an error's text (1038 (3)) ────────────────────────────────────────────────
+
+// An error reply's `message`: `{Class,Reason}` as `~p` writes it.
+pub fn raisedText(class: string, reason: BuildValue) -> string {
+    return termText(BuildValue.TupleValue(items: [BuildValue.AtomValue(name: class), reason]));
+}
+
+// The reason of a division or a remainder by zero (`'__bp_cdz'/1`, decision
+// 533): `{bp_wat_runtime,<<"division by zero">>}`.
+pub fn divisionByZero() -> BuildValue {
+    return BuildValue.TupleValue(items: [BuildValue.AtomValue(name: "bp_wat_runtime"), BuildValue.StringValue(value: "division by zero")]);
+}
+
+// The reason of a `case` no arm matched: `{case_clause,Value}`.
+pub fn noMatch(value: BuildValue) -> BuildValue {
+    return BuildValue.TupleValue(items: [BuildValue.AtomValue(name: "case_clause"), value]);
+}
+
+// The reason of any other arithmetic error (decision 472): `badarith`.
+pub fn badArith() -> BuildValue {
+    return BuildValue.AtomValue(name: "badarith");
+}
+
+// `v` as `~p` writes it on one line (std-wasm's `io_lib.writeTerm`): `null`
+// is `undefined`, a string a binary, a record a map with its keys in order.
+pub fn termText(v: BuildValue) -> string {
+    return case v {
+        NullValue -> "undefined";
+        BoolValue(value: b) -> boolText(b);
+        IntValue(value: n) -> n.toString();
+        FloatValue(value: x) -> x.toString();
+        StringValue(value: s) -> binaryText(s);
+        ArrayValue(items: _) -> listText(valueItems(v));
+        TupleValue(items: _) -> tupleText(valueItems(v));
+        RecordValue(fields: _) -> mapText(sortBuildFields(valueFields(v)));
+        AtomValue(name: a) -> atomText(a);
+        FnValue(index: _) -> "#Fun<bp_wat>";
+        ResourceValue(text: t) -> t;
+    };
+}
+
+fn sortBuildFields(fs: BuildField[]) -> BuildField[] {
+    val sorted = sortFields(fs.map({ f -> JsonField(key: f.name, value: Json.JsonNull) }));
+    return sorted.map({ s -> (fs.filter({ f -> f.name == s.key }).at(0) ?? BuildField(name: s.key, value: BuildValue.NullValue)) });
+}
+
+fn printableLatin1(c: i32) -> bool {
+    return c >= 32 && c <= 126
+        || c >= 160 && c <= 255
+        || c == 10
+        || c == 13
+        || c == 9
+        || c == 11
+        || c == 8
+        || c == 12
+        || c == 27
+        || c == 7;
+}
+
+fn printableUnicode(c: i32) -> bool {
+    return printableLatin1(c)
+        || c > 255
+            && c <= 1114111
+            && !(c >= 55296 && c <= 57343)
+            && c != 65534
+            && c != 65535;
+}
+
+fn escapeLetter(c: i32) -> string {
+    if (c == 10) return "n";
+    if (c == 13) return "r";
+    if (c == 9) return "t";
+    if (c == 11) return "v";
+    if (c == 8) return "b";
+    if (c == 12) return "f";
+    if (c == 27) return "e";
+    if (c == 7) return "d";
+    if (c == 92) return "\\";
+    return "";
+}
+
+fn termChar(c: i32, text: string) -> string {
+    val letter = escapeLetter(c);
+    if (letter != "") return "\\" + letter;
+    if (c == 34) return "\\\"";
+    return text;
+}
+
+fn binaryText(s: string) -> string {
+    val cps = codePointsOf(s);
+    val texts = textsOf(s);
+    val ascii = cps.filter({ c -> !printableLatin1(c) || c >= 128 }).length
+        == 0;
+    val unicode = cps.filter({ c -> !printableUnicode(c) }).length == 0;
+    if (ascii || unicode && cps.length > 0) {
+        var out: string[] = ["<<\""];
+        var i = 0;
+        while (i < cps.length) {
+            out.push(termChar(cps.at(i) ?? 0, texts.at(i) ?? ""));
+            i = i + 1;
+        }
+        out.push(if (ascii) "\">>" else "\"/utf8>>");
+        return out.join("");
+    }
+    return ["<<", utf8Bytes(cps)
+        .map({ b -> b.toString() })
+        .join(","), ">>"].join("");
+}
+
+fn utf8Bytes(cps: i32[]) -> i32[] {
+    var out: i32[] = [];
+    var i = 0;
+    while (i < cps.length) {
+        val c = cps.at(i) ?? 0;
+        if (c < 128) out.push(c) else if (c < 2048) {
+            out.push(192 + c / 64);
+            out.push(128 + c % 64);
+        } else if (c < 65536) {
+            out.push(224 + c / 4096);
+            out.push(128 + c / 64 % 64);
+            out.push(128 + c % 64);
+        } else {
+            out.push(240 + c / 262144);
+            out.push(128 + c / 4096 % 64);
+            out.push(128 + c / 64 % 64);
+            out.push(128 + c % 64);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn listText(xs: BuildValue[]) -> string {
+    if (xs.length == 0) return "[]";
+    val codes = xs.filter({ x -> printableCode(x) }).length == xs.length;
+    if (codes)
+        return ["\"", xs
+            .map({ x -> termChar(codeOf(x), codepointText(codeOf(x))) })
+            .join(""), "\""].join("");
+    return ["[", xs.map({ x -> termText(x) }).join(","), "]"].join("");
+}
+
+fn printableCode(v: BuildValue) -> bool {
+    return case v {
+        IntValue(value: n) -> n >= 0
+            && n <= 1114111
+            && printableUnicode(n.toI32());
+        _ -> false;
+    };
+}
+
+fn codeOf(v: BuildValue) -> i32 {
+    return case v {
+        IntValue(value: n) -> n.toI32();
+        _ -> 0;
+    };
+}
+
+fn atomText(name: string) -> string {
+    val cps = codePointsOf(name);
+    val first = cps.at(0) ?? 0;
+    val plain = cps.length > 0
+        && first >= 97
+        && first <= 122
+        && cps.filter({ c -> !(c >= 97 && c <= 122 || c >= 65 && c <= 90 || c >= 48 && c <= 57 || c == 95 || c == 64) }).length
+            == 0
+        && !reservedWord(name);
+    if (plain) return name;
+    val texts = textsOf(name);
+    var out: string[] = ["'"];
+    var i = 0;
+    while (i < cps.length) {
+        val c = cps.at(i) ?? 0;
+        if (c == 39 || c == 92) out.push("\\");
+        out.push(texts.at(i) ?? "");
+        i = i + 1;
+    }
+    out.push("'");
+    return out.join("");
+}
+
+fn reservedWord(name: string) -> bool {
+    return ["after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor", "case", "catch", "cond", "div", "end", "fun", "if", "let", "maybe", "not", "of", "or", "orelse", "receive", "rem", "try", "when", "xor", "else"].filter({ w -> w == name }).length
+        > 0;
+}
+
+fn arrayText(xs: Json[]) -> string {
+    return ["[", xs.map({ x -> jsonText(x) }).join(","), "]"].join("");
+}
+
+fn objectText(fs: JsonField[]) -> string {
+    return ["{", fs
+        .map({ f -> [quoteJson(f.key, true), ":", jsonText(f.value)].join("") })
+        .join(","), "}"].join("");
+}
+
+fn sortedItems(xs: Json[]) -> Json[] {
+    return xs.map({ x -> jsonSorted(x) });
+}
+
+fn sortedMembers(fs: JsonField[]) -> JsonField[] {
+    return fs.map({ f -> JsonField(key: f.key, value: jsonSorted(f.value)) });
+}
+
+fn prettyArray(xs: Json[], indent: string) -> string {
+    if (xs.length == 0) return "[]";
+    val inner = indent + "  ";
+    return ["[\n", xs
+        .map({ x -> inner + prettyAt(x, inner) })
+        .join(",\n"), "\n", indent, "]"].join("");
+}
+
+fn prettyObject(fs: JsonField[], indent: string) -> string {
+    if (fs.length == 0) return "{}";
+    val inner = indent + "  ";
+    return ["{\n", fs
+        .map({ f -> [inner, quoteJson(f.key, false), ": ", prettyAt(f.value, inner)].join("") })
+        .join(",\n"), "\n", indent, "}"].join("");
+}
+
+// The items of an array or a tuple, `[]` for any other value.
+fn valueItems(v: BuildValue) -> BuildValue[] {
+    return case v {
+        ArrayValue(items: xs) -> xs;
+        TupleValue(items: xs) -> xs;
+        _ -> [];
+    };
+}
+
+// The fields of a record, `[]` for any other value.
+fn valueFields(v: BuildValue) -> BuildField[] {
+    return case v {
+        RecordValue(fields: fs) -> fs;
+        _ -> [];
+    };
+}
+
+fn templateItems(xs: BuildValue[]) -> Json[] {
+    return xs.map({ x -> templateValueJson(x) });
+}
+
+fn templateFields(fs: BuildField[]) -> JsonField[] {
+    return fs.map({ f -> JsonField(key: f.name, value: templateValueJson(f.value)) });
+}
+
+fn templateValuesOf(xs: Json[]) -> BuildValue[] {
+    return xs.map({ x -> templateValueOf(x) });
+}
+
+fn anyHoldsFn(xs: BuildValue[]) -> bool {
+    return xs.filter({ x -> holdsFn(x) }).length > 0;
+}
+
+fn blockItems(xs: BuildValue[]) -> Json[] {
+    return xs.map({ x -> blockValueJson(x) });
+}
+
+fn blockFields(fs: BuildField[]) -> JsonField[] {
+    return fs.map({ f -> JsonField(key: f.name, value: blockValueJson(f.value)) });
+}
+
+fn blockValuesOf(xs: Json[]) -> BuildValue[] {
+    return xs.map({ x -> blockValueOf(x) });
+}
+
+fn tupleText(xs: BuildValue[]) -> string {
+    return ["{", xs.map({ x -> termText(x) }).join(","), "}"].join("");
+}
+
+fn mapText(fs: BuildField[]) -> string {
+    return ["#{", fs
+        .map({ f -> [atomText(f.name), " => ", termText(f.value)].join("") })
+        .join(","), "}"].join("");
+}
+
+fn decoratorContributions(r: DecoratorReply) -> Contribution[] {
+    return case r {
+        DecoratorOk(contributions: cs, printed: _) -> cs;
+        _ -> [];
+    };
+}
+
+fn decoratorFrames(r: DecoratorReply) -> Frame[] {
+    return case r {
+        DecoratorError(message: _, frames: fs, printed: _) -> fs;
+        _ -> [];
+    };
+}
+
+fn templateNotes(r: TemplateReply) -> string[] {
+    return case r {
+        TemplateDone(answer: _, build: _, notes: ns) -> ns;
+        _ -> [];
+    };
+}
+
+fn templateFrames(r: TemplateReply) -> ?Frame[] {
+    return case r {
+        TemplateError(message: _, frames: fs) -> fs;
+        _ -> null;
+    };
+}
+
+fn blockFrames(r: BlockReply) -> Frame[] {
+    return case r {
+        BlockError(message: _, frames: fs, printed: _) -> fs;
+        _ -> [];
+    };
+}
+
+// ── host conversions (as `json.bp`'s: on commonJS a std module does not load
+// the `String` prelude its `chars` / `charCodeAt` need) ─────────────────────
+
+#[compiler.external(
+    .JavaScript("""Array.from($0, (__c) => __c.codePointAt(0))"""),
+    .Erlang("""unicode:characters_to_list($0, utf8)"""),
+    .Wasm(body: codePointsOfBody),
+)]
+declare fn codePointsOf(s: string) -> i32[];
+
+#[compiler.external(
+    .JavaScript("""Array.from($0)"""),
+    .Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"""),
+    .Wasm(body: textsOfBody),
+)]
+declare fn textsOf(s: string) -> string[];
+
+#[compiler.external(
+    .JavaScript("""String.fromCodePoint($0)"""),
+    .Erlang("""unicode:characters_to_binary([$0])"""),
+    .Wasm(body: codepointTextBody),
+)]
+declare fn codepointText(cp: i32) -> string;
+
+fn codePointsOfBody(s: string) -> i32[] {
+    return s.chars().map({ c -> c.charCodeAt(0) });
+}
+
+fn textsOfBody(s: string) -> string[] {
+    return s.chars();
+}
+
+fn codepointTextBody(cp: i32) -> string {
+    return string.fromCodepoint(cp);
+}
 
 ```
 
@@ -1822,6 +3050,2830 @@ pub type HookNode = __HookNode;
     },
     {
       "ast": "typeAlias"
+    },
+    {
+      "ast": "enum_def",
+      "name": "Json",
+      "variants": [
+        {
+          "name": "JsonNull"
+        },
+        {
+          "name": "JsonBool",
+          "fields": {
+            "value": "bool"
+          }
+        },
+        {
+          "name": "JsonInt",
+          "fields": {
+            "value": "i64"
+          }
+        },
+        {
+          "name": "JsonFloat",
+          "fields": {
+            "value": "f64"
+          }
+        },
+        {
+          "name": "JsonString",
+          "fields": {
+            "value": "string"
+          }
+        },
+        {
+          "name": "JsonArray",
+          "fields": {
+            "items": "Json[]"
+          }
+        },
+        {
+          "name": "JsonObject",
+          "fields": {
+            "fields": "JsonField[]"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "JsonField",
+      "fields": {
+        "key": "string",
+        "value": "Json"
+      }
+    },
+    {
+      "ast": "enum_def",
+      "name": "BuildValue",
+      "variants": [
+        {
+          "name": "NullValue"
+        },
+        {
+          "name": "BoolValue",
+          "fields": {
+            "value": "bool"
+          }
+        },
+        {
+          "name": "IntValue",
+          "fields": {
+            "value": "i64"
+          }
+        },
+        {
+          "name": "FloatValue",
+          "fields": {
+            "value": "f64"
+          }
+        },
+        {
+          "name": "StringValue",
+          "fields": {
+            "value": "string"
+          }
+        },
+        {
+          "name": "ArrayValue",
+          "fields": {
+            "items": "BuildValue[]"
+          }
+        },
+        {
+          "name": "TupleValue",
+          "fields": {
+            "items": "BuildValue[]"
+          }
+        },
+        {
+          "name": "RecordValue",
+          "fields": {
+            "fields": "BuildField[]"
+          }
+        },
+        {
+          "name": "AtomValue",
+          "fields": {
+            "name": "string"
+          }
+        },
+        {
+          "name": "FnValue",
+          "fields": {
+            "index": "?i64"
+          }
+        },
+        {
+          "name": "ResourceValue",
+          "fields": {
+            "text": "string"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "BuildField",
+      "fields": {
+        "name": "string",
+        "value": "BuildValue"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Frame",
+      "fields": {
+        "file": "string",
+        "line": "i64",
+        "col": "i64"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Contribution",
+      "fields": {
+        "kind": "string",
+        "source": "?string",
+        "key": "?string",
+        "value": "?string",
+        "name": "?string",
+        "index": "?i64",
+        "data": "?Json"
+      }
+    },
+    {
+      "ast": "enum_def",
+      "name": "FailSpan",
+      "variants": [
+        {
+          "name": "NoSpan"
+        },
+        {
+          "name": "SpanAt",
+          "fields": {
+            "start": "i64",
+            "end": "i64",
+            "line": "i64"
+          }
+        },
+        {
+          "name": "ArgAt",
+          "fields": {
+            "index": "i64"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "enum_def",
+      "name": "DecoratorReply",
+      "variants": [
+        {
+          "name": "DecoratorOk",
+          "fields": {
+            "contributions": "Contribution[]",
+            "printed": "?string"
+          }
+        },
+        {
+          "name": "DecoratorFail",
+          "fields": {
+            "message": "string",
+            "span": "FailSpan",
+            "printed": "?string"
+          }
+        },
+        {
+          "name": "DecoratorError",
+          "fields": {
+            "message": "string",
+            "frames": "Frame[]",
+            "printed": "?string"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "enum_def",
+      "name": "TemplateAnswer",
+      "variants": [
+        {
+          "name": "CodeAnswer",
+          "fields": {
+            "source": "string"
+          }
+        },
+        {
+          "name": "AstAnswer",
+          "fields": {
+            "node": "BuildValue"
+          }
+        },
+        {
+          "name": "ValueAnswer",
+          "fields": {
+            "value": "BuildValue"
+          }
+        },
+        {
+          "name": "CaptureAnswer",
+          "fields": {
+            "param": "string"
+          }
+        },
+        {
+          "name": "CustomAnswer",
+          "fields": {
+            "source": "string",
+            "tree": "BuildValue"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "TagRequest",
+      "fields": {
+        "kind": "string",
+        "name": "string",
+        "attrs": "TagAttr[]",
+        "answer": "i64"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "TagAttr",
+      "fields": {
+        "name": "string",
+        "value": "BuildValue"
+      }
+    },
+    {
+      "ast": "enum_def",
+      "name": "TemplateReply",
+      "variants": [
+        {
+          "name": "TemplateDone",
+          "fields": {
+            "answer": "TemplateAnswer",
+            "build": "?i64",
+            "notes": "string[]"
+          }
+        },
+        {
+          "name": "TemplateNeed",
+          "fields": {
+            "request": "TagRequest",
+            "span": "BuildValue"
+          }
+        },
+        {
+          "name": "TemplateFail",
+          "fields": {
+            "message": "string",
+            "param": "?string",
+            "span": "BuildValue"
+          }
+        },
+        {
+          "name": "TemplateError",
+          "fields": {
+            "message": "string",
+            "frames": "?Frame[]"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "enum_def",
+      "name": "BlockReply",
+      "variants": [
+        {
+          "name": "BlockValue",
+          "fields": {
+            "value": "BuildValue",
+            "printed": "?string"
+          }
+        },
+        {
+          "name": "BlockError",
+          "fields": {
+            "message": "string",
+            "frames": "Frame[]",
+            "printed": "?string"
+          }
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonText",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonSorted",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonPretty",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return prettyAt(j, \"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "prettyAt",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        },
+        {
+          "name": "indent",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "boolText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "b",
+          "type": "bool"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (b) return \"true\";"
+        },
+        {
+          "source": "return \"false\";"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "quoteJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        },
+        {
+          "name": "upper",
+          "type": "bool"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val cps = codePointsOf(s);"
+        },
+        {
+          "source": "val texts = textsOf(s);"
+        },
+        {
+          "source": "var out: string[] = [\"\\\"\"];"
+        },
+        {
+          "source": "var i = 0;"
+        },
+        {
+          "source": "while (i < cps.length) {"
+        },
+        {
+          "source": "out.push(\"\\\"\");"
+        },
+        {
+          "source": "return out.join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonChar",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "i32"
+        },
+        {
+          "name": "text",
+          "type": "string"
+        },
+        {
+          "name": "upper",
+          "type": "bool"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (c == 34) return \"\\\\\\\"\";"
+        },
+        {
+          "source": "if (c == 92) return \"\\\\\\\\\";"
+        },
+        {
+          "source": "if (c == 10) return \"\\\\n\";"
+        },
+        {
+          "source": "if (c == 13) return \"\\\\r\";"
+        },
+        {
+          "source": "if (c == 9) return \"\\\\t\";"
+        },
+        {
+          "source": "if (c == 8) return \"\\\\b\";"
+        },
+        {
+          "source": "if (c == 12) return \"\\\\f\";"
+        },
+        {
+          "source": "if (c < 32)"
+        },
+        {
+          "source": "return text;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "hexDigit",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "d",
+          "type": "i32"
+        },
+        {
+          "name": "upper",
+          "type": "bool"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val digits = if (upper) \"0123456789ABCDEF\" else \"0123456789abcdef\";"
+        },
+        {
+          "source": "return textsOf(digits).at(d) ?? \"\";"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "sortFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "var out: JsonField[] = [];"
+        },
+        {
+          "source": "var i = 0;"
+        },
+        {
+          "source": "while (i < fs.length) {"
+        },
+        {
+          "source": "return out;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "textBefore",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "string"
+        },
+        {
+          "name": "b",
+          "type": "string"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "val x = codePointsOf(a);"
+        },
+        {
+          "source": "val y = codePointsOf(b);"
+        },
+        {
+          "source": "var i = 0;"
+        },
+        {
+          "source": "var answer = x.length < y.length;"
+        },
+        {
+          "source": "var decided = false;"
+        },
+        {
+          "source": "while (!decided && i < x.length && i < y.length) {"
+        },
+        {
+          "source": "return answer;"
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "Reading",
+      "fields": {
+        "cps": "i32[]",
+        "texts": "string[]"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "ReadJson",
+      "fields": {
+        "value": "Json",
+        "next": "i32"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "ReadText",
+      "fields": {
+        "text": "string",
+        "next": "i32"
+      }
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonRead",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "return_type": "Result<Json,string>",
+      "body": [
+        {
+          "source": "val doc = Reading(cps: codePointsOf(text), texts: textsOf(text));"
+        },
+        {
+          "source": "val read = try readJson(doc, skipSpace(doc, 0));"
+        },
+        {
+          "source": "val end = skipSpace(doc, read.next);"
+        },
+        {
+          "source": "if (end < doc.cps.length) throw readProblem(end, \"text after the value\");"
+        },
+        {
+          "source": "return read.value;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "cpAt",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "return doc.cps.at(i) ?? (0 - 1);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "skipSpace",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "start",
+          "type": "i32"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "var i = start;"
+        },
+        {
+          "source": "while (cpAt(doc, i) == 32"
+        },
+        {
+          "source": "return i;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readProblem",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "at",
+          "type": "i32"
+        },
+        {
+          "name": "what",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return [\"compiler.jsonRead: \", what, \" at \", at.toString()].join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadJson,string>",
+      "body": [
+        {
+          "source": "val c = cpAt(doc, i);"
+        },
+        {
+          "source": "if (c == 123) return try readObject(doc, skipSpace(doc, i + 1));"
+        },
+        {
+          "source": "if (c == 91) return try readArray(doc, skipSpace(doc, i + 1));"
+        },
+        {
+          "source": "if (c == 34) {"
+        },
+        {
+          "source": "if (c == 116)"
+        },
+        {
+          "source": "if (c == 102)"
+        },
+        {
+          "source": "if (c == 110) return try readWord(doc, i, \"null\", Json.JsonNull);"
+        },
+        {
+          "source": "if (c == 45 || (c >= 48 && c <= 57)) return try readNumber(doc, i);"
+        },
+        {
+          "source": "throw readProblem(i, \"no JSON value\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readWord",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        },
+        {
+          "name": "word",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Result<ReadJson,string>",
+      "body": [
+        {
+          "source": "val want = textsOf(word);"
+        },
+        {
+          "source": "var ok = true;"
+        },
+        {
+          "source": "var k = 0;"
+        },
+        {
+          "source": "while (k < want.length) {"
+        },
+        {
+          "source": "if (!ok) throw readProblem(i, \"no JSON value\");"
+        },
+        {
+          "source": "return ReadJson(value: value, next: i + want.length);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readNumber",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadJson,string>",
+      "body": [
+        {
+          "source": "var k = i;"
+        },
+        {
+          "source": "var whole = true;"
+        },
+        {
+          "source": "var go = true;"
+        },
+        {
+          "source": "while (go) {"
+        },
+        {
+          "source": "val numeral = doc.texts.slice(i, k).join(\"\");"
+        },
+        {
+          "source": "if (whole) {"
+        },
+        {
+          "source": "val x = numeral.parseFloat();"
+        },
+        {
+          "source": "if (x.isError()) throw readProblem(i, \"a malformed number\");"
+        },
+        {
+          "source": "return ReadJson(value: Json.JsonFloat(value: x.unwrapOr(0.0)), next: k);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readString",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadText,string>",
+      "body": [
+        {
+          "source": "var out: string[] = [];"
+        },
+        {
+          "source": "var k = i + 1;"
+        },
+        {
+          "source": "var problem = \"\";"
+        },
+        {
+          "source": "var done = false;"
+        },
+        {
+          "source": "while (!done) {"
+        },
+        {
+          "source": "if (problem != \"\") throw problem;"
+        },
+        {
+          "source": "return ReadText(text: out.join(\"\"), next: k + 1);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "escapedChar",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "e",
+          "type": "i32"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (e == 110) return \"\\n\";"
+        },
+        {
+          "source": "if (e == 114) return \"\\r\";"
+        },
+        {
+          "source": "if (e == 116) return \"\\t\";"
+        },
+        {
+          "source": "if (e == 98) return codepointText(8);"
+        },
+        {
+          "source": "if (e == 102) return codepointText(12);"
+        },
+        {
+          "source": "return codepointText(e);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "hexValue",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "var v = 0;"
+        },
+        {
+          "source": "var k = 0;"
+        },
+        {
+          "source": "while (k < 4) {"
+        },
+        {
+          "source": "return v;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readArray",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "start",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadJson,string>",
+      "body": [
+        {
+          "source": "var items: Json[] = [];"
+        },
+        {
+          "source": "var i = start;"
+        },
+        {
+          "source": "if (cpAt(doc, i) == 93)"
+        },
+        {
+          "source": "var more = true;"
+        },
+        {
+          "source": "while (more) {"
+        },
+        {
+          "source": "if (i < 0) throw readProblem(0 - 1 - i, \"a malformed array\");"
+        },
+        {
+          "source": "return ReadJson(value: Json.JsonArray(items: items), next: i);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "readObject",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "start",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadJson,string>",
+      "body": [
+        {
+          "source": "var fields: JsonField[] = [];"
+        },
+        {
+          "source": "var i = start;"
+        },
+        {
+          "source": "if (cpAt(doc, i) == 125)"
+        },
+        {
+          "source": "var more = true;"
+        },
+        {
+          "source": "while (more) {"
+        },
+        {
+          "source": "if (i < 0) throw readProblem(0 - 1 - i, \"a malformed object\");"
+        },
+        {
+          "source": "return ReadJson(value: Json.JsonObject(fields: fields), next: i);"
+        }
+      ]
+    },
+    {
+      "ast": "record_def",
+      "name": "ReadMember",
+      "fields": {
+        "field": "JsonField",
+        "next": "i32"
+      }
+    },
+    {
+      "ast": "fn_def",
+      "name": "readMember",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "doc",
+          "type": "Reading"
+        },
+        {
+          "name": "i",
+          "type": "i32"
+        }
+      ],
+      "return_type": "Result<ReadMember,string>",
+      "body": [
+        {
+          "source": "if (cpAt(doc, i) != 34) throw readProblem(i, \"a member without a name\");"
+        },
+        {
+          "source": "val key = try readString(doc, i);"
+        },
+        {
+          "source": "val colon = skipSpace(doc, key.next);"
+        },
+        {
+          "source": "if (cpAt(doc, colon) != 58)"
+        },
+        {
+          "source": "val value = try readJson(doc, skipSpace(doc, colon + 1));"
+        },
+        {
+          "source": "return ReadMember(field: JsonField(key: key.text, value: value.value), next: value.next);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "jsonField",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        },
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "return_type": "?Json",
+      "body": [
+        {
+          "source": "val fs = fieldsOf(j);"
+        },
+        {
+          "source": "var hit: ?Json = null;"
+        },
+        {
+          "source": "var i = fs.length - 1;"
+        },
+        {
+          "source": "while (i >= 0) {"
+        },
+        {
+          "source": "return hit;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "textField",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        },
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "return_type": "?string",
+      "body": [
+        {
+          "source": "val v = jsonField(j, key) ?? Json.JsonNull;"
+        },
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "intField",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        },
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "return_type": "?i64",
+      "body": [
+        {
+          "source": "val v = jsonField(j, key) ?? Json.JsonNull;"
+        },
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "itemsOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Json[]",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "fieldsOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateValueJson",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateValueOf",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateObjectOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "val only = fs.at(0) ?? JsonField(key: \"\", value: Json.JsonNull);"
+        },
+        {
+          "source": "if (fs.length == 1 && only.key == \"$tuple\")"
+        },
+        {
+          "source": "return BuildValue.RecordValue(fields: fs.map({ f -> BuildField(name: f.key, value: templateValueOf(f.value)) }));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "holdsFn",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockValueJson",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockValueOf",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockObjectOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "val only = fs.at(0) ?? JsonField(key: \"\", value: Json.JsonNull);"
+        },
+        {
+          "source": "val inner = only.value;"
+        },
+        {
+          "source": "if (only.key == \"float\")"
+        },
+        {
+          "source": "if (only.key == \"tuple\")"
+        },
+        {
+          "source": "if (only.key == \"record\")"
+        },
+        {
+          "source": "if (only.key == \"atom\") return BuildValue.AtomValue(name: stringOf(inner));"
+        },
+        {
+          "source": "if (only.key == \"fn\") return BuildValue.FnValue(index: intOf(inner));"
+        },
+        {
+          "source": "return BuildValue.ResourceValue(text: stringOf(inner));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "tagged",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "tag",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return Json.JsonObject(fields: [JsonField(key: tag, value: value)]);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "noInt",
+      "is_pub": false,
+      "params": [],
+      "return_type": "i64",
+      "body": [
+        {
+          "source": "return 0;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "optionalInt",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "n",
+          "type": "?i64"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "if (n != null) return Json.JsonInt(value: n);"
+        },
+        {
+          "source": "return Json.JsonNull;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "optionalText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "?string"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "if (s != null) return Json.JsonString(value: s);"
+        },
+        {
+          "source": "return Json.JsonNull;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "floatOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "f64",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "stringOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "intOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "?i64",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "replyObject",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fields",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return jsonSorted(Json.JsonObject(fields: fields));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "withPrinted",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fields",
+          "type": "JsonField[]"
+        },
+        {
+          "name": "printed",
+          "type": "?string"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "var out: JsonField[] = fields.map({ f -> f });"
+        },
+        {
+          "source": "if (printed != null)"
+        },
+        {
+          "source": "return out;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "framesJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "frames",
+          "type": "Frame[]"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return Json.JsonArray(items: frames.map({ f -> Json.JsonArray(items: [Json.JsonString(value: f.file), Json.JsonInt(value: f.line), Json.JsonInt(value: f.col)]) }));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "framesOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Frame[]",
+      "body": [
+        {
+          "source": "return itemsOf(j).map({ f -> frameOf(itemsOf(f)) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "frameOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "parts",
+          "type": "Json[]"
+        }
+      ],
+      "return_type": "Frame",
+      "body": [
+        {
+          "source": "return Frame(file: stringOf(parts.at(0) ?? Json.JsonNull), line: wholeOf(parts.at(1) ?? Json.JsonNull), col: wholeOf(parts.at(2) ?? Json.JsonNull));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "wholeOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "i64",
+      "body": [
+        {
+          "source": "return case j {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "decoratorReplyJson",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "r",
+          "type": "DecoratorReply"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "contributionsJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "cs",
+          "type": "Contribution[]"
+        }
+      ],
+      "return_type": "Json[]",
+      "body": [
+        {
+          "source": "return cs.map({ c -> contributionJson(c) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "contributionJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "Contribution"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "var fs: JsonField[] = [JsonField(key: \"kind\", value: Json.JsonString(value: c.kind))];"
+        },
+        {
+          "source": "if (c.source != null)"
+        },
+        {
+          "source": "if (c.key != null)"
+        },
+        {
+          "source": "if (c.value != null)"
+        },
+        {
+          "source": "if (c.name != null)"
+        },
+        {
+          "source": "if (c.index != null)"
+        },
+        {
+          "source": "if (c.data != null)"
+        },
+        {
+          "source": "return replyObject(fs);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "failSpanJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "FailSpan"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case s {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "decoratorReplyOf",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "DecoratorReply",
+      "body": [
+        {
+          "source": "val kind = textField(j, \"kind\") ?? \"\";"
+        },
+        {
+          "source": "val printed = textField(j, \"printed\");"
+        },
+        {
+          "source": "if (kind == \"ok\")"
+        },
+        {
+          "source": "if (kind == \"fail\")"
+        },
+        {
+          "source": "return DecoratorReply.DecoratorError(message: textField(j, \"message\") ?? \"\", frames: framesOf(jsonField(j, \"frames\") ?? Json.JsonNull), printed: printed);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "contributionOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "Contribution",
+      "body": [
+        {
+          "source": "return Contribution("
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "failSpanOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "FailSpan",
+      "body": [
+        {
+          "source": "val arg = intField(j, \"arg\");"
+        },
+        {
+          "source": "if (arg != null) return FailSpan.ArgAt(index: arg);"
+        },
+        {
+          "source": "val start = intField(j, \"start\");"
+        },
+        {
+          "source": "if (start != null)"
+        },
+        {
+          "source": "return FailSpan.NoSpan;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateReplyJson",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "r",
+          "type": "TemplateReply"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "errorFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "message",
+          "type": "string"
+        },
+        {
+          "name": "frames",
+          "type": "?Frame[]"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "var out: JsonField[] = ["
+        },
+        {
+          "source": "if (frames != null)"
+        },
+        {
+          "source": "return out;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateDoneJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "TemplateAnswer"
+        },
+        {
+          "name": "build",
+          "type": "?i64"
+        },
+        {
+          "name": "notes",
+          "type": "string[]"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "val unsupported = case a {"
+        },
+        {
+          "source": "if (unsupported)"
+        },
+        {
+          "source": "var fs = case a {"
+        },
+        {
+          "source": "if (build != null)"
+        },
+        {
+          "source": "if (notes.length > 0)"
+        },
+        {
+          "source": "return replyObject(fs);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "tagRequestJson",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "q",
+          "type": "TagRequest"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return replyObject(["
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateReplyOf",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "TemplateReply",
+      "body": [
+        {
+          "source": "val kind = textField(j, \"kind\") ?? \"\";"
+        },
+        {
+          "source": "if (kind == \"need\") {"
+        },
+        {
+          "source": "if (kind == \"fail\")"
+        },
+        {
+          "source": "if (kind == \"error\") {"
+        },
+        {
+          "source": "val notes = itemsOf(jsonField(j, \"notes\") ?? Json.JsonNull).map({ n -> stringOf(n) });"
+        },
+        {
+          "source": "return TemplateReply.TemplateDone(answer: templateAnswerOf(kind, j), build: intField(j, \"build\"), notes: notes);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateAnswerOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "kind",
+          "type": "string"
+        },
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "TemplateAnswer",
+      "body": [
+        {
+          "source": "if (kind == \"ast\")"
+        },
+        {
+          "source": "if (kind == \"value\")"
+        },
+        {
+          "source": "if (kind == \"capture\")"
+        },
+        {
+          "source": "if (kind == \"custom\")"
+        },
+        {
+          "source": "return TemplateAnswer.CodeAnswer(source: textField(j, \"source\") ?? \"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "tagAttrOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "TagAttr",
+      "body": [
+        {
+          "source": "val items = case v {"
+        },
+        {
+          "source": "val name = case items.at(0) ?? BuildValue.NullValue {"
+        },
+        {
+          "source": "return TagAttr(name: name, value: items.at(1) ?? BuildValue.NullValue);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockReplyJson",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "r",
+          "type": "BlockReply"
+        }
+      ],
+      "return_type": "Json",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockReplyOf",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "j",
+          "type": "Json"
+        }
+      ],
+      "return_type": "BlockReply",
+      "body": [
+        {
+          "source": "val printed = textField(j, \"printed\");"
+        },
+        {
+          "source": "if ((textField(j, \"kind\") ?? \"\") == \"error\")"
+        },
+        {
+          "source": "return BlockReply.BlockValue(value: blockValueOf(jsonField(j, \"value\") ?? Json.JsonNull), printed: printed);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "raisedText",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "class",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return termText(BuildValue.TupleValue(items: [BuildValue.AtomValue(name: class), reason]));"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "divisionByZero",
+      "is_pub": true,
+      "params": [],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "return BuildValue.TupleValue(items: [BuildValue.AtomValue(name: \"bp_wat_runtime\"), BuildValue.StringValue(value: \"division by zero\")]);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "noMatch",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "value",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "return BuildValue.TupleValue(items: [BuildValue.AtomValue(name: \"case_clause\"), value]);"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "badArith",
+      "is_pub": true,
+      "params": [],
+      "return_type": "BuildValue",
+      "body": [
+        {
+          "source": "return BuildValue.AtomValue(name: \"badarith\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "termText",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "sortBuildFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "BuildField[]"
+        }
+      ],
+      "return_type": "BuildField[]",
+      "body": [
+        {
+          "source": "val sorted = sortFields(fs.map({ f -> JsonField(key: f.name, value: Json.JsonNull) }));"
+        },
+        {
+          "source": "return sorted.map({ s -> (fs.filter({ f -> f.name == s.key }).at(0) ?? BuildField(name: s.key, value: BuildValue.NullValue)) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "printableLatin1",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "i32"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return c >= 32 && c <= 126"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "printableUnicode",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "i32"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return printableLatin1(c)"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "escapeLetter",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "i32"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (c == 10) return \"n\";"
+        },
+        {
+          "source": "if (c == 13) return \"r\";"
+        },
+        {
+          "source": "if (c == 9) return \"t\";"
+        },
+        {
+          "source": "if (c == 11) return \"v\";"
+        },
+        {
+          "source": "if (c == 8) return \"b\";"
+        },
+        {
+          "source": "if (c == 12) return \"f\";"
+        },
+        {
+          "source": "if (c == 27) return \"e\";"
+        },
+        {
+          "source": "if (c == 7) return \"d\";"
+        },
+        {
+          "source": "if (c == 92) return \"\\\\\";"
+        },
+        {
+          "source": "return \"\";"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "termChar",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "i32"
+        },
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val letter = escapeLetter(c);"
+        },
+        {
+          "source": "if (letter != \"\") return \"\\\\\" + letter;"
+        },
+        {
+          "source": "if (c == 34) return \"\\\\\\\"\";"
+        },
+        {
+          "source": "return text;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "binaryText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val cps = codePointsOf(s);"
+        },
+        {
+          "source": "val texts = textsOf(s);"
+        },
+        {
+          "source": "val ascii = cps.filter({ c -> !printableLatin1(c) || c >= 128 }).length"
+        },
+        {
+          "source": "val unicode = cps.filter({ c -> !printableUnicode(c) }).length == 0;"
+        },
+        {
+          "source": "if (ascii || unicode && cps.length > 0) {"
+        },
+        {
+          "source": "return [\"<<\", utf8Bytes(cps)"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "utf8Bytes",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "cps",
+          "type": "i32[]"
+        }
+      ],
+      "return_type": "i32[]",
+      "body": [
+        {
+          "source": "var out: i32[] = [];"
+        },
+        {
+          "source": "var i = 0;"
+        },
+        {
+          "source": "while (i < cps.length) {"
+        },
+        {
+          "source": "return out;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "listText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "BuildValue[]"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (xs.length == 0) return \"[]\";"
+        },
+        {
+          "source": "val codes = xs.filter({ x -> printableCode(x) }).length == xs.length;"
+        },
+        {
+          "source": "if (codes)"
+        },
+        {
+          "source": "return [\"[\", xs.map({ x -> termText(x) }).join(\",\"), \"]\"].join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "printableCode",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "codeOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "atomText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val cps = codePointsOf(name);"
+        },
+        {
+          "source": "val first = cps.at(0) ?? 0;"
+        },
+        {
+          "source": "val plain = cps.length > 0"
+        },
+        {
+          "source": "if (plain) return name;"
+        },
+        {
+          "source": "val texts = textsOf(name);"
+        },
+        {
+          "source": "var out: string[] = [\"'\"];"
+        },
+        {
+          "source": "var i = 0;"
+        },
+        {
+          "source": "while (i < cps.length) {"
+        },
+        {
+          "source": "out.push(\"'\");"
+        },
+        {
+          "source": "return out.join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "reservedWord",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return [\"after\", \"and\", \"andalso\", \"band\", \"begin\", \"bnot\", \"bor\", \"bsl\", \"bsr\", \"bxor\", \"case\", \"catch\", \"cond\", \"div\", \"end\", \"fun\", \"if\", \"let\", \"maybe\", \"not\", \"of\", \"or\", \"orelse\", \"receive\", \"rem\", \"try\", \"when\", \"xor\", \"else\"].filter({ w -> w == name }).length"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "arrayText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "Json[]"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return [\"[\", xs.map({ x -> jsonText(x) }).join(\",\"), \"]\"].join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "objectText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return [\"{\", fs"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "sortedItems",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "Json[]"
+        }
+      ],
+      "return_type": "Json[]",
+      "body": [
+        {
+          "source": "return xs.map({ x -> jsonSorted(x) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "sortedMembers",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "return fs.map({ f -> JsonField(key: f.key, value: jsonSorted(f.value)) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "prettyArray",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "Json[]"
+        },
+        {
+          "name": "indent",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (xs.length == 0) return \"[]\";"
+        },
+        {
+          "source": "val inner = indent + \"  \";"
+        },
+        {
+          "source": "return [\"[\\n\", xs"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "prettyObject",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "JsonField[]"
+        },
+        {
+          "name": "indent",
+          "type": "string"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (fs.length == 0) return \"{}\";"
+        },
+        {
+          "source": "val inner = indent + \"  \";"
+        },
+        {
+          "source": "return [\"{\\n\", fs"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "valueItems",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "BuildValue[]",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "valueFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "BuildValue"
+        }
+      ],
+      "return_type": "BuildField[]",
+      "body": [
+        {
+          "source": "return case v {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateItems",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "BuildValue[]"
+        }
+      ],
+      "return_type": "Json[]",
+      "body": [
+        {
+          "source": "return xs.map({ x -> templateValueJson(x) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "BuildField[]"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "return fs.map({ f -> JsonField(key: f.name, value: templateValueJson(f.value)) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateValuesOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "Json[]"
+        }
+      ],
+      "return_type": "BuildValue[]",
+      "body": [
+        {
+          "source": "return xs.map({ x -> templateValueOf(x) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "anyHoldsFn",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "BuildValue[]"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "return xs.filter({ x -> holdsFn(x) }).length > 0;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockItems",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "BuildValue[]"
+        }
+      ],
+      "return_type": "Json[]",
+      "body": [
+        {
+          "source": "return xs.map({ x -> blockValueJson(x) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockFields",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "BuildField[]"
+        }
+      ],
+      "return_type": "JsonField[]",
+      "body": [
+        {
+          "source": "return fs.map({ f -> JsonField(key: f.name, value: blockValueJson(f.value)) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockValuesOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "Json[]"
+        }
+      ],
+      "return_type": "BuildValue[]",
+      "body": [
+        {
+          "source": "return xs.map({ x -> blockValueOf(x) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "tupleText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "BuildValue[]"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return [\"{\", xs.map({ x -> termText(x) }).join(\",\"), \"}\"].join(\"\");"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "mapText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "fs",
+          "type": "BuildField[]"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return [\"#{\", fs"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "decoratorContributions",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "DecoratorReply"
+        }
+      ],
+      "return_type": "Contribution[]",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "decoratorFrames",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "DecoratorReply"
+        }
+      ],
+      "return_type": "Frame[]",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateNotes",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "TemplateReply"
+        }
+      ],
+      "return_type": "string[]",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "templateFrames",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "TemplateReply"
+        }
+      ],
+      "return_type": "?Frame[]",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "blockFrames",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "BlockReply"
+        }
+      ],
+      "return_type": "Frame[]",
+      "body": [
+        {
+          "source": "return case r {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "codePointsOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "return_type": "i32[]",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "textsOf",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "return_type": "string[]",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "codepointText",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "cp",
+          "type": "i32"
+        }
+      ],
+      "return_type": "string",
+      "body": []
+    },
+    {
+      "ast": "fn_def",
+      "name": "codePointsOfBody",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "return_type": "i32[]",
+      "body": [
+        {
+          "source": "return s.chars().map({ c -> c.charCodeAt(0) });"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "textsOfBody",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "return_type": "string[]",
+      "body": [
+        {
+          "source": "return s.chars();"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "codepointTextBody",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "cp",
+          "type": "i32"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "return string.fromCodepoint(cp);"
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,48 @@
+//// Decisions 550, 1035 (4) — each recorded `COMPTIME REPLY` read into the typed
+//// reply of its evaluator and written back by std's codecs
+//// (`comptime_reply_codecs.sh` generates `cases.bp` from the snapshots).
+
+pub mod cases;
+import {cases.recorded, cases.Recorded};
+import {
+    compiler.Json,
+    compiler.BuildValue,
+    compiler.BuildField,
+    compiler.jsonRead,
+    compiler.jsonPretty,
+    compiler.decoratorReplyOf,
+    compiler.decoratorReplyJson,
+    compiler.templateReplyOf,
+    compiler.templateReplyJson,
+    compiler.blockReplyOf,
+    compiler.blockReplyJson,
+    compiler.raisedText,
+    compiler.divisionByZero,
+    compiler.noMatch,
+    compiler.badArith,
+    io.terminal.print,
+} from "std";
+
+fn writtenBack(r: Recorded) -> string {
+    val read = jsonRead(r.text);
+    if (read.isError()) return "unreadable: " + r.text;
+    val j = read.unwrapOr(Json.JsonNull);
+    if (r.dialect == "decorator")
+        return jsonPretty(decoratorReplyJson(decoratorReplyOf(j)));
+    if (r.dialect == "template")
+        return jsonPretty(templateReplyJson(templateReplyOf(j)));
+    return jsonPretty(blockReplyJson(blockReplyOf(j)));
+}
+
+pub fn main() -> void {
+    for (recorded()) { r ->
+        print(writtenBack(r));
+        print("----- end");
+    }
+    print(raisedText("error", divisionByZero()));
+    print(raisedText("error", noMatch(BuildValue.RecordValue(fields: [
+        BuildField(name: "size", value: BuildValue.IntValue(value: 3)),
+        BuildField(name: "label", value: BuildValue.StringValue(value: "x")),
+    ]))));
+    print(raisedText("error", badArith()));
+}

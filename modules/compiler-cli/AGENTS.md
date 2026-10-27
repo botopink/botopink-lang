@@ -105,6 +105,15 @@ compiler-cli/
 │   │                          the same answer on the three targets; decision 1023:
 │   │                          a build on each of the four targets lays exactly
 │   │                          `out/<t>/`, and `--out <dir>` exactly `<dir>/<t>/`
+│   ├── comptime_reply_codecs.sh ← std's comptime reply codecs (decisions 550, 1035 (4),
+│   │                          1038 (3); `compiler.bp` § the crossing): every distinct
+│   │                          `COMPTIME REPLY` section of compiler-core's snapshots,
+│   │                          read by `compiler.jsonRead` into its evaluator's typed
+│   │                          reply and written back by that dialect's encoder, is the
+│   │                          recorded text byte for byte on erlang and commonJS (wasm
+│   │                          once the GC lowering hosts the codecs); and the three
+│   │                          runtime errors 1038 (3) keeps, as `raisedText` writes them
+│   ├── comptime_reply_codecs/ ← its fixture: `codecs` (`cases.bp` generated per run)
 │   ├── packages_list.sh     ← `packages --list` and `--check-docs` (decisions 993 (2), (7)): a throwaway
 │   │                          checkout — a library, a workspace with a member
 │   │                          inheriting its targets and one declaring its own, a
