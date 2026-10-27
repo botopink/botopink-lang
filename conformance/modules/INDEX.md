@@ -797,13 +797,13 @@ cells 1678 · a 79 · b 924 · c 605 · t 70 · code-bearing rows 451 · with a 
 | modules/format_annotation_trailing_comma | modules/decisions-taken/bare_variant_expression_refused-587/cases/format_annotation_trailing_comma | 587 |  | b |
 | modules/fs_asset_opens_as_file | modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file | 538 |  | b |
 | modules/fs_error_message | modules/decisions-taken/fs_error_message_text-563/cases/fs_error_message | 563 |  | b |
-| modules/fs_error_variants | modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants | 711 |  | a |
-| modules/fs_file_defer_close | modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_defer_close | 540 | 539 | b |
-| modules/fs_file_handle | modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle | 540 |  | b |
+| modules/fs_error_variants | modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants | 711 |  | a |
+| modules/fs_file_defer_close | modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_defer_close | 540 | 539 | b |
+| modules/fs_file_handle | modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle | 540 |  | b |
 | modules/fs_file_streams | modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams | 540 |  | b |
-| modules/fs_read_text_not_utf8 | modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8 | 540 |  | b |
+| modules/fs_read_text_not_utf8 | modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8 | 540 |  | b |
 | modules/fs_stat_mtime_whole_seconds | modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds | 499 |  | b |
-| modules/fs_whole_file_shortcuts | modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts | 540 |  | b |
+| modules/fs_whole_file_shortcuts | modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts | 540 |  | b |
 | modules/generator_body_lazy | modules/generator/cases/generator_body_lazy |  |  | c |
 | modules/generator_break_value | modules/decisions-taken/body_marker_whole_return_type-553/cases/generator_break_value | 553 |  | b |
 | modules/generator_captured_var_shared | modules/generator/cases/generator_captured_var_shared |  |  | c |

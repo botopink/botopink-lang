@@ -1,6 +1,0 @@
-mod cases;
-
-pub fn main() -> void {
-    cases.generic_float_record_text.runCase();
-    cases.template_hole_prints_every_value.runCase();
-}

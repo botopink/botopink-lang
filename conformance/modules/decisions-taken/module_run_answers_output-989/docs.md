@@ -5,7 +5,7 @@ for byte, nothing of it reaching the program's own output; `Async` of that answe
 `async`; and on a failure `RunFailure.output`, the text written before the package crashed (`.Abort`) or before its
 `main` returned `Error` (`.Failed`) (`module_run_answers_output`), on commonJS, erlang, beam and wasm.
 
-[cells/module_run_answers_output/src/main.bp](cells/module_run_answers_output/src/main.bp)
+[cells/module_run_answers_output/src/main.bp](cases/module_run_answers_output/src/main.bp)
 
 What a loaded package's answer carries for a suite that reads it (989 (4)): the build's prints on its `Module`, the calls a build raise crossed on its `Diagnostic`, and a refused manifest as a `Diagnostic` of `botopink.json`.
 
@@ -16,7 +16,7 @@ target out is audited there: a package the target does not refuse is `load-exclu
 with it (`load_excluded_target_compiles_refused`). `io.os.target()` answers the target the program runs on, each
 target's own constant (`os_target_names_the_target`).
 
-[cells/module_build_output_and_from/src/main.bp](cells/module_build_output_and_from/src/main.bp)
-[cells/load_refused_on_one_target_answers_refused/src/main.bp](cells/load_refused_on_one_target_answers_refused/src/main.bp)
-[cells/load_excluded_target_compiles_refused/src/main.bp](cells/load_excluded_target_compiles_refused/src/main.bp)
-[cells/os_target_names_the_target/src/main.bp](cells/os_target_names_the_target/src/main.bp)
+[cells/module_build_output_and_from/src/main.bp](cases/module_build_output_and_from/src/main.bp)
+[cells/load_refused_on_one_target_answers_refused/src/main.bp](cases/load_refused_on_one_target_answers_refused/src/main.bp)
+[cells/load_excluded_target_compiles_refused/src/main.bp](cases/load_excluded_target_compiles_refused/src/main.bp)
+[cells/os_target_names_the_target/src/main.bp](cases/os_target_names_the_target/src/main.bp)

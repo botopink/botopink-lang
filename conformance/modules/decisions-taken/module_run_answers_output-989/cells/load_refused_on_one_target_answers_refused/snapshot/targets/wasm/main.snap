@@ -1,6 +1,0 @@
-botopink-cell 1
-out == hosted
-out refused `host` has no implementation for the wasm backend
-out == named
-out excluded `named` has no implementation for the wasm backend
-out main

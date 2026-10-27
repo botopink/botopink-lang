@@ -2122,20 +2122,20 @@ can fail answers `@Result<…, FsError>`, the same OS error the same `FsError` v
 away from wasm (the `wasi:filesystem` bindings are front 164's; the table above names `utf8Offset`, the first
 host cell a body of `std/io/fs` calls with no binding):
 
-- `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants` — six of the seven variants (`PermissionDenied` is std's own test, which
+- `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants` — six of the seven variants (`PermissionDenied` is std's own test, which
   reaches it as a user who is not root): `NotFound`, `IsDirectory`, `NotDirectory`, `AlreadyExists`,
   `InvalidUtf8` and `Other` (a dangling link under `walk`, decision 178's text its `message`), met through
   `readText`, `list`, `mkdir`, `rm`, `copy`, `stat`, `open`, `create`, `writeText` and `walk`, each with the
   path the caller wrote.
-- `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8` — `readText` of valid text (a four-byte sequence, U+10FFFF, U+FFFE, a byte
+- `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8` — `readText` of valid text (a four-byte sequence, U+10FFFF, U+FFFE, a byte
   order mark) and of sixteen byte strings that are not UTF-8 (a stray continuation, an overlong form, a
   surrogate, past U+10FFFF, a sequence cut short), the same `InvalidUtf8` offset on every target, the bytes
   still readable.
-- `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts` — `writeBytes` / `readBytes` keep every byte, `appendText` creates and
+- `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts` — `writeBytes` / `readBytes` keep every byte, `appendText` creates and
   adds, `copy`, `rm`, `removeTree` (a missing path is `Ok`), `mkdirRecursive`, `stat`, `list`, `walk`, `glob`.
-- `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle` — `create` / `open`, `path`, `size`, `read(n)`, `bytes`, `text`, `hash` (the whole
+- `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle` — `create` / `open`, `path`, `size`, `read(n)`, `bytes`, `text`, `hash` (the whole
   file whatever the position), `write`, a file opened for reading refusing `write` and one created for writing
-  refusing `read`, `close` twice, `create` truncating. Written without `defer`: `close` is called by hand; `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_defer_close` is the same handle closed with `defer` (539) on every exit of a block, a program type that writes `implement Closeable`, a closed file refusing a read.
+  refusing `read`, `close` twice, `create` truncating. Written without `defer`: `close` is called by hand; `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_defer_close` is the same handle closed with `defer` (539) on every exit of a block, a program type that writes `implement Closeable`, a closed file refusing a read.
 - `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams` — `chunks(size)` and `lines()`: `\n` and `\r\n` stripped, an empty line, a last line
   with no terminator, an empty file, `lines` after `read`, and a line that is not UTF-8 ending the stream with
   `InvalidUtf8` at its offset in what the call read.
@@ -2212,7 +2212,7 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 | `modules/decisions-taken/any_type_absent-31/cells/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
 | `modules/decisions-taken/wasm_clock_fs_refused-241/cells/std_template_host_fns_across_modules`, `modules/import/cases/import_std_groups`, `modules/decisions-taken/stat_mtime_whole_seconds-499/cells/fs_stat_mtime_whole_seconds` | commonJS erlang beam | wasm — `utf8Offset` (the first host cell a body of `std/io/fs` calls with no wasm binding; decision 540) |
 | `modules/decisions-taken/decorator_registry_gathers_marked_declarations-665/cells/typeinfo_all_default_at_caller` | commonJS erlang beam | wasm — `through` |
-| `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
+| `modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8`, `modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle`, `modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_streams`, `modules/decisions-taken/asset_size_hash_open-538/cells/fs_asset_opens_as_file` | commonJS erlang beam | wasm — `utf8Offset` (the same; front 164 binds `wasi:filesystem`) |
 | `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_rfc3339_domain`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_civil_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_format_past_rfc3339_aborts`, `modules/decisions-taken/clock_rfc3339_domain-497/cases/clock_offset_past_rfc3339_aborts`, `modules/std/cells/std_generic_primitives`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_build_and_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_comptime_block_in_run`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_imported`, `modules/decisions-taken/function_stage_propagated-376/cases/stage_of_functions` | commonJS erlang beam | wasm — `systemTimeWithUnit` |
 | `modules/decisions-taken/decl_hooks_reachable_components-277/cells/decl_hooks_direct` | commonJS erlang beam | wasm — `session` |
 | `modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_library` | commonJS erlang beam | wasm — `hostStash` |

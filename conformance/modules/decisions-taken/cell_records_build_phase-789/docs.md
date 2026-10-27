@@ -6,4 +6,4 @@ compiler.load(…) catch { r -> compiler.init({ … }); return; };` —, and sin
 branch is taken at build: in the cell `comptime_load_try_catch_return_in_expansion` the `broken` case registers the
 init that prints its refusals and stops there, the `fine` case binds its `Module` and registers the init that runs it.
 
-[cells/comptime_load_try_catch_return_in_expansion/src/main.bp](cells/comptime_load_try_catch_return_in_expansion/src/main.bp)
+[cells/comptime_load_try_catch_return_in_expansion/src/main.bp](cases/comptime_load_try_catch_return_in_expansion/src/main.bp)

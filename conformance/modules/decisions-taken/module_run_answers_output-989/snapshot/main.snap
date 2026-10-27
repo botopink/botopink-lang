@@ -1,0 +1,65 @@
+botopink-cell 2
+== load_excluded_target_compiles_refused
+out ok [narrowed
+out ]
+out main
+== load_excluded_target_compiles_refused on wasm
+refused error: load-excluded-target-compiles: the package `packages/narrowed` leaves the target 'wasm' out of its manifest's `targets`, and the target compiles it — a target is left out only where a host binding refuses it (decisions 67, 989)
+at src/main.bp:9:36
+== load_refused_on_one_target_answers_refused
+out == hosted
+out ok [hosted host
+out ]
+out == named
+out ok [named
+out ]
+out main
+== load_refused_on_one_target_answers_refused on wasm
+out == hosted
+out refused `host` has no implementation for the wasm backend
+out == named
+out excluded `named` has no implementation for the wasm backend
+out main
+== module_build_output_and_from
+out printed packages/printed
+out 13
+out first
+out second
+out
+out refused packages/refused_after_print
+out before the refusal
+out
+out message=type mismatch: expected i32, got string
+out at=src/main.bp:8:12
+out from=0
+out message={error,{panic,<<"boom hi">>}}
+out at=src/helper.bp:5:5
+out from=1
+out   src/main.bp:7:11
+out message=unknown target `jvm` (commonJS, erlang, beam, wasm)
+out at=botopink.json:1:36
+out from=0
+== module_run_answers_output
+out == fine
+out ok [fine body
+out fine main 2
+out ]
+out == crash
+out abort boom [crash before
+out ]
+out == err
+out failed bad answer [err before
+out ]
+out == later
+out ok [later before
+out later after 42
+out ]
+out main
+== os_target_names_the_target
+out commonJS
+== os_target_names_the_target on beam
+out beam
+== os_target_names_the_target on erlang
+out erlang
+== os_target_names_the_target on wasm
+out wasm

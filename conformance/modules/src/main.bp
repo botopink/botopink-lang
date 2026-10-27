@@ -129,6 +129,7 @@ comptime {
     runModule("decisions-taken/bytes_build_constant_only-520");
     runModule("decisions-taken/bytes_primitive-346");
     runModule("decisions-taken/case_optional_bare_name_refused-980");
+    runModule("decisions-taken/cell_records_build_phase-789");
     runModule("decisions-taken/clock_iso8601_millis_always-849");
     runModule("decisions-taken/clock_rfc3339_domain-497");
     runModule("decisions-taken/code_never_enters_as_string-625");
@@ -220,6 +221,8 @@ comptime {
     runModule("decisions-taken/folder_import_refused-919");
     runModule("decisions-taken/format_applied_canonical_rewrites-524");
     runModule("decisions-taken/fs_error_message_text-563");
+    runModule("decisions-taken/fs_typed_error_shape-540");
+    runModule("decisions-taken/fs_walk_dangling_link_not_found-711");
     runModule("decisions-taken/function_return_type_written-622");
     runModule("decisions-taken/function_stage_propagated-376");
     runModule("decisions-taken/generic_fn_of_other_module_takes_shape-899");
@@ -257,6 +260,7 @@ comptime {
     runModule("decisions-taken/module_comptime_block_rules-793");
     runModule("decisions-taken/module_import_binds_namespace-582");
     runModule("decisions-taken/module_run_answers-792");
+    runModule("decisions-taken/module_run_answers_output-989");
     runModule("decisions-taken/module_run_failure_contained-806");
     runModule("decisions-taken/module_test_reports_each_test-993");
     runModule("decisions-taken/module_var_holds_async_refused-905");
@@ -313,6 +317,7 @@ comptime {
     runModule("decisions-taken/template_called_with_raw_text-577");
     runModule("decisions-taken/template_code_located_by_expansion-429");
     runModule("decisions-taken/template_hole_error_at_column-691");
+    runModule("decisions-taken/template_hole_writes_print_text-530");
     runModule("decisions-taken/template_lookup_answers_node-802");
     runModule("decisions-taken/try_region_closed_by_catch-595");
     runModule("decisions-taken/type_application_versus_comparison-255");

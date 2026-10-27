@@ -573,7 +573,7 @@ Several `Captured` children run at once and their `wait()`s are awaited together
 constant (decision 989 (7)). It is read when the program runs, never at build: comptime reads no target (decision
 798 (4)), so a body that runs at build and reaches it is `run-in-build`, at the call.
 
-<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/os_target_names_the_target -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cases/os_target_names_the_target -->
 
 ### The file system, `io.fs`
 
@@ -592,7 +592,7 @@ beam: `NotFound`), whichever function met it. `path` is the path the caller wrot
 source; for `walk`, the root); `Other.message` is the host's text; a dangling link under `walk` is an
 `Other` whose message names it. `exists` stays a `bool`: it cannot fail.
 
-<!-- example: modules/decisions-taken/fs_walk_dangling_link_not_found-711/cells/fs_error_variants -->
+<!-- example: modules/decisions-taken/fs_walk_dangling_link_not_found-711/cases/fs_error_variants -->
 
 `FsError` carries its own text (decision 563): `e.message()` answers one string per variant, `<what>: <path>` —
 `not found: <path>`, `permission denied: <path>`, `is a directory: <path>`, `not a directory: <path>`,
@@ -612,9 +612,9 @@ functions (`exists`, `list`, `mkdir`, `mkdirRecursive`, `rm`, `removeTree`, `cop
 `offset` the byte where the first invalid sequence starts — never node's silent U+FFFD, nor erlang's
 unchecked binary.
 
-<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cells/fs_whole_file_shortcuts -->
+<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cases/fs_whole_file_shortcuts -->
 
-<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cells/fs_read_text_not_utf8 -->
+<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cases/fs_read_text_not_utf8 -->
 
 **The handle.** `open(path)` (reading) and `create(path)` (writing, creating or truncating) answer a
 `File`, a `Closeable` the writer closes — `val f = try fs.open(p); defer f.close();` — and nothing checks
@@ -622,9 +622,9 @@ that it is. Its calls are `path()`, `size()`, `read(n)` (up to `n` bytes, empty 
 `text()` (the rest from the position), `hash()` (the SHA-256 of the whole file, lowercase hex),
 `write(b)` and `close()`; each that can fail answers `Result<…, FsError>`.
 
-<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_handle -->
+<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_handle -->
 
-<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cells/fs_file_defer_close -->
+<!-- example: modules/decisions-taken/fs_typed_error_shape-540/cases/fs_file_defer_close -->
 
 `chunks(size = 65536)` and `lines()` are `AsyncIter<Result<…, FsError>>`: the rest of the file in pieces of
 at most `size` bytes, or line by line with `\n` and `\r\n` stripped. An error ends the stream; a line that
@@ -4281,7 +4281,7 @@ compiler.load(…) catch { r -> …; return; };` — takes its branch at build w
 function: on `Error` the handler's statements are the block's and the `return` ends the expansion; on
 `Ok` the `Module` is bound and the statements after it are the block's.
 
-<!-- example: modules/decisions-taken/cell_records_build_phase-789/cells/comptime_load_try_catch_return_in_expansion -->
+<!-- example: modules/decisions-taken/cell_records_build_phase-789/cases/comptime_load_try_catch_return_in_expansion -->
 
 One rule holds for every block (decision 793): a `return` or a `throw` inside it is
 `comptime-block-exit`, at the jump; a block in a library package runs in the build of the package that
@@ -4400,7 +4400,7 @@ loaded package whose `botopink.json` the compiler refuses — invalid JSON, a ta
 `"targets"` — answers `Error` with one `Diagnostic` whose `file` is `botopink.json`, never a refusal of the
 caller.
 
-<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/module_build_output_and_from -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cases/module_build_output_and_from -->
 
 <!-- example: modules/decisions-taken/compiler_load_answers_module-786/cells/compiler_load_answers_module -->
 
@@ -4434,7 +4434,7 @@ The capture is the run's own — no program opens one. A loaded `main` that is `
 `Async<Result<string, RunFailure>>`, its `main` awaited inside the capture (989 (2)); a sync `main` keeps the sync
 form.
 
-<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/module_run_answers_output -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cases/module_run_answers_output -->
 
 The target built may refuse the loaded package — a host binding it reaches has no implementation there (decision
 989 (3)). That is the answer of its `run()`, never a refusal of the build, and nothing of the package runs: `kind`
@@ -4443,8 +4443,8 @@ is `.Refused` when the package's manifest declares the target, `.Excluded` when 
 audited when that target is built: a package the target does not refuse there is `load-excluded-target-compiles`,
 and the build with it — a target is left out only where a host binding refuses it (decision 67).
 
-<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/load_refused_on_one_target_answers_refused -->
-<!-- example: modules/decisions-taken/module_run_answers_output-989/cells/load_excluded_target_compiles_refused -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cases/load_refused_on_one_target_answers_refused -->
+<!-- example: modules/decisions-taken/module_run_answers_output-989/cases/load_excluded_target_compiles_refused -->
 
 Each `run()` starts clean: the loaded package's `val`s, `var`s, body and `compiler.init` executors run again before
 its `main`, so no run-time state passes from one run to the next. What the build folded (`val total = comptime

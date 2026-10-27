@@ -1,0 +1,9 @@
+botopink-cell 2
+== comptime_load_try_catch_return_in_expansion
+build == fine comptime
+build == broken comptime
+out == fine
+out fine main
+out == broken
+out refused error: type mismatch: expected i32, got string
+out at src/main.bp:2:18
