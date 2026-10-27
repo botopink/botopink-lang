@@ -178,15 +178,20 @@ install tests) would otherwise act on the committing repository.
 **Stages by name (decision 987).** `gate.sh --list-stages` prints the stage names in the order the
 gate runs them (`fmt otp build backend-partition test test-bpmp beam-export-audit test-cli test-libs
 test-conformance test-docs tsc-check test-web`; `--uses-binaries` prints the ones that run the
-installed binaries); `--stage <name>` (repeatable) runs only those, in the gate's order, and
-never reads or writes the green-tree record; no `--stage` runs every stage as before. `--prebuilt`
+installed binaries); `--list-rows` prints CI's rows (decision 1004 (2)) — `<stage>`, or `<stage>
+<target>` once per target for a stage split by target (`PER_TARGET_STAGES`: `test-conformance` on
+commonJS, erlang, beam and wasm) —, `--uses-binaries` again narrowing them; `--stage <name>`
+(repeatable) runs only those, in the gate's order, and never reads or writes the green-tree record;
+`--target <t>` (repeatable) narrows the stages split by target to those targets (on the step gate, to
+those the step also reaches); no `--stage` runs every stage as before. `--prebuilt`
 says `zig-out/bin` is already built (a CI job that downloaded it): the stages that run the
 binaries pass `-Dprebuilt=true` to `zig build` (build.zig leaves the install step out of
 `test-cli`, `test-libs`, `test-conformance` and `test-docs`), so nothing recompiles the compiler.
 `--portable` builds for the baseline CPU (`-Dcpu=baseline` on every `zig build` of the gate): CI builds the
 binaries on one runner and runs them on others, where a native build dies of SIGILL (exit 132). The
 conformance stage's command is spelled once, in `gate.sh`'s `conformance_cmd`; the CI workflow
-(`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name>`, one job per stage, and keeps no list.
+(`.github/workflows/test.yml`) only calls `gate.sh --cold --stage <name> [--target <t>]`, one job per row of
+`--list-rows`, and keeps no list.
 
 ### tsc-check.sh
 

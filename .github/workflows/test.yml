@@ -2,28 +2,38 @@
 # (decisions 466, 470, 477, 987): the same stages the commit hook runs with
 # `--no-conformance`, here WITH conformance and `--cold`, so a push to `feat`
 # runs every stage the gate declares. The workflow keeps no list of stages of
-# its own: the stages and their order are `scripts/gate.sh --list-stages`, a
-# stage runs as `scripts/gate.sh --cold --stage <name>`, and a stage is added to
-# or removed from `scripts/gate.sh`, never here. A front's Conformance step reads
-# this run (decision 477): one verdict per commit, the `scripts/gate.sh` job.
+# its own: the rows and their order are `scripts/gate.sh --list-rows` — a stage,
+# or a stage split by target once per target (decision 1004 (2)) —, a row runs as
+# `scripts/gate.sh --cold --stage <name> [--target <t>]`, and a stage or a target
+# is added to or removed from `scripts/gate.sh`, never here. A front's
+# Conformance step reads this run (decision 477): one verdict per commit, the
+# `scripts/gate.sh` job.
 #
 # The jobs, each on its own ubuntu-22.04 runner (no macos row; no windows row —
 # 1.0.11-beta 00-gate, gate-f: the snapshot capture carries CRLF / path-separator
 # drift there, and a row that cannot fail measures nothing), so a run's wall time
 # is its longest job rather than the sum of the stages:
 #
-#   stages     reads the stage list from `scripts/gate.sh --list-stages` (and
-#              `--uses-binaries`) and hands it to the jobs below as matrices.
+#   stages     reads the rows from `scripts/gate.sh --list-rows` (and
+#              `--uses-binaries`) and hands them to the jobs below as matrices:
+#              a row is `<stage>`, or `<stage> <target>` for a stage split by
+#              target (test-conformance: commonJS, erlang, beam, wasm).
 #   build      the `build` stage (`zig build`, ReleaseSafe — the mode the gate
 #              builds) once; uploads `zig-out/` as an artifact.
 #   unit       one job per stage that reads sources only (zig fmt, the OTP
 #              release, the backend partition audit, `zig build test`,
 #              `test-bpmp`, the beam export audit, `test-web`); starts at once.
-#   installed  one job per stage that runs the installed binaries (`test-cli`,
-#              `test-libs`, `test-conformance`, `test-docs`, `tsc-check`); downloads
+#   installed  one job per row that runs the installed binaries (`test-cli`,
+#              `test-libs`, `test-docs`, `tsc-check`, and `test-conformance` once
+#              per target, `--target <t>`, each row its own verdict); downloads
 #              `build`'s artifact and runs with `--prebuilt`, so nothing compiles
 #              the compiler again.
-#   gate       the run's one verdict: red when any job above is.
+#   gate       the run's one verdict: red when any job above is (a matrix job
+#              is red when any of its rows is).
+#
+# Every job has a `timeout-minutes` (decision 1004 (2)): a hung test ends its
+# job, never runs to GitHub's six hours. The bounds are about twice the
+# longest green run of each job.
 #
 # Every stage job runs its stage cold (`--cold`, decisions 509 (5), 754): the run
 # that decides a merge reads no botopink cache. Only Zig's own compile cache and
@@ -50,8 +60,9 @@ concurrency:
 
 jobs:
   stages:
-    name: stage list (scripts/gate.sh --list-stages)
+    name: stage list (scripts/gate.sh --list-rows)
     runs-on: ubuntu-22.04
+    timeout-minutes: 5
     outputs:
       unit: ${{ steps.lists.outputs.unit }}
       installed: ${{ steps.lists.outputs.installed }}
@@ -59,14 +70,15 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: false
-      - name: Read the stage lists from scripts/gate.sh
+      - name: Read the rows from scripts/gate.sh
         id: lists
         shell: bash
         run: |
-          all="$(bash scripts/gate.sh --list-stages)"
-          bins="$(bash scripts/gate.sh --list-stages --uses-binaries)"
-          json() { jq -Rsc 'split("\n") | map(select(. != ""))'; }
-          # every stage but `build` (its own job) and the ones that run the installed binaries
+          all="$(bash scripts/gate.sh --list-rows)"
+          bins="$(bash scripts/gate.sh --list-rows --uses-binaries)"
+          # each row `<stage>` or `<stage> <target>` → {"stage": …, "target": …} (target "" when whole)
+          json() { jq -Rsc 'split("\n") | map(select(. != "") | split(" ") | {stage: .[0], target: (.[1] // "")})'; }
+          # every row but `build` (its own job) and the ones that run the installed binaries
           unit="$(printf '%s\n' "$all" | grep -vxF build | grep -vxFf <(printf '%s\n' "$bins") | json)"
           installed="$(printf '%s\n' "$bins" | json)"
           echo "unit=$unit" >> "$GITHUB_OUTPUT"
@@ -77,6 +89,7 @@ jobs:
   build:
     name: build (scripts/gate.sh --stage build)
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -99,13 +112,14 @@ jobs:
           if-no-files-found: error
 
   unit:
-    name: ${{ matrix.stage }}
+    name: ${{ matrix.row.stage }}
     needs: stages
     strategy:
       fail-fast: false
       matrix:
-        stage: ${{ fromJSON(needs.stages.outputs.unit) }}
+        row: ${{ fromJSON(needs.stages.outputs.unit) }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
@@ -114,18 +128,23 @@ jobs:
         with:
           libs: 'true'
           zig-cache: 'true'
-      - name: scripts/gate.sh --cold --stage ${{ matrix.stage }}
+      - name: scripts/gate.sh --cold --stage ${{ matrix.row.stage }}
         shell: bash
-        run: bash scripts/gate.sh --cold --stage "${{ matrix.stage }}"
+        env:
+          STAGE: ${{ matrix.row.stage }}
+          TARGET: ${{ matrix.row.target }}
+        run: bash scripts/gate.sh --cold --stage "$STAGE" ${TARGET:+--target "$TARGET"}
 
   installed:
-    name: ${{ matrix.stage }}
+    name: ${{ matrix.row.target && format('{0} ({1})', matrix.row.stage, matrix.row.target) || matrix.row.stage }}
     needs: [stages, build]
     strategy:
       fail-fast: false
       matrix:
-        stage: ${{ fromJSON(needs.stages.outputs.installed) }}
+        row: ${{ fromJSON(needs.stages.outputs.installed) }}
     runs-on: ubuntu-22.04
+    # test-conformance's rows took 25–31 min whole before the split by target; test-libs ~28 min
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
         with:
@@ -140,9 +159,12 @@ jobs:
       - name: Unpack the binaries
         shell: bash
         run: tar -xzf zig-out.tgz
-      - name: scripts/gate.sh --cold --portable --prebuilt --stage ${{ matrix.stage }}
+      - name: scripts/gate.sh --cold --portable --prebuilt --stage ${{ matrix.row.stage }} ${{ matrix.row.target && format('--target {0}', matrix.row.target) || '' }}
         shell: bash
-        run: bash scripts/gate.sh --cold --portable --prebuilt --stage "${{ matrix.stage }}"
+        env:
+          STAGE: ${{ matrix.row.stage }}
+          TARGET: ${{ matrix.row.target }}
+        run: bash scripts/gate.sh --cold --portable --prebuilt --stage "$STAGE" ${TARGET:+--target "$TARGET"}
 
   # The run's one verdict, for a front's Conformance step (decision 477).
   gate:
@@ -150,6 +172,7 @@ jobs:
     if: always()
     needs: [stages, build, unit, installed]
     runs-on: ubuntu-22.04
+    timeout-minutes: 5
     steps:
       - name: Every job green
         shell: bash

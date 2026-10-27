@@ -62,8 +62,9 @@
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged] [--no-conformance] [--jobs <N>]
-#                   [--stage <name>]… [--prebuilt] [--portable]
+#                   [--stage <name>]… [--target <t>]… [--prebuilt] [--portable]
 #   scripts/gate.sh --list-stages [--uses-binaries]
+#   scripts/gate.sh --list-rows [--uses-binaries]
 #
 # Two modes, decided by the current branch alone (§ step gate and full gate;
 # decision 460) — there is no flag or variable for it. On a `front/*` branch the
@@ -109,6 +110,21 @@
 #             installed binaries (test-cli, test-libs, test-conformance, test-docs,
 #             tsc-check): the jobs that need the build job's artifact.
 #
+#   --list-rows
+#             print the CI rows, one per line, in the gate's order (decision
+#             1004 (2)): `<stage>` for a stage that runs whole, `<stage> <target>`
+#             once per target for a stage split by target (`PER_TARGET_STAGES`,
+#             today test-conformance: commonJS, erlang, beam, wasm). With
+#             `--uses-binaries`, only the rows of the stages that run the
+#             installed binaries. The CI workflow builds its matrices from it.
+#
+#   --target <t>
+#             (repeatable; commonJS, erlang, beam or wasm) narrow the stages
+#             split by target to the named targets — a CI row runs
+#             `--stage test-conformance --target <t>`; every other stage
+#             ignores it. On the step gate the targets are those the step
+#             reaches AND named here; none left skips the stage.
+#
 #   --stage <name>
 #             (repeatable) run only the named stages, in the gate's order, and
 #             nothing else; no `--stage` runs every stage as always. A selected
@@ -150,6 +166,12 @@ STAGES=(fmt otp build backend-partition test test-bpmp beam-export-audit test-cl
 # The stages that run the installed binaries (zig-out/bin) stage 2 builds; every other stage
 # (but `build` itself) reads sources only. `--list-stages --uses-binaries` prints these.
 BIN_STAGES=(test-cli test-libs test-conformance test-docs tsc-check)
+# The stages a CI row runs one target at a time (`--list-rows`, `--target`; decision 1004 (2)),
+# and their targets, in the order the rows are listed.
+PER_TARGET_STAGES=(test-conformance)
+TARGETS=(commonJS erlang beam wasm)
+list_rows=0
+target_sel=()
 selected=()
 list_stages=0
 only_bin=0
@@ -167,6 +189,11 @@ while [ "$#" -gt 0 ]; do
             jobs_total="$1"; shift ;;
         --jobs=*) jobs_total="${a#--jobs=}" ;;
         --list-stages) list_stages=1 ;;
+        --list-rows) list_rows=1 ;;
+        --target)
+            [ "$#" -gt 0 ] || { echo "gate: --target needs a target" >&2; exit 2; }
+            target_sel+=("$1"); shift ;;
+        --target=*) target_sel+=("${a#--target=}") ;;
         --uses-binaries) only_bin=1 ;;
         --stage)
             [ "$#" -gt 0 ] || { echo "gate: --stage needs a name" >&2; exit 2; }
@@ -186,6 +213,24 @@ if [ "$list_stages" -eq 1 ]; then
     if [ "$only_bin" -eq 1 ]; then printf '%s\n' "${BIN_STAGES[@]}"; else printf '%s\n' "${STAGES[@]}"; fi
     exit 0
 fi
+if [ "$list_rows" -eq 1 ]; then
+    for s in "${STAGES[@]}"; do
+        if [ "$only_bin" -eq 1 ]; then
+            case " ${BIN_STAGES[*]} " in *" $s "*) ;; *) continue ;; esac
+        fi
+        case " ${PER_TARGET_STAGES[*]} " in
+            *" $s "*) for t in "${TARGETS[@]}"; do printf '%s %s\n' "$s" "$t"; done ;;
+            *) printf '%s\n' "$s" ;;
+        esac
+    done
+    exit 0
+fi
+for t in ${target_sel[@]+"${target_sel[@]}"}; do
+    case " ${TARGETS[*]} " in
+        *" $t "*) ;;
+        *) echo "gate: unknown target '$t' (one of: ${TARGETS[*]})" >&2; exit 2 ;;
+    esac
+done
 for a in ${selected[@]+"${selected[@]}"}; do
     case " ${STAGES[*]} " in
         *" $a "*) ;;
@@ -304,6 +349,24 @@ if [ "$gate_kind" = step ]; then
 else
     if [ -n "$gate_branch" ]; then gate_where="branch $gate_branch"; else gate_where="detached HEAD"; fi
     printf 'gate: full gate (%s): every stage, every cell, every library\n' "$gate_where"
+fi
+
+# --target: the stages split by target run on the named targets only — those the
+# step reaches among them, on the step gate (decision 1004 (2)).
+if [ "${#target_sel[@]}" -gt 0 ] && [ "$run_lang" -eq 1 ] && [ "$no_conformance" -eq 0 ]; then
+    if [ "${#lang_args[@]}" -gt 0 ]; then reach_list=",${lang_args[1]},"; else reach_list=",$(IFS=,; echo "${TARGETS[*]}"),"; fi
+    sel_list=""
+    for t in "${target_sel[@]}"; do
+        case "$reach_list" in *",$t,"*) case ",$sel_list," in *",$t,"*) ;; *) sel_list="${sel_list:+$sel_list,}$t" ;; esac ;; esac
+    done
+    if [ -n "$sel_list" ]; then
+        lang_args=(--target "$sel_list")
+        echo "gate: test-conformance on $sel_list (--target)"
+    else
+        run_lang=0
+        reach_why="--target names no target the step reaches"
+        echo "gate: test-conformance skipped: --target names no target the step reaches"
+    fi
 fi
 
 # Decision 470: the conformance cells (test-conformance) are what a front's
