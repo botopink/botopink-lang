@@ -233,13 +233,13 @@ pub fn rt_std_random__seed(s: T) callconv(.c) term.T {
 /// `random.float` is an unseeded draw (decision 456): at build it is refused
 /// as `seededFloat` is before any seed, never `comptime-host-cell-unavailable`.
 pub fn rt_std_random__float() callconv(.c) term.T {
-    term.raiseWat("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)");
+    term.raiseWat(stdWasm.random.unseeded_text);
     return &term.nil_cell;
 }
 
 pub fn rt_std_random__seededFloat() callconv(.c) term.T {
     const v = random_stream.next() orelse {
-        term.raiseWat("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)");
+        term.raiseWat(stdWasm.random.unseeded_text);
         return &term.nil_cell;
     };
     return term.mkFloat(v);

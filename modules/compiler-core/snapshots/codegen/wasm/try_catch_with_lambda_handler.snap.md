@@ -33,10 +33,10 @@ fn safe() -> i32 {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem0
-    i32.const 11720
+    i32.const 11704
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -90,22 +90,22 @@ fn safe() -> i32 {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 22
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11720
+    i32.const 11704
     i32.const 0
     i32.const 8
     memory.init $__bp_seg1
     data.drop $__bp_seg1
     global.get $__heap_ptr
-    i32.const 11728
+    i32.const 11712
     i32.lt_u
     (if
       (then
-      i32.const 11728
+      i32.const 11712
       global.set $__heap_ptr
       )
     )

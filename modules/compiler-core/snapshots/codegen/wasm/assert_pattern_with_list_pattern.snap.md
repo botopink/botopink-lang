@@ -54,7 +54,7 @@ fn f() -> Result<void, string> {
     i32.const 1
     i32.store ;; Result tag (Error)
     local.get $_res0
-    i32.const 11696
+    i32.const 11680
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -89,17 +89,17 @@ fn f() -> Result<void, string> {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 14
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11712
+    i32.const 11696
     i32.lt_u
     (if
       (then
-      i32.const 11712
+      i32.const 11696
       global.set $__heap_ptr
       )
     )

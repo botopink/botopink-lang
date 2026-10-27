@@ -146,7 +146,7 @@ import {io.terminal.print} from "std";
     local.get $__mem0
     call $fromList
     call $toList
-    i32.const 11696
+    i32.const 11680
     call $__std_array_joinInts
     call $__print_str
   )
@@ -414,17 +414,17 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 5
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11704
+    i32.const 11688
     i32.lt_u
     (if
       (then
-      i32.const 11704
+      i32.const 11688
       global.set $__heap_ptr
       )
     )

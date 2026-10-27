@@ -113,7 +113,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem2
     local.get $__mem2
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem2
     i32.const 4
@@ -141,21 +141,21 @@ import {io.terminal.print} from "std";
   (func $__lambda0 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 2
-    i32.const 11716
+    i32.const 11700
     call $__i32_mul_chk
     return
   )
   (func $__lambda1 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 100
-    i32.const 11764
+    i32.const 11748
     call $__i32_add_chk
     return
   )
   (func $__lambda2 (param $__env i32) (param $n i32) (result i32)
     local.get $n
     i32.const 1
-    i32.const 11812
+    i32.const 11796
     call $__i32_sub_chk
     return
   )
@@ -599,32 +599,32 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 17
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11716
+    i32.const 11700
     i32.const 0
     i32.const 46
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11764
+    i32.const 11748
     i32.const 0
     i32.const 47
     memory.init $__bp_seg2
     data.drop $__bp_seg2
-    i32.const 11812
+    i32.const 11796
     i32.const 0
     i32.const 47
     memory.init $__bp_seg3
     data.drop $__bp_seg3
     global.get $__heap_ptr
-    i32.const 11860
+    i32.const 11844
     i32.lt_u
     (if
       (then
-      i32.const 11860
+      i32.const 11844
       global.set $__heap_ptr
       )
     )

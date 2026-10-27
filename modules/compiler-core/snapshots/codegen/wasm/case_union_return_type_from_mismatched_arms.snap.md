@@ -23,7 +23,7 @@ val result = case 42 {
     i32.eq
     (if (result i32)
       (then
-    i32.const 11696
+    i32.const 11680
       )
       (else
     i32.const 1
@@ -44,17 +44,17 @@ val result = case 42 {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 8
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11704
+    i32.const 11688
     i32.lt_u
     (if
       (then
-      i32.const 11704
+      i32.const 11688
       global.set $__heap_ptr
       )
     )

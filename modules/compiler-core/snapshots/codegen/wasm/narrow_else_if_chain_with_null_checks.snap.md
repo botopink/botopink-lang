@@ -42,7 +42,7 @@ import {io.terminal.print} from "std";
     )
     (if (result i32)
       (then
-    i32.const 11696
+    i32.const 11680
     return
       )
       (else
@@ -62,7 +62,7 @@ import {io.terminal.print} from "std";
     i32.eqz
     (if (result i32)
       (then
-    i32.const 11704
+    i32.const 11688
     call $__cap_begin
     local.set $_res0
     local.get $x
@@ -73,7 +73,7 @@ import {io.terminal.print} from "std";
     return
       )
       (else
-    i32.const 11720
+    i32.const 11704
     return
       )
     )
@@ -523,27 +523,27 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 8
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 13
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11720
+    i32.const 11704
     i32.const 0
     i32.const 8
     memory.init $__bp_seg2
     data.drop $__bp_seg2
     global.get $__heap_ptr
-    i32.const 11728
+    i32.const 11712
     i32.lt_u
     (if
       (then
-      i32.const 11728
+      i32.const 11712
       global.set $__heap_ptr
       )
     )

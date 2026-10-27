@@ -27,9 +27,9 @@ import {io.terminal.print} from "std";
     (local $Fn i32)
     (local $names i32)
     (local $at i32)
-    i32.const 11696
+    i32.const 11680
     local.set $File
-    i32.const 11708
+    i32.const 11692
     local.set $Fn
     i32.const 8
     call $__alloc
@@ -262,22 +262,22 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 11
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11708
+    i32.const 11692
     i32.const 0
     i32.const 8
     memory.init $__bp_seg1
     data.drop $__bp_seg1
     global.get $__heap_ptr
-    i32.const 11716
+    i32.const 11700
     i32.lt_u
     (if
       (then
-      i32.const 11716
+      i32.const 11700
       global.set $__heap_ptr
       )
     )

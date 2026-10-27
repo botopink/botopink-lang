@@ -20,7 +20,7 @@ import {io.terminal.print} from "std";
   (func $main
     (local $s i32)
     (local $mid i32)
-    i32.const 11696
+    i32.const 11680
     local.set $s
     local.get $s
     i32.const 1
@@ -228,17 +228,17 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 9
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11708
+    i32.const 11692
     i32.lt_u
     (if
       (then
-      i32.const 11708
+      i32.const 11692
       global.set $__heap_ptr
       )
     )

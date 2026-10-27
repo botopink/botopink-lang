@@ -38,10 +38,10 @@ val parity = case 5 {
     i32.or
     (if (result i32)
       (then
-    i32.const 11696
+    i32.const 11680
       )
       (else
-    i32.const 11704
+    i32.const 11688
     local.set $value
     local.get $value
       )
@@ -61,22 +61,22 @@ val parity = case 5 {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 8
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 7
     memory.init $__bp_seg1
     data.drop $__bp_seg1
     global.get $__heap_ptr
-    i32.const 11712
+    i32.const 11696
     i32.lt_u
     (if
       (then
-      i32.const 11712
+      i32.const 11696
       global.set $__heap_ptr
       )
     )

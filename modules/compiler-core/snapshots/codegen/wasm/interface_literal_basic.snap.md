@@ -32,9 +32,9 @@ import {io.terminal.print} from "std";
     (local $Fn i32)
     (local $kinds i32)
     (local $decl i32)
-    i32.const 11696
+    i32.const 11680
     local.set $Type
-    i32.const 11704
+    i32.const 11688
     local.set $Fn
     i32.const 8
     call $__alloc
@@ -55,7 +55,7 @@ import {io.terminal.print} from "std";
     i32.load
     i32.store
     local.get $__mem1
-    i32.const 11712
+    i32.const 11696
     i32.store offset=4
     local.get $__mem1
     i32.const 4
@@ -76,7 +76,7 @@ import {io.terminal.print} from "std";
     local.get $__mem3
     i32.store offset=12
     local.get $__mem1
-    i32.const 11724
+    i32.const 11708
     i32.store offset=16
     local.get $__mem1
     i32.const 4
@@ -312,32 +312,32 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 8
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 6
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11712
+    i32.const 11696
     i32.const 0
     i32.const 11
     memory.init $__bp_seg2
     data.drop $__bp_seg2
-    i32.const 11724
+    i32.const 11708
     i32.const 0
     i32.const 4
     memory.init $__bp_seg3
     data.drop $__bp_seg3
     global.get $__heap_ptr
-    i32.const 11728
+    i32.const 11712
     i32.lt_u
     (if
       (then
-      i32.const 11728
+      i32.const 11712
       global.set $__heap_ptr
       )
     )

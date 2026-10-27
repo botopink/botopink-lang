@@ -18,11 +18,11 @@ val txt = box("hi");
   (data $__bp_seg1 "\01\00\00\00x")
   (data $__bp_seg2 "\02\00\00\00hi")
   (func $node (result i32)
-    i32.const 11696
+    i32.const 11680
     return
   )
   (func $box (param $children i32) (result i32)
-    i32.const 11704
+    i32.const 11688
     return
   )
   (global $many (mut i32) (i32.const 0))
@@ -48,7 +48,7 @@ val txt = box("hi");
     call $node
     call $box
     global.set $one
-    i32.const 11712
+    i32.const 11696
     call $box
     global.set $txt
   )
@@ -65,27 +65,27 @@ val txt = box("hi");
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 5
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 5
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11712
+    i32.const 11696
     i32.const 0
     i32.const 6
     memory.init $__bp_seg2
     data.drop $__bp_seg2
     global.get $__heap_ptr
-    i32.const 11720
+    i32.const 11704
     i32.lt_u
     (if
       (then
-      i32.const 11720
+      i32.const 11704
       global.set $__heap_ptr
       )
     )

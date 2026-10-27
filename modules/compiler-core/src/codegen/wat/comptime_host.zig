@@ -21,27 +21,35 @@
 //! instances per evaluation (`reset`), so nothing one evaluation leaves —
 //! the heap past `__heap_ptr` included — is seen by the next.
 //!
-//! **The reply** (1059 (2)): when the evaluation export returns, its reply
-//! is the answer as it is — C2's codec wrote `printed` into it. When no codec
-//! ran — a trap, the deadline, an interrupt — the host builds the reply,
-//! `{"kind":"error","message":…}` with `"printed"` holding the text fd 1 and
-//! 2 received so far when there is any (904).
+//! **The reply** (1059 (2), 1063 (3)): when the evaluation export returns,
+//! its reply is the answer as it is — C2's codec wrote `printed` into it. When
+//! no codec ran — a trap, the deadline, an interrupt — the host builds the
+//! reply (`hostReply`), `{"kind":"error","message":…,"frames":[…],"loc":""}`
+//! with `"printed"` holding the text fd 1 and 2 received so far when there is
+//! any (904). The host never passes a capture in: under comptime the core
+//! mirrors each write to `fd_write` (1063 (3), C1 / C2's side); until it does,
+//! the host's own fd capture is that copy.
 //!
 //! **The host services** (1059 (4)), and nothing else (any other import that
 //! is not an earlier unit is a `compile_error` naming it):
 //!
 //! - print: `wasi_snapshot_preview1.fd_write` on fd 1 or 2 is captured;
 //! - clock: `clock_time_get`, `clock_res_get`, `poll_oneoff`, every
-//!   `bp_host` timer — trap `a build has no clock: …`;
-//! - entropy: `random_get`, `bp_random_f64` — trap with 451's refusal;
+//!   `bp_host` timer — trap `a build has no clock`;
+//! - entropy: `random_get`, `bp_random_f64` — trap with 451's refusal
+//!   (std-wasm's `random.unseeded_text`);
 //! - files: every `bp_fs` import, every `fd_*` and `path_*` but `fd_write`
-//!   on 1 / 2 — trap `a build has no file system: …`;
-//! - process: `environ_*`, `args_*` — trap `a build has no process: …`;
+//!   on 1 / 2 — trap `a build has no file system`;
+//! - process: `environ_*`, `args_*` — trap `a build has no process`;
 //!   `proc_exit` — trap `a build does not exit the process`;
 //! - `sched_yield` answers 0.
 //!
-//! A trap's message is the plain fact; the evaluator locates it at the
-//! expression being evaluated (451 (3), 878's shape), as it does today.
+//! **A trap** (1063 (1)): the host never names the function. Its `Fault`
+//! keeps the message (`classText`, the fact with no function), the class and
+//! the import, and the backtrace's frames by each unit's `name` section
+//! (`<pkg>@<path>.<fn>`, C1), innermost first, at most `max_frames`; the
+//! evaluator names the innermost std frame and locates at the first frame
+//! outside `std@` (`namedText`), and with no frame keeps the class text.
 //!
 //! **Time and interrupt** (878, 1059 (5)): no default limit — a body runs to
 //! its end (380 (2)). The store is watched by the runner's `StoreWatch`, so
@@ -81,9 +89,9 @@ pub const Options = struct {
     deadline_ns: ?u64 = null,
 };
 
-/// Decision 451's refusal of an unseeded draw, the words the term runtime
-/// raises today.
-pub const entropy_text = "an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)";
+/// The refusal of an unseeded draw (451 (3), 456): std-wasm's one constant,
+/// the words the term runtime raises (1063 (2)).
+pub const entropy_text = @import("std_wasm").random.unseeded_text;
 pub const exit_text = "a build does not exit the process";
 /// An evaluation `runner.interrupt()` ended: the reply comptime answers today
 /// (`persistent_wat.interrupted_reply`, decision 878), which the evaluators
@@ -92,8 +100,49 @@ pub const interrupted_text = "wasmtime: interrupted";
 /// An evaluation its deadline ended (1059 (5), 1034 (3)).
 pub const timed_out_text = "wasm trap: time limit reached";
 
+/// The fact of a host service a build does not have, with no function named
+/// (1063 (1)): the message the host gives a forbidden import's trap. The
+/// evaluator, which has the frames, words it with `namedText`.
+pub fn classText(service: Service) []const u8 {
+    return switch (service) {
+        .clock => "a build has no clock",
+        .files, .print => "a build has no file system",
+        .environment => "a build has no process",
+        .exit => exit_text,
+        .entropy => entropy_text,
+        .yield => unreachable,
+    };
+}
+
+/// The most frames a raise keeps, the innermost first: wasmtime's own
+/// backtrace bound (`wasm_backtrace_max_frames`' default), which the page
+/// keeps too.
+pub const max_frames = 20;
+
+/// One frame of a trap's backtrace, by the unit's `name` section (1063 (1)):
+/// the module's name and the function's (`<pkg>@<path>.<fn>`, C1). A frame
+/// whose function has no name is left out; a module with no name is "".
+pub const Frame = struct { module: []u8, function: []u8 };
+
+/// What a trap or a deadline raised, no codec having run.
+pub const Fault = struct {
+    /// The plain fact (`classText`), or the engine's `wasmtime: <what>`.
+    message: []u8,
+    /// A forbidden import's class, null for any other trap (1063 (1)).
+    service: ?Service = null,
+    /// That import, `<module>.<name>`; empty for any other trap.
+    import: []u8 = &.{},
+    frames: []Frame = &.{},
+
+    pub fn deinit(f: Fault, alloc: std.mem.Allocator) void {
+        alloc.free(f.message);
+        alloc.free(f.import);
+        freeFrames(alloc, f.frames);
+    }
+};
+
 /// The named fact of a host service a build does not have, for the function
-/// `name` (1059 (3)). Owned.
+/// `name` (1059 (3)): the evaluator's words, from the frames. Owned.
 pub fn namedText(alloc: std.mem.Allocator, service: Service, name: []const u8) Error![]u8 {
     return switch (service) {
         .clock => std.fmt.allocPrint(alloc, "a build has no clock: {s} reads the time when the program runs", .{name}),
@@ -108,8 +157,8 @@ pub fn namedText(alloc: std.mem.Allocator, service: Service, name: []const u8) E
 pub const Outcome = union(enum) {
     /// The evaluation export's reply JSON, as the codec wrote it.
     reply: []u8,
-    /// No codec ran: the reply the host built, and its message.
-    raised: struct { reply: []u8, message: []u8 },
+    /// No codec ran: the reply the host built, and what raised.
+    raised: struct { reply: []u8, fault: Fault },
     /// A unit the engine refused, an import the host does not serve, or a
     /// crossing export missing.
     compile_error: []u8,
@@ -126,7 +175,7 @@ pub const Answer = struct {
             .reply, .compile_error => |t| alloc.free(t),
             .raised => |r| {
                 alloc.free(r.reply);
-                alloc.free(r.message);
+                r.fault.deinit(alloc);
             },
         }
         alloc.free(self.printed);
@@ -157,37 +206,61 @@ fn refused(alloc: std.mem.Allocator, text: []u8) Error!Answer {
     return .{ .outcome = .{ .compile_error = text }, .printed = try alloc.dupe(u8, "") };
 }
 
-/// `{"kind":"error","message":<message>}`, with `"printed"` when `printed`
-/// is not empty: the reply the host builds when no codec ran (1059 (2)).
-pub fn hostReply(alloc: std.mem.Allocator, message: []const u8, printed: []const u8) Error![]u8 {
+/// `{"kind":"error","message":<message>,"frames":[{"module","function"}…],"loc":""}`,
+/// with `"printed"` when `printed` is not empty: the reply the host builds
+/// when no codec ran (1059 (2), 1063 (1), (3)); `loc` stays empty until C4's
+/// offset table.
+pub fn hostReply(alloc: std.mem.Allocator, fault: Fault, printed: []const u8) Error![]u8 {
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
     var s: std.json.Stringify = .{ .writer = &out.writer };
-    s.beginObject() catch return error.OutOfMemory;
-    s.objectField("kind") catch return error.OutOfMemory;
-    s.write("error") catch return error.OutOfMemory;
-    s.objectField("message") catch return error.OutOfMemory;
-    s.write(message) catch return error.OutOfMemory;
-    if (printed.len > 0) {
-        s.objectField("printed") catch return error.OutOfMemory;
-        s.write(printed) catch return error.OutOfMemory;
-    }
-    s.endObject() catch return error.OutOfMemory;
+    writeReply(&s, fault, printed) catch return error.OutOfMemory;
     return out.toOwnedSlice();
+}
+
+fn writeReply(s: *std.json.Stringify, fault: Fault, printed: []const u8) !void {
+    try s.beginObject();
+    try s.objectField("kind");
+    try s.write("error");
+    try s.objectField("message");
+    try s.write(fault.message);
+    try s.objectField("frames");
+    try s.beginArray();
+    for (fault.frames) |f| {
+        try s.beginObject();
+        try s.objectField("module");
+        try s.write(f.module);
+        try s.objectField("function");
+        try s.write(f.function);
+        try s.endObject();
+    }
+    try s.endArray();
+    try s.objectField("loc");
+    try s.write("");
+    if (printed.len > 0) {
+        try s.objectField("printed");
+        try s.write(printed);
+    }
+    try s.endObject();
 }
 
 /// What a run of the units came to, before the reply is settled.
 const Ran = union(enum) {
     reply: []u8,
-    raised: []u8,
+    raised: Fault,
     compile_error: []u8,
 
     fn free(r: Ran, alloc: std.mem.Allocator) void {
         switch (r) {
-            inline else => |t| alloc.free(t),
+            .reply, .compile_error => |t| alloc.free(t),
+            .raised => |f| f.deinit(alloc),
         }
     }
 };
+
+fn plainFault(alloc: std.mem.Allocator, text: []const u8) Error!Fault {
+    return .{ .message = try alloc.dupe(u8, text) };
+}
 
 const Job = struct {
     alloc: std.mem.Allocator,
@@ -207,7 +280,7 @@ const Job = struct {
             .exited => {},
             .interrupted, .timed_out => {
                 ran.free(alloc);
-                ran = .{ .raised = try alloc.dupe(u8, if (end == .interrupted) interrupted_text else timed_out_text) };
+                ran = .{ .raised = try plainFault(alloc, if (end == .interrupted) interrupted_text else timed_out_text) };
             },
         }
         const printed = try alloc.dupe(u8, host.printed.items);
@@ -215,7 +288,7 @@ const Job = struct {
         const outcome: Outcome = switch (ran) {
             .reply => |r| .{ .reply = r },
             .compile_error => |t| .{ .compile_error = t },
-            .raised => |m| .{ .raised = .{ .reply = try hostReply(alloc, m, printed), .message = m } },
+            .raised => |f| .{ .raised = .{ .reply = try hostReply(alloc, f, printed), .fault = f } },
         };
         return .{ .outcome = outcome, .printed = printed, .end = end };
     }
@@ -244,7 +317,7 @@ const Job = struct {
                 defer alloc.free(prefix);
                 return .{ .compile_error = try engine.errorText(alloc, prefix, err) };
             }
-            if (trap) |t| return .{ .raised = try host.trapText(t) };
+            if (trap) |t| return .{ .raised = try host.fault(t) };
             if (c.wasmtime_linker_define_instance(linker, ctx, u.name.ptr, u.name.len, &instances[i])) |err|
                 return .{ .compile_error = try engine.errorText(alloc, "linker: ", err) };
         }
@@ -279,7 +352,7 @@ const Job = struct {
             const mem = memoryOf(ctx, core, ru.memory_export) orelse
                 return .{ .compile_error = try std.fmt.allocPrint(alloc, "{s} exports no memory {s}", .{ ru.name, ru.memory_export }) };
             if (@as(usize, in_ptr) + job.input.len > mem.len)
-                return .{ .raised = try alloc.dupe(u8, "the input does not fit the core unit's memory") };
+                return .{ .raised = try plainFault(alloc, "the input does not fit the core unit's memory") };
             @memcpy(mem[in_ptr..][0..job.input.len], job.input);
         }
         if (try host.call(ctx, &eval_f, &.{ i32Val(@bitCast(in_ptr)), i32Val(@intCast(job.input.len)) }, r[0..2])) |e| return .{ .raised = e };
@@ -288,7 +361,7 @@ const Job = struct {
         // The memory may have grown during the evaluation: read it again.
         const mem = memoryOf(ctx, core, ru.memory_export).?;
         if (@as(usize, out_ptr) + out_len > mem.len)
-            return .{ .raised = try alloc.dupe(u8, "the reply lies outside the core unit's memory") };
+            return .{ .raised = try plainFault(alloc, "the reply lies outside the core unit's memory") };
         return .{ .reply = try alloc.dupe(u8, mem[out_ptr..][0..out_len]) };
     }
 };
@@ -344,20 +417,12 @@ pub fn serviceOf(module: []const u8, name: []const u8) ?Service {
     return null;
 }
 
-/// The function a named fact names: the import's own name for WASI's, the
-/// host module's and its name for botopink's (`bp_fs.open`). The std
-/// function behind it is the evaluator's to name (the frames).
-fn shownName(alloc: std.mem.Allocator, module: []const u8, name: []const u8) Error![]u8 {
-    if (std.mem.eql(u8, module, "wasi_snapshot_preview1")) return alloc.dupe(u8, name);
-    return std.fmt.allocPrint(alloc, "{s}.{s}", .{ module, name });
-}
-
 /// One host import as defined: the callback's `env`.
 const Import = struct {
     host: *Host,
     service: Service,
-    /// The named fact it traps with (null for print and yield).
-    text: ?[]u8,
+    /// `<module>.<name>`.
+    name: []u8,
 };
 
 const Host = struct {
@@ -365,9 +430,8 @@ const Host = struct {
     printed: std.ArrayList(u8) = .empty,
     imports: std.ArrayList(*Import) = .empty,
     defined: std.StringHashMapUnmanaged(void) = .empty,
-    /// The text of the named trap a host import raised, for the call that
-    /// raised it.
-    named: ?[]const u8 = null,
+    /// The forbidden import that trapped, for the call that raised it.
+    named: ?*Import = null,
     /// An allocation in a callback failed.
     oom: bool = false,
 
@@ -375,7 +439,7 @@ const Host = struct {
         const alloc = host.alloc;
         host.printed.deinit(alloc);
         for (host.imports.items) |imp| {
-            if (imp.text) |t| alloc.free(t);
+            alloc.free(imp.name);
             alloc.destroy(imp);
         }
         host.imports.deinit(alloc);
@@ -384,22 +448,54 @@ const Host = struct {
         host.defined.deinit(alloc);
     }
 
-    /// Call `f`; null when it returned (its results in `results`), else the
-    /// runtime error's text (owned).
-    fn call(host: *Host, ctx: *c.wasmtime_context_t, f: *const c.wasmtime_func_t, args: []const c.wasmtime_val_t, results: []c.wasmtime_val_t) Error!?[]u8 {
+    /// Call `f`; null when it returned (its results in `results`), else what
+    /// raised (owned).
+    fn call(host: *Host, ctx: *c.wasmtime_context_t, f: *const c.wasmtime_func_t, args: []const c.wasmtime_val_t, results: []c.wasmtime_val_t) Error!?Fault {
         var trap: ?*c.wasm_trap_t = null;
         host.named = null;
         const err = c.wasmtime_func_call(ctx, f, args.ptr, args.len, results.ptr, results.len, &trap);
         if (host.oom) return error.OutOfMemory;
         if (err) |e| {
+            // A host import's trap comes back as an error: its fault, with
+            // the error's backtrace.
+            if (host.named) |n| {
+                defer c.wasmtime_error_delete(e);
+                var trace: c.wasm_frame_vec_t = undefined;
+                c.wasmtime_error_wasm_trace(e, &trace);
+                return try host.namedFault(n, &trace);
+            }
             // The epoch callback's error (interrupt, deadline): `Job.run`
             // replaces the text by the watch's end.
             const full = try engine.errorText(host.alloc, "", e);
             defer host.alloc.free(full);
-            return try host.alloc.dupe(u8, runner.trapLine(full));
+            return try plainFault(host.alloc, runner.trapLine(full));
         }
-        if (trap) |t| return try host.trapText(t);
+        if (trap) |t| return try host.fault(t);
         return null;
+    }
+
+    /// What `trap` raised: its one line (`trapText`), the forbidden import's
+    /// class and name, and the backtrace's named frames. Takes `trap`.
+    fn fault(host: *Host, trap: *c.wasm_trap_t) Error!Fault {
+        var trace: c.wasm_frame_vec_t = undefined;
+        c.wasm_trap_trace(trap, &trace);
+        if (host.named) |n| {
+            c.wasm_trap_delete(trap);
+            return host.namedFault(n, &trace);
+        }
+        const frames = try framesOf(host.alloc, &trace);
+        errdefer freeFrames(host.alloc, frames);
+        return .{ .message = try host.trapText(trap), .frames = frames };
+    }
+
+    /// The fault of the forbidden import `n`'s trap. Takes `trace`.
+    fn namedFault(host: *Host, n: *Import, trace: *c.wasm_frame_vec_t) Error!Fault {
+        const alloc = host.alloc;
+        const frames = try framesOf(alloc, trace);
+        errdefer freeFrames(alloc, frames);
+        const message = try alloc.dupe(u8, classText(n.service));
+        errdefer alloc.free(message);
+        return .{ .message = message, .service = n.service, .import = try alloc.dupe(u8, n.name), .frames = frames };
     }
 
     /// A trap as one line: a named trap's text as the host raised it, else
@@ -407,7 +503,7 @@ const Host = struct {
     /// (persistent_wat's shape, never the engine's backtrace). Takes `trap`.
     fn trapText(host: *Host, trap: *c.wasm_trap_t) Error![]u8 {
         defer c.wasm_trap_delete(trap);
-        if (host.named) |n| return host.alloc.dupe(u8, n);
+        if (host.named) |n| return host.alloc.dupe(u8, classText(n.service));
         var code: c.wasmtime_trap_code_t = undefined;
         if (c.wasmtime_trap_code(trap, &code)) if (trapName(code)) |name|
             return std.fmt.allocPrint(host.alloc, "wasmtime: {s}", .{name});
@@ -476,17 +572,15 @@ fn defineImports(
         const ty = c.wasm_externtype_as_functype_const(c.wasm_importtype_type(imp)) orelse
             return try std.fmt.allocPrint(alloc, "unit {s} imports {s}.{s} as no function: the comptime host serves functions only", .{ unit.name, m, n });
         const entry = try alloc.create(Import);
-        entry.* = .{ .host = host, .service = service, .text = null };
+        entry.* = .{ .host = host, .service = service, .name = std.fmt.allocPrint(alloc, "{s}.{s}", .{ m, n }) catch |e| {
+            alloc.destroy(entry);
+            return e;
+        } };
         host.imports.append(alloc, entry) catch |e| {
+            alloc.free(entry.name);
             alloc.destroy(entry);
             return e;
         };
-        if (service != .yield) {
-            // `fd_write` beyond fd 1 / 2 is a file.
-            const shown = try shownName(alloc, m, n);
-            defer alloc.free(shown);
-            entry.text = try namedText(alloc, if (service == .print) .files else service, shown);
-        }
         const cb: c.wasmtime_func_callback_t = switch (service) {
             .print => fdWrite,
             .yield => yieldZero,
@@ -498,9 +592,48 @@ fn defineImports(
     return null;
 }
 
+/// The named frames of `trace`, innermost first, at most `max_frames`.
+/// Takes `trace`.
+fn framesOf(alloc: std.mem.Allocator, trace: *c.wasm_frame_vec_t) Error![]Frame {
+    defer c.wasm_frame_vec_delete(trace);
+    var frames: std.ArrayList(Frame) = .empty;
+    errdefer {
+        for (frames.items) |fr| {
+            alloc.free(fr.module);
+            alloc.free(fr.function);
+        }
+        frames.deinit(alloc);
+    }
+    if (trace.size > 0) for (trace.data[0..trace.size]) |fr| {
+        if (frames.items.len == max_frames) break;
+        const fname = c.wasmtime_frame_func_name(fr) orelse continue;
+        const mname = c.wasmtime_frame_module_name(fr);
+        const function = try alloc.dupe(u8, nameText(fname));
+        errdefer alloc.free(function);
+        const module = try alloc.dupe(u8, if (mname) |m| nameText(m) else "");
+        errdefer alloc.free(module);
+        try frames.append(alloc, .{ .module = module, .function = function });
+    };
+    return frames.toOwnedSlice(alloc);
+}
+
+fn freeFrames(alloc: std.mem.Allocator, frames: []Frame) void {
+    for (frames) |fr| {
+        alloc.free(fr.module);
+        alloc.free(fr.function);
+    }
+    alloc.free(frames);
+}
+
+fn nameText(n: *const c.wasm_name_t) []const u8 {
+    return if (n.size == 0) "" else n.data[0..n.size];
+}
+
+/// Trap with the import's class text (`fd_write` beyond fd 1 / 2 is a file,
+/// `classText(.print)`).
 fn trapWith(imp: *Import) ?*c.wasm_trap_t {
-    const text = imp.text.?;
-    imp.host.named = text;
+    const text = classText(imp.service);
+    imp.host.named = imp;
     return c.wasmtime_trap_new(text.ptr, text.len);
 }
 
@@ -574,7 +707,7 @@ const snap = @import("../../utils/snap.zig");
 /// A runtime core in the shape `runtime_unit.zig` writes: the memory, a bump
 /// `__alloc`, `fd_write` imported from the host; its `__bp_init` sets the
 /// heap start and `order` to 1.
-fn coreWat(comptime tag: []const u8) []const u8 {
+pub fn coreWat(comptime tag: []const u8) []const u8 {
     return
     \\(module $core_
     ++ tag ++
@@ -597,7 +730,7 @@ fn coreWat(comptime tag: []const u8) []const u8 {
 /// The module's own unit: its `__bp_init` records that the core's ran first
 /// (`order` 1 → 2, else 99); `__bp_comptime_eval` prints the input and
 /// answers `{"in":<input>,"order":<n>}`, built in the core's memory.
-fn entryWat(comptime tag: []const u8) []const u8 {
+pub fn entryWat(comptime tag: []const u8) []const u8 {
     return
     \\(module $entry_
     ++ tag ++
@@ -625,14 +758,14 @@ fn entryWat(comptime tag: []const u8) []const u8 {
 
 /// Another module's unit after the evaluated one, with an evaluation export
 /// of its own answering `"other"`: the host must not pick it by position.
-const other_wat =
+pub const other_wat =
     \\(module $other
     \\  (import "std@__rt" "memory" (memory 1))
     \\  (data (i32.const 600) "\22other\22")
     \\  (func (export "__bp_comptime_eval") (param i32 i32) (result i32 i32) (i32.const 600) (i32.const 7)))
 ;
 
-fn units2(comptime tag: []const u8) [2]Unit {
+pub fn units2(comptime tag: []const u8) [2]Unit {
     return .{ .{ .name = "std@__rt", .bytes = coreWat(tag) }, .{ .name = "app@main", .bytes = entryWat(tag) } };
 }
 
@@ -640,7 +773,7 @@ fn replyOf(a: Answer) ![]const u8 {
     if (a.outcome != .reply) {
         std.debug.print("\n{s}: {s}\n", .{ @tagName(a.outcome), switch (a.outcome) {
             .reply, .compile_error => |t| t,
-            .raised => |r| r.message,
+            .raised => |r| r.fault.message,
         } });
         return error.TestUnexpectedResult;
     }
@@ -685,7 +818,7 @@ test "comptime host: every evaluation starts from fresh instances (reset)" {
 
 /// One unit, the core and the evaluated module at once, importing a host
 /// service and calling it from the evaluation after printing `hi`.
-fn serviceWat(comptime import: []const u8, comptime sig: []const u8, comptime call: []const u8) []const u8 {
+pub fn serviceWat(comptime import: []const u8, comptime sig: []const u8, comptime call: []const u8) []const u8 {
     return "(module\n  (import " ++ import ++ " (func $h " ++ sig ++ "))\n" ++
         \\  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
         \\  (memory (export "memory") 1)
@@ -702,10 +835,10 @@ fn serviceWat(comptime import: []const u8, comptime sig: []const u8, comptime ca
     ;
 }
 
-const Case = struct { label: []const u8, wat: []const u8 };
+pub const Case = struct { label: []const u8, wat: []const u8 };
 
 /// Every host service a build does not have, one call each (1059 (4)).
-const service_cases = [_]Case{
+pub const service_cases = [_]Case{
     .{ .label = "clock_time_get", .wat = serviceWat("\"wasi_snapshot_preview1\" \"clock_time_get\"", "(param i32 i64 i32) (result i32)", "(drop (call $h (i32.const 0) (i64.const 1) (i32.const 0)))") },
     .{ .label = "clock_res_get", .wat = serviceWat("\"wasi_snapshot_preview1\" \"clock_res_get\"", "(param i32 i32) (result i32)", "(drop (call $h (i32.const 0) (i32.const 0)))") },
     .{ .label = "poll_oneoff", .wat = serviceWat("\"wasi_snapshot_preview1\" \"poll_oneoff\"", "(param i32 i32 i32 i32) (result i32)", "(drop (call $h (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0)))") },
@@ -720,7 +853,22 @@ const service_cases = [_]Case{
     .{ .label = "args_sizes_get", .wat = serviceWat("\"wasi_snapshot_preview1\" \"args_sizes_get\"", "(param i32 i32) (result i32)", "(drop (call $h (i32.const 0) (i32.const 0)))") },
     .{ .label = "proc_exit", .wat = serviceWat("\"wasi_snapshot_preview1\" \"proc_exit\"", "(param i32)", "(call $h (i32.const 0))") },
     .{ .label = "sched_yield", .wat = serviceWat("\"wasi_snapshot_preview1\" \"sched_yield\"", "(result i32)", "(drop (call $h))") },
+    .{ .label = "frames", .wat = frames_wat },
 };
+
+/// A clock read two named functions deep, the unit and its functions named
+/// as C1 names them (`<pkg>@<path>`, `<pkg>@<path>.<fn>`): the host's reply
+/// carries the frames, innermost first (1063 (1)).
+pub const frames_wat =
+    \\(module $std@io@clock
+    \\  (import "wasi_snapshot_preview1" "clock_time_get" (func $h (param i32 i64 i32) (result i32)))
+    \\  (memory (export "memory") 1)
+    \\  (func (export "__alloc") (param i32) (result i32) (i32.const 64))
+    \\  (func $std@io@clock.now (result i32) (call $h (i32.const 0) (i64.const 1) (i32.const 0)))
+    \\  (func $app@main.body (drop (call $std@io@clock.now)))
+    \\  (func (export "__bp_comptime_eval") (param i32 i32) (result i32 i32)
+    \\    (call $app@main.body) (i32.const 0) (i32.const 0)))
+;
 
 test "comptime host: comptime_host_named_traps — each service a build lacks traps with its fact, and the host builds the reply" {
     const alloc = std.testing.allocator;
@@ -730,12 +878,15 @@ test "comptime host: comptime_host_named_traps — each service a build lacks tr
         const units = [_]Unit{.{ .name = "std@__rt", .bytes = case_.wat }};
         const a = try evaluate(alloc, std.testing.io, &units, "std@__rt", "", .{});
         defer a.deinit(alloc);
-        const reply = switch (a.outcome) {
-            .reply => |r| r,
-            .raised => |r| r.reply,
-            .compile_error => |t| t,
-        };
-        try text.print(alloc, "{s} ({s})\n{s}\n\n", .{ case_.label, @tagName(a.outcome), reply });
+        switch (a.outcome) {
+            .reply, .compile_error => |r| try text.print(alloc, "{s} ({s})\n{s}\n\n", .{ case_.label, @tagName(a.outcome), r }),
+            .raised => |r| try text.print(alloc, "{s} (raised: {s} {s})\n{s}\n\n", .{
+                case_.label,
+                if (r.fault.service) |sv| @tagName(sv) else "-",
+                if (r.fault.import.len > 0) r.fault.import else "-",
+                r.reply,
+            }),
+        }
     }
     // The deadline, armed by a caller: no codec ran, the host replies.
     const spin = [_]Unit{.{ .name = "std@__rt", .bytes = spin_eval }};
@@ -761,7 +912,7 @@ test "comptime host: no default limit; an armed deadline stops a loop, and the n
     const a = try evaluate(alloc, std.testing.io, &units, "std@__rt", "", .{ .deadline_ns = 50 * std.time.ns_per_ms });
     defer a.deinit(alloc);
     try std.testing.expectEqual(runner.End.timed_out, a.end);
-    try std.testing.expectEqualStrings(timed_out_text, a.outcome.raised.message);
+    try std.testing.expectEqualStrings(timed_out_text, a.outcome.raised.fault.message);
     try std.testing.expectEqualStrings("hi\n", a.printed);
     try std.testing.expect(!runner.running());
     try std.testing.expectEqual(@as(?u64, null), (Options{}).deadline_ns);
@@ -792,13 +943,13 @@ test "comptime host: runner.interrupt ends an evaluation with today's interrupte
     const a = try evaluate(alloc, std.testing.io, &units, "std@__rt", "", .{ .deadline_ns = 20 * std.time.ns_per_s });
     defer a.deinit(alloc);
     try std.testing.expectEqual(runner.End.interrupted, a.end);
-    try std.testing.expectEqualStrings(interrupted_text, a.outcome.raised.message);
+    try std.testing.expectEqualStrings(interrupted_text, a.outcome.raised.fault.message);
 }
 
 /// `depth(n)` recurses `n` times with no tail call, as an Erlang-shaped loop
 /// does; `app@deep` within the 64 MiB wasm stack (past wasmtime's 512 KiB
 /// default), `app@too_deep` past it.
-const depth_core =
+pub const depth_core =
     \\(module $depth
     \\  (memory (export "memory") 1)
     \\  (func (export "__alloc") (param i32) (result i32) (i32.const 64))
@@ -807,7 +958,7 @@ const depth_core =
     \\      (else (i32.add (i32.const 1) (call $depth (i32.sub (local.get 0) (i32.const 1))))))))
 ;
 
-fn depthEntry(comptime n: []const u8) []const u8 {
+pub fn depthEntry(comptime n: []const u8) []const u8 {
     return
     \\(module
     \\  (import "std@__rt" "depth" (func $depth (param i32) (result i32)))
@@ -830,7 +981,7 @@ test "comptime host: deep recursion runs on the 64 MiB wasm stack; past it, call
     try std.testing.expectEqualStrings("", try replyOf(deep));
     const too = try evaluate(alloc, std.testing.io, &units, "app@too_deep", "", .{});
     defer too.deinit(alloc);
-    try std.testing.expectEqualStrings("wasmtime: call stack exhausted", too.outcome.raised.message);
+    try std.testing.expectEqualStrings("wasmtime: call stack exhausted", too.outcome.raised.fault.message);
 }
 
 test "comptime host: the .cwasm of each unit is written once and reused by a second call" {

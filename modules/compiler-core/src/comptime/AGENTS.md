@@ -1769,8 +1769,8 @@ and with no frame names the expression, at where it starts. Cells:
 `modules/decisions-taken/comptime_equality_iterative-471/cells/comptime_deep_structure_equality` (decision 471, std-wasm's `compare`).
 
 Decisions 451 (3), 456 — an unseeded draw at build (`random.float()`, `seededFloat()` before a `seed`) is
-refused with the plain text `an unseeded draw: a build has no entropy, call \`random.seed\` first (decision
-451)`, no Erlang term and no `the comptime block raised:` prefix, the same on the `comptime` and the decorator
+refused with the plain text `an unseeded draw: a build has no entropy, call \`random.seed\` first`
+(`std-wasm/src/random.zig` `unseeded_text`, no decision number: 1063 (2)), no Erlang term and no `the comptime block raised:` prefix, the same on the `comptime` and the decorator
 forms: `block_eval.unseededDraw` drops the runtime's `{error,{bp_wat_runtime,<<"…">>}}` wrapper in `parseReply`
 and `decorator_eval.parseOutcome`. Cells: `modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/comptime_random_unseeded`, `comptime_random_float_unseeded`,
 `decorator_random_float_unseeded`.

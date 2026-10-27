@@ -56,7 +56,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
         (block $__next
     local.get $x
     i32.const 2
-    i32.const 11696
+    i32.const 11680
     call $__i32_nz
     i32.rem_s
     i32.const 0
@@ -491,17 +491,17 @@ fn sumEvens(arr: i32[]) -> i32[] {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 54
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11752
+    i32.const 11736
     i32.lt_u
     (if
       (then
-      i32.const 11752
+      i32.const 11736
       global.set $__heap_ptr
       )
     )

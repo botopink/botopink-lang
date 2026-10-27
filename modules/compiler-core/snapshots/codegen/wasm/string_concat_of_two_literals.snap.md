@@ -19,8 +19,8 @@ import {io.terminal.print} from "std";
   (data $__bp_seg1 "\05\00\00\00there")
   (func $main
     (local $s i32)
-    i32.const 11696
-    i32.const 11704
+    i32.const 11680
+    i32.const 11688
     call $__str_concat
     local.set $s
     local.get $s
@@ -268,22 +268,22 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 7
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 9
     memory.init $__bp_seg1
     data.drop $__bp_seg1
     global.get $__heap_ptr
-    i32.const 11716
+    i32.const 11700
     i32.lt_u
     (if
       (then
-      i32.const 11716
+      i32.const 11700
       global.set $__heap_ptr
       )
     )

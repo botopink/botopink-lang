@@ -51,7 +51,7 @@ import {io.terminal.print} from "std";
   (func $__lambda0 (param $__env i32) (param $x i32) (param $y i32) (result i32)
     local.get $x
     local.get $y
-    i32.const 11696
+    i32.const 11680
     call $__i32_add_chk
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -493,17 +493,17 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 45
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11744
+    i32.const 11728
     i32.lt_u
     (if
       (then
-      i32.const 11744
+      i32.const 11728
       global.set $__heap_ptr
       )
     )

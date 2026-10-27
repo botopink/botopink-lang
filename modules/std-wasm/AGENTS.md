@@ -191,7 +191,8 @@ seed `next` answers null, and each face decides what that draw is. A program's
 (`wasm.zig`) calls `env.bp_random_f64`, which `std_wasm_link.zig` binds to the program's
 `$__wasi_random_f64` — the host's entropy, which stays in `wat_prelude` (it talks to the
 host). The comptime's (`term_faces.zig`'s `rt_std_random__seededFloat`) raises
-`{bp_wat_runtime, <<"an unseeded draw: …">>}`, which the build reports at the `comptime`
+`{bp_wat_runtime, <<"an unseeded draw: …">>}` — `random.zig`'s `unseeded_text`, the one text the
+comptime host (`codegen/wat/comptime_host.zig`) imports too (1063 (2)) —, which the build reports at the `comptime`
 that reached it: a build has no entropy and never pretends to (cells
 `modules/decisions-taken/libraries_run_at_build_on_wasm-594/run/src/cases/comptime_random_seeded`, `modules/decisions-taken/seeded_random_std_wasm-451/refused/src/cases/comptime_random_unseeded`). Each comptime evaluation
 starts from a fresh instance, so its stream is unseeded until its body seeds it, and one

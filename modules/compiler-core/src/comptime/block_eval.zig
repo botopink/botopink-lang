@@ -2968,8 +2968,8 @@ pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8
 }
 
 test "unseededDraw: the Erlang wrapper is dropped, other raises are left alone" {
-    const wrapped = "{error,{bp_wat_runtime,<<\"an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)\">>}}";
-    try std.testing.expectEqualStrings("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)", unseededDraw(wrapped).?);
+    const wrapped = "{error,{bp_wat_runtime,<<\"an unseeded draw: a build has no entropy, call `random.seed` first\">>}}";
+    try std.testing.expectEqualStrings("an unseeded draw: a build has no entropy, call `random.seed` first", unseededDraw(wrapped).?);
     try std.testing.expect(unseededDraw("{error,badarith}") == null);
     try std.testing.expect(unseededDraw("{error,{bp_wat_runtime,<<\"integer beyond 64 bits (a bignum)\">>}}") == null);
 }

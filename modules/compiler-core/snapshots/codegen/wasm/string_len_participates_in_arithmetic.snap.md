@@ -18,12 +18,12 @@ import {io.terminal.print} from "std";
   (data $__bp_seg1 "\2a\00\00\00integer overflow: + on i32 at main.bp:3:17")
   (func $main
     (local $s i32)
-    i32.const 11696
+    i32.const 11680
     local.set $s
     local.get $s
     i32.load ;; string length
     i32.const 1
-    i32.const 11708
+    i32.const 11692
     call $__i32_add_chk
     call $__print_i32
   )
@@ -467,22 +467,22 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 9
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11708
+    i32.const 11692
     i32.const 0
     i32.const 46
     memory.init $__bp_seg1
     data.drop $__bp_seg1
     global.get $__heap_ptr
-    i32.const 11756
+    i32.const 11740
     i32.lt_u
     (if
       (then
-      i32.const 11756
+      i32.const 11740
       global.set $__heap_ptr
       )
     )

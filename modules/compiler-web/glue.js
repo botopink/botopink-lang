@@ -41,6 +41,7 @@
 
   const ERRNO_SUCCESS = 0;
   const ERRNO_BADF = 8;
+  const ERRNO_FAULT = 21;
   const WASI_MODULE = "wasi_snapshot_preview1";
 
   // ── the WASI shim ──────────────────────────────────────────────────────────
@@ -146,15 +147,316 @@
     }
   }
 
+  // ── the comptime host over units (decisions 1035, 1038 (2), 1059; C3b) ─────
+  //
+  // The page's side of `codegen/wat/comptime_page.zig`: it follows the plan
+  // the compiler wrote — the units in dependency order, each import's action
+  // and words already sorted by the native host's own rules, the input, the
+  // crossing's names from `runtime_unit.zig` — on the page's engine, with GC
+  // and exceptions (1033 (1)). Every unit is compiled and instantiated afresh,
+  // every `__bp_init` called in order, the input written at the core's alloc
+  // export in its memory, the evaluated module's evaluation export read back
+  // as `(ptr, len)`. `fd_write` on 1 / 2 is captured. There is no epoch on the
+  // page: no deadline, and the compiler's interrupt is a no-op. Status 0 the
+  // reply, 1 raised (the message; the compiler builds the host's reply), 2 a
+  // compile refusal. The only words of its own are the engine's trap names.
+
+  // A module with a struct type, a tag and a `try_table`: the engine the
+  // program's generator needs (WasmGC and exnref exceptions, 1033 (1)).
+  const GC_EXN_PROBE = new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x06, 0x02, 0x5f, 0x00, 0x60, 0x00, 0x00, // types: (struct) (func)
+    0x03, 0x02, 0x01, 0x01, // one function of type 1
+    0x0d, 0x03, 0x01, 0x00, 0x01, // one tag of type 1
+    0x0a, 0x08, 0x01, 0x06, 0x00, 0x1f, 0x40, 0x00, 0x0b, 0x0b, // (try_table) end
+  ]);
+  let gcExn = null;
+  function engineRefusal() {
+    if (gcExn === null) {
+      try {
+        gcExn = WebAssembly.validate(GC_EXN_PROBE);
+      } catch (_) {
+        gcExn = false;
+      }
+    }
+    return gcExn ? null : "the page's engine runs no WasmGC with exceptions, which comptime needs";
+  }
+
+  // `comptime_page.zig` `Action`.
+  const ACTION = { unit: 0, print: 1, yield: 2, trap: 3, refuse: 4 };
+
+  /// A host trap: its text is the answer's, whatever the engine wraps it in;
+  /// `imp` is the import that raised it (`<module>.<name>`).
+  class HostTrap extends Error {
+    constructor(text, imp) {
+      super(text);
+      this.imp = imp;
+    }
+  }
+
+  // The most frames a raise keeps (`comptime_host.zig` `max_frames`, wasmtime's backtrace bound).
+  const MAX_FRAMES = 20;
+
+  /// The named wasm frames of `err`'s backtrace, innermost first, by each
+  /// unit's `name` section, as the native host reads them from wasmtime's:
+  /// `{ module, function }`, a frame with no function name left out. V8's
+  /// stack-trace API; an engine without it gives none.
+  function framesOf(err) {
+    if (!err || typeof err !== "object" || typeof Error.captureStackTrace !== "function") return [];
+    const saved = Error.prepareStackTrace;
+    let sites = null;
+    try {
+      Error.prepareStackTrace = (_e, s) => s;
+      sites = err.stack;
+    } catch (_) {
+      sites = null;
+    } finally {
+      Error.prepareStackTrace = saved;
+    }
+    if (!Array.isArray(sites)) return [];
+    const frames = [];
+    for (const site of sites) {
+      if (frames.length === MAX_FRAMES) break;
+      const url = site.getScriptNameOrSourceURL && site.getScriptNameOrSourceURL();
+      if (typeof url !== "string" || !url.startsWith("wasm://wasm/")) continue;
+      const fn = site.getFunctionName();
+      if (fn === null || fn === undefined) continue;
+      const m = /^(.*)-[0-9a-f]{8}$/.exec(url.slice("wasm://wasm/".length));
+      frames.push({ module: m ? m[1] : "", function: fn });
+    }
+    return frames;
+  }
+
+  /// The page's raise as `comptime_page.zig` `finish` reads it.
+  function raised(message, imp, err) {
+    return JSON.stringify({ message, import: imp || "", frames: framesOf(err) });
+  }
+
+  /// V8's trap messages under the names the native host gives wasmtime's
+  /// trap codes (`comptime_host.zig` `trapName`): one text for both engines.
+  const TRAP_NAMES = [
+    [/^unreachable/, "unreachable"],
+    [/memory access out of bounds/, "out of bounds memory access"],
+    [/(divide|remainder) by zero/, "integer divide by zero"],
+    [/divide result unrepresentable/, "integer overflow"],
+    [/float unrepresentable in integer range/, "invalid conversion to integer"],
+    [/table index is out of bounds/, "undefined element: out of bounds table access"],
+  ];
+
+  /// The runtime error's one line for a thrown `err`, as the native host
+  /// writes it: a host trap's text, else `wasmtime: <what>`.
+  function trapLine(err) {
+    if (err instanceof HostTrap) return err.message;
+    if (typeof WebAssembly.Exception !== "undefined" && err instanceof WebAssembly.Exception) return "wasmtime: uncaught exception";
+    if (err instanceof RangeError && /call stack/i.test(err.message)) return "wasmtime: call stack exhausted";
+    const msg = String((err && err.message) || err).split("\n")[0];
+    for (const [re, name] of TRAP_NAMES) if (re.test(msg)) return `wasmtime: ${name}`;
+    return `wasmtime: ${msg}`;
+  }
+
+  /// The plan `comptime_page.zig` `plan` writes, read out of `bytes`.
+  function readPlan(bytes) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const decoder = new TextDecoder();
+    let at = 0;
+    const int = () => {
+      const v = dv.getUint32(at, true);
+      at += 4;
+      return v;
+    };
+    const raw = () => {
+      const n = int();
+      const b = bytes.subarray(at, at + n);
+      at += n;
+      return b;
+    };
+    const str = () => decoder.decode(raw());
+    const units = [];
+    for (let n = int(), i = 0; i < n; i++) {
+      const unit = { name: str(), bytes: raw(), imports: [] };
+      for (let k = int(), j = 0; j < k; j++) unit.imports.push({ module: str(), name: str(), action: int(), text: str() });
+      units.push(unit);
+    }
+    const input = raw();
+    const crossing = { memoryUnit: str(), memory: str(), alloc: str(), eval: str(), evaluated: str() };
+    return { units, input, crossing };
+  }
+
+  /// One evaluation of a plan. Answers `{ status, bytes, printed }`; a raise's
+  /// bytes are `raised`'s JSON.
+  function runComptimeUnits(plan) {
+    // Enough frames for `MAX_FRAMES` wasm ones under the host's own.
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = MAX_FRAMES + 16;
+    try {
+      return evaluateUnits(plan);
+    } finally {
+      Error.stackTraceLimit = limit;
+    }
+  }
+
+  function evaluateUnits(plan) {
+    const encoder = new TextEncoder();
+    const printed = [];
+    const answer = (status, text) => ({ status, bytes: typeof text === "string" ? encoder.encode(text) : text, printed: concat(printed) });
+    const refused = engineRefusal();
+    if (refused) return answer(2, refused);
+    const { units, input, crossing } = plan;
+
+    const modules = [];
+    for (const u of units) {
+      try {
+        modules.push(new WebAssembly.Module(u.bytes));
+      } catch (err) {
+        return answer(2, `unit ${u.name}: ${err.message}`);
+      }
+    }
+
+    const instances = new Map();
+    let pending = null; // a host trap the engine may rewrap
+    const raise = (imp) => {
+      pending = new HostTrap(imp.text, `${imp.module}.${imp.name}`);
+      throw pending;
+    };
+    const fault = (err) => (pending ? raised(pending.message, pending.imp, pending) : raised(trapLine(err), "", err));
+    const call = (f, args) => {
+      pending = null;
+      try {
+        return { value: f(...args) };
+      } catch (err) {
+        return { error: fault(err) };
+      }
+    };
+
+    const ordered = [];
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      const imports = {};
+      let instance = null;
+      const memoryOf = () => (instance && instance.exports.memory instanceof WebAssembly.Memory ? instance.exports.memory : null);
+      for (const imp of u.imports) {
+        let value;
+        switch (imp.action) {
+          case ACTION.unit:
+            value = instances.get(imp.module).exports[imp.name];
+            break;
+          case ACTION.print:
+            value = fdWrite(memoryOf, printed, () => raise(imp));
+            break;
+          case ACTION.yield:
+            value = () => 0;
+            break;
+          case ACTION.trap:
+            value = () => raise(imp);
+            break;
+          default:
+            return answer(2, imp.text);
+        }
+        (imports[imp.module] = imports[imp.module] || {})[imp.name] = value;
+      }
+      pending = null;
+      try {
+        instance = new WebAssembly.Instance(modules[i], imports);
+      } catch (err) {
+        // A link the engine refuses is a compile refusal; a trap in a start
+        // function is raised.
+        if (err instanceof WebAssembly.LinkError) return answer(2, `unit ${u.name}: ${err.message}`);
+        return answer(1, fault(err));
+      }
+      instances.set(u.name, instance);
+      ordered.push(instance);
+    }
+
+    for (const inst of ordered) {
+      if (typeof inst.exports.__bp_init !== "function") continue;
+      const r = call(inst.exports.__bp_init, []);
+      if (r.error !== undefined) return answer(1, r.error);
+    }
+
+    const core = instances.get(crossing.memoryUnit);
+    if (!core) return answer(2, `no unit is ${crossing.memoryUnit}, whose memory the JSON crosses through`);
+    const entry = instances.get(crossing.evaluated);
+    if (!entry) return answer(2, `no unit is ${crossing.evaluated}, the module evaluated`);
+    const allocF = core.exports[crossing.alloc];
+    if (typeof allocF !== "function") return answer(2, `${crossing.memoryUnit} exports no function ${crossing.alloc}`);
+    const evalF = entry.exports[crossing.eval];
+    if (typeof evalF !== "function") return answer(2, `${crossing.evaluated} exports no function ${crossing.eval}`);
+
+    const a = call(allocF, [input.length]);
+    if (a.error !== undefined) return answer(1, a.error);
+    const memory = core.exports[crossing.memory];
+    if (!(memory instanceof WebAssembly.Memory)) return answer(2, `${crossing.memoryUnit} exports no memory ${crossing.memory}`);
+    const inPtr = a.value >>> 0;
+    if (inPtr + input.length > memory.buffer.byteLength) return answer(1, raised("the input does not fit the core unit's memory"));
+    new Uint8Array(memory.buffer, inPtr, input.length).set(input);
+    const r = call(evalF, [inPtr, input.length]);
+    if (r.error !== undefined) return answer(1, r.error);
+    const [outPtr, outLen] = Array.isArray(r.value) ? r.value.map((v) => v >>> 0) : [0, 0];
+    // The memory may have grown during the evaluation: read it again.
+    if (outPtr + outLen > memory.buffer.byteLength) return answer(1, raised("the reply lies outside the core unit's memory"));
+    return answer(0, new Uint8Array(memory.buffer, outPtr, outLen).slice());
+  }
+
+  function concat(chunks) {
+    let n = 0;
+    for (const c of chunks) n += c.length;
+    const out = new Uint8Array(n);
+    let at = 0;
+    for (const c of chunks) {
+      out.set(c, at);
+      at += c.length;
+    }
+    return out;
+  }
+
+  /// `fd_write(fd, iovs, iovs_len, nwritten) -> errno` over the importing
+  /// unit's exported `memory`: fd 1 and 2 append to `printed`; any other fd
+  /// is a file, and `refuse` traps.
+  function fdWrite(memoryOf, printed, refuse) {
+    return (fd, iovs, count, nwritten) => {
+      if (fd !== 1 && fd !== 2) return refuse();
+      const memory = memoryOf();
+      if (!memory) return ERRNO_FAULT;
+      const dv = new DataView(memory.buffer);
+      const size = memory.buffer.byteLength;
+      let total = 0;
+      for (let k = 0; k < count; k++) {
+        const at = (iovs >>> 0) + 8 * k;
+        if (at + 8 > size) return ERRNO_FAULT;
+        const p = dv.getUint32(at, true);
+        const n = dv.getUint32(at + 4, true);
+        if (p + n > size) return ERRNO_FAULT;
+        printed.push(new Uint8Array(memory.buffer, p, n).slice());
+        total += n;
+      }
+      if ((nwritten >>> 0) + 4 > size) return ERRNO_FAULT;
+      dv.setUint32(nwritten >>> 0, total, true);
+      return ERRNO_SUCCESS;
+    };
+  }
+
   /// `bp_host`: the compiler asks the page to run a comptime module, then
-  /// copies the answer back into its own memory.
+  /// copies the answer back into its own memory. `run_module` is the term
+  /// runtime's (`persistent_wat.zig` `Page`); `run_units(plan, len)` the GC
+  /// host's (`codegen/wat/comptime_page.zig`), whose answer comes back
+  /// through `result_len` / `result_copy` and what the body printed through
+  /// `printed_len` / `printed_copy`.
   function hostServed(state) {
     let last = new Uint8Array(0);
+    let lastPrinted = new Uint8Array(0);
     return {
       run_module(wptr, wlen, aptr, alen) {
         const mem = new Uint8Array(state.memory.buffer);
         const r = runComptime(mem.slice(wptr >>> 0, (wptr >>> 0) + (wlen >>> 0)), mem.slice(aptr >>> 0, (aptr >>> 0) + (alen >>> 0)));
         last = r.bytes;
+        lastPrinted = new Uint8Array(0);
+        return r.status;
+      },
+      run_units(planPtr, planLen) {
+        const bytes = new Uint8Array(state.memory.buffer, planPtr >>> 0, planLen >>> 0).slice();
+        const r = runComptimeUnits(readPlan(bytes));
+        last = r.bytes;
+        lastPrinted = r.printed;
         return r.status;
       },
       result_len() {
@@ -162,6 +464,12 @@
       },
       result_copy(dst) {
         new Uint8Array(state.memory.buffer, dst >>> 0, last.length).set(last);
+      },
+      printed_len() {
+        return lastPrinted.length;
+      },
+      printed_copy(dst) {
+        new Uint8Array(state.memory.buffer, dst >>> 0, lastPrinted.length).set(lastPrinted);
       },
     };
   }
@@ -359,5 +667,5 @@
     };
   }
 
-  return { Compiler, importsFor, run, wasmBytes, serveWorker };
+  return { Compiler, importsFor, run, wasmBytes, serveWorker, hostServed, readPlan, runComptimeUnits };
 });

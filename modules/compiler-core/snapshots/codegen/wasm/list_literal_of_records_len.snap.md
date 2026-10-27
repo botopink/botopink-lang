@@ -33,7 +33,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem1
     i32.const 1
@@ -50,7 +50,7 @@ import {io.terminal.print} from "std";
     call $__alloc
     local.set $__mem2
     local.get $__mem2
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem2
     i32.const 3
@@ -265,17 +265,17 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 14
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11712
+    i32.const 11696
     i32.lt_u
     (if
       (then
-      i32.const 11712
+      i32.const 11696
       global.set $__heap_ptr
       )
     )

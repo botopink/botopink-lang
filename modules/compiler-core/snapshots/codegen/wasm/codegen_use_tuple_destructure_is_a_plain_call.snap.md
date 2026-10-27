@@ -824,10 +824,10 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem0
-    i32.const 11728
+    i32.const 11712
     i32.store offset=8
     local.get $__mem0
     local.get $value
@@ -838,19 +838,19 @@ component fn LikeWidget() -> Component<Element> {
     return
   )
   (func $provide (param $ctx i32) (result i32)
-    i32.const 11732
+    i32.const 11716
     call $__panic_fail
     unreachable
     i32.const 0
   )
   (func $context (param $ctx i32) (result i32)
-    i32.const 11732
+    i32.const 11716
     call $__panic_fail
     unreachable
     i32.const 0
   )
   (func $inject (param $t i32) (result i32)
-    i32.const 11824
+    i32.const 11808
     call $__panic_fail
     unreachable
     i32.const 0
@@ -861,7 +861,7 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11900
+    i32.const 11884
     i32.store
     local.get $__mem0
     i32.const 0
@@ -878,14 +878,14 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11900
+    i32.const 11884
     i32.store
     local.get $__mem0
     i32.const 16
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 11928
+    i32.const 11912
     i32.store
     local.get $__mem1
     local.get $key
@@ -931,7 +931,7 @@ component fn LikeWidget() -> Component<Element> {
     i32.ge_u
     i32.mul
     i32.load
-    i32.const 11928
+    i32.const 11912
     i32.eq
     i32.and
     (if (result i32)
@@ -963,7 +963,7 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem1
     local.get $__mem1
-    i32.const 11928
+    i32.const 11912
     i32.store
     local.get $__mem1
     local.get $key
@@ -993,10 +993,10 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11960
+    i32.const 11944
     i32.store
     local.get $__mem0
-    i32.const 11728
+    i32.const 11712
     i32.store offset=12
     local.get $__mem0
     local.get $value
@@ -1189,7 +1189,7 @@ component fn LikeWidget() -> Component<Element> {
     call $__alloc
     local.set $__mem2
     local.get $__mem2
-    i32.const 11992
+    i32.const 11976
     i32.store
     local.get $__mem2
     i32.const 4
@@ -1220,7 +1220,7 @@ component fn LikeWidget() -> Component<Element> {
   (func $__lambda3 (param $__env i32) (param $c i32) (param $a i32) (result i32)
     local.get $c
     local.get $a
-    i32.const 12004
+    i32.const 11988
     call $__i32_add_chk
   )
   ;; Scratch layout below the data section (which starts at 256):
@@ -1997,57 +1997,57 @@ component fn LikeWidget() -> Component<Element> {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 28
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11724
+    i32.const 11708
     i32.const 0
     i32.const 5
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11732
+    i32.const 11716
     i32.const 0
     i32.const 90
     memory.init $__bp_seg2
     data.drop $__bp_seg2
-    i32.const 11824
+    i32.const 11808
     i32.const 0
     i32.const 69
     memory.init $__bp_seg3
     data.drop $__bp_seg3
-    i32.const 11896
+    i32.const 11880
     i32.const 0
     i32.const 26
     memory.init $__bp_seg4
     data.drop $__bp_seg4
-    i32.const 11924
+    i32.const 11908
     i32.const 0
     i32.const 32
     memory.init $__bp_seg5
     data.drop $__bp_seg5
-    i32.const 11956
+    i32.const 11940
     i32.const 0
     i32.const 29
     memory.init $__bp_seg6
     data.drop $__bp_seg6
-    i32.const 11988
+    i32.const 11972
     i32.const 0
     i32.const 14
     memory.init $__bp_seg7
     data.drop $__bp_seg7
-    i32.const 12004
+    i32.const 11988
     i32.const 0
     i32.const 46
     memory.init $__bp_seg8
     data.drop $__bp_seg8
     global.get $__heap_ptr
-    i32.const 12052
+    i32.const 12036
     i32.lt_u
     (if
       (then
-      i32.const 12052
+      i32.const 12036
       global.set $__heap_ptr
       )
     )

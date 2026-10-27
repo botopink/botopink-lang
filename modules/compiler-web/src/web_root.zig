@@ -32,6 +32,12 @@ const bp = @import("botopink");
 
 const gpa = std.heap.wasm_allocator;
 
+// The web comptime host (`codegen/wat/comptime_page.zig`, decision 1038 (2),
+// C3b) is compiled into this build before C4's evaluators call it.
+comptime {
+    _ = &bp.codegen.wasmComptimeHost.evaluate;
+}
+
 var sources: std.ArrayListUnmanaged(bp.Module) = .empty;
 var output: []u8 = "";
 var root_package: []u8 = "";

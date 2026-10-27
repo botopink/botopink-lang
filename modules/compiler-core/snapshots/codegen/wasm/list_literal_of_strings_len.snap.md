@@ -28,13 +28,13 @@ import {io.terminal.print} from "std";
     i32.const 3
     i32.store
     local.get $__mem0
-    i32.const 11696
+    i32.const 11680
     i32.store offset=4
     local.get $__mem0
-    i32.const 11704
+    i32.const 11688
     i32.store offset=8
     local.get $__mem0
-    i32.const 11712
+    i32.const 11696
     i32.store offset=12
     local.get $__mem0
     local.set $labels
@@ -239,27 +239,27 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 5
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11704
+    i32.const 11688
     i32.const 0
     i32.const 6
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11712
+    i32.const 11696
     i32.const 0
     i32.const 7
     memory.init $__bp_seg2
     data.drop $__bp_seg2
     global.get $__heap_ptr
-    i32.const 11720
+    i32.const 11704
     i32.lt_u
     (if
       (then
-      i32.const 11720
+      i32.const 11704
       global.set $__heap_ptr
       )
     )

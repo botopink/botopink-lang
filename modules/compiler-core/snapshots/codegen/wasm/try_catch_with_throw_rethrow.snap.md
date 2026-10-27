@@ -33,10 +33,10 @@ fn strict() -> Result<i32, string> {
     call $__alloc
     local.set $__mem0
     local.get $__mem0
-    i32.const 11700
+    i32.const 11684
     i32.store
     local.get $__mem0
-    i32.const 11716
+    i32.const 11700
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -63,7 +63,7 @@ fn strict() -> Result<i32, string> {
     i32.const 1
     i32.store ;; Result tag (Error)
     local.get $_res0
-    i32.const 11732
+    i32.const 11716
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -100,27 +100,27 @@ fn strict() -> Result<i32, string> {
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 20
     memory.init $__bp_seg0
     data.drop $__bp_seg0
-    i32.const 11716
+    i32.const 11700
     i32.const 0
     i32.const 13
     memory.init $__bp_seg1
     data.drop $__bp_seg1
-    i32.const 11732
+    i32.const 11716
     i32.const 0
     i32.const 16
     memory.init $__bp_seg2
     data.drop $__bp_seg2
     global.get $__heap_ptr
-    i32.const 11748
+    i32.const 11732
     i32.lt_u
     (if
       (then
-      i32.const 11748
+      i32.const 11732
       global.set $__heap_ptr
       )
     )

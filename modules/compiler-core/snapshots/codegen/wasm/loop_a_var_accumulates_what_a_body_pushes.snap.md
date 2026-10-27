@@ -60,7 +60,7 @@ import {io.terminal.print} from "std";
     local.get $out
     local.get $x
     i32.const 2
-    i32.const 11696
+    i32.const 11680
     call $__i32_mul_chk
     call $__arr_push
     local.set $out
@@ -641,17 +641,17 @@ import {io.terminal.print} from "std";
       drop
       )
     )
-    i32.const 11696
+    i32.const 11680
     i32.const 0
     i32.const 46
     memory.init $__bp_seg0
     data.drop $__bp_seg0
     global.get $__heap_ptr
-    i32.const 11744
+    i32.const 11728
     i32.lt_u
     (if
       (then
-      i32.const 11744
+      i32.const 11728
       global.set $__heap_ptr
       )
     )

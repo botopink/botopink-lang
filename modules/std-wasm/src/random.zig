@@ -9,6 +9,10 @@
 //! build has no entropy (451 (3)).
 const std = @import("std");
 
+/// The refusal of a draw before any `seed` at build (decisions 451 (3), 456,
+/// 1063 (2)): the one text, raised by the comptime face and the comptime host.
+pub const unseeded_text = "an unseeded draw: a build has no entropy, call `random.seed` first";
+
 pub const Stream = struct {
     state: u32 = 0,
     seeded: bool = false,

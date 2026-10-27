@@ -1,44 +1,47 @@
-clock_time_get (raised)
-{"kind":"error","message":"a build has no clock: clock_time_get reads the time when the program runs","printed":"hi\n"}
+clock_time_get (raised: clock wasi_snapshot_preview1.clock_time_get)
+{"kind":"error","message":"a build has no clock","frames":[],"loc":"","printed":"hi\n"}
 
-clock_res_get (raised)
-{"kind":"error","message":"a build has no clock: clock_res_get reads the time when the program runs","printed":"hi\n"}
+clock_res_get (raised: clock wasi_snapshot_preview1.clock_res_get)
+{"kind":"error","message":"a build has no clock","frames":[],"loc":"","printed":"hi\n"}
 
-poll_oneoff (raised)
-{"kind":"error","message":"a build has no clock: poll_oneoff reads the time when the program runs","printed":"hi\n"}
+poll_oneoff (raised: clock wasi_snapshot_preview1.poll_oneoff)
+{"kind":"error","message":"a build has no clock","frames":[],"loc":"","printed":"hi\n"}
 
-bp_host.delay (raised)
-{"kind":"error","message":"a build has no clock: bp_host.delay reads the time when the program runs","printed":"hi\n"}
+bp_host.delay (raised: clock bp_host.delay)
+{"kind":"error","message":"a build has no clock","frames":[],"loc":"","printed":"hi\n"}
 
-random_get (raised)
-{"kind":"error","message":"an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)","printed":"hi\n"}
+random_get (raised: entropy wasi_snapshot_preview1.random_get)
+{"kind":"error","message":"an unseeded draw: a build has no entropy, call `random.seed` first","frames":[],"loc":"","printed":"hi\n"}
 
-env.bp_random_f64 (raised)
-{"kind":"error","message":"an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)","printed":"hi\n"}
+env.bp_random_f64 (raised: entropy env.bp_random_f64)
+{"kind":"error","message":"an unseeded draw: a build has no entropy, call `random.seed` first","frames":[],"loc":"","printed":"hi\n"}
 
-bp_fs.open (raised)
-{"kind":"error","message":"a build has no file system: bp_fs.open reads a file when the program runs","printed":"hi\n"}
+bp_fs.open (raised: files bp_fs.open)
+{"kind":"error","message":"a build has no file system","frames":[],"loc":"","printed":"hi\n"}
 
-path_open (raised)
-{"kind":"error","message":"a build has no file system: path_open reads a file when the program runs","printed":"hi\n"}
+path_open (raised: files wasi_snapshot_preview1.path_open)
+{"kind":"error","message":"a build has no file system","frames":[],"loc":"","printed":"hi\n"}
 
-fd_read (raised)
-{"kind":"error","message":"a build has no file system: fd_read reads a file when the program runs","printed":"hi\n"}
+fd_read (raised: files wasi_snapshot_preview1.fd_read)
+{"kind":"error","message":"a build has no file system","frames":[],"loc":"","printed":"hi\n"}
 
-fd_write on fd 3 (raised)
-{"kind":"error","message":"a build has no file system: fd_write reads a file when the program runs","printed":"hi\n"}
+fd_write on fd 3 (raised: print wasi_snapshot_preview1.fd_write)
+{"kind":"error","message":"a build has no file system","frames":[],"loc":"","printed":"hi\n"}
 
-environ_get (raised)
-{"kind":"error","message":"a build has no process: environ_get reads the environment when the program runs","printed":"hi\n"}
+environ_get (raised: environment wasi_snapshot_preview1.environ_get)
+{"kind":"error","message":"a build has no process","frames":[],"loc":"","printed":"hi\n"}
 
-args_sizes_get (raised)
-{"kind":"error","message":"a build has no process: args_sizes_get reads the environment when the program runs","printed":"hi\n"}
+args_sizes_get (raised: environment wasi_snapshot_preview1.args_sizes_get)
+{"kind":"error","message":"a build has no process","frames":[],"loc":"","printed":"hi\n"}
 
-proc_exit (raised)
-{"kind":"error","message":"a build does not exit the process","printed":"hi\n"}
+proc_exit (raised: exit wasi_snapshot_preview1.proc_exit)
+{"kind":"error","message":"a build does not exit the process","frames":[],"loc":"","printed":"hi\n"}
 
 sched_yield (reply)
 {"ok":0}
 
+frames (raised: clock wasi_snapshot_preview1.clock_time_get)
+{"kind":"error","message":"a build has no clock","frames":[{"module":"std@io@clock","function":"std@io@clock.now"},{"module":"std@io@clock","function":"app@main.body"}],"loc":""}
+
 deadline (raised)
-{"kind":"error","message":"wasm trap: time limit reached","printed":"hi\n"}
+{"kind":"error","message":"wasm trap: time limit reached","frames":[],"loc":"","printed":"hi\n"}
