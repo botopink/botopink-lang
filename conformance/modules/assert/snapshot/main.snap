@@ -1,3 +1,7 @@
 botopink-cell 2
 == assert_statement
 out both hold
+== assert_message_aborts
+out held
+abort
+stderr double(2) should be five

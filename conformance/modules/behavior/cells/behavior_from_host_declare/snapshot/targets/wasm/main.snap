@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `hostGreeter` has no implementation for the wasm backend
-at src/main.bp:28:17

@@ -46,7 +46,7 @@ comptime/
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)
 ├── decorator_same.zig ← decision 371: `d.same(other)` lowered to `==` of two identities for the comptime runtime
-├── block_eval.zig     ← decisions 266/331: a `comptime` the Zig folder cannot read, run on the comptime runtime and lifted; a call through a namespace import (`jwt.sign(x)`, `Env.namespaces.calls`) is the call of the template-alias closure `importTemplateAliasClosures` registers (`modules/comptime/cells/comptime_module_qualified_call`)
+├── block_eval.zig     ← decisions 266/331: a `comptime` the Zig folder cannot read, run on the comptime runtime and lifted; a call through a namespace import (`jwt.sign(x)`, `Env.namespaces.calls`) is the call of the template-alias closure `importTemplateAliasClosures` registers (`modules/comptime/cases/comptime_module_qualified_call`)
 ├── host_cells.zig     ← decisions 341, 434: the host and std functions a comptime module carries (std's renamed `__bp_std__<module>__<name>`), each host function's source at comptime — std-wasm, else `.Wasm(body: …)` (`forRuntime`; decision 452), a decorator's host functions checked at its package's compile (`checkDecorators`)
 ├── hooks.zig          ← decision 277: the hook node of each function, `decl.hooks` and its term
 ├── typed_meta.zig     ← decision 298 + 370 (1): typed meta keyed by its record type — `asCall` / `collect` (a decorator body's `decl.setMeta(v)` / `decl.addMeta(v)`, in `eraseFn`'s order), `ctorOf` (the record constructor written at the call), `Shape` / `render` (the value the body built, JSON, written back as the constructor's arguments — a `syntax` field as the annotation wrote its argument, a tuple `#(…)` (the prelude's `meta_json` writes it `{"tuple": […]}`), a `Type.Field<T>` its `.name`, read with a generic record's one parameter spelled as the annotated declaration, `infer.zig` `fieldKeyOwnerParam`; 144 B-19 — the `.name` typed there is spliced as the field's run-time form `Type__Field(T, "name")`, decision 631: `infer.zig` `inferFieldRunTimeForm` on the read's lines only, swapped by `transform.zig` through `Env.srcRewrites`, the owner a run-time type token (`recordTokenCallee`, 758); `refuseFieldBuildMember` refuses `typeName` / `annotations` read outside a decorator's, a template's or the compiler's body), `withMetaHelper` (a module reading a catalogue entry's typed meta declares `declared__metaAll__<T>`, inferred with it)
@@ -808,7 +808,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   claims them with `from` records (`cell_snap.zig`). A call inside a template's expansion is a
   frame at the template's use, the expansion's one line in the file (`block_eval.Preparer.use_loc`).
   A body method nothing answers names `file:line:col` (`unsupportedText`'s `owner_file`)
-  (`modules/decorator/refused/src/cases/decorator_raise_names_body_file`, 144 B-23). Another module's template
+  (`modules/decorator/cases/decorator_raise_names_body_file`, 144 B-23). Another module's template
   is located the same way (`template_eval.evaluate`'s `located`: the template and
   the functions it reaches; `Outcome.raised`): refused at the call that raised,
   in `src/tpl.bp:3:5`, the call that expanded it the `called from` line
@@ -1532,7 +1532,7 @@ importer puts them in `Env.fnParams` under its local name, so the fill and the l
 for a local call. Only a **closed** default travels (`isClosedDefault`: a literal, `true` / `false`,
 a sign, an array or tuple literal of those): a default naming a binding of the declaring module
 cannot be written at the importer's call site, so that parameter is exported without it and omitting
-it stays the arity error. `conformance/modules/default/cells/default_argument_across_modules` (a sibling module
+it stays the arity error. `conformance/modules/default/cases/default_argument_across_modules` (a sibling module
 and a path dependency, on all four targets) and `modules/default/cells/default_argument_open_across_modules` (the
 refusal).
 

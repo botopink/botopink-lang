@@ -2,3 +2,17 @@ botopink-cell 2
 == default_argument_open_across_modules
 refused error: 'greetFrom' expects 2 argument(s), got 1
 at src/main.bp:12:11
+== default_argument_across_modules
+out ..7
+out .7
+out 007
+out a:0:false:-1
+out b:2:false:-1
+out c:0:true:-1
+out p00
+out p12
+== default_fn_import
+out 8
+out node(leaf)
+== default_handle_member
+out 42

@@ -50,5 +50,13 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("decorator_negative_argument");
     runCase("decorator_random_seeded_commonjs");
     runCase("decorator_same_refuses_mark");
+    runCase("decorator_body_unknown_field");
+    runCase("decorator_default_not_closed");
+    runCase("decorator_helper_unknown_field");
+    runCase("decorator_imported_function_name_conflict");
+    runCase("decorator_member_return_mismatch");
+    runCase("decorator_nested_std_namespace");
+    runCase("decorator_raise_names_body_file");
+    runCase("decorator_argument_default");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

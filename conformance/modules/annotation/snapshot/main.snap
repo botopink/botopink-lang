@@ -16,3 +16,16 @@ refused error: unknown-annotation: `#[@TotallyMadeUp.Nonsense]` names no annotat
 at src/main.bp:8:3
 == annotation_dotted_through_mod
 out a
+== annotation_argument_dot_variant
+out manual
+out eager
+== annotation_argument_dot_variant_payload
+out lazy 5
+== annotation_argument_dot_variant_same_name
+refused error: `.Slow` names no variant of `Lifecycle`
+at src/main.bp:12:20
+== annotation_dotted_missing_in_import
+refused error: annotation-not-a-decorator: `#[jwt.missing]` names nothing — `jwt` has no `missing`
+at src/main.bp:7:3
+== annotation_dotted_through_import
+out a

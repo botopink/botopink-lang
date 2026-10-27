@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: `#[dec]` on `first` leaves out `name`, whose default names a binding the decorator body cannot read
-at src/cases/decorator_default_not_closed/mod.bp:17:3

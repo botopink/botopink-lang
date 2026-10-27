@@ -42,5 +42,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("beam_memory_ets_recompose");
     runCase("beam_memory_on_val");
     runCase("beam_memory_pt_write");
+    runCase("beam_memory_persistent_term");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

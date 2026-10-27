@@ -2,3 +2,10 @@ botopink-cell 2
 == component_await_call_chain
 out card!
 out card!
+== component_field_lambda_awaited
+out 7
+== component_loop_await_accumulates
+out <a|b|c>
+== component_use
+out 6
+out 0

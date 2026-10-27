@@ -53,5 +53,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("defer_refuses_try");
     runCase("defer_refuses_yield");
     runCase("defer_async_after_awaits");
+    runCase("defer_stream_consumer_stops");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -49,3 +49,6 @@ at src/main.bp:5:9
 out got 20
 out done
 out 21
+== defer_stream_consumer_stops
+out closed
+out done

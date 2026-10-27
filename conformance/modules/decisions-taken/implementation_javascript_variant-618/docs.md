@@ -5,6 +5,6 @@ A host source names the language its template is written in. `mirror`'s JavaScri
 it: `Node` is no variant of `Implementation` any more, so the annotation is refused at `.Node`, and the program does not
 run. With `.JavaScript` in its place it would print `cba` and `3`.
 
-Cells that also bear on it: `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_host`, `modules/behavior/cells/behavior_from_host_declare`.
+Cells that also bear on it: `modules/decisions-taken/runtime_abort_prints_failure-535/cells/abort_text_host`, `modules/behavior/cases/behavior_from_host_declare`.
 
 [draft/main.bp](draft/main.bp)

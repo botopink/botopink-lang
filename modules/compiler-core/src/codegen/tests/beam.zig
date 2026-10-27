@@ -559,7 +559,7 @@ test "beam: a member call through a library's default handle is a call into the 
     // fn with no run-time binding, so the receiver used to lower as an unbound
     // name and the call aborted with `{unresolved_method, make, 1}`. It is the
     // remote call into the module that declares `make` (144 B-50;
-    // `conformance/modules/default/cells/default_handle_member` runs it).
+    // `conformance/modules/default/cases/default_handle_member` runs it).
     try h.assertConsumerBeam(std.testing.allocator, &.{
         .{ .path = "qlib/qlib", .source =
         \\pub fn make(x: i32) -> i32 {

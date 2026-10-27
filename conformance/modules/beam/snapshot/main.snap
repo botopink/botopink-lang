@@ -10,3 +10,6 @@ refused error: `#[compiler.beamMemory(.Ets)]` needs a `var` — `hits` is a `val
 at src/main.bp:7:3
 == beam_memory_pt_write
 out 102
+== beam_memory_persistent_term
+out [101]
+out 101

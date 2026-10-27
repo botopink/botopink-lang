@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("dot_variant_argument_imported_fn");
+    runCase("dot_shorthand_enum_not_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -1,3 +1,7 @@
 botopink-cell 2
 == dot_variant_argument_imported_fn
 out slow
+== dot_shorthand_enum_not_imported
+out top
+out two:x
+out 9

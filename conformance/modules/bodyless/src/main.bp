@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("bodyless_fn_no_return_type");
+    runCase("bodyless_method_without_binding");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

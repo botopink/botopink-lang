@@ -585,7 +585,7 @@ out of the AST dump), which the checker judges and the formatter prints back. `n
 (`isPlainBinder`): `Box(label: null, n: k)` is `literals`, and every backend
 tests the field (`commonJS` `isKeywordLiteralPattern`, erlang's `undefined`
 atom, beam's `is_eq_exact`, wasm's `eqz`) — kept as `fields` it was bound as a
-name `null` (`conformance/modules/case/cells/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
+name `null` (`conformance/modules/case/cases/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
 owes it.
 
 Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —

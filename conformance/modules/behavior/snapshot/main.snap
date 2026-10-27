@@ -9,3 +9,30 @@ at src/main.bp:18:20
 out 41
 == behavior_parameter
 out hi bob
+== behavior_associated_fn_imported
+out 1
+out 7
+== behavior_from_host_declare
+out hi a
+out hi b
+out host
+out host
+== behavior_from_host_declare on wasm
+refused error: `hostGreeter` has no implementation for the wasm backend
+at src/main.bp:28:17
+== behavior_host_value_wasm_refused
+out hey, world
+== behavior_host_value_wasm_refused on wasm
+refused error: `makeGreeter` has no implementation for the wasm backend
+at src/main.bp:22:14
+== behavior_method_host_value
+out hi, local
+out hi, annotated
+out hi, param
+out echo x
+== behavior_method_imported
+out h:Cookie
+out response Server
+== behavior_method_imported on wasm
+refused error: `hostRequest` has no implementation for the wasm backend
+at src/main.bp:12:15

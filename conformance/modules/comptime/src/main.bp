@@ -46,5 +46,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("comptime_fn_name_shadowed_by_local");
     runCase("comptime_section_value");
     runCase("comptime_value_or_type_param");
+    runCase("comptime_module_qualified_call");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

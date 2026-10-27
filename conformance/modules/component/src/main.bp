@@ -39,5 +39,8 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("component_await_call_chain");
+    runCase("component_field_lambda_awaited");
+    runCase("component_loop_await_accumulates");
+    runCase("component_use");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

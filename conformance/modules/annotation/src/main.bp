@@ -44,5 +44,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("annotation_not_decorator_value");
     runCase("annotation_unknown_family");
     runCase("annotation_dotted_through_mod");
+    runCase("annotation_argument_dot_variant");
+    runCase("annotation_argument_dot_variant_payload");
+    runCase("annotation_argument_dot_variant_same_name");
+    runCase("annotation_dotted_missing_in_import");
+    runCase("annotation_dotted_through_import");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

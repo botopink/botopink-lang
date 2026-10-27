@@ -88,6 +88,7 @@ comptime {
     runModule("assoc");
     runModule("associated");
     runModule("beam");
+    runModule("behavior");
     runModule("bitwise");
     runModule("block");
     runModule("bodyless");
@@ -98,6 +99,7 @@ comptime {
     runModule("case");
     runModule("char");
     runModule("comment");
+    runModule("component");
     runModule("comptime");
     runModule("continue");
     runModule("ctor");
@@ -294,9 +296,11 @@ comptime {
     runModule("decisions-taken/wat_prelude_representation_only-442");
     runModule("decorator");
     runModule("default");
+    runModule("defer");
     runModule("derived");
     runModule("dict");
     runModule("display");
+    runModule("dot");
     runModule("effect");
     runModule("enum");
     runModule("explicit");

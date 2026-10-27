@@ -42,5 +42,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("behavior_method_result_typed");
     runCase("behavior_default_awaits");
     runCase("behavior_parameter");
+    runCase("behavior_associated_fn_imported");
+    runCase("behavior_from_host_declare");
+    runCase("behavior_host_value_wasm_refused");
+    runCase("behavior_method_host_value");
+    runCase("behavior_method_imported");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

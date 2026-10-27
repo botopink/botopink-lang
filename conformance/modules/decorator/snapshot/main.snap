@@ -34,3 +34,33 @@ out 5
 out Point 0.6011037519201636
 == decorator_same_refuses_mark
 out w
+== decorator_body_unknown_field
+refused error: unknown field 'nope' on type 'Decl'
+at src/main.bp:10:18
+== decorator_default_not_closed
+refused error: `#[dec]` on `first` leaves out `name`, whose default names a binding the decorator body cannot read
+at src/main.bp:17:3
+== decorator_helper_unknown_field
+refused error: cannot read a field of an `unknown` value
+at src/main.bp:9:17
+== decorator_imported_function_name_conflict
+refused error: the decorator `tag` reaches two different functions named `wrap` — one of its module's and one an imported function calls — and a decorator runs as one module, where one name is one function
+at src/main.bp:22:3
+== decorator_member_return_mismatch
+refused error: type mismatch: expected i32, got string
+at src/main.bp:10:3
+from src/main.bp:7:14
+== decorator_nested_std_namespace
+refused error: unknown field 'nope' on type 'Decl'
+at src/main.bp:13:18
+== decorator_raise_names_body_file
+refused error: {error,{panic,<<"boom A">>}}
+at src/deco.bp:5:5
+from src/main.bp:10:3
+== decorator_argument_default
+out a:-1.
+out B:-1.
+out c:3.
+out n2.5
+out pin7
+out 10

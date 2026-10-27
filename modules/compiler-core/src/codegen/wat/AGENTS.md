@@ -683,7 +683,7 @@ to call — the value comes from a `declare fn` answering `Greeter` (`external_m
 such function to the named type it answers). When one of them has no wasm cell, the call is refused
 as that function's missing `#[@external(.Wasm(…))]`, not as an unresolved call, so a `"targets"`
 narrowing (`conformance/test/behavior_host_dispatch/`) stands on a host binding as the runner's
-audit requires (`conformance/modules/behavior/cells/behavior_host_value_wasm_refused`).
+audit requires (`conformance/modules/behavior/cases/behavior_host_value_wasm_refused`).
 
 **A function of the root package that reaches such a cell is refused where the
 call is written, called or not** (decision 146 — "an error for whatever has no
@@ -1976,7 +1976,7 @@ arm whose name is BOTH a record of the module and some enum's variant
 (`type Block(…)` beside `Token.Layout { Block, … }`) tests both — the record's
 header, `or` the variant's identity (`emitVariantIdentityTest`: an all-unit
 ordinal, or a payload variant's descriptor, never a load of a record's first
-field as a tag); `conformance/modules/case/cells/case_arm_record_named_like_a_variant`.
+field as a tag); `conformance/modules/case/cases/case_arm_record_named_like_a_variant`.
 
 **An all-unit enum's value prints by name** (`unitEnumOf`,
 `unitEnumShape`): its value is the ordinal, with no header, so the print shape
@@ -2049,7 +2049,7 @@ Three pattern shapes had no wasm test, and two of them answered at exit 0:
 | a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float is read from its slot's cell); `..` skips the rest |
 | a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to std-wasm's `array.slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
 | `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
-| `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`modules/case/cells/case_record_field_null`) |
+| `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`modules/case/cases/case_record_field_null`) |
 
 The subject local carries what the patterns read (`noteSubjectShape`, in
 `lowerCase` and `lowerAssertPattern`): a tuple's or an array's print shape,

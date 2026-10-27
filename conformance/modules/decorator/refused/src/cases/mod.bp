@@ -1,7 +1,0 @@
-pub mod decorator_body_unknown_field;
-pub mod decorator_default_not_closed;
-pub mod decorator_helper_unknown_field;
-pub mod decorator_imported_function_name_conflict;
-pub mod decorator_member_return_mismatch;
-pub mod decorator_nested_std_namespace;
-pub mod decorator_raise_names_body_file;

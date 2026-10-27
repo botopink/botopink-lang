@@ -22,3 +22,7 @@ out true
 == comptime_value_or_type_param
 out 4
 out none
+== comptime_module_qualified_call
+out signed(a)
+out signed(signed(a))
+out true

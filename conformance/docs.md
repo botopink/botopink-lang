@@ -170,7 +170,7 @@ as a value is the default (decision 582, § Imports). A decorator on an anonymou
 default reads the file's name as `compiler.name(decl)`. A second default is
 `default-twice`; `pub default nope;` naming no function is `default-unknown`.
 
-<!-- example: modules/default/cells/default_fn_import -->
+<!-- example: modules/default/cases/default_fn_import -->
 <!-- example: modules/decisions-taken/anonymous_default_function-289/cases/default_named_twice -->
 <!-- example: modules/decisions-taken/anonymous_default_function-289/cases/default_unknown -->
 
@@ -267,7 +267,7 @@ name: the namespace is what `import {a.b}` binds.
 A namespace's function is called through it inside a `comptime` block too: `comptime jwt.sign(x)` runs
 `sign` of the module, with the functions it reaches, as `sign(x)` imported by name does.
 
-<!-- example: modules/comptime/cells/comptime_module_qualified_call -->
+<!-- example: modules/comptime/cases/comptime_module_qualified_call -->
 
 <!-- example: modules/decisions-taken/module_import_binds_namespace-582/cells/import_namespace_callable_default -->
 
@@ -1267,7 +1267,7 @@ The expected type names the enum also where the module never does — an enum
 of a dependency or of another module, reached through an imported function's
 parameter (decision 430):
 
-<!-- example: modules/dot/cells/dot_shorthand_enum_not_imported -->
+<!-- example: modules/dot/cases/dot_shorthand_enum_not_imported -->
 
 A position that expects nothing (`val x = .Color.Red.500;`) leaves the path
 carried by two enums with nothing to choose between them, and the compiler
@@ -1319,7 +1319,7 @@ the modifier, `default-on-static`:
 A behavior's static `fn` is called through the behavior's name wherever the
 behavior is imported, under an alias too, as in its own module:
 
-<!-- example: modules/behavior/cells/behavior_associated_fn_imported -->
+<!-- example: modules/behavior/cases/behavior_associated_fn_imported -->
 
 A type implementing a behavior of another module adopts the behavior's
 instance `default fn`s, and those of what it extends, as a type implementing a
@@ -1829,7 +1829,7 @@ alone: a later closure — a `for` body — that binds the same name in its own 
 binding, never the earlier one, whether the earlier optional was present or absent:
 
 <!-- example: modules/if/cases/if_binding_before_loop_closure -->
-<!-- example: modules/component/cells/component_loop_await_accumulates -->
+<!-- example: modules/component/cases/component_loop_await_accumulates -->
 
 ## Expressions
 
@@ -2445,7 +2445,7 @@ the stream ends or its consumer stops (a `break` in `for await`):
 
 <!-- example: modules/defer/cases/defer_async_after_awaits -->
 
-<!-- example: modules/defer/cells/defer_stream_consumer_stops -->
+<!-- example: modules/defer/cases/defer_stream_consumer_stops -->
 
 Its body cannot leave the path it runs on: `return`, a `break` or `continue` that leaves it, `yield`,
 `await` and `throw` in it (a `catch throw` included), and a `try` whose region is not written inside the body,
@@ -2784,7 +2784,7 @@ message on stderr, on every target.
 
 <!-- example: modules/assert/cases/assert_statement -->
 
-<!-- example: modules/assert/cells/assert_message_aborts -->
+<!-- example: modules/assert/cases/assert_message_aborts -->
 
 `val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
 the match fails, so the names below the binding are never unbound. It takes no
@@ -2831,7 +2831,7 @@ a component, which may `await` too. There is no annotation: the return is the
 declaration of the effect (decision 118), and there is no base: any
 `Component` may be `use`d in any `Component` body.
 
-<!-- example: modules/component/cells/component_use -->
+<!-- example: modules/component/cases/component_use -->
 
 The rules, each with its diagnostic:
 
@@ -4106,7 +4106,7 @@ A library's default handle is also its namespace: after `import {shapes} from
 "shapes"`, where the package's default module declares the template `shapes`,
 `shapes.twice(21)` calls that module's member `twice`, on every target:
 
-<!-- example: modules/default/cells/default_handle_member -->
+<!-- example: modules/default/cases/default_handle_member -->
 
 **A call is typed by the code it built** (decision 426). The type of a
 template call is the type of the code the template built for that call,
@@ -4700,7 +4700,7 @@ use, the one line the expansion has in the file.
 
 <!-- example: modules/decorator/cases/decorator_imported_builds_private_record -->
 
-<!-- example: modules/decorator/refused/src/cases/decorator_raise_names_body_file -->
+<!-- example: modules/decorator/cases/decorator_raise_names_body_file -->
 
 <!-- example: modules/template/refused/src/cases/template_raise_names_body_file -->
 
@@ -4732,7 +4732,7 @@ namespace included (`random.seed(7)` after `import {io.random} from "std"`); a b
 whose run fails is checked with them bound, so its answer is its own error —
 never the namespace read as unbound:
 
-<!-- example: modules/decorator/refused/src/cases/decorator_nested_std_namespace -->
+<!-- example: modules/decorator/cases/decorator_nested_std_namespace -->
 
 A member a decorator adds is written as if by hand: a record update in its body
 (`Point(..self, y: 0)`) copies every field it does not name. A decorator's body
@@ -4799,14 +4799,14 @@ module imports none: a decorator another package declares takes
 `#[kit.m(lifecycle: .Manual)]`, and an enum of the same name the annotating
 module declares never supplies its variants.
 
-<!-- example: modules/annotation/cells/annotation_argument_dot_variant -->
+<!-- example: modules/annotation/cases/annotation_argument_dot_variant -->
 
-<!-- example: modules/annotation/cells/annotation_argument_dot_variant_same_name -->
+<!-- example: modules/annotation/cases/annotation_argument_dot_variant_same_name -->
 
 A variant with a payload resolves the same way, on the parameter's declared type:
 `#[kit.m(lifecycle: .Lazy(afterMs: 5))]`.
 
-<!-- example: modules/annotation/cells/annotation_argument_dot_variant_payload -->
+<!-- example: modules/annotation/cases/annotation_argument_dot_variant_payload -->
 
 The value is that enum's variant wherever it goes (decisions 310, 603: a type
 is its module plus its name): the body reads `Manual` at build, and an executor

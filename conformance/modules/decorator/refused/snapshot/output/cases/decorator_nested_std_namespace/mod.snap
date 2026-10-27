@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: unknown field 'nope' on type 'Decl'
-at src/cases/decorator_nested_std_namespace/mod.bp:13:18

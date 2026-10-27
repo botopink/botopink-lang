@@ -74,5 +74,8 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("case_values");
     runCase("case_variant_fields");
     runCase("case_wide_integer_scrutinee");
+    runCase("case_arm_record_named_like_a_variant");
+    runCase("case_record_field_null");
+    runCase("case_union_constructor_arms");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -299,7 +299,7 @@ codegen/
   (`isKeywordLiteralPattern`, read by `patternTest` and `isBindingName`):
   `Box(label: null, n: k)` is `_s.label == null` (the loose `==` an absence is
   everywhere), never `const null = …` — a `SyntaxError` before `main` ran
-  (`conformance/modules/case/cells/case_record_field_null`).
+  (`conformance/modules/case/cases/case_record_field_null`).
 - **A record's constructor pattern is the record's class test** (`variantTest`):
   `Dog(name: n, breed: b)` — labelled, swapped, with `..`, positional or
   nested — over a name `record_fields` holds and no variant of the module
@@ -323,7 +323,7 @@ codegen/
   225 / 0, from one source). Pinned by
   `conformance/modules/case/run/src/cases/case_arm_name_is_also_a_type`, which runs on all four.
   erlang, beam and wasm test both the same way — the variant's identity
-  `orelse` the record's type (`conformance/modules/case/cells/case_arm_record_named_like_a_variant`,
+  `orelse` the record's type (`conformance/modules/case/cases/case_arm_record_named_like_a_variant`,
   the mirror case: a `case` over `Block | Vec` naming the record). A
   `val assert` over a variant (`buildPatternCheck`) tests the `tag` as a `case`
   arm does; `instanceof Circle` named no class and died `ReferenceError`
@@ -566,7 +566,7 @@ codegen/
   (`import {shapes} from "shapes"`) is a comptime fn with no run-time binding;
   `collectImportedTypes` records it in `lib_handles` (name → the import's
   `from`) and a call through it (`shapes.twice(x)`) lowers to the remote call
-  into the module that declares `twice` (`conformance/modules/default/cells/default_handle_member`).
+  into the module that declares `twice` (`conformance/modules/default/cases/default_handle_member`).
 - **Default handle member (beam)**: `beam_asm.zig` records the handle in its own `lib_handles`
   (`collectImportedTypes`' cross loop) and lowers `shapes.twice(x)` to a `call_ext` into the module that
   declares `twice`, ahead of the `std_imports` path; without it the call ended in `{unresolved_method, twice, 1}`.
@@ -1312,7 +1312,7 @@ codegen/
   `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
   `{True, N}`, a binder, and the first arm took every tuple. `null` is the
   atom `undefined`: `Box(label: null, n: k)` was `{…, Null, K}` and took every
-  box (`conformance/modules/case/cells/case_record_field_null`).
+  box (`conformance/modules/case/cases/case_record_field_null`).
 - **A record's constructor pattern carries the record's tag**: `Point(x: 0, ..)`
   and `Point(x: 0, y: y)` in a `case` are `{'<pkg>@<path>@@Point', 0, _}`
   (`recordTagAtom`, decision 109), what the constructor builds — the bare
@@ -2420,7 +2420,7 @@ codegen/
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a
   primitive type name, `true`/`false`, `null` (the atom `undefined`,
-  `is_eq_exact`; it was bound and took every field — `modules/case/cells/case_record_field_null`)
+  `is_eq_exact`; it was bound and took every field — `modules/case/cases/case_record_field_null`)
   — is tested from `{x, 0}` element by element. Tests fall through on a match and jump to the next arm; nothing is
   written below the scratch base, so the subject is intact on the fail edge; each
   binder takes a y-slot (`patternYSlots` counts nested ones). `A...B` is two

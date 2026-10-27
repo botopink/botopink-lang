@@ -14,5 +14,5 @@
 [cases/defer_refuses_yield/src/main.bp](cases/defer_refuses_yield/src/main.bp)
 [cases/defer_return_value_before_defers/src/main.bp](cases/defer_return_value_before_defers/src/main.bp)
 [cases/defer_scope_is_block/src/main.bp](cases/defer_scope_is_block/src/main.bp)
-[cells/defer_stream_consumer_stops/src/main.bp](cells/defer_stream_consumer_stops/src/main.bp)
+[cases/defer_stream_consumer_stops/src/main.bp](cases/defer_stream_consumer_stops/src/main.bp)
 [cases/defer_try_catch_inside/src/main.bp](cases/defer_try_catch_inside/src/main.bp)

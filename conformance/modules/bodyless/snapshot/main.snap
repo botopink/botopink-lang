@@ -3,3 +3,15 @@ botopink-cell 2
 refused error[bodyless-fn-needs-return-type]: a declaration with no body must say what it answers
 at src/main.bp:7:23
 label add `-> void`, or give the fn a body
+== bodyless_method_without_binding
+refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:11:20
+== bodyless_method_without_binding on commonJS
+refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:11:20
+== bodyless_method_without_binding on erlang
+refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:11:20
+== bodyless_method_without_binding on wasm
+refused error: declare-without-implementation: `Repo.find` is a bodyless `declare fn`, and no annotation implements it
+at src/main.bp:11:20
