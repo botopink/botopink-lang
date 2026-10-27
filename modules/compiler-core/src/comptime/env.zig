@@ -1183,6 +1183,13 @@ pub const Env = struct {
     /// emits, where a behavior's function may be called on a catalogue
     /// entry's `value` (`infer.zig` `refuseBehaviorCallOnEntry`).
     inExpansion: bool = false,
+    /// Decisions 808 (1), 998 (4), (6) — the body of a function expanded at
+    /// its call site checked in its own module (not an expansion of it): a
+    /// `compiler.load` whose path reads a `comptime` parameter and a
+    /// `comptime` that reads a value the function's build lines bound
+    /// (`if (comptime loaded.mainAsync())`) are each caller's, answered where
+    /// the call is expanded; here they are typed and fold nothing.
+    inExpandedFnDecl: bool = false,
     /// Decision 370 (2) — the body of the decorator being inferred: a member
     /// function it hands to `decl.addMember(name, fn…)` reads none of its
     /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.

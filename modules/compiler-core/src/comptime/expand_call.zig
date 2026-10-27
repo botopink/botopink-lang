@@ -107,6 +107,9 @@ pub fn expand(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, expected: ?*
     const savedInExpansion = env.inExpansion;
     env.inExpansion = true;
     defer env.inExpansion = savedInExpansion;
+    const savedInExpandedFnDecl = env.inExpandedFnDecl;
+    env.inExpandedFnDecl = false;
+    defer env.inExpandedFnDecl = savedInExpandedFnDecl;
 
     var x: Expander = .{
         .env = env,
@@ -693,6 +696,8 @@ const Expander = struct {
             }
             if (self.build_mode) if (try self.expandAtBuild(e.call, out)) return .normal;
         }
+        std.debug.print("DBG stmt tag={s} build_mode={}\n", .{ @tagName(st.expr), self.build_mode });
+        if (try self.handledReturn(st, out)) |flow| return flow;
         switch (e.*) {
             .literal => |l| if (l.kind == .comment) return .normal,
             .binding => |b| switch (b.kind) {
@@ -752,11 +757,22 @@ const Expander = struct {
     /// Decision 808 (2), (4) — the body of the executor `compiler.init(f)`
     /// hands, written where the line is: a block of its own when it binds a
     /// name.
+    ///
+    /// Decision 998 (2) — an `async` executor's statements are written as
+    /// they are inside its brace, its `await`s the enclosing body's: only at
+    /// a run-time call inside an `async` body; in a body that is not `async`
+    /// and in 808 (4)'s block (`build_mode`) it is refused at the `async`.
     fn initHere(self: *Expander, cc: anytype, out: *std.ArrayListUnmanaged(ast.Stmt)) InferError!void {
         if (cc.args.len != 1 or cc.args[0].value.* != .function) return;
         const f = cc.args[0].value.function;
+        var body: []const ast.Stmt = f.kind.body;
+        if (f.kind.marker == .task) {
+            const awaits = if (self.env.starFn) |sf| sf.allowsAwait else false;
+            if (self.build_mode or !awaits) return infer.refuseAsyncExecutor(self.env, f.loc);
+            body = ast.asyncLambdaBody(f) orelse body;
+        }
         var inner: std.ArrayListUnmanaged(ast.Stmt) = .empty;
-        for (f.kind.body) |*s| {
+        for (body) |*s| {
             if (s.expr == .literal and s.expr.literal.kind == .comment) continue;
             // A lambda's tail answers nothing here.
             var one = s.*;
@@ -772,6 +788,61 @@ const Expander = struct {
         const loc: ast.Loc = .{ .line = self.call_loc.line, .col = self.call_loc.col, .expansion = try self.callerFresh() };
         const blk = exprsMod.makeBlockExpr(self.env.arena, loc, inner.items) catch return error.OutOfMemory;
         try out.append(self.env.arena, .{ .expr = blk });
+    }
+
+    /// Decisions 789 (4), 998 (5) — `[val x =] try e catch { r -> …; return; }`
+    /// with `e` known at build (`try comptime compiler.load(…)`): its branch
+    /// taken here, as a top-level block's is (`parser/comptime_blocks.zig`
+    /// `liftCatchReturns`) — on `Ok` the value bound to `x` and the
+    /// statements after it walked, on `Error` the handler's statements, `r`
+    /// bound to the error, and the expansion ended. Null for any other line.
+    fn handledReturn(self: *Expander, st: *const ast.Stmt, out: *std.ArrayListUnmanaged(ast.Stmt)) InferError!?Flow {
+        var name: ?[]const u8 = null;
+        var e = &st.expr;
+        if (e.* == .binding and e.binding.kind == .localBind) {
+            const lb = e.binding.kind.localBind;
+            if (lb.mutable or lb.typeAnnotation != null) return null;
+            name = lb.name;
+            e = lb.value;
+        }
+        std.debug.print("DBG value tag={s} {s}\n", .{ @tagName(e.*), if (e.* == .branch) @tagName(e.branch.kind) else "" });
+        if (e.* == .branch and e.branch.kind == .tryCatch) std.debug.print("DBG tc region={} handlerblk={} expr={s}\n", .{ e.branch.kind.tryCatch.region, blockBodyOf(e.branch.kind.tryCatch.handler.*) != null, @tagName(e.branch.kind.tryCatch.expr.*) });
+        if (e.* != .branch or e.branch.kind != .tryCatch) return null;
+        const tc = e.branch.kind.tryCatch;
+        if (tc.region) return null;
+        const handler = blockBodyOf(tc.handler.*) orelse return null;
+        if (handler.len == 0) return null;
+        const last = handler[handler.len - 1].expr;
+        if (last != .jump or last.jump.kind != .@"return" or last.jump.kind.@"return" != null) return null;
+        if (self.runRead(tc.expr) != null) return null;
+        std.debug.print("DBG handled\n", .{});
+        var v = try self.evalBuild(tc.expr);
+        std.debug.print("DBG v={s}\n", .{try exprText(self.env.arena, v.*)});
+        while (v.* == .collection and v.collection.kind == .grouped) v = v.collection.kind.grouped;
+        const side: enum { ok, err }, const payload = blk: {
+            if (v.* == .call and v.call.kind == .call) {
+                const cc = v.call.kind.call;
+                if (cc.receiver == null and !cc.is_builtin and cc.args.len == 1) {
+                    if (std.mem.eql(u8, cc.callee, "Ok")) break :blk .{ .ok, cc.args[0].value };
+                    if (std.mem.eql(u8, cc.callee, "Error")) break :blk .{ .err, cc.args[0].value };
+                }
+            }
+            _ = try self.unsupported(tc.expr.getLoc(), "a handled read that returns takes its branch at build over a `Result` known there");
+            unreachable;
+        };
+        switch (side) {
+            .ok => {
+                if (name) |n| try self.bindings.append(self.env.arena, .{ .name = n, .bound = .{ .build = payload } });
+                return .normal;
+            },
+            .err => {
+                const mark = self.bindings.items.len;
+                defer self.bindings.shrinkRetainingCapacity(mark);
+                if (tc.binder) |b| try self.bindings.append(self.env.arena, .{ .name = b, .bound = .{ .build = payload } });
+                const flow = try self.block(handler[0 .. handler.len - 1], out);
+                return if (flow == .normal) .ret else flow;
+            },
+        }
     }
 
     /// Decision 808 (4) — a line of a build-mode expansion, run at build as

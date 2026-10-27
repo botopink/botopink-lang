@@ -1,0 +1,23 @@
+//// Decision 998 (4) — `Module.mainAsync()` answers whether the loaded package's `main` is
+//// `async`, read at build: `if (comptime loaded.mainAsync())` keeps one branch at each
+//// expansion, so a sync `main` writes only the other branch's executor.
+
+import {compiler, io.terminal.print} from "std";
+
+fn kind(comptime name: string) -> void {
+    val loaded = try comptime compiler.load("packages/" + name) catch { r ->
+        compiler.init({ -> print(name + " refused"); });
+        return;
+    };
+    if (comptime loaded.mainAsync()) {
+        compiler.init({ -> print(name + " async"); });
+    } else {
+        compiler.init({ -> print(name + " sync"); });
+    }
+}
+
+pub fn main() -> void {
+    kind("plain");
+    kind("later");
+    print("main");
+}

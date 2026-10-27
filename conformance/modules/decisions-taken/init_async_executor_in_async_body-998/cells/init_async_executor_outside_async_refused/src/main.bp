@@ -1,0 +1,16 @@
+//// Decision 998 (2) — an `async` executor stands only where its body is written into an `async`
+//// body: `main` here is not `async`, so nothing would await it, and it is refused at the
+//// `async`, the message naming the plain form.
+
+import {async, compiler, io.terminal.print} from "std";
+
+fn later(comptime name: string) -> void {
+    compiler.init({ async ->
+        await async.delay(1, 0);
+        print(name);
+    });
+}
+
+pub fn main() -> void {
+    later("one");
+}

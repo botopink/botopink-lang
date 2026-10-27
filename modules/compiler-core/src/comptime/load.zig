@@ -60,7 +60,7 @@ pub const module_alias = "Bp__LoadModule";
 /// without `pub` that makes one: the lowering's call, no program's.
 pub const module_maker = "of";
 /// The function `withLoadHelper` declares over `module_maker`:
-/// `__bp_load_module(name:, path:, buildOutput:)` answers `Bp__LoadModule.of(…)`. A read's
+/// `__bp_load_module(name:, path:, buildOutput:, mainAsync:)` answers `Bp__LoadModule.of(…)`. A read's
 /// answer and an executor's captured `Module` are written as its call.
 pub const module_fn = "__bp_load_module";
 /// The local name of std's `compiler.Refused` in a module that loads.
@@ -70,7 +70,7 @@ pub const refused_alias = "Bp__LoadRefused";
 /// writes them — std's `compiler.Module`, `compiler.Refused` and
 /// `compiler.Diagnostic`, record for record (`tests/compiler_members.zig`).
 pub const records = [_]struct { name: []const u8, fields: []const []const u8 }{
-    .{ .name = "Module", .fields = &.{ "name", "path", "buildOutput" } },
+    .{ .name = "Module", .fields = &.{ "name", "path", "buildOutput", "mainAsync" } },
     .{ .name = "Refused", .fields = &.{ "module", "diagnostics" } },
     .{ .name = "Diagnostic", .fields = &.{ "code", "message", "file", "line", "column", "label", "from" } },
 };
@@ -424,7 +424,7 @@ pub fn withLoadHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     };
     const base = "import {compiler.Diagnostic as " ++ diagnostic_alias ++ ", compiler.Module as " ++ module_alias ++ ", compiler.Refused as " ++ refused_alias ++ ", failure.attempt as " ++ attempt_alias ++ "} from \"std\";\n" ++
         "fn " ++ helper_fn ++ "(m: " ++ module_alias ++ ", ds: " ++ diagnostic_alias ++ "[]) -> Result<" ++ module_alias ++ ", " ++ refused_alias ++ "> { if (ds.length > 0) throw " ++ refused_alias ++ "(module: m, diagnostics: ds); return m; }\n" ++
-        "fn " ++ module_fn ++ "(name: string, path: string, buildOutput: string) -> " ++ module_alias ++ " { return " ++ module_alias ++ "." ++ module_maker ++ "(name: name, path: path, buildOutput: buildOutput); }\n";
+        "fn " ++ module_fn ++ "(name: string, path: string, buildOutput: string, mainAsync: bool) -> " ++ module_alias ++ " { return " ++ module_alias ++ "." ++ module_maker ++ "(name: name, path: path, buildOutput: buildOutput, mainAsync: mainAsync); }\n";
     // A module that writes a `run()` also gets what the call is rewritten to
     // (`runRewrite`): std's `compiler.RunFailure` and `run_fn` (decision 806).
     var runs_found: RunFinder = .{ .arena = arena, .collect_all = true };
@@ -510,6 +510,14 @@ pub const Loaded = struct {
     pub fn buildOutput(self: Loaded) []const u8 {
         const e = entryOf(self.path) orelse return "";
         return e.build_output;
+    }
+
+    /// Decision 998 (4) — `mainAsync`: whether the loaded package's `main`
+    /// is `async` (what `run()`'s type follows, 989 (2)); `false` before the
+    /// load answered.
+    pub fn mainAsync(self: Loaded) bool {
+        const e = entryOf(self.path) orelse return false;
+        return e.main_async;
     }
 };
 
@@ -617,10 +625,11 @@ pub fn runtimeAnswer(arena: std.mem.Allocator, loc: ast.Loc, loaded: Loaded, ds:
     // The comptime runtime's host record (`decorator_eval`), built by its
     // constructor: no program reads it, and an executor writes it back as
     // `__bp_load_module(…)` (`recordSource`).
-    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
+    try text.print(arena, module_alias ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\", mainAsync: {})", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
         try blockEval.stringLexeme(arena, loaded.buildOutput()),
+        loaded.mainAsync(),
     });
     if (ds.len > 0) {
         try text.appendSlice(arena, ", diagnostics: ");
@@ -706,10 +715,11 @@ fn writeRecord(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), v: s
             }
             const path = jsonString(o, "path") orelse return false;
             const name = jsonString(o, "name") orelse return false;
-            try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
+            try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\", mainAsync: {})", .{
                 try blockEval.stringLexeme(arena, name),
                 try blockEval.stringLexeme(arena, path),
                 try blockEval.stringLexeme(arena, jsonString(o, "buildOutput") orelse ""),
+                if (o.get("mainAsync")) |ma| ma == .bool and ma.bool else false,
             });
             return true;
         },
@@ -1500,14 +1510,15 @@ fn targetsText(arena: std.mem.Allocator, targets: ?moduleMod.Targets) ![]const u
     return out.items;
 }
 
-/// `__bp_load_module(name: …, path: …, buildOutput: …)` — decision 811 (4): std's opaque
+/// `__bp_load_module(name: …, path: …, buildOutput: …, mainAsync: …)` — decision 811 (4): std's opaque
 /// `Module` made by its method without `pub` (`module_fn`'s body, the only
 /// call of it).
 fn writeModule(arena: std.mem.Allocator, text: *std.ArrayListUnmanaged(u8), loaded: Loaded) !void {
-    try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\")", .{
+    try text.print(arena, module_fn ++ "(name: \"{s}\", path: \"{s}\", buildOutput: \"{s}\", mainAsync: {})", .{
         try blockEval.stringLexeme(arena, loaded.name()),
         try blockEval.stringLexeme(arena, loaded.path),
         try blockEval.stringLexeme(arena, loaded.buildOutput()),
+        loaded.mainAsync(),
     });
 }
 

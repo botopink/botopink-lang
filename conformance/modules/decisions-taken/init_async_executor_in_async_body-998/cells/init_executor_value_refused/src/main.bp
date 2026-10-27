@@ -1,0 +1,15 @@
+//// Decision 998 (3) — `compiler.init` answers `void` at every use: an executor whose body ends in
+//// a value is refused at the tail, no value dropped.
+
+import {compiler, io.terminal.print} from "std";
+
+fn count(comptime name: string) -> void {
+    compiler.init({ ->
+        print(name);
+        name + "!"
+    });
+}
+
+pub fn main() -> void {
+    count("one");
+}
