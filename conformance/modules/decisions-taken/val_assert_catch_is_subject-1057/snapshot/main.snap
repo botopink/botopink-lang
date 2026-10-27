@@ -1,0 +1,19 @@
+botopink-cell 2
+== catch_wrong_type
+refused error: assert-catch-type: after `catch` the value stands for the subject: `Shape` expected, `i32` written
+at src/main.bp:9:36
+== catch_other_variant
+refused error: assert-catch-never-matches: after `catch` the value stands for the subject, and `Shape.Rect` never matches the pattern `Circle`
+at src/main.bp:9:42
+== catch_jump
+out 4
+out -1
+out 6
+out 0
+== catch_substitute_matches
+out 5
+out 0
+== catch_substitute_fails
+out 7
+abort
+stderr assert pattern did not match

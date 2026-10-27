@@ -424,3 +424,43 @@ test "infer error: narrow ---- a pattern assert handler is checked too" {
         \\import {io.terminal.print} from "std";
     );
 }
+
+// ── decision 1057 — the value after `catch` stands for the subject ───────────
+
+test "infer error: narrow ---- decision 1057 a catch value of another type than the subject is assert-catch-type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn radiusOf(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch -1;
+        \\    return r;
+        \\}
+    );
+}
+
+test "infer error: narrow ---- decision 1057 a catch value of another variant is assert-catch-never-matches" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn radiusOf(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch Shape.Rect(1, 1);
+        \\    return r;
+        \\}
+    );
+}
+
+test "infer: narrow ---- decision 1057 a jump or a substitute of the subject's type after catch checks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn radiusOf(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch return -1;
+        \\    return r;
+        \\}
+        \\fn widthOf(s: Shape) -> Result<i32, string> {
+        \\    val assert Rect(w, _) = s catch throw "not a rect";
+        \\    return w;
+        \\}
+        \\fn radiusOr(s: Shape) -> i32 {
+        \\    val assert Circle(r) = s catch Shape.Circle(0);
+        \\    return r;
+        \\}
+    );
+}

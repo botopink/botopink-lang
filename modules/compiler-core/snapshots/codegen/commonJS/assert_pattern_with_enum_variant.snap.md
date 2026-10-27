@@ -78,7 +78,8 @@ function parse() {
 
 function main() {
     const result = parse();
-    const _assert0 = (() => { const _match = result; if (("ok" in _match)) { return _match; } else { return (() => { throw Object.defineProperty(new Error("assert pattern did not match"), '__bp_panic', { value: true }) })(); } })();
+    let _assert0 = result;
+    if (!(("ok" in _assert0))) { (() => { throw Object.defineProperty(new Error("assert pattern did not match"), '__bp_panic', { value: true }) })(); }
     const value = _assert0.ok;
     __bp_print(value);
 }

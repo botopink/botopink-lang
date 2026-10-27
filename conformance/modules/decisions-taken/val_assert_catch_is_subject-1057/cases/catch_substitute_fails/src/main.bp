@@ -1,0 +1,22 @@
+//// Decision 1057 (3) — a substitute that still does not match at run time is the same fatal failure
+//// as a `val assert` with no `catch` (`assert pattern did not match`), on every target: what was
+//// printed before stays printed, nothing after it runs.
+
+import {io.terminal.print} from "std";
+
+type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+
+fn fallback(s: Shape) -> Shape {
+    return s;
+}
+
+fn radiusOf(s: Shape) -> i32 {
+    val assert Circle(r) = s catch fallback(s);
+    return r;
+}
+
+pub fn main() -> void {
+    print(radiusOf(Shape.Circle(7)));
+    print(radiusOf(Shape.Rect(2, 3)));
+    print("after");
+}

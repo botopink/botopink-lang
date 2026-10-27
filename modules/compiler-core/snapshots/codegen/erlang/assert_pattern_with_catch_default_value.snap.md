@@ -17,7 +17,7 @@ fn f() -> void {
 f() ->
     R = {test@main@@Person, <<"ann">>, 30},
     BpAssert4_9 = R,
-    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> {test@main@@Person, <<"bob">>, 12} end.
+    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> BpAssert4_9_h = {test@main@@Person, <<"bob">>, 12}, case BpAssert4_9_h of {test@main@@Person, _, _} -> BpAssert4_9_h; _ -> erlang:error({panic, <<"assert pattern did not match">>}) end end.
 
 '__bp_priv__f'() -> f().
 ```

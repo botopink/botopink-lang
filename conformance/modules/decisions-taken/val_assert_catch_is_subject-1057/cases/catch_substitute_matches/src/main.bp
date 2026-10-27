@@ -1,0 +1,16 @@
+//// Decision 1057 (1) — when the subject does not match, the value after `catch` is taken as the
+//// subject and matched again: a substitute of the variant the pattern names binds its names.
+
+import {io.terminal.print} from "std";
+
+type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+
+fn radiusOf(s: Shape) -> i32 {
+    val assert Circle(r) = s catch Shape.Circle(0);
+    return r;
+}
+
+pub fn main() -> void {
+    print(radiusOf(Shape.Circle(5)));
+    print(radiusOf(Shape.Rect(2, 3)));
+}

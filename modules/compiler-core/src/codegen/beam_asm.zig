@@ -7153,10 +7153,12 @@ const Emitter = struct {
                 const ok_l = self.allocLabel();
                 try self.emitSubPattern(0, ap.pattern, fail_l, 1);
                 try beamEmitter.writeJump(self.out, ok_l);
+                // Decision 1057 (3) — the value after `catch` is matched again;
+                // a substitute that still does not match is the handler-less
+                // form's fatal failure (`assert pattern did not match`), never a
+                // raw `badmatch`.
                 try beamEmitter.writeLabel(self.out, fail_l);
-                try beamEmitter.writeTestHeap(self.out, 3, 1);
-                try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("badmatch"), Op.xr(0) });
-                try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+                try self.lowerExprIntoX0(try ast.assertFatalPanic(self.atom_arena.allocator(), ap.handler.getLoc()));
                 try beamEmitter.writeLabel(self.out, ok_l);
             },
         }

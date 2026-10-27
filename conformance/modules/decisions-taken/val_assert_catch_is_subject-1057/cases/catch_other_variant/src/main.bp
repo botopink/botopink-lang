@@ -1,0 +1,15 @@
+//// Decision 1057 (2) — a `catch` value that constructs another variant of the subject's type than
+//// the one the pattern names can never match: refused `assert-catch-never-matches`, at the value.
+
+import {io.terminal.print} from "std";
+
+type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+
+fn radiusOf(s: Shape) -> i32 {
+    val assert Circle(r) = s catch Shape.Rect(1, 1);
+    return r;
+}
+
+pub fn main() -> void {
+    print(radiusOf(Shape.Circle(3)));
+}

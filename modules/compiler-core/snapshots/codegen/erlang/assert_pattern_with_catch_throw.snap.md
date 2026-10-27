@@ -17,9 +17,12 @@ fn f() -> Result<void, string> {
 
 f() ->
     R = {test@main@@Person, <<"ann">>, 30},
-    BpAssert4_9 = R,
-    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> {error, <<"is not person">>} end,
-    {ok, undefined}.
+    case R of
+        {test@main@@Person, Name, Age} ->
+            {ok, undefined};
+        _ ->
+            {error, <<"is not person">>}
+    end.
 
 '__bp_priv__f'() -> f().
 ```

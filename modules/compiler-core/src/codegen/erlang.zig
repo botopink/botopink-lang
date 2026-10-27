@@ -6644,6 +6644,15 @@ const Emitter = struct {
             // clause, not inside the `case` (a name bound by a single `case`
             // clause is "unsafe" after it).
             if (this.assertPatternBindingStmt(stmt)) |ap| {
+                // Decision 1057 — `catch return …` / `catch throw …` leaves the
+                // function: erlang has no early return, so the rest of the body
+                // is nested in the arm that matched (as `earlyReturnIfExpr`
+                // does). Inside a loop's fun the jump throws (`returnNode`), and
+                // the plain lowering below already leaves.
+                if (!is_last and assertCatchReturns(ap) and !this.returnThrows()) {
+                    try stmts.append(b.arena, .{ .expr = try this.assertEarlyExitExpr(b, body, i, ap) });
+                    break; // remaining statements are nested inside the matching arm
+                }
                 try stmts.appendSlice(b.arena, try this.assertPatternStmts(b, ap, stmt.expr.comptime_.loc));
                 continue;
             }
@@ -6890,16 +6899,75 @@ const Emitter = struct {
         this.pattern_discard = true;
         const check = try this.ctorBindPattern(b, ap.pattern);
         this.pattern_discard = false;
-        const handler = try this.exprNode(b, ap.handler.*);
+        const handled = try this.assertHandled(b, ap, try std.fmt.allocPrint(b.arena, "{s}_h", .{tmp}));
         const decided = try b.caseInline(Ast.Expr.v(tmp), &.{
             try b.clause(&.{check}, &.{}, &.{Ast.Expr.v(tmp)}),
-            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{handler}),
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, handled),
         });
         const bind = try this.ctorBindPattern(b, ap.pattern);
         const stmts = try b.arena.alloc(Ast.Stmt, 2);
         stmts[0] = .{ .expr = try b.match(Ast.Expr.v(tmp), subject) };
         stmts[1] = .{ .expr = try b.match(bind, decided) };
         return stmts;
+    }
+
+    /// True when a `val assert`'s handler is `return …` or `throw …`.
+    fn assertCatchReturns(ap: anytype) bool {
+        if (ap.fatal or ap.handler.* != .jump) return false;
+        return switch (ap.handler.jump.kind) {
+            .@"return", .throw_ => true,
+            else => false,
+        };
+    }
+
+    /// `case Subject of P -> <body[i+1..]>; _ -> <the jump's value> end` — a
+    /// `val assert P = e catch return …` (or `catch throw …`) in a function's
+    /// own statement sequence: the pattern binds in the arm the rest runs in,
+    /// and the other arm is the value the jump leaves the function with
+    /// (decision 1057).
+    fn assertEarlyExitExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, ap: anytype) anyerror!Ast.Expr {
+        const arm_indent = this.indent + 2;
+        const subject = try this.exprNode(b, ap.expr.*);
+        const left = try b.body(&.{try this.exprNode(b, ap.handler.*)});
+        const pattern = try this.ctorBindPattern(b, ap.pattern);
+        const rest = try this.bodyNode(b, body, i + 1, arm_indent);
+        return b.caseOf(subject, &.{
+            .{ .patterns = try b.exprs(&.{pattern}), .body = rest },
+            .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = left },
+        });
+    }
+
+    /// The body of a `val assert`'s mismatch clause: the jump after `catch`,
+    /// the handler-less form's `@panic(…)`, or — decision 1057 — the value
+    /// after `catch` taken as the subject and matched again, staged in `tmp`:
+    ///
+    /// ```erlang
+    /// Tmp = Handler, case Tmp of P' -> Tmp; _ -> <panic "assert pattern did not match"> end
+    /// ```
+    ///
+    /// so a substitute that still does not match is the handler-less form's
+    /// fatal failure, never a raw `badmatch`.
+    fn assertHandled(this: *Emitter, b: Ast.Builder, ap: anytype, tmp: []const u8) anyerror![]const Ast.Expr {
+        const handler = try this.exprNode(b, ap.handler.*);
+        const jumps = switch (ap.handler.*) {
+            .jump => |j| switch (j.kind) {
+                .throw_, .@"return", .@"break", .@"continue" => true,
+                else => false,
+            },
+            else => false,
+        };
+        if (ap.fatal or jumps) return b.exprs(&.{handler});
+        this.pattern_discard = true;
+        const again = try this.ctorBindPattern(b, ap.pattern);
+        this.pattern_discard = false;
+        const panic = try this.exprNode(b, try ast.assertFatalPanic(b.arena, ap.handler.getLoc()));
+        return b.exprs(&.{
+            try b.match(Ast.Expr.v(tmp), handler),
+            try b.caseInline(Ast.Expr.v(tmp), &.{
+                try b.clause(&.{again}, &.{}, &.{Ast.Expr.v(tmp)}),
+                try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{panic}),
+            }),
+        });
     }
 
     /// Match `var acc = init;` at `body[i]` immediately followed by
@@ -9835,10 +9903,11 @@ const Emitter = struct {
                 const subject = try this.exprNode(b, ap.expr.*);
                 const pattern = try this.ctorBindPattern(b, ap.pattern);
                 const matched = try this.exprNode(b, ap.expr.*);
-                const handler = try this.exprNode(b, ap.handler.*);
+                const where = ap.handler.getLoc();
+                const handled = try this.assertHandled(b, ap, try std.fmt.allocPrint(b.arena, "BpAssertH{d}_{d}", .{ where.line, where.col }));
                 return b.caseInline(subject, &.{
                     try b.clause(&.{pattern}, &.{}, &.{matched}),
-                    try b.clause(&.{V("_")}, &.{}, &.{handler}),
+                    try b.clause(&.{V("_")}, &.{}, handled),
                 });
             },
         }

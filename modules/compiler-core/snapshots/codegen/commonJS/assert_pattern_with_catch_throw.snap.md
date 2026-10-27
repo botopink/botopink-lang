@@ -20,7 +20,8 @@ Person.prototype.__bp = "Person";
 
 function f() {
     const r = new Person("ann", 30);
-    const _assert0 = (() => { const _match = r; if ((_match instanceof Person)) { return _match; } else { return ({ error: "is not person" }); } })();
+    let _assert0 = r;
+    if (!((_assert0 instanceof Person))) { return ({ error: "is not person" }); }
     const { name, age } = _assert0;
     return ({ ok: null });
 }

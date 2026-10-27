@@ -17109,6 +17109,100 @@ fn checkAssertPatternSubject(
     return error.TypeError;
 }
 
+/// Decision 1057 (2) — `val assert P = s catch X`: `X` is a jump (`return`,
+/// `throw`, `break`, `continue`), or a value of the subject's type that is
+/// matched against `P` again. Two refusals, each located at the handler:
+/// `assert-catch-type` when `X`'s type is not assignable to the subject's,
+/// `assert-catch-never-matches` when `X` constructs another variant of the
+/// subject's type than the one `P` names.
+fn checkAssertCatchHandler(
+    env: *Env,
+    pattern: ast.Pattern,
+    subjectType: *T.Type,
+    handler: ast.Expr,
+    handlerType: *T.Type,
+) InferError!void {
+    if (handler == .jump) switch (handler.jump.kind) {
+        .@"return", .throw_, .@"break", .@"continue" => return,
+        else => {},
+    };
+    const hloc = handler.getLoc();
+    unifyUnlocated(env, subjectType, handlerType) catch |err| {
+        if (err != error.TypeError) return err;
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: after `catch` the value stands for the subject: `{s}` expected, `{s}` written",
+            .{ diagnostics.assert_catch_type, try snapshotMod.typeNameOf(env.arena, subjectType), try snapshotMod.typeNameOf(env.arena, handlerType) },
+        );
+        env.lastError = TypeError.custom(
+            msg,
+            "When the subject does not match, the value after `catch` is matched against the pattern again, so it has the subject's type. To leave instead, write a jump: `catch return …` or `catch throw …` (decision 1057).",
+        ).withLoc(hloc);
+        return error.TypeError;
+    };
+    const want = switch (pattern) {
+        .variant => |v| bareVariantName(v.name),
+        else => return,
+    };
+    const built = assertCatchVariantName(handler) orelse return;
+    const st = subjectType.deref();
+    if (st.* != .named) return;
+    const td = env.lookupTypeDef(st.named.name) orelse return;
+    if (td != .enum_) return;
+    var wantKnown = false;
+    var builtKnown = false;
+    for (td.enum_.variants) |vd| {
+        if (std.mem.eql(u8, vd.name, want)) wantKnown = true;
+        if (std.mem.eql(u8, vd.name, built)) builtKnown = true;
+    }
+    if (!wantKnown or !builtKnown or std.mem.eql(u8, want, built)) return;
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "{s}: after `catch` the value stands for the subject, and `{s}.{s}` never matches the pattern `{s}`",
+        .{ diagnostics.assert_catch_never_matches, st.named.name, built, want },
+    );
+    env.lastError = TypeError.custom(
+        msg,
+        "The value after `catch` is matched against the pattern again: a constructor of another variant always fails, and a failure is fatal. Build the variant the pattern names, or leave with `catch return …` / `catch throw …` (decision 1057).",
+    ).withLoc(hloc);
+    return error.TypeError;
+}
+
+/// The variant a `val assert`'s handler constructs, as its bare name
+/// (`Shape.Rect(1, 1)`, `Rect(1, 1)`, `.Rect(1, 1)`, `Shape.Dot`, `.Dot`), or
+/// null when the handler is no constructor written in place.
+fn assertCatchVariantName(e: ast.Expr) ?[]const u8 {
+    switch (e) {
+        .call => |c| switch (c.kind) {
+            .call => |call| {
+                if (call.calleeExpr) |ce| {
+                    if (ce.* == .identifier and ce.identifier.kind == .dotIdent) return ce.identifier.kind.dotIdent;
+                    return null;
+                }
+                if (call.callee.len == 0) return null;
+                const name = bareVariantName(call.callee);
+                if (call.receiver) |r| {
+                    if (r.* != .identifier or r.identifier.kind != .ident) return null;
+                    if (!std.ascii.isUpper(r.identifier.kind.ident[0])) return null;
+                }
+                if (!std.ascii.isUpper(name[0])) return null;
+                return name;
+            },
+            else => return null,
+        },
+        .identifier => |id| switch (id.kind) {
+            .dotIdent => |n| return n,
+            .identAccess => |ia| {
+                if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+                if (ia.member.len == 0 or !std.ascii.isUpper(ia.member[0])) return null;
+                return ia.member;
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
 /// Decision 54 — the `null` pattern. The parser lands it as `.ident` carrying
 /// the keyword's own lexeme (`parser/patterns.zig`), so `null` is never a
 /// binding: no source can spell a binder with that name, `null` being a keyword
@@ -28655,6 +28749,8 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             const handlerExpr = ap.handler.*;
             const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
+            // Decision 1057 — the value after `catch` stands for the subject.
+            if (!ap.fatal) try checkAssertCatchHandler(env, ap.pattern, exprTyped.getType(), handlerExpr, handlerTyped.getType());
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = exprTyped.getType(), .kind = .{ .assertPattern = .{
                 .pattern = ap.pattern,
                 .expr = exprPtr,

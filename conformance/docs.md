@@ -2787,10 +2787,18 @@ message on stderr, on every target.
 <!-- example: modules/assert/cases/assert_message_aborts -->
 
 `val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
-the match fails, so the names below the binding are never unbound. It takes no
-`catch` — `try … catch` is the form that supplies a fallback.
+the match fails (`assert pattern did not match`), so the names below the binding
+are never unbound. `val assert P = s catch X` takes `X` as the subject when `s`
+does not match and matches it again (decision 1057): `X` is a jump (`catch return
+…`, `catch throw …`), or a value of the subject's type — another type is refused
+`assert-catch-type`, a constructor of another variant `assert-catch-never-matches`,
+both at `X` — and a substitute that still does not match is the same fatal
+failure, on every target. Over a `Result` it takes no `catch` — `try … catch` is
+the form that supplies a fallback.
 
 <!-- example: modules/val/cases/val_assert_ok -->
+
+<!-- example: modules/decisions-taken/val_assert_catch_is_subject-1057/cases/catch_jump -->
 
 ### use — imports, activation, and hooks
 

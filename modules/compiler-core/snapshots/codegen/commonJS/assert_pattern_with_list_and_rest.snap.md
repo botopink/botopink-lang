@@ -10,7 +10,8 @@ fn f() -> void {
 ```javascript
 function f() {
     const items = [1, 2, 3, 4];
-    const _assert0 = (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 2)) { return _match; } else { return []; } })();
+    let _assert0 = items;
+    if (!((Array.isArray(_assert0) && _assert0.length >= 2))) { _assert0 = []; if (!((Array.isArray(_assert0) && _assert0.length >= 2))) { (() => { throw Object.defineProperty(new Error("assert pattern did not match"), '__bp_panic', { value: true }) })(); } }
     const rest = _assert0.slice(2);
     const first = _assert0[0];
     const second = _assert0[1];

@@ -11,7 +11,8 @@ fn f() -> Result<void, string> {
 ```javascript
 function f() {
     const answer = 42;
-    (() => { const _match = answer; if ((_match === 42)) { return _match; } else { return ({ error: "not 42" }); } })();
+    let _assert0 = answer;
+    if (!((_assert0 === 42))) { return ({ error: "not 42" }); }
     return ({ ok: null });
 }
 

@@ -524,6 +524,16 @@ pub const use_tuple_arity: []const u8 = "use-tuple-arity";
 /// that say what a mismatch does.
 pub const refutable_val_pattern: []const u8 = "refutable-val-pattern";
 
+/// Decision 1057 (2) — `val assert P = s catch X` where `X` is no jump and its
+/// type is not assignable to the subject's: after `catch` the value stands for
+/// the subject and is matched against `P` again. Located at the handler.
+pub const assert_catch_type: []const u8 = "assert-catch-type";
+
+/// Decision 1057 (2) — `val assert P = s catch X` where `X` constructs another
+/// variant of the subject's type than the one `P` names: the substitute can
+/// never match. Located at the handler.
+pub const assert_catch_never_matches: []const u8 = "assert-catch-never-matches";
+
 // ── RG1–RG4: §1G default-generic diagnostics ────────────────────────────────
 
 /// RG1 — `<T = default, U>` — required parameter follows a defaulted one.
@@ -1051,6 +1061,8 @@ pub const all_codes = [_][]const u8{
     generator_loop_closed_scope,
     yield_label_not_generator,
     refutable_val_pattern,
+    assert_catch_type,
+    assert_catch_never_matches,
     type_alias_arity,
     type_alias_recursive,
     type_alias_name_taken,

@@ -19,7 +19,8 @@ Person.prototype.__bp = "Person";
 
 function f() {
     const r = new Person("ann", 30);
-    const _assert0 = (() => { const _match = r; if ((_match instanceof Person)) { return _match; } else { return new Person("bob", 12); } })();
+    let _assert0 = r;
+    if (!((_assert0 instanceof Person))) { _assert0 = new Person("bob", 12); if (!((_assert0 instanceof Person))) { (() => { throw Object.defineProperty(new Error("assert pattern did not match"), '__bp_panic', { value: true }) })(); } }
     const { name, age } = _assert0;
 }
 

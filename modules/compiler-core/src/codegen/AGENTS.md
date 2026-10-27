@@ -476,12 +476,16 @@ codegen/
   cleared in `buildArrow`/`buildLambda`), so the runner's `catch` prints
   `FAIL <name>  (<e>)  at <file>:<line>`. Everywhere else the arm keeps its
   `return _tryN;`.
-- **`val assert P = e [catch h];`** (decision 8 § 9): the IIFE the construct has
-  always lowered to — the pattern check, then the subject or the handler's value
-  — is bound to `_assert<N>` and `appendPatternBinds` declares the pattern's own
-  names from it, in the enclosing block where the statements after it read them
-  (`buildStmts`, not `buildStmt`: one botopink statement becomes several JS
-  ones). A pattern that binds nothing keeps the bare IIFE. `buildPatternCheck`
+- **`val assert P = e [catch h];`** (decision 8 § 9) at statement position is
+  statements (`appendAssertPatternStmts`): `let _assert<N> = e;`, then `if
+  (!(<check>)) { <handled> }`, then `appendPatternBinds` declares the pattern's
+  own names from it, in the enclosing block where the statements after it read
+  them (`buildStmts`, not `buildStmt`: one botopink statement becomes several JS
+  ones). `<handled>` (`assertHandledStmts`) is the jump after `catch` — so
+  `catch return -1` leaves the function, never an IIFE —, the handler-less
+  form's `@panic(…)`, or (decision 1057) the substitute assigned and checked
+  again, a second mismatch `panic("assert pattern did not match")`. In a value
+  position the same handling runs inside the IIFE. `buildPatternCheck`
   tests an `Ok`/`Err`/`Error` that no module declares with `"ok" in _match`, the
   same key test the `case` arms use — `_match instanceof Ok` named a class no
   module ever emits, so every `val assert Ok(…)` took its handler.
@@ -1404,6 +1408,10 @@ codegen/
   The test clause's own binders render as `_` (`Emitter.pattern_discard`), and the
   subject is staged rather than re-emitted in the arm — it used to be evaluated
   twice. A pattern that binds nothing keeps the old single-`case` expression.
+  Both run the mismatch clause through `assertHandled`: a jump or the handler-less
+  `@panic(…)` as written, a substitute (decision 1057) staged in `<tmp>_h` and
+  matched again, a second mismatch the handler-less form's `@panic(…)` — never a
+  raw `badmatch`.
   Record/interface literal keys are atoms (quoted when PascalCase or reserved); an
   array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
   a leading-dot enum shorthand (`.Black`) is the variant atom.
@@ -2609,7 +2617,9 @@ codegen/
   (`lowerArmBody`).
 - **`val assert P = e catch h`** binds P's names from the value either path
   answers — `e` when it matched, `h` otherwise — with a second
-  `emitSubPattern` after the `case` (a mismatch raises `{badmatch, V}`); bound
+  `emitSubPattern` after the `case` (a mismatch — a substitute after `catch` that
+  does not match either, decision 1057 — runs the handler-less form's
+  `panic("assert pattern did not match")`); bound
   in the matching arm only, `erlc +from_asm` refused the module
   (`{unassigned, {y, N}}`). `emitSubPattern` reads a RECORD's constructor
   pattern by its type atom and declared field positions (`isRecordPattern`),
@@ -2955,7 +2965,8 @@ first three are now enforced by the model, not by discipline:
   `assert`, `val assert` (`lowerAssertPattern`: the subject is staged in
   `$__assert_<n>`, `emitPatternTest` decides, a mismatch runs the handler — the
   parser's `@panic(…)` traps, a written `catch <value>` replaces the staged
-  subject — and `bindPattern` binds the names in the function's locals. A
+  subject and is tested again, a second mismatch the same `@panic(…)`
+  (`assertSubstituteMatches`, decision 1057) — and `bindPattern` binds the names in the function's locals. A
   pattern `emitPatternTest` has no real test for, a record constructor say,
   is lowered as a plain binding rather than as "never matches":
   `patternTestIsReal`. A list pattern binds nothing, the same gap its `case`

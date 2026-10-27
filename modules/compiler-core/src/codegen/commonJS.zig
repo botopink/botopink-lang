@@ -4590,32 +4590,28 @@ const Emitter = struct {
         return built;
     }
 
-    /// The `val assert` at `stmt` whose pattern binds at least one name, or
-    /// null. A pattern that binds nothing (`val assert 42 = answer catch 0;`)
-    /// is a pure check and keeps the single-expression lowering.
+    /// The `val assert` at `stmt`, or null. Every statement-level one is
+    /// lowered as statements (`appendAssertPatternStmts`): its pattern's names
+    /// are bound in the enclosing block (decision 8 § 9), and a jump after
+    /// `catch` (`catch return -1`) leaves the enclosing function, not an IIFE
+    /// around it (decision 1057).
     fn assertPatternBindingStmt(self: *const Emitter, stmt: ast.Stmt) ?@FieldType(@FieldType(ast.ComptimeExpr, "kind"), "assertPattern") {
+        _ = self;
         if (stmt.expr != .comptime_) return null;
         if (stmt.expr.comptime_.kind != .assertPattern) return null;
-        const ap = stmt.expr.comptime_.kind.assertPattern;
-        const isVariant = struct {
-            fn f(e: *const Emitter, name: []const u8) bool {
-                return e.variant_fields.get(name) != null;
-            }
-        }.f;
-        if (!patternFacts.bindsNames(ap.pattern, self, isVariant)) return null;
-        return ap;
+        return stmt.expr.comptime_.kind.assertPattern;
     }
 
     /// ```javascript
-    /// const _assert0 = (() => { … the check, the handler … })();
+    /// let _assert0 = <subject>;
+    /// if (!(<check _assert0>)) { <handled> }
     /// const n = _assert0.ok;
     /// ```
     ///
-    /// The IIFE is the lowering a `val assert` has always had — it yields the
-    /// subject when the pattern matched and the handler's value otherwise (for
-    /// the handler-less form the handler is the `@panic(…)` the parser
-    /// desugars to, so a mismatch throws). The declarations after it are what
-    /// decision 8 § 9 adds: the pattern's names, in the enclosing block.
+    /// `<handled>` is `assertHandledStmts`: the jump after `catch`, the
+    /// handler-less form's `@panic(…)`, or the substitute matched again
+    /// (decision 1057). The declarations after it are what decision 8 § 9
+    /// adds: the pattern's names, in the enclosing block.
     fn appendAssertPatternStmts(
         self: *Emitter,
         out: *std.ArrayListUnmanaged(js.Stmt),
@@ -4624,10 +4620,39 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(self.arena(), "_assert{d}", .{self.assert_seq});
         self.assert_seq += 1;
         try out.append(self.arena(), .{ .decl = .{
+            .kw = .let_,
             .pattern = .{ .name = tmp },
-            .value = try self.buildExpr(.{ .comptime_ = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .assertPattern = ap } } }),
+            .value = try self.buildExpr(ap.expr.*),
         } });
+        try out.append(self.arena(), try self.b.ifStmt(
+            try self.b.unary("!", try self.b.paren(try self.buildPatternCheck(&ap.pattern, tmp)), false),
+            .{ .block = .{ .stmts = try self.assertHandledStmts(ap, tmp), .layout = .spaced } },
+        ));
         try self.appendPatternBinds(out, ap.pattern, .{ .name = tmp });
+    }
+
+    /// What a `val assert` does when `tmp` (its subject) did not match: the
+    /// jump after `catch` (`return`, `throw`, `break`, `continue`), the
+    /// handler-less form's `@panic(…)`, or — decision 1057 — the value after
+    /// `catch` taken as the subject and matched again, a second mismatch the
+    /// handler-less form's fatal failure (`assert pattern did not match`).
+    fn assertHandledStmts(self: *Emitter, ap: anytype, tmp: []const u8) anyerror![]const js.Stmt {
+        const jumps = switch (ap.handler.*) {
+            .jump => |j| switch (j.kind) {
+                .throw_, .@"return", .@"break", .@"continue" => true,
+                else => false,
+            },
+            else => false,
+        };
+        if (ap.fatal or jumps) return self.b.stmts(&.{try self.buildStmt(.{ .expr = ap.handler.* })});
+        const panic = try ast.assertFatalPanic(self.arena(), ap.handler.getLoc());
+        return self.b.stmts(&.{
+            .{ .expr = try self.b.assign(.{ .name = tmp }, "=", try self.buildExpr(ap.handler.*)) },
+            try self.b.ifStmt(
+                try self.b.unary("!", try self.b.paren(try self.buildPatternCheck(&ap.pattern, tmp)), false),
+                .{ .block = .{ .stmts = try self.b.stmts(&.{.{ .expr = try self.buildExpr(panic) }}), .layout = .spaced } },
+            ),
+        });
     }
 
     fn buildStmt(self: *Emitter, stmt: ast.Stmt) anyerror!js.Stmt {
@@ -5732,20 +5757,18 @@ const Emitter = struct {
                     });
                 },
                 .assertPattern => |ap| {
-                    const handler_is_statement = switch (ap.handler.*) {
-                        .jump => |j| j.kind == .throw_ or j.kind == .@"return",
-                        else => false,
-                    };
-                    const handled: js.Stmt = if (handler_is_statement)
-                        try self.buildStmt(.{ .expr = ap.handler.* })
-                    else
-                        .{ .return_ = try self.buildExpr(ap.handler.*) };
+                    // In a value position: the subject when it matched, else
+                    // `assertHandledStmts` (decision 1057: a substitute is
+                    // matched again) and the value it left.
+                    var handled: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                    try handled.appendSlice(self.arena(), try self.assertHandledStmts(ap, "_match"));
+                    try handled.append(self.arena(), .{ .return_ = .{ .name = "_match" } });
                     return self.iife(&.{
-                        .{ .decl = .{ .pattern = .{ .name = "_match" }, .value = try self.buildExpr(ap.expr.*) } },
+                        .{ .decl = .{ .kw = .let_, .pattern = .{ .name = "_match" }, .value = try self.buildExpr(ap.expr.*) } },
                         try self.b.ifElse(
                             try self.buildPatternCheck(&ap.pattern, "_match"),
                             .{ .block = .{ .stmts = try self.b.stmts(&.{.{ .return_ = .{ .name = "_match" } }}), .layout = .spaced } },
-                            .{ .block = .{ .stmts = try self.b.stmts(&.{handled}), .layout = .spaced } },
+                            .{ .block = .{ .stmts = try handled.toOwnedSlice(self.arena()), .layout = .spaced } },
                         ),
                     });
                 },

@@ -14865,10 +14865,25 @@ const Emitter = struct {
             const handler_tail = self.exprTail(ap.handler.*);
             if (self.mode == .gc and handler_tail == .value) try self.lowerCoerced(ap.handler.*, srepr) else try self.lowerExpr(ap.handler.*);
             if (handler_tail == .value) try self.emit(.{ .local_set = slot });
+            // Decision 1057 (3) — the value after `catch` is matched again; a
+            // substitute that still does not match is the handler-less form's
+            // fatal `@panic`, never a raw trap.
+            if (handler_tail == .value and !ap.fatal) try self.assertSubstituteMatches(ap, slot, loc);
             const then_seq = self.seal(&then_c, if (handler_tail == .terminated) .terminated else .none);
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
         }
         try self.bindPattern(ap.pattern, slot);
+    }
+
+    /// `if (!(<P matches slot>)) @panic("assert pattern did not match")`.
+    fn assertSubstituteMatches(self: *Emitter, ap: anytype, slot: []const u8, loc: ast.Loc) anyerror!void {
+        try self.emitPatternTest(ap.pattern, slot, loc);
+        try self.emit(opOf(.i32, "eqz"));
+        var fail_c: Capture = .{};
+        self.open(&fail_c);
+        try self.lowerExpr(try ast.assertFatalPanic(self.arena(), ap.handler.getLoc()));
+        const fail_seq = self.seal(&fail_c, .terminated);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = fail_seq } } });
     }
 
     /// `throw e`. Inside a fn that returns a `@Result` the transform rewrites

@@ -1,0 +1,23 @@
+//// Decision 1057 (1) — a jump after `catch` is accepted: `catch return …` leaves the function,
+//// `catch throw …` its `Result`, when the subject does not match; on a match the names are bound.
+
+import {io.terminal.print} from "std";
+
+type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+
+fn radiusOf(s: Shape) -> i32 {
+    val assert Circle(r) = s catch return -1;
+    return r;
+}
+
+fn widthOf(s: Shape) -> Result<i32, string> {
+    val assert Rect(w, _) = s catch throw "not a rect";
+    return w;
+}
+
+pub fn main() -> void {
+    print(radiusOf(Shape.Circle(4)));
+    print(radiusOf(Shape.Rect(1, 1)));
+    print(try widthOf(Shape.Rect(6, 2)) catch 0);
+    print(try widthOf(Shape.Circle(1)) catch 0);
+}

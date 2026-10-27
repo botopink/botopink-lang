@@ -766,19 +766,7 @@ fn absentInfixKind(kind: TokenKind) ?ParseErrorType {
 /// backend already has. The message is a static literal — the parser owns no
 /// arena and a `Literal.stringLit` is never freed by `deinit`.
 fn assertFatalHandler(alloc: std.mem.Allocator, assertTok: Token) ParseError!Expr {
-    const loc = locFromToken(assertTok);
-    const msgExpr = try alloc.create(Expr);
-    errdefer alloc.destroy(msgExpr);
-    msgExpr.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = "assert pattern did not match" } } };
-    const args = try alloc.alloc(ast.CallArg, 1);
-    args[0] = .{ .label = null, .value = msgExpr };
-    return Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
-        .receiver = null,
-        .callee = "panic",
-        .is_builtin = true,
-        .args = args,
-        .trailing = &.{},
-    } } } };
+    return ast.assertFatalPanic(alloc, locFromToken(assertTok));
 }
 
 /// `val/var name = expr` or any destructuring variant.

@@ -2784,6 +2784,13 @@ success value, so the pattern would be asserted against the unwrapped one. And a
 naming no variant the subject's type can hold, when that type is a scalar the env knows holds none;
 an unregistered name stays permissive (a forward reference, an imported type).
 
+**The value after `catch` stands for the subject** (decision 1057, `checkAssertCatchHandler`): a
+jump (`return`, `throw`, `break`, `continue`) is accepted; any other handler must unify with the
+subject's type, else `assert-catch-type` ("after `catch` the value stands for the subject: `Shape`
+expected, `i32` written"), and a constructor of another variant of the subject's enum than the one
+the pattern names is `assert-catch-never-matches`, both located at the handler. The handler-less form
+(`fatal`) is not checked.
+
 `throw` carries the error channel's own value (`throw "empty"`), not a constructor — `Error` is
 bound to nothing.
 

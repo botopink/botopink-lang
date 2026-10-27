@@ -9,7 +9,8 @@
 //// - `unit()` builds the value in the declaring module;
 //// - a payload whose fields are themselves `Shape`s (`Two(l, r)`), and a
 ////   `val assert`,
-////   read the same fields.
+////   read the same fields; the `val assert`'s `catch return -1` leaves
+////   `radiusOf` when the variant is another (decision 1057).
 
 mod shapes;
 
@@ -31,7 +32,7 @@ fn leftArea(p: Pair) -> i32 {
 }
 
 fn radiusOf(s: Shape) -> i32 {
-    val assert Circle(r) = s catch -1;
+    val assert Circle(r) = s catch return -1;
     return r;
 }
 
@@ -41,4 +42,5 @@ pub fn main() -> void {
     print(area(unit()));
     print(leftArea(Pair.Two(Shape.Rect(9, 1), Shape.Circle(1))));
     print(radiusOf(Shape.Circle(11)));
+    print(radiusOf(Shape.Rect(1, 1)));
 }

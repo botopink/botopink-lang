@@ -14,9 +14,12 @@ fn f() -> Result<void, string> {
 
 f() ->
     Items = [1, 2, 3],
-    BpAssert3_9 = Items,
-    [First | _] = case BpAssert3_9 of [_ | _] -> BpAssert3_9; _ -> {error, <<"not a list">>} end,
-    {ok, undefined}.
+    case Items of
+        [First | _] ->
+            {ok, undefined};
+        _ ->
+            {error, <<"not a list">>}
+    end.
 
 '__bp_priv__f'() -> f().
 ```

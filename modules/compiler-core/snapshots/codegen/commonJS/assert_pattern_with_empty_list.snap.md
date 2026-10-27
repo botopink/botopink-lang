@@ -11,7 +11,8 @@ fn f() -> Result<void, string> {
 ```javascript
 function f() {
     const list = [];
-    (() => { const _match = list; if ((Array.isArray(_match))) { return _match; } else { return ({ error: "not empty" }); } })();
+    let _assert0 = list;
+    if (!((Array.isArray(_assert0)))) { return ({ error: "not empty" }); }
     return ({ ok: null });
 }
 

@@ -11,7 +11,8 @@ fn f() -> Result<void, string> {
 ```javascript
 function f() {
     const items = [1, 2, 3];
-    const _assert0 = (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { return ({ error: "not a list" }); } })();
+    let _assert0 = items;
+    if (!((Array.isArray(_assert0) && _assert0.length >= 1))) { return ({ error: "not a list" }); }
     const first = _assert0[0];
     return ({ ok: null });
 }

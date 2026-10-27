@@ -11,7 +11,8 @@ fn f() -> Result<void, string> {
 ```javascript
 function f() {
     const numbers = [1, 2, 3];
-    (() => { const _match = numbers; if ((Array.isArray(_match) && _match.length >= 3)) { return _match; } else { return ({ error: "not matching" }); } })();
+    let _assert0 = numbers;
+    if (!((Array.isArray(_assert0) && _assert0.length >= 3))) { return ({ error: "not matching" }); }
     return ({ ok: null });
 }
 

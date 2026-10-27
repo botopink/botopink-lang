@@ -1890,6 +1890,30 @@ fn freeTypeRefs(allocator: std.mem.Allocator, refs: ?[]TypeRef) void {
     allocator.free(list);
 }
 
+/// Decision 8 § 9 / 1057 (3) — the text of a `val assert` whose subject (or,
+/// after `catch`, its substitute) does not match the pattern: the same fatal
+/// failure on every target.
+pub const assert_pattern_failed = "assert pattern did not match";
+
+/// The handler of the handler-less `val assert P = e;` — `@panic("assert
+/// pattern did not match")` — which every backend also lowers when the value
+/// after `catch` still does not match (decision 1057 (3)). Allocated in
+/// `alloc`; the parser owns its copy, a backend's lives in its arena.
+pub fn assertFatalPanic(alloc: std.mem.Allocator, loc: Loc) std.mem.Allocator.Error!Expr {
+    const msgExpr = try alloc.create(Expr);
+    errdefer alloc.destroy(msgExpr);
+    msgExpr.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = assert_pattern_failed } } };
+    const args = try alloc.alloc(CallArg, 1);
+    args[0] = .{ .label = null, .value = msgExpr };
+    return Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = "panic",
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 /// Decision 527 (2) — a failed `assert`'s panic message, the same on every
 /// target: `assertion failed: <condition> at <where>`, and with the
 /// program's message `assertion failed: <condition>: <message> at <where>`.
