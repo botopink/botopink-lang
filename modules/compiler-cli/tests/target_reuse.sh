@@ -71,7 +71,7 @@ for target in "${targets[@]}"; do
   says "$target: the second run (reuses)" "answer 42"
   listing "$APP/$OUT" > "$WORK/after"
   cmp -s "$WORK/before" "$WORK/after" || { fail "$target: the second run rewrote a file of $OUT"; diff "$WORK/before" "$WORK/after" | sed 's/^/      /' >&2 || true; }
-  [[ -s "$APP/.botopinkbuild/runtime/app/$target.key" ]] || fail "$target: no target key under .botopinkbuild/runtime/app/"
+  [[ -s "$APP/.botopinkbuild/runtime/app/app.$target.key" ]] || fail "$target: no target key under .botopinkbuild/runtime/app/"
 
   # `run --cold` reuses a fresh `.bpr` and a matching target key.
   bp "$APP" run --cold --target "$target" --out "$OUT" || { fail "$target: run --cold failed"; show "$WORK/err"; continue; }

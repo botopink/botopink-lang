@@ -360,9 +360,19 @@ pub fn readProgram(arena: std.mem.Allocator, io: std.Io, dir: []const u8, pkg: [
     return outputs;
 }
 
-/// `<dir>/<target>.key`: the target key beside the `.bpr`'s (decision 1008 (1)).
+/// `<dir>/<pkg>.<target>.key`: the target key beside the `.bpr`'s `<pkg>.key` (decisions 1008 (1), 1029). `dir` is
+/// `dirFor`'s `<cache root>/.botopinkbuild/runtime/<pkg>`, so the package is its last segment; no package name is
+/// reserved — `erlang.erlang.key` sits beside `erlang.key`.
 pub fn targetKeyPath(arena: std.mem.Allocator, dir: []const u8, target: config.Target) ![]const u8 {
-    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ std.mem.trimEnd(u8, dir, "/"), @tagName(target), KEY_EXT });
+    const d = std.mem.trimEnd(u8, dir, "/");
+    return std.fmt.allocPrint(arena, "{s}/{s}.{s}{s}", .{ d, std.fs.path.basename(d), @tagName(target), KEY_EXT });
+}
+
+test "targetKeyPath: <pkg>.<target>.key, never the .bpr's own key (decision 1029)" {
+    var a = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer a.deinit();
+    const p = try targetKeyPath(a.allocator(), "/c/.botopinkbuild/runtime/erlang/", .erlang);
+    try std.testing.expectEqualStrings("/c/.botopinkbuild/runtime/erlang/erlang.erlang" ++ KEY_EXT, p);
 }
 
 /// What an emit's output depends on besides the `.bpr` set (decision 1008 (1)).

@@ -92,7 +92,7 @@ const HELP =
     \\Options for `run`:
     \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target (default: the manifest's); the .bpr set is
     \\                               reused while its key is fresh, else built first; the output is left alone
-    \\                               while its target key matches (<cache root>/.botopinkbuild/runtime/<pkg>/<target>.key)
+    \\                               while its target key matches (<cache root>/.botopinkbuild/runtime/<pkg>/<pkg>.<target>.key)
     \\  --module <name>              Entry-point module (default: main)
     \\  --out <dir>                  Output directory (default: out)
     \\  --cold                       Read nothing from the code cache (the wasmtime cache included); write what is compiled; a fresh .bpr
