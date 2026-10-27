@@ -3051,7 +3051,7 @@ const Emitter = struct {
     /// type parameters it substituted. `fieldTypeIn` / `fieldTypeRefIn`
     /// answer a field of the owner declared as one of them by its
     /// substitution — `self.left == self.right` over `Pair<string>`
-    /// compared WORDS while the fields read as `A` (`modules/generic/run/src/cases/generic_string_equality`).
+    /// compared WORDS while the fields read as `A` (`modules/generic/cases/generic_string_equality`).
     field_subs_owner: []const u8 = "",
     /// The names a `val` / `var` of the function being emitted has bound so
     /// far (`bindTarget`), and the aliases a re-binding of one installed,

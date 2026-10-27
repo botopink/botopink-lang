@@ -1,0 +1,49 @@
+//// Decision 105 — a generator's body captures the enclosing scope's variables
+//// as a closure: a captured `var` is one variable on both sides. A write made
+//// after the generator, and one made between two items, is what the body reads
+//// next; what the body writes is what the function reads after it — in the same
+//// sequence, in a nested block, and in a lambda made before or after the run.
+
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    var k = 5;
+    val reads = iter loop {
+        yield k;
+        k = k + 1;
+        if (k >= 2) break;
+    };
+    k = 0;
+    for (reads) { x ->
+        print(x);
+    }
+    print(k);
+
+    var n = 0;
+    val counter = iter loop {
+        n = n + 1;
+        yield n;
+        if (n > 20) break;
+    };
+    for (counter) { x ->
+        print(x);
+        n = n + 10;
+    }
+    print(n);
+
+    var total = 0;
+    val adds = iter loop {
+        total = total + 2;
+        yield total;
+        if (total >= 4) break;
+    };
+    val before: fn() -> i32 = { -> total };
+    for (adds) { x ->
+        print(x);
+    }
+    print(total);
+    if (total > 0) print(total);
+    val after: fn() -> i32 = { -> total };
+    print(after());
+    print(before());
+}

@@ -44,5 +44,18 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("generic_fn_result_array_string_bool");
     runCase("generic_method_map");
     runCase("generic_method_optional_answer");
+    runCase("generic_body_specialized");
+    runCase("generic_call_result_shape");
+    runCase("generic_field_fn_value_nested");
+    runCase("generic_fn_and_type");
+    runCase("generic_method_lambda_param_typed");
+    runCase("generic_record_nested_field_concat");
+    runCase("generic_record_prints_its_arguments");
+    runCase("generic_string_equality");
+    runCase("generic_type_through_imported_function");
+    runCase("generic_value_widens_to_optional");
+    runCase("generic_answer_record_field_read");
+    runCase("generic_field_float");
+    runCase("generic_method_array_join");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

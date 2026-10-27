@@ -414,7 +414,7 @@ std module's declaration is located in that module's file:
 
 <!-- example: modules/import/cases/import_tree_group -->
 
-<!-- example: modules/import/cells/import_record_beside_std_record_of_same_name -->
+<!-- example: modules/import/cases/import_record_beside_std_record_of_same_name -->
 
 <!-- example: modules/decisions-taken/aliased_same_named_types-310/cases/import_two_types_one_name -->
 
@@ -719,7 +719,7 @@ same way, so every line of the report leads to the one real error. A name the
 named module does not declare, where that module checked, is still refused as
 missing:
 
-<!-- example: modules/import/cells/import_of_failed_module -->
+<!-- example: modules/import/cases/import_of_failed_module -->
 
 ## Bindings
 
@@ -885,7 +885,7 @@ belongs to the module version that created it and dies with it on reload.
 
 ### fn — function
 
-<!-- example: modules/fn/run/src/cases/fn_declaration -->
+<!-- example: modules/fn/cases/fn_declaration -->
 
 Every function writes its return type, `-> void` included (decision 622): `pub fn main() -> void { … }`,
 `fn m(self: Self) -> void { … }`. It holds for every form — a free `fn`, `main`, a method, a `default fn`,
@@ -958,9 +958,9 @@ the `T` as `return value;` is:
 An empty body is a function that does nothing: `pub fn main() -> void {}` builds and runs, printing
 nothing, and a call of a `fn` written `{}` runs and answers nothing, on every target:
 
-<!-- example: modules/fn/run/src/cases/fn_empty_main -->
+<!-- example: modules/fn/cases/fn_empty_main -->
 
-<!-- example: modules/fn/run/src/cases/fn_empty_body_call -->
+<!-- example: modules/fn/cases/fn_empty_body_call -->
 
 A program's own function is the program's whatever a std module names the same: `fn run` and `fn size`
 are called as written, also where the program imports `io.process` (which declares `run`) and
@@ -1425,7 +1425,7 @@ a connection or a handle without the program naming a concrete type.
 
 ### Generics
 
-<!-- example: modules/generic/run/src/cases/generic_fn_and_type -->
+<!-- example: modules/generic/cases/generic_fn_and_type -->
 
 Built-in generic types are written bare: `Result<D, E>`, `Async<T>`,
 `Iter<T>`. Optionals are `?T`; tuples are `#(A, B)`.
@@ -1461,7 +1461,7 @@ A function another module declares takes its type arguments as one of this
 module does, imported by name or called through its module:
 `resolve<i32>("n", 7)`, `kit.pair<i32>(1, 2)` — one per type parameter, in order.
 
-<!-- example: modules/imported/cells/imported_generic_fn_type_arguments -->
+<!-- example: modules/imported/cases/imported_generic_fn_type_arguments -->
 
 A parameter says how its argument arrives (decisions 575 (4), 576). `comptime
 x: T` is the argument's **value**, known while the program compiles: the body
@@ -1528,7 +1528,7 @@ A field of a generic record may hold a function: read into a local and called, i
 answers what the function answers — an array, a record, an optional, a string,
 through two type parameters or a generic record nested in another:
 
-<!-- example: modules/generic/run/src/cases/generic_field_fn_value_nested -->
+<!-- example: modules/generic/cases/generic_field_fn_value_nested -->
 
 ### Type aliases
 
@@ -2224,7 +2224,7 @@ none, the written types are the function's:
 
 <!-- example: modules/decisions-taken/typed_fn_expression_any_position-408/cases/fn_expr_typed_mismatch -->
 
-<!-- example: modules/fn/run/src/cases/fn_expression_string_parameter -->
+<!-- example: modules/fn/cases/fn_expression_string_parameter -->
 
 An untyped fn expression takes its parameter types from its use: called where it is written
 (`(fn(s) { return s + "x"; })("a")`), passed to a parameter that expects `fn(string) -> string`,
@@ -2289,7 +2289,7 @@ function-typed field called on a loop's element answers its declared type (`op.r
 
 <!-- example: modules/fn/cases/fn_value_tuple_string_answer -->
 
-<!-- example: modules/fn/run/src/cases/fn_field_call_in_for -->
+<!-- example: modules/fn/cases/fn_field_call_in_for -->
 
 A lambda's and a function expression's last expression written without `;` is
 its value, as a named function's is (§ fn — function, decision 409):
@@ -3827,20 +3827,20 @@ answered the last one: a print before and after a `yield` comes out between the
 items, and an endless generator is consumed by `take(n)` — on every form, an
 `iter fn`, an `iter loop` and a marked lambda `{ iter -> … }`.
 
-<!-- example: modules/generator/run/src/cases/generator_body_lazy -->
+<!-- example: modules/generator/cases/generator_body_lazy -->
 
 A generator handle is stateful, whatever its body: a second `for` over a handle the
 first one exhausted reads nothing — on an `iter fn`, whether its body is only
 literal `yield`s or runs code, and on an `iter loop`.
 
-<!-- example: modules/generator/run/src/cases/generator_handle_stateful -->
+<!-- example: modules/generator/cases/generator_handle_stateful -->
 
 A generator's body captures the enclosing scope's variables as a closure (decision 105): a captured
 `var` is one variable on both sides. What the function writes after making the generator, or between
 two items, is what the body reads next; what the body writes is what the function reads after it — in
 the same block, in a nested one, and in a lambda.
 
-<!-- example: modules/generator/run/src/cases/generator_captured_var_shared -->
+<!-- example: modules/generator/cases/generator_captured_var_shared -->
 
 **Items that can fail — `Iter<Result<T, E>>`.** The iterator does not
 fail; **each item** may be an error. When the item is `Result<U, E>` the body
@@ -5454,7 +5454,7 @@ function with a body refuses it (`discard-param-with-body`).
 A binding may also be a template, where `$0`, `$1`, … are the declared
 parameters — on a method, `self` is `$0`:
 
-<!-- example: modules/external/cells/external_template_binding -->
+<!-- example: modules/external/cases/external_template_binding -->
 
 `$stringify(…)` is no marker of the language: a template is host code, and the conversion is written in the host's own terms. It is refused as `template-stringify-marker`, located at the template (decisions 164, 239).
 
@@ -5468,7 +5468,7 @@ arguments after it; a template that calls one host function with the
 parameters in order (`"erlang:is_list($0)"`) is that call, the receiver first. A host function with no such owner (`listen(port,
 backlog)`, `now()`) stays at module level.
 
-<!-- example: modules/external/cells/external_method_in_type -->
+<!-- example: modules/external/cases/external_method_in_type -->
 
 Every backend lowers such a method as a real method of the type whose body is
 the binding: a class member on commonJS (an enum's is a static taking `self`,
@@ -5611,7 +5611,7 @@ that already carries its type is left exactly as it is. The same holds one
 container deep — `?T`, `T[]`, `Result<T, E>` and `Async<T>` are looked
 through — and no deeper.
 
-<!-- example: modules/external/cells/external_returns_record -->
+<!-- example: modules/external/cases/external_returns_record -->
 
 A field the host leaves out is the absent value, not an error — a host is not
 asked to fill a record it does not know about.
@@ -6111,7 +6111,7 @@ A value of a generic declaration prints each field as the value it holds,
 whatever the type argument — a field written as the type parameter or an array of
 it, in a record or a variant, built directly or by a generic function:
 
-<!-- example: modules/generic/run/src/cases/generic_record_prints_its_arguments -->
+<!-- example: modules/generic/cases/generic_record_prints_its_arguments -->
 
 A `Result` prints the way the source writes it — `Ok(81)`, `Error("bad")` — at
 the top level and nested in a container or a record, its payload printed as any

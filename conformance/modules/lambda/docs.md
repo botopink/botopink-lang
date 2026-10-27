@@ -1,6 +1,6 @@
 # lambda
 
-[cells/lambda_arg_param_type/src/main.bp](cells/lambda_arg_param_type/src/main.bp)
+[cases/lambda_arg_param_type/src/main.bp](cases/lambda_arg_param_type/src/main.bp)
 [cases/lambda_element_method/src/main.bp](cases/lambda_element_method/src/main.bp)
 [cases/lambda_expression_body/src/main.bp](cases/lambda_expression_body/src/main.bp)
 [cases/lambda_method_chain/src/main.bp](cases/lambda_method_chain/src/main.bp)

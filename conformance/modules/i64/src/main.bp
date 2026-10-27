@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("i64_full_width");
+    runCase("i64_in_array_slot");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

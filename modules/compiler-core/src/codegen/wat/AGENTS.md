@@ -675,7 +675,7 @@ compile and fails if wasm ever starts accepting one.
 answering a value — and emit `fn f() {}`, which does nothing. Reading an empty body
 as bodyless emitted no `pub fn main() {}` for `_start` to call (`compilation failed
 UndefinedCall`) and refused every call of an empty `fn`
-(`conformance/modules/fn/run/src/cases/fn_empty_main`, `modules/fn/run/src/cases/fn_empty_body_call`).
+(`conformance/modules/fn/cases/fn_empty_main`, `modules/fn/cases/fn_empty_body_call`).
 
 **A method of a behavior only a host builds is refused on the host binding** (`lowerPlainCall`):
 `g.greet("ana")` over `behavior Greeter` that no type of the program implements has no function
@@ -838,7 +838,7 @@ the shapes that bound a string and still reached the one body:
   (`recordTypeOfExpr`'s `identAccess` arm applies `recvTypeArg`):
   `route.data.title` of `route: Route<string, Post>` reads `Post`'s slot —
   it was an unknown record, so `"<h1>" + route.data.title` printed the
-  string's address (`modules/generic/run/src/cases/generic_record_nested_field_concat`);
+  string's address (`modules/generic/cases/generic_record_nested_field_concat`);
 - **a generic fn NAMED as an argument** whose parameter is written as a
   function type, or **bound** to a `val` written with one, is the copy that
   type binds (`specializeByFnType`, `specCopy`): `apply(same, s, "ab")`
@@ -854,7 +854,7 @@ binds `T` from a field written `Array<T>` / `T[]` by its elements, `bindParam`),
 resolves as the integer's (`primKindAt` reads a parameter's `local_typerefs`), `bindMethodRet`
 types the answer `Bag<string>`, and a composite field read through that receiver is
 `Array<string>` (`recvTypeArgRef` writes the receiver's arguments into `Array<T>`). It was
-`cannot resolve the call toString/0` (`conformance/modules/generic/run/src/cases/generic_method_lambda_param_typed`).
+`cannot resolve the call toString/0` (`conformance/modules/generic/cases/generic_method_lambda_param_typed`).
 
 **A function in a generic record's field answers its declared return**
 (`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):
@@ -867,7 +867,7 @@ array (`isArrayExpr` / `elemKindOf` read `valueCallTypeRef`); a generic record
 built in place keeps its own type arguments (`Box(value: Box(value: hi))` is a
 `Box<Box<fn() -> string>>`, and `recvTypeArg` names a generic argument by its
 record), as does any argument whose type is written (`typeRefOf`) —
-`conformance/modules/generic/run/src/cases/generic_field_fn_value_nested`. A function value answering
+`conformance/modules/generic/cases/generic_field_fn_value_nested`. A function value answering
 an `f64` is still refused (`call_indirect` answers an `i32`).
 
 **A lambda argument is typed by the parameter it is passed for.** A call of a
@@ -895,7 +895,7 @@ exit 0, then trapped at the lambda's entry. Any other lambda keeps
 `param_known` true: its slot types it, or an integer reading is what it always
 had (`modules/generic/cells/generic_field_fn_value`, `tests/wat.zig`'s refusal fixture).
 
-`modules/generic/run/src/cases/generic_string_equality` pins every way a type parameter gets a
+`modules/generic/cases/generic_string_equality` pins every way a type parameter gets a
 string bound on four targets, `modules/method/run/src/cases/method_on_unimported_type` (`Dict.at`
 with a key `split` built) included — it already passed at the open, through
 `specializeMethod`. **What stays**: a call whose arguments and context say
@@ -907,7 +907,7 @@ type-parameter values compares words (a composite bound where the body
 compares with `==` IS specialised, § Structural equality); so is a method of a generic `type` whose receiver binds a record and whose body compares with `==` or calls a method on `self` or a parameter — `Set<Point>.contains` / `union` — and a type-qualified call such as `Set.fromList(xs)` takes the same path (`specializeMethod`) and `elemKindOfTypeRef` reads a type
 parameter as `.i32`. A string carries no header (it is a bare
 `[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
-the only cure, and `modules/generic/run/src/cases/generic_body_specialized` pins the shapes that
+the only cure, and `modules/generic/cases/generic_body_specialized` pins the shapes that
 reach it. `fieldSub` is owner-wide: inside a copy of `Pair<string>`'s method,
 a `Pair` of another instantiation reads its fields as `string` too.
 
@@ -1218,9 +1218,9 @@ class beside them. What each number is here, and what is refused:
 Cells (four targets, one `.out`): `modules/decisions-taken/wasm_prints_std_wasm_text-441/cells/float_shortest_text`,
 `modules/float/run/src/cases/float_slot_keeps_f64`, `modules/i64/cells/i64_full_width`, `modules/u64/cells/u64_tuple_slot`,
 `modules/decisions-taken/i64_is_64_bit_everywhere-319/run/src/cases/u64_record_field_print`, `modules/optional/cells/optional_u64_to_string`; refused on wasm
-(`.wasm.expect`): `modules/optional/cells/optional_index_arithmetic`, `modules/i64/cells/i64_in_array_slot`,
+(`.wasm.expect`): `modules/optional/cells/optional_index_arithmetic`, `modules/i64/cases/i64_in_array_slot`,
 `modules/fn/cells/fn_value_float_argument`, `modules/untyped/cells/untyped_array_float_push`
-(`modules/generic/cells/generic_field_float` is answered since 164 s2 P3: a float in a generic slot is boxed). `tests/wat.zig` pins the forms erlang spells
+(`modules/generic/cases/generic_field_float` is answered since 164 s2 P3: a float in a generic slot is boxed). `tests/wat.zig` pins the forms erlang spells
 otherwise or cannot make (`1e+21`, `5e-324`, `Infinity`, `NaN`) and the
 overflow trap as RUN LOGs.
 
@@ -1840,7 +1840,7 @@ each `valueShapeOf` its argument). The descriptor stays one per declaration, so
 identity tests are untouched; `$__print_tagged_raw` walks those shapes (`q`) at
 each `G`. `Q(items: [7])` over `Q<T>(items: Array<T>)` printed `Q(items: 308)`,
 and `B(v: o)` over a `?i32` the box's address
-(`conformance/modules/generic/run/src/cases/generic_record_prints_its_arguments`). A `?T` field keeps
+(`conformance/modules/generic/cases/generic_record_prints_its_arguments`). A `?T` field keeps
 its declared box shape, a record or enum argument its header. A value built where
 the argument's shape is unknown (a parameter typed `T` of a generic body) reads
 as a word, `i`.
@@ -2022,7 +2022,7 @@ asks the argument. `o.unwrapOr(d)` answers the payload's shape — an
 (an empty `[]` says nothing) — so `r.unwrapOr([])` over an `@Result<Array<#(
 string, string)>, …>` and `rows.at(1).unwrapOr(#("", ""))._1` print their
 strings, not addresses (`modules/std/run/src/cases/std_querystring_on_every_target`). A string
-printed as its address (`modules/generic/run/src/cases/generic_call_result_shape`); a string, a bool
+printed as its address (`modules/generic/cases/generic_call_result_shape`); a string, a bool
 or a float bound to a type parameter calls a specialisation (above).
 
 **A function named as an array method's argument** (`xs.map(inc)`, an imported
@@ -2365,8 +2365,8 @@ answered, and each was a red wasm cell of `conformance`:
   prints under is the bare name again (`displayTypeName`). Before, such a
   declaration was DROPPED at link time: two packages each declaring `type
   Response` linked the first one's layout into both and `ok().html` printed
-  `0` at exit 0 (`modules/import/cells/import_same_name_from_two_packages`,
-  `modules/import/cells/import_same_enum_name_from_two_packages`). A plain call of a
+  `0` at exit 0 (`modules/import/cases/import_same_name_from_two_packages`,
+  `modules/import/cases/import_same_enum_name_from_two_packages`). A plain call of a
   function declared to answer an enum is a variant to the print path
   (`enumReturnedBy`, `namedShapeOf`, `isTaggedValue`): `@print(stop())` over
   a linked module's `fn stop() -> Signal` printed the value's address.

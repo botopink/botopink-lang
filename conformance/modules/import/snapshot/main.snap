@@ -39,3 +39,39 @@ out admin
 out 12
 out circle
 out 1.0
+== import_ambiguous_from_package
+refused error: ambiguous-import-use: `NotFound` is imported from two declarations — declared `pub` by `site/app/blog/not_found` and by `site/app/not_found` — and this use does not say which
+at src/main.bp:12:11
+== import_from_package_beside_same_name
+out 2
+out pkg:/a
+== import_of_failed_module
+refused error: type mismatch: expected string, got i32
+at src/shapes.bp:2:30
+refused error: import-of-failed-module: `area` comes from `shapes`, which failed to check — its own errors are reported there (src/shapes.bp)
+at src/main.bp:7:9
+== import_own_module_over_dependency_path
+out own
+out other
+== import_record_beside_std_record_of_same_name
+out crowded
+out 2
+out crowded:2
+out -1
+== import_same_enum_name_from_two_packages
+out 1
+out 103
+out 0
+out 70
+out Signal.Red
+out Signal.Low
+== import_same_name_from_two_packages
+out 200
+out <p>
+== import_sibling_path_beside_std_name
+out kit:321:true
+out -1
+== import_type_closure_across_modules
+out 1
+out 2
+out 3

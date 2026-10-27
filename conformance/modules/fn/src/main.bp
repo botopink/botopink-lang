@@ -45,5 +45,10 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("fn_value_float_argument");
     runCase("fn_value_in_tuple");
     runCase("fn_value_tuple_string_answer");
+    runCase("fn_declaration");
+    runCase("fn_empty_body_call");
+    runCase("fn_empty_main");
+    runCase("fn_expression_string_parameter");
+    runCase("fn_field_call_in_for");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

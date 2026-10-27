@@ -1,0 +1,23 @@
+//// Decisions 105, 539 (3) — a `break :outer` out of a `for` over a generator
+//// closes it as a plain `break` does: the defer pending where the body rests
+//// runs before the outer loop is left.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iter<i32> {
+    defer print("closed");
+    print("before");
+    yield 1;
+    print("after");
+    yield 2;
+}
+
+pub fn main() -> void {
+    for :outer ([1, 2]) { n ->
+        for (counted()) { x ->
+            print(n * 10 + x);
+            if (x == 1) break :outer;
+        }
+    }
+    print("left");
+}

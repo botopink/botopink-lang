@@ -1,0 +1,6 @@
+botopink-cell 2
+== lexer_error_in_imported_module
+refused error: bad string escape
+at src/pattern.bp:3:2
+refused error: import-of-failed-module: `dotted` comes from `pattern`, which failed to check — its own errors are reported there (src/pattern.bp)
+at src/main.bp:8:9

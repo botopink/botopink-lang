@@ -1,0 +1,23 @@
+//// An untyped fn expression whose parameter is a `string` writes its text, however it
+//// is reached: called where it is written, passed to a parameter that expects
+//// `fn(string) -> string`, or bound to a `val` so annotated. The parameter's type comes from its
+//// use (what the checker inferred), so `s + "x"` is a concatenation on every target.
+
+import {io.terminal.print} from "std";
+
+fn apply(f: fn(string) -> string, v: string) -> string {
+    return f(v);
+}
+
+pub fn main() -> void {
+    print((fn(s) {
+        return s + "x";
+    })("a"));
+    print(apply(fn(s) {
+        return s + "y";
+    }, "b"));
+    val g: fn(string) -> string = fn(s) {
+        return s + "z";
+    };
+    print(g("c"));
+}

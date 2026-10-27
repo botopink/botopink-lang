@@ -1,0 +1,25 @@
+//// Decision 105 — a generator whose body holds a `defer` runs one step per item
+//// like any other: a print before and after the first `yield` comes out between
+//// the items, and the deferred statement runs when the sequence ends — at the
+//// body's end, or when the consumer leaves the `for` with `break`.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iter<i32> {
+    defer print("closed");
+    print("before");
+    yield 1;
+    print("after");
+    yield 2;
+}
+
+pub fn main() -> void {
+    for (counted()) { x ->
+        print(x);
+    }
+    for (counted()) { x ->
+        print(x);
+        if (x == 1) break;
+    }
+    print("done");
+}

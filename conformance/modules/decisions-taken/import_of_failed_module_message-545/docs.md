@@ -6,6 +6,6 @@ The example is a chain of three modules. [draft/geometry.bp](draft/geometry.bp) 
 
 Each line is true where it stands and names only its direct import, so a reader follows the chain one step at a time down to `geometry.bp`. The uses of `shapes.area` and `side` below the imports get no `unbound variable` of their own. Nothing prints.
 
-Cells in this repository that bear on it: `modules/import/cells/import_of_failed_module`, `modules/lexer/cells/lexer_error_in_imported_module`.
+Cells in this repository that bear on it: `modules/import/cases/import_of_failed_module`, `modules/lexer/cases/lexer_error_in_imported_module`.
 
 [draft/main.bp](draft/main.bp)

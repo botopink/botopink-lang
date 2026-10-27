@@ -40,5 +40,18 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("generator_loop_await");
     runCase("generator_loop_break_outer");
+    runCase("generator_body_lazy");
+    runCase("generator_captured_var_shared");
+    runCase("generator_defer_lazy");
+    runCase("generator_find_lazy");
+    runCase("generator_for_break_outer_closes");
+    runCase("generator_for_return_closes");
+    runCase("generator_handle_stateful");
+    runCase("generator_item_untyped_lazy");
+    runCase("generator_to_array_printed");
+    runCase("generator_take_closes_source");
+    runCase("generator_walk_lazy");
+    runCase("iter_flat_map_function_value");
+    runCase("iter_flat_map_generator");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

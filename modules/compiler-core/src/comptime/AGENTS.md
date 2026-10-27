@@ -562,7 +562,7 @@ Without the package pass a `from "<pkg>"` handle narrowed nothing, and two
 libraries of one build declaring one name (a server library's `Response` and
 an HTML library's, both loaded by an application that uses the two) made every
 such import ambiguous — inside either library's own modules too
-(`conformance/modules/import/cells/import_same_name_from_two_packages`). A bare
+(`conformance/modules/import/cases/import_same_name_from_two_packages`). A bare
 `import { … };` and a module not yet analysed still reach the scan they
 reached before.
 
@@ -1828,7 +1828,7 @@ there (src/shapes.bp) ``, the label the failed module's own diagnostics print, `
 `import {components.Card};` cannot tell the two apart. The refused module keeps its own error. Nothing real is hidden: an importer reports one error, its first, as before; a name
 missing from a module that checked reaches none of this and stays `unbound variable` (the resolver's
 `imported symbol is not exported` catches it first in a build). Pinned by
-`conformance/modules/import/cells/import_of_failed_module` and `tests/infer_decls.zig`'s `import of a failed
+`conformance/modules/import/cases/import_of_failed_module` and `tests/infer_decls.zig`'s `import of a failed
 module` tests.
 
 ## A local ends with its body (01 step 13)
@@ -2321,7 +2321,7 @@ Dict<…>)` imported from another package gives its importer `Dict`'s methods �
 field (`found.params.at(k).unwrapOr("")`) used to lower as a bare `unwrapOr/2` on erlang. A name
 found in neither is left to the ordinary unknown-type diagnostic. Cells:
 `conformance/modules/import/run/src/cases/import_type_closure`,
-`conformance/modules/import/cells/import_type_closure_across_modules`,
+`conformance/modules/import/cases/import_type_closure_across_modules`,
 `conformance/modules/narrowed/cells/narrowed_optional_std_field_across_packages`. An imported FUNCTION brings the
 types its signature names the same way (`registerImportedSignatureClosure`, from the module that
 exports it): `import {matchPath}` alone gives `?RouteMatch`'s fields and methods to the value it
@@ -2604,7 +2604,7 @@ The other direction is the widening a concrete type already had: an expected `?T
 the variable `T` it wraps (`unify.zig`'s `.named` arm, an unbound variable that occurs in the
 optional's argument unifies with the argument, not with the optional) — `fn some<T>(v: T) -> ?T {
 return v; }` checks, and a `?T` returned where `T` is expected stays the mismatch
-(`modules/generic/run/src/cases/generic_value_widens_to_optional`, `modules/generic/refused/src/cases/generic_optional_never_narrows`).
+(`modules/generic/cases/generic_value_widens_to_optional`, `modules/generic/refused/src/cases/generic_optional_never_narrows`).
 
 ## A program's primitive behavior extends std's
 

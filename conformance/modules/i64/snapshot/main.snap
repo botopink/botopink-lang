@@ -19,3 +19,8 @@ out 9007199254740990
 out 3002399751580330
 out 4294967295
 out 4294967296
+== i64_in_array_slot
+out [3000000000, 1]
+== i64_in_array_slot on wasm
+refused error: the wasm backend would narrow this `i64` value to an `i32` slot it does not fit
+at src/main.bp:11:15

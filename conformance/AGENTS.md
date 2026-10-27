@@ -283,8 +283,8 @@ dispatcher trapped on `feat`; all four failed on the parent binary) —, `module
 on the parent binary) and two pins that held on the parent binary: `modules/decisions-taken/optional_typescript_operators-330/cases/optional_chain_record_fields`
 (`?.` along optional record fields, a member and a method after a link) and `modules/decisions-taken/optional_typescript_operators-330/cells/optional_bang_in_lambda`
 (`x!` in a lambda's body, its abort naming the expression inside the lambda).
-144 B-22 adds `modules/fn/run/src/cases/fn_empty_main` (`pub fn main() -> void {}` builds and prints nothing) and
-`modules/fn/run/src/cases/fn_empty_body_call` (a `fn` written `{}` called between two prints), four targets (wasm took an
+144 B-22 adds `modules/fn/cases/fn_empty_main` (`pub fn main() -> void {}` builds and prints nothing) and
+`modules/fn/cases/fn_empty_body_call` (a `fn` written `{}` called between two prints), four targets (wasm took an
 empty body for a bodyless `declare fn` on the parent binary: no `main` emitted, `compilation failed
 UndefinedCall`, and the call refused).
 144 B-22 adds `modules/decisions-taken/optional_typescript_operators-330/cases/optional_chain_field_after_call` — a field read after a `?.` method link and
@@ -413,7 +413,7 @@ Decision 140 adds `modules/pub/cells/pub_val_across_modules` — a module-level 
 an array, a primitive and a lambda imported from a sibling, one under an alias, read from `main`, a
 function and a method; the module bodies of `base` (imported only by `config`) and `config` run
 before `main`, dependencies first, and a val read twice is evaluated once — on all four targets.
-`modules/import/cells/import_same_name_from_two_packages` — two dependencies (`web`, and `ui`) each declare
+`modules/import/cases/import_same_name_from_two_packages` — two dependencies (`web`, and `ui`) each declare
 `Response` and `ok`, a third (`webapp`) imports `{Response, ok} from "web"`, and `main` imports
 `served` from `webapp` and `ok` from `ui`: a package handle narrows a name to the one module of that
 package declaring it, in the consumer and inside a dependency, on commonJS and erlang (both modules
@@ -544,7 +544,7 @@ Step 8 (decision 45) adds `modules/decisions-taken/optional_member_access_needs_
 targets); both pass on the parent binary — the checker half landed with decision 45 — and pin it. The
 absent half (`?.b` on a `null`) is `modules/decisions-taken/optional_member_access_needs_safe_call-45/cases/tuple_label_through_absent_optional` (144 B-22), four
 targets.
-Step 15 (report L, R3) adds `modules/imported/cells/imported_type_field_closure` (package `a`'s `Client(life:
+Step 15 (report L, R3) adds `modules/imported/cases/imported_type_field_closure` (package `a`'s `Client(life:
 Life, …)` with `Life` in a sibling module, imported by package `b` as `Client` alone and called from
 the root, four targets) and `modules/imported/cells/imported_declaration_error_location` (a type error inside the
 dependency's declaration is located at `a/client.bp`, by its snapshot). Both pass on the parent
@@ -938,7 +938,7 @@ and called through the field, through an untyped local and through a generic wra
 stored there typed by those calls, by a `val`'s annotation, by a parameter and by a return type —
 answers the fn's own result on commonJS, beam and wasm (wasm printed a string's address, a bool as
 `1`, a lambda's string parameter as an integer; front 130's row); erlang refused `h.value("b")` (`function value/2 undefined`) until a field written as a type parameter was applied like a `fn(…)` one (`codegen/AGENTS.md`).
-Step 2 adds `modules/generic/run/src/cases/generic_string_equality` — `==` / `!=` between two type-parameter values bound
+Step 2 adds `modules/generic/cases/generic_string_equality` — `==` / `!=` between two type-parameter values bound
 to strings built at run time, by a call's arguments, an array's elements, a generic record's
 constructor and a generic call answering one, a parameter written `Pair<T>`, a variant's payload,
 an array of such records under `map`, and a generic fn handed to a `fn(a: string, b: string) ->
@@ -966,21 +966,21 @@ second is refused at the call of `deepEquals` (STD-001, decision 518 (4); `snaps
 (`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
 cell each: `modules/pub_val_in_a_test` (F1 — a sibling's `pub val` read by a TEST: the erlang runner
-did not load the sibling; the first project cell of the test kind), `modules/import/cells/import_type_closure_across_modules`
+did not load the sibling; the first project cell of the test kind), `modules/import/cases/import_type_closure_across_modules`
 (F2 — `import {Canvas}` from a local dependency whose fields name types of the package's other
 modules), `modules/unwrap/cases/unwrap_or_positions` (F4/F9 — `xs.at(i).unwrapOr(d)` in a method, as the branch of
 a parenthesised `if` read with `.v`, nested in another `unwrapOr`, over an unannotated `map`),
 `modules/src_at_package_root` (F5 — `"src": "."`, a test importing `lib.db`),
 `modules/string/cases/string_slice_in_if_branch` (F6 — a one-argument `slice`, an array `slice` and a string
 template as the value of an `if` branch), `modules/integer/cases/integer_division_truncates` (F7 — integer `/`
-truncates toward zero on every target, float `/` stays float) and `modules/lexer/cells/lexer_error_in_imported_module`
+truncates toward zero on every target, float `/` stays float) and `modules/lexer/cases/lexer_error_in_imported_module`
 (F8 — every target refuses the project with `bad string escape` located in the imported module, via
 its snapshot). The erlang float-literal item adds `modules/float/cases/float_literal_spellings` (`1e3`,
 `2.5E3`, `3e+2`, `5e-1`, `1_000.5` are `f64` on all four targets) and
 `modules/number/cases/number_literal_erlang_spellings` (`5e-324`, the largest `f64`, an `f64` record field and
 `0xFF + 0b101 + 0o17`, on all four targets — wasm since its float literal is an `f64.const` and its
 radix literal a decimal `i32.const`).
-144's cascading-diagnostic row adds `modules/import/cells/import_of_failed_module` (`shapes.bp` holds a type error,
+144's cascading-diagnostic row adds `modules/import/cases/import_of_failed_module` (`shapes.bp` holds a type error,
 `main` imports `area` from it): `shapes.snap` claims the type error and `main.snap` the one
 `import-of-failed-module` refusal at the import item, naming `shapes` (`` `area` comes from `shapes`,
 which failed to check ``) — the parent binary refused
@@ -1046,7 +1046,7 @@ a `@Result` in any layer, `@Result<void, E>` included, and a `@Async` / `@Compon
 value, end with `return`), `modules/narrowed/cells/narrowed_optional_std_field_across_packages` (a method chain on a
 field of a narrowed optional, and of an optional binder, whose type another package declares and
 this module never names — its field a std type only that package imports;
-`modules/generic/run/src/cases/generic_type_through_imported_function` keeps two instances of such a generic type apart),
+`modules/generic/cases/generic_type_through_imported_function` keeps two instances of such a generic type apart),
 `modules/decorator/cases/decorator_argument_default` and `modules/decorator/cases/decorator_default_not_closed` (a decorator
 argument the annotation leaves out takes its closed default; one naming a binding is refused at the
 annotation), `modules/decisions-taken/record_field_assignment_refused-37/cases/record_update` and `modules/decisions-taken/component_props_plain_or_rest-529/cases/record_update_base_not_a_name` (decision 37's
@@ -1068,7 +1068,7 @@ its snapshot even though nothing calls it; the parent held this rule, and decisi
 made wasm hold it — `modules/external/cells/external_wrapper_associated_default` is the same rule on a behavior's
 associated `default fn`, which wasm lowered only when a call reached it),
 `modules/behavior/run/src/cases/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `"targets"`
-`commonJS erlang beam`, wasm answers `a a b b`), `modules/import/cells/import_from_package_beside_same_name`
+`commonJS erlang beam`, wasm answers `a a b b`), `modules/import/cases/import_from_package_beside_same_name`
 (a project `pub fn attempt` beside another module's `import {match.attempt} from "pkg"`; wasm
 listed, the flat namespace), `modules/host/cells/host_array_slice_without_start` (commonJS's global `slice`
 patch reads a missing start as 0; `"targets"` `commonJS`), `modules/decorator/cases/decorator_calls_imported_function`
@@ -1089,7 +1089,7 @@ the checker half already held; wasm, whose `case` read the leaf's tag, followed)
 and a `case` over each — the checker half already held; wasm followed),
 `modules/section/cases/section_path_es4_expected_enum` / `modules/section/cases/section_path_es4_every_head` (ES4 names the
 expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
-`modules/labelled/cells/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
+`modules/labelled/cases/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
 namespace and `"std"` call paths, and a namespace call filled from its default; the `"std"` path is
 `testing.asserts`, which does not build on wasm — `snapshot/targets/wasm/`, the refusal at the import),
 `modules/label/cases/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
@@ -1108,7 +1108,7 @@ defaults and labels, at expression and statement position) and `modules/case/cas
 `false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
 `test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
 The residual backend rows (`front/residual-backend-3`) add a cell each, every one failing on the
-parent binary on the targets named: `modules/generic/run/src/cases/generic_call_result_shape` (a generic `-> T` call answers
+parent binary on the targets named: `modules/generic/cases/generic_call_result_shape` (a generic `-> T` call answers
 its argument's shape, `unwrapOr` its default's — wasm printed a string's address),
 `modules/unit/cases/unit_enum_print_by_name` (an all-unit enum's value by name, a field, an array, a `?Color` whose
 present first variant is not absent — wasm printed the ordinal or trapped),
@@ -1121,7 +1121,7 @@ over unit variants, numbers, strings, payload variants with a wildcard, a litera
 behavior, called through a value of the behavior — commonJS, erlang and beam),
 `modules/behavior/run/src/cases/behavior_method_result_chained` and `modules/behavior/cases/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
-wasm trapped), `modules/external/cells/external_template_escaped_quote` (a `\"` in an `.JavaScript` template is a
+wasm trapped), `modules/external/cases/external_template_escaped_quote` (a `\"` in an `.JavaScript` template is a
 quote of the JavaScript; `"targets"` without wasm), `modules/std/run/src/cases/std_path_relative` (a std module calling an
 `Array` `default fn` — commonJS had no prototype method), `modules/if/cases/if_value_float` (an `f64` value `if`
 outside an `f64` function — wasm refused the module, commonJS printed `0`) and
@@ -1129,7 +1129,7 @@ outside an `f64` function — wasm refused the module, commonJS printed `0`) and
 written, imported under an alias and shadowed by a parameter — wasm read the first one).
 `modules/val/cases/val_assert_record_pattern` gained the labelled form (erlang bound it by position).
 `modules/hof/cases/hof_named_function` (a local, an imported and a bound function named as an array method's
-argument — wasm trapped), `modules/generic/run/src/cases/generic_body_specialized` (a method on a type-parameter value, a float
+argument — wasm trapped), `modules/generic/cases/generic_body_specialized` (a method on a type-parameter value, a float
 through one, a behavior's generic associated fn and `Dict<string, string>.at` over a key built at
 run time — wasm answered from one word-typed body) and `modules/imported/cases/imported_fn_as_value` (handed over by
 `front/residual-checker-3`: erlang and beam lowered the name as an unbound variable) close the
@@ -1263,7 +1263,7 @@ B-22 adds `modules/fn/cases/fn_value_in_tuple` (a function value read out of a t
 arguments staged first — beam's frame did not count the stack slot the arguments park in while
 `erlang:element/2` reads the function, `invalid_store` on the base).
 `modules/fn/cases/fn_value_tuple_string_answer` (each element of `#(g, h)` keeps its function type — wasm printed
-the string's address on the base) and `modules/fn/run/src/cases/fn_field_call_in_for` (`op.run(5).toString()` on a
+the string's address on the base) and `modules/fn/cases/fn_field_call_in_for` (`op.run(5).toString()` on a
 `for` loop's element — wasm could not resolve `toString/0` on the base).
 
 Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
@@ -1337,10 +1337,10 @@ time and adopts the answer with its own `'__bp_adopt'/3`),
 methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
 form, `inline: true`, an enum's host method — on commonJS, erlang and beam, refused on wasm by
 `snapshot/targets/wasm/`; `modules/external/cells/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
-commonJS and wasm; `modules/external/cells/external_method_on_host_record` — a host method on a record the HOST built,
+commonJS and wasm; `modules/external/cases/external_method_on_host_record` — a host method on a record the HOST built,
 adopted directly, through `@Result` and through an array, and a lambda-parameter receiver whose
 method shares `name/arity` with a module function (`"targets"` `commonJS erlang beam`, as
-`external_host_record`'s); `modules/external/cells/external_method_imported` — the method on an IMPORTED type,
+`external_host_record`'s); `modules/external/cases/external_method_imported` — the method on an IMPORTED type,
 answered by its owner, with `snapshot/targets/wasm/`),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
 `lambda_rebinds_case_binders` (front 24, beam: a lambda's own `case` binder, `val` and `for`
@@ -1571,8 +1571,8 @@ loop that is a value — a generator whose body is a closed generator scope.
 | `test/loop_future_generator_expr.bp` | a `#[@futureGenerator] loop` awaiting in a plain `fn` body, consumed by a `#[@future]` body's `for await` |
 | `test/loop_yield_nearest_scope.bp` | `yield :out` from inside a `for` names the generator fn; an unannotated `loop` inside a generator fn is an ordinary loop |
 | `modules/loop/cases/loop_generator_dobros` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
-| `modules/generator/run/src/cases/generator_body_lazy` | 144 B-128: a generator's body runs one step per item asked for — on an `iter fn`, an `iter loop` and a marked lambda `{ iter -> … }`, a print before and after the first `yield` comes out between the items, and an endless generator is consumed by `take(3)`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
-| `modules/generator/run/src/cases/generator_handle_stateful` | 144 B-134: a generator handle is stateful whatever its body — a second `for` over an exhausted handle reads nothing, on an `iter fn` of only literal `yield`s, an `iter fn` that runs code and an `iter loop`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
+| `modules/generator/cases/generator_body_lazy` | 144 B-128: a generator's body runs one step per item asked for — on an `iter fn`, an `iter loop` and a marked lambda `{ iter -> … }`, a print before and after the first `yield` comes out between the items, and an endless generator is consumed by `take(3)`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
+| `modules/generator/cases/generator_handle_stateful` | 144 B-134: a generator handle is stateful whatever its body — a second `for` over an exhausted handle reads nothing, on an `iter fn` of only literal `yield`s, an `iter fn` that runs code and an `iter loop`; wasm does not answer it until B-128's wasm half lands, and no target mark says so: the cell is red there, no departure recorded |
 | `modules/loop/cases/loop_range_inclusive` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
 
 The refusal cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
@@ -1864,7 +1864,7 @@ on wasm printed `1` for the lifted tuple's `bool` (`@print(cfg.debug)`), and `te
 `Set.fromList` of structurally-equal records kept three members on commonJS where erlang and beam
 keep two; both answer their snapshots on every target. `generic-loader-binding` (three `from "erika"` forms — a library, not the language) moved to erika's
 `conformance/modules/generic_loader_binding` (rule 10's consumer commit); its three forms answer alike on
-every target since 144 B-45, B-50 and `modules/generic/cells/generic_method_array_join`.
+every target since 144 B-45, B-50 and `modules/generic/cases/generic_method_array_join`.
 
 `front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
 four-target cells for numbers wasm answered wrongly at exit 0 — `modules/decisions-taken/wasm_prints_std_wasm_text-441/cases/float_shortest_text` (a
@@ -1872,8 +1872,8 @@ float's shortest round-trip text, where erlang and beam agree with commonJS), `m
 (a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `modules/i64/cases/i64_full_width`
 (`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and four cells refused on
 wasm by a snapshot departure, each a value wasm has no reader for yet: `modules/optional/cells/optional_index_arithmetic`
-(`xs[i] + 1`), `modules/i64/cells/i64_in_array_slot`, `modules/fn/cases/fn_value_float_argument`,
-`modules/untyped/cells/untyped_array_float_push` (`modules/generic/cells/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
+(`xs[i] + 1`), `modules/i64/cases/i64_in_array_slot`, `modules/fn/cases/fn_value_float_argument`,
+`modules/untyped/cells/untyped_array_float_push` (`modules/generic/cases/generic_field_float` answers `1.5` on wasm since 164 s2 P3: a
 float goes into a generic slot in its box in a GC module).
 
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
@@ -1881,7 +1881,7 @@ eight abort cells, each `abort` plus `stderr` naming `integer overflow: <op> on 
 src/main.bp:<L:C>` on commonJS, erlang and beam: `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i32`, `modules/decisions-taken/i64_is_64_bit_everywhere-319/cells/int_overflow_mul_i64`
 (past `2^63 − 1`; commonJS reaches the bound through `BigInt`, decision 319),
 `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_negate_i32`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_plus_assign`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_division_min_by_minus_one`,
-`modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_sub_u32`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i8` and `modules/int/cells/int_division_by_zero` (commonJS's
+`modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_sub_u32`, `modules/decisions-taken/integer_overflow_aborts-264/cells/int_overflow_add_i8` and `modules/int/cases/int_division_by_zero` (commonJS's
 `integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
 `modules/decisions-taken/integer_overflow_aborts-264/cases/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
 traps with no text, so its half is `abort` alone; `u32` and the narrower types check their own range
@@ -2102,7 +2102,7 @@ all four, and its `refused` line is the same on each.
 An erlang/BEAM module atom starts with its package (decision 109 of 1.0.10-beta): a cell's entry
 is `<cell>@main`, and a host
 template that builds a record's tag spells it (`'external_host_record@main@@Point'`,
-`modules/external/cells/external_host_record`).
+`modules/external/cases/external_host_record`).
 
 **A beam program's host modules.** `botopink build --target beam` ships the `.erl` of every
 `#[@external(.Erlang("<host>", …))]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
@@ -2146,7 +2146,7 @@ host cell a body of `std/io/fs` calls with no binding):
 Found while writing them, each a defect of another front and not recorded as a departure (458), both
 since fixed (144 B-94, B-95): `Bytes.length` read as a property is the byte count on every target
 (`modules/bytes/cases/bytes_length_property`), and a field read on a type the module does not declare (`asset.path` in std,
-`Asset` being the compiler's record) answers the field on beam as on erlang (`modules/embed/cells/embed_field_read_other_module`,
+`Asset` being the compiler's record) answers the field on beam as on erlang (`modules/embed/cases/embed_field_read_other_module`,
 a dependency reading an `Asset`'s fields; wasm places it too, front 164 s2c). 144 B-97 widens the beam
 fix to every record the compiler splices (`Declared`, `DeclaredMeta`, `DeclaredTypedMeta` beside `Asset` and
 `SourceLocation`): `modules/declared/cells/declared_field_read_other_module` — a dependency reading `name`, `module` and `meta` off
@@ -2198,12 +2198,12 @@ The narrowed cells whose excluded targets' missing binding is named here (re-der
 |---|---|---|
 | `modules/behavior/cases/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |
 | `modules/external/cells/external_erlang_host_module_missing` | erlang beam (each refuses it: `output/main.snap`) | commonJS, wasm — `total` |
-| `modules/external/cells/external_host_record`, `modules/external/cells/external_returns_record` | commonJS erlang beam | wasm — `hostPoint` |
+| `modules/external/cases/external_host_record`, `modules/external/cases/external_returns_record` | commonJS erlang beam | wasm — `hostPoint` |
 | `modules/decisions-taken/host_error_fields-489/cells/external_result_erlang_exit` | erlang beam | commonJS, wasm — `host` |
-| `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/external_result_host_method`, `modules/external/cells/external_method_in_type` | commonJS erlang beam | wasm — `Meter.plus` |
-| `modules/external/cells/external_method_on_host_record` | commonJS erlang beam | wasm — `Pair.at` |
-| `modules/external/cells/external_template_binding` | commonJS erlang beam | wasm — `shout` |
-| `modules/external/cells/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
+| `modules/decisions-taken/binding_result_true_maps_host_errors-490/cells/external_result_host_method`, `modules/external/cases/external_method_in_type` | commonJS erlang beam | wasm — `Meter.plus` |
+| `modules/external/cases/external_method_on_host_record` | commonJS erlang beam | wasm — `Pair.at` |
+| `modules/external/cases/external_template_binding` | commonJS erlang beam | wasm — `shout` |
+| `modules/external/cases/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
 | `modules/external/cells/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
 | `modules/host/cells/host_array_slice_without_start` | commonJS | erlang, wasm, beam — `copyAll` |
 | `modules/host/cells/host_template_binding_inside_while` | erlang beam | commonJS, wasm — `bump` |
@@ -2401,7 +2401,7 @@ Decision 146 (a function whose body calls a host function with no binding for th
 refused called or not, on every target): `modules/external/cells/external_wrapper_keeps_refusal` and
 `modules/external/cells/external_wrapper_associated_default` are refused on commonJS and wasm by their
 `snapshot/targets/<t>/` departures (`otpRelease` has no binding there); `modules/decisions-taken/asserts_throws_generic-493/cases/std_asserts_on_every_target`,
-`modules/labelled/cells/labelled_call_by_label` and `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_asserts_host_cell_on_wasm` are refused on wasm at the
+`modules/labelled/cases/labelled_call_by_label` and `modules/decisions-taken/wasm_attempt_by_exception_handling-518/cells/std_asserts_host_cell_on_wasm` are refused on wasm at the
 import of `testing.asserts` (a `snapshot/targets/wasm/` departure); `modules/std/cells/std_decorator_through_namespace`
 pins the import's `std-unsupported-on-target` line on wasm.
 
@@ -2535,7 +2535,7 @@ are gone.
   formats each staged `.bp` (`scripts/git-hooks/lib/format-staged.sh`), so `test/` and `modules/`
   are committed canonical — a cell is written formatted (`botopink format <file>`) before its
   snapshot is recorded, since the hook's reformat would move a pinned `<file>:<L>:<C>`. Two
-  things are outside the walk, both by structure (`format_cmd.zig`), never by a list: `modules/lexer/cells/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
+  things are outside the walk, both by structure (`format_cmd.zig`), never by a list: `modules/lexer/cases/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
   refuse — by the second arm (gate-c: a `.bp` under `modules/<cell>/` that the cell's `snapshot`
   files name and that does not lex or parse). A `modules/<cell>/snapshot/` record pins a
   `<file>:<L>:<C>`: reformatting the file it names moves the pinned line with it, in the same

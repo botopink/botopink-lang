@@ -1,3 +1,0 @@
-botopink-cell 1
-refused error: type mismatch: expected string, got i32
-at src/shapes.bp:2:30

@@ -1,6 +1,0 @@
-//// An empty body is a function that does nothing: `pub fn main() -> void {}` builds
-//// and runs, printing nothing, on every target. wasm took a body of no
-//// statements for a bodyless `declare fn`, emitted no `main`, and refused the
-//// program its own `_start` calls (`compilation failed UndefinedCall`).
-
-pub fn runCase() -> void {}

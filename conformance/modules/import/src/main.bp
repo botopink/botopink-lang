@@ -50,5 +50,14 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("import_type_alias");
     runCase("import_type_closure");
     runCase("import_module_paths");
+    runCase("import_ambiguous_from_package");
+    runCase("import_from_package_beside_same_name");
+    runCase("import_of_failed_module");
+    runCase("import_own_module_over_dependency_path");
+    runCase("import_record_beside_std_record_of_same_name");
+    runCase("import_same_enum_name_from_two_packages");
+    runCase("import_same_name_from_two_packages");
+    runCase("import_sibling_path_beside_std_name");
+    runCase("import_type_closure_across_modules");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

@@ -302,6 +302,7 @@ comptime {
     runModule("display");
     runModule("dot");
     runModule("effect");
+    runModule("embed");
     runModule("enum");
     runModule("explicit");
     runModule("export");
@@ -319,8 +320,10 @@ comptime {
     runModule("if");
     runModule("implement");
     runModule("import");
+    runModule("imported");
     runModule("index");
     runModule("inline");
+    runModule("int");
     runModule("integer");
     runModule("interpolation");
     runModule("is");
@@ -329,6 +332,7 @@ comptime {
     runModule("label");
     runModule("labelled");
     runModule("lambda");
+    runModule("lexer");
     runModule("list");
     runModule("local");
     runModule("loop");

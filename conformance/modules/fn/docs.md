@@ -1,11 +1,11 @@
 # fn
 
-[run/src/cases/fn_declaration/mod.bp](run/src/cases/fn_declaration/mod.bp)
-[run/src/cases/fn_empty_body_call/mod.bp](run/src/cases/fn_empty_body_call/mod.bp)
-[run/src/cases/fn_empty_main/mod.bp](run/src/cases/fn_empty_main/mod.bp)
-[run/src/cases/fn_expression_string_parameter/mod.bp](run/src/cases/fn_expression_string_parameter/mod.bp)
+[cases/fn_declaration/src/main.bp](cases/fn_declaration/src/main.bp)
+[cases/fn_empty_body_call/src/main.bp](cases/fn_empty_body_call/src/main.bp)
+[cases/fn_empty_main/src/main.bp](cases/fn_empty_main/src/main.bp)
+[cases/fn_expression_string_parameter/src/main.bp](cases/fn_expression_string_parameter/src/main.bp)
 [cases/fn_falls_off_end/src/main.bp](cases/fn_falls_off_end/src/main.bp)
-[run/src/cases/fn_field_call_in_for/mod.bp](run/src/cases/fn_field_call_in_for/mod.bp)
+[cases/fn_field_call_in_for/src/main.bp](cases/fn_field_call_in_for/src/main.bp)
 [cases/fn_local_rebound_call/src/main.bp](cases/fn_local_rebound_call/src/main.bp)
 [cases/fn_named_like_import/src/main.bp](cases/fn_named_like_import/src/main.bp)
 [cases/fn_value_bound_by_val/src/main.bp](cases/fn_value_bound_by_val/src/main.bp)

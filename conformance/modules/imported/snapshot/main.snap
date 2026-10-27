@@ -26,3 +26,10 @@ out 11
 out shop stall
 out shop stall of stall
 out shop corner of corner
+== imported_generic_fn_type_arguments
+out 2
+out n 7
+out 2
+out s x
+== imported_type_field_closure
+out 7

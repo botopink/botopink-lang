@@ -43,5 +43,7 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("imported_fn_field_call");
     runCase("imported_variant_positional_payload");
     runCase("imported_type_method_signature_resolves_in_owner");
+    runCase("imported_generic_fn_type_arguments");
+    runCase("imported_type_field_closure");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

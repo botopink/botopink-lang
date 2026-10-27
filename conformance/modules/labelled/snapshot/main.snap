@@ -15,3 +15,11 @@ out 9
 out 10
 out bc
 out bee
+== labelled_call_by_label
+out b=3
+out a=1
+out c=4
+out p3
+out q7
+out refused
+out ok

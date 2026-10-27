@@ -5,3 +5,139 @@ at src/main.bp:13:17
 == generator_loop_break_outer
 refused error: generator-loop-closed-scope: `break :outer` crosses the border of an `iter` loop — its body is a closure and cannot leave a loop outside it
 at src/main.bp:11:26
+== generator_body_lazy
+out fn before
+out 1
+out fn after
+out 2
+out 0
+out 1
+out 2
+out loop before
+out 1
+out loop after
+out 2
+out 10
+out 11
+out 12
+out lambda before
+out 1
+out lambda after
+out 2
+out 1
+out 1
+out 1
+== generator_captured_var_shared
+out 0
+out 1
+out 2
+out 1
+out 12
+out 22
+out 2
+out 4
+out 4
+out 4
+out 4
+out 4
+== generator_defer_lazy
+out before
+out 1
+out after
+out 2
+out closed
+out before
+out 1
+out closed
+out done
+== generator_find_lazy
+out before
+out after
+out closed
+out 2
+out before
+out after
+out last
+out closed
+out -1
+out long
+out none
+== generator_for_break_outer_closes
+out before
+out 11
+out closed
+out left
+== generator_for_return_closes
+out before
+out closed
+out 1
+out before
+out after
+out closed
+out 2
+out before
+out iteration
+out closed
+out 1
+== generator_handle_stateful
+out 1
+out 2
+out fn literals done
+out 1
+out 2
+out fn computed done
+out 1
+out 2
+out loop done
+== generator_item_untyped_lazy
+out before a
+out a
+out after a
+out before b
+out b
+out after b
+== generator_to_array_printed
+out made
+out before
+out after
+out [1, 2]
+out before
+out [1]
+== generator_take_closes_source
+out closed
+out [1]
+out 1
+out 2
+out closed
+out end
+== generator_walk_lazy
+out before
+out 1
+out after
+out 2
+out before
+out true
+out before
+out false
+out before
+out after
+out 3
+== iter_flat_map_function_value
+out before
+out twice 1
+out after
+out twice 2
+out closed
+out [1, 10, 2]
+== iter_flat_map_generator
+out twice 0
+out 0
+out 0
+out twice 1
+out 1
+out before
+out twice 1
+out after
+out twice 2
+out closed
+out [1, 10, 2]

@@ -34,3 +34,7 @@ out attempt: negative -8
 out 1
 out 2
 out 3
+== lambda_arg_param_type
+out 2
+out 1
+out 2

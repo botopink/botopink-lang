@@ -25,3 +25,16 @@ out 7
 out 5
 out n=7
 out n=4
+== fn_declaration
+out 3
+== fn_empty_body_call
+out before
+out after
+== fn_empty_main
+== fn_expression_string_parameter
+out ax
+out by
+out cz
+== fn_field_call_in_for
+out inc=6
+out dbl=10

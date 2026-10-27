@@ -1,0 +1,52 @@
+//// Decision 105 — a generator handle is stateful whatever its body: a second
+//// `for` over an exhausted handle reads nothing, as the first one left it. On an
+//// `iter fn` (a body of only literal `yield`s, and one that runs code) and on an
+//// `iter loop`.
+
+import {io.terminal.print} from "std";
+
+iter fn literals() -> Iter<i32> {
+    yield 1;
+    yield 2;
+}
+
+iter fn computed() -> Iter<i32> {
+    var n = 1;
+    while (n < 3) {
+        yield n;
+        n = n + 1;
+    }
+}
+
+pub fn main() -> void {
+    val a = literals();
+    for (a) { x ->
+        print(x);
+    }
+    for (a) { x ->
+        print(x);
+    }
+    print("fn literals done");
+
+    val b = computed();
+    for (b) { x ->
+        print(x);
+    }
+    for (b) { x ->
+        print(x);
+    }
+    print("fn computed done");
+
+    val c = iter loop {
+        yield 1;
+        yield 2;
+        break;
+    };
+    for (c) { x ->
+        print(x);
+    }
+    for (c) { x ->
+        print(x);
+    }
+    print("loop done");
+}

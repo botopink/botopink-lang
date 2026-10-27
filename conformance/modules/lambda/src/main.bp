@@ -44,5 +44,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("lambda_param_shared_field");
     runCase("lambda_rebinds_case_binders");
     runCase("lambda_tail_iter_loop");
+    runCase("lambda_arg_param_type");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

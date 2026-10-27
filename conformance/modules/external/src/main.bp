@@ -45,5 +45,13 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("external_wasm_prefixed_std_refused");
     runCase("external_wasm_prefixed_wasi_refused");
     runCase("external_wasm_op_and_fn");
+    runCase("external_host_record");
+    runCase("external_method_imported");
+    runCase("external_method_in_type");
+    runCase("external_method_on_host_record");
+    runCase("external_returns_record");
+    runCase("external_template_binding");
+    runCase("external_template_escaped_quote");
+    runCase("external_template_quote_in_host_string");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

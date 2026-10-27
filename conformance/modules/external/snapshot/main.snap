@@ -21,3 +21,37 @@ at src/main.bp:6:11
 out 2.0
 out 3.0
 out -2.0
+== external_host_record
+out 16
+out 7
+out 11
+out 2
+out 10
+out 30
+== external_method_imported
+out 42
+out id:7
+== external_method_imported on wasm
+refused error: `Meter.plus` has no implementation for the wasm backend
+at src/main.bp:13:13
+== external_method_in_type
+out 7
+out 6
+== external_method_on_host_record
+out 6
+out 7
+out 6
+out 12
+out Pair(a: 1, b: 2)
+== external_returns_record
+out 16
+== external_template_binding
+out HI
+== external_template_escaped_quote
+out say hi
+out {"k":"v"}
+out say a "quoted" word
+out [b]
+== external_template_quote_in_host_string
+out 2
+out 0

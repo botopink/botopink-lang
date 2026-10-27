@@ -40,5 +40,6 @@ fn runCase(comptime name: string) -> void {
 pub async fn main() -> Async<Result<void, string>> {
     runCase("labelled_arguments");
     runCase("labelled_arguments_reorder");
+    runCase("labelled_call_by_label");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

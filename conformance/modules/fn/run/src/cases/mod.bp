@@ -1,5 +1,0 @@
-pub mod fn_declaration;
-pub mod fn_empty_body_call;
-pub mod fn_empty_main;
-pub mod fn_expression_string_parameter;
-pub mod fn_field_call_in_for;

@@ -1,5 +1,0 @@
-botopink-cell 1
-out 1
-out 3
-abort
-stderr integer division by zero: / on i32 at src/main.bp:12:14

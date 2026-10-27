@@ -1,0 +1,68 @@
+//// Decision 105 — a generator's body runs one step per item asked for: each
+//// `next` runs the body up to the next `yield`. On each form — an `iter fn`,
+//// an `iter loop`, a marked lambda `{ iter -> … }` — a print before and after
+//// the first `yield` comes out between the items, and an endless generator is
+//// consumed by `take(3)`.
+
+import {io.terminal.print} from "std";
+
+iter fn counted() -> Iter<i32> {
+    print("fn before");
+    yield 1;
+    print("fn after");
+    yield 2;
+}
+
+iter fn naturals() -> Iter<i32> {
+    var n = 0;
+    while (true) {
+        yield n;
+        n = n + 1;
+    }
+}
+
+pub fn main() -> void {
+    for (counted()) { x ->
+        print(x);
+    }
+    for (naturals().take(3)) { x ->
+        print(x);
+    }
+
+    val looped = iter loop {
+        print("loop before");
+        yield 1;
+        print("loop after");
+        yield 2;
+        break;
+    };
+    for (looped) { x ->
+        print(x);
+    }
+    var k = 10;
+    val endless = iter loop {
+        yield k;
+        k = k + 1;
+    };
+    for (endless.take(3)) { x ->
+        print(x);
+    }
+
+    val marked: fn() -> Iter<i32> = { iter ->
+        print("lambda before");
+        yield 1;
+        print("lambda after");
+        yield 2;
+    };
+    for (marked()) { x ->
+        print(x);
+    }
+    val ones: fn() -> Iter<i32> = { iter ->
+        while (true) {
+            yield 1;
+        }
+    };
+    for (ones().take(3)) { x ->
+        print(x);
+    }
+}
