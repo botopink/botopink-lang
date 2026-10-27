@@ -3903,7 +3903,7 @@ import {io.terminal.print} from "std";
     call $__panic_fail
     unreachable
   )
-  (data $__d0 "integer overflow: - on i32 at main.bp:540:15")
+  (data $__d0 "integer overflow: - on i32 at src/collections.bp:540:15")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "less")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
@@ -3914,7 +3914,7 @@ import {io.terminal.print} from "std";
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
-    i32.const 44
+    i32.const 55
     array.new_data $str $__d0
     global.set $__s0
     i32.const 0

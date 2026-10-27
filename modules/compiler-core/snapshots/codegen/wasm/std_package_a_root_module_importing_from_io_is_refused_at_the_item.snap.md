@@ -6741,13 +6741,13 @@ test "fs answers PermissionDenied for an OS permission error" {
   )
   (data $__d0 "")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "integer overflow: + on i32 at src/io/fs.bp:114:52")
+  (data $__d1 "integer overflow: + on i32 at src/path.bp:114:52")
   (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "integer overflow: - on i32 at src/io/fs.bp:120:42")
+  (data $__d2 "integer overflow: - on i32 at src/path.bp:120:42")
   (global $__s2 (mut (ref null $str)) (ref.null $str))
   (data $__d3 "..")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "integer overflow: - on i32 at src/io/fs.bp:135:39")
+  (data $__d4 "integer overflow: - on i32 at src/path.bp:135:39")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
   (data $__d5 ".")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
@@ -6807,11 +6807,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_data $str $__d0
     global.set $__s0
     i32.const 0
-    i32.const 49
+    i32.const 48
     array.new_data $str $__d1
     global.set $__s1
     i32.const 0
-    i32.const 49
+    i32.const 48
     array.new_data $str $__d2
     global.set $__s2
     i32.const 0
@@ -6819,7 +6819,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_data $str $__d3
     global.set $__s3
     i32.const 0
-    i32.const 49
+    i32.const 48
     array.new_data $str $__d4
     global.set $__s4
     i32.const 0

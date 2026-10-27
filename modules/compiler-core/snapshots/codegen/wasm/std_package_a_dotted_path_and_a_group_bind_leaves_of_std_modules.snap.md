@@ -5343,13 +5343,13 @@ import {io.terminal.print} from "std";
   (global $__s2 (mut (ref null $str)) (ref.null $str))
   (data $__d3 ")")
   (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "integer overflow: + on i32 at main.bp:81:53")
+  (data $__d4 "integer overflow: + on i32 at src/collections.bp:81:53")
   (global $__s4 (mut (ref null $str)) (ref.null $str))
   (data $__d5 "\"")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
   (data $__d6 "")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "integer overflow: - on i32 at main.bp:540:15")
+  (data $__d7 "integer overflow: - on i32 at src/collections.bp:540:15")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
   (data $__d8 "a")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
@@ -5372,7 +5372,7 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d3
     global.set $__s3
     i32.const 0
-    i32.const 43
+    i32.const 54
     array.new_data $str $__d4
     global.set $__s4
     i32.const 0
@@ -5384,7 +5384,7 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d6
     global.set $__s6
     i32.const 0
-    i32.const 44
+    i32.const 55
     array.new_data $str $__d7
     global.set $__s7
     i32.const 0
