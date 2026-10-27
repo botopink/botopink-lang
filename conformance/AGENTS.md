@@ -58,7 +58,7 @@ conformance/
 
 | Path | Kind | Passes when |
 |---|---|---|
-| `modules/` (the root package, decision 990 (6)) | built once (`botopink build --emit-runtime`) into one `.bpr`, run on each target from `modules/` (`botopink run --target <t> <bpr>`) by `run.sh`; each module's verdict is that target's result for `modules/<m>`; a module on disk not in decision 989's shape, one with no `runModule` line, and a line naming no module are reds of their own (`*`) | every module `ok` on every target, the summary's count the lines' |
+| `modules/` (the root package, decision 990 (6)) | built once (a bare `botopink build`) into its `.bpr` set, run on each target from `modules/` (`botopink run --target <t>`, which reuses the set while its key is fresh — decisions 1006 P3, 1009) by `run.sh`; each module's verdict is that target's result for `modules/<m>`; a module on disk not in decision 989's shape, one with no `runModule` line, and a line naming no module are reds of their own (`*`) | every module `ok` on every target, the summary's count the lines' |
 | `modules/<module>/` (self-checking, decision 989) | a module that checks itself in process, `modules/array` first: `botopink.json` (a path dependency on `lib/`), `src/main.bp` — `pub async fn main() -> Async<Result<void, string>>` whose `runCase(comptime name)` loads `cases/<name>` at build, runs it and turns its answer into records —, `cases/<case>/` a package each (`botopink.json`, `src/main.bp` with `pub fn main`, `docs.md`), and one `snapshot/main.snap`: `botopink-cell 2`, a `== <case>` section per case, a departure as `== <case> on <t>`; a difference writes `snapshot/main.snap.new` through `io.fs` on every target (decision 992) and `main` answers `Error`; run by the root package, or alone by `botopink run --target <t>` in the module's directory (lib/README.md) | `main` answers `Ok` on every target |
 | `modules/<module>/run/`, `modules/<module>/refused/` | the old shape, converted by 990 (6)'s codemod and no longer checked by any command (`cell check` left the CLI): a case still in it is held to `conformance/leftover-cases.txt` (decision 1011), and a module's roster red names any case not on the list. A module's two packages of cases (decision 779): `src/cases/<case>/mod.bp` per case (its entry `pub fn runCase()` in `run/`), `src/main.bp` calling the cases of `run/` in `src/cases/mod.bp`'s order and reaching none in `refused/`; `run/`'s answer is one `snapshot/output/main.snap`, the cases' `out` lines in call order, `refused/`'s each case's own `snapshot/output/cases/<case>/mod.snap`; the module holds a `docs.md` linking every case and no `src/`; `scripts/pack-cells.py apply <module>` packs a module's 765 `cases/` (a case packs only when its package's check equals its old answers); | — |
 | `modules/<module>/cells/<case>/` | the old shape's full cell (the shape below) for a case that cannot share a package — an abort, a narrowed `"targets"`, a dependency, a departure, an asset, a lone case (decision 779); the cells' residue is converted last (990 (6)) | — |
@@ -2269,11 +2269,14 @@ cd conformance/modules/array && ../../../zig-out/bin/botopink run --target erlan
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves). **The root package**
-(decisions 989, 990 (6)) is built once, before the pool starts, with `botopink build --emit-runtime`
-from `modules/` — the comptime compile, where the whole cost of the suite is (every module loaded,
-every case of every module loaded inside it) — and its one `.bpr` (target-independent, decision 798)
-is run on each target of the run as one job (`botopink run --target <t> <bpr>` from `modules/`, the
-directory of the project that wrote it). One process per target holds every module (989 (8)); a
+(decisions 989, 990 (6)) is built once, before the pool starts, with a bare `botopink build` in
+`modules/` — the comptime compile, where the whole cost of the suite is (every module loaded, every
+case of every module loaded inside it) — into its `.bpr` set and key under
+`modules/.botopinkbuild/runtime/conformance/` (target-independent, decisions 798, 1006 (2)); each target
+of the run is one job, `botopink run --target <t>` in `modules/`, which reuses that set while its key is
+fresh (1006 P3; `run` takes no `.bpr` path, 1009) — and a later `run.sh` call, while no file of the
+package changed, does no comptime at all. `--cold` rebuilds the set (`build --cold`) and the runs reuse it
+with no code cache read (1006 (4)). One process per target holds every module (989 (8)); a
 crash or a hang is that target's run red whole, and a run that ends without its summary, or with
 fewer verdicts than the root's lines, is a red of its own. Before the build `run.sh` holds the root's
 `runModule` lines to the tree (`roster`): a module on disk not in decision 989's shape, a module with

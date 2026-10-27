@@ -53,7 +53,7 @@ a case without one answering its plain section on every target. A difference wri
 beside it (through `io.fs` on every target, decision 992) and the module's `main` answers `Error`;
 the program never writes the accepted file. The shared code is `conformance/lib/`. The suite's root
 package, `conformance/modules/` itself (decision 990 (6)), loads every module the same way and runs
-each in turn, one verdict per module; it is built once into one `.bpr` and that file run on each
+each in turn, one verdict per module; it is built once into its `.bpr` set and run on each
 target (`conformance/run.sh`, the gate's conformance stage). No CLI command checks a cell: `cell
 check` and `cell new` left the CLI with it.
 

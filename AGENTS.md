@@ -40,7 +40,7 @@ botopink-lang/                 ← language core (this project)
 │                                docs.md (the reference, the manifest schema included; every example a cell),
 │                                modules/ — the root package (decisions 989, 990 (6)) loading every self-checking module
 │                                (modules/<module>/ and modules/decisions-taken/<slug>-<N>/: cases/<case>/, snapshot/main.snap),
-│                                built once into one `.bpr` and run per target —, lib/ (their shared library), test/ suites by
+│                                built once into its `.bpr` set and run per target —, lib/ (their shared library), test/ suites by
 │                                `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
@@ -282,7 +282,7 @@ gate's time goes):
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling and the wasm core module's `--invoke main`);
 8. (the libraries' stage joined stage 9 — decision 996);
-9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with `botopink build --emit-runtime` and its one `.bpr` run on each target — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` —, every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, and every package `botopink packages --list` prints tested in process, one program per package per target, its own process on the pool (`libraries/<name>`, decisions 993, 995, 996, 1004; the pairs that did not run before are `conformance/disabled.txt`'s, shrink-only), after the runner's own `--self-test`);
+9. `zig build test-conformance` (the conformance suite, `conformance/`: the root package `conformance/modules/` built once with a bare `botopink build` into its `.bpr` set and run on each target with `botopink run --target <t>`, which reuses the set (decision 1006 P3) — every self-checking module loaded, run and compared with its `snapshot/main.snap` (decision 989), a loaded package's `"targets"` narrowing audited by the compiler at `emit` —, every `conformance/test/` suite by `botopink test --json` on commonJS, erlang, wasm and beam, and every package `botopink packages --list` prints tested in process, one program per package per target, its own process on the pool (`libraries/<name>`, decisions 993, 995, 996, 1004; the pairs that did not run before are `conformance/disabled.txt`'s, shrink-only), after the runner's own `--self-test`);
 10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 

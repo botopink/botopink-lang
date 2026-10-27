@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run.sh — botopink-lang's conformance suite (decisions 457, 466, 989, 990 (6)):
 # the root package `modules/` — every self-checking module, loaded and run in one
-# program — built once into one `.bpr` and run on each target, every `test/`
+# program — built once into its `.bpr` set and run on each target, every `test/`
 # suite run by `botopink test --json`, and every library and workspace member of
 # the checkout tested in process, one program per package per target (decisions
 # 993, 995, 996, 1004) (`zig build test-conformance`, the gate's conformance
@@ -52,9 +52,9 @@
 #                      `modules/decisions-taken/<d>/` holding `botopink.json`,
 #                      `src/main.bp` (its cases loaded from `cases/<case>/` at build,
 #                      run, compared with `snapshot/main.snap`) and `snapshot/main.snap`.
-#                      `botopink build --emit-runtime` writes its one `.bpr` once
-#                      (§ the root package); a job per target runs it there
-#                      (`botopink run --target <t> <bpr>`), and its printed verdicts —
+#                      A bare `botopink build` writes its `.bpr` set once
+#                      (§ the root package); a job per target runs the package there
+#                      (`botopink run --target <t>`, reusing the set), and its printed verdicts —
 #                      `ok   <m>` or `FAIL <m> — …` and the lines under it, then
 #                      `modules: N checked — P passed, F failed` — are that target's
 #                      result per module. The list is held to the tree: a module on
@@ -142,7 +142,7 @@ fi
 # CPU, bounded by `MemAvailable / 768 MiB`, and a job admitted only while the
 # machine's runnable threads are at most the CPU count (other gates share it).
 # The root package is built once before the pool starts (§ the root package);
-# each target's run of its `.bpr` is one job of the plan.
+# each target's run of the package (reusing its `.bpr` set) is one job of the plan.
 # shellcheck source=../scripts/lib/pool.sh
 . "$repo/scripts/lib/pool.sh"
 [ -n "$jobs" ] || jobs="$(pool_default_jobs)"
@@ -152,8 +152,8 @@ pool_check_jobs "$jobs" run.sh
 # `botopink test --target beam` assembles every module of the run beside
 # itself and runs each test module's runner with `erl -pa`, and `botopink test
 # --target wasm` runs each test unit under wasmtime (decision 513), so `test/`
-# suites run on all four targets. The root package's `.bpr` runs on each of
-# them with `botopink run --target <t>`.
+# suites run on all four targets. The root package runs on each of them with
+# `botopink run --target <t>`, from its one `.bpr` set.
 #
 # `erlc` and `erl` are gate dependencies already, so beam costs no new tool; a
 # machine without them fails the run below rather than run fewer targets and
@@ -510,17 +510,20 @@ test_project() { # <dir> <path> <target> <out>
 # ── § the root package ────────────────────────────────────────────────────────
 # `modules/` is one botopink package (decisions 989, 990 (6)): its `main` loads
 # every self-checking module at build (`compiler.load`), runs each in turn and
-# prints its verdicts. It is built ONCE, before the pool starts, into one `.bpr`
-# (`botopink build --emit-runtime`, target-independent: decision 798), and each
-# target's job runs that file (`botopink run --target <t> <bpr>`) from
-# `modules/`, the directory of the project that wrote it — the comptime compile,
-# the whole cost of the suite (m2-0063's ramp), is paid once for four targets.
+# prints its verdicts. It is built ONCE, before the pool starts, by a bare
+# `botopink build` in `modules/` — the package's `.bpr` set and its key under
+# `modules/.botopinkbuild/runtime/conformance/`, target-independent (decisions
+# 798, 1006 (2)) —, and each target's job is `botopink run --target <t>` there,
+# which reuses that set while its key is fresh (1006 P3; `run` takes no `.bpr`
+# path, 1009) — the comptime compile, the whole cost of the suite (m2-0063's
+# ramp), is paid once for four targets, and not again on a later call while no
+# file of the package changed.
 # One process per target holds every module (989 (8)); a crash or a hang is that
 # target's run red whole.
 #
 # The libraries are not lines of this program: one program per package per
 # target beside it (§ the libraries, decision 1004 (1)).
-root_bpr=""      # the `.bpr` the build wrote, empty when it did not build
+root_built=0     # 1 when the bare build wrote (or found fresh) the package's `.bpr` set
 root_refusal=""  # why the root package did not build
 
 # The modules of the tree: every directory of `modules/` (and of
@@ -638,18 +641,19 @@ roster() {
     done <"$listed"
 }
 
-# Build the root package once: `root_bpr` the `.bpr` it wrote, or `root_refusal`
-# what the build printed (its first error lines).
+# Build the root package once — a bare `botopink build`, its `.bpr` set reused
+# when fresh, rebuilt under `--cold` (decision 1006 (2), (4)): `root_built` 1, or
+# `root_refusal` what the build printed (its first error lines).
 build_root() {
     local dir="$work/root" code
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    (cd "$here/modules" && with_timeout 7200 "$compiler" build --emit-runtime "$dir/rt" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
+    (cd "$here/modules" && with_timeout 7200 "$compiler" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
-    if [ $code -eq 0 ] && [ -f "$dir/rt/conformance.bpr" ]; then
-        root_bpr="$dir/rt/conformance.bpr"
+    if [ $code -eq 0 ]; then
+        root_built=1
     else
-        root_refusal="the root package does not build (botopink build --emit-runtime: exit $code): $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
+        root_refusal="the root package does not build (botopink build: exit $code): $(strip <"$dir/e.txt" | grep -m3 -E 'error' | tr '\t\n' '  ')"
     fi
 }
 
@@ -660,11 +664,13 @@ build_root() {
 run_root() { # <target> <out file>
     local t="$1" out="$2" dir="$work/root-$1" code
     mkdir -p "$dir"
-    if [ -z "$ROOT_BPR" ]; then
+    if [ "$ROOT_BUILT" != 1 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" modules fail "$ROOT_REFUSAL" >"$out"
         return
     fi
-    (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" "$ROOT_BPR" >"$dir/o.txt" 2>"$dir/e.txt")
+    # The set `build_root` wrote is fresh: this run emits from it, no comptime (1006 P3).
+    # `--cold` reads no code cache and still reuses the fresh set (1006 (4)).
+    (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
     strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
       const fs = require("fs");
@@ -1037,7 +1043,7 @@ for f in "${files[@]}"; do
         echo "run.sh: no such root package or suite: $f" >&2; exit 2
     fi
     case "$f" in
-        # The root package: one job per target of the run, each running the one `.bpr`.
+        # The root package: one job per target of the run, each a run of the package reusing its `.bpr` set.
         modules)
             for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done ;;
         # The libraries (§ the libraries): one job per package name `packages --list` prints, per target.
@@ -1074,15 +1080,15 @@ fi
 # from a store. The jobs are the plan's lines, in plan order.
 #
 # The root package (§ the root package) is held to the tree and built once
-# here, before the pool: its targets' jobs only run the `.bpr`.
-ROOT_BPR=""; ROOT_REFUSAL=""; ROOT_LISTED=0
+# here, before the pool: its targets' jobs reuse its `.bpr` set.
+ROOT_BUILT=0; ROOT_REFUSAL=""; ROOT_LISTED=0
 if grep -q '^modules	' "$jobs_list"; then
     roster
     build_root
-    ROOT_BPR="$root_bpr"; ROOT_REFUSAL="$root_refusal"
+    ROOT_BUILT="$root_built"; ROOT_REFUSAL="$root_refusal"
     ROOT_LISTED="$(listed_modules | grep -c . || true)"
 fi
-export ROOT_BPR ROOT_REFUSAL ROOT_LISTED
+export ROOT_BUILT ROOT_REFUSAL ROOT_LISTED
 # The libraries' programs are written inside the checkout (the name resolves by its walk-up), under
 # a directory of this run's own (§ the libraries); the disabled pairs are read once.
 LIB_RUN=""

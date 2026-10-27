@@ -33,8 +33,8 @@
 #                           (decisions 457, 466, 989, 990 (6)): the root package
 #                           conformance/modules/ — every self-checking module,
 #                           loaded and run in one program — built once into one
-#                           `.bpr` (`botopink build --emit-runtime`) and run on
-#                           each target (`botopink run --target <t> <bpr>`),
+#                           `.bpr` set (a bare `botopink build`) and run on
+#                           each target (`botopink run --target <t>`, reusing it),
 #                           every conformance/test/ suite by `botopink test
 #                           --json`, and every package `botopink packages
 #                           --list` prints tested in process, one program per
