@@ -585,13 +585,16 @@ fi
 #   test-web (`zig build test-web`, the wasm32-wasi compile of compiler-web,
 #       one process whatever `-j`): 7.39 GiB;
 #   test-cli (four scripts, one after another): 3.45 GiB.
-# test-web and test-cli are counted before the pools are sized (`budget_fixed`),
+# test-web and test-cli are counted (only when they run in this invocation: `pool_budget_for`)
+# before the pools are sized,
 # not run apart from them: they take no job, so they cost no wall time beside the
 # pools, and a lone 7 GiB step after them would add its whole compile to the run.
 # The per-job figures below are those peaks rounded up; a pool whose jobs are all
 # small is estimated at its worst, which only lowers a total, never raises it.
 budget_reserve_mib=3072
-budget_fixed_mib=11200   # test-web 7.39 GiB + test-cli 3.45 GiB, rounded up
+budget_web_mib=7700      # test-web 7.39 GiB, rounded up; counted only when test-web runs in this invocation
+budget_cli_mib=3500      # test-cli 3.45 GiB, rounded up; counted only when test-cli runs in this invocation
+budget_fixed_mib=$((budget_web_mib + budget_cli_mib)) # both, the whole gate's
 budget_libs_mib=3700     # a test-libs job (rakun-ssr 3.55 GiB)
 budget_conf_mib=1024     # a test-conformance job (0.89 GiB)
 budget_tsc_mib=768       # a tsc-check job (0.62 GiB)
@@ -603,8 +606,8 @@ if [ -n "$jobs_total" ]; then
 else
     budget_avail_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
     if [ -n "$budget_avail_kb" ]; then
-        budget_total="$(pool_budget_jobs "$budget_avail_kb" "$(pool_cpus)" "$budget_fixed_mib" "$budget_reserve_mib" \
-            "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib")"
+        budget_total="$(pool_budget_for "$budget_avail_kb" "$(pool_cpus)" "$budget_reserve_mib" "$budget_web_mib" \
+            "$budget_cli_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib" ${selected[@]+"${selected[@]}"})"
     else
         budget_total="$(pool_cpus)" # no /proc/meminfo (macOS): one per CPU
     fi

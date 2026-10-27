@@ -451,6 +451,14 @@ beside the ReleaseSafe build (§ ahead of the build): it finishes in 1m55 inside
 the build's 3m10, with `MemAvailable` never below 10 GB of 30 GB, so it adds
 nothing to the head.
 
+**Only the stages this invocation runs are counted** (decision 1004 P0). `pool_budget_for` (`lib/pool.sh`) takes the
+`--stage` names: with none, the whole gate's budget as above (`test-web` 7700 MiB + `test-cli` 3500 MiB as `budget_web_mib` /
+`budget_cli_mib`); with `--stage`, the 11.2 GiB of those two is counted only for the one(s) named, and the pool
+stages split 100 % among the pool stages named (`test-libs` alone is 100 %, a stage not named costs nothing). Before this, a
+CI job running one stage on a 16 GB runner still counted both fixed stages and ran at `job budget 1`. `cli_contract.sh` prints the
+budget of a whole gate and of `--stage test-libs` / `test-conformance` / `test-cli` on a 14 GiB / 4-CPU runner (1 / 3 / 4 / 4)
+and asserts the stage runs at least 3.
+
 Measured on the 16-core / 30 GB machine, one cold gate alone, fresh
 `.zig-cache`, load below 3 at start:
 

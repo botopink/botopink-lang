@@ -1436,7 +1436,7 @@ POOL_SHARES="$(bash -c '. "$1"; for p in 50 30 10; do pool_share 16 "$p"; done; 
 # 144 B-129: the total of jobs is bounded by the stages' measured peaks (the
 # `budget_*_mib` of gate.sh § job budget): the largest n <= CPUs whose estimated
 # peak fits MemAvailable minus the reserve and the uncounted test-web / test-cli.
-eval "$(grep -E '^budget_(reserve|fixed|libs|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
+eval "$(grep -E '^budget_(reserve|web|cli|fixed|libs|conf|tsc)_mib=' "$REPO_ROOT/scripts/gate.sh" | sed 's/ *#.*//')"
 budget() { # <MemAvailable GiB> <cpus>
   bash -c '. "$1"; pool_budget_jobs $(( $2 * 1048576 )) "$3" "$4" "$5" "$6" "$7" "$8"' _ "$REPO_ROOT/scripts/lib/pool.sh" \
     "$1" "$2" "$budget_fixed_mib" "$budget_reserve_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib"
@@ -1455,6 +1455,21 @@ for gib in 8 12 16 20 24 28 31 40 64 128; do
   done
 done
 [[ -z "$BUDGET_OVER" ]] && ok "the estimated peak of the total stays under MemAvailable minus the reserve, for 8–128 GiB and 2–32 CPUs" || fail "pool_budget_jobs exceeds its bound:$BUDGET_OVER"
+# The budget counts only the stages this invocation runs (a `--stage` run counts its own): a 16 GB / 4-CPU
+# runner (about 14 GiB available) gave 1 job to both pool stages when test-web + test-cli were always counted.
+budget_for() { # <MemAvailable GiB> <cpus> [<stage>…]
+  local gib="$1" cpus="$2"; shift 2
+  bash -c '. "$1"; shift; pool_budget_for "$@"' _ "$REPO_ROOT/scripts/lib/pool.sh" $(( gib * 1048576 )) "$cpus" \
+    "$budget_reserve_mib" "$budget_web_mib" "$budget_cli_mib" "$budget_libs_mib" "$budget_conf_mib" "$budget_tsc_mib" "$@"
+}
+RUNNER_GIB=14 RUNNER_CPUS=4
+B_WHOLE="$(budget_for $RUNNER_GIB $RUNNER_CPUS)"; B_LIBS="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-libs)"
+B_CONF="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-conformance)"; B_CLI="$(budget_for $RUNNER_GIB $RUNNER_CPUS test-cli)"
+echo "  job budget on a ${RUNNER_GIB} GiB / ${RUNNER_CPUS}-CPU runner: whole gate $B_WHOLE, --stage test-libs $B_LIBS, --stage test-conformance $B_CONF, --stage test-cli $B_CLI"
+[[ "$B_WHOLE" == "$(budget "$RUNNER_GIB" "$RUNNER_CPUS")" ]] && ok "no --stage: the whole gate's budget, test-web and test-cli counted" || fail "pool_budget_for without a stage: got '$B_WHOLE', want '$(budget "$RUNNER_GIB" "$RUNNER_CPUS")'"
+[[ "$B_LIBS" -ge 3 && "$B_CONF" -ge 3 ]] && ok "--stage test-libs / test-conformance on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_LIBS, $B_CONF)" || fail "stage budget on a 16 GB runner: test-libs '$B_LIBS', test-conformance '$B_CONF', want >= 3"
+[[ "$B_CLI" -ge 3 ]] && ok "--stage test-cli on a 14 GiB / 4-CPU runner: a budget of at least 3 ($B_CLI)" || fail "--stage test-cli budget: got '$B_CLI', want >= 3"
+[[ "$(budget_for 14 4 test-web)" -ge "$(budget_for 14 4 test-web test-cli)" ]] && ok "a stage adds its own memory to the budget, never another's" || fail "pool_budget_for: test-web alone is below test-web + test-cli"
 gate_args() { # <want exit> <want text> <label> <arg>… — `gate.sh` refuses the arguments before it starts
   local want="$1" text="$2" label="$3"
   shift 3
