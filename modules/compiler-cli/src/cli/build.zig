@@ -359,15 +359,13 @@ fn runBuild(
         // write the key last.
         const packages = try libs.packagesOf(arena, proj, dep_modules);
         const tkey = targetKeyFor(proj, opts, t, rt_key.?);
-        if (shared == null and !opts.rebuild and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) {
-            reportTarget(env_map, .reused);
-            return 0;
-        }
+        // `--cold` (run or build) reads no target key: its first reach of the
+        // package on this target emits (decision 1043 (4)).
+        if (shared == null and !opts.rebuild and !opts.cold and targetReused(arena, io, rt_dir, opts, t, tkey, packages)) return 0;
         if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
         const root_bpr = try runtime_cache.rootPath(arena, rt_dir, proj.name);
         const built = (try runRuntime(gpa, io, arena, opts, root_bpr, env_map, opts.entry, proj, shared, &closure_keys.runtime)).exit;
         if (built == 0 and shared == null) runtime_cache.writeTargetKey(arena, io, rt_dir, t, tkey);
-        if (built == 0) reportTarget(env_map, .built);
         return built;
     }
     if (opts.target) |t| if (shared == null) runtime_cache.removeTargetKey(arena, io, rt_dir, t);
@@ -491,20 +489,8 @@ fn runBuild(
     if (!erl_ok) return 1;
 
     if (opts.target) |t| if (shared == null) if (runtime_sink.key_written) |k| runtime_cache.writeTargetKey(arena, io, rt_dir, t, targetKeyFor(proj, opts, t, k));
-    if (opts.target != null) reportTarget(env_map, .built);
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
-}
-
-/// `BOTOPINK_TARGET_REPORT` set (conformance/run.sh sets it, decision 1008 (6)): a
-/// `--target` build ends by printing one line on stderr, `botopink-target: built`
-/// (it emitted and compiled) or `botopink-target: reused` (the target key matched,
-/// nothing emitted), which `run.sh` reads and hides. Unset, nothing is printed.
-const TargetOutcome = enum { built, reused };
-fn reportTarget(env_map: libs.EnvMap, outcome: TargetOutcome) void {
-    const m = env_map orelse return;
-    if (m.get("BOTOPINK_TARGET_REPORT") == null) return;
-    std.debug.print("botopink-target: {s}\n", .{@tagName(outcome)});
 }
 
 /// The target key of this emit (decision 1008 (1), `runtime_cache.targetKey`).

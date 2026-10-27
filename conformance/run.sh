@@ -58,11 +58,10 @@
 #                      `ok   <m>` or `FAIL <m> — …` and the lines under it, then
 #                      `modules: N checked — P passed, F failed` — are that target's
 #                      result per module. The report adds `target runs: <t> built N,
-#                      reused M` per target (decision 1008 (6)): the runs (the root
-#                      package's, each library's) that emitted and compiled, and those
-#                      whose target key matched; the CLI prints one `botopink-target:`
-#                      stderr line under `BOTOPINK_TARGET_REPORT`, which run.sh hides.
-#                      The list is held to the tree: a module on
+#                      reused M` per target (decision 1043): the package runs that wrote
+#                      a file under their runtime or output directory after a stamp
+#                      and those that wrote none; a `--cold` run that reuses on its first
+#                      reach is a red. The list is held to the tree: a module on
 #                      disk without its line, a line without its module, and a
 #                      directory still in the old cell shape (`run/`, `refused/`,
 #                      `cells/` with no `snapshot/main.snap`) are reds of their own; a
@@ -388,6 +387,33 @@ FAKE
             echo "self-test: run.sh without --cold handed --cold to a job:" >&2; sed 's/^/    /' "$argv" >&2; missing=1
         fi
     done
+    # Decision 1043 (4): under --cold a package's first reach is `built`. A stub `run` that writes nothing reads
+    # `reused`; the cold run is red and names the package and the target, the warm one is not.
+    local csuite="$st/cold-suite" ccode
+    mkdir -p "$csuite/libraries"
+    cp "$here/libraries/botopink.json" "$csuite/libraries/botopink.json"
+    cat >"$st/fake-cold" <<'FAKE'
+#!/usr/bin/env bash
+case "$1" in
+    packages) if [ "$2" = --list ]; then printf 'good\trepository/good\tall\tpackage\n'; fi; exit 0 ;;
+    run) echo 'library: 1 cases — 1 passed, 0 failed'; exit 0 ;;
+esac
+exit 0
+FAKE
+    chmod +x "$st/fake-cold"
+    for cflag in "" "--cold"; do
+        bash "$runner" --suite "$csuite" --only libraries --target commonJS --compiler "$st/fake-cold" --lib-root "$lib_root" \
+            --jobs 1 --lib-timeout 15 $cflag >"$st/cold-raw.txt" 2>&1
+        ccode=$?
+        strip <"$st/cold-raw.txt" >"$st/cold-report.txt"
+        if [ -n "$cflag" ]; then
+            { [ $ccode -eq 1 ] && grep -qF 'lib-good-commonJS [commonJS] — a --cold run reused its package on the first reach' "$st/cold-report.txt"; } \
+                || { echo "self-test: a --cold run that reused its package was not red and named (exit $ccode):" >&2; sed 's/^/    /' "$st/cold-report.txt" >&2; missing=1; }
+        else
+            { [ $ccode -eq 0 ] && grep -qF 'target runs: commonJS built 0, reused 1' "$st/cold-report.txt"; } \
+                || { echo "self-test: a warm stub run was red, or lacks 'target runs: commonJS built 0, reused 1' (exit $ccode):" >&2; sed 's/^/    /' "$st/cold-report.txt" >&2; missing=1; }
+        fi
+    done
     # The libraries (§ the libraries, decision 1004 (7)): a checkout of four packages — `good` answers, `hard`
     # fails its program's build, `hangs` never ends, `broken`'s manifest is refused (`not-a-package`) — each its
     # own process, so each is red alone and `good` answers; a disabled.txt line on a pair that passes, one
@@ -469,15 +495,6 @@ json_tests() {
 }
 
 strip() { sed "s/$(printf '\033')\[[0-9;]*m//g"; }
-# Decision 1008 (6): `BOTOPINK_TARGET_REPORT` makes a `--target` run print one stderr line,
-# `botopink-target: built|reused` (emitted and compiled, or its target key matched and it only
-# executed). `note_target` moves it out of a run's stderr into `$work/bt-<target>-<slug>`, which the
-# report counts as `built N, reused M` per target.
-note_target() { # <target> <slug> <stderr file>
-    local l
-    l="$(sed -n 's/^botopink-target: //p' "$3" | tail -1)"
-    [ -z "$l" ] || { printf '%s\n' "$l" >"$work/bt-$1-$2"; sed -i '/^botopink-target: /d' "$3"; }
-}
 # progress lines (`Checking 1 module(s)...`) carry no refusal
 quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
@@ -519,6 +536,29 @@ test_project() { # <dir> <path> <target> <out>
         fi
         [ -z "$problem" ] || printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "$problem" >>"$out"
     fi
+}
+
+# Decision 1043: the built/reused count is read from the file system. A stamp is touched in this run's
+# work directory before a target run; a file under the package's runtime directory (its target key
+# `<pkg>.<t>.key`) or its output directory newer than the stamp reads `built` (the run emitted), none
+# `reused` (the key matched and it only executed). A by-name library set (`<pkg>@<place>/`) is counted once
+# per set, under the first target that reaches it. A `--cold` run's first reach of a package that reads
+# `reused` is a red of the plan (decision 1043 (4)): it names the package and the target.
+reach_report() { # <target> <id> <stamp> <runtime dir> <out dir> <set stamp>
+    local t="$1" id="$2" stamp="$3" rt="$4" out="$5" sstamp="$6" prog=reused d n
+    if [ -n "$(find "$rt" -maxdepth 2 -type f -name "*.$t.key" -newer "$stamp" 2>/dev/null | head -n 1)" ] \
+        || [ -n "$(find "$out" -type f -newer "$stamp" 2>/dev/null | head -n 1)" ]; then prog=built; fi
+    printf '%s\n' "$prog" >"$work/bt-$t-$id"
+    if [ "$prog" = reused ] && [ -n "$cold_flag" ]; then
+        printf '*\t%s\tfail\t%s\n' "$id [$t]" "a --cold run reused its package on the first reach (its target key was read): decision 1043 (4)" >"$work/r-plan-cold-$t-$id"
+    fi
+    for d in "$rt"/*@*/; do
+        [ -d "$d" ] || continue
+        n="$(basename "$d")"
+        if ( set -C; : >"$work/bts-${id%%/*}-$n" ) 2>/dev/null; then
+            if [ -n "$(find "$d" -type f -newer "$sstamp" 2>/dev/null | head -n 1)" ]; then echo built; else echo reused; fi >"$work/bt-$t-set-${id%%/*}-$n"
+        fi
+    done
 }
 
 # ── § the root package ────────────────────────────────────────────────────────
@@ -662,6 +702,7 @@ build_root() {
     local dir="$work/root" code
     mkdir -p "$dir"
     export BOTOPINK_LIB_ROOTS="$lib_root"
+    touch "$work/stamp-root-build"
     (cd "$here/modules" && with_timeout 7200 "$compiler" build $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
     if [ $code -eq 0 ]; then
@@ -684,9 +725,10 @@ run_root() { # <target> <out file>
     fi
     # The set `build_root` wrote is fresh: this run emits from it, no comptime (1006 P3).
     # `--cold` reads no code cache and still reuses the fresh set (1006 (4)).
+    touch "$work/stamp-root-$t"
     (cd "$here/modules" && with_timeout 7200 "$compiler" run --target "$t" --out "$dir/out" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
     code=$?
-    note_target "$t" root "$dir/e.txt"
+    reach_report "$t" "root/modules" "$work/stamp-root-$t" "$here/modules/.botopinkbuild/runtime" "$dir/out" "$work/stamp-root-build"
     strip <"$dir/o.txt" | T="$t" OUT="$out" LOGS="$work" EXPECT="$ROOT_LISTED" CODE="$code" ERR="$dir/e.txt" node -e '
       const fs = require("fs");
       const t = process.env.T, lines = fs.readFileSync(0, "utf8").split("\n");
@@ -849,9 +891,10 @@ lib_one() { # <name> <target> <out file>
         mkdir -p "$dir/src"
         cp "$here/libraries/botopink.json" "$dir/botopink.json"
         printf '%s' "$LIB_PROGRAM_TEMPLATE" | sed "s/@PACKAGE@/$name/g" >"$dir/src/main.bp"
+        touch "$work/stamp-$slug"
         (unset BOTOPINK_LIB_ROOTS; cd "$dir" && with_timeout "$LIB_TIMEOUT" "$compiler" run --target "$t" $cold_flag >"$dir/o.txt" 2>"$dir/e.txt")
         code=$?
-        note_target "$t" "lib-$slug" "$dir/e.txt"
+        reach_report "$t" "lib-$slug" "$work/stamp-$slug" "$dir/.botopinkbuild/runtime" "$dir/out" "$work/stamp-$slug"
         strip <"$dir/o.txt" >"$dir/out.txt"
         local summary
         summary="$(grep -E '^library: ' "$dir/out.txt" | tail -1)"
@@ -986,9 +1029,8 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — let the suite run there" >"$out"
     fi
 }
-export -f note_target run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
+export -f reach_report run_one run_root lib_one test_project json_tests strip quiet project audit_one pool_job pool_admit pool_cpus with_timeout
 export here work compiler lib_root LIB_PROGRAM_TEMPLATE cold_flag
-export BOTOPINK_TARGET_REPORT=1
 export LIB_TIMEOUT="$lib_timeout"
 
 if [ $self_test -eq 1 ]; then
@@ -1191,8 +1233,8 @@ if (hasDisabled === "1") console.log(`${disabledCount} disabled (shrink-only, de
 const order = ["commonJS", "erlang", "wasm", "beam", "*"];
 const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
-// Decision 1008 (6): per target, the runs that emitted and compiled (built) and the runs whose target key
-// matched (reused) — the root package's and each library's, from the `botopink-target:` line of each run.
+// Decision 1043: per target, the package runs that emitted (built) and those that only executed (reused),
+// read from the file system by `reach_report`; a by-name library set counts once.
 const bt = new Map();
 for (const f of fs.readdirSync(work)) {
   const m = /^bt-([^-]+)-/.exec(f);

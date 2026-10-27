@@ -9,7 +9,8 @@
 #   • a changed source file makes the next run emit again, and it answers the
 #     changed program;
 #   • `build --cold --target <t>` rewrites the output folder;
-#   • `run --cold --target <t>` reuses a fresh `.bpr` and a matching target key;
+#   • `run --cold --target <t>` reuses a fresh `.bpr` but reads no target key: its first reach emits
+#     again and answers the same (decision 1043 (4));
 #   • on wasm the compilation cache of wasmtime is
 #     `.botopinkbuild/cache/wasmtime/` and nothing goes under `$HOME/.cache`
 #     (HOME is a temporary directory); `--cold` deletes it.
@@ -73,11 +74,13 @@ for target in "${targets[@]}"; do
   cmp -s "$WORK/before" "$WORK/after" || { fail "$target: the second run rewrote a file of $OUT"; diff "$WORK/before" "$WORK/after" | sed 's/^/      /' >&2 || true; }
   [[ -s "$APP/.botopinkbuild/runtime/app/app.$target.key" ]] || fail "$target: no target key under .botopinkbuild/runtime/app/"
 
-  # `run --cold` reuses a fresh `.bpr` and a matching target key.
+  # `run --cold` reuses a fresh `.bpr` and reads no target key (1043 (4)): it emits again.
+  sleep 1
   bp "$APP" run --cold --target "$target" --out "$OUT" || { fail "$target: run --cold failed"; show "$WORK/err"; continue; }
-  says "$target: run --cold (reuses)" "answer 42"
+  says "$target: run --cold (emits again)" "answer 42"
   listing "$APP/$OUT" > "$WORK/after"
-  cmp -s "$WORK/before" "$WORK/after" || fail "$target: run --cold rewrote a file of $OUT"
+  if cmp -s "$WORK/before" "$WORK/after"; then fail "$target: run --cold rewrote nothing (it read the target key)"; fi
+  [[ -s "$APP/.botopinkbuild/runtime/app/app.$target.key" ]] || fail "$target: no target key after run --cold"
 
   # `build --cold` rewrites everything.
   bp "$APP" build --cold --target "$target" --out "$OUT" || { fail "$target: build --cold failed"; show "$WORK/err"; continue; }
