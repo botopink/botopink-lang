@@ -9,7 +9,9 @@ array, a tuple or an optional array (`gc_optional_field_payload`), a behavior-ty
 return written through an alias of a `Result` (`gc_result_alias_return`) and a tuple parameter's pattern
 (`gc_param_destructure`). Declarations of one shape stay distinct types, one package's and two packages' alike
 (`wasm_same_shape_types_distinct`, decision 1027), and two packages' `Person` in modules of one path, told apart by the
-package alone (`wasm_same_shape_types_distinct_two_packages`, 1027 (2)). Each case answers on wasm as on the other
+package alone (`wasm_same_shape_types_distinct_two_packages`, 1027 (2)). A function value crosses between two modules
+of a program — made in one and called in the other, passed to `std@array`'s `map`, a type's method taken as a value, one
+capturing the other module's `val` (`wasm_closure_crosses_units`, decision 1055 (4)). Each case answers on wasm as on the other
 targets; the wasm answers are also pinned by `modules/compiler-core`'s wasm codegen tests, a wasm conformance module not
 running yet.
 
@@ -27,3 +29,4 @@ running yet.
 [cases/gc_val_assert_subject/src/main.bp](cases/gc_val_assert_subject/src/main.bp)
 [cases/gc_result_alias_return/src/main.bp](cases/gc_result_alias_return/src/main.bp)
 [cases/gc_param_destructure/src/main.bp](cases/gc_param_destructure/src/main.bp)
+[cases/wasm_closure_crosses_units/src/main.bp](cases/wasm_closure_crosses_units/src/main.bp)

@@ -980,6 +980,11 @@ fn renderItem(w: *Writer, defs: Defs, it: ast.Item) Error!void {
             for (names) |n| try w.print(" ${f}", .{id(n)});
             try w.writeAll("))\n");
         },
+        .elem_declare => |names| {
+            try w.writeAll("  (elem declare func");
+            for (names) |n| try w.print(" ${f}", .{id(n)});
+            try w.writeAll(")\n");
+        },
         .data => |d| try dataSegment(w, d),
         .global => |g| try global(w, defs, g),
         .func => |f| try func(w, defs, f),
@@ -1050,6 +1055,7 @@ fn global(w: *Writer, defs: Defs, g: ast.Global) Error!void {
 fn func(w: *Writer, defs: Defs, f: ast.Func) Error!void {
     try w.print("  (func ${f}", .{id(f.name)});
     for (f.exports) |e| try w.print(" (export \"{s}\")", .{e});
+    if (f.type) |k| try w.print(" (type ${f})", .{id(try typeName(defs, k))});
     for (f.params) |p| {
         try w.print(" (param ${f}", .{id(p.name)});
         try typeText(w, defs, p.ty, " ");
@@ -1113,7 +1119,7 @@ fn typeName(defs: Defs, k: u16) Error![]const u8 {
 fn fieldText(w: *Writer, defs: Defs, r: ast.FieldRef) Error!void {
     const fields = switch (defs[r.ty].kind) {
         .@"struct" => |f| f,
-        .array => return error.UndefinedType,
+        .array, .func => return error.UndefinedType,
     };
     if (fields[r.field].name) |n| return w.print(" ${f}", .{id(n)});
     try w.print(" {d}", .{r.field});
@@ -1163,6 +1169,16 @@ fn recGroupOf(w: *Writer, types: []const ast.TypeDef, lo: usize, hi: usize) Erro
             .array => |f| {
                 try w.writeAll("(array ");
                 try fieldType(w, types, f);
+                try w.writeAll(")");
+            },
+            .func => |ft| {
+                try w.writeAll("(func");
+                if (ft.params.len > 0) {
+                    try w.writeAll(" (param");
+                    for (ft.params) |p| try typeText(w, types, p, " ");
+                    try w.writeAll(")");
+                }
+                if (ft.result) |r| try resultText(w, types, r);
                 try w.writeAll(")");
             },
         }
@@ -1296,6 +1312,8 @@ fn instr(w: *Writer, defs: Defs, i: ast.Instr) Error!void {
             if (m.offset != 0) try w.print(" offset={d}", .{m.offset});
         },
         .call => |n| try w.print("call ${f}", .{id(n)}),
+        .call_ref => |k| try w.print("call_ref ${f}", .{id(try typeName(defs, k))}),
+        .ref_func => |n| try w.print("ref.func ${f}", .{id(n)}),
         .call_indirect => |t| {
             try w.writeAll("call_indirect");
             if (t.params.len > 0) {

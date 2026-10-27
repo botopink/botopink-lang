@@ -149,6 +149,7 @@ pub fn abstractOf(defs: []const ast.TypeDef, t: ast.ValType) ast.ValType {
     return switch (defs[k].kind) {
         .@"struct" => .structref,
         .array => .arrayref,
+        .func => .funcref,
     };
 }
 

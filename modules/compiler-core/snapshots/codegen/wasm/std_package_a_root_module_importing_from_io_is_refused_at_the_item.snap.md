@@ -334,7 +334,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -342,9 +342,22 @@ test "path.isInside treats a name starting with two dots as a name" {
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_PathAccum (struct (field $f0 (mut i32)) (field $f1 (mut (ref null $arr_any)))))
+    (type $rec_PathAccum (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)) (field $f1 (mut (ref null $arr_any))))))
     (type $brand_rec_PathAccum (struct (field i64) (field i32) (field f32) (field f32) (field f64) (field f32) (field i64) (field i64) (field i64) (field i32) (field i64) (field i32) (field i32) (field i64) (field i32) (field f64) (field i64) (field f32) (field i32) (field i64) (field f32) (field i32) (field i64) (field f32) (field f64) (field i32) (field i32) (field f32) (field f64) (field i32) (field f64) (field f32)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
@@ -1300,7 +1313,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $baseParts
     local.get $pieces
     call $applyPieces
-    struct.new $rec_PathAccum
+    call $__new_31
     return
   )
   (func $resolveAll (param $segments (ref null $arr_any)) (param $i i32) (param $state (ref null $rec_PathAccum)) (result (ref null $rec_PathAccum))
@@ -1372,7 +1385,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     i32.const 0
     array.new_fixed $arr_any 0
-    struct.new $rec_PathAccum
+    call $__new_31
     call $resolveAll
     local.set $finalState
     local.get $finalState
@@ -2484,6 +2497,13 @@ test "path.isInside treats a name starting with two dots as a name" {
     global.set $__s14
     call $__init_globals
   )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
+    global.get $__ti_31
+    local.get $f0
+    local.get $f1
+    struct.new $rec_PathAccum
+  )
   (@custom "botopink.needs" "gc\0a")
 )
 ```
@@ -2621,7 +2641,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -2629,9 +2649,22 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_Failure (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str)))))
+    (type $rec_Failure (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
     (type $brand_rec_Failure (struct (field f32) (field f64) (field i64) (field i64) (field i32) (field f32) (field f64) (field i32) (field i64) (field i64) (field f64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field f64) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field f64) (field i64)))
   )
   (rec
@@ -2641,7 +2674,6 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (tag $__bp_panic (param anyref))
-  (table funcref (elem))
   ;; std/failure — the two records a failure that is not a typed error carries
   ;; (decisions 431, 492).
   ;; 
@@ -2748,7 +2780,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    struct.new $rec_Failure
+    call $__new_31
     struct.new $result
     return
       )
@@ -2915,7 +2947,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    struct.new $rec_Failure
+    call $__new_31
     struct.new $result
     return
       )
@@ -3235,8 +3267,9 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
       (try_table (result anyref) (catch $__bp_panic $caught)
         local.get $f
         local.get $f
-        struct.get $closure $idx
-        call_indirect (param (ref null $closure)) (result anyref)
+        struct.get $closure $fn
+        ref.cast (ref null $sig_0)
+        call_ref $sig_0
       )
       local.set $v
       i32.const 0
@@ -3259,6 +3292,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 5
     array.new_data $str $__d0
     global.set $__s0
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_31
+    local.get $f0
+    local.get $f1
+    struct.new $rec_Failure
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
 )
@@ -3697,7 +3737,7 @@ fn wholeOf(v: f64) -> i32 {
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -3705,6 +3745,19 @@ fn wholeOf(v: f64) -> i32 {
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.at" (func $__std_text_at (param i32 i32) (result i32)))
@@ -8099,7 +8152,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -8107,57 +8160,70 @@ test "fs answers PermissionDenied for an OS permission error" {
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_Asset (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i64)) (field $f3 (mut (ref null $str)))))
+    (type $rec_Asset (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i64)) (field $f3 (mut (ref null $str))))))
     (type $brand_rec_Asset (struct (field f32) (field i32) (field i64) (field f32) (field f32) (field i64) (field i64) (field f64) (field f64) (field i64) (field f64) (field f32) (field f32) (field i64) (field i32) (field i64) (field i64) (field i64) (field f64) (field i64) (field i64) (field i32) (field i32) (field f32) (field i64) (field f64) (field i64) (field f64) (field f32) (field f64) (field i32) (field f64)))
   )
   (rec
-    (type $rec_Failure (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str)))))
+    (type $rec_Failure (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
     (type $brand_rec_Failure (struct (field f32) (field f64) (field i64) (field i64) (field i32) (field f32) (field f64) (field i32) (field i64) (field i64) (field f64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field f32) (field i64) (field f64) (field i32) (field i32) (field i32) (field f32) (field f32) (field f64) (field f64) (field i64)))
   )
   (rec
-    (type $rec_HostError (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i32)) (field $f3 (mut (ref null $str)))))
+    (type $rec_HostError (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))) (field $f2 (mut i32)) (field $f3 (mut (ref null $str))))))
     (type $brand_rec_HostError (struct (field i32) (field i32) (field f32) (field i64) (field i32) (field i64) (field f64) (field f64) (field f32) (field f64) (field i32) (field i64) (field f32) (field i64) (field i64) (field f32) (field i64) (field f64) (field f64) (field i64) (field f64) (field i64) (field f32) (field f32) (field f32) (field i64) (field f32) (field f32) (field f64) (field f32) (field i32) (field i32)))
   )
   (rec
-    (type $rec_File (struct (field $f0 (mut (ref null $str))) (field $f1 (mut anyref))))
+    (type $rec_File (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut anyref)))))
     (type $brand_rec_File (struct (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field i32) (field f32) (field i32) (field f64) (field f32) (field i64) (field f64) (field f64) (field i32) (field i32) (field i64) (field f32) (field i64) (field i32) (field f64) (field f32) (field i64) (field f32) (field f64) (field f32) (field i32) (field f64) (field i64) (field i32) (field f64) (field i64)))
   )
   (rec
-    (type $rec_FileStat (struct (field $f0 (mut i64)) (field $f1 (mut i64)) (field $f2 (mut i32))))
+    (type $rec_FileStat (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i64)) (field $f1 (mut i64)) (field $f2 (mut i32)))))
     (type $brand_rec_FileStat (struct (field f64) (field i32) (field f64) (field i32) (field i32) (field i32) (field i32) (field f64) (field f32) (field i64) (field i32) (field f64) (field i64) (field f32) (field i32) (field i64) (field f32) (field f64) (field i64) (field f32) (field f32) (field f32) (field i32) (field f32) (field i64) (field i32) (field f32) (field i32) (field i32) (field i32) (field f64) (field i64)))
   )
   (rec
-    (type $var_FsError_AlreadyExists (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_AlreadyExists (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_FsError_AlreadyExists (struct (field f32) (field i32) (field f64) (field f64) (field i64) (field i64) (field i64) (field i32) (field f64) (field i64) (field i32) (field f32) (field i32) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field f64) (field i32) (field i64) (field i32) (field i32) (field f64) (field f64) (field f64) (field f64) (field i32) (field f64) (field i64) (field i32)))
   )
   (rec
-    (type $var_FsError_InvalidUtf8 (struct (field $f0 (mut (ref null $str))) (field $f1 (mut i64))))
+    (type $var_FsError_InvalidUtf8 (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut i64)))))
     (type $brand_var_FsError_InvalidUtf8 (struct (field f64) (field f32) (field i32) (field i64) (field i32) (field i32) (field i64) (field i64) (field i64) (field i64) (field i32) (field i32) (field i64) (field f32) (field i64) (field f32) (field f64) (field f64) (field i32) (field f32) (field f32) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field i32) (field i64) (field f32) (field f64) (field f64)))
   )
   (rec
-    (type $var_FsError_IsDirectory (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_IsDirectory (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_FsError_IsDirectory (struct (field i64) (field f32) (field f64) (field f32) (field i64) (field f32) (field f32) (field f32) (field f32) (field f32) (field f64) (field i64) (field i32) (field f64) (field i64) (field i32) (field i64) (field f32) (field i64) (field i64) (field f32) (field f64) (field i32) (field f64) (field f32) (field f32) (field i32) (field i32) (field f32) (field i64) (field f64) (field i32)))
   )
   (rec
-    (type $var_FsError_NotDirectory (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_NotDirectory (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_FsError_NotDirectory (struct (field f64) (field f64) (field i64) (field i32) (field i32) (field f64) (field f32) (field i32) (field f64) (field i64) (field f32) (field f64) (field i64) (field f64) (field i32) (field i32) (field f32) (field f64) (field i32) (field f64) (field i32) (field i64) (field f64) (field f32) (field i32) (field i32) (field i64) (field i32) (field f64) (field i64) (field f32) (field f32)))
   )
   (rec
-    (type $var_FsError_NotFound (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_NotFound (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_FsError_NotFound (struct (field i32) (field f64) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field f64) (field i32) (field f32) (field i64) (field i32) (field i32) (field f32) (field i64) (field f64) (field i64) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field i32) (field f32) (field i64) (field f64) (field i32) (field f64) (field i32) (field f32)))
   )
   (rec
-    (type $var_FsError_Other (struct (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str)))))
+    (type $var_FsError_Other (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut (ref null $str))))))
     (type $brand_var_FsError_Other (struct (field i64) (field f64) (field f32) (field i32) (field f32) (field f32) (field i32) (field f32) (field i64) (field i64) (field i32) (field f64) (field f64) (field i32) (field f64) (field f32) (field i32) (field f64) (field i32) (field f64) (field i32) (field i64) (field f64) (field f64) (field i64) (field i32) (field i64) (field f32) (field i64) (field f64) (field f32) (field i32)))
   )
   (rec
-    (type $var_FsError_PermissionDenied (struct (field $f0 (mut (ref null $str)))))
+    (type $var_FsError_PermissionDenied (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_FsError_PermissionDenied (struct (field i32) (field i32) (field i32) (field f32) (field i32) (field i32) (field i64) (field i32) (field f32) (field f32) (field f32) (field i32) (field f64) (field f32) (field i32) (field f64) (field i32) (field i32) (field i64) (field i64) (field i64) (field i32) (field f64) (field i32) (field i64) (field i64) (field i32) (field i32) (field f32) (field f32) (field f32) (field i32)))
   )
   (rec
-    (type $rec_Walked (struct (field $f0 (mut (ref null $arr_any))) (field $f1 (mut (ref null $arr_any)))))
+    (type $rec_Walked (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))) (field $f1 (mut (ref null $arr_any))))))
     (type $brand_rec_Walked (struct (field i32) (field i32) (field f32) (field i64) (field i64) (field i32) (field i32) (field i64) (field f32) (field i32) (field i32) (field i64) (field i64) (field i32) (field i64) (field i32) (field f32) (field f64) (field i32) (field f32) (field i64) (field i64) (field i32) (field f64) (field f32) (field f64) (field i64) (field f32) (field f64) (field f64) (field i32) (field f64)))
   )
   (rec
@@ -9377,7 +9443,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    struct.new $var_FsError_NotFound
+    call $__new_49
     return
       )
       (else
@@ -9421,7 +9487,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    struct.new $var_FsError_PermissionDenied
+    call $__new_53
     return
       )
       (else
@@ -9465,7 +9531,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    struct.new $var_FsError_IsDirectory
+    call $__new_45
     return
       )
       (else
@@ -9489,7 +9555,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    struct.new $var_FsError_NotDirectory
+    call $__new_47
     return
       )
       (else
@@ -9513,7 +9579,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    struct.new $var_FsError_AlreadyExists
+    call $__new_41
     return
       )
       (else
@@ -9524,7 +9590,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $path
     local.get $e
     struct.get $rec_HostError $f0
-    struct.new $var_FsError_Other
+    call $__new_51
     return
   )
   ;; A host cell's answer, its failure read as an `FsError` of `path`.
@@ -9956,7 +10022,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 1
     local.get $path
     local.get $offset
-    struct.new $var_FsError_InvalidUtf8
+    call $__new_43
     struct.new $result
     return
       )
@@ -10429,7 +10495,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_fixed $arr_any 3
     global.get $__s0
     call $__arr_join_any
-    struct.new $var_FsError_Other
+    call $__new_51
     struct.new $result
     return
       )
@@ -11068,7 +11134,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $offset
     global.get $__s33
     call $__i64_add_chk
-    struct.new $var_FsError_InvalidUtf8
+    call $__new_43
     struct.new $result
     struct.set $gen $value ;; the yitem
     local.get $__frame
@@ -11323,7 +11389,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $self
     struct.get $rec_File $f0
     global.get $__s35
-    struct.new $var_FsError_Other
+    call $__new_51
     struct.new $result
     return
       )
@@ -11391,7 +11457,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 0
     local.get $path
     local.get $h
-    struct.new $rec_File
+    call $__new_37
     struct.new $result
     return
   )
@@ -11420,7 +11486,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 0
     local.get $path
     local.get $h
-    struct.new $rec_File
+    call $__new_37
     struct.new $result
     return
   )
@@ -11434,7 +11500,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $asset
     struct.get $rec_Asset $f1
     call $memoryHandle
-    struct.new $rec_File
+    call $__new_37
     return
   )
   ;; ── the wasm bodies (decision 992) ───────────────────────────────────────────
@@ -11715,7 +11781,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     global.get $__s104
     i32.const 0 ;; HostErrorName.Error
     ref.null $str
-    struct.new $rec_HostError
+    call $__new_35
     return
   )
   ;; The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
@@ -13898,7 +13964,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $kind
     i32.const 3
     i32.eq
-    struct.new $rec_FileStat
+    call $__new_39
     struct.new $result
     return
   )
@@ -14227,7 +14293,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $sortedStrings
     local.get $dangling
     call $sortedStrings
-    struct.new $rec_Walked
+    call $__new_55
     struct.new $result
     return
   )
@@ -16881,7 +16947,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $__i32_sub_chk
     i64.extend_i32_s
     i32.const 0
-    struct.new $rec_FileStat
+    call $__new_39
       )
       (else
     ref.null $rec_FileStat
@@ -17368,7 +17434,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     global.get $__s0
     global.get $__s0
     call $memHandle
-    struct.new $rec_File
+    call $__new_37
     return
   )
   ;; Internal, test scaffolding: take every permission from `path`; whether that
@@ -20356,6 +20422,81 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_data $str $__d266
     global.set $__s266
     call $__init_globals
+  )
+  (global $__ti_49 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_49 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotFound))
+    global.get $__ti_49
+    local.get $f0
+    struct.new $var_FsError_NotFound
+  )
+  (global $__ti_53 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_53 (param $f0 (ref null $str)) (result (ref null $var_FsError_PermissionDenied))
+    global.get $__ti_53
+    local.get $f0
+    struct.new $var_FsError_PermissionDenied
+  )
+  (global $__ti_45 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_45 (param $f0 (ref null $str)) (result (ref null $var_FsError_IsDirectory))
+    global.get $__ti_45
+    local.get $f0
+    struct.new $var_FsError_IsDirectory
+  )
+  (global $__ti_47 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_47 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotDirectory))
+    global.get $__ti_47
+    local.get $f0
+    struct.new $var_FsError_NotDirectory
+  )
+  (global $__ti_41 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_41 (param $f0 (ref null $str)) (result (ref null $var_FsError_AlreadyExists))
+    global.get $__ti_41
+    local.get $f0
+    struct.new $var_FsError_AlreadyExists
+  )
+  (global $__ti_51 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_51 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $var_FsError_Other))
+    global.get $__ti_51
+    local.get $f0
+    local.get $f1
+    struct.new $var_FsError_Other
+  )
+  (global $__ti_43 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_43 (param $f0 (ref null $str)) (param $f1 i64) (result (ref null $var_FsError_InvalidUtf8))
+    global.get $__ti_43
+    local.get $f0
+    local.get $f1
+    struct.new $var_FsError_InvalidUtf8
+  )
+  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_37 (param $f0 (ref null $str)) (param $f1 anyref) (result (ref null $rec_File))
+    global.get $__ti_37
+    local.get $f0
+    local.get $f1
+    struct.new $rec_File
+  )
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_35 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (param $f2 i32) (param $f3 (ref null $str)) (result (ref null $rec_HostError))
+    global.get $__ti_35
+    local.get $f0
+    local.get $f1
+    local.get $f2
+    local.get $f3
+    struct.new $rec_HostError
+  )
+  (global $__ti_39 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_39 (param $f0 i64) (param $f1 i64) (param $f2 i32) (result (ref null $rec_FileStat))
+    global.get $__ti_39
+    local.get $f0
+    local.get $f1
+    local.get $f2
+    struct.new $rec_FileStat
+  )
+  (global $__ti_55 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_55 (param $f0 (ref null $arr_any)) (param $f1 (ref null $arr_any)) (result (ref null $rec_Walked))
+    global.get $__ti_55
+    local.get $f0
+    local.get $f1
+    struct.new $rec_Walked
   )
   (@custom "botopink.needs" "gc\0afilesystem\0a")
 )

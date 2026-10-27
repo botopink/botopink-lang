@@ -86,7 +86,7 @@ import {io.terminal.print} from "std";
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -94,13 +94,26 @@ import {io.terminal.print} from "std";
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $var_Val_Num (struct (field $f0 (mut i32))))
+    (type $var_Val_Num (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut i32)))))
     (type $brand_var_Val_Num (struct (field f64) (field i64) (field i64) (field i64) (field i64) (field i32) (field f32) (field i64) (field i32) (field i32) (field i32) (field f64) (field f32) (field i32) (field f64) (field i64) (field i64) (field i64) (field i64) (field f64) (field f64) (field f64) (field i64) (field i32) (field f64) (field f64) (field f64) (field f64) (field f64) (field i32) (field i64) (field f32)))
   )
   (rec
-    (type $var_Val_Text (struct (field $f0 (mut (ref null $str)))))
+    (type $var_Val_Text (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))))))
     (type $brand_var_Val_Text (struct (field f32) (field i32) (field i32) (field i32) (field f32) (field i64) (field f32) (field i32) (field i64) (field f64) (field i64) (field f32) (field i64) (field i32) (field i32) (field i64) (field i32) (field f32) (field f64) (field i64) (field i64) (field i64) (field f32) (field i64) (field i32) (field i32) (field f32) (field i32) (field i32) (field i32) (field f32) (field i64)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
@@ -148,7 +161,7 @@ import {io.terminal.print} from "std";
     (if (result anyref)
       (then
     global.get $__s1
-    struct.new $var_Val_Text
+    call $__new_33
     return
       )
       (else
@@ -162,7 +175,7 @@ import {io.terminal.print} from "std";
     (if (result anyref)
       (then
     i32.const 40
-    struct.new $var_Val_Num
+    call $__new_31
     return
       )
       (else
@@ -508,7 +521,7 @@ import {io.terminal.print} from "std";
     )
     call $__print_str
     i32.const 2
-    struct.new $var_Val_Num
+    call $__new_31
     call $Val_str
     call $__std_text_length
     call $__print_i32
@@ -1282,6 +1295,18 @@ import {io.terminal.print} from "std";
     i32.const 4
     array.new_data $str $__d13
     global.set $__s13
+  )
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_33 (param $f0 (ref null $str)) (result (ref null $var_Val_Text))
+    global.get $__ti_33
+    local.get $f0
+    struct.new $var_Val_Text
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 i32) (result (ref null $var_Val_Num))
+    global.get $__ti_31
+    local.get $f0
+    struct.new $var_Val_Num
   )
   (@custom "botopink.needs" "gc\0a")
 )

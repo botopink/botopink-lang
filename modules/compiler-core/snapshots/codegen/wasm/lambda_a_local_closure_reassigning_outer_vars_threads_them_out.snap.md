@@ -32,7 +32,7 @@ import {io.terminal.print} from "std";
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -40,16 +40,29 @@ import {io.terminal.print} from "std";
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $str))) (field $c1 (mut i32)))))
+    (type $env0 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $str))) (field $c1 (mut i32)))))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@number" "wat:number.i32ToString" (func $__abi___std_number_i32ToString (param i32) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem $__lambda0))
+  (elem declare func $__lambda0)
   (func $render (param $words (ref null $arr_any)) (result (ref null $str))
     (local $out (ref null $str))
     (local $count i32)
@@ -65,7 +78,8 @@ import {io.terminal.print} from "std";
     local.set $out
     i32.const 0
     local.set $count
-    i32.const 0
+    ref.func $__lambda0
+    i32.const 1 ;; arity
     i32.const 0
     local.get $out ;; capture out
     local.get $count ;; capture count
@@ -84,8 +98,9 @@ import {io.terminal.print} from "std";
     local.get $__fnv0
     global.get $__s1
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     local.get $__fnv0
     ref.cast (ref null $env0)
     struct.get $env0 $c0 ;; sync out from env
@@ -128,8 +143,9 @@ import {io.terminal.print} from "std";
     local.get $__fnv2
     local.get $w__sh0
     local.get $__fnv2
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     local.get $__fnv2
     ref.cast (ref null $env0)
     struct.get $env0 $c0 ;; sync out from env
@@ -196,7 +212,7 @@ import {io.terminal.print} from "std";
     struct.set $env0 $c1 ;; write count back to env
     i32.const 0
   )
-  (func $__lambda0 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda0 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env0)
     local.get $__a0

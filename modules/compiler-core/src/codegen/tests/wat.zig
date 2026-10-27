@@ -3373,6 +3373,16 @@ fn recGroupsOf(allocator: Allocator, wasm: []const u8) ![]const []const u8 {
                 if (k == 0x5F) {
                     var fields = r.leb();
                     while (fields > 0) : (fields -= 1) r.field();
+                } else if (k == 0x60) {
+                    // A function type of the prelude (decision 1055 (1)):
+                    // its parameters, then its results.
+                    for (0..2) |_| {
+                        var vals = r.leb();
+                        while (vals > 0) : (vals -= 1) {
+                            const t = r.byte();
+                            if (t == 0x63 or t == 0x64) _ = r.leb();
+                        }
+                    }
                 } else r.field();
             }
             try groups.append(allocator, wasm[start..r.at]);
@@ -5832,4 +5842,81 @@ test "wat: units ---- runner.runEntry composes a two-module program from its uni
     defer missing.deinit(a);
     try std.testing.expectEqual(@as(i32, 1), missing.status);
     try std.testing.expect(std.mem.startsWith(u8, missing.trap orelse "", "no unit std@__rt.wasm beside the entry"));
+}
+
+/// The sources of a conformance case's modules, read from its `src/`
+/// (tests run with `modules/compiler-core` as their directory).
+fn caseSources(ar: std.mem.Allocator, case: []const u8, names: []const []const u8) ![]codegen.Module {
+    const io = std.testing.io;
+    const out = try ar.alloc(codegen.Module, names.len);
+    for (names, out) |n, *o| {
+        const path = try std.fmt.allocPrint(ar, "../../conformance/modules/{s}/src/{s}.bp", .{ case, n });
+        o.* = .{ .path = n, .source = try std.Io.Dir.cwd().readFileAlloc(io, path, ar, .limited(1 << 20)) };
+    }
+    return out;
+}
+
+/// Each program unit's bytes (by its stem) and the entry `entry_name`'s.
+fn programUnits(ar: std.mem.Allocator, outputs: anytype, entry_name: []const u8) !struct { program: []const @import("../wat/wat_emitter.zig").UnitBytes, entry: []const u8 } {
+    const ru = @import("../wat/runtime_unit.zig");
+    var program: std.ArrayListUnmanaged(@import("../wat/wat_emitter.zig").UnitBytes) = .empty;
+    var entry: ?[]const u8 = null;
+    for (outputs.items) |o| {
+        const bin = o.result.wasm orelse continue;
+        const stems = try ru.unitsOf(ar, bin);
+        if (stems.len == 0) continue;
+        try program.append(ar, .{ .name = stems[stems.len - 1], .bytes = bin });
+        if (std.mem.eql(u8, o.name, entry_name)) entry = bin;
+    }
+    return .{ .program = program.items, .entry = entry orelse return error.ModuleDidNotCompile };
+}
+
+// Decision 1055 (4) — cell `wasm_closure_crosses_units`, run through the
+// units' frame (`Config.wasm_units`): `maker` exports `adder` (answering a
+// closure) and `apply` (taking one), which `main` imports instead of linking;
+// a closure made in `maker` is called in `main`, one made in `main` in `maker`,
+// one goes to `std@array`'s `map`, a type's method is taken as a value and one
+// captures `maker`'s module `val` — the cell's own answers.
+test "wat: units ---- decision 1055 (4): a closure crosses units (cell wasm_closure_crosses_units)" {
+    const a = std.testing.allocator;
+    const ru = @import("../wat/runtime_unit.zig");
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    const srcs = try caseSources(ar, "decisions-taken/wasm_unit_per_module_linked-1021/cases/wasm_closure_crosses_units", &.{ "maker", "main" });
+    var outputs = try h.generate(a, srcs, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const pu = try programUnits(ar, &outputs, "main");
+    const main_text = (try ru.faceOfBytes(ar, pu.entry)).text;
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"adder\" ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main_text, "(import \"test@maker\" \"apply\" ") != null);
+    const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
+    const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
+    try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_closure_crosses_units"), out);
+}
+
+/// A case's section of a self-checking module's `main.snap` as the program's
+/// stdout: each `out <line>` of `== <case>`.
+fn snapSection(ar: std.mem.Allocator, text: []const u8, case: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var in = false;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |l| {
+        if (std.mem.startsWith(u8, l, "== ")) {
+            in = std.mem.eql(u8, l[3..], case);
+            continue;
+        }
+        if (!in) continue;
+        if (std.mem.startsWith(u8, l, "out ")) {
+            try out.appendSlice(ar, l[4..]);
+            try out.append(ar, '\n');
+        } else if (std.mem.eql(u8, l, "out")) try out.append(ar, '\n');
+    }
+    return out.items;
 }

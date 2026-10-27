@@ -169,6 +169,10 @@ pub const TypeDef = struct {
     pub const Kind = union(enum) {
         @"struct": []const Field,
         array: Field,
+        /// `(func (param …) (result …))` — a function type of the group
+        /// (decision 1055 (1): the prelude's `$sig_n`, `$__print_sig`,
+        /// `$__eq_sig`), which `call_ref` and a `Func.type` name.
+        func: FuncType,
     };
 };
 
@@ -261,6 +265,13 @@ pub const Instr = union(enum) {
     /// `call_indirect (param …) (result …)` — a call through the module's
     /// function table. The table index is the last operand.
     call_indirect: FuncType,
+    /// `call_ref $t` — a call through a typed function reference (decision
+    /// 1055 (4)): the arguments, then the reference, of the group's function
+    /// type `t`.
+    call_ref: u16,
+    /// `ref.func $f` — a reference to the module's function `f`, which an
+    /// `Item.elem_declare` declares.
+    ref_func: []const u8,
     br: []const u8,
     br_if: []const u8,
     drop,
@@ -425,6 +436,11 @@ pub const Local = struct {
 pub const Func = struct {
     /// The WAT symbol, without the leading `$`.
     name: []const u8,
+    /// `(type $t)` — the function type of the group it is declared with
+    /// (decision 1055 (4): a lambda's entry is the prelude's `$sig_n`, so a
+    /// `ref.cast` to it holds in every unit); null, the structural type of
+    /// its parameters and result.
+    type: ?u16 = null,
     /// `(export "…")` clauses, in order. `_start` carries two.
     exports: []const []const u8 = &.{},
     params: []const Param = &.{},
@@ -518,6 +534,9 @@ pub const Item = union(enum) {
     /// `(table funcref (elem $f0 $f1 …))` — the functions a `call_indirect`
     /// can reach, by table index.
     table: []const []const u8,
+    /// `(elem declare func $f …)` — the functions a `ref.func` names
+    /// (decision 1055 (4)).
+    elem_declare: []const []const u8,
     data: DataSegment,
     global: Global,
     func: Func,
@@ -654,6 +673,10 @@ pub fn validateModule(m: Module) Invalid!void {
         switch (d.kind) {
             .@"struct" => |fields| for (fields) |f| try checkStorage(defs[0..end], f.ty),
             .array => |f| try checkStorage(defs[0..end], f.ty),
+            .func => |ft| {
+                for (ft.params) |p| try checkStorage(defs[0..end], p);
+                if (ft.result) |r| try checkStorage(defs[0..end], r);
+            },
         }
         // A supertype is an earlier type, and not final.
         if (d.super) |k| if (k >= i or defs[k].final) return error.UndefinedType;
@@ -667,7 +690,7 @@ pub fn validateModule(m: Module) Invalid!void {
             for (f.locals) |group| for (group) |l| try checkValue(defs, l.ty);
             try checkGc(m, defs, f.body);
         },
-        .table => |names| for (names) |n| {
+        .table, .elem_declare => |names| for (names) |n| {
             if (!declaresCall(m, n)) return error.UndefinedCall;
         },
         .global => |g| try checkValue(defs, g.ty),
@@ -710,7 +733,7 @@ fn structFields(defs: []const TypeDef, k: u16) Invalid![]const Field {
     if (k >= defs.len) return error.UndefinedType;
     return switch (defs[k].kind) {
         .@"struct" => |f| f,
-        .array => error.UndefinedType,
+        .array, .func => error.UndefinedType,
     };
 }
 
@@ -718,7 +741,7 @@ fn arrayElem(defs: []const TypeDef, k: u16) Invalid!Field {
     if (k >= defs.len) return error.UndefinedType;
     return switch (defs[k].kind) {
         .array => |f| f,
-        .@"struct" => error.UndefinedType,
+        .@"struct", .func => error.UndefinedType,
     };
 }
 
@@ -764,6 +787,9 @@ fn checkGc(m: Module, defs: []const TypeDef, s: Seq) Invalid!void {
             for (t.params) |p| try checkValue(defs, p);
             if (t.result) |r| try checkValue(defs, r);
         },
+        .call_ref => |k| {
+            if (k >= defs.len or defs[k].kind != .func) return error.UndefinedType;
+        },
         else => {},
     };
 }
@@ -779,7 +805,7 @@ pub fn declaresTag(m: Module, name: []const u8) bool {
 
 fn checkCalls(m: Module, s: Seq) Invalid!void {
     for (s.lines) |l| switch (l.instr) {
-        .call => |name| if (!declaresCall(m, name)) return error.UndefinedCall,
+        .call, .ref_func => |name| if (!declaresCall(m, name)) return error.UndefinedCall,
         .throw => |name| if (!declaresTag(m, name)) return error.UndefinedTag,
         .@"if" => |n| {
             try checkCalls(m, n.then.seq);

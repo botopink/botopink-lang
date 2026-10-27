@@ -51,7 +51,7 @@ import {io.terminal.print} from "std";
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -59,17 +59,30 @@ import {io.terminal.print} from "std";
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_Item (struct (field $f0 (mut anyref)) (field $f1 (mut i32)) (field $f2 (mut (ref null $str)))))
+    (type $rec_Item (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)) (field $f1 (mut i32)) (field $f2 (mut (ref null $str))))))
     (type $brand_rec_Item (struct (field f64) (field f32) (field i64) (field i64) (field f64) (field i64) (field i32) (field i64) (field f32) (field i64) (field i32) (field f32) (field f64) (field f32) (field f32) (field f32) (field f32) (field i32) (field f64) (field f64) (field f64) (field f64) (field f64) (field i32) (field f32) (field f64) (field i64) (field f64) (field f32) (field f64) (field i32) (field f32)))
   )
   (rec
-    (type $var_Shape_Circle (struct (field $f0 (mut f64))))
+    (type $var_Shape_Circle (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut f64)))))
     (type $brand_var_Shape_Circle (struct (field i64) (field i32) (field i64) (field i32) (field f32) (field i64) (field i64) (field f64) (field i64) (field i64) (field i32) (field f64) (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field i32) (field i64) (field f64) (field f32) (field f64) (field f32) (field i64) (field i32) (field i32) (field f32) (field f64) (field i32) (field i64) (field i32)))
   )
   (rec
-    (type $var_Shape_Square (struct (field $f0 (mut f64))))
+    (type $var_Shape_Square (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut f64)))))
     (type $brand_var_Shape_Square (struct (field i32) (field i64) (field i32) (field i64) (field i64) (field i64) (field i64) (field f32) (field f64) (field i64) (field f64) (field i64) (field f64) (field f32) (field f64) (field i64) (field i32) (field i32) (field i64) (field i64) (field i64) (field f64) (field i64) (field i64) (field f32) (field f64) (field i32) (field f32) (field f32) (field f64) (field f64) (field f32)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
@@ -172,18 +185,18 @@ import {io.terminal.print} from "std";
     (local $__mem3 i32)
     (local $it (ref null $rec_Item))
     f64.const 2.0
-    struct.new $var_Shape_Square
+    call $__new_35
     call $area
     call $__print_f64
     f64.const 1.0
-    struct.new $var_Shape_Circle
+    call $__new_33
     call $area
     call $__print_f64
     f64.const 3.0
-    struct.new $var_Shape_Square
+    call $__new_35
     i32.const 1 ;; Color.Green
     global.get $__s0
-    struct.new $rec_Item
+    call $__new_31
     local.set $it
     local.get $it
     call $__pr0
@@ -821,6 +834,26 @@ import {io.terminal.print} from "std";
     i32.const 6
     array.new_data $str $__d13
     global.set $__s13
+  )
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_35 (param $f0 f64) (result (ref null $var_Shape_Square))
+    global.get $__ti_35
+    local.get $f0
+    struct.new $var_Shape_Square
+  )
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_33 (param $f0 f64) (result (ref null $var_Shape_Circle))
+    global.get $__ti_33
+    local.get $f0
+    struct.new $var_Shape_Circle
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 anyref) (param $f1 i32) (param $f2 (ref null $str)) (result (ref null $rec_Item))
+    global.get $__ti_31
+    local.get $f0
+    local.get $f1
+    local.get $f2
+    struct.new $rec_Item
   )
   (@custom "botopink.needs" "gc\0a")
 )

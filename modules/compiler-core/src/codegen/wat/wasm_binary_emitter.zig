@@ -49,7 +49,9 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
     // write the sections.
     for (m.items) |it| switch (it) {
         .import => |im| _ = try e.typeIndex(im.type),
-        .func => |f| _ = try e.typeIndex(try funcType(ar, f)),
+        .func => |f| if (f.type == null) {
+            _ = try e.typeIndex(try funcType(ar, f));
+        },
         .tag => |t| _ = try e.typeIndex(.{ .params = t.params }),
         else => {},
     };
@@ -97,6 +99,15 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
                 .array => |f| {
                     try sec.append(ar, 0x5E);
                     try fieldType(ar, &sec, f);
+                },
+                .func => |ft| {
+                    try sec.append(ar, 0x60);
+                    try uleb(ar, &sec, ft.params.len);
+                    for (ft.params) |p| try valTypeInto(ar, &sec, p);
+                    if (ft.result) |r| {
+                        try sec.append(ar, 1);
+                        try valTypeInto(ar, &sec, r);
+                    } else try sec.append(ar, 0);
                 },
             }
         }
@@ -167,7 +178,7 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         sec = .empty;
         try uleb(ar, &sec, n_funcs);
         for (m.items) |it| switch (it) {
-            .func => |f| try uleb(ar, &sec, try e.typeIndex(try funcType(ar, f))),
+            .func => |f| try uleb(ar, &sec, if (f.type) |k| k else try e.typeIndex(try funcType(ar, f))),
             else => {},
         };
         try section(alloc, &out, 3, sec.items);
@@ -279,14 +290,30 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
         try section(alloc, &out, 8, sec.items);
     }
 
-    // element
-    if (e.table) |names| {
+    // element: the table's active segment, then each declarative one
+    // (`(elem declare func …)`, decision 1055 (4)).
+    var n_elems: usize = @intFromBool(e.table != null);
+    for (m.items) |it| if (it == .elem_declare) {
+        n_elems += 1;
+    };
+    if (n_elems > 0) {
         sec = .empty;
-        try uleb(ar, &sec, 1);
-        try sec.append(ar, 0x00);
-        try sec.appendSlice(ar, &.{ 0x41, 0x00, 0x0B });
-        try uleb(ar, &sec, names.len);
-        for (names) |n| try uleb(ar, &sec, try e.funcIndex(n));
+        try uleb(ar, &sec, n_elems);
+        if (e.table) |names| {
+            try sec.append(ar, 0x00);
+            try sec.appendSlice(ar, &.{ 0x41, 0x00, 0x0B });
+            try uleb(ar, &sec, names.len);
+            for (names) |n| try uleb(ar, &sec, try e.funcIndex(n));
+        }
+        for (m.items) |it| switch (it) {
+            .elem_declare => |names| {
+                try sec.append(ar, 0x03);
+                try sec.append(ar, 0x00);
+                try uleb(ar, &sec, names.len);
+                for (names) |n| try uleb(ar, &sec, try e.funcIndex(n));
+            },
+            else => {},
+        };
         try section(alloc, &out, 9, sec.items);
     }
 
@@ -410,7 +437,7 @@ pub const Encoder = struct {
                 if (d.passive != null) e.n_passive += 1;
             },
             .tag => |t| if (t.import == null) try e.tags.append(e.ar, t.name),
-            .import, .comment, .custom, .types => {},
+            .import, .comment, .custom, .types, .elem_declare => {},
         };
     }
 
@@ -608,6 +635,14 @@ const Body = struct {
             },
             .call => |n| {
                 try o.append(ar, 0x10);
+                try uleb(ar, o, try c.e.funcIndex(n));
+            },
+            .call_ref => |k| {
+                try o.append(ar, 0x14);
+                try uleb(ar, o, k);
+            },
+            .ref_func => |n| {
+                try o.append(ar, 0xD2);
                 try uleb(ar, o, try c.e.funcIndex(n));
             },
             .call_indirect => |t| {

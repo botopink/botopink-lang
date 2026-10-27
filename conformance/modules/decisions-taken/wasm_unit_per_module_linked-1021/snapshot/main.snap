@@ -130,3 +130,10 @@ out true
 out x
 out 42
 out ana=2.5
+== wasm_closure_crosses_units
+out 42
+out 15
+out [3, 4, 5]
+out 40
+out 50
+out 101

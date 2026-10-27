@@ -593,7 +593,7 @@ test "order case over Order" {
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -601,24 +601,36 @@ test "order case over Order" {
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_Dict (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $rec_Dict (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Dict (struct (field i64) (field i32) (field f32) (field f32) (field f64) (field i32) (field f64) (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field i64) (field f64) (field f32) (field f64) (field i32) (field f64) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field i64) (field i64) (field i32) (field f32) (field i32)))
   )
   (rec
-    (type $rec_Queue (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $rec_Queue (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Queue (struct (field i64) (field f32) (field i64) (field i64) (field f32) (field f64) (field f64) (field f64) (field f32) (field i64) (field f64) (field i64) (field i32) (field f64) (field i64) (field f64) (field f64) (field i32) (field i64) (field f32) (field f64) (field i64) (field i64) (field i64) (field f64) (field f32) (field i32) (field f32) (field f32) (field f32) (field i32) (field f64)))
   )
   (rec
-    (type $rec_Set (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $rec_Set (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Set (struct (field i32) (field f64) (field i32) (field i32) (field i32) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field f64) (field i32) (field i32) (field i32) (field i32) (field f64) (field i64) (field i32) (field f32) (field f64) (field f32) (field i64) (field f64) (field i32) (field i64) (field f64) (field i64) (field f64) (field i64) (field f64) (field f64)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -1011,7 +1023,7 @@ test "order case over Order" {
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_bump (param $self (ref null $rec_Dict)) (param $key anyref) (param $by anyref) (result (ref null $rec_Dict))
@@ -1109,7 +1121,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_merge (param $self (ref null $rec_Dict)) (param $other (ref null $rec_Dict)) (result (ref null $rec_Dict))
@@ -1203,8 +1215,9 @@ test "order case over Order" {
     i32.const 1
     array.get $arr_any
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_3)
+    call_ref $sig_3
     local.set $acc
         local.get $__idx0
         i32.const 1
@@ -1260,8 +1273,9 @@ test "order case over Order" {
     i32.const 1
     array.get $arr_any
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     array.new_fixed $tuple 2
     call $__arr_push_any
     local.set $out
@@ -1273,7 +1287,7 @@ test "order case over Order" {
       )
     )
     local.get $out
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_empty (result (ref null $rec_Dict))
@@ -1281,7 +1295,7 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_ofEntries (param $entries (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -1295,7 +1309,7 @@ test "order case over Order" {
     (local $e (ref null $arr_any))
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Dict
+    call $__new_31
     local.set $out
     local.get $entries
     local.set $__iter0
@@ -1512,7 +1526,7 @@ test "order case over Order" {
     local.get $x
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    struct.new $rec_Set
+    call $__new_35
       )
     )
     return
@@ -1577,7 +1591,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    struct.new $rec_Set
+    call $__new_35
     return
   )
   (func $Set_union (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1589,7 +1603,7 @@ test "order case over Order" {
     call $Set_difference
     struct.get $rec_Set $f0
     call $__arr_concat_any
-    struct.new $rec_Set
+    call $__new_35
     return
   )
   (func $Set_intersection (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1651,7 +1665,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    struct.new $rec_Set
+    call $__new_35
     return
   )
   (func $Set_difference (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1714,7 +1728,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    struct.new $rec_Set
+    call $__new_35
     return
   )
   (func $Set_empty (result (ref null $rec_Set))
@@ -1722,7 +1736,7 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Set
+    call $__new_35
     return
   )
   (func $Set_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Set))
@@ -1736,7 +1750,7 @@ test "order case over Order" {
     (local $x anyref)
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Set
+    call $__new_35
     local.set $out
     local.get $xs
     local.set $__iter0
@@ -1804,7 +1818,7 @@ test "order case over Order" {
     local.get $item
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    struct.new $rec_Queue
+    call $__new_33
     return
   )
   (func $Queue_dequeue (param $self (ref null $rec_Queue)) (result (ref null $arr_any))
@@ -1826,7 +1840,7 @@ test "order case over Order" {
     call $__arr_slice_any
     local.set $rest
     local.get $rest
-    struct.new $rec_Queue
+    call $__new_33
     local.get $head
     array.new_fixed $tuple 2
     return
@@ -1848,13 +1862,13 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Queue
+    call $__new_33
     return
   )
   (func $Queue_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Queue))
     (local $__mem0 i32)
     local.get $xs
-    struct.new $rec_Queue
+    call $__new_33
     return
   )
   ;; ── empty-collection boundary (B1) ──
@@ -2366,7 +2380,7 @@ test "order case over Order" {
     )
     i32.const 1
   )
-  (func $__unk_eq_s8 (param $a (ref null $rec_Set)) (param $b (ref null $rec_Set)) (result i32)
+  (func $__unk_eq_s10 (param $a (ref null $rec_Set)) (param $b (ref null $rec_Set)) (result i32)
     local.get $a
     struct.get $rec_Set $f0
     local.get $b
@@ -2381,7 +2395,7 @@ test "order case over Order" {
     )
     i32.const 1
   )
-  (func $__unk_eq_s9 (param $a (ref null $rec_Queue)) (param $b (ref null $rec_Queue)) (result i32)
+  (func $__unk_eq_s11 (param $a (ref null $rec_Queue)) (param $b (ref null $rec_Queue)) (result i32)
     local.get $a
     struct.get $rec_Queue $f0
     local.get $b
@@ -2506,7 +2520,7 @@ test "order case over Order" {
     ref.cast (ref null $rec_Set)
     local.get $b
     ref.cast (ref null $rec_Set)
-    call $__unk_eq_s8
+    call $__unk_eq_s10
     return
       )
     )
@@ -2527,7 +2541,7 @@ test "order case over Order" {
     ref.cast (ref null $rec_Queue)
     local.get $b
     ref.cast (ref null $rec_Queue)
-    call $__unk_eq_s9
+    call $__unk_eq_s11
     return
       )
     )
@@ -3189,6 +3203,24 @@ test "order case over Order" {
     array.new_data $str $__d7
     global.set $__s7
   )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
+    global.get $__ti_31
+    local.get $f0
+    struct.new $rec_Dict
+  )
+  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_35 (param $f0 (ref null $arr_any)) (result (ref null $rec_Set))
+    global.get $__ti_35
+    local.get $f0
+    struct.new $rec_Set
+  )
+  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_33 (param $f0 (ref null $arr_any)) (result (ref null $rec_Queue))
+    global.get $__ti_33
+    local.get $f0
+    struct.new $rec_Queue
+  )
   (@custom "botopink.needs" "gc\0a")
 )
 ```
@@ -3224,7 +3256,7 @@ import {io.terminal.print} from "std";
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -3232,16 +3264,28 @@ import {io.terminal.print} from "std";
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $rec_Dict (struct (field $f0 (mut (ref null $arr_any)))))
+    (type $rec_Dict (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $arr_any))))))
     (type $brand_rec_Dict (struct (field i64) (field i32) (field f32) (field f32) (field f64) (field i32) (field f64) (field i64) (field f32) (field f32) (field f64) (field i64) (field f32) (field f32) (field i32) (field i64) (field f64) (field f32) (field f64) (field i32) (field f64) (field i64) (field f64) (field i64) (field f64) (field i32) (field f32) (field i64) (field i64) (field i32) (field f32) (field i32)))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem))
   (func $Dict_display (param $self (ref null $rec_Dict)) (result (ref null $str))
     (local $__mem0 i32)
     (local $parts (ref null $arr_any))
@@ -3609,7 +3653,7 @@ import {io.terminal.print} from "std";
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_bump (param $self (ref null $rec_Dict)) (param $key anyref) (param $by anyref) (result (ref null $rec_Dict))
@@ -3707,7 +3751,7 @@ import {io.terminal.print} from "std";
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_merge (param $self (ref null $rec_Dict)) (param $other (ref null $rec_Dict)) (result (ref null $rec_Dict))
@@ -3801,8 +3845,9 @@ import {io.terminal.print} from "std";
     i32.const 1
     array.get $arr_any
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_3)
+    call_ref $sig_3
     local.set $acc
         local.get $__idx0
         i32.const 1
@@ -3858,8 +3903,9 @@ import {io.terminal.print} from "std";
     i32.const 1
     array.get $arr_any
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     array.new_fixed $tuple 2
     call $__arr_push_any
     local.set $out
@@ -3871,7 +3917,7 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $out
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_empty (result (ref null $rec_Dict))
@@ -3879,7 +3925,7 @@ import {io.terminal.print} from "std";
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_ofEntries (param $entries (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -3893,7 +3939,7 @@ import {io.terminal.print} from "std";
     (local $e (ref null $arr_any))
     i32.const 0
     array.new_default $arr_any
-    struct.new $rec_Dict
+    call $__new_31
     local.set $out
     local.get $entries
     local.set $__iter0
@@ -4135,7 +4181,7 @@ import {io.terminal.print} from "std";
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    struct.new $rec_Dict
+    call $__new_31
     return
   )
   (func $Dict_size__K_string__V_i32 (param $self (ref null $rec_Dict)) (result i32)
@@ -5331,6 +5377,12 @@ import {io.terminal.print} from "std";
     i32.const 1
     array.new_data $str $__d8
     global.set $__s8
+  )
+  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (func $__new_31 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
+    global.get $__ti_31
+    local.get $f0
+    struct.new $rec_Dict
   )
   (@custom "botopink.needs" "gc\0a")
 )

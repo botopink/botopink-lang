@@ -2496,7 +2496,7 @@ const gc_main_fail = typedFunc("__main_fail", &.{pref("msg")}, null, i32s(&.{ "n
 // the other holds it back as a waiter until it settles.
 
 /// The types the GC forms name by slot.
-pub const GcSlot = enum(u16) { task, waiter, hostn, closure, arr_any, box_i32, result, exn, cell };
+pub const GcSlot = enum(u16) { task, waiter, hostn, closure, arr_any, box_i32, result, exn, cell, sig0 };
 /// The first slot index: far above any index a module's group reaches.
 pub const gc_slot_base: u16 = 0xF000;
 
@@ -2787,8 +2787,8 @@ const gc_task_race = typedFunc("__task_race", &.{pslot("xs", .arr_any)}, gref(.t
 /// Thunk `f` called: the task it answers (decision 392: started, run to its
 /// first `await`). A function value is a `$closure`, called through the table
 /// with no argument (`gcClosureSig(0)`).
-fn callThunk(comptime f: []const u8) [5]Instr {
-    return .{ get(f), get(f), sget(.closure, 0), .{ .call_indirect = .{ .params = &.{gref(.closure)}, .result = .anyref } }, rcast(.task) };
+fn callThunk(comptime f: []const u8) [6]Instr {
+    return .{ get(f), get(f), sget(.closure, 0), rcast(.sig0), .{ .call_ref = gs(.sig0) }, rcast(.task) };
 }
 
 /// `wasi:race_of` — every thunk of `fs` called in order, then raced.
@@ -2916,7 +2916,7 @@ const gc_panic_raise = typedFunc("__panic_raise", &.{ pref("msg"), p32("print") 
 const gc_wasi_attempt = typedFunc("__wasi_attempt", &.{pslot("f", .closure)}, gref(.result), &.{ .{ .name = "v", .ty = .anyref }, sref("m") }, &.{
     .{ .block = .{ .kind = .block, .label = "caught", .result = .anyref, .body = seqOf(&.{
         .{ .block = .{ .kind = .try_table, .result = .anyref, .catches = &.{.{ .tag = "__bp_panic", .label = "caught" }}, .body = seqOf(&.{
-            get("f"), get("f"), sget(.closure, 0), .{ .call_indirect = .{ .params = &.{gref(.closure)}, .result = .anyref } },
+            get("f"), get("f"), sget(.closure, 0), rcast(.sig0), .{ .call_ref = gs(.sig0) },
         }, .{ .value = .anyref }) } },
         .{ .local_set = "v" },
         c32(0),
@@ -3037,7 +3037,36 @@ const gc_print_items_capture = blk: {
 /// vocabulary, emitted whole in every module that declares a GC type, at
 /// these indices, so every unit agrees on each of them (a std unit holding
 /// `.wat` leaves declares it alone, decision 1026).
-pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell };
+///
+/// Decision 1055 (1): `$__decl`, the open struct every record and variant
+/// subtypes, its first field the type's `$__tinfo` (its name
+/// `<pkg>@<path>.<Type>`, its `print` / `eq` / `display` funcrefs, its
+/// `kind`); `$__print_sig` and `$__eq_sig`, what the core casts those
+/// funcrefs to; and `$sig_0 … $sig_<gc_closure_max_arity>`, the function type
+/// of a lambda's entry of each arity (`$closure` and `anyref`s to an
+/// `anyref`), declared here so a `ref.cast` to it holds in every unit — a
+/// structurally equal type outside the group is another type.
+pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell, decl, tinfo, print_sig, eq_sig, sig0, sig1, sig2, sig3, sig4, sig5, sig6, sig7, sig8 };
+
+/// The most parameters a function value takes on wasm in the GC lowering:
+/// one prelude `$sig_n` per arity (decision 1055 (1)); a call of more falls
+/// back to linear memory.
+pub const gc_closure_max_arity = 8;
+
+/// The prelude index of the entry type of a lambda of `n` parameters.
+pub fn gcSigIndex(n: usize) u16 {
+    return @intFromEnum(GcPrelude.sig0) + @as(u16, @intCast(n));
+}
+
+fn sigDef(comptime n: usize) ast.TypeDef {
+    const params = comptime blk: {
+        var ps: [n + 1]ast.ValType = undefined;
+        ps[0] = gcPreludeRef(.closure);
+        for (ps[1..]) |*p| p.* = .anyref;
+        break :blk ps;
+    };
+    return .{ .name = std.fmt.comptimePrint("sig_{d}", .{n}), .kind = .{ .func = .{ .params = &params, .result = .anyref } } };
+}
 
 pub fn gcPreludeRef(p: GcPrelude) ast.ValType {
     return ast.ValType.def(@intFromEnum(p));
@@ -3059,7 +3088,10 @@ pub const gc_prelude_defs = [_]ast.TypeDef{
     // parameter's slot): its block's bytes in a box of its own, so it is told from a
     // string (`ref.test`), printed by its digits and compared by value. A leaf: final.
     .{ .name = "box_big", .kind = .{ .@"struct" = &.{.{ .name = "v", .ty = gc_str_ref }} } },
-    .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "idx", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
+    // Decision 1055 (4): the lambda's entry (`ref.func`, cast to the
+    // prelude's `$sig_<arity>` and `call_ref`ed), its declared arity (what
+    // `fn/N` prints, 1051), the component mark (decision 504).
+    .{ .name = "closure", .kind = .{ .@"struct" = &.{ .{ .name = "fn", .ty = .funcref }, .{ .name = "arity", .ty = .i32 }, .{ .name = "mark", .ty = .i32 } } }, .final = false },
     .{ .name = "result", .kind = .{ .@"struct" = &.{ .{ .name = "tag", .ty = .i32, .mutable = true }, .{ .name = "payload", .ty = .anyref, .mutable = true } } } },
     .{ .name = "exn", .kind = .{ .@"struct" = &.{ .{ .name = "msg", .ty = gc_str_ref }, .{ .name = "print", .ty = .i32 } } } },
     .{ .name = "task", .kind = .{ .@"struct" = &.{
@@ -3096,4 +3128,23 @@ pub const gc_prelude_defs = [_]ast.TypeDef{
         .{ .name = "filled", .ty = .i32, .mutable = true },
         .{ .name = "value", .ty = .anyref, .mutable = true },
     } } },
+    .{ .name = "__decl", .kind = .{ .@"struct" = &.{.{ .name = "ti", .ty = gcPreludeRef(.tinfo) }} }, .final = false },
+    .{ .name = "__tinfo", .kind = .{ .@"struct" = &.{
+        .{ .name = "name", .ty = gc_str_ref },
+        .{ .name = "print", .ty = .funcref },
+        .{ .name = "eq", .ty = .funcref },
+        .{ .name = "display", .ty = .funcref },
+        .{ .name = "kind", .ty = .i32 },
+    } } },
+    .{ .name = "__print_sig", .kind = .{ .func = .{ .params = &.{.anyref} } } },
+    .{ .name = "__eq_sig", .kind = .{ .func = .{ .params = &.{ .anyref, .anyref }, .result = .i32 } } },
+    sigDef(0),
+    sigDef(1),
+    sigDef(2),
+    sigDef(3),
+    sigDef(4),
+    sigDef(5),
+    sigDef(6),
+    sigDef(7),
+    sigDef(8),
 };

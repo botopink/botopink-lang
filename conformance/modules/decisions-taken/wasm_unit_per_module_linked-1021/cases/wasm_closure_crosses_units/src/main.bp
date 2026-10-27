@@ -1,0 +1,21 @@
+//// Unit B: closures crossing to and from unit A (decision 1055 (4)).
+
+import {io.terminal.print} from "std";
+mod maker;
+import {maker.base, maker.adder, maker.apply, maker.Scale};
+
+pub fn main() -> void {
+    val add2 = adder(2);
+    print(add2(40));
+    print(apply(fn(x: i32) -> i32 {
+        return x * 3;
+    }, 5));
+    print([1, 2, 3].map(add2));
+    val tenfold = Scale.tenfold;
+    print(apply(tenfold, 4));
+    print(tenfold(5));
+    val withBase = fn(x: i32) -> i32 {
+        return x + base;
+    };
+    print(apply(withBase, 1));
+}

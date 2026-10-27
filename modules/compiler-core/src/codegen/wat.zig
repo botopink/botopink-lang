@@ -2582,8 +2582,15 @@ fn emitWatPass(
         break :gc_tag t;
     } else prelude.panic_tag });
 
-    // The function table a lambda value indexes into.
-    if (em.lambdas.items.len > 0 or em.uses_table) {
+    // The function table a lambda value indexes into; in a GC module a
+    // lambda's entry is a `ref.func` (decision 1055 (4)), declared.
+    if (em.mode == .gc) {
+        if (em.lambdas.items.len > 0) {
+            const names = try ar.alloc([]const u8, em.lambdas.items.len);
+            for (em.lambdas.items, 0..) |l, i| names[i] = l.name;
+            try items.append(ar, .{ .elem_declare = names });
+        }
+    } else if (em.lambdas.items.len > 0 or em.uses_table) {
         const names = try ar.alloc([]const u8, em.lambdas.items.len);
         for (em.lambdas.items, 0..) |l, i| names[i] = l.name;
         try items.append(ar, .{ .table = names });
@@ -3119,17 +3126,17 @@ fn sameFuncType(a: wat.FuncType, b: wat.FuncType) bool {
 
 /// Whether a function of a program unit may cross into another unit: no
 /// generic parameter (each importer instantiates its own), no effect (a task's
-/// state machine is its module's), no host binding, and a signature no
-/// function value reaches — a closure is an index into its unit's table until
-/// the shared table (decision 1021 (4)) is the core's.
+/// state machine is its module's), no host binding. A function value crosses
+/// (decision 1055 (4)): a closure is a GC value holding its entry's `funcref`,
+/// typed by the prelude's `$sig_<n>` in every unit.
 fn crossesUnit(f: ast.FnDecl, decls: []const ast.DeclKind) bool {
     if (f.genericParams.len > 0 or f.effect != null or f.marker != null or f.isDeclare or f.anonymousDefault) return false;
-    for (f.params) |p| if (!closureFree(p.typeRef, decls, 0)) return false;
-    if (f.returnType) |r| if (!closureFree(r, decls, 0)) return false;
+    for (f.params) |p| if (!unitCrossable(p.typeRef, decls, 0)) return false;
+    if (f.returnType) |r| if (!unitCrossable(r, decls, 0)) return false;
     return true;
 }
 
-fn closureFree(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
+fn unitCrossable(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
     if (depth > 8) return false;
     return switch (t) {
         .named => |n| blk: {
@@ -3137,20 +3144,23 @@ fn closureFree(t: ast.TypeRef, decls: []const ast.DeclKind, depth: u8) bool {
                 const td = d.type_;
                 if (td.genericParams.len > 0) break :blk false;
                 switch (td.shape) {
-                    .record => |fs| for (fs) |fl| if (!closureFree(fl.typeRef, decls, depth + 1)) break :blk false,
+                    .record => |fs| for (fs) |fl| if (!unitCrossable(fl.typeRef, decls, depth + 1)) break :blk false,
                     .enum_ => |e| {
                         if (e.sections.len > 0) break :blk false;
-                        for (e.variants) |v| for (v.fields) |fl| if (!closureFree(fl.typeRef, decls, depth + 1)) break :blk false;
+                        for (e.variants) |v| for (v.fields) |fl| if (!unitCrossable(fl.typeRef, decls, depth + 1)) break :blk false;
                     },
                 }
                 break :blk true;
             };
             break :blk isUnitScalarName(n);
         },
-        .array => |inner| closureFree(inner.*, decls, depth + 1),
-        .optional => |inner| closureFree(inner.*, decls, depth + 1),
+        .array => |inner| unitCrossable(inner.*, decls, depth + 1),
+        .optional => |inner| unitCrossable(inner.*, decls, depth + 1),
         .tuple_ => |elems| for (elems) |e| {
-            if (!closureFree(e, decls, depth + 1)) break false;
+            if (!unitCrossable(e, decls, depth + 1)) break false;
+        } else true,
+        .function => |f| !f.anyParams and f.params.len <= prelude.gc_closure_max_arity and unitCrossable(f.returnType.*, decls, depth + 1) and for (f.params) |p| {
+            if (!unitCrossable(p, decls, depth + 1)) break false;
         } else true,
         else => false,
     };
@@ -3412,6 +3422,11 @@ const Emitter = struct {
     /// While `finishGc` renumbers the module into its canonical type groups:
     /// the new index of each type of the lowering's numbering (`gcRemapIdx`).
     gc_perm: ?[]const u16 = null,
+    /// Decision 1055 (1), (2) — while `finishGc` renumbers: the declared types
+    /// (records, variants) a `struct.new` built, by their lowering index; each
+    /// gets its constructor `$__new_<type>`, which reads the type's
+    /// `$__tinfo` from `$__ti_<type>` (`gcDeclCtors`).
+    gc_decl_ctors: std.AutoArrayHashMapUnmanaged(u16, void) = .empty,
     /// The environment type of the lifted lambda being emitted (`.gc`).
     gc_env_ty: u16 = 0,
     /// Front 164 s2 P4 — per state machine of a GC module, the value types
@@ -4251,6 +4266,7 @@ const Emitter = struct {
         self.gc_strs.deinit(self.alloc);
         self.gc_types.deinit(self.alloc);
         self.gc_type_keys.deinit(self.alloc);
+        self.gc_decl_ctors.deinit(self.alloc);
         self.gc_frames.deinit(self.alloc);
         self.gc_block_locals.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
@@ -6168,8 +6184,14 @@ const Emitter = struct {
         /// one per enum, a subtype of `$box_i32`: it prints by the enum's names.
         ebox: []const u8,
         /// A function value (front 164 s2 P3): the open struct every closure
-        /// is, its table index and its component mark (decision 504).
+        /// is — its entry's funcref, its arity and its component mark
+        /// (decisions 504, 1055 (4)).
         closure,
+        /// Decision 1055 (1) — the prelude's `$sig_<n>`, the function type of
+        /// a lambda's entry of `n` parameters; its `$__decl` and `$__tinfo`.
+        sig: u8,
+        decl,
+        tinfo,
         /// The environment of lifted lambda `n`: a subtype of `closure`
         /// holding the lambda's captures, each typed as the local it copies.
         env: u32,
@@ -6204,7 +6226,8 @@ const Emitter = struct {
                 .variant => |v| std.mem.eql(u8, v.en, b.variant.en) and std.mem.eql(u8, v.name, b.variant.name),
                 .arr => |e| e == b.arr,
                 .box => |k| k == b.box,
-                .result, .closure, .tuple => true,
+                .result, .closure, .tuple, .decl, .tinfo => true,
+                .sig => |n| n == b.sig,
                 .ebox => |n| std.mem.eql(u8, n, b.ebox),
                 .env => |n| n == b.env,
                 .frame => |n| n == b.frame,
@@ -6238,6 +6261,7 @@ const Emitter = struct {
             .waiter => .waiter,
             .hostn => .hostn,
             .closure => .closure,
+            .sig0 => .{ .sig = 0 },
             .arr_any => .{ .arr = .any },
             .box_i32 => .{ .box = .i32 },
             .result => .result,
@@ -6276,7 +6300,32 @@ const Emitter = struct {
         return .{ .lines = lines, .stack = self.gcRemapStack(seq.stack) };
     }
 
+    /// Whether a type of the lowering is a declared one — a record or a
+    /// variant —, a `$__decl` subtype whose fields follow its `$__tinfo`
+    /// (decision 1055 (1)).
+    fn gcIsDecl(t: GcTy) bool {
+        return t == .record or t == .variant;
+    }
+
+    /// Whether type `k` of the lowering's numbering is a declared one, while
+    /// `finishGc` renumbers.
+    fn gcIsDeclIdx(self: *Emitter, k: u16) bool {
+        if (self.gc_perm == null or k == 0 or k > self.gc_types.items.len) return false;
+        return gcIsDecl(self.gc_types.items[k - 1]);
+    }
+
     fn gcRemapInstr(self: *Emitter, i: Instr) anyerror!Instr {
+        // Decision 1055 (1) — a declared type's fields follow its `$__tinfo`;
+        // it is built by its constructor, which reads that.
+        switch (i) {
+            .struct_new => |k| if (self.gcIsDeclIdx(k)) {
+                try self.gc_decl_ctors.put(self.alloc, k, {});
+                return .{ .call = try self.gcDeclCtorName(self.gcRemapIdx(k)) };
+            },
+            .struct_get => |f| if (self.gcIsDeclIdx(f.ty)) return .{ .struct_get = .{ .ty = self.gcRemapIdx(f.ty), .field = f.field + 1, .ext = f.ext } },
+            .struct_set => |f| if (self.gcIsDeclIdx(f.ty)) return .{ .struct_set = .{ .ty = self.gcRemapIdx(f.ty), .field = f.field + 1, .ext = f.ext } },
+            else => {},
+        }
         return switch (i) {
             .struct_new => |k| .{ .struct_new = self.gcRemapIdx(k) },
             .struct_new_default => |k| .{ .struct_new_default = self.gcRemapIdx(k) },
@@ -6293,6 +6342,7 @@ const Emitter = struct {
             .ref_null => |v| .{ .ref_null = self.gcRemapVt(v) },
             .ref_test => |v| .{ .ref_test = self.gcRemapVt(v) },
             .ref_cast => |v| .{ .ref_cast = self.gcRemapVt(v) },
+            .call_ref => |k| .{ .call_ref = self.gcRemapIdx(k) },
             .call_indirect => |ft| blk: {
                 const ps = try self.arena().alloc(ValType, ft.params.len);
                 for (ft.params, ps) |v, *o| o.* = self.gcRemapVt(v);
@@ -6319,12 +6369,52 @@ const Emitter = struct {
         };
     }
 
+    fn gcDeclCtorName(self: *Emitter, k: u16) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "__new_{d}", .{k});
+    }
+
+    /// Decision 1055 (1), (2) — per declared type a `struct.new` built (its
+    /// final index `k` in `defs`): the global `$__ti_<k>` holding its
+    /// `$__tinfo`, and the constructor `$__new_<k>(f0, …)`, which builds the
+    /// struct with it first.
+    fn gcDeclCtors(self: *Emitter, items: *std.ArrayListUnmanaged(Item), defs: []const wat.TypeDef) !void {
+        const ar = self.arena();
+        const ti_vt = ValType.def(@intFromEnum(GcPrelude.tinfo));
+        for (self.gc_decl_ctors.keys()) |old| {
+            const k = self.gc_perm.?[old];
+            const fields = defs[k].kind.@"struct";
+            const ti = try self.gcTinfoGlobal(k);
+            try items.append(ar, .{ .global = .{ .name = ti, .ty = ti_vt, .mutable = true, .init = "" } });
+            const params = try ar.alloc(wat.Param, fields.len - 1);
+            const lines = try ar.alloc(Line, fields.len + 1);
+            lines[0] = .{ .instr = .{ .global_get = ti } };
+            for (fields[1..], params, 0..) |f, *p, j| {
+                p.* = .{ .name = try std.fmt.allocPrint(ar, "f{d}", .{j}), .ty = f.ty };
+                lines[1 + j] = .{ .instr = .{ .local_get = p.name } };
+            }
+            lines[fields.len] = .{ .instr = .{ .struct_new = k } };
+            try items.append(ar, .{ .func = .{
+                .name = try self.gcDeclCtorName(k),
+                .params = params,
+                .result = ValType.def(k),
+                .body = .{ .lines = lines, .stack = .{ .value = ValType.def(k) } },
+            } });
+        }
+        self.gc_decl_ctors.clearRetainingCapacity();
+    }
+
+    /// The global holding declared type `k`'s `$__tinfo` (decision 1055 (2)).
+    fn gcTinfoGlobal(self: *Emitter, k: u16) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "__ti_{d}", .{k});
+    }
+
     /// A prelude GC form whose types are named by slot, resolved for the module.
     fn gcRemapItem(self: *Emitter, it: Item) anyerror!Item {
         const ar = self.arena();
         switch (it) {
             .func => |f| {
                 var g = f;
+                g.type = if (f.type) |k| self.gcRemapIdx(k) else null;
                 const ps = try ar.alloc(wat.Param, f.params.len);
                 for (f.params, ps) |p, *o| o.* = .{ .name = p.name, .ty = self.gcRemapVt(p.ty) };
                 g.params = ps;
@@ -6497,6 +6587,7 @@ const Emitter = struct {
         if (self.gc_gap != null) return error.GcFallback;
         // Every type the lowering named, renumbered into its canonical group.
         for (items.items) |*it| it.* = try self.gcRemapItem(it.*);
+        try self.gcDeclCtors(items, defs);
         self.gc_perm = null;
         if (self.gc_str_used) try items.insert(ar, 0, .{ .types = defs });
         var diag: typecheck.Diag = .{};
@@ -6700,6 +6791,9 @@ const Emitter = struct {
                 .big => .box_big,
             },
             .closure => .closure,
+            .sig => |n| return prelude.gcSigIndex(n),
+            .decl => .decl,
+            .tinfo => .tinfo,
             .result => .result,
             .exn => .exn,
             .task => .task,
@@ -6808,10 +6902,16 @@ const Emitter = struct {
             if (perm[k] < n_pre) continue;
             var e = d;
             e.super = if (d.super) |s| perm[s] else null;
+            // Decision 1055 (1) — a record or a variant is `(sub final
+            // $__decl …)`, its first field its type's `$__tinfo`.
+            const declared = k > 0 and gcIsDecl(self.gc_types.items[k - 1]);
+            if (declared) e.super = @intFromEnum(GcPrelude.decl);
             e.kind = switch (d.kind) {
                 .@"struct" => |fs| blk: {
-                    const nf = try ar.alloc(wat.Field, fs.len);
-                    for (fs, nf) |f, *o| {
+                    const at: usize = @intFromBool(declared);
+                    const nf = try ar.alloc(wat.Field, at + fs.len);
+                    if (declared) nf[0] = gc_prelude_defs[@intFromEnum(GcPrelude.decl)].kind.@"struct"[0];
+                    for (fs, nf[at..]) |f, *o| {
                         o.* = f;
                         o.ty = self.gcRemapVt(f.ty);
                     }
@@ -6822,6 +6922,7 @@ const Emitter = struct {
                     g.ty = self.gcRemapVt(f.ty);
                     break :blk .{ .array = g };
                 },
+                .func => d.kind,
             };
             out[perm[k]] = e;
         }
@@ -6875,6 +6976,7 @@ const Emitter = struct {
         switch (d.kind) {
             .@"struct" => |fs| for (fs) |f| if (f.ty.defIndex()) |k| try out.append(ar, k),
             .array => |f| if (f.ty.defIndex()) |k| try out.append(ar, k),
+            .func => {},
         }
         if (d.super) |k| try out.append(ar, k);
         return out.items;
@@ -6986,18 +7088,19 @@ const Emitter = struct {
                     fs[0] = .{ .name = "v", .ty = .i32 };
                     try defs.append(ar, .{ .name = try std.fmt.allocPrint(ar, "ebox_{s}", .{en}), .kind = .{ .@"struct" = fs }, .super = self.gcTyIndex(.{ .box = .i32 }) });
                 },
-                .closure => {
-                    const fs = try ar.alloc(wat.Field, 2);
-                    fs[0] = .{ .name = "idx", .ty = .i32 };
-                    fs[1] = .{ .name = "mark", .ty = .i32 };
-                    try defs.append(ar, .{ .name = "closure", .kind = .{ .@"struct" = fs }, .final = false });
-                },
+                // Prelude types (decision 1055 (1)): `gcBuildTypes` writes
+                // `gc_prelude_defs`' own definition in their place.
+                .closure => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.closure)]),
+                .decl => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.decl)]),
+                .tinfo => try defs.append(ar, gc_prelude_defs[@intFromEnum(GcPrelude.tinfo)]),
+                .sig => |n| try defs.append(ar, gc_prelude_defs[prelude.gcSigIndex(n)]),
                 .env => |li| {
                     const caps = self.lambdas.items[li].captures;
-                    const fs = try ar.alloc(wat.Field, 2 + caps.len);
-                    fs[0] = .{ .name = "idx", .ty = .i32 };
-                    fs[1] = .{ .name = "mark", .ty = .i32 };
-                    for (caps, 0..) |cp, k| fs[2 + k] = .{
+                    const fs = try ar.alloc(wat.Field, env_caps_at + caps.len);
+                    fs[0] = .{ .name = "fn", .ty = .funcref };
+                    fs[1] = .{ .name = "arity", .ty = .i32 };
+                    fs[2] = .{ .name = "mark", .ty = .i32 };
+                    for (caps, 0..) |cp, k| fs[env_caps_at + k] = .{
                         .name = try std.fmt.allocPrint(ar, "c{d}", .{k}),
                         .ty = self.vtOf(cp.ty),
                         .mutable = true,
@@ -21658,7 +21761,7 @@ const Emitter = struct {
         self.open(&op_c);
         try self.lowerCoerced(cc.args[0].value.*, .{ .ref = .closure });
         try self.emit(.{ .local_tee = cv });
-        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 1 } }, "the lambda's mark: a state machine?");
+        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = closure_mark_field } }, "the lambda's mark: a state machine?");
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = cv });
         try self.lowerCoerced(cc.args[1].value.*, .{ .ref = .unknown });
@@ -22544,12 +22647,24 @@ const Emitter = struct {
     // it is). So `call_indirect` carries one signature per arity and a call
     // site needs no knowledge of the callee but its declared function type.
 
-    /// `(closure, anyref × argc) -> anyref`.
-    fn gcClosureSig(self: *Emitter, argc: usize) !wat.FuncType {
-        const params = try self.arena().alloc(ValType, argc + 1);
-        params[0] = self.gcTy(.closure);
-        for (params[1..]) |*p| p.* = .anyref;
-        return .{ .params = params, .result = .anyref };
+    /// Decision 1055 (4) — a closure's fields: its entry (`fn`), its
+    /// declared arity, its component mark; a lambda's environment holds its
+    /// captures after them.
+    const closure_mark_field: u32 = 2;
+    const env_caps_at: usize = 3;
+
+    /// The declared arity a function value of lambda `l` prints (`fn/N`,
+    /// 1051): a top-level function's parameters, a lambda's.
+    fn lambdaArity(self: *Emitter, l: Lifted) usize {
+        if (l.fn_ref) |target| if (self.fn_sigs.get(target)) |sig| return sig.params.len;
+        return l.params.len;
+    }
+
+    /// The prelude's `$sig_<n>` a lambda's entry of `n` parameters is
+    /// declared with (decision 1055 (4)).
+    fn gcSigOf(self: *Emitter, n: usize) !u16 {
+        if (n > prelude.gc_closure_max_arity) return self.gcFail("a function value of more parameters than the prelude's signatures");
+        return self.gcTyIndex(.{ .sig = @intCast(n) });
     }
 
     const GcCalleeType = struct { ft: ast.TypeRef, gps: ?[]const ast.GenericParam };
@@ -22659,10 +22774,12 @@ const Emitter = struct {
     /// `call_indirect` of the function value in the local `fnv`, its
     /// arguments boxed on the stack under the environment.
     fn gcEmitIndirect(self: *Emitter, fnv: []const u8, argc: usize) anyerror!void {
-        self.uses_table = true;
+        if (argc > prelude.gc_closure_max_arity) return self.gcFail("a call through a function value of more parameters than the prelude's signatures");
+        const sig = self.gcTyIndex(.{ .sig = @intCast(argc) });
         try self.emit(.{ .local_get = fnv });
-        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 0 } }, "table index");
-        try self.emit(.{ .call_indirect = try self.gcClosureSig(argc) });
+        try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.closure), .field = 0 } }, "the entry");
+        try self.emit(.{ .ref_cast = ValType.def(sig) });
+        try self.emit(.{ .call_ref = sig });
     }
 
     /// `f(a, b)` through a function value in a GC module.
@@ -22781,7 +22898,7 @@ const Emitter = struct {
             // what the function reads after (the threaded ones copied out).
             if (dir == .out_of_env and !cp.threaded) continue;
             if (!self.locals.contains(cp.name)) continue;
-            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(2 + i) };
+            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(env_caps_at + i) };
             try self.emit(.{ .local_get = env });
             try self.emit(.{ .ref_cast = ValType.def(ety) });
             switch (dir) {
@@ -22800,7 +22917,9 @@ const Emitter = struct {
     /// The closure a lambda value is, in a GC module: a struct of its
     /// environment type holding the table index, the mark and the captures.
     fn gcClosureNew(self: *Emitter, idx: u32, caps: []const Captured, mark: ?bool) anyerror!void {
-        try self.emit(try self.constInt(idx));
+        const l = self.lambdas.items[idx];
+        try self.emit(.{ .ref_func = l.name });
+        try self.emitC(try self.constInt(self.lambdaArity(l)), "arity");
         try self.emit(try self.constInt(@intFromBool(mark orelse false)));
         for (caps) |cp| try self.emitCf(.{ .local_get = cp.name }, "capture {s}", .{cp.name});
         try self.emit(.{ .struct_new = self.gcTyIndex(.{ .env = idx }) });
@@ -22886,7 +23005,7 @@ const Emitter = struct {
         }
         for (l.captures, 0..) |cp, i| {
             try self.declareLocal(cp.name, cp.ty);
-            if (cp.threaded) try self.env_slots.put(cp.name, @intCast(2 + i));
+            if (cp.threaded) try self.env_slots.put(cp.name, @intCast(env_caps_at + i));
             if (cp.str) try self.str_locals.put(cp.name, {});
             if (cp.bool_) try self.bool_locals.put(cp.name, {});
             if (cp.typeref) |t| try self.local_typerefs.put(cp.name, t);
@@ -22896,7 +23015,7 @@ const Emitter = struct {
                 try self.arr_elem_locals.put(cp.name, ek);
             }
             try self.emit(.{ .local_get = "__env" });
-            try self.emit(.{ .struct_get = .{ .ty = ety, .field = @intCast(2 + i) } });
+            try self.emit(.{ .struct_get = .{ .ty = ety, .field = @intCast(env_caps_at + i) } });
             try self.emit(.{ .local_set = cp.name });
         }
         try self.declareScratch("_try", countTrys(l.body));
@@ -22935,12 +23054,14 @@ const Emitter = struct {
             try self.emit(.{ .ref_cast = env_vt });
             try self.emit(.{ .call = gname });
             const gwbody = self.seal(&gwc, .{ .value = .anyref });
-            try self.item(.{ .func = try self.builder().func(.{
+            var gentry = try self.builder().func(.{
                 .name = l.name,
                 .params = &.{wat.Builder.param("__env", self.gcTy(.closure))},
                 .result = .anyref,
                 .body = gwbody,
-            }) });
+            });
+            gentry.type = try self.gcSigOf(0);
+            try self.item(.{ .func = gentry });
             return;
         }
         defer self.machine = null;
@@ -22988,12 +23109,14 @@ const Emitter = struct {
         try self.emit(.{ .call = bname });
         if (!l.async_block) try self.gcBox(ret);
         const wbody = self.seal(&wc, .{ .value = .anyref });
-        try self.item(.{ .func = try self.builder().func(.{
+        var entry = try self.builder().func(.{
             .name = l.name,
             .params = wparams.items,
             .result = .anyref,
             .body = wbody,
-        }) });
+        });
+        entry.type = try self.gcSigOf(reprs.items.len);
+        try self.item(.{ .func = entry });
     }
 
     /// The trampoline of a top-level fn used as a value, in a GC module.
@@ -23019,12 +23142,14 @@ const Emitter = struct {
             try self.gcBox(.i32);
         }
         const body = self.seal(&c, .{ .value = .anyref });
-        try self.item(.{ .func = try self.builder().func(.{
+        var entry = try self.builder().func(.{
             .name = l.name,
             .params = params.items,
             .result = .anyref,
             .body = body,
-        }) });
+        });
+        entry.type = try self.gcSigOf(sig.params.len);
+        try self.item(.{ .func = entry });
     }
 
     /// The tail of a lifted lambda's body, converted to the repr it answers;
@@ -28728,7 +28853,7 @@ const Emitter = struct {
         for (l.captures, 0..) |cp, i| {
             if (dir == .out_of_env and !cp.threaded) continue;
             if (!self.locals.contains(cp.name)) continue;
-            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(2 + i) };
+            const f: wat.FieldRef = .{ .ty = ety, .field = @intCast(env_caps_at + i) };
             try self.emit(.{ .local_get = gl.handle });
             try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.gen), .field = gen_fld.aux } });
             try self.emit(.{ .ref_cast = ValType.def(ety) });

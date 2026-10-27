@@ -171,6 +171,23 @@ const FuncCtx = struct {
                 try st.pop(.i32);
                 try self.callType(st, ft);
             },
+            // Decision 1055 (4) — a call through a typed function reference.
+            .call_ref => |k| {
+                if (k >= self.mod.types.len) return self.fail("a type index past the group");
+                const ft = switch (self.mod.types[k].kind) {
+                    .func => |f| f,
+                    else => return self.fail("a call_ref of no function type"),
+                };
+                try st.pop(ValType.def(k));
+                try self.callType(st, ft);
+            },
+            .ref_func => |n| {
+                if (self.mod.funcs.get(n) == null) {
+                    self.diag.detail = n;
+                    return self.fail("a ref.func of no function");
+                }
+                try st.push(.funcref);
+            },
             .drop => try st.popAny(),
             .select => {
                 try st.pop(.i32);
@@ -407,7 +424,7 @@ const FuncCtx = struct {
         if (k >= self.mod.types.len) return self.fail("a type index past the group");
         return switch (self.mod.types[k].kind) {
             .@"struct" => |fs| fs,
-            .array => self.fail("a struct instruction on an array type"),
+            .array, .func => self.fail("a struct instruction on an array type"),
         };
     }
 
@@ -415,7 +432,7 @@ const FuncCtx = struct {
         if (k >= self.mod.types.len) return self.fail("a type index past the group");
         return switch (self.mod.types[k].kind) {
             .array => |f| f,
-            .@"struct" => self.fail("an array instruction on a struct type"),
+            .@"struct", .func => self.fail("an array instruction on a struct type"),
         };
     }
 };
@@ -487,9 +504,11 @@ pub fn subtype(types: []const ast.TypeDef, a: ValType, b: ValType) bool {
         return false;
     };
     const kind: ?ast.TypeDef.Kind = if (a.defIndex()) |k| (if (k < types.len) types[k].kind else null) else null;
+    const is_func = kind != null and kind.? == .func;
     return switch (b) {
-        .anyref => a != .funcref and a != .externref,
-        .eqref => a == .i31ref or a == .structref or a == .arrayref or kind != null,
+        .anyref => a != .funcref and a != .externref and !is_func,
+        .funcref => is_func,
+        .eqref => a == .i31ref or a == .structref or a == .arrayref or (kind != null and !is_func),
         .structref => kind != null and kind.? == .@"struct",
         .arrayref => kind != null and kind.? == .array,
         else => false,

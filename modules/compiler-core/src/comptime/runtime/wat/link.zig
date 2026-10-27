@@ -305,7 +305,7 @@ pub fn link(alloc: std.mem.Allocator, rt_bytes: []const u8, program: wat.Module,
         // The program has none of these: the lowering raises an Erlang
         // exception through `rt_pending`, never a tag (decision 518's tags
         // are a run-time program's).
-        .memory, .start, .data, .tag, .custom, .types => return error.Malformed,
+        .memory, .start, .data, .tag, .custom, .types, .elem_declare => return error.Malformed,
     };
     for (prog_funcs.items) |f| _ = try e.typeIndex(try bin.funcType(ar, f));
     var bodies: std.ArrayListUnmanaged([]const u8) = .empty;

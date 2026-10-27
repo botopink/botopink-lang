@@ -72,7 +72,9 @@ fn isStep(edges: []const Edge, name: []const u8) bool {
 
 fn collectCalls(alloc: std.mem.Allocator, s: wat.Seq, out: *std.ArrayListUnmanaged([]const u8), indirect: *bool) !void {
     for (s.lines) |l| switch (l.instr) {
-        .call => |n| try out.append(alloc, n),
+        // Decision 1055 (4) — a `ref.func` makes the function a value some
+        // `call_ref` may call: an edge as a call is.
+        .call, .ref_func => |n| try out.append(alloc, n),
         .call_indirect => indirect.* = true,
         .@"if" => |n| {
             try collectCalls(alloc, n.then.seq, out, indirect);
@@ -85,7 +87,7 @@ fn collectCalls(alloc: std.mem.Allocator, s: wat.Seq, out: *std.ArrayListUnmanag
 
 fn callsAny(s: wat.Seq, gone: *const Names) bool {
     for (s.lines) |l| switch (l.instr) {
-        .call => |n| if (gone.contains(n)) return true,
+        .call, .ref_func => |n| if (gone.contains(n)) return true,
         .@"if" => |n| {
             if (callsAny(n.then.seq, gone)) return true;
             if (n.@"else") |e| if (callsAny(e.seq, gone)) return true;
@@ -140,6 +142,12 @@ pub fn dropCallers(alloc: std.mem.Allocator, items: *std.ArrayListUnmanaged(wat.
                 dead_stub = true;
             };
             it.* = .{ .table = names };
+        }
+        if (it.* == .elem_declare) {
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (it.elem_declare) |n| if (!gone.contains(n)) try names.append(alloc, n);
+            if (names.items.len == 0) continue;
+            it.* = .{ .elem_declare = names.items };
         }
         items.items[keep] = it.*;
         keep += 1;

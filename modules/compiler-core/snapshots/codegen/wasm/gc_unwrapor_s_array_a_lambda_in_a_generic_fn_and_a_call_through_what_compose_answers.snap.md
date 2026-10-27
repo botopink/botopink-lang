@@ -80,7 +80,7 @@ test "functions.constant ignores its argument" {
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -88,15 +88,28 @@ test "functions.constant ignores its argument" {
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
-    (type $env1 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
-    (type $env2 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut anyref)))))
+    (type $env0 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
+    (type $env1 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
+    (type $env2 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut anyref)))))
   )
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
+  (elem declare func $__lambda0 $__lambda1 $__lambda2)
   ;; std/functions — combinators over function values (decision 738).
   ;; 
   ;; Plain functions of a std module, imported by path:
@@ -112,7 +125,8 @@ test "functions.constant ignores its argument" {
   )
   ;; `f`, then `g`: `compose(f, g)(a)` is `g(f(a))`.
   (func $compose (export "compose") (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
-    i32.const 0
+    ref.func $__lambda0
+    i32.const 1 ;; arity
     i32.const 0
     local.get $g ;; capture g
     local.get $f ;; capture f
@@ -121,7 +135,8 @@ test "functions.constant ignores its argument" {
   )
   ;; `f` with its two arguments swapped: `flip(f)(b, a)` is `f(a, b)`.
   (func $flip (export "flip") (param $f (ref null $closure)) (result (ref null $closure))
-    i32.const 1
+    ref.func $__lambda1
+    i32.const 2 ;; arity
     i32.const 0
     local.get $f ;; capture f
     struct.new $env1
@@ -131,7 +146,8 @@ test "functions.constant ignores its argument" {
   ;; `unknown` (decision 668: no parameter would bind a type for it), so one
   ;; binding takes any argument.
   (func $constant (export "constant") (param $x anyref) (result (ref null $closure))
-    i32.const 2
+    ref.func $__lambda2
+    i32.const 1 ;; arity
     i32.const 0
     local.get $x ;; capture x
     struct.new $env2
@@ -156,13 +172,15 @@ test "functions.constant ignores its argument" {
     local.get $__fnv1
     local.get $a
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
   )
-  (func $__lambda0 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda0 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env0)
     local.get $__a0
@@ -180,10 +198,11 @@ test "functions.constant ignores its argument" {
     local.get $a
     local.get $b
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_2)
+    call_ref $sig_2
   )
-  (func $__lambda1 (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
+  (func $__lambda1 (type $sig_2) (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env1)
     local.get $__a0
@@ -197,7 +216,7 @@ test "functions.constant ignores its argument" {
     local.set $x
     local.get $x
   )
-  (func $__lambda2 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda2 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env2)
     local.get $__a0
@@ -254,7 +273,7 @@ import {functions} from "std";
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $idx i32) (field $mark i32))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
     (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
     (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
     (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
@@ -262,19 +281,32 @@ import {functions} from "std";
     (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
     (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
     (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+    (type $sig_0 (func (param (ref null $closure)) (result anyref)))
+    (type $sig_1 (func (param (ref null $closure) anyref) (result anyref)))
+    (type $sig_2 (func (param (ref null $closure) anyref anyref) (result anyref)))
+    (type $sig_3 (func (param (ref null $closure) anyref anyref anyref) (result anyref)))
+    (type $sig_4 (func (param (ref null $closure) anyref anyref anyref anyref) (result anyref)))
+    (type $sig_5 (func (param (ref null $closure) anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_6 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_7 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
+    (type $sig_8 (func (param (ref null $closure) anyref anyref anyref anyref anyref anyref anyref anyref) (result anyref)))
   )
   (rec
-    (type $env0 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
-    (type $env1 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
-    (type $env2 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut anyref)))))
-    (type $env3 (sub final $closure (struct (field $idx i32) (field $mark i32))))
-    (type $env4 (sub final $closure (struct (field $idx i32) (field $mark i32))))
-    (type $env5 (sub final $closure (struct (field $idx i32) (field $mark i32))))
-    (type $env6 (sub final $closure (struct (field $idx i32) (field $mark i32))))
-    (type $env7 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
-    (type $env8 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
-    (type $env9 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
-    (type $env10 (sub final $closure (struct (field $idx i32) (field $mark i32) (field $c0 (mut i32)))))
+    (type $env0 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
+    (type $env1 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
+    (type $env2 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut anyref)))))
+    (type $env3 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
+    (type $env4 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
+    (type $env5 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
+    (type $env6 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
+    (type $env7 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
+    (type $env8 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))) (field $c1 (mut (ref null $closure))))))
+    (type $env9 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut (ref null $closure))))))
+    (type $env10 (sub final $closure (struct (field $fn funcref) (field $arity i32) (field $mark i32) (field $c0 (mut i32)))))
   )
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@string" "std:text.toUpper" (func $__std_text_toUpper (param i32) (result i32)))
@@ -282,9 +314,10 @@ import {functions} from "std";
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem $__lambda0 $__lambda1 $__lambda2 $__lambda3 $__lambda4 $__lambda5 $__lambda6 $__lambda7 $__lambda8 $__lambda9 $__lambda10))
+  (elem declare func $__lambda0 $__lambda1 $__lambda2 $__lambda3 $__lambda4 $__lambda5 $__lambda6 $__lambda7 $__lambda8 $__lambda9 $__lambda10)
   (func $compose (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
-    i32.const 0
+    ref.func $__lambda0
+    i32.const 1 ;; arity
     i32.const 0
     local.get $g ;; capture g
     local.get $f ;; capture f
@@ -292,14 +325,16 @@ import {functions} from "std";
     return
   )
   (func $flip (param $f (ref null $closure)) (result (ref null $closure))
-    i32.const 1
+    ref.func $__lambda1
+    i32.const 2 ;; arity
     i32.const 0
     local.get $f ;; capture f
     struct.new $env1
     return
   )
   (func $constant (param $x anyref) (result (ref null $closure))
-    i32.const 2
+    ref.func $__lambda2
+    i32.const 1 ;; arity
     i32.const 0
     local.get $x ;; capture x
     struct.new $env2
@@ -434,11 +469,13 @@ import {functions} from "std";
     call $pairsOf
     call $__std_text_length
     call $__print_i32
-    i32.const 3
+    ref.func $__lambda3
+    i32.const 1 ;; arity
     i32.const 0
     struct.new $env3
     local.set $double
-    i32.const 4
+    ref.func $__lambda4
+    i32.const 1 ;; arity
     i32.const 0
     struct.new $env4
     local.set $addOne
@@ -450,12 +487,14 @@ import {functions} from "std";
     i32.const 3
     struct.new $box_i32
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     call $__print_i32
-    i32.const 5
+    ref.func $__lambda5
+    i32.const 1 ;; arity
     i32.const 0
     struct.new $env5
     local.set $shout
@@ -466,11 +505,13 @@ import {functions} from "std";
     local.get $__fnv1
     global.get $__s5
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $str)
     call $__print_str
-    i32.const 6
+    ref.func $__lambda6
+    i32.const 2 ;; arity
     i32.const 0
     struct.new $env6
     local.set $sub
@@ -483,8 +524,9 @@ import {functions} from "std";
     i32.const 10
     struct.new $box_i32
     local.get $__fnv2
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_2)
+    call_ref $sig_2
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     call $__print_i32
@@ -494,14 +536,16 @@ import {functions} from "std";
     local.get $__fnv3
     global.get $__s6
     local.get $__fnv3
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     call $__print_i32
   )
   (func $compose__B_i32__C_i32 (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
-    i32.const 7
+    ref.func $__lambda7
+    i32.const 1 ;; arity
     i32.const 0
     local.get $g ;; capture g
     local.get $f ;; capture f
@@ -509,7 +553,8 @@ import {functions} from "std";
     return
   )
   (func $compose__B_string__C_string (param $f (ref null $closure)) (param $g (ref null $closure)) (result (ref null $closure))
-    i32.const 8
+    ref.func $__lambda8
+    i32.const 1 ;; arity
     i32.const 0
     local.get $g ;; capture g
     local.get $f ;; capture f
@@ -517,14 +562,16 @@ import {functions} from "std";
     return
   )
   (func $flip__C_i32 (param $f (ref null $closure)) (result (ref null $closure))
-    i32.const 9
+    ref.func $__lambda9
+    i32.const 2 ;; arity
     i32.const 0
     local.get $f ;; capture f
     struct.new $env9
     return
   )
   (func $constant__A_i32 (param $x i32) (result (ref null $closure))
-    i32.const 10
+    ref.func $__lambda10
+    i32.const 1 ;; arity
     i32.const 0
     local.get $x ;; capture x
     struct.new $env10
@@ -549,13 +596,15 @@ import {functions} from "std";
     local.get $__fnv1
     local.get $a
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
   )
-  (func $__lambda0 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda0 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env0)
     local.get $__a0
@@ -573,10 +622,11 @@ import {functions} from "std";
     local.get $a
     local.get $b
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_2)
+    call_ref $sig_2
   )
-  (func $__lambda1 (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
+  (func $__lambda1 (type $sig_2) (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env1)
     local.get $__a0
@@ -590,7 +640,7 @@ import {functions} from "std";
     local.set $x
     local.get $x
   )
-  (func $__lambda2 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda2 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env2)
     local.get $__a0
@@ -602,7 +652,7 @@ import {functions} from "std";
     global.get $__s7
     call $__i32_mul_chk
   )
-  (func $__lambda3 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda3 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env3)
     local.get $__a0
@@ -617,7 +667,7 @@ import {functions} from "std";
     global.get $__s8
     call $__i32_add_chk
   )
-  (func $__lambda4 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda4 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env4)
     local.get $__a0
@@ -631,7 +681,7 @@ import {functions} from "std";
     global.get $__s9
     call $__str_concat
   )
-  (func $__lambda5 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda5 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env5)
     local.get $__a0
@@ -644,7 +694,7 @@ import {functions} from "std";
     global.get $__s10
     call $__i32_sub_chk
   )
-  (func $__lambda6 (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
+  (func $__lambda6 (type $sig_2) (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env6)
     local.get $__a0
@@ -675,18 +725,20 @@ import {functions} from "std";
     local.get $__fnv1
     local.get $a
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     struct.new $box_i32
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
   )
-  (func $__lambda7 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda7 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env7)
     local.get $__a0
@@ -712,15 +764,17 @@ import {functions} from "std";
     local.get $__fnv1
     local.get $a
     local.get $__fnv1
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $str)
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_1)
+    call_ref $sig_1
     ref.cast (ref null $str)
   )
-  (func $__lambda8 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda8 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env8)
     local.get $__a0
@@ -738,12 +792,13 @@ import {functions} from "std";
     local.get $a
     local.get $b
     local.get $__fnv0
-    struct.get $closure $idx ;; table index
-    call_indirect (param (ref null $closure) anyref anyref) (result anyref)
+    struct.get $closure $fn ;; the entry
+    ref.cast (ref null $sig_2)
+    call_ref $sig_2
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
   )
-  (func $__lambda9 (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
+  (func $__lambda9 (type $sig_2) (param $__env (ref null $closure)) (param $__a0 anyref) (param $__a1 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env9)
     local.get $__a0
@@ -758,7 +813,7 @@ import {functions} from "std";
     local.set $x
     local.get $x
   )
-  (func $__lambda10 (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
+  (func $__lambda10 (type $sig_1) (param $__env (ref null $closure)) (param $__a0 anyref) (result anyref)
     local.get $__env
     ref.cast (ref null $env10)
     local.get $__a0
