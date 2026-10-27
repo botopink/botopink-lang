@@ -1701,6 +1701,27 @@ fn findDeclared(env: *Env, name: []const u8) ?FoundType {
     return if (found) |t| .{ .decl = t, .helpers = &.{} } else null;
 }
 
+/// The type `name` of one std module, private ones included: what a carried
+/// std function constructs when a program module declares a type of the same
+/// name too (B-168).
+fn findDeclaredStd(env: *Env, name: []const u8) ?FoundType {
+    const registry = env.typeDeclRegistry orelse return null;
+    const key = std.mem.concat(env.arena, u8, &.{ "\x01", name }) catch return null;
+    var found: ?ast.TypeDecl = null;
+    var it = registry.iterator();
+    while (it.next()) |e| {
+        // std's modules sit in the registry as `std/<name>`, in `stdModules`
+        // as `<name>`.
+        const path = e.key_ptr.*;
+        if (!std.mem.startsWith(u8, path, "std/") or !env.stdModules.contains(path["std/".len..])) continue;
+        const d = e.value_ptr.get(name) orelse e.value_ptr.get(key) orelse continue;
+        if (d != .type_) continue;
+        if (found != null) return null;
+        found = d.type_;
+    }
+    return if (found) |t| .{ .decl = t, .helpers = &.{} } else null;
+}
+
 fn ownFns(env: *Env) []const ast.FnDecl {
     var list: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
     for (env.moduleDecls) |d| switch (d) {
@@ -2892,7 +2913,10 @@ pub fn typesReached(env: *Env, fns: []const ast.FnDecl, skip: []const []const u8
         while (it.next()) |n| try pending.append(arena, n.*);
         for (pending.items) |n| {
             if (fn_seen.contains(n) or types.contains(n)) continue;
-            const found = ownerType(env, owner, n) orelse findType(env, n) orelse continue;
+            // A name no module of the build answers alone is a carried std
+            // function's own type (B-168: std/code's private `Tok` beside a
+            // program's `Tok`).
+            const found = ownerType(env, owner, n) orelse findType(env, n) orelse findDeclaredStd(env, n) orelse continue;
             try types.put(arena, n, .{ .decl = found.decl, .helpers = found.helpers, .kept = .empty });
             try readTypeShape(arena, &names, found.decl);
             changed = true;

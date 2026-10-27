@@ -1,0 +1,5 @@
+import {compiler, code} from "std";
+
+pub fn twice(syntax value: unknown) -> anyvalue {
+    return code @`(${value}) + (${value})`;
+}

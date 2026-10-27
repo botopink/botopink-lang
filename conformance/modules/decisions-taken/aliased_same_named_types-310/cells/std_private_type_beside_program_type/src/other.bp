@@ -1,0 +1,6 @@
+type Tok(kind: string, text: string, hole: i32)
+
+pub fn make() -> string {
+    val t = Tok(kind: "a", text: "b", hole: 1);
+    return t.text;
+}

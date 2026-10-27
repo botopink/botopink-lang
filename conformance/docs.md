@@ -381,7 +381,9 @@ two as well (`import {collections.Dict as D} from "std";` beside `import
 Without an alias the second item binds the name again (`import-name-collision`,
 decision 170); a type this module declares beside an aliased import of a
 same-named type is two types (decision 603), the alias the other module's type here,
-a std type's included (`own_type_beside_std_type_import`). An activation cannot be
+a std type's included (`own_type_beside_std_type_import`), and a private type of std's own beside a
+program's same-named one is two types too: a template carrying std's code carries std's
+(`std_private_type_beside_program_type`). An activation cannot be
 renamed (`import-alias-on-activation`). A folder of std is no module and is not
 importable (decision 919): `import {io} from "std"` is refused, located, naming
 the leaves (`import {io.fs}`); a module namespace reaches its types, so `import {collections} from "std"`

@@ -1,0 +1,14 @@
+//// Decisions 310, 603 — a type is its module plus its name: `other` declares a private `Tok`, and
+//// std's own `code` module declares a private `Tok` its tokenizer constructs. `twice`'s template
+//// carries that tokenizer, so its module carries std's `Tok`, not `other`'s, and both calls run.
+
+mod mac;
+mod other;
+
+import {mac.twice, other.make};
+import {io.terminal.print} from "std";
+
+pub fn main() -> void {
+    print(twice(2).toString());
+    print(make());
+}
