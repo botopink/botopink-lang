@@ -1,0 +1,26 @@
+//// `xs.at(i) ?? v` over an array of an enum with payloads answers the
+//// element, or `v` when the index is out of range: a value of the enum,
+//// passed on as one.
+
+import {io.terminal.print} from "std";
+
+type Shape {
+    Dot,
+    Circle(r: i32),
+}
+
+fn name(s: Shape) -> string {
+    return case s {
+        Dot -> "dot";
+        Circle(r) -> "circle " + r.toString();
+    };
+}
+
+pub fn main() -> void {
+    val xs: Shape[] = [Shape.Circle(2), Shape.Dot];
+    print(name(xs.at(0) ?? Shape.Dot));
+    print(name(xs.at(5) ?? Shape.Circle(9)));
+    val i = 1;
+    print(name(xs.at(i) ?? Shape.Circle(9)));
+    print(name(xs.first() ?? Shape.Dot));
+}

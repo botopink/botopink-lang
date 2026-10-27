@@ -935,7 +935,12 @@ fn collectLinks(
                 const owns = if (cross.picked(imp.leaf(), leaf_src, null)) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
-                    whole.namesModule(o.name) or (whole != .key and std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf()));
+                    whole.namesModule(o.name) or (whole != .key and std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf())) or
+                        // Decision 1021 (10) — a `pub behavior` with no associated
+                        // default is in no export index (`import {ui.Component}`):
+                        // the module the item's prefix names declares it, and
+                        // a GC module types a parameter by it.
+                        (leaf_src.namesModule(o.name) and declaresPubBehavior(o, imp.leaf()));
                 if (!owns or visited.contains(o.name)) continue;
                 const ok = switch (o.outcome) {
                     .ok => |*ok| ok,
@@ -955,6 +960,16 @@ fn collectLinks(
             }
         }
     }
+}
+
+/// Whether module `o` declares `pub behavior <name>`.
+fn declaresPubBehavior(o: *const ComptimeOutput, name: []const u8) bool {
+    const ok = switch (o.outcome) {
+        .ok => |*ok| ok,
+        else => return false,
+    };
+    for (ok.transformed.decls) |d| if (d == .behavior and d.behavior.isPub and std.mem.eql(u8, d.behavior.name, name)) return true;
+    return false;
 }
 
 /// The source path a declaration of `linked[from]` is lowered under — the
@@ -4515,8 +4530,8 @@ const Emitter = struct {
                     if (self.elemRecordOfTypeRef(ta)) |rec| try self.arr_elem_rec_globals.put(v.name, rec);
                 }
             },
-            .implement => |im| try self.registerMethodSigs(im.target, im.methods),
-            .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
+            .implement => |im| try self.registerMethodSigs(im.target, im.targetArgs, im.methods),
+            .extend => |ex| try self.registerMethodSigs(ex.target, &.{}, ex.methods),
             // An enum's methods too: `Shape.Rect(…).counts(3)` is
             // `$Shape_counts(self, 3)` exactly as a record's is — it used to
             // be an `unresolved call` trap.
@@ -4658,16 +4673,44 @@ const Emitter = struct {
         return self.import_aliases.get(name) orelse name;
     }
 
-    fn registerMethodSigs(self: *Emitter, target: []const u8, methods: []const ast.ImplementMethod) !void {
+    /// The type `Self` means in an extension block for `target`: the record,
+    /// the primitive, or the array with the block's type arguments.
+    fn extSelfTypeRef(target: []const u8, target_args: []const ast.TypeRef) ast.TypeRef {
+        if (std.mem.eql(u8, target, "array")) return .{ .generic = .{ .name = "array", .args = @constCast(target_args), .is_builtin = false } };
+        return .{ .named = target };
+    }
+
+    /// The repr an extension method's parameter or result of type `t` has: a
+    /// word in linear memory (its every slot is one there); in a GC module the
+    /// written type's, `Self` being the block's target (decision 1021 (10): an
+    /// `implement … for i32` method answering a `string` was typed a word, and
+    /// its `return` refused the conversion).
+    fn extMethodRepr(self: *Emitter, t: ast.TypeRef, target: []const u8, target_args: []const ast.TypeRef) Repr {
+        if (self.mode != .gc) return .i32;
+        const tr = if (t == .named and std.mem.eql(u8, t.named, "Self")) extSelfTypeRef(target, target_args) else t;
+        return self.memberRepr(tr);
+    }
+
+    /// What an extension method answers (`extMethodRepr` of its return type),
+    /// null when it answers nothing.
+    fn extMethodResult(self: *Emitter, m: ast.ImplementMethod, target: []const u8, target_args: []const ast.TypeRef) ?Repr {
+        if (!methodHasResult(m.body)) return null;
+        if (self.mode != .gc) return .i32;
+        const rt = m.returnType orelse return .i32;
+        if (ast.answersNothing(rt)) return .i32;
+        return self.extMethodRepr(rt, target, target_args);
+    }
+
+    fn registerMethodSigs(self: *Emitter, target: []const u8, target_args: []const ast.TypeRef, methods: []const ast.ImplementMethod) !void {
         const ra = self.reg_arena.allocator();
         for (methods) |m| {
             const qualifier = m.qualifier orelse target;
             const sym = try std.fmt.allocPrint(ra, "{s}_{s}", .{ qualifier, m.name });
             const params = try ra.alloc(Repr, m.params.len);
-            for (params) |*t| t.* = .i32;
+            for (params, m.params) |*t, p| t.* = self.extMethodRepr(p.typeRef, target, target_args);
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (methodHasResult(m.body)) .i32 else null,
+                .result = self.extMethodResult(m, target, target_args),
             });
             // The shape the method answers, under the symbol its call emits:
             // `@print` and `+` pick their printer from it, and a block's method
@@ -12108,15 +12151,20 @@ const Emitter = struct {
     fn emitExtensionMethods(self: *Emitter, target: []const u8, target_args: []const ast.TypeRef, methods: []const ast.ImplementMethod) !void {
         for (methods) |m| {
             const has_result = methodHasResult(m.body);
-            self.resetFnState(if (has_result) .i32 else null);
+            const result_ty = self.extMethodResult(m, target, target_args);
+            self.resetFnState(result_ty);
+            if (self.mode == .gc) self.cur_ret_typeref = m.returnType;
             // `self.field` inside an extension method walks the target record's
             // declared field layout.
             self.self_type = if (self.records.contains(target)) target else null;
             defer self.self_type = null;
+            const prev_sig_owner = self.sig_owner;
+            if (self.mode == .gc) self.sig_owner = target;
+            defer self.sig_owner = prev_sig_owner;
             const qualifier = m.qualifier orelse target;
             for (m.params, 0..) |p, i| {
                 const sym = try self.paramSymbol(p, i);
-                try self.locals.put(sym, .i32);
+                try self.locals.put(sym, self.extMethodRepr(p.typeRef, target, target_args));
                 if (std.mem.eql(u8, p.name, "self")) {
                     if (self.self_type) |st| try self.local_types.put("self", st);
                     // A block for a primitive (`StringShout implement Shout for
@@ -12150,12 +12198,12 @@ const Emitter = struct {
             const ar = self.arena();
             var params: std.ArrayListUnmanaged(wat.Param) = .empty;
             for (m.params, 0..) |p, i| {
-                try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), .i32));
+                try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), self.vtOf(self.extMethodRepr(p.typeRef, target, target_args))));
             }
             try self.item(.{ .func = try self.builder().func(.{
                 .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ qualifier, m.name }),
                 .params = params.items,
-                .result = if (has_result) .i32 else null,
+                .result = if (has_result) self.vtOf(result_ty orelse .i32) else null,
                 .locals = try self.localLines(),
                 .body = body,
             }) });
@@ -24813,6 +24861,10 @@ const Emitter = struct {
                     else => return null,
                 };
                 if (!isParam(n, a, b) or !self.isArrayExpr(arg)) return null;
+                // Decision 1021 (10) — an empty `[]` says nothing of its elements:
+                // binding `T` to the `i32` its unknown elements default to
+                // typed `first<string>([], "none")`'s `fallback: T` a word.
+                if (self.mode == .gc and isEmptyArrayLit(arg)) return null;
                 if (self.elemRecordOf(arg)) |r| return .{ .name = n, .ty = r };
                 return .{
                     .name = n,
@@ -25516,6 +25568,12 @@ const Emitter = struct {
         // A record is its own pointer: `0` is absence, as it is for a string,
         // and a box would only hide the payload from every reader.
         if (self.elemRecordOf(recv)) |rec| return .{ .boxed = false, .rec = rec };
+        // 144 B-197 — in a GC module an element of an enum with payloads is
+        // its own nullable reference (`gcArrayAt` casts the slot to it): `xs.at(i)
+        // ?? Shape.Dot` answers a `Shape`, not the boxed word it was typed.
+        if (self.mode == .gc) if (self.gcElemRepr(recv)) |er| if (er == .ref and er.ref == .enum_) {
+            return .{ .boxed = false, .inner = .{ .named = er.ref.enum_ } };
+        };
         if (self.elemIsPointer(recv)) {
             const sh = (self.printShapeOf(recv) catch null).?;
             return .{ .boxed = false, .shape = sh[1..] };

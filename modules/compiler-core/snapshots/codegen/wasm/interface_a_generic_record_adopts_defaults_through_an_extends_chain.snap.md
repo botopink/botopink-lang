@@ -106,7 +106,7 @@ import {io.terminal.print} from "std";
     i32.const 0
     array.new_default $arr_any
     call $__new_31
-    call $Bag_isEmpty__T_i32
+    call $Bag_isEmpty
     call $__print_bool
     i32.const 1
     array.new_fixed $arr_i32 1

@@ -10,3 +10,8 @@ out ["a", "b"]
 out none
 out x
 out 0
+== nullish_enum_element_default
+out circle 2
+out circle 9
+out dot
+out circle 2

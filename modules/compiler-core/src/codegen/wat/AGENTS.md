@@ -206,6 +206,16 @@ prints as one (`lowerPrintArg`: `f()._1`) — `conformance/modules/nullish/cases
 answers were addresses before. Measured by building every conformance unit for wasm with `gc_debug` on; the test
 `wat: gc ---- an empty array arm, a case of its own type, …` and the ones after it pin them.
 
+Decision 1021 (10), P2b: an extension block's method (`implement … for <T>`, `extend`) is typed by what it
+writes — `registerMethodSigs` and `emitExtensionMethods` through `extMethodRepr`, `Self` the block's target
+(`extSelfTypeRef`) —, where every parameter and answer was a word; an empty `[]` argument binds no type
+parameter of a generic call (`bindParam`), where it bound the `i32` its elements default to; an element of an
+enum with payloads read by `at` / `first` is that enum's nullable reference (`arrayElemOpt`, 144 B-197:
+`xs.at(i) ?? Shape.Dot`); and `collectLinks` links the module an import's prefix names when it declares the
+`pub behavior` imported (`declaresPubBehavior`), which no export index lists without an associated default, so a
+parameter typed by it is the implementer's reference. Tests `wat: decision 1021 (10) ---- an element of an enum
+with payloads …` and the three after it.
+
 **std-wasm across the boundary** (decision 544's answer 4, until front 164 s3): std-wasm reads and writes
 linear memory, so `emitStdCall` marshals a GC module's call — each string or `Bytes` argument copied into the
 marshal arena (`$__gc_to_lin_str`, the `std_marshal` group, through `$__alloc`), a `string[]` as std-wasm's
