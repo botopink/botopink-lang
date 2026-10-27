@@ -633,6 +633,49 @@ pub fn executeTestModule(allocator: std.mem.Allocator, io: anytype, target: Test
     return ran.output;
 }
 
+/// One compile step's answer: every file compiled, the toolchain is missing
+/// (or the run was interrupted), or the first rejection's RUN LOG text.
+const BatchOutcome = union(enum) { ok, unavailable, failed: []u8 };
+
+/// Compile `basenames` (in order) in `tmp_dir` with ONE `erlc` call: the VM
+/// starts once for the whole fixture instead of once per module. `erlc` keeps
+/// going past a rejected file and prints every file's diagnostics, but a RUN
+/// LOG records only the first rejected file's, as the one-call-per-module
+/// loop did — so a rejected batch is compiled again one file at a time and
+/// the failure text is that loop's, byte for byte. Rejections are the rare
+/// path; the batch is the common one.
+fn compileModules(allocator: std.mem.Allocator, io: anytype, tmp_dir: []const u8, flags: []const []const u8, tool: []const u8, basenames: []const []const u8) !BatchOutcome {
+    if (basenames.len == 0) return .ok;
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(allocator);
+    try argv.append(allocator, "erlc");
+    try argv.appendSlice(allocator, flags);
+    try argv.appendSlice(allocator, &.{ "-o", "." });
+    try argv.appendSlice(allocator, basenames);
+    const batch = try runCaptured(allocator, io, argv.items, tmp_dir, RUNTIME_TIMEOUT_NS);
+    defer allocator.free(batch.output);
+    switch (batch.status) {
+        .ok => return .ok,
+        .unavailable, .interrupted => return .unavailable,
+        .failed => {},
+    }
+    if (basenames.len == 1) return .{ .failed = try compileFailureLog(allocator, tool, batch.output) };
+    for (basenames) |base| {
+        argv.shrinkRetainingCapacity(1 + flags.len + 2);
+        try argv.append(allocator, base);
+        const one = try runCaptured(allocator, io, argv.items, tmp_dir, RUNTIME_TIMEOUT_NS);
+        defer allocator.free(one.output);
+        switch (one.status) {
+            .ok => {},
+            .unavailable, .interrupted => return .unavailable,
+            .failed => return .{ .failed = try compileFailureLog(allocator, tool, one.output) },
+        }
+    }
+    // The batch failed but every file passes alone: report it as the batch
+    // saw it rather than run the program on a half-built scratch dir.
+    return .{ .failed = try compileFailureLog(allocator, tool, batch.output) };
+}
+
 /// Execute Erlang code and capture stdout/stderr.
 /// `aux` modules are compiled into the same scratch dir so remote calls
 /// (`option:map(...)`) resolve at runtime.
@@ -697,23 +740,12 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_filename, .data = erl_code });
     }
 
-    // Compile the Erlang module (and any sibling modules it calls into).
-    // `erlc` exits 0 for a warning-only compilation and prints the warnings
-    // on stderr, so only the exit status decides: warnings are dropped and
-    // the module still runs; a rejection becomes the RUN LOG.
-    {
-        const compiled = try runCaptured(allocator, io, &.{ "erlc", "-o", ".", entry_basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
-        defer allocator.free(compiled.output);
-        switch (compiled.status) {
-            .ok => {},
-            .unavailable, .interrupted => return allocator.dupe(u8, ""),
-            .failed => {
-                const log = try compileFailureLog(allocator, "erlc", compiled.output);
-                cacheWrite(io, allocator, &key, log);
-                return log;
-            },
-        }
-    }
+    // Write every sibling module the entry calls into, then compile the whole
+    // program with one `erlc` call (`compileModules`). `erlc` exits 0 for a
+    // warning-only compilation and prints the warnings on stderr, so only the
+    // exit status decides: warnings are dropped and the module still runs; a
+    // rejection becomes the RUN LOG. A duplicate atom is refused after the
+    // modules before it compiled, so a rejection of those still comes first.
     // `seen` keys on the atom slices it is handed, so every aux atom has to
     // outlive the loop: freed per iteration, the key of the first claim was
     // dangling by the time the second claim was compared against it, and the
@@ -723,32 +755,41 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         for (aux_atoms.items) |m| allocator.free(m);
         aux_atoms.deinit(allocator);
     }
+    var basenames: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (basenames.items) |n| allocator.free(n);
+        basenames.deinit(allocator);
+    }
+    try basenames.append(allocator, try allocator.dupe(u8, entry_basename));
+    var duplicate: ?[]u8 = null;
+    defer if (duplicate) |d| allocator.free(d);
     for (aux) |a| {
         const aux_module = try auxAtom(allocator, a);
         try aux_atoms.append(allocator, aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {
-            const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
-            cacheWrite(io, allocator, &key, log);
-            return log;
+            duplicate = try duplicateAtomLog(allocator, aux_module, first, a.name);
+            break;
         }
         try seen.put(aux_module, a.name);
         const aux_basename = try std.fmt.allocPrint(allocator, "{s}.erl", .{aux_module});
-        defer allocator.free(aux_basename);
+        try basenames.append(allocator, aux_basename);
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, aux_basename });
         defer allocator.free(aux_filename);
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = aux_filename, .data = a.code });
-        const aux_compiled = try runCaptured(allocator, io, &.{ "erlc", "-o", ".", aux_basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
-        defer allocator.free(aux_compiled.output);
-        switch (aux_compiled.status) {
-            .ok => {},
-            .unavailable, .interrupted => return allocator.dupe(u8, ""),
-            .failed => {
-                const log = try compileFailureLog(allocator, "erlc", aux_compiled.output);
-                cacheWrite(io, allocator, &key, log);
-                return log;
-            },
-        }
+    }
+    switch (try compileModules(allocator, io, tmp_dir, &.{}, "erlc", basenames.items)) {
+        .ok => {},
+        .unavailable => return allocator.dupe(u8, ""),
+        .failed => |log| {
+            cacheWrite(io, allocator, &key, log);
+            return log;
+        },
+    }
+    if (duplicate) |d| {
+        const log = try allocator.dupe(u8, d);
+        cacheWrite(io, allocator, &key, log);
+        return log;
     }
 
     // A crashing program (non-zero exit) records an empty RUN LOG: the
@@ -816,56 +857,51 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
     // only signal: reading "no output" as failure is what kept every BEAM
     // fixture from running (spec 06 H1). A rejection (the loader's validator
     // included) becomes the RUN LOG instead of being silently dropped.
-    {
-        const assembled = try runCaptured(allocator, io, &.{ "erlc", "+from_asm", "-o", ".", asm_basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
-        defer allocator.free(assembled.output);
-        switch (assembled.status) {
-            .ok => {},
-            .unavailable, .interrupted => return allocator.dupe(u8, ""),
-            .failed => {
-                const log = try compileFailureLog(allocator, "erlc +from_asm", assembled.output);
-                cacheWrite(io, allocator, &key, log);
-                return log;
-            },
-        }
-    }
-
-    // Assemble sibling modules the entry calls into (cross-module `call_ext`).
-    // `seen` keys on the atom slices it is handed, so every aux atom has to
-    // outlive the loop: freed per iteration, the key of the first claim was
-    // dangling by the time the second claim was compared against it, and the
-    // refusal below read freed memory instead of firing.
+    // Sibling modules the entry calls into (cross-module `call_ext`) are
+    // written first and assembled with the entry in one `erlc` call
+    // (`compileModules`); a duplicate atom is refused after the modules
+    // before it assembled, as in `executeErlang`, whose note on `aux_atoms`
+    // applies here too.
     var aux_atoms: std.ArrayListUnmanaged([]u8) = .empty;
     defer {
         for (aux_atoms.items) |m| allocator.free(m);
         aux_atoms.deinit(allocator);
     }
+    var basenames: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (basenames.items) |n| allocator.free(n);
+        basenames.deinit(allocator);
+    }
+    try basenames.append(allocator, try allocator.dupe(u8, asm_basename));
+    var duplicate: ?[]u8 = null;
+    defer if (duplicate) |d| allocator.free(d);
     for (aux) |a| {
         const aux_module = try auxAtom(allocator, a);
         try aux_atoms.append(allocator, aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {
-            const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
-            cacheWrite(io, allocator, &key, log);
-            return log;
+            duplicate = try duplicateAtomLog(allocator, aux_module, first, a.name);
+            break;
         }
         try seen.put(aux_module, a.name);
         const aux_basename = try std.fmt.allocPrint(allocator, "{s}.S", .{aux_module});
-        defer allocator.free(aux_basename);
+        try basenames.append(allocator, aux_basename);
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, aux_basename });
         defer allocator.free(aux_filename);
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = aux_filename, .data = a.code });
-        const aux_assembled = try runCaptured(allocator, io, &.{ "erlc", "+from_asm", "-o", ".", aux_basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
-        defer allocator.free(aux_assembled.output);
-        switch (aux_assembled.status) {
-            .ok => {},
-            .unavailable, .interrupted => return allocator.dupe(u8, ""),
-            .failed => {
-                const log = try compileFailureLog(allocator, "erlc +from_asm", aux_assembled.output);
-                cacheWrite(io, allocator, &key, log);
-                return log;
-            },
-        }
+    }
+    switch (try compileModules(allocator, io, tmp_dir, &.{"+from_asm"}, "erlc +from_asm", basenames.items)) {
+        .ok => {},
+        .unavailable => return allocator.dupe(u8, ""),
+        .failed => |log| {
+            cacheWrite(io, allocator, &key, log);
+            return log;
+        },
+    }
+    if (duplicate) |d| {
+        const log = try allocator.dupe(u8, d);
+        cacheWrite(io, allocator, &key, log);
+        return log;
     }
 
     const ran = try runCaptured(allocator, io, &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{ "-noinput", "-pa", ".", "-s", entry_module, "_botopink_main", "-s", "init", "stop" }), tmp_dir, RUNTIME_TIMEOUT_NS);
