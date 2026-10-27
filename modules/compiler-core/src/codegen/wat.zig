@@ -17194,6 +17194,12 @@ const Emitter = struct {
                 try self.noteTypedBinder(n, arg);
             }
         };
+        // 144 B-196 — an array payload (`Obj(fields: fs)` of `fields: F[]`)
+        // carries its element shape, as a parameter of that type does: unnoted,
+        // `fs.map({ f -> f.key })` read `f` by no record type — the field at
+        // slot 0 — and joined the result as integers.
+        if (field_ty) |t| if (ref == .user and arrayElemOfTypeRef(t) != null and self.tparamArgOf(ref, subj, t) == null)
+            try self.noteParamShape(n, t);
         if (self.mode == .gc and ref != .user) {
             const shape = self.result_subjects.get(subj) orelse ResultShape{};
             if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))

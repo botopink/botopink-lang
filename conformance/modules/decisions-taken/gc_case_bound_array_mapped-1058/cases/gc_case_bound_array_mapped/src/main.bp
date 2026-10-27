@@ -1,0 +1,58 @@
+//// An array bound by a `case` arm's payload pattern carries its declared element type into
+//// what the arm does with it (decision 1058 (4), 144 B-196): `Obj(fields: fs)` of `fields: F[]`
+//// mapped `{ f -> f.key }` reads each element's `key`, whichever slot the record keeps it in,
+//// and the mapped array is a `string[]`. wasm bound `fs` with no element type: it read the
+//// field by no record and joined the result as integers, printing heap addresses at exit 0.
+//// The control returns the same `fs` through a function typed `F[]` and maps it there.
+
+import {io.terminal.print} from "std";
+
+type F(key: string, n: i32)
+
+type G(weight: i32, label: string)
+
+type J {
+    Leaf(value: i32),
+    Obj(fields: F[]),
+    Rev(items: G[]),
+}
+
+fn keys(j: J) -> string {
+    return case j {
+        Obj(fields: fs) -> fs.map({ f -> f.key }).join(";");
+        _ -> "leaf";
+    };
+}
+
+fn revKeys(j: J) -> string {
+    return case j {
+        Rev(gs) -> gs.map({ g -> g.label }).join(";");
+        _ -> "leaf";
+    };
+}
+
+fn total(j: J) -> i32 {
+    return case j {
+        Rev(items: gs) -> gs
+            .map({ g -> g.weight * 10 })
+            .fold(0, { a, b -> a + b });
+        _ -> 0;
+    };
+}
+
+fn fieldsOf(j: J) -> F[] {
+    return case j {
+        Obj(fields: fs) -> fs;
+        _ -> [];
+    };
+}
+
+pub fn main() -> void {
+    print(keys(J.Obj(fields: [F(key: "y", n: 1)])));
+    print(fieldsOf(J.Obj(fields: [F(key: "y", n: 1)]))
+        .map({ f -> f.key })
+        .join(";"));
+    print(revKeys(J.Rev(items: [G(weight: 1, label: "a"), G(weight: 2, label: "b")])));
+    print(total(J.Rev(items: [G(weight: 1, label: "a"), G(weight: 2, label: "b")])));
+    print(keys(J.Leaf(value: 3)));
+}
