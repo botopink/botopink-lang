@@ -643,11 +643,12 @@ pub fn build(b: *std.Build) void {
     // intermediate, the same bytes; the directory required), and the
     // package's `.bpr` set reused while its key is fresh (`runtime_reuse.sh`,
     // decision 1006: another target's run does no comptime, a changed source
-    // rebuilds it). The language
+    // rebuilds it), and a `.beam` loaded as it is while its source is
+    // unchanged (`beam_reuse.sh`, decision 1007). The language
     // half these scripts held — numeric, records, the `mod` tree, mutual
     // recursion, `assert` / `try` — is conformance cells (144 B-29 step H). The
     // scripts run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "code_cache.sh", "backend_exec.sh", "closure_invariant.sh", "level_b.sh", "analysis_equivalence.sh", "runtime_file.sh", "resolved_file.sh", "build_modes_same_answer.sh", "runtime_reuse.sh", "beam_reuse.sh", "build_json.sh", "packages_list.sh", "flat_output_names.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

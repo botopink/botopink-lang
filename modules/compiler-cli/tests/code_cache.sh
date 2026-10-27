@@ -115,7 +115,7 @@ run_in "$WS/one" build --target erlang
 [[ "$(inodes)" == "$BEFORE" ]] || fail "build stored a dependency entry run had stored already"
 ok "test and build link the dependency entries run stored (decision 513)"
 
-echo "==> build_materialises_dependency_beams: build leaves the dependencies' .beam in the output"
+echo "==> build_materialises_dependency_beams: build leaves the dependencies' .beam in the output, and its own"
 rm -rf "$WS/one/out"
 run_in "$WS/one" build --target erlang
 [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "build of the first member (exit $CODE)"; }
@@ -124,10 +124,12 @@ for e in "$WS"/one/out/erl/lib@*.erl; do
   [[ -f "$b" ]] || fail "build left no .beam beside $(basename "$e")"
   [[ "$(links "$b")" -ge 2 ]] || fail "$(basename "$b") is no link to its cache entry"
 done
-[[ -z "$(find "$WS/one/out/erl" -name 'one@*.beam')" ]] || fail "build compiled the member's own module into the output"
-DEP_BEAMS="$(find "$WS/one/out/erl" -name '*@*.beam' | wc -l | tr -d ' ')"
+# Decision 1007 (2): the build's OTP check writes the member's own `.beam` too — never stored, no link.
+OWN_BEAM="$WS/one/out/erl/one@main.beam"
+[[ -f "$OWN_BEAM" && "$(links "$OWN_BEAM")" -eq 1 && -s "$OWN_BEAM.rec" ]] || fail "build wrote no own .beam with its record, or linked it to the store"
+DEP_BEAMS="$(find "$WS/one/out/erl" -name '*@*.beam' ! -name 'one@*' | wc -l | tr -d ' ')"
 [[ "$DEP_BEAMS" -eq "$(find "$WS/one/out/erl" -name '*@*.erl' ! -name 'one@*' | wc -l | tr -d ' ')" ]] || fail "one .beam per dependency module"
-ok "$DEP_BEAMS dependency .beam files, links to the entries; the member's own module has none"
+ok "$DEP_BEAMS dependency .beam files, links to the entries; the member's own module compiled beside its .erl, never stored"
 
 echo "==> beam: both members, one store in the workspace"
 for m in one two; do
@@ -163,6 +165,8 @@ BEFORE="$(inodes)"
 PIN="$WORK/pin"
 mkdir -p "$PIN"
 while read -r ino rel; do ln "$STORE/$rel" "$PIN/$ino"; done <<<"$BEFORE"
+# Without `out/`: a `.beam` there whose record matches is loaded as it is, `--cold` too (decision 1007 (3)).
+rm -rf "$WS/one/out"
 run_in "$WS/one" run --target erlang --cold
 [[ $CODE -eq 0 ]] && grep -q '^hullo one$' <<<"$OUT" || { echo "$OUT" >&2; fail "a cold run"; }
 [[ "$(links "$WS/one/out/erl/lib@root.beam")" -eq 1 ]] || fail "--cold links nothing from the store"

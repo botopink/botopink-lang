@@ -15,6 +15,7 @@ const refusals = @import("./refusals.zig");
 const manifest = @import("manifest");
 const runtime_file = bp.runtime_file;
 const runtime_cache = @import("./runtime_cache.zig");
+const beam_record = @import("./beam_record.zig");
 
 const Module = bp.Module;
 
@@ -464,11 +465,11 @@ fn runBuild(
     removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
 
     // erlang: emitted text is not yet a program — the OTP compiler must accept
-    // it. Every `.erl` this build wrote is compiled (in memory, nothing is
-    // written) and one it refuses fails the build, so "it builds on erlang"
-    // means what it says.
+    // it. Every `.erl` this build wrote whose `.beam` record does not match is
+    // compiled into its `.beam` beside it (decision 1007) and one it refuses
+    // fails the build, so "it builds on erlang" means what it says.
     const erl_ok = if (target == .erlang)
-        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj))
+        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj), opts.rebuild)
     else
         true;
 
@@ -625,7 +626,7 @@ pub fn runRuntime(
     };
     removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
     const erl_ok = if (target == .erlang)
-        try checkErlang(arena, io, emitted.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj))
+        try checkErlang(arena, io, emitted.items, opts.out_dir, cfg.packages, try code_cache.dir(arena, proj), opts.rebuild)
     else
         true;
     if (failed.len > 0) {
@@ -718,8 +719,10 @@ fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: ru
 }
 
 /// Compile every `.erl` this build wrote with the OTP compiler, in one `erl`
-/// (one process per scheduler, `compile:file(F, [binary, return_errors])` —
-/// in memory, so `out/` holds exactly what it held before), and print each
+/// (one process per scheduler, `compile:file(F, [deterministic,
+/// return_errors, {outdir, …}])` — each `.beam` beside its `.erl`, its record
+/// beside it once the job succeeded, `beam_record.zig`; a module whose record
+/// matches is not compiled, `build --cold` compiling every one), and print each
 /// refusal as `<file>:<line>: <message>`. False when any module is refused, or
 /// when `erl` cannot be run: a build that did not check its output does not
 /// get to say it succeeded.
@@ -730,7 +733,8 @@ fn readRuntime(arena: std.mem.Allocator, io: std.Io, path: []const u8, stamp: ru
 /// The warnings of generated code are not reported (`return_errors` alone).
 ///
 /// **The code cache** (decision 509, `code_cache.zig`, `cache_dir`). The
-/// project's own modules are compiled every time. A DEPENDENCY's module (std,
+/// project's own modules are compiled when their record does not match
+/// (decision 1007). A DEPENDENCY's module (std,
 /// a library — `Packages.idOf`) is answered from the store when its `.beam` is
 /// there under the key of its bytes and the OTP compiler's version: the same
 /// bytes under the same compiler compile the same — rakun's build tests spawn
@@ -746,25 +750,33 @@ fn checkErlang(
     out_dir: []const u8,
     packages: bp.codegen.crossModule.Packages,
     cache_dir: []const u8,
+    /// `build --cold`: every module compiled, whatever its record says
+    /// (decision 1007 (3)).
+    rebuild: bool,
 ) !bool {
     // The files go through list files, never the command line: one path per
     // module made `erl`'s argv grow with the program, and a 203-module build
     // with a deep `--out` passed macOS's 1 MiB `ARG_MAX` (`arglist.zig`).
-    var own = std.ArrayListUnmanaged([]const u8).empty;
-    var deps = std.ArrayListUnmanaged([]const u8).empty;
+    var own = std.ArrayListUnmanaged(beam_record.Pair).empty;
+    var deps = std.ArrayListUnmanaged(beam_record.Pair).empty;
     for (outputs) |o| {
         if (o.result.failed()) continue;
         const list = if (packages.idOf(o.name).package_in_path) &deps else &own;
-        try list.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
+        try list.append(arena, try erlPair(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl")));
         for (o.result.units) |u| {
-            try list.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
+            try list.append(arena, try erlPair(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom })));
         }
     }
-    const total = own.items.len + deps.items.len;
+    // Decision 1007: a module whose `.beam` beside it carries the record of
+    // its `.erl`'s bytes, this compiler and this OTP release was checked and
+    // compiled already; it is loaded as it is.
+    const own_todo = try beam_record.stale(arena, io, own.items, rebuild);
+    const dep_todo = try beam_record.stale(arena, io, deps.items, rebuild);
+    const total = own_todo.len + dep_todo.len;
     if (total == 0) return true;
-    const own_list = try arglist.write(arena, io, own.items);
+    const own_list = try arglist.write(arena, io, try beam_record.sources(arena, own_todo));
     defer arglist.remove(io, own_list);
-    const dep_list = try arglist.write(arena, io, deps.items);
+    const dep_list = try arglist.write(arena, io, try beam_record.sources(arena, dep_todo));
     defer arglist.remove(io, dep_list);
 
     // One job of the command's `erl` session (`otp.zig`): the VM that answered
@@ -778,9 +790,19 @@ fn checkErlang(
     };
     if (result.stdout.len > 0) reporter.print("{s}", .{result.stdout});
     const code: u8 = result.code;
-    if (code == 0) return true;
+    if (code == 0) {
+        beam_record.writeAll(arena, io, own_todo);
+        beam_record.writeAll(arena, io, dep_todo);
+        return true;
+    }
     reporter.errMsg("the OTP compiler refused emitted erlang — the build is not a program");
     return false;
+}
+
+/// `<dir>/<atom>.erl` and the `.beam` its compile writes beside it.
+fn erlPair(arena: std.mem.Allocator, src: []const u8) !beam_record.Pair {
+    const stem = src[0 .. src.len - ".erl".len];
+    return .{ .src = src, .beam = try std.mem.concat(arena, u8, &.{ stem, ".beam" }) };
 }
 
 /// The check `checkErlang` runs in one `erl`: the plain arguments are the code
@@ -791,7 +813,11 @@ fn checkErlang(
 /// from the store when it is there and its `.beam` materialised beside its
 /// `.erl` (decisions 509 (4), 767: what `run` links, so a consumer of the
 /// output compiles only the project's own modules); every refusal is printed as
-/// `<file>:<line>: <message>`; exit 1 when there is any.
+/// `<file>:<line>: <message>`; exit 1 when there is any. The own modules are
+/// compiled `deterministic` into their `.beam` beside the `.erl` (decision
+/// 1007 (2)), which a `run` then loads as it is; `deterministic` names a file
+/// by its base name, so a refusal's file is given back as the path the job
+/// was handed (`Named`), the text it had.
 const ERLANG_CHECK_EVAL =
     \\[CacheDir, CacheMode, OwnListFile, DepListFile] = init:get_plain_arguments(),
 ++ arglist.READ_LIST("Own", "OwnListFile") ++ arglist.READ_LIST("Deps", "DepListFile") ++ code_cache.ERL_FUNS ++
@@ -802,11 +828,13 @@ const ERLANG_CHECK_EVAL =
     \\Self = self(),
     \\Loc = fun({L, C}) -> io_lib:format("~p:~p", [L, C]); (none) -> "0"; (L) -> io_lib:format("~p", [L]) end,
     \\Compile = fun(F) ->
-    \\    case catch compile:file(F, [binary, return_errors]) of
+    \\    Named = fun(File) -> case File =:= filename:basename(F) of true -> F; false -> File end end,
+    \\    case catch compile:file(F, [deterministic, return_errors, {outdir, filename:dirname(F)}]) of
+    \\        {ok, _} -> [];
     \\        {ok, _, _} -> [];
     \\        {ok, _, _, _} -> [];
     \\        {error, Errors, _} ->
-    \\            [io_lib:format("~ts:~ts: ~ts~n", [File, Loc(L), M:format_error(D)])
+    \\            [io_lib:format("~ts:~ts: ~ts~n", [Named(File), Loc(L), M:format_error(D)])
     \\             || {File, Items} <- Errors, {L, M, D} <- Items];
     \\        Other -> [io_lib:format("~ts: ~p~n", [F, Other])]
     \\    end

@@ -1,0 +1,12 @@
+import {io.terminal.print} from "std";
+
+//// Decision 1007 — an edited module is recompiled alone: after a change to `src/greeting.bp`, the next
+//// `botopink run --target erlang` (and `beam`) writes that module's `.beam` again and loads every other one as it
+//// is (`modules/compiler-cli/tests/beam_reuse.sh` edits it between two runs on each).
+
+mod greeting;
+mod shapes;
+
+pub fn main() -> void {
+    print(greeting.text() + " " + shapes.area(3, 4).toString());
+}

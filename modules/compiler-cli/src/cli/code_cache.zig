@@ -182,8 +182,12 @@ pub const ERL_FUNS =
     \\                        false ->
     \\                            case catch compile:file(Src, Opts) of
     \\                                {ok, _, Bin} ->
-    \\                                    case Out of none -> ok; _ -> ok = CodePlace(Out, Bin) end,
     \\                                    CodeStore(Entry, Bin),
+    \\                                    case Out of
+    \\                                        none -> ok;
+    \\                                        _ when CacheMode =:= "warm" -> case catch CodeLink(Entry, Out) of ok -> ok; _ -> ok = CodePlace(Out, Bin) end;
+    \\                                        _ -> ok = CodePlace(Out, Bin)
+    \\                                    end,
     \\                                    ok;
     \\                                Other -> {error, Other}
     \\                            end

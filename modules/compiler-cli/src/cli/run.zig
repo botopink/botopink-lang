@@ -8,6 +8,7 @@ const libs = @import("./libs.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const code_cache = @import("./code_cache.zig");
+const beam_record = @import("./beam_record.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,8 @@ fn programArgvFor(
     const entry_atom = try bp.codegen.crossModule.erlAtom(arena, packages.idOf(module));
     if (target == .erlang or target == .beam) {
         // A dependency's module is linked from the code cache when it is there
-        // (decision 509); the project's own are compiled every time.
+        // (decision 509); every module whose `.beam` record matches is loaded
+        // as it is (decision 1007).
         const cache: Cache = .{ .dir = try code_cache.dir(arena, proj), .own_prefix = try code_cache.ownAtomPrefix(arena, proj.name) };
         return if (target == .erlang) erlangArgv(arena, io, out_dir, entry_atom, cache) else beamArgv(arena, io, out_dir, entry_atom, cache);
     }
@@ -311,8 +313,9 @@ fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_ato
 /// when its `.beam` is there, else compiled `deterministic` (its `.beam` is
 /// then the same bytes wherever it is compiled) and stored, side by side on
 /// the job's schedulers; one that is refused, or cannot be keyed, is compiled
-/// as the project's own are, so its refusal reads as before. The project's
-/// own modules are compiled every time.
+/// as the project's own are, so its refusal reads as before. A file whose
+/// `.beam` in `dir` carries the record of its bytes (`beam_record.zig`,
+/// decision 1007) is not compiled at all, own or dependency's.
 fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: Kind, files: []const []const u8, cache: Cache) !u8 {
     const code = try compileInto(arena, io, dir, kind, files, cache);
     if (code != 0) reporter.errMsg("the OTP compiler refused the emitted program — nothing to run");
@@ -325,12 +328,22 @@ pub const Kind = enum { erlang, beam };
 /// its run's `.S` files with it (`test_cmd.zig`), a refusal printed as `erlc`
 /// prints it.
 pub fn compileInto(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: Kind, files: []const []const u8, cache: Cache) !u8 {
-    var own: std.ArrayListUnmanaged([]const u8) = .empty;
-    var deps: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (files) |f| try (if (code_cache.isDependencyArtifact(f, cache.own_prefix)) &deps else &own).append(arena, f);
-    const own_list = try arglist.write(arena, io, own.items);
+    // Decision 1007: a file whose `.beam` in `dir` carries the record of its
+    // bytes, this compiler and this OTP release is loaded as it is — `build`'s
+    // OTP check wrote the own modules' — and the rest compiled.
+    var own: std.ArrayListUnmanaged(beam_record.Pair) = .empty;
+    var deps: std.ArrayListUnmanaged(beam_record.Pair) = .empty;
+    for (files) |f| {
+        const stem = std.fs.path.stem(f);
+        const pair: beam_record.Pair = .{ .src = f, .beam = try std.fmt.allocPrint(arena, "{s}/{s}.beam", .{ dir, stem }) };
+        try (if (code_cache.isDependencyArtifact(f, cache.own_prefix)) &deps else &own).append(arena, pair);
+    }
+    const own_todo = try beam_record.stale(arena, io, own.items, false);
+    const dep_todo = try beam_record.stale(arena, io, deps.items, false);
+    if (own_todo.len + dep_todo.len == 0) return 0;
+    const own_list = try arglist.write(arena, io, try beam_record.sources(arena, own_todo));
     defer arglist.remove(io, own_list);
-    const dep_list = try arglist.write(arena, io, deps.items);
+    const dep_list = try arglist.write(arena, io, try beam_record.sources(arena, dep_todo));
     defer arglist.remove(io, dep_list);
     const mode: []const u8 = switch (kind) {
         .erlang => "erl",
@@ -338,11 +351,15 @@ pub fn compileInto(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: 
     };
     // A job of the command's `erl` session (`otp.zig`), after `build`'s check.
     const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, own_list, dep_list, cache.dir, code_cache.mode() };
-    const result = otp.job(arena, io, COMPILE_EVAL, argv[5..], otp.onlineFor(deps.items.len)) catch |err| {
+    const result = otp.job(arena, io, COMPILE_EVAL, argv[5..], otp.onlineFor(dep_todo.len)) catch |err| {
         reporter.errMsg(arglist.spawnError(arena, "erl", argv, err));
         return 1;
     };
     if (result.stdout.len > 0) std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
+    if (result.code == 0) {
+        beam_record.writeAll(arena, io, own_todo);
+        beam_record.writeAll(arena, io, dep_todo);
+    }
     return result.code;
 }
 

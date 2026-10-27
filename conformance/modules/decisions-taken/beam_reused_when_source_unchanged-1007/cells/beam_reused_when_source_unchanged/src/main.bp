@@ -1,0 +1,11 @@
+import {io.terminal.print} from "std";
+
+//// Decision 1007 — on erlang and beam a module's `.beam` is reused while its emitted source is unchanged: a
+//// second `botopink run --target erlang` (and `beam`) compiles no module and answers the same
+//// (`modules/compiler-cli/tests/beam_reuse.sh` runs it twice on each, every `.beam` the same file).
+
+mod shapes;
+
+pub fn main() -> void {
+    print("area " + shapes.area(3, 4).toString());
+}

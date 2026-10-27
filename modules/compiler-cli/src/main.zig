@@ -113,8 +113,9 @@ const HELP =
     \\
     \\The code cache (.botopinkbuild/cache/code/ under the workspace root, else the
     \\project): the compiled modules of a project's dependencies — std and the
-    \\libraries — by the bytes compiled and the tool's version; the project's own
-    \\modules are compiled every time.
+    \\libraries — by the bytes compiled and the tool's version. On erlang and beam a
+    \\.beam in out/ is loaded as it is while its record (the source's hash, the
+    \\compiler, the OTP release) matches.
     \\
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
@@ -580,6 +581,7 @@ test {
     _ = @import("./cli/analysis_equivalence.zig");
     _ = @import("./cli/analysis_store.zig");
     _ = @import("./cli/arglist.zig");
+    _ = @import("./cli/beam_record.zig");
     _ = @import("./cli/bpp.zig");
     _ = @import("./cli/bpp_unfold.zig");
     _ = @import("./cli/build.zig");
