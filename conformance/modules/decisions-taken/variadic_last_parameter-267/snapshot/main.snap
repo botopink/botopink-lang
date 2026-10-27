@@ -35,3 +35,9 @@ out x
 out x+y+z
 out 2
 out two 3
+== variadic_parameter_host
+out 9
+out 7
+== variadic_parameter_host on wasm
+refused error: `largest` has no implementation for the wasm backend
+at src/main.bp:15:11

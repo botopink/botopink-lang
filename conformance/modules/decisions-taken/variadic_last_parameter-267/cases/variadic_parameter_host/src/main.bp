@@ -4,7 +4,7 @@
 //// (`lists:max([3, 9, 4])`).
 ////
 //// wasm has no host, so it refuses the program where the host function is
-//// first called — `variadic_parameter_host.wasm.expect`.
+//// first called (its `on wasm` section).
 
 import {compiler, io.terminal.print} from "std";
 

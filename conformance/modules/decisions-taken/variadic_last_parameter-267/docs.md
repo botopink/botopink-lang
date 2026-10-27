@@ -6,7 +6,7 @@
 [cases/variadic_not_array/src/main.bp](cases/variadic_not_array/src/main.bp)
 [cases/variadic_not_last/src/main.bp](cases/variadic_not_last/src/main.bp)
 [cases/variadic_parameter/src/main.bp](cases/variadic_parameter/src/main.bp)
-[cells/variadic_parameter_host/src/main.bp](cells/variadic_parameter_host/src/main.bp)
+[cases/variadic_parameter_host/src/main.bp](cases/variadic_parameter_host/src/main.bp)
 [cases/variadic_spread_at_call/src/main.bp](cases/variadic_spread_at_call/src/main.bp)
 [cases/variadic_twice/src/main.bp](cases/variadic_twice/src/main.bp)
 
