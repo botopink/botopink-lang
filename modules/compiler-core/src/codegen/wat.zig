@@ -3746,6 +3746,70 @@ fn blockReturnValueOf(e: ast.Expr) ?ast.Expr {
     };
 }
 
+/// Decision 1088 — a bare `loop { … }` (no `iter`/`stream` prefix, no
+/// generator effect) whose body holds no `break`: the only way out is a
+/// `return` (or a declared-`noreturn` call that never falls back in at all —
+/// `isNoReturnCall`), so nothing after the loop is reachable and its type is
+/// whatever its first `return` carries (`blockReturnValue`, which already
+/// walks `if`/`case`/nested-loop bodies the same way). Null when the loop may
+/// also leave through a `break`: such a loop completes normally and is no
+/// `wasmTypeOf`/`gcReprOfExpr`/`recordTypeOfExpr` question of its own.
+fn returnOnlyLoopValue(lp: anytype) ?ast.Expr {
+    if (lp.keyword != .loop or lp.generator != null) return null;
+    if (bodyHasBreak(lp.body)) return null;
+    return blockReturnValue(lp.body);
+}
+
+/// Whether a `break` reaches past `body`'s own loop scope — conservatively
+/// true for a `break` anywhere inside, nested loops included (an unlabeled
+/// `break` there targets the inner loop, but a labelled one may not, and
+/// missing that is unsafe; overcounting only costs the decision-1088
+/// optimisation, never correctness).
+fn bodyHasBreak(body: []const ast.Stmt) bool {
+    for (body) |s| if (exprHasBreak(s.expr)) return true;
+    return false;
+}
+
+fn exprHasBreak(e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => true,
+            else => false,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| bodyHasBreak(i.then_) or (if (i.else_) |els| bodyHasBreak(els) else false),
+            .tryCatch => |tc| exprHasBreak(tc.expr.*) or exprHasBreak(tc.handler.*),
+        },
+        .loop => |lp| bodyHasBreak(lp.body),
+        .collection => |col| switch (col.kind) {
+            .case => |c| blk: {
+                for (c.arms) |arm| {
+                    const has = if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
+                        bodyHasBreak(arm.body.function.kind.body)
+                    else
+                        exprHasBreak(arm.body);
+                    if (has) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprHasBreak(lb.value.*),
+            .localBindDestruct => |lb| exprHasBreak(lb.value.*),
+            .assign => |a| exprHasBreak(a.value.*),
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                for (cc.trailing) |t| if (bodyHasBreak(t.body)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// Signature of an emitted function, keyed by its WAT symbol (already mangled
 /// for extension/record methods). `result` is null for a void function. Call
 /// sites consult this to know whether a `call` pushes a value, and to coerce
@@ -5596,6 +5660,9 @@ const Emitter = struct {
                 // are one type; either names the record.
                 .tryCatch => |tc| self.recordTypeOfExpr(tc.handler.*) orelse self.resultPayloadRecord(tc.expr.*),
             },
+            // Decision 1088 — a bare `loop` with no `break` only leaves
+            // through a `return`: its record is that return's.
+            .loop => |lp| if (returnOnlyLoopValue(lp)) |v| self.recordTypeOfExpr(v) else null,
             else => null,
         };
     }
@@ -7859,6 +7926,11 @@ const Emitter = struct {
                     }
                 },
                 else => {},
+            },
+            // Decision 1088 — a bare `loop` with no `break` only leaves
+            // through a `return`: its GC repr is that return's.
+            .loop => |lp| if (returnOnlyLoopValue(lp)) |v| {
+                if (self.gcReprOfExpr(v)) |r| return r;
             },
             .collection => |col| switch (col.kind) {
                 .arrayLit => |al| {
@@ -11925,7 +11997,7 @@ const Emitter = struct {
             // A tail that cannot return (`@panic`) leaves the stack polymorphic.
             const last_e: ?ast.Expr = if (body.len > 0) body[ast.lastRealIndex(body)].expr else null;
             const leaves = if (last_e) |le| le == .jump and (le.jump.kind == .@"return" or le.jump.kind == .throw_) else false;
-            const no_return = self.mode == .gc and last_e != null and (isNoReturnCall(last_e.?) or leaves);
+            const no_return = self.mode == .gc and last_e != null and (self.isNoReturnCall(last_e.?) or leaves);
             // Front 164 s2 P4 — a function declaring no answer whose last
             // statement makes a task (`pub fn main() { run(); }`): the word
             // linear memory answered was the task's address, which nothing
@@ -15111,11 +15183,21 @@ const Emitter = struct {
     /// side). Matches the void arms of `lowerBuiltin` 1:1. New builtins
     /// added here must update this list or be wired through a producing
     /// arm in `lowerBuiltin`.
-    /// `@panic(…)` / `@todo()` as an expression (declared `-> noreturn`).
-    fn isNoReturnCall(e: ast.Expr) bool {
+    /// `@panic(…)` / `@todo()` as an expression (declared `-> noreturn`), or a
+    /// call to any other function whose declared return type is `noreturn`
+    /// (decision 1088): decision 606 removed the builtin spellings, so std's
+    /// own `failure.panic` / `failure.todo` — and any user function declared
+    /// the same way — are ordinary calls now, read off `fn_ret_typerefs` the
+    /// way every other declared-return-type question here is.
+    fn isNoReturnCall(self: *Emitter, e: ast.Expr) bool {
         return switch (e) {
             .call => |c| switch (c.kind) {
-                .call => |cc| cc.is_builtin and (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo")),
+                .call => |cc| blk: {
+                    if (cc.is_builtin and (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo"))) break :blk true;
+                    const sym = self.calleeSymbol(cc, c.loc) orelse break :blk false;
+                    const tr = self.fn_ret_typerefs.get(sym) orelse break :blk false;
+                    break :blk std.mem.eql(u8, typeRefName(tr), "noreturn");
+                },
                 else => false,
             },
             else => false,
@@ -31016,6 +31098,10 @@ const Emitter = struct {
                 },
                 else => .i32,
             },
+            // Decision 1088 — a bare `loop` with no `break` only leaves
+            // through a `return`: its type is that return's, the way an
+            // `if`/`case` arm's type is its own tail's.
+            .loop => |lp| if (returnOnlyLoopValue(lp)) |v| self.wasmTypeOf(v) else .i32,
             .useHook => |uh| self.wasmTypeOf(uh.kind.inner.*),
             // Decision 392 — what the task settles with.
             .jump => |j| switch (j.kind) {
@@ -31132,7 +31218,7 @@ const Emitter = struct {
         if (self.mode == .gc and want.isRef() and isNullLit(e)) return self.emit(self.zeroOf(want));
         // `@panic(…)` / `@todo()` stand wherever a value of any type is wanted:
         // the call ends in `unreachable`, so nothing converts or follows it.
-        if (self.mode == .gc and isNoReturnCall(e)) return self.lowerExpr(e);
+        if (self.mode == .gc and self.isNoReturnCall(e)) return self.lowerExpr(e);
         // A `return` / `throw` / `break` / `continue` leaves: nothing follows it.
         if (self.mode == .gc and e == .jump) switch (e.jump.kind) {
             .@"return", .throw_, .@"break", .@"continue" => return self.lowerValue(e),
