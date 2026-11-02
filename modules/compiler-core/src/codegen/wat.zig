@@ -18657,17 +18657,22 @@ const Emitter = struct {
                     (if (self.generic_methods.contains(generic)) (self.specializeMethod(generic, cc) catch null) else null) orelse generic;
             }
         }
+        // An import alias (`import {failure.attemptTask as x}`) names the
+        // declared function `fn_sigs`/`locals` know by its real name — the
+        // await-task check this symbol serves (`isTaskExpr`) otherwise misses
+        // an aliased call entirely and the `await` is lost (B-205).
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
         // A local named like a function is the function value it holds.
-        if (cc.receiver == null and self.locals.contains(cc.callee)) return null;
+        if (cc.receiver == null and self.locals.contains(callee)) return null;
         if (self.specializedCallee(cc) catch null) |sym| return sym;
-        if (self.fn_sigs.get(cc.callee)) |sig| {
+        if (self.fn_sigs.get(callee)) |sig| {
             // A method call on a value (`m.at(k)` on an `Index<K, V>`) is the
             // module's free function of its name only when that function
             // takes the receiver first (`recv.m(a)` against `fn m(self, a)`)
             // or the receiver is a namespace: `fn at(c: bool) -> ?Point`
             // answered for `m.at(key)`.
             if (cc.receiver != null and cc.calleeExpr == null and sig.params.len != cc.args.len + 1 and !self.isNamespaceReceiver(cc)) return null;
-            return cc.callee;
+            return callee;
         }
         return null;
     }
