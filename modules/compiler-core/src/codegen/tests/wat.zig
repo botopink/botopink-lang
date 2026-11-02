@@ -3469,11 +3469,28 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
 // Decision 771 — a module binding std's memo cells (`wasi: .CellNew` …, `use
 // memo`) keeps the WasmGC lowering: the cell is a `$cell` struct, not a
 // linear-memory word.
+//
+// Refused on wasm (pending b162wasm-d): decision 1088 closed the half of
+// this that was `cellOf`'s (place stamping, std/context.bp) — its bare
+// `loop` diverging through a declared `-> noreturn` call no longer defeats
+// the wasm backend's tail-type inference (`isNoReturnCall` reads any
+// declared-`noreturn` callee now, and `wasmTypeOf` / `gcReprOfExpr` /
+// `recordTypeOfExpr` read a return-only loop's type off its `return`s). This
+// module still falls `.gc` back to `.linear`, for an unrelated reason:
+// `run` reaches `placed` (std/context.bp), whose declared return
+// `Composition<T>` — a type alias of a function type — the wasm GC
+// backend's `gcReprOfType` does not unwrap (only a `@Result`-shaped alias
+// is, decision 118's `gcExpandResultAliasReturns`), so `placed`'s closure
+// value refuses to convert and `context.run`'s `is Async<unknown>` has no
+// run-time test once in linear memory (same cause as the four
+// `features.zig` cases `assertJsRefusedOnWasm` records). Decision 771's
+// WasmGC claim cannot be asserted until that lands too; this records
+// today's actual answer, a refused compile, instead of inventing one.
 test "wat: needs ---- a use memo module stays WasmGC" {
-    const needs = try wasmNeedsOfSource(std.testing.allocator,
-        \\import {context.RenderScope, hooks.memo, io.terminal.print} from "std";
+    try std.testing.expectError(error.ModuleDidNotCompile, wasmNeedsOfSource(std.testing.allocator,
+        \\import {context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
         \\
-        \\type Element(text: string) implement Renderable
+        \\type Element(text: string)
         \\
         \\component fn Page(name: string) -> Component<Element> {
         \\    val label = use memo({ ->
@@ -3488,19 +3505,20 @@ test "wat: needs ---- a use memo module stays WasmGC" {
         \\}
         \\
         \\pub async fn main() -> Async<void> {
+        \\    val root = Scope.root();
+        \\    defer root.close();
         \\    val a = Page("a");
         \\    val b = Page("bb");
-        \\    val first = (await a.run(RenderScope.root())).value;
+        \\    val first = await run(a, root);
         \\    print(first.text);
-        \\    val again = (await a.run(RenderScope.root())).value;
+        \\    val again = await run(a, root);
         \\    print(again.text);
-        \\    val other = (await b.run(RenderScope.root())).value;
+        \\    val other = await run(b, root);
         \\    print(other.text);
-        \\    val last = (await a.run(RenderScope.root())).value;
+        \\    val last = await run(a, root);
         \\    print(last.text);
         \\}
-    );
-    try std.testing.expect(needs.contains(.gc));
+    ));
 }
 
 // ... and a call of `attempt` asks for `Exceptions`.

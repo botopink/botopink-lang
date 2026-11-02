@@ -19,21 +19,25 @@
 ////     val theme = use context(themeContext);             // the nearest above
 ////
 //// Both are hooks, so they are `use`d, never called for a value; `provide`
-//// only in a component's body (a `Component<R>` whose `R` implements
-//// `@Renderable`), before it renders a child. `use` exists only where there
+//// only in a `component` body answering `Component<R>`, in the order
+//// written: what the body resolves after it reads it, what it resolved
+//// before does not (decision 812 (3)). `use` exists only where there
 //// is a render tree — a decorator body, a template body and a
 //// `comptime { … }` have none (`use-outside-render-tree`). A read naming a
 //// bare type (`use context(Theme)`) is refused at the argument
 //// (`context-read-by-type`).
 ////
-//// A component at run time is a lambda over a `RenderScope` (decision 388):
-//// calling `Card(item)` only makes the lambda, and the render library runs it
-//// — `c.run(scope)` answers a `Rendered`, the body's result and the scope its
-//// `use provide(…)`s made for its children. The library runs the root with
-//// `RenderScope.root()` and each child with the scope its parent answered;
-//// inside a component body `use c` runs `c` with the body's children scope
-//// (decision 791 (3)), and an `await` of a component is refused (791 (4)).
-//// The scope travels explicitly: no "current context", on any target.
+//// A component at run time is a function over a `Scope` and a `Place`
+//// (decisions 809, 815, 819): calling `Card(item)` only makes it, and std's
+//// `resolve(c, scope, key)` runs it — the one way a component runs: `use c`
+//// in a component body, each child a render library meets, and the root,
+//// which a program runs with `await run(App())` (decisions 822, 825). Each
+//// component body opens its own cell, `scope.childAt(key)`, a child of the
+//// cell it was handed; a `use provide(…)` writes the body's cell, so what
+//// the body resolves after it — its subtree — reads it, and a `use
+//// context(…)` reads the contexts the cell held when the body entered
+//// (decisions 809 (8), 812). The scope travels explicitly: no "current
+//// context", on any target.
 ////
 //// The work is the compiler's: each `use provide(…)` / `use context(…)` is
 //// lowered where it is written — `provide` makes the children's scope and
@@ -42,7 +46,7 @@
 //// refuses every reference to them but a `use`'s operand, and the bodies
 //// panic.
 
-import {failure.panic};
+import {compiler, failure.panic};
 
 // A context of `T`: the value a provider gives, or a type's declared default.
 pub type Context<T>(contextValue: T)
@@ -83,51 +87,417 @@ pub component fn inject(comptime t: anytype) -> Component<unknown> {
     );
 }
 
-// ── the render scope (decision 388) ──────────────────────────────────────────
+// Decision 827 — the components `cs` resolved in order under one `use`:
+// `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+// stands at the `use`'s place and entry `i` runs under it at
+// `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+// body counted its count, and any other entry its position. It answers
+// `T[]`, or the task of it when an entry answered a task; the `use` awaits
+// it. Lowered where it is `use`d; this body never runs.
+pub component fn all<T>(cs: Component<T>[]) -> Component<T[]> {
+    panic("`use all` is lowered where it is written; this body never runs");
+}
 
-// The scope a component's lambda runs with: the contexts provided above it.
-// Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
-// every other scope is one a component's `run` answered.
-pub type RenderScope(frames: unknown) {
-    // The empty scope a render starts from: nothing provided.
-    pub fn root() -> RenderScope {
-        return RenderScope(frames: null);
+// ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
+
+// Where a component stands among its siblings (819 (2)): the number of the
+// call that made it, and its item half — absent, a count the call's
+// component body or plain function made (821), a list runner's index, or a
+// key. A program passes `Place.none()` (the place the value carries), or
+// runs one by hand with `Place.key(k)` / `Place.index(i)` (819 (3), 884).
+// `stamped` marks a place a making call wrote (820 (1)): a runner's never is.
+pub type Place(callNo: i32, item: PlaceItem, itemNo: i32, keyValue: unknown, stamped: bool) {
+    // The place the component's value carries (820 (2)): what `use c` and a
+    // root pass.
+    pub fn none() -> Place {
+        return Place(callNo: 0, item: PlaceItem.Absent, itemNo: 0, keyValue: null, stamped: false);
+    }
+
+    // `k` in the item's stead, the call's number kept (819 (3)).
+    pub fn key<K>(k: K) -> Place {
+        return Place(callNo: 0, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: false);
+    }
+
+    // Position `i` in a list run — `all`'s entries and a render library's
+    // children (884, 891).
+    pub fn index(i: i32) -> Place {
+        return Place(callNo: 0, item: PlaceItem.Index, itemNo: i, keyValue: null, stamped: false);
+    }
+
+    // This place as `key` says it is run (820 (2), 884 (1), 891 (1)): a key
+    // replaces the item half; an index fills an absent one or a plain
+    // function's count and keeps a body's count and a key; `Place.none()`
+    // keeps it whole.
+    pub fn with(self: Self, key: Place) -> Place {
+        if (key.item == PlaceItem.Key)
+            return Place(callNo: self.callNo, item: PlaceItem.Key, itemNo: 0, keyValue: key.keyValue, stamped: self.stamped);
+        if (key.item == PlaceItem.Index)
+            if (self.item == PlaceItem.Absent || self.item == PlaceItem.Plain)
+                return Place(callNo: self.callNo, item: PlaceItem.Index, itemNo: key.itemNo, keyValue: null, stamped: self.stamped);
+        return self;
     }
 }
 
-// What `c.run(scope)` answers: the component body's result and the scope its
-// `use provide(…)`s made for the children it renders (the scope it received
-// when it provides nothing).
-pub type Rendered<R>(value: R, scope: RenderScope)
+// A place's item half (891 (1)).
+pub type PlaceItem { Absent, Body, Plain, Index, Key }
 
-// ── what the scope lowering calls (decision 388) ─────────────────────────────
+// Whether two places name one child: the call's number and the item half,
+// a key compared by value (818 (3)).
+fn samePlace(a: Place, b: Place) -> bool {
+    if (a.callNo != b.callNo || a.item != b.item || a.itemNo != b.itemNo)
+        return false;
+    if (a.item == PlaceItem.Key) return sameKey(placeKey(a), placeKey(b));
+    return true;
+}
+
+fn placeKey(p: Place) -> unknown {
+    return p.keyValue;
+}
+
+// ── the scope (decisions 809 (8), 816, 817, 824, 825) ────────────────────────
+
+// A cell of a render's tree: the contexts provided above it, a persistent map
+// keyed by each context's identity. Opaque — made only by `Scope.root()`, a
+// cell's `childAt` and `detach`. A root's whole tree is one entry: on erlang
+// and beam an entry `{bp_scope, Ref}` of the process dictionary of the
+// process that made the root, ended by that process or by `close()`; on
+// commonJS a plain object, on wasm a heap cell (824). A scope used after its
+// root's `close()` fails `scope-closed` on every target (825 (2)); one read in
+// another process than the root's fails `scope-foreign` (824 (3)).
+pub opaque type Scope(scopeStore: unknown, scopeCell: i32, scopeOwner: unknown, scopeCarried: unknown) implement Closeable {
+    // A new root: an empty tree, nothing provided. Closed by whoever made it
+    // (`run` closes its own, 825 (1)).
+    pub fn root() -> Scope {
+        return Scope(scopeStore: storeOf(null), scopeCell: 0, scopeOwner: ownerSelf(), scopeCarried: null);
+    }
+
+    // The child cell of this one at `key`, entered for a render (816, 817):
+    // the cell its place named in this cell's previous render, or in this
+    // one, reused with its hooks' state; any other place a fresh cell. It
+    // takes this cell's contexts as they stand (817 (5)). Each component body
+    // opens its own with it; two siblings with one key fail `key-duplicate`
+    // (819 (5)).
+    pub fn childAt(self: Self, key: Place) -> Scope {
+        return Scope(scopeStore: self.scopeStore, scopeCell: openChild(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell, key), scopeOwner: self.scopeOwner, scopeCarried: self.scopeCarried);
+    }
+
+    // Ends the root's tree (`Closeable`, 539): every scope of it fails
+    // `scope-closed` after, and on erlang and beam its process-dictionary
+    // entry is erased (825 (2)). Closing a closed root does nothing.
+    pub fn close(self: Self) -> void {
+        closeStore(self.scopeStore);
+    }
+
+    // A new root over this cell's contexts as they stand, with no tree — what
+    // crosses a process (824 (3)): it carries the contexts, and each process
+    // that reads it keeps its tree in its own entry; closed by whoever made it.
+    pub fn detach(self: Self) -> Scope {
+        val carried = Carried(frames: framesAt(self.scopeStore, self.scopeOwner, self.scopeCarried, self.scopeCell));
+        return Scope(scopeStore: storeNew(), scopeCell: 0, scopeOwner: null, scopeCarried: carried);
+    }
+
+    // The root's store, the cell's id and the root's process — what the
+    // lowering's functions below read the tree by.
+    fn storeRef(self: Self) -> unknown {
+        return self.scopeStore;
+    }
+
+    fn cellId(self: Self) -> i32 {
+        return self.scopeCell;
+    }
+
+    fn ownerRef(self: Self) -> unknown {
+        return self.scopeOwner;
+    }
+
+    fn carriedRef(self: Self) -> unknown {
+        return self.scopeCarried;
+    }
+}
+
+// A root's tree: whether it is closed, the count of its cells, each cell's
+// state and each `place → cell` link, the latest entry for an id or a place
+// first. Public as `Frame` is: a program never names it.
+pub type ScopeTree(treeClosed: bool, treeCount: i32, treeCells: unknown, treeLinks: unknown)
+
+// The contexts a detached root carries across processes (824 (3)).
+pub type Carried(frames: unknown)
+
+// One cell of a root's tree: its contexts, the number of its renders, its
+// hook's slot (816, 818 (1)) and the count of the values each call of its
+// body made in the current render (821 (1)).
+pub type CellEntry(cellNo: i32, cellFrames: unknown, cellGen: i32, cellSlot: unknown, cellFilled: bool, cellCounts: unknown, cellNext: unknown)
+
+// A child cell at a place of its parent, and the parent's render that last
+// met it (817 (1)).
+pub type PlaceLink(linkParent: i32, linkPlace: Place, linkChild: i32, linkSeen: i32, linkNext: unknown)
+
+// The count of the values call `countCall` made in one render or one entry.
+pub type PlaceCount(countCall: i32, countValue: i32, countNext: unknown)
+
+// A new root's store, its one cell holding `frames`.
+fn storeOf(frames: unknown) -> unknown {
+    val store = storeNew();
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: frames, cellGen: 0, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: null), treeLinks: null));
+    return store;
+}
+
+// The root's tree, live and in its own process; a detached root's starts in
+// each process that reads it from the contexts it carries.
+fn treeOf(store: unknown, owner: unknown, carried: unknown) -> ScopeTree {
+    if (ownerForeign(owner))
+        panic("scope-foreign: a scope is read in another process than its root's — pass `scope.detach()` to another process (decision 824 (3))");
+    if (!storeLive(store))
+        if (carried is Carried) {
+            val c: Carried = carried;
+            val t = ScopeTree(treeClosed: false, treeCount: 1, treeCells: CellEntry(cellNo: 0, cellFrames: carriedFrames(c), cellGen: 0, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: null), treeLinks: null);
+            storeSet(store, t);
+            return t;
+        }
+    if (storeLive(store)) {
+        val raw = storeGet(store);
+        if (raw is ScopeTree) {
+            val t: ScopeTree = raw;
+            if (!t.treeClosed) return t;
+        }
+    }
+    panic("scope-closed: a scope is used after its root's `close()` (decision 825 (2))");
+}
+
+fn treeCells(t: ScopeTree) -> unknown {
+    return t.treeCells;
+}
+
+fn treeLinks(t: ScopeTree) -> unknown {
+    return t.treeLinks;
+}
+
+// `t` with `e` as cell `e.cellNo`'s state.
+fn withCell(t: ScopeTree, e: CellEntry) -> ScopeTree {
+    return ScopeTree(treeClosed: false, treeCount: t.treeCount, treeCells: CellEntry(cellNo: e.cellNo, cellFrames: entryFrames(e), cellGen: e.cellGen, cellSlot: entrySlot(e), cellFilled: e.cellFilled, cellCounts: entryCounts(e), cellNext: treeCells(t)), treeLinks: treeLinks(t));
+}
+
+// Cell `id`'s state in `cells`.
+fn cellOf(cells: unknown, id: i32) -> CellEntry {
+    var cur = cells;
+    loop {
+        if (cur is CellEntry) {
+            val e: CellEntry = cur;
+            if (e.cellNo == id) return e;
+            cur = entryNext(e);
+        } else panic("a scope names a cell its tree does not hold (decision 817)");
+    }
+}
+
+// The child of cell `parent` at `key`, entered for a render: its id.
+fn openChild(store: unknown, owner: unknown, carried: unknown, parent: i32, key: Place) -> i32 {
+    val t = treeOf(store, owner, carried);
+    val p = cellOf(treeCells(t), parent);
+    val frames = entryFrames(p);
+    val found = linkAt(treeLinks(t), parent, key);
+    if (found is PlaceLink) {
+        val l: PlaceLink = found;
+        // Two siblings with one key in one render (819 (5)); the root's
+        // children are each run's own.
+        if (parent != 0 && l.linkSeen == p.cellGen && key.item == PlaceItem.Key)
+            panic("key-duplicate: two siblings carry the key "
+                + keyText(placeKey(key))
+                + " (decision 819 (5))");
+        // Met in the parent's previous render or in this one: the same cell,
+        // its contexts taken anew and its counts reset (816 (2), 817 (5)).
+        if (parent == 0 || l.linkSeen >= p.cellGen - 1) {
+            val c = cellOf(treeCells(t), l.linkChild);
+            val kept = withCell(t, CellEntry(cellNo: c.cellNo, cellFrames: frames, cellGen: c.cellGen
+                + 1, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: null, cellNext: null));
+            storeSet(store, ScopeTree(treeClosed: false, treeCount: kept.treeCount, treeCells: treeCells(kept), treeLinks: PlaceLink(linkParent: parent, linkPlace: key, linkChild: l.linkChild, linkSeen: p.cellGen, linkNext: treeLinks(kept))));
+            return l.linkChild;
+        }
+    }
+    // A place not met in the parent's previous render: a fresh cell.
+    val id = t.treeCount;
+    storeSet(store, ScopeTree(treeClosed: false, treeCount: id
+        + 1, treeCells: CellEntry(cellNo: id, cellFrames: frames, cellGen: 1, cellSlot: null, cellFilled: false, cellCounts: null, cellNext: treeCells(t)), treeLinks: PlaceLink(linkParent: parent, linkPlace: key, linkChild: id, linkSeen: p.cellGen, linkNext: treeLinks(t))));
+    return id;
+}
+
+// The latest link of cell `parent` at `key`, or null.
+fn linkAt(links: unknown, parent: i32, key: Place) -> unknown {
+    var cur = links;
+    loop {
+        if (cur is PlaceLink) {
+            val l: PlaceLink = cur;
+            if (l.linkParent == parent && samePlace(l.linkPlace, key))
+                return linkSelf(l);
+            cur = linkNext(l);
+        } else return null;
+    }
+}
+
+fn linkSelf(l: PlaceLink) -> unknown {
+    return l;
+}
+
+fn linkNext(l: PlaceLink) -> unknown {
+    return l.linkNext;
+}
+
+// A key as a failure names it.
+fn keyText(k: unknown) -> string {
+    if (k is string) return "\"" + k + "\"";
+    if (k is i32) return k.toString();
+    return "of another type";
+}
+
+// The contexts cell `id` holds now.
+fn framesAt(store: unknown, owner: unknown, carried: unknown, id: i32) -> unknown {
+    return entryFrames(cellOf(treeCells(treeOf(store, owner, carried)), id));
+}
+
+fn carriedFrames(c: Carried) -> unknown {
+    return c.frames;
+}
+
+// `value` provided for `key` in cell `id`.
+fn provideAt(store: unknown, owner: unknown, carried: unknown, id: i32, key: string, value: unknown) -> void {
+    val t = treeOf(store, owner, carried);
+    val c = cellOf(treeCells(t), id);
+    val frames = Frame(key: key, value: value, parent: entryFrames(c));
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: frames, cellGen: c.cellGen, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: entryCounts(c), cellNext: null)));
+}
+
+// The count of the values call `callNo` made before this one in cell `id`'s
+// current render; the cell counts this one (821 (1)).
+fn countAt(store: unknown, owner: unknown, carried: unknown, id: i32, callNo: i32) -> i32 {
+    val t = treeOf(store, owner, carried);
+    val c = cellOf(treeCells(t), id);
+    val n = countIn(entryCounts(c), callNo);
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: entryFrames(c), cellGen: c.cellGen, cellSlot: entrySlot(c), cellFilled: c.cellFilled, cellCounts: PlaceCount(countCall: callNo, countValue: n
+        + 1, countNext: entryCounts(c)), cellNext: null)));
+    return n;
+}
+
+// The latest count of call `callNo` in `counts`, else 0.
+fn countIn(counts: unknown, callNo: i32) -> i32 {
+    var cur = counts;
+    loop {
+        if (cur is PlaceCount) {
+            val k: PlaceCount = cur;
+            if (k.countCall == callNo) return k.countValue;
+            cur = countRest(k);
+        } else return 0;
+    }
+}
+
+fn countRest(k: PlaceCount) -> unknown {
+    return k.countNext;
+}
+
+// Cell `id`'s slot: what `make` answered on the cell's first render, kept
+// while the cell stands (816 (1), 818 (1)).
+fn slotAt(store: unknown, owner: unknown, carried: unknown, id: i32, make: fn() -> unknown) -> unknown {
+    val c = cellOf(treeCells(treeOf(store, owner, carried)), id);
+    if (c.cellFilled) return entrySlot(c);
+    val value = make();
+    val t = treeOf(store, owner, carried);
+    val now = cellOf(treeCells(t), id);
+    storeSet(store, withCell(t, CellEntry(cellNo: id, cellFrames: entryFrames(now), cellGen: now.cellGen, cellSlot: value, cellFilled: true, cellCounts: entryCounts(now), cellNext: null)));
+    return value;
+}
+
+// The root's tree closed; a closed one is left as it is.
+fn closeStore(store: unknown) -> void {
+    if (!storeLive(store)) return;
+    storeClose(store, ScopeTree(treeClosed: true, treeCount: 0, treeCells: null, treeLinks: null));
+}
+
+fn entryFrames(e: CellEntry) -> unknown {
+    return e.cellFrames;
+}
+
+fn entrySlot(e: CellEntry) -> unknown {
+    return e.cellSlot;
+}
+
+fn entryCounts(e: CellEntry) -> unknown {
+    return e.cellCounts;
+}
+
+fn entryNext(e: CellEntry) -> unknown {
+    return e.cellNext;
+}
+
+// ── resolving and running (decisions 809 (6), 815 (5), 819, 822, 825) ───────
+
+// Runs `c` over `scope` at `key` and hands back its answer as it came — a
+// value, or the task of a component that awaits —, nothing awaited inside.
+pub fn resolve<T>(c: Component<T>, scope: Scope, key: Place) -> T | Async<T> {
+    if (c is Composable<T>) return c.compose()(scope, key);
+    return c(scope, key);
+}
+
+// Runs a root: `c` resolved over `scope`, or over a root of its own that it
+// closes when `c` settles or fails (825 (1)), awaited only when it answered a
+// task (822, 823): `val page = await run(App());`.
+pub async fn run<T>(c: Component<T>, scope: ?Scope = null) -> Async<T> {
+    if (scope != null) {
+        val handed = resolve(c, scope, Place.none());
+        if (handed is Async<unknown>) return await handed;
+        return handed;
+    }
+    val root = Scope.root();
+    defer root.close();
+    val r = resolve(c, root, Place.none());
+    if (r is Async<unknown>) return await r;
+    return r;
+}
+
+// ── what the scope lowering calls (decisions 809 (8), 812, 819) ──────────────
 //
 // A program never names these: the compiler imports them under names no
-// source can spell. A `Component` function answers `{ scope -> … }`; each
-// `return v` of its body answers `rendered(v, <children's scope>)`; `use
-// provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
-// children (a context is its value at run time: the compiler writes
-// `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
-// <ctx's type's identity>, ctx)`,
-// a `use` of a hook or of a component value runs the lambda and reads
-// `valueOf` of what it answers. A context's identity is its value's type
-// (379) — the compiler writes it, never a program.
+// source can spell. A component body is lowered to `{ scope, key -> … }`
+// opening `enter(scope, key)`, its own cell; `use provide(c)` is
+// `provideIn(<cell>, <T's identity>, c)` (a context is its value at run time:
+// the compiler writes `createContext(v)` as `v`), `use context(ctx)` is
+// `find(<the cell's contexts at entry>, <ctx's type's identity>, ctx)`, a
+// `use` of a hook or a component calls its value with the cell and
+// `Place.none()`, and each `return v` answers `answer(v)`. A context's
+// identity is its value's type (379) — the compiler writes it, never a
+// program.
 
 // One provided value over the frames it was provided in.
 pub type Frame(key: string, value: unknown, parent: unknown)
 
-// The children's scope: `value` provided for `key` over `scope`.
-pub fn push(scope: RenderScope, key: string, value: unknown) -> RenderScope {
-    return RenderScope(
-        frames: Frame(key: key, value: value, parent: scope.frames),
-    );
+// The cell a body opens: `scope`'s child at `key`.
+pub fn enter(scope: unknown, key: unknown) -> unknown {
+    if (scope is Scope) {
+        if (key is Place) return scope.childAt(key);
+        return scope.childAt(Place.none());
+    }
+    panic("a component is run with a `Scope` (decision 819)");
 }
 
-// The value provided nearest above for `key`, else `fallback` — the type's
-// declared default (decision 378 (3): no read is unbound).
+// The contexts `cell` holds now — what a body's `use context` reads.
+pub fn received(cell: unknown) -> unknown {
+    if (cell is Scope)
+        return framesAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId());
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// `value` provided for `key` in `cell`: what is resolved under it afterwards
+// reads it (809 (8), 812 (3)).
+pub fn provideIn(cell: unknown, key: string, value: unknown) -> unknown {
+    if (cell is Scope) {
+        provideAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), key, value);
+        return null;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// The value provided nearest above for `key` in `frames`, else `fallback` —
+// the type's declared default (decision 378 (3): no read is unbound).
 // The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
-    var cur = scope.frames;
+pub fn find(frames: unknown, key: string, fallback: unknown) -> unknown {
+    var cur = frames;
     loop {
         if (cur is Frame) {
             val f: Frame = cur;
@@ -137,19 +507,112 @@ pub fn find(scope: RenderScope, key: string, fallback: unknown) -> unknown {
     }
 }
 
-// A body's answer: its result over its children's scope.
-pub fn rendered(value: unknown, scope: RenderScope) -> Rendered<unknown> {
-    return Rendered(value: value, scope: scope);
+// A body's answer, as it is (the word wasm moves through it, decision 504).
+pub fn answer(value: unknown) -> unknown {
+    return value;
 }
 
-// The result a run answered.
-pub fn valueOf(r: Rendered<unknown>) -> unknown {
-    return r.value;
+// The place a `use` passes (820 (2)).
+pub fn nowhere() -> unknown {
+    return Place.none();
 }
 
-// The empty scope, the root's (`RenderScope.root()`).
-pub fn root() -> RenderScope {
-    return RenderScope.root();
+// A fresh root, for a `use` written outside every component body.
+pub fn root() -> unknown {
+    return Scope.root();
+}
+
+// ── the stamp (decisions 820, 821, 818 (3)) ──────────────────────────────────
+//
+// Each written call answering a component answers its value carrying its
+// place: `stamp(c, <the body's cell>, n)` in a component body, the item the
+// count of the values call `n` made in the body's current render;
+// `stampPlain(c, <the entry's counter>, n)` in a plain function, counted in
+// that entry (`countNew` at its entry, `countEnd` deferred); `stampKeyed(c,
+// n, k)` for `#[key(k)]`. The place travels in the value: run with a
+// runner's place it is `mine.with(key)`; a place another stamp already wrote
+// passes through, so the stamp written last — the outer call's — wins
+// (821 (2)).
+
+pub fn stamp(c: Component<unknown>, cell: unknown, callNo: i32) -> Composition<unknown> {
+    if (cell is Scope)
+        return placed(c, Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+pub fn stampPlain(c: Component<unknown>, counter: unknown, callNo: i32) -> Composition<unknown> {
+    return placed(c, Place(callNo: callNo, item: PlaceItem.Plain, itemNo: countNext(counter, callNo), keyValue: null, stamped: true));
+}
+
+pub fn stampKeyed(c: Component<unknown>, callNo: i32, k: unknown) -> Composition<unknown> {
+    return placed(c, Place(callNo: callNo, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: true));
+}
+
+// `c` carrying `mine`.
+fn placed(c: Component<unknown>, mine: Place) -> Composition<unknown> {
+    return { scope, key -> resolve(c, scope, if (key.stamped) key else mine.with(key)) };
+}
+
+// `use memo(make)` written as call `callNo` of a body: the slot of its own
+// child cell (818 (1)), filled on that cell's first render.
+pub fn memoIn(cell: unknown, callNo: i32, make: fn() -> unknown) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        return slotAt(child.storeRef(), child.ownerRef(), child.carriedRef(), child.cellId(), make);
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+// under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+// a list, or the task of the list once each settled in order when an entry
+// answered a task.
+pub fn allIn(cell: unknown, callNo: i32, cs: Component<unknown>[]) -> unknown {
+    if (cell is Scope) {
+        val child = cell.childAt(Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
+        var answers: unknown[] = [];
+        var waits = false;
+        for (0..cs.length) { i ->
+            val r = resolve(cs[i]!, child, Place.index(i));
+            if (r is Async<unknown>) waits = true;
+            answers = answers.append([r]);
+        }
+        if (waits) return settled(answers);
+        return answers;
+    }
+    panic("a component is run with a `Scope` (decision 819)");
+}
+
+// Each of `answers` awaited in order where it is a task.
+async fn settled(answers: unknown[]) -> Async<unknown[]> {
+    var out: unknown[] = [];
+    for (answers) { r ->
+        if (r is Async<unknown>) {
+            val v = await r;
+            out = out.append([v]);
+        } else out = out.append([r]);
+    }
+    return out;
+}
+
+// A plain function entry's counter of the values each of its calls made
+// (821 (2)).
+pub fn countNew() -> unknown {
+    return countCellNew();
+}
+
+// The entry's counter gone: on erlang and beam its process-dictionary entry.
+pub fn countEnd(counter: unknown) -> void {
+    countCellEnd(counter, null);
+}
+
+// The count of the values call `callNo` made before this one in the entry.
+fn countNext(counter: unknown, callNo: i32) -> i32 {
+    val counts = if (countCellFilled(counter)) countCellGet(counter) else null;
+    val n = countIn(counts, callNo);
+    countCellSet(counter, PlaceCount(countCall: callNo, countValue: n
+        + 1, countNext: counts));
+    return n;
 }
 
 fn frameValue(f: Frame) -> unknown {
@@ -160,60 +623,108 @@ fn frameParent(f: Frame) -> unknown {
     return f.parent;
 }
 
+// ── the store's host side (decision 824) ─────────────────────────────────────
+
+// Two keys compared by value (818 (3)).
+fn sameKey(a: unknown, b: unknown) -> bool {
+    return a == b;
+}
+
+#[compiler.external(
+    .JavaScript("""({ v: undefined })"""),
+    .Erlang("""erlang:make_ref()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn countCellNew() -> unknown;
+
+#[compiler.external(
+    .JavaScript("""($0.v !== undefined)"""),
+    .Erlang("""(erlang:get({bp_count, $0}) =/= undefined)"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn countCellFilled(counter: unknown) -> bool;
+
+#[compiler.external(
+    .JavaScript("""$0.v"""),
+    .Erlang("""erlang:get({bp_count, $0})"""),
+    .Wasm(wasi: .CellGet),
+)]
+declare fn countCellGet(counter: unknown) -> unknown;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, __V) -> erlang:put({bp_count, __S}, __V), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn countCellSet(counter: unknown, value: unknown) -> void;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, _) -> erlang:erase({bp_count, __S}), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn countCellEnd(counter: unknown, gone: unknown) -> void;
+
+#[compiler.external(
+    .JavaScript("""({ v: undefined })"""),
+    .Erlang("""erlang:make_ref()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn storeNew() -> unknown;
+
+#[compiler.external(
+    .JavaScript("""($0.v !== undefined)"""),
+    .Erlang("""(erlang:get({bp_scope, $0}) =/= undefined)"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn storeLive(store: unknown) -> bool;
+
+#[compiler.external(
+    .JavaScript("""$0.v"""),
+    .Erlang("""erlang:get({bp_scope, $0})"""),
+    .Wasm(wasi: .CellGet),
+)]
+declare fn storeGet(store: unknown) -> unknown;
+
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, __V) -> erlang:put({bp_scope, __S}, __V), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn storeSet(store: unknown, value: unknown) -> void;
+
+// The closed tree written over the root's: on erlang and beam the entry goes
+// instead, so the process keeps no `{bp_scope, _}` (825 (2), (3)).
+#[compiler.external(
+    .JavaScript("""((__s, __v) => { __s.v = __v; return undefined; })($0, $1)"""),
+    .Erlang("""(fun(__S, _) -> erlang:erase({bp_scope, __S}), undefined end)($0, $1)"""),
+    .Wasm(wasi: .CellSet),
+)]
+declare fn storeClose(store: unknown, closed: unknown) -> void;
+
+// The process a root is made in: its pid on erlang and beam; elsewhere one
+// process holds every root, and a token no test reads stands for it.
+#[compiler.external(
+    .JavaScript("""null"""),
+    .Erlang("""self()"""),
+    .Wasm(wasi: .CellNew),
+)]
+declare fn ownerSelf() -> unknown;
+
+// Whether `owner` is another process than this one: never off the BEAM (an
+// owner token there is an empty cell).
+#[compiler.external(
+    .JavaScript("""false"""),
+    .Erlang("""(($0 =/= undefined) andalso ($0 =/= self()))"""),
+    .Wasm(wasi: .CellFilled),
+)]
+declare fn ownerForeign(owner: unknown) -> bool;
+
 ```
 
 ----- WASM TEXT -- std/context.wat
 ```wasm
 (module
-  (rec
-    (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
-    (type $arr_f64 (array (mut f64)))
-    (type $arr_any (sub (array (mut anyref))))
-    (type $tuple (sub final $arr_any (array (mut anyref))))
-    (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
-    (type $box_f64 (struct (field $v f64)))
-    (type $box_bool (sub final $box_i32 (struct (field $v i32))))
-    (type $box_big (struct (field $v (ref null $str))))
-    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
-    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
-    (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
-    (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
-    (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
-    (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
-    (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
-    (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
-    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
-    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
-    (type $__print_sig (func (param anyref)))
-    (type $__eq_sig (func (param anyref anyref) (result i32)))
-  )
-  (rec
-    (type $rec_Context (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)))))
-    (type $brand_rec_Context (struct (field f64) (field f64) (field i64) (field f64) (field f32) (field f32) (field i64) (field i64) (field i64) (field f32) (field i64) (field i32) (field i64) (field f32) (field i64) (field f64) (field i64) (field i64) (field i64) (field i64) (field f32) (field i32) (field i32) (field f64) (field i64) (field i64) (field f64) (field f64) (field i32) (field i32) (field i64) (field i32)))
-  )
-  (rec
-    (type $rec_Frame (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut (ref null $str))) (field $f1 (mut anyref)) (field $f2 (mut anyref)))))
-    (type $brand_rec_Frame (struct (field i64) (field f32) (field i64) (field i64) (field i64) (field i32) (field f32) (field f32) (field f64) (field f32) (field f32) (field f64) (field i64) (field f32) (field i32) (field i64) (field i64) (field i32) (field f32) (field i32) (field f32) (field f64) (field i32) (field f64) (field i64) (field f32) (field i64) (field i32) (field f64) (field i64) (field f64) (field i64)))
-  )
-  (rec
-    (type $rec_RenderScope (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)))))
-    (type $brand_rec_RenderScope (struct (field f64) (field i32) (field i32) (field f32) (field f64) (field f32) (field f32) (field f32) (field f32) (field i64) (field f32) (field i32) (field f64) (field f64) (field f32) (field f32) (field i32) (field f32) (field i64) (field i64) (field i32) (field i64) (field f64) (field f64) (field f32) (field f64) (field i64) (field i32) (field f64) (field i64) (field i64) (field f64)))
-  )
-  (rec
-    (type $rec_Rendered (sub final $__decl (struct (field $ti (ref null $__tinfo)) (field $f0 (mut anyref)) (field $f1 (mut (ref null $rec_RenderScope))))))
-    (type $brand_rec_Rendered (struct (field f32) (field f32) (field f64) (field i64) (field i64) (field i32) (field i64) (field i64) (field i32) (field f64) (field i64) (field i64) (field i64) (field i32) (field i32) (field f64) (field f32) (field f32) (field f64) (field i32) (field f64) (field i32) (field f64) (field f32) (field f32) (field i64) (field i32) (field i64) (field i32) (field i64) (field f64) (field f32)))
-  )
-  (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
-  (import "std@__rt" "__print_decl" (func $__print_decl (param anyref)))
-  (import "std@__rt" "__eq_decl" (func $__eq_decl (param anyref anyref) (result i32)))
-  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
-  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
-  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
-  (import "std@number" "wat:number.u64ToString" (func $__abi___std_number_u64ToString (param i64) (result arrayref)))
-  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   ;; Contexts (decisions 354, 378, 379) — what a component's body reads from
@@ -235,21 +746,25 @@ fn frameParent(f: Frame) -> unknown {
   ;;     val theme = use context(themeContext);             // the nearest above
   ;; 
   ;; Both are hooks, so they are `use`d, never called for a value; `provide`
-  ;; only in a component's body (a `Component<R>` whose `R` implements
-  ;; `@Renderable`), before it renders a child. `use` exists only where there
+  ;; only in a `component` body answering `Component<R>`, in the order
+  ;; written: what the body resolves after it reads it, what it resolved
+  ;; before does not (decision 812 (3)). `use` exists only where there
   ;; is a render tree — a decorator body, a template body and a
   ;; `comptime { … }` have none (`use-outside-render-tree`). A read naming a
   ;; bare type (`use context(Theme)`) is refused at the argument
   ;; (`context-read-by-type`).
   ;; 
-  ;; A component at run time is a lambda over a `RenderScope` (decision 388):
-  ;; calling `Card(item)` only makes the lambda, and the render library runs it
-  ;; — `c.run(scope)` answers a `Rendered`, the body's result and the scope its
-  ;; `use provide(…)`s made for its children. The library runs the root with
-  ;; `RenderScope.root()` and each child with the scope its parent answered;
-  ;; inside a component body `use c` runs `c` with the body's children scope
-  ;; (decision 791 (3)), and an `await` of a component is refused (791 (4)).
-  ;; The scope travels explicitly: no "current context", on any target.
+  ;; A component at run time is a function over a `Scope` and a `Place`
+  ;; (decisions 809, 815, 819): calling `Card(item)` only makes it, and std's
+  ;; `resolve(c, scope, key)` runs it — the one way a component runs: `use c`
+  ;; in a component body, each child a render library meets, and the root,
+  ;; which a program runs with `await run(App())` (decisions 822, 825). Each
+  ;; component body opens its own cell, `scope.childAt(key)`, a child of the
+  ;; cell it was handed; a `use provide(…)` writes the body's cell, so what
+  ;; the body resolves after it — its subtree — reads it, and a `use
+  ;; context(…)` reads the contexts the cell held when the body entered
+  ;; (decisions 809 (8), 812). The scope travels explicitly: no "current
+  ;; context", on any target.
   ;; 
   ;; The work is the compiler's: each `use provide(…)` / `use context(…)` is
   ;; lowered where it is written — `provide` makes the children's scope and
@@ -261,1578 +776,129 @@ fn frameParent(f: Frame) -> unknown {
   ;; A context of `value`'s type. At module level it declares that type's
   ;; default (decisions 378, 379); inside a component it makes the context a
   ;; `use provide(…)` gives.
-  (func $createContext (export "createContext") (param $value anyref) (result (ref null $rec_Context))
-    (local $__mem0 i32)
-    local.get $value
-    call $__new_22
-    return
-  )
   ;; Gives `ctx` to every component this component renders below it — never
   ;; to itself or a sibling; the nearest provider of a type wins.
-  (func $provide (export "provide") (param $ctx (ref null $rec_Context)) (result (ref null $closure))
-    global.get $__s0
-    call $__panic_fail
-    unreachable
-    ref.null $closure
-  )
   ;; The value of the context of `ctx`'s type provided nearest above this body,
   ;; or `ctx`'s own default: `use context(themeContext)` names a context value
   ;; the module declares or imports, never a bare type (decisions 722, 723).
-  (func $context (export "context") (param $ctx (ref null $rec_Context)) (result (ref null $closure))
-    global.get $__s0
-    call $__panic_fail
-    unreachable
-    ref.null $closure
-  )
   ;; Decision 416 — the record `T` built from the contexts of its fields'
   ;; types: each field the nearest context of its type provided above, else
   ;; that type's declared default, else the field's own default (`use
   ;; inject(Deps)`). `T` is a record; a behavior is read with `use context`.
   ;; `createContext(value, Behavior)` keys a context by the behavior its value
   ;; implements, so a field typed by the behavior reads it.
-  (func $inject (export "inject") (param $t i32) (result (ref null $closure))
-    global.get $__s1
-    call $__panic_fail
-    unreachable
-    ref.null $closure
-  )
-  ;; ── the render scope (decision 388) ──────────────────────────────────────────
-  ;; The scope a component's lambda runs with: the contexts provided above it.
-  ;; Opaque — made only by `RenderScope.root()` (`render-scope-construction`);
-  ;; every other scope is one a component's `run` answered.
-  (func $RenderScope_root (result (ref null $rec_RenderScope))
-    (local $__mem0 i32)
-    ref.null any
-    call $__new_26
-    return
-  )
-  ;; What `c.run(scope)` answers: the component body's result and the scope its
-  ;; `use provide(…)`s made for the children it renders (the scope it received
-  ;; when it provides nothing).
-  ;; ── what the scope lowering calls (decision 388) ─────────────────────────────
+  ;; Decision 827 — the components `cs` resolved in order under one `use`:
+  ;; `val items = use all(self.entries.map({ e -> e.view }));`. `all`'s cell
+  ;; stands at the `use`'s place and entry `i` runs under it at
+  ;; `Place.index(i)` (884), so a keyed entry keeps its key, one a component
+  ;; body counted its count, and any other entry its position. It answers
+  ;; `T[]`, or the task of it when an entry answered a task; the `use` awaits
+  ;; it. Lowered where it is `use`d; this body never runs.
+  ;; ── the place (decisions 819, 820, 821, 884, 891) ────────────────────────────
+  ;; Where a component stands among its siblings (819 (2)): the number of the
+  ;; call that made it, and its item half — absent, a count the call's
+  ;; component body or plain function made (821), a list runner's index, or a
+  ;; key. A program passes `Place.none()` (the place the value carries), or
+  ;; runs one by hand with `Place.key(k)` / `Place.index(i)` (819 (3), 884).
+  ;; `stamped` marks a place a making call wrote (820 (1)): a runner's never is.
+  ;; A place's item half (891 (1)).
+  ;; Whether two places name one child: the call's number and the item half,
+  ;; a key compared by value (818 (3)).
+  ;; ── the scope (decisions 809 (8), 816, 817, 824, 825) ────────────────────────
+  ;; A cell of a render's tree: the contexts provided above it, a persistent map
+  ;; keyed by each context's identity. Opaque — made only by `Scope.root()`, a
+  ;; cell's `childAt` and `detach`. A root's whole tree is one entry: on erlang
+  ;; and beam an entry `{bp_scope, Ref}` of the process dictionary of the
+  ;; process that made the root, ended by that process or by `close()`; on
+  ;; commonJS a plain object, on wasm a heap cell (824). A scope used after its
+  ;; root's `close()` fails `scope-closed` on every target (825 (2)); one read in
+  ;; another process than the root's fails `scope-foreign` (824 (3)).
+  ;; A root's tree: whether it is closed, the count of its cells, each cell's
+  ;; state and each `place → cell` link, the latest entry for an id or a place
+  ;; first. Public as `Frame` is: a program never names it.
+  ;; The contexts a detached root carries across processes (824 (3)).
+  ;; One cell of a root's tree: its contexts, the number of its renders, its
+  ;; hook's slot (816, 818 (1)) and the count of the values each call of its
+  ;; body made in the current render (821 (1)).
+  ;; A child cell at a place of its parent, and the parent's render that last
+  ;; met it (817 (1)).
+  ;; The count of the values call `countCall` made in one render or one entry.
+  ;; A new root's store, its one cell holding `frames`.
+  ;; The root's tree, live and in its own process; a detached root's starts in
+  ;; each process that reads it from the contexts it carries.
+  ;; `t` with `e` as cell `e.cellNo`'s state.
+  ;; Cell `id`'s state in `cells`.
+  ;; The child of cell `parent` at `key`, entered for a render: its id.
+  ;; The latest link of cell `parent` at `key`, or null.
+  ;; A key as a failure names it.
+  ;; The contexts cell `id` holds now.
+  ;; `value` provided for `key` in cell `id`.
+  ;; The count of the values call `callNo` made before this one in cell `id`'s
+  ;; current render; the cell counts this one (821 (1)).
+  ;; The latest count of call `callNo` in `counts`, else 0.
+  ;; Cell `id`'s slot: what `make` answered on the cell's first render, kept
+  ;; while the cell stands (816 (1), 818 (1)).
+  ;; The root's tree closed; a closed one is left as it is.
+  ;; ── resolving and running (decisions 809 (6), 815 (5), 819, 822, 825) ───────
+  ;; Runs `c` over `scope` at `key` and hands back its answer as it came — a
+  ;; value, or the task of a component that awaits —, nothing awaited inside.
+  ;; Runs a root: `c` resolved over `scope`, or over a root of its own that it
+  ;; closes when `c` settles or fails (825 (1)), awaited only when it answered a
+  ;; task (822, 823): `val page = await run(App());`.
+  ;; ── what the scope lowering calls (decisions 809 (8), 812, 819) ──────────────
   ;; 
   ;; A program never names these: the compiler imports them under names no
-  ;; source can spell. A `Component` function answers `{ scope -> … }`; each
-  ;; `return v` of its body answers `rendered(v, <children's scope>)`; `use
-  ;; provide(c)` binds `push(<children's scope>, <T's identity>, c)` for the
-  ;; children (a context is its value at run time: the compiler writes
-  ;; `createContext(v)` as `v`), `use context(ctx)` is `find(<received scope>,
-  ;; <ctx's type's identity>, ctx)`,
-  ;; a `use` of a hook or of a component value runs the lambda and reads
-  ;; `valueOf` of what it answers. A context's identity is its value's type
-  ;; (379) — the compiler writes it, never a program.
+  ;; source can spell. A component body is lowered to `{ scope, key -> … }`
+  ;; opening `enter(scope, key)`, its own cell; `use provide(c)` is
+  ;; `provideIn(<cell>, <T's identity>, c)` (a context is its value at run time:
+  ;; the compiler writes `createContext(v)` as `v`), `use context(ctx)` is
+  ;; `find(<the cell's contexts at entry>, <ctx's type's identity>, ctx)`, a
+  ;; `use` of a hook or a component calls its value with the cell and
+  ;; `Place.none()`, and each `return v` answers `answer(v)`. A context's
+  ;; identity is its value's type (379) — the compiler writes it, never a
+  ;; program.
   ;; One provided value over the frames it was provided in.
-  ;; The children's scope: `value` provided for `key` over `scope`.
-  (func $push (export "push") (param $scope (ref null $rec_RenderScope)) (param $key (ref null $str)) (param $value anyref) (result (ref null $rec_RenderScope))
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    local.get $key
-    local.get $value
-    local.get $scope
-    struct.get $rec_RenderScope $f0
-    call $__new_24
-    call $__new_26
-    return
-  )
-  ;; The value provided nearest above for `key`, else `fallback` — the type's
-  ;; declared default (decision 378 (3): no read is unbound).
+  ;; The cell a body opens: `scope`'s child at `key`.
+  ;; The contexts `cell` holds now — what a body's `use context` reads.
+  ;; `value` provided for `key` in `cell`: what is resolved under it afterwards
+  ;; reads it (809 (8), 812 (3)).
+  ;; The value provided nearest above for `key` in `frames`, else `fallback` —
+  ;; the type's declared default (decision 378 (3): no read is unbound).
   ;; The two `unknown` fields are read through `frameValue` / `frameParent`: wasm boxes a field read as `unknown` only as a function's answer.
-  (func $find (export "find") (param $scope (ref null $rec_RenderScope)) (param $key (ref null $str)) (param $fallback anyref) (result anyref)
-    (local $__mem0 i32)
-    (local $cur anyref)
-    (local $f (ref null $rec_Frame))
-    (local $__gc0 anyref)
-    local.get $scope
-    struct.get $rec_RenderScope $f0
-    local.set $cur
-    (block $__break
-      (loop $__continue
-    i32.const 1
-        i32.eqz
-        br_if $__break
-    local.get $cur
-    local.set $__gc0
-    local.get $__gc0
-    ref.test (ref null $rec_Frame)
-    local.get $__gc0
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if (result i32)
-      (then
-    local.get $cur
-    ref.cast (ref null $rec_Frame)
-    local.set $f
-    local.get $f
-    struct.get $rec_Frame $f0
-    local.get $key
-    call $__str_eq
-    (if (result anyref)
-      (then
-    local.get $f
-    call $frameValue
-    return
-      )
-      (else
-        ref.null any
-      )
-    )
-    drop
-    local.get $f
-    call $frameParent
-    local.set $cur
-    i32.const 0
-      )
-      (else
-    local.get $key
-    local.get $fallback
-    ref.null any
-    call $__new_24
-    call $frameValue
-    return
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-    struct.new $box_i32
-  )
-  ;; A body's answer: its result over its children's scope.
-  (func $rendered (export "rendered") (param $value anyref) (param $scope (ref null $rec_RenderScope)) (result (ref null $rec_Rendered))
-    (local $__mem0 i32)
-    local.get $value
-    local.get $scope
-    call $__new_28
-    return
-  )
-  ;; The result a run answered.
-  (func $valueOf (export "valueOf") (param $r (ref null $rec_Rendered)) (result anyref)
-    local.get $r
-    struct.get $rec_Rendered $f0
-    return
-  )
-  ;; The empty scope, the root's (`RenderScope.root()`).
-  (func $root (export "root") (result (ref null $rec_RenderScope))
-    call $RenderScope_root
-    return
-  )
-  (func $frameValue (param $f (ref null $rec_Frame)) (result anyref)
-    local.get $f
-    struct.get $rec_Frame $f1
-    return
-  )
-  (func $frameParent (param $f (ref null $rec_Frame)) (result anyref)
-    local.get $f
-    struct.get $rec_Frame $f2
-    return
-  )
-  (func $__unk_print_q (param $v anyref)
-    local.get $v
-    ref.is_null
-    (if
-      (then
-    global.get $__s5
-    call $__print_str_raw
-    return
-      )
-    )
-    local.get $v
-    call $__print_ebox
-    (if
-      (then
-    return
-      )
-    )
-    local.get $v
-    call $__print_arrs
-    (if
-      (then
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_bool)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_bool)
-    struct.get $box_bool $v
-    call $__print_bool_raw
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_i32)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    call $__print_i32_raw
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_f64)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_f64)
-    struct.get $box_f64 $v
-    call $__print_f64_raw
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_i64)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_i64)
-    struct.get $box_i64 $v
-    call $__print_i64_raw
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $str)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $str)
-    call $__print_quoted_raw
-    return
-      )
-    )
-    local.get $v
-    call $__print_tagged_raw
-  )
-  (func $__pr1 (param $v anyref)
-    local.get $v
-    call $__unk_print_q
-  )
-  (func $__pr0 (param $v (ref null $rec_Context))
-    global.get $__s2
-    call $__print_str_raw
-    global.get $__s3
-    call $__print_str_raw
-    global.get $__s4
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Context $f0
-    call $__pr1
-    global.get $__s6
-    call $__print_str_raw
-  )
-  (func $__tip1 (param $v anyref)
-    local.get $v
-    ref.cast (ref null $rec_Context)
-    call $__pr0
-  )
-  (func $__unk_is_num (param $v anyref) (result i32)
-    local.get $v
-    ref.is_null
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $box_i32)
-    local.get $v
-    ref.test (ref null $box_bool)
-    i32.eqz
-    i32.and
-    local.get $v
-    ref.test (ref null $box_f64)
-    i32.or
-  )
-  (func $__unk_as_f64 (param $v anyref) (result f64)
-    local.get $v
-    ref.test (ref null $box_i32)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    f64.convert_i32_s
-    return
-      )
-    )
-    local.get $v
-    ref.cast (ref null $box_f64)
-    struct.get $box_f64 $v
-  )
-  (func $__unk_eq (param $a anyref) (param $b anyref) (result i32)
-    local.get $a
-    call $__unk_is_num
-    local.get $b
-    call $__unk_is_num
-    i32.and
-    (if
-      (then
-    local.get $a
-    call $__unk_as_f64
-    local.get $b
-    call $__unk_as_f64
-    f64.eq
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $str)
-    local.get $a
-    ref.is_null
-    i32.eqz
-    i32.and
-    local.get $b
-    ref.test (ref null $str)
-    i32.and
-    local.get $b
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if
-      (then
-    local.get $a
-    ref.cast (ref null $str)
-    local.get $b
-    ref.cast (ref null $str)
-    call $__str_eq
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $box_bool)
-    local.get $a
-    ref.is_null
-    i32.eqz
-    i32.and
-    local.get $b
-    ref.test (ref null $box_bool)
-    i32.and
-    local.get $b
-    ref.is_null
-    i32.eqz
-    i32.and
-    (if
-      (then
-    local.get $a
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    local.get $b
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    i32.eq
-    return
-      )
-    )
-    local.get $a
-    local.get $b
-    call $__unk_eq_ref
-  )
-  (func $__tie1 (param $a anyref) (param $b anyref) (result i32)
-    local.get $b
-    ref.test (ref null $rec_Context)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    local.get $b
-    call $__unk_eq_ref
-  )
-  (func $__pr2 (param $v (ref null $rec_RenderScope))
-    global.get $__s8
-    call $__print_str_raw
-    global.get $__s3
-    call $__print_str_raw
-    global.get $__s9
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_RenderScope $f0
-    call $__pr1
-    global.get $__s6
-    call $__print_str_raw
-  )
-  (func $__tip3 (param $v anyref)
-    local.get $v
-    ref.cast (ref null $rec_RenderScope)
-    call $__pr2
-  )
-  (func $__tie3 (param $a anyref) (param $b anyref) (result i32)
-    local.get $b
-    ref.test (ref null $rec_RenderScope)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    local.get $b
-    call $__unk_eq_ref
-  )
-  (func $__pr4 (param $v (ref null $str))
-    local.get $v
-    call $__print_quoted_raw
-  )
-  (func $__pr3 (param $v (ref null $rec_Frame))
-    global.get $__s11
-    call $__print_str_raw
-    global.get $__s3
-    call $__print_str_raw
-    global.get $__s12
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Frame $f0
-    call $__pr4
-    global.get $__s13
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Frame $f1
-    call $__pr1
-    global.get $__s14
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Frame $f2
-    call $__pr1
-    global.get $__s6
-    call $__print_str_raw
-  )
-  (func $__tip4 (param $v anyref)
-    local.get $v
-    ref.cast (ref null $rec_Frame)
-    call $__pr3
-  )
-  (func $__tie4 (param $a anyref) (param $b anyref) (result i32)
-    local.get $b
-    ref.test (ref null $rec_Frame)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    local.get $b
-    call $__unk_eq_ref
-  )
-  (func $__pr6 (param $v anyref)
-    local.get $v
-    call $__print_tagged_raw
-  )
-  (func $__pr5 (param $v (ref null $rec_Rendered))
-    global.get $__s16
-    call $__print_str_raw
-    global.get $__s3
-    call $__print_str_raw
-    global.get $__s17
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Rendered $f0
-    call $__pr1
-    global.get $__s18
-    call $__print_str_raw
-    local.get $v
-    struct.get $rec_Rendered $f1
-    call $__pr6
-    global.get $__s6
-    call $__print_str_raw
-  )
-  (func $__tip6 (param $v anyref)
-    local.get $v
-    ref.cast (ref null $rec_Rendered)
-    call $__pr5
-  )
-  (func $__tie6 (param $a anyref) (param $b anyref) (result i32)
-    local.get $b
-    ref.test (ref null $rec_Rendered)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    local.get $b
-    call $__unk_eq_ref
-  )
-  (func $__unk_eq_s1 (param $a (ref null $rec_Context)) (param $b (ref null $rec_Context)) (result i32)
-    local.get $a
-    struct.get $rec_Context $f0
-    local.get $b
-    struct.get $rec_Context $f0
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    i32.const 1
-  )
-  (func $__unk_eq_s3 (param $a (ref null $rec_RenderScope)) (param $b (ref null $rec_RenderScope)) (result i32)
-    local.get $a
-    struct.get $rec_RenderScope $f0
-    local.get $b
-    struct.get $rec_RenderScope $f0
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    i32.const 1
-  )
-  (func $__unk_eq_s4 (param $a (ref null $rec_Frame)) (param $b (ref null $rec_Frame)) (result i32)
-    local.get $a
-    struct.get $rec_Frame $f0
-    local.get $b
-    struct.get $rec_Frame $f0
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    struct.get $rec_Frame $f1
-    local.get $b
-    struct.get $rec_Frame $f1
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    struct.get $rec_Frame $f2
-    local.get $b
-    struct.get $rec_Frame $f2
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    i32.const 1
-  )
-  (func $__unk_eq_s6 (param $a (ref null $rec_Rendered)) (param $b (ref null $rec_Rendered)) (result i32)
-    local.get $a
-    struct.get $rec_Rendered $f0
-    local.get $b
-    struct.get $rec_Rendered $f0
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    struct.get $rec_Rendered $f1
-    local.get $b
-    struct.get $rec_Rendered $f1
-    call $__unk_eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    i32.const 1
-  )
-  (func $__unk_eq_s9 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
-    local.get $a
-    struct.get $box_i64 $v
-    local.get $b
-    struct.get $box_i64 $v
-    i64.eq
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    i32.const 1
-  )
-  (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
-    local.get $a
-    ref.is_null
-    local.get $b
-    ref.is_null
-    i32.or
-    (if
-      (then
-    local.get $a
-    ref.is_null
-    local.get $b
-    ref.is_null
-    i32.and
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null eq)
-    local.get $b
-    ref.cast (ref null eq)
-    ref.eq
-    (if
-      (then
-    i32.const 1
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $rec_Context)
-    (if
-      (then
-    local.get $b
-    ref.test (ref null $rec_Context)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null $rec_Context)
-    local.get $b
-    ref.cast (ref null $rec_Context)
-    call $__unk_eq_s1
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $rec_RenderScope)
-    (if
-      (then
-    local.get $b
-    ref.test (ref null $rec_RenderScope)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null $rec_RenderScope)
-    local.get $b
-    ref.cast (ref null $rec_RenderScope)
-    call $__unk_eq_s3
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $rec_Frame)
-    (if
-      (then
-    local.get $b
-    ref.test (ref null $rec_Frame)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null $rec_Frame)
-    local.get $b
-    ref.cast (ref null $rec_Frame)
-    call $__unk_eq_s4
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $rec_Rendered)
-    (if
-      (then
-    local.get $b
-    ref.test (ref null $rec_Rendered)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null $rec_Rendered)
-    local.get $b
-    ref.cast (ref null $rec_Rendered)
-    call $__unk_eq_s6
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $box_i64)
-    (if
-      (then
-    local.get $b
-    ref.test (ref null $box_i64)
-    i32.eqz
-    (if
-      (then
-    i32.const 0
-    return
-      )
-    )
-    local.get $a
-    ref.cast (ref null $box_i64)
-    local.get $b
-    ref.cast (ref null $box_i64)
-    call $__unk_eq_s9
-    return
-      )
-    )
-    local.get $a
-    ref.test (ref null $__decl)
-    local.get $b
-    ref.test (ref null $__decl)
-    i32.and
-    (if
-      (then
-    local.get $a
-    local.get $b
-    call $__eq_decl
-    return
-      )
-    )
-    i32.const 0
-  )
-  (func $__print_tagged_raw (param $v anyref)
-    local.get $v
-    ref.test (ref null $rec_Context)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $rec_Context)
-    call $__pr0
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $rec_RenderScope)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $rec_RenderScope)
-    call $__pr2
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $rec_Frame)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $rec_Frame)
-    call $__pr3
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $rec_Rendered)
-    (if
-      (then
-    local.get $v
-    ref.cast (ref null $rec_Rendered)
-    call $__pr5
-    return
-      )
-    )
-    local.get $v
-    ref.test (ref null $__decl)
-    (if
-      (then
-    local.get $v
-    call $__print_decl
-    return
-      )
-    )
-    unreachable
-  )
-  (func $__print_ebox (param $v anyref) (result i32)
-    i32.const 0
-  )
-  (func $__print_arrs (param $v anyref) (result i32)
-    i32.const 0
-  )
-  ;; Scratch layout below the data section (which starts at 256):
-  ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   64..128 i32 digits
-  (func $__print_nl
-    i32.const 8
-    i32.const 10
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  ;; separator between the arguments of a multi-argument `@print`
-  (func $__print_sp
-    i32.const 8
-    i32.const 32
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  (func $__print_i32 (param $n i32)
-    local.get $n
-    call $__print_i32_raw
-    call $__print_nl
-  )
-  (func $__print_i32_raw (param $n i32)
-    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
-    (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 64
-    local.set $buf
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 1
-        local.set $neg
-        i32.const 0
-        local.get $n
-        i32.sub
-        local.set $n
-      )
-    )
-    (block $done
-      (loop $digits
-        local.get $n
-        i32.const 10
-        i32.rem_u
-        i32.const 48
-        i32.add
-        local.set $d
-        local.get $buf
-        local.get $len
-        i32.add
-        local.get $d
-        i32.store8
-        local.get $len
-        i32.const 1
-        i32.add
-        local.set $len
-        local.get $n
-        i32.const 10
-        i32.div_u
-        local.set $n
-        local.get $n
-        i32.const 0
-        i32.gt_u
-        br_if $digits
-      )
-    )
-    ;; reverse
-    i32.const 0
-    local.set $i
-    local.get $len
-    i32.const 1
-    i32.sub
-    local.set $j
-    (block $rdone
-      (loop $rev
-        local.get $i
-        local.get $j
-        i32.ge_u
-        br_if $rdone
-        local.get $buf
-        local.get $i
-        i32.add
-        i32.load8_u
-        local.set $tmp
-        local.get $buf
-        local.get $i
-        i32.add
-        local.get $buf
-        local.get $j
-        i32.add
-        i32.load8_u
-        i32.store8
-        local.get $buf
-        local.get $j
-        i32.add
-        local.get $tmp
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        local.get $j
-        i32.const 1
-        i32.sub
-        local.set $j
-        br $rev
-      )
-    )
-    ;; add neg sign + newline
-    ;; shift the digits one byte right to make room for '-'
-    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
-    ;;  bytes and printed -12 as -21)
-    local.get $neg
-    (if
-      (then
-        local.get $buf
-        i32.const 1
-        i32.add
-        local.get $buf
-        local.get $len
-        call $__memmove
-        local.get $buf
-        i32.const 45
-        i32.store8
-        local.get $len
-        i32.const 1
-        i32.add
-        local.set $len
-      )
-    )
-    local.get $buf
-    local.get $len
-    call $__write_bytes
-  )
-  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
-    (local $i i32)
-    local.get $len
-    i32.const 1
-    i32.sub
-    local.set $i
-    (block $done
-      (loop $loop
-        local.get $i
-        i32.const 0
-        i32.lt_s
-        br_if $done
-        local.get $dst
-        local.get $i
-        i32.add
-        local.get $src
-        local.get $i
-        i32.add
-        i32.load8_u
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.sub
-        local.set $i
-        br $loop
-      )
-    )
-  )
-  (func $__print_str_raw (param $s (ref null $str))
-    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
-    local.get $s
-    array.len
-    local.set $n
-    global.get $__heap_ptr
-    local.set $top
-    local.get $n
-    call $__alloc
-    local.set $p
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
-        local.get $s
-        local.get $i
-        array.get_u $str
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-    local.get $n
-    call $__write_bytes
-    local.get $top
-    global.set $__heap_ptr
-  )
-  (func $__print_str (param $s (ref null $str))
-    local.get $s
-    call $__print_str_raw
-    call $__print_nl
-  )
-  (func $__print_bool (param $b i32)
-    local.get $b
-    call $__print_bool_raw
-    call $__print_nl
-  )
-  (func $__print_bool_raw (param $b i32)
-    local.get $b
-    (if
-      (then
-        ;; "true" as a little-endian i32
-        i32.const 16
-        i32.const 1702195828
-        i32.store
-        i32.const 16
-        i32.const 4
-        call $__write_bytes
-      )
-      (else
-        ;; "fals" + 'e'
-        i32.const 16
-        i32.const 1936482662
-        i32.store
-        i32.const 16
-        i32.const 101
-        i32.store8 offset=4
-        i32.const 16
-        i32.const 5
-        call $__write_bytes
-      )
-    )
-  )
-  (func $__print_f64 (param $x f64)
-    local.get $x
-    call $__print_f64_raw
-    call $__print_nl
-  )
-  (func $__print_f64_raw (param $x f64)
-    (local $s i32) (local $top i32)
-    global.get $__heap_ptr
-    local.set $top
-    local.get $x
-    call $__std_number_floatToString
-    local.set $s
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
-    call $__write_bytes
-    local.get $top
-    global.set $__heap_ptr
-  )
-  (func $__str_eq (param $a (ref null $str)) (param $b (ref null $str)) (result i32)
-    (local $i i32) (local $n i32) (local $an i32) (local $bn i32)
-    local.get $a
-    ref.is_null
-    local.set $an
-    local.get $b
-    ref.is_null
-    local.set $bn
-    local.get $an
-    local.get $bn
-    i32.or
-    (if
-      (then
-        local.get $an
-        local.get $bn
-        i32.and
-        return
-      )
-    )
-    local.get $a
-    array.len
-    local.set $n
-    local.get $n
-    local.get $b
-    array.len
-    i32.ne
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $a
-        local.get $i
-        array.get_u $str
-        local.get $b
-        local.get $i
-        array.get_u $str
-        i32.ne
-        (if
-          (then
-            i32.const 0
-            return
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const 1
-  )
-  (func $__write_err (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 2
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
-  (func $__assert_fail (param $where i32) (param $msg i32)
-    local.get $where
-    i32.const 4
-    i32.add
-    local.get $where
-    i32.load
-    call $__write_err
-    i32.const 188
-    i64.const 8390880602276044858
-    i64.store
-    i32.const 196
-    i64.const 7811882119909502825
-    i64.store
-    i32.const 204
-    i32.const 101
-    i32.store8
-    i32.const 205
-    i32.const 100
-    i32.store8
-    i32.const 188
-    i32.const 18
-    call $__write_err
-    local.get $msg
-    (if
-      (then
-        i32.const 188
-        i32.const 8250
-        i32.store
-        i32.const 188
-        i32.const 2
-        call $__write_err
-        local.get $msg
-        i32.const 4
-        i32.add
-        local.get $msg
-        i32.load
-        call $__write_err
-      )
-    )
-    i32.const 188
-    i32.const 10
-    i32.store8
-    i32.const 188
-    i32.const 1
-    call $__write_err
-  )
-  (func $__panic_fail (param $msg (ref null $str))
-    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
-    i32.const 188
-    i64.const 9071397899755888
-    i64.store
-    i32.const 188
-    i32.const 7
-    call $__write_err
-    local.get $msg
-    array.len
-    local.set $n
-    global.get $__heap_ptr
-    local.set $top
-    local.get $n
-    call $__alloc
-    local.set $p
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $p
-        local.get $i
-        i32.add
-        local.get $msg
-        local.get $i
-        array.get_u $str
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-    local.get $n
-    call $__write_err
-    i32.const 188
-    i32.const 10
-    i32.store8
-    i32.const 188
-    i32.const 1
-    call $__write_err
-    local.get $top
-    global.set $__heap_ptr
-  )
-  (func $__print_quoted_raw (param $s (ref null $str))
-    (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
-    i32.const 8
-    i32.const 34
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-    local.get $s
-    array.len
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $i
-        array.get_u $str
-        local.set $ch
-        i32.const 0
-        local.set $e
-        local.get $ch
-        i32.const 34
-        i32.eq
-        local.get $ch
-        i32.const 92
-        i32.eq
-        i32.or
-        (if
-          (then
-            local.get $ch
-            local.set $e
-          )
-        )
-        local.get $ch
-        i32.const 10
-        i32.eq
-        (if
-          (then
-            i32.const 110
-            local.set $e
-          )
-        )
-        local.get $ch
-        i32.const 13
-        i32.eq
-        (if
-          (then
-            i32.const 114
-            local.set $e
-          )
-        )
-        local.get $ch
-        i32.const 9
-        i32.eq
-        (if
-          (then
-            i32.const 116
-            local.set $e
-          )
-        )
-        local.get $e
-        (if
-          (then
-            i32.const 8
-            i32.const 92
-            i32.store8
-            i32.const 8
-            i32.const 1
-            call $__write_bytes
-            i32.const 8
-            local.get $e
-            i32.store8
-            i32.const 8
-            i32.const 1
-            call $__write_bytes
-          )
-          (else
-            i32.const 8
-            local.get $ch
-            i32.store8
-            i32.const 8
-            i32.const 1
-            call $__write_bytes
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const 8
-    i32.const 34
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  (func $__print_i64_raw (param $v i64)
-    local.get $v
-    call $__std_number_i64ToString
-    call $__print_str_raw
-  )
-  (func $__print_i64 (param $v i64)
-    local.get $v
-    call $__print_i64_raw
-    call $__print_nl
-  )
-  (func $__print_u64_raw (param $v i64)
-    local.get $v
-    call $__std_number_u64ToString
-    call $__print_str_raw
-  )
-  (func $__print_u64 (param $v i64)
-    local.get $v
-    call $__print_u64_raw
-    call $__print_nl
-  )
-  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
-    local.get $p0
-    call $__abi___std_number_i64ToString
-    ref.cast (ref null $str)
-  )
-  (func $__std_number_u64ToString (param $p0 i64) (result (ref null $str))
-    local.get $p0
-    call $__abi___std_number_u64ToString
-    ref.cast (ref null $str)
-  )
-  (data $__d0 "`use provide` / `use context` are lowered where they are written; this body never runs")
-  (global $__s0 (mut (ref null $str)) (ref.null $str))
-  (data $__d1 "`use inject` is lowered where it is written; this body never runs")
-  (global $__s1 (mut (ref null $str)) (ref.null $str))
-  (data $__d2 "Context")
-  (global $__s2 (mut (ref null $str)) (ref.null $str))
-  (data $__d3 "(")
-  (global $__s3 (mut (ref null $str)) (ref.null $str))
-  (data $__d4 "contextValue: ")
-  (global $__s4 (mut (ref null $str)) (ref.null $str))
-  (data $__d5 "null")
-  (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 ")")
-  (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "std@context.Context")
-  (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "RenderScope")
-  (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "frames: ")
-  (global $__s9 (mut (ref null $str)) (ref.null $str))
-  (data $__d10 "std@context.RenderScope")
-  (global $__s10 (mut (ref null $str)) (ref.null $str))
-  (data $__d11 "Frame")
-  (global $__s11 (mut (ref null $str)) (ref.null $str))
-  (data $__d12 "key: ")
-  (global $__s12 (mut (ref null $str)) (ref.null $str))
-  (data $__d13 ", value: ")
-  (global $__s13 (mut (ref null $str)) (ref.null $str))
-  (data $__d14 ", parent: ")
-  (global $__s14 (mut (ref null $str)) (ref.null $str))
-  (data $__d15 "std@context.Frame")
-  (global $__s15 (mut (ref null $str)) (ref.null $str))
-  (data $__d16 "Rendered")
-  (global $__s16 (mut (ref null $str)) (ref.null $str))
-  (data $__d17 "value: ")
-  (global $__s17 (mut (ref null $str)) (ref.null $str))
-  (data $__d18 ", scope: ")
-  (global $__s18 (mut (ref null $str)) (ref.null $str))
-  (data $__d19 "std@context.Rendered")
-  (global $__s19 (mut (ref null $str)) (ref.null $str))
-  (start $__init_strs)
-  (func $__init_strs
-    i32.const 0
-    i32.const 86
-    array.new_data $str $__d0
-    global.set $__s0
-    i32.const 0
-    i32.const 65
-    array.new_data $str $__d1
-    global.set $__s1
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d2
-    global.set $__s2
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d3
-    global.set $__s3
-    i32.const 0
-    i32.const 14
-    array.new_data $str $__d4
-    global.set $__s4
-    i32.const 0
-    i32.const 4
-    array.new_data $str $__d5
-    global.set $__s5
-    i32.const 0
-    i32.const 1
-    array.new_data $str $__d6
-    global.set $__s6
-    i32.const 0
-    i32.const 19
-    array.new_data $str $__d7
-    global.set $__s7
-    i32.const 0
-    i32.const 11
-    array.new_data $str $__d8
-    global.set $__s8
-    i32.const 0
-    i32.const 8
-    array.new_data $str $__d9
-    global.set $__s9
-    i32.const 0
-    i32.const 23
-    array.new_data $str $__d10
-    global.set $__s10
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d11
-    global.set $__s11
-    i32.const 0
-    i32.const 5
-    array.new_data $str $__d12
-    global.set $__s12
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d13
-    global.set $__s13
-    i32.const 0
-    i32.const 10
-    array.new_data $str $__d14
-    global.set $__s14
-    i32.const 0
-    i32.const 17
-    array.new_data $str $__d15
-    global.set $__s15
-    i32.const 0
-    i32.const 8
-    array.new_data $str $__d16
-    global.set $__s16
-    i32.const 0
-    i32.const 7
-    array.new_data $str $__d17
-    global.set $__s17
-    i32.const 0
-    i32.const 9
-    array.new_data $str $__d18
-    global.set $__s18
-    i32.const 0
-    i32.const 20
-    array.new_data $str $__d19
-    global.set $__s19
-    call $__init_types
-  )
-  (func $__new_22 (param $f0 anyref) (result (ref null $rec_Context))
-    global.get $__ti_22
-    local.get $f0
-    struct.new $rec_Context
-  )
-  (func $__new_26 (param $f0 anyref) (result (ref null $rec_RenderScope))
-    global.get $__ti_26
-    local.get $f0
-    struct.new $rec_RenderScope
-  )
-  (func $__new_24 (param $f0 (ref null $str)) (param $f1 anyref) (param $f2 anyref) (result (ref null $rec_Frame))
-    global.get $__ti_24
-    local.get $f0
-    local.get $f1
-    local.get $f2
-    struct.new $rec_Frame
-  )
-  (func $__new_28 (param $f0 anyref) (param $f1 (ref null $rec_RenderScope)) (result (ref null $rec_Rendered))
-    global.get $__ti_28
-    local.get $f0
-    local.get $f1
-    struct.new $rec_Rendered
-  )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (elem declare func $__tip1 $__tie1 $__tip3 $__tie3 $__tip4 $__tie4 $__tip6 $__tie6)
-  (func $__init_types
-    global.get $__s7
-    ref.func $__tip1
-    ref.func $__tie1
-    ref.null func
-    i32.const 0
-    struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
-    call $__ti_register
-    global.get $__s10
-    ref.func $__tip3
-    ref.func $__tie3
-    ref.null func
-    i32.const 0
-    struct.new $__tinfo
-    global.set $__ti_26
-    global.get $__ti_26
-    call $__ti_register
-    global.get $__s15
-    ref.func $__tip4
-    ref.func $__tie4
-    ref.null func
-    i32.const 0
-    struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
-    call $__ti_register
-    global.get $__s19
-    ref.func $__tip6
-    ref.func $__tie6
-    ref.null func
-    i32.const 0
-    struct.new $__tinfo
-    global.set $__ti_28
-    global.get $__ti_28
-    call $__ti_register
-  )
-  (@custom "botopink.needs" "gc\0a")
+  ;; A body's answer, as it is (the word wasm moves through it, decision 504).
+  ;; The place a `use` passes (820 (2)).
+  ;; A fresh root, for a `use` written outside every component body.
+  ;; ── the stamp (decisions 820, 821, 818 (3)) ──────────────────────────────────
+  ;; 
+  ;; Each written call answering a component answers its value carrying its
+  ;; place: `stamp(c, <the body's cell>, n)` in a component body, the item the
+  ;; count of the values call `n` made in the body's current render;
+  ;; `stampPlain(c, <the entry's counter>, n)` in a plain function, counted in
+  ;; that entry (`countNew` at its entry, `countEnd` deferred); `stampKeyed(c,
+  ;; n, k)` for `#[key(k)]`. The place travels in the value: run with a
+  ;; runner's place it is `mine.with(key)`; a place another stamp already wrote
+  ;; passes through, so the stamp written last — the outer call's — wins
+  ;; (821 (2)).
+  ;; `c` carrying `mine`.
+  ;; `use memo(make)` written as call `callNo` of a body: the slot of its own
+  ;; child cell (818 (1)), filled on that cell's first render.
+  ;; `use all(cs)` written as call `callNo` of a body (827, 884): entry `i` run
+  ;; under `all`'s own child cell at `Place.index(i)`, in order; the answers as
+  ;; a list, or the task of the list once each settled in order when an entry
+  ;; answered a task.
+  ;; Each of `answers` awaited in order where it is a task.
+  ;; A plain function entry's counter of the values each of its calls made
+  ;; (821 (2)).
+  ;; The entry's counter gone: on erlang and beam its process-dictionary entry.
+  ;; The count of the values call `callNo` made before this one in the entry.
+  ;; ── the store's host side (decision 824) ─────────────────────────────────────
+  ;; Two keys compared by value (818 (3)).
+  ;; The closed tree written over the root's: on erlang and beam the entry goes
+  ;; instead, so the process keeps no `{bp_scope, _}` (825 (2), (3)).
+  ;; The process a root is made in: its pid on erlang and beam; elsewhere one
+  ;; process holds every root, and a token no test reads stands for it.
+  ;; Whether `owner` is another process than this one: never off the BEAM (an
+  ;; owner token there is an empty cell).
 )
 ```
 
@@ -1842,7 +908,7 @@ fn frameParent(f: Frame) -> unknown {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement Renderable
+val Element = type()
 component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
     val push: fn(i32) -> i32 = { action -> f(base, action) };
     return #(base, push);
@@ -1854,1260 +920,12 @@ component fn LikeWidget() -> Component<Element> {
 }
 ```
 
------ WASM TEXT -- main.wat
-```wasm
-(module
-  (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-  (memory (export "memory") (import "std@__rt" "memory") 1)
-  (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (table funcref (elem $__lambda0 $__lambda1 $__lambda2 $__lambda3))
-  (data $__bp_seg0 "\18\00\00\00R\07Context\01\0ccontextValueG")
-  (data $__bp_seg1 "\01\00\00\00i")
-  (data $__bp_seg2 "\56\00\00\00`use provide` / `use context` are lowered where they are written; this body never runs")
-  (data $__bp_seg3 "\41\00\00\00`use inject` is lowered where it is written; this body never runs")
-  (data $__bp_seg4 "\16\00\00\00R\0bRenderScope\01\06framesi")
-  (data $__bp_seg5 "\1c\00\00\00R\05Frame\03\03keys\05valuei\06parenti")
-  (data $__bp_seg6 "\19\00\00\00R\08Rendered\02\05valueG\05scopeT")
-  (data $__bp_seg7 "\0a\00\00\00R\07Element\00")
-  (data $__bp_seg8 "\2a\00\00\00integer overflow: + on i32 at main.bp:7:57")
-  (func $createContext (param $value i32) (result i32)
-    (local $__mem0 i32)
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 11684
-    i32.store
-    local.get $__mem0
-    i32.const 11712
-    i32.store offset=8
-    local.get $__mem0
-    local.get $value
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $provide (param $ctx i32) (result i32)
-    i32.const 11716
-    call $__panic_fail
-    unreachable
-    i32.const 0
-  )
-  (func $context (param $ctx i32) (result i32)
-    i32.const 11716
-    call $__panic_fail
-    unreachable
-    i32.const 0
-  )
-  (func $inject (param $t i32) (result i32)
-    i32.const 11808
-    call $__panic_fail
-    unreachable
-    i32.const 0
-  )
-  (func $RenderScope_root (result i32)
-    (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 11884
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $push (param $scope i32) (param $key i32) (param $value i32) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 11884
-    i32.store
-    local.get $__mem0
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 11912
-    i32.store
-    local.get $__mem1
-    local.get $key
-    i32.store offset=4
-    local.get $__mem1
-    local.get $value
-    i32.store offset=8
-    local.get $__mem1
-    local.get $scope
-    i32.load ;; .frames
-    i32.store offset=12
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $find (param $scope i32) (param $key i32) (param $fallback i32) (result i32)
-    (local $__mem0 i32)
-    (local $cur i32)
-    (local $f i32)
-    (local $__mem1 i32)
-    local.get $scope
-    i32.load ;; .frames
-    local.set $cur
-    (block $__break
-      (loop $__continue
-    i32.const 1
-        i32.eqz
-        br_if $__break
-    local.get $cur
-    local.tee $__mem0
-    i32.const 256
-    i32.ge_u
-    local.get $__mem0
-    i32.const 4
-    i32.sub
-    local.get $__mem0
-    i32.const 256
-    i32.ge_u
-    i32.mul
-    i32.load
-    i32.const 11912
-    i32.eq
-    i32.and
-    (if (result i32)
-      (then
-    local.get $cur
-    local.set $f
-    local.get $f
-    i32.load
-    local.get $key
-    call $__str_eq
-    (if (result i32)
-      (then
-    local.get $f
-    call $frameValue
-    return
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $f
-    call $frameParent
-    local.set $cur
-    i32.const 0
-      )
-      (else
-    i32.const 16
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 11912
-    i32.store
-    local.get $__mem1
-    local.get $key
-    i32.store offset=4
-    local.get $__mem1
-    local.get $fallback
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 0
-    i32.store offset=12
-    local.get $__mem1
-    i32.const 4
-    i32.add
-    call $frameValue
-    return
-      )
-    )
-    drop
-        br $__continue
-      )
-    )
-    i32.const 0
-  )
-  (func $rendered (param $value i32) (param $scope i32) (result i32)
-    (local $__mem0 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 11944
-    i32.store
-    local.get $__mem0
-    i32.const 11712
-    i32.store offset=12
-    local.get $__mem0
-    local.get $value
-    i32.store offset=4
-    local.get $__mem0
-    local.get $scope
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 4
-    i32.add
-    return
-  )
-  (func $valueOf (param $r i32) (result i32)
-    local.get $r
-    i32.load ;; .value
-    return
-  )
-  (func $root (result i32)
-    call $RenderScope_root
-    return
-  )
-  (func $frameValue (param $f i32) (result i32)
-    local.get $f
-    i32.load offset=4 ;; .value
-    return
-  )
-  (func $frameParent (param $f i32) (result i32)
-    local.get $f
-    i32.load offset=8 ;; .parent
-    return
-  )
-  (func $optimistic (param $base i32) (param $f i32) (result i32)
-    (local $__mem0 i32)
-    i32.const 16
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
-    i32.const 0
-    i32.store offset=4
-    local.get $__mem0
-    local.get $f
-    i32.store offset=8 ;; capture f
-    local.get $__mem0
-    local.get $base
-    i32.store offset=12 ;; capture base
-    local.get $__mem0
-    i32.const 4
-    i32.add ;; a component's lambda: past its mark
-    return
-  )
-  (func $LikeWidget (result i32)
-    (local $__mem0 i32)
-    i32.const 8
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
-    i32.const 1
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 4
-    i32.add ;; a component's lambda: past its mark
-    return
-  )
-  (func $bpScopeRaw__rendered (param $v i32) (param $s i32) (result i32)
-    local.get $v
-    local.get $s
-    call $rendered
-    return
-  )
-  (func $bpScopeRaw__value0 (param $r i32) (result i32)
-    local.get $r
-    call $valueOf
-    return
-  )
-  (func $bpScopeRaw__run1 (param $c i32) (param $s i32) (result i32)
-    (local $__fnv0 i32)
-    local.get $c
-    local.set $__fnv0
-    local.get $__fnv0
-    local.get $s
-    local.get $__fnv0
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    return
-  )
-  (func $__lambda0 (param $__env i32) (param $bpScope__ i32) (result i32)
-    (local $f i32)
-    (local $base i32)
-    (local $__mem0 i32)
-    (local $push i32)
-    (local $__mem1 i32)
-    local.get $__env
-    i32.load offset=4
-    local.set $f
-    local.get $__env
-    i32.load offset=8
-    local.set $base
-    i32.const 12
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 2
-    i32.store
-    local.get $__mem0
-    local.get $f
-    i32.store offset=4 ;; capture f
-    local.get $__mem0
-    local.get $base
-    i32.store offset=8 ;; capture base
-    local.get $__mem0
-    local.set $push
-    i32.const 8
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    local.get $base
-    i32.store
-    local.get $__mem1
-    local.get $push
-    i32.store offset=4
-    local.get $__mem1
-    local.get $bpScope__
-    call $bpScopeRaw__rendered
-    return
-  )
-  (func $__lambda1 (param $__env i32) (param $bpScope__ i32) (result i32)
-    (local $__mem0 i32)
-    (local $__mem1 i32)
-    (local $shown i32)
-    (local $push i32)
-    (local $__runc0 i32)
-    (local $__runm0 i32)
-    (local $__runw0 i32)
-    (local $__fnv1 i32)
-    (local $__mem2 i32)
-    i32.const 12
-    i32.const 4
-    call $__alloc
-    local.set $__mem1
-    local.get $__mem1
-    i32.const 3
-    i32.store
-    local.get $__mem1
-    call $optimistic
-    local.tee $__runc0
-    i32.const 4
-    i32.sub
-    i32.load ;; the lambda's mark: a state machine?
-    local.set $__runm0
-    local.get $__runc0
-    local.get $bpScope__
-    local.get $__runc0
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    local.set $__runw0
-    local.get $__runm0
-    (if (result i32)
-      (then
-    local.get $__runw0
-    call $__task_block_on
-    i32.load offset=8 ;; the settled value
-      )
-      (else
-    local.get $__runw0
-      )
-    )
-    call $bpScopeRaw__value0
-    local.set $__mem0
-    local.get $__mem0
-    i32.load
-    local.set $shown
-    local.get $__mem0
-    i32.load offset=4
-    local.set $push
-    local.get $push
-    local.set $__fnv1
-    local.get $__fnv1
-    local.get $shown
-    local.get $__fnv1
-    i32.load ;; table index
-    call_indirect (param i32 i32) (result i32)
-    drop
-    i32.const 4
-    call $__alloc
-    local.set $__mem2
-    local.get $__mem2
-    i32.const 11976
-    i32.store
-    local.get $__mem2
-    i32.const 4
-    i32.add
-    local.get $bpScope__
-    call $bpScopeRaw__rendered
-    return
-  )
-  (func $__lambda2 (param $__env i32) (param $action i32) (result i32)
-    (local $f i32)
-    (local $base i32)
-    (local $__fnv0 i32)
-    local.get $__env
-    i32.load offset=4
-    local.set $f
-    local.get $__env
-    i32.load offset=8
-    local.set $base
-    local.get $f
-    local.set $__fnv0
-    local.get $__fnv0
-    local.get $base
-    local.get $action
-    local.get $__fnv0
-    i32.load ;; table index
-    call_indirect (param i32 i32 i32) (result i32)
-  )
-  (func $__lambda3 (param $__env i32) (param $c i32) (param $a i32) (result i32)
-    local.get $c
-    local.get $a
-    i32.const 11988
-    call $__i32_add_chk
-  )
-  ;; Scratch layout below the data section (which starts at 256):
-  ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
-  (func $__print_nl
-    i32.const 8
-    i32.const 10
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  ;; separator between the arguments of a multi-argument `@print`
-  (func $__print_sp
-    i32.const 8
-    i32.const 32
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
-  )
-  (func $__print_i32 (param $n i32)
-    local.get $n
-    call $__print_i32_raw
-    call $__print_nl
-  )
-  (func $__print_i32_raw (param $n i32)
-    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
-    (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 64
-    local.set $buf
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 1
-        local.set $neg
-        i32.const 0
-        local.get $n
-        i32.sub
-        local.set $n
-      )
-    )
-    (block $done
-      (loop $digits
-        local.get $n
-        i32.const 10
-        i32.rem_u
-        i32.const 48
-        i32.add
-        local.set $d
-        local.get $buf
-        local.get $len
-        i32.add
-        local.get $d
-        i32.store8
-        local.get $len
-        i32.const 1
-        i32.add
-        local.set $len
-        local.get $n
-        i32.const 10
-        i32.div_u
-        local.set $n
-        local.get $n
-        i32.const 0
-        i32.gt_u
-        br_if $digits
-      )
-    )
-    ;; reverse
-    i32.const 0
-    local.set $i
-    local.get $len
-    i32.const 1
-    i32.sub
-    local.set $j
-    (block $rdone
-      (loop $rev
-        local.get $i
-        local.get $j
-        i32.ge_u
-        br_if $rdone
-        local.get $buf
-        local.get $i
-        i32.add
-        i32.load8_u
-        local.set $tmp
-        local.get $buf
-        local.get $i
-        i32.add
-        local.get $buf
-        local.get $j
-        i32.add
-        i32.load8_u
-        i32.store8
-        local.get $buf
-        local.get $j
-        i32.add
-        local.get $tmp
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        local.get $j
-        i32.const 1
-        i32.sub
-        local.set $j
-        br $rev
-      )
-    )
-    ;; add neg sign + newline
-    ;; shift the digits one byte right to make room for '-'
-    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
-    ;;  bytes and printed -12 as -21)
-    local.get $neg
-    (if
-      (then
-        local.get $buf
-        i32.const 1
-        i32.add
-        local.get $buf
-        local.get $len
-        call $__memmove
-        local.get $buf
-        i32.const 45
-        i32.store8
-        local.get $len
-        i32.const 1
-        i32.add
-        local.set $len
-      )
-    )
-    local.get $buf
-    local.get $len
-    call $__write_bytes
-  )
-  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
-    (local $i i32)
-    local.get $len
-    i32.const 1
-    i32.sub
-    local.set $i
-    (block $done
-      (loop $loop
-        local.get $i
-        i32.const 0
-        i32.lt_s
-        br_if $done
-        local.get $dst
-        local.get $i
-        i32.add
-        local.get $src
-        local.get $i
-        i32.add
-        i32.load8_u
-        i32.store8
-        local.get $i
-        i32.const 1
-        i32.sub
-        local.set $i
-        br $loop
-      )
-    )
-  )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
-    local.get $b
-    i32.load
-    i32.ne
-    (if
-      (then i32.const 0 return)
-    )
-    (block $done
-      (loop $cmp
-        local.get $i
-        local.get $alen
-        i32.ge_u
-        br_if $done
-        local.get $a
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        local.get $b
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.ne
-        (if
-          (then i32.const 0 return)
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cmp
-      )
-    )
-    i32.const 1
-  )
-  (func $__write_err (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 2
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
-  (func $__assert_fail (param $where i32) (param $msg i32)
-    local.get $where
-    i32.const 4
-    i32.add
-    local.get $where
-    i32.load
-    call $__write_err
-    i32.const 188
-    i64.const 8390880602276044858
-    i64.store
-    i32.const 196
-    i64.const 7811882119909502825
-    i64.store
-    i32.const 204
-    i32.const 101
-    i32.store8
-    i32.const 205
-    i32.const 100
-    i32.store8
-    i32.const 188
-    i32.const 18
-    call $__write_err
-    local.get $msg
-    (if
-      (then
-        i32.const 188
-        i32.const 8250
-        i32.store
-        i32.const 188
-        i32.const 2
-        call $__write_err
-        local.get $msg
-        i32.const 4
-        i32.add
-        local.get $msg
-        i32.load
-        call $__write_err
-      )
-    )
-    i32.const 188
-    i32.const 10
-    i32.store8
-    i32.const 188
-    i32.const 1
-    call $__write_err
-  )
-  (func $__panic_fail (param $msg i32)
-    i32.const 188
-    i64.const 9071397899755888
-    i64.store
-    i32.const 188
-    i32.const 7
-    call $__write_err
-    local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
-    call $__write_err
-    i32.const 188
-    i32.const 10
-    i32.store8
-    i32.const 188
-    i32.const 1
-    call $__write_err
-  )
-  (func $__i32_add_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
-    (local $r i64)
-    local.get $a
-    i64.extend_i32_s
-    local.get $b
-    i64.extend_i32_s
-    i64.add
-    local.set $r
-    local.get $r
-    i32.wrap_i64
-    i64.extend_i32_s
-    local.get $r
-    i64.ne
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $r
-    i32.wrap_i64
-  )
-  (func $__i32_sub_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
-    (local $r i64)
-    local.get $a
-    i64.extend_i32_s
-    local.get $b
-    i64.extend_i32_s
-    i64.sub
-    local.set $r
-    local.get $r
-    i32.wrap_i64
-    i64.extend_i32_s
-    local.get $r
-    i64.ne
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $r
-    i32.wrap_i64
-  )
-  (func $__i32_mul_chk (param $a i32) (param $b i32) (param $site i32) (result i32)
-    (local $r i64)
-    local.get $a
-    i64.extend_i32_s
-    local.get $b
-    i64.extend_i32_s
-    i64.mul
-    local.set $r
-    local.get $r
-    i32.wrap_i64
-    i64.extend_i32_s
-    local.get $r
-    i64.ne
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $r
-    i32.wrap_i64
-  )
-  (func $__i64_add_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
-    (local $r i64)
-    local.get $a
-    local.get $b
-    i64.add
-    local.set $r
-    local.get $a
-    local.get $r
-    i64.xor
-    local.get $b
-    local.get $r
-    i64.xor
-    i64.and
-    i64.const 0
-    i64.lt_s
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $r
-  )
-  (func $__i64_sub_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
-    (local $r i64)
-    local.get $a
-    local.get $b
-    i64.sub
-    local.set $r
-    local.get $a
-    local.get $b
-    i64.xor
-    local.get $a
-    local.get $r
-    i64.xor
-    i64.and
-    i64.const 0
-    i64.lt_s
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $r
-  )
-  (func $__i64_mul_chk (param $a i64) (param $b i64) (param $site i32) (result i64)
-    (local $r i64)
-    local.get $a
-    i64.const -1
-    i64.eq
-    local.get $b
-    i64.const -9223372036854775808
-    i64.eq
-    i32.and
-    (if
-      (then
-        local.get $site
-        call $__chk_fail
-        unreachable
-      )
-    )
-    local.get $a
-    local.get $b
-    i64.mul
-    local.set $r
-    local.get $a
-    i64.eqz
-    i32.eqz
-    (if
-      (then
-        local.get $r
-        local.get $a
-        i64.div_s
-        local.get $b
-        i64.ne
-        (if
-          (then
-            local.get $site
-            call $__chk_fail
-            unreachable
-          )
-        )
-      )
-    )
-    local.get $r
-  )
-  (global $__task_head (mut i32) (i32.const 0))
-  (global $__task_tail (mut i32) (i32.const 0))
-  (global $__task_suspended (mut i32) (i32.const 0))
-  (func $__task_new (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    i32.const 40
-    call $__alloc
-    local.set $t
-    local.get $t
-    local.get $kind
-    i32.store offset=20
-    local.get $t
-    local.get $frame
-    i32.store offset=16
-    local.get $t
-  )
-  (func $__task_start (param $kind i32) (param $frame i32) (result i32)
-    (local $t i32)
-    local.get $kind
-    local.get $frame
-    call $__task_new
-    local.tee $t
-    call $__task_resume
-    local.get $t
-  )
-  (func $__task_pending (param $t i32) (result i32)
-    local.get $t
-    i32.load
-    i32.eqz
-  )
-  (func $__task_listen (param $t i32) (param $kind i32) (param $target i32) (param $index i32)
-    (local $n i32)
-    i32.const 16
-    call $__alloc
-    local.set $n
-    local.get $n
-    local.get $t
-    i32.load offset=4
-    i32.store
-    local.get $n
-    local.get $kind
-    i32.store offset=4
-    local.get $n
-    local.get $target
-    i32.store offset=8
-    local.get $n
-    local.get $index
-    i32.store offset=12
-    local.get $t
-    local.get $n
-    i32.store offset=4
-  )
-  (func $__task_wait (param $t i32) (param $w i32)
-    local.get $t
-    i32.const 0
-    local.get $w
-    i32.const 0
-    call $__task_listen
-  )
-  (func $__task_settle_i32 (param $t i32) (param $v i32)
-    local.get $t
-    local.get $v
-    i32.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_i64 (param $t i32) (param $v i64)
-    local.get $t
-    local.get $v
-    i64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_settle_f64 (param $t i32) (param $v f64)
-    local.get $t
-    local.get $v
-    f64.store offset=8
-    local.get $t
-    call $__task_wake
-  )
-  (func $__task_wake (param $t i32)
-    (local $n i32) (local $m i32) (local $r i32) (local $k i32) (local $w i32)
-    local.get $t
-    i32.load
-    (if
-      (then
-        return
-      )
-    )
-    local.get $t
-    i32.const 1
-    i32.store
-    local.get $t
-    i32.load offset=4
-    local.set $n
-    local.get $t
-    i32.const 0
-    i32.store offset=4
-    (block $brk
-      (loop $cont
-        local.get $n
-        i32.eqz
-        br_if $brk
-        local.get $n
-        i32.load
-        local.set $m
-        local.get $n
-        local.get $r
-        i32.store
-        local.get $n
-        local.set $r
-        local.get $m
-        local.set $n
-        br $cont
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $r
-        i32.eqz
-        br_if $brk
-        local.get $r
-        i32.load offset=4
-        local.set $k
-        local.get $r
-        i32.load offset=8
-        local.set $w
-        local.get $k
-        i32.eqz
-        (if
-          (then
-            local.get $w
-            call $__task_enqueue
-          )
-        )
-        local.get $k
-        i32.const 1
-        i32.eq
-        (if
-          (then
-            local.get $w
-            i32.load
-            i32.eqz
-            (if
-              (then
-                local.get $w
-                local.get $t
-                i64.load offset=8
-                i64.store offset=8
-                local.get $w
-                call $__task_wake
-              )
-            )
-          )
-        )
-        local.get $k
-        i32.const 2
-        i32.eq
-        (if
-          (then
-            local.get $w
-            i32.load offset=28
-            i32.const 4
-            i32.add
-            local.get $r
-            i32.load offset=12
-            i32.const 4
-            i32.mul
-            i32.add
-            local.get $t
-            i32.load offset=8
-            i32.store
-            local.get $w
-            local.get $w
-            i32.load offset=32
-            i32.const 1
-            i32.sub
-            i32.store offset=32
-            local.get $w
-            i32.load offset=32
-            i32.eqz
-            (if
-              (then
-                local.get $w
-                local.get $w
-                i32.load offset=28
-                i32.store offset=8
-                local.get $w
-                call $__task_wake
-              )
-            )
-          )
-        )
-        local.get $r
-        i32.load
-        local.set $r
-        br $cont
-      )
-    )
-  )
-  (func $__task_enqueue (param $t i32)
-    local.get $t
-    i32.const 0
-    i32.store offset=24
-    global.get $__task_tail
-    (if
-      (then
-        global.get $__task_tail
-        local.get $t
-        i32.store offset=24
-      )
-      (else
-        local.get $t
-        global.set $__task_head
-      )
-    )
-    local.get $t
-    global.set $__task_tail
-  )
-  (func $__task_drain
-    (local $t i32)
-    (block $brk
-      (loop $cont
-        global.get $__task_head
-        local.tee $t
-        i32.eqz
-        br_if $brk
-        local.get $t
-        i32.load offset=24
-        global.set $__task_head
-        global.get $__task_head
-        i32.eqz
-        (if
-          (then
-            i32.const 0
-            global.set $__task_tail
-          )
-        )
-        local.get $t
-        call $__task_resume
-        br $cont
-      )
-    )
-  )
-  (func $__task_block_on (param $t i32) (result i32)
-    (local $r i32)
-    (block $brk
-      (loop $cont
-        local.get $t
-        i32.load
-        br_if $brk
-        global.get $__task_head
-        local.tee $r
-        i32.eqz
-        (if
-          (then
-            unreachable
-          )
-        )
-        local.get $r
-        i32.load offset=24
-        global.set $__task_head
-        global.get $__task_head
-        i32.eqz
-        (if
-          (then
-            i32.const 0
-            global.set $__task_tail
-          )
-        )
-        local.get $r
-        call $__task_resume
-        br $cont
-      )
-    )
-    local.get $t
-  )
-  (func $__task_finish
-    (block $brk
-      (loop $cont
-        call $__task_drain
-        call $__task_host_poll
-        i32.eqz
-        br_if $brk
-        br $cont
-      )
-    )
-  )
-  (func $__task_resume (param $t i32)
-    (local $k i32)
-    local.get $t
-    i32.load offset=20 ;; kind
-    local.set $k
-    unreachable
-  )
-  (func $__task_host_poll (result i32)
-    i32.const 0
-  )
-  (func $__chk_fail (param $site i32)
-    local.get $site
-    call $__panic_fail
-    unreachable
-  )
-  (start $__bp_reserve)
-  (func $__bp_reserve
-    memory.size
-    i32.const 1
-    i32.lt_u
-    (if
-      (then
-      i32.const 1
-      memory.size
-      i32.sub
-      memory.grow
-      drop
-      )
-    )
-    i32.const 11680
-    i32.const 0
-    i32.const 28
-    memory.init $__bp_seg0
-    data.drop $__bp_seg0
-    i32.const 11708
-    i32.const 0
-    i32.const 5
-    memory.init $__bp_seg1
-    data.drop $__bp_seg1
-    i32.const 11716
-    i32.const 0
-    i32.const 90
-    memory.init $__bp_seg2
-    data.drop $__bp_seg2
-    i32.const 11808
-    i32.const 0
-    i32.const 69
-    memory.init $__bp_seg3
-    data.drop $__bp_seg3
-    i32.const 11880
-    i32.const 0
-    i32.const 26
-    memory.init $__bp_seg4
-    data.drop $__bp_seg4
-    i32.const 11908
-    i32.const 0
-    i32.const 32
-    memory.init $__bp_seg5
-    data.drop $__bp_seg5
-    i32.const 11940
-    i32.const 0
-    i32.const 29
-    memory.init $__bp_seg6
-    data.drop $__bp_seg6
-    i32.const 11972
-    i32.const 0
-    i32.const 14
-    memory.init $__bp_seg7
-    data.drop $__bp_seg7
-    i32.const 11988
-    i32.const 0
-    i32.const 46
-    memory.init $__bp_seg8
-    data.drop $__bp_seg8
-    global.get $__heap_ptr
-    i32.const 12036
-    i32.lt_u
-    (if
-      (then
-      i32.const 12036
-      global.set $__heap_ptr
-      )
-    )
-  )
-)
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: `is Async<unknown>`: the wasm backend has no run-time test for this type (no value of it carries a descriptor) — in another module's code this line reaches
+  ┌─ :0:0
+  │
+0 │ }
+  │ ^
 ```
 
------ RUN LOG -----
-```logs
-```

@@ -245,8 +245,23 @@ test "js: import ---- named imports" {
 // declared, and the client runtime supplies hook semantics through what `state`
 // does. The component carries `#[@use]`, the effect that lets a body
 // activate a hook.
+//
+// Refused on wasm (pending b162wasm-d): decision 1088 closed the half of
+// this that was `cellOf`'s (std/context.bp) — a bare `loop` diverging
+// through a declared `-> noreturn` call (`isNoReturnCall` now reads any
+// declared-`noreturn` callee, not only the builtin `panic`/`todo`
+// spellings; `wasmTypeOf` / `gcReprOfExpr` / `recordTypeOfExpr` read such a
+// loop's type off its `return`s). The same place-stamping path still falls
+// `.gc` back to `.linear` for an unrelated reason: `placed` (std/context.bp)
+// returns a `Composition<T>` — a type alias of a function type — and the
+// wasm GC backend's `gcReprOfType` only unwraps a `@Result`-shaped alias
+// (decision 118's `gcExpandResultAliasReturns`), not a function-shaped one,
+// so `placed`'s declared return defaults to `.i32` and its closure value
+// refuses to convert. The module falls back to linear memory, where `is
+// Async<unknown>` (reached inside std's own hook-resolution code) has no
+// run-time test. Four tests, same (now different) cause.
 test "codegen ---- use object destructure is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type()
         \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
@@ -261,8 +276,9 @@ test "codegen ---- use object destructure is a plain call" {
 // Front 19 step 3: the tuple form binds `R`'s elements (`shown : i32`,
 // `push : fn(action: i32) -> i32`), so the hook's `R` is a tuple here — the
 // lowering is the same plain call followed by the destructure.
+// Refused on wasm (pending b162wasm-d) — see the note above.
 test "codegen ---- use tuple destructure is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type()
         \\component fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push: fn(i32) -> i32 = { action -> f(base, action) };
@@ -276,8 +292,9 @@ test "codegen ---- use tuple destructure is a plain call" {
     );
 }
 
+// Refused on wasm (pending b162wasm-d) — see the note above.
 test "codegen ---- use memo is a plain call with no inferred deps" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type()
         \\component fn state(initial: i32) -> Component<i32> {
         \\    return initial;
@@ -293,8 +310,9 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
     );
 }
 
+// Refused on wasm (pending b162wasm-d) — see the note above.
 test "codegen ---- use effect void hook is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type()
         \\fn cleanup() -> void {
         \\    0;
