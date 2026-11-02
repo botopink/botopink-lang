@@ -6149,6 +6149,16 @@ const Emitter = struct {
         return isUnknownTypeRef(t);
     }
 
+    /// Whether `e`'s declared type is bare — one of the CURRENT function's or
+    /// its owner's own generic parameters (`T`, not `unknown`): a value a
+    /// call with nothing bound reaches, erased to `unknown` in GC mode too
+    /// (`gcErasedRepr`), but never a real `unknown` by construction the way
+    /// `isUnknownExpr` means.
+    fn isGenericParamExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return t == .named and isGenericParamName(t.named, self.owner_tparams, self.fn_tparams);
+    }
+
     /// The descriptor a boxed primitive carries: `'P' <n> name`, interned once.
     fn primDescriptorAddr(self: *Emitter, name: []const u8) anyerror!u32 {
         const key = try std.fmt.allocPrint(self.reg_arena.allocator(), "#{s}", .{name});
@@ -9436,6 +9446,60 @@ const Emitter = struct {
         }
         try self.emit(one);
         try self.gcHelperFunc(name, &.{ wat.Builder.param("a", vt), wat.Builder.param("b", vt) }, .i32, &.{}, self.seal(&c, .{ .value = .i32 }));
+        return name;
+    }
+
+    /// `__unk_scalar_print_raw(v)`: a type parameter's own value, inside the
+    /// one generic body a call with nothing bound reaches — `gcErasedRepr`
+    /// erases it to `unknown` too, so it prints by what it actually holds (a
+    /// `box_bool` / `box_i32` / `box_f64` / `box_i64` / a string), the same
+    /// `ref.test` chain `gcUnkPrint` opens with, but with no record, enum,
+    /// array or tuple arm: those fall through to `__print_tagged_raw`
+    /// (`gcTaggedPrinter`), which walks every GC type the module declared and
+    /// calls `gcDeclPrinter` on each one unconditionally — tripping the
+    /// generic-record-display guard for a record the program never actually
+    /// prints through this path (B-207's class of gap, independent of
+    /// decision 900 (3)'s own fix). Anything else traps, as a generic
+    /// parameter bound to a record or an array here needs B-207 first
+    /// regardless.
+    fn gcUnkScalarPrint(self: *Emitter) anyerror![]const u8 {
+        const name = "__unk_scalar_print_raw";
+        if (!try self.gcHelperOnce(name)) return name;
+        const b = self.builder();
+        const bb = self.gcBoxVt(.bool);
+        const bi = self.gcBoxVt(.i32);
+        const bf = self.gcBoxVt(.f64);
+        const bl = self.gcBoxVt(.i64);
+        const str = prelude.gc_str_ref;
+        self.gc_str_used = true;
+        var c: Capture = .{};
+        self.open(&c);
+        var nul: Capture = .{};
+        self.open(&nul);
+        try self.gcPutStr("null");
+        try self.emit(.@"return");
+        const nul_seq = self.seal(&nul, .terminated);
+        try self.emit(.{ .local_get = "v" });
+        try self.emit(.ref_is_null);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = nul_seq } } });
+        const Arm = struct { vt: ValType, print: Instr };
+        const arms = [_]Arm{
+            .{ .vt = bb, .print = b.helper(.print_bool_raw) },
+            .{ .vt = bi, .print = b.helper(.print_i32_raw) },
+            .{ .vt = bf, .print = b.helper(.print_f64_raw) },
+            .{ .vt = bl, .print = b.helper(.print_i64_raw) },
+            .{ .vt = str, .print = b.helper(.print_str_raw) },
+        };
+        for (arms) |a| {
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .ref_test = a.vt });
+            if (a.vt.defIndex() != null and a.vt != str) {
+                const k = a.vt.defIndex().?;
+                try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, .{ .struct_get = .{ .ty = k, .field = 0 } }, a.print });
+            } else try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, a.print });
+        }
+        try self.emit(.@"unreachable");
+        try self.gcHelperFunc(name, &.{wat.Builder.param("v", .anyref)}, null, &.{}, self.seal(&c, .terminated));
         return name;
     }
 
@@ -16358,6 +16422,24 @@ const Emitter = struct {
             }
             try self.lowerCoerced(arg, .i32);
             try self.emit(self.builder().helper(if (last) .print_unknown else .print_unknown_raw));
+            return;
+        }
+        // A type parameter's own value, inside the one generic body a call
+        // with nothing bound reaches (decision 900 (3)): it prints by what
+        // it actually holds (`gcUnkScalarPrint`) instead of assuming the
+        // slot is always `box_i32`. Checked by the STATIC type (`T`, not
+        // `unknown`), not by the erased repr `gcPrintArg` already passed
+        // over — that repr is the same `unknown` a real `unknown` value
+        // carries, and routing it through `isUnknownExpr`'s printer
+        // (`gcUnkPrint`) above would pull in `__print_tagged_raw`'s
+        // unconditional walk of every declared record (B-207's class of
+        // gap). In `.linear` memory a type parameter's slot is already an
+        // untagged word, same as `unknown`'s own fallback just above — no
+        // narrower form to give it there.
+        if (self.mode == .gc and self.isGenericParamExpr(arg)) {
+            try self.lowerCoerced(arg, .{ .ref = .unknown });
+            try self.emit(.{ .call = try self.gcUnkScalarPrint() });
+            if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
         if (self.optInfoOf(arg)) |oi| {

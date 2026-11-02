@@ -630,6 +630,8 @@ test "order case over Order" {
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (global $__cap (import "std@__rt" "__cap") (mut arrayref))
   (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -1371,9 +1373,7 @@ test "order case over Order" {
     call $__cap_begin
     local.set $__gc1
     local.get $x
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    call $__print_i32_raw
+    call $__unk_scalar_print_raw
     local.get $__gc1
     call $__cap_end
     call $__str_concat
@@ -1386,13 +1386,11 @@ test "order case over Order" {
       )
     )
     drop
-    global.get $__s6
+    global.get $__s7
     call $__cap_begin
     local.set $__gc2
     local.get $x
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    call $__print_i32_raw
+    call $__unk_scalar_print_raw
     local.get $__gc2
     call $__cap_end
     call $__str_concat
@@ -1903,7 +1901,7 @@ test "order case over Order" {
       (then
     i32.const 0
     i32.const 1
-    global.get $__s7
+    global.get $__s8
     call $__i32_sub_chk
       )
       (else
@@ -2281,6 +2279,72 @@ test "order case over Order" {
     array.copy $arr_any $arr_any
     local.get $r
   )
+  (func $__unk_scalar_print_raw (param $v anyref)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    global.get $__s6
+    call $__print_str_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_bool)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_bool)
+    struct.get $box_bool $v
+    call $__print_bool_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_f64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+    call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i64)
+    struct.get $box_i64 $v
+    call $__print_i64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $str)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $str)
+    call $__print_str_raw
+    return
+      )
+    )
+    unreachable
+  )
   (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
     local.get $b
     ref.test (ref null $rec_Dict)
@@ -2295,7 +2359,7 @@ test "order case over Order" {
     local.get $b
     call $__unk_eq_ref
   )
-  (func $__tie10 (param $a anyref) (param $b anyref) (result i32)
+  (func $__tie11 (param $a anyref) (param $b anyref) (result i32)
     local.get $b
     ref.test (ref null $rec_Set)
     i32.eqz
@@ -2309,7 +2373,7 @@ test "order case over Order" {
     local.get $b
     call $__unk_eq_ref
   )
-  (func $__tie11 (param $a anyref) (param $b anyref) (result i32)
+  (func $__tie12 (param $a anyref) (param $b anyref) (result i32)
     local.get $b
     ref.test (ref null $rec_Queue)
     i32.eqz
@@ -2424,7 +2488,22 @@ test "order case over Order" {
     )
     i32.const 1
   )
-  (func $__unk_eq_s10 (param $a (ref null $rec_Set)) (param $b (ref null $rec_Set)) (result i32)
+  (func $__unk_eq_s10 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
+    local.get $a
+    struct.get $box_i64 $v
+    local.get $b
+    struct.get $box_i64 $v
+    i64.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
+  (func $__unk_eq_s11 (param $a (ref null $rec_Set)) (param $b (ref null $rec_Set)) (result i32)
     local.get $a
     struct.get $rec_Set $f0
     local.get $b
@@ -2439,7 +2518,7 @@ test "order case over Order" {
     )
     i32.const 1
   )
-  (func $__unk_eq_s11 (param $a (ref null $rec_Queue)) (param $b (ref null $rec_Queue)) (result i32)
+  (func $__unk_eq_s12 (param $a (ref null $rec_Queue)) (param $b (ref null $rec_Queue)) (result i32)
     local.get $a
     struct.get $rec_Queue $f0
     local.get $b
@@ -2548,11 +2627,11 @@ test "order case over Order" {
       )
     )
     local.get $a
-    ref.test (ref null $rec_Set)
+    ref.test (ref null $box_i64)
     (if
       (then
     local.get $b
-    ref.test (ref null $rec_Set)
+    ref.test (ref null $box_i64)
     i32.eqz
     (if
       (then
@@ -2561,14 +2640,35 @@ test "order case over Order" {
       )
     )
     local.get $a
-    ref.cast (ref null $rec_Set)
+    ref.cast (ref null $box_i64)
     local.get $b
-    ref.cast (ref null $rec_Set)
+    ref.cast (ref null $box_i64)
     call $__unk_eq_s10
     return
       )
     )
     local.get $a
+    ref.test (ref null $rec_Set)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $rec_Set)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $rec_Set)
+    local.get $b
+    ref.cast (ref null $rec_Set)
+    call $__unk_eq_s11
+    return
+      )
+    )
+    local.get $a
     ref.test (ref null $rec_Queue)
     (if
       (then
@@ -2585,7 +2685,7 @@ test "order case over Order" {
     ref.cast (ref null $rec_Queue)
     local.get $b
     ref.cast (ref null $rec_Queue)
-    call $__unk_eq_s11
+    call $__unk_eq_s12
     return
       )
     )
@@ -2769,6 +2869,99 @@ test "order case over Order" {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
     (local $r (ref null $str)) (local $alen i32) (local $blen i32)
@@ -2965,6 +3158,16 @@ test "order case over Order" {
     local.get $top
     global.set $__heap_ptr
   )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
@@ -3155,6 +3358,11 @@ test "order case over Order" {
     call $__panic_fail
     unreachable
   )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 ": ")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "Dict(")
@@ -3167,16 +3375,18 @@ test "order case over Order" {
   (global $__s4 (mut (ref null $str)) (ref.null $str))
   (data $__d5 "\"")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "")
+  (data $__d6 "null")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "integer overflow: - on i32 at src/collections.bp:540:15")
+  (data $__d7 "")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "std@collections.Dict")
+  (data $__d8 "integer overflow: - on i32 at src/collections.bp:540:15")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "std@collections.Set")
+  (data $__d9 "std@collections.Dict")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
-  (data $__d10 "std@collections.Queue")
+  (data $__d10 "std@collections.Set")
   (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "std@collections.Queue")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -3204,25 +3414,29 @@ test "order case over Order" {
     array.new_data $str $__d5
     global.set $__s5
     i32.const 0
-    i32.const 0
+    i32.const 4
     array.new_data $str $__d6
     global.set $__s6
     i32.const 0
-    i32.const 55
+    i32.const 0
     array.new_data $str $__d7
     global.set $__s7
     i32.const 0
-    i32.const 20
+    i32.const 55
     array.new_data $str $__d8
     global.set $__s8
     i32.const 0
-    i32.const 19
+    i32.const 20
     array.new_data $str $__d9
     global.set $__s9
     i32.const 0
-    i32.const 21
+    i32.const 19
     array.new_data $str $__d10
     global.set $__s10
+    i32.const 0
+    i32.const 21
+    array.new_data $str $__d11
+    global.set $__s11
     call $__init_types
   )
   (func $__new_24 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -3243,9 +3457,9 @@ test "order case over Order" {
   (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (elem declare func $__tie2 $__tie10 $__tie11)
+  (elem declare func $__tie2 $__tie11 $__tie12)
   (func $__init_types
-    global.get $__s8
+    global.get $__s9
     ref.null func
     ref.func $__tie2
     ref.null func
@@ -3254,18 +3468,18 @@ test "order case over Order" {
     global.set $__ti_24
     global.get $__ti_24
     call $__ti_register
-    global.get $__s9
+    global.get $__s10
     ref.null func
-    ref.func $__tie10
+    ref.func $__tie11
     ref.null func
     i32.const 0
     struct.new $__tinfo
     global.set $__ti_28
     global.get $__ti_28
     call $__ti_register
-    global.get $__s10
+    global.get $__s11
     ref.null func
-    ref.func $__tie11
+    ref.func $__tie12
     ref.null func
     i32.const 0
     struct.new $__tinfo
@@ -3337,6 +3551,8 @@ import {io.terminal.print} from "std";
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (global $__cap (import "std@__rt" "__cap") (mut arrayref))
   (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
+  (import "std@number" "std:number.floatToString" (func $__std_number_floatToString (param f64) (result i32)))
+  (import "std@number" "wat:number.i64ToString" (func $__abi___std_number_i64ToString (param i64) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
@@ -4051,9 +4267,7 @@ import {io.terminal.print} from "std";
     call $__cap_begin
     local.set $__gc1
     local.get $x
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    call $__print_i32_raw
+    call $__unk_scalar_print_raw
     local.get $__gc1
     call $__cap_end
     call $__str_concat
@@ -4066,13 +4280,11 @@ import {io.terminal.print} from "std";
       )
     )
     drop
-    global.get $__s6
+    global.get $__s7
     call $__cap_begin
     local.set $__gc2
     local.get $x
-    ref.cast (ref null $box_i32)
-    struct.get $box_i32 $v
-    call $__print_i32_raw
+    call $__unk_scalar_print_raw
     local.get $__gc2
     call $__cap_end
     call $__str_concat
@@ -4113,12 +4325,12 @@ import {io.terminal.print} from "std";
     (local $__bp_nullish i32)
     (local $__opt0 anyref)
     call $Dict_empty
-    global.get $__s7
+    global.get $__s8
     i32.const 1
     call $Dict_insert__K_string__V_i32
     local.set $d
     local.get $d
-    global.get $__s7
+    global.get $__s8
     call $Dict_at__K_string__V_i32
     local.tee $__opt0
     ref.is_null
@@ -4137,7 +4349,7 @@ import {io.terminal.print} from "std";
     )
     call $__print_i32
     local.get $d
-    global.get $__s8
+    global.get $__s9
     i32.const 2
     call $Dict_insert__K_string__V_i32
     call $Dict_size__K_string__V_i32
@@ -4678,6 +4890,72 @@ import {io.terminal.print} from "std";
     array.copy $arr_any $arr_any
     local.get $r
   )
+  (func $__unk_scalar_print_raw (param $v anyref)
+    local.get $v
+    ref.is_null
+    (if
+      (then
+    global.get $__s6
+    call $__print_str_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_bool)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_bool)
+    struct.get $box_bool $v
+    call $__print_bool_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i32)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i32)
+    struct.get $box_i32 $v
+    call $__print_i32_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_f64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_f64)
+    struct.get $box_f64 $v
+    call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_i64)
+    struct.get $box_i64 $v
+    call $__print_i64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $str)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $str)
+    call $__print_str_raw
+    return
+      )
+    )
+    unreachable
+  )
   (func $__tie2 (param $a anyref) (param $b anyref) (result i32)
     local.get $b
     ref.test (ref null $rec_Dict)
@@ -4793,6 +5071,21 @@ import {io.terminal.print} from "std";
     )
     i32.const 1
   )
+  (func $__unk_eq_s10 (param $a (ref null $box_i64)) (param $b (ref null $box_i64)) (result i32)
+    local.get $a
+    struct.get $box_i64 $v
+    local.get $b
+    struct.get $box_i64 $v
+    i64.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    i32.const 1
+  )
   (func $__unk_eq_ref (param $a anyref) (param $b anyref) (result i32)
     local.get $a
     ref.is_null
@@ -4883,6 +5176,27 @@ import {io.terminal.print} from "std";
     local.get $b
     ref.cast (ref null $rec_Dict)
     call $__unk_eq_s2
+    return
+      )
+    )
+    local.get $a
+    ref.test (ref null $box_i64)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $box_i64)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $box_i64)
+    local.get $b
+    ref.cast (ref null $box_i64)
+    call $__unk_eq_s10
     return
       )
     )
@@ -5066,6 +5380,99 @@ import {io.terminal.print} from "std";
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    local.get $s
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $s
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
+  )
+  (func $__print_str (param $s (ref null $str))
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $s i32) (local $top i32)
+    global.get $__heap_ptr
+    local.set $top
+    local.get $x
+    call $__std_number_floatToString
+    local.set $s
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+    local.get $top
+    global.set $__heap_ptr
   )
   (func $__str_concat (param $a (ref null $str)) (param $b (ref null $str)) (result (ref null $str))
     (local $r (ref null $str)) (local $alen i32) (local $blen i32)
@@ -5262,6 +5669,16 @@ import {io.terminal.print} from "std";
     local.get $top
     global.set $__heap_ptr
   )
+  (func $__print_i64_raw (param $v i64)
+    local.get $v
+    call $__std_number_i64ToString
+    call $__print_str_raw
+  )
+  (func $__print_i64 (param $v i64)
+    local.get $v
+    call $__print_i64_raw
+    call $__print_nl
+  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (param $site (ref null $str)) (result i32)
     (local $r i64)
     local.get $a
@@ -5452,6 +5869,11 @@ import {io.terminal.print} from "std";
     call $__panic_fail
     unreachable
   )
+  (func $__std_number_i64ToString (param $p0 i64) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i64ToString
+    ref.cast (ref null $str)
+  )
   (data $__d0 ": ")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
   (data $__d1 "Dict(")
@@ -5464,14 +5886,16 @@ import {io.terminal.print} from "std";
   (global $__s4 (mut (ref null $str)) (ref.null $str))
   (data $__d5 "\"")
   (global $__s5 (mut (ref null $str)) (ref.null $str))
-  (data $__d6 "")
+  (data $__d6 "null")
   (global $__s6 (mut (ref null $str)) (ref.null $str))
-  (data $__d7 "a")
+  (data $__d7 "")
   (global $__s7 (mut (ref null $str)) (ref.null $str))
-  (data $__d8 "b")
+  (data $__d8 "a")
   (global $__s8 (mut (ref null $str)) (ref.null $str))
-  (data $__d9 "std@collections.Dict")
+  (data $__d9 "b")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "std@collections.Dict")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -5499,11 +5923,11 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d5
     global.set $__s5
     i32.const 0
-    i32.const 0
+    i32.const 4
     array.new_data $str $__d6
     global.set $__s6
     i32.const 0
-    i32.const 1
+    i32.const 0
     array.new_data $str $__d7
     global.set $__s7
     i32.const 0
@@ -5511,9 +5935,13 @@ import {io.terminal.print} from "std";
     array.new_data $str $__d8
     global.set $__s8
     i32.const 0
-    i32.const 20
+    i32.const 1
     array.new_data $str $__d9
     global.set $__s9
+    i32.const 0
+    i32.const 20
+    array.new_data $str $__d10
+    global.set $__s10
     call $__init_types
   )
   (func $__new_24 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -5524,7 +5952,7 @@ import {io.terminal.print} from "std";
   (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tie2)
   (func $__init_types
-    global.get $__s9
+    global.get $__s10
     ref.null func
     ref.func $__tie2
     ref.null func
