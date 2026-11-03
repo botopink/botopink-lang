@@ -6783,6 +6783,78 @@ test "wat: units ---- front 229 s6: a foreign val's type is renumbered with the 
     try std.testing.expectEqualStrings("1\n[\"a\"]\n", out);
 }
 
+// Front 229 s7 — a behavior imported from a linked module, under a bare name
+// a std `compiler` reflection record also answers to (`Field`, decision 1071
+// (1)), was mangled by the link step's name-collision guard
+// (`own_names.contains(n)`, `emitWat`) to tell the two apart — but
+// `linkTypeRenames`'s `.use` arm only forwarded that rename for an imported
+// `record` or `enum` (`crossModule.zig`'s export table, gated for a
+// `behavior` on carrying an associated `default fn` — `importsBehavior`'s
+// own rule — so a plain interface's import is never `cross.picked`'s).
+// `main`'s own `f: Field` parameter kept the bare, unmangled name, and
+// `gcReprOfType`'s bare-name lookup read it against whatever else answered to
+// it: the reflection record, not the behavior — `GCCONV Card -> Field`, the
+// whole module falling to `.linear`. Resolving the import directly against
+// the mangled-types table (`leafSource`'s own module key, the same one the
+// mangling was keyed under) finds the right one without widening what
+// `cross.picked` tracks.
+test "wat: gc ---- a behavior named like a std `compiler` reflection record dispatches by value, not by the record's shape" {
+    try h.assertWasmGcRunLogModules(std.testing.allocator, &.{
+        .{ .path = "ui", .source =
+        \\import {compiler} from "std";
+        \\
+        \\pub behavior Component {
+        \\    fn render(self: Self) -> string;
+        \\}
+        \\
+        \\pub behavior Field {
+        \\    fn column(self: Self) -> string;
+        \\}
+        \\
+        \\pub fn widget(syntax decl: Component) -> void {
+        \\    compiler.setMeta(Widget(kind: "widget"));
+        \\}
+        \\
+        \\type Widget(kind: string)
+        },
+        .{ .path = "main", .source =
+        \\mod ui;
+        \\
+        \\import {ui.Component, ui.Field, ui.widget};
+        \\import {io.terminal.print} from "std";
+        \\
+        \\#[widget]
+        \\pub type Card(title: string) implement Component, Field {
+        \\    fn render(self: Self) -> string {
+        \\        return "<" + self.title + ">";
+        \\    }
+        \\
+        \\    fn column(self: Self) -> string {
+        \\        return "title";
+        \\    }
+        \\}
+        \\
+        \\fn show(c: Component) -> string {
+        \\    return c.render();
+        \\}
+        \\
+        \\fn columnOf(f: Field) -> string {
+        \\    return f.column();
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val card = Card(title: "hi");
+        \\    print(show(card));
+        \\    print(columnOf(card));
+        \\}
+        },
+    },
+        \\<hi>
+        \\title
+        \\
+    );
+}
+
 // Front 229 s1 — a function of the module's own that nothing reaches and
 // that still writes linear memory (a list pattern, `[a, b]`) is a stub that
 // traps, naming why and where; the module keeps its GC form. Reached, the

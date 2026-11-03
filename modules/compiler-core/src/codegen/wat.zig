@@ -1309,18 +1309,39 @@ fn linkTypeRenames(
         .implement => |im| if (mangled.get(try linkKey(arena, module_name, im.name))) |m| try out.put(arena, im.name, m),
         .extend => |ex| if (mangled.get(try linkKey(arena, module_name, ex.name))) |m| try out.put(arena, ex.name, m),
         .use => |u| for (u.imports) |imp| {
-            const c = cross orelse continue;
             const src = try u.leafSource(imp, arena, false);
-            const info = c.picked(imp.leaf(), src, null) orelse continue;
-            if (info.kind != .record and info.kind != .@"enum") continue;
-            // Decision 310 — a type kept under its alias (two modules'
-            // same-named types meet in this module) names the linked
-            // declaration: the mangled one, or the declared name the first
-            // declaration kept.
-            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse {
-                if (imp.alias) |al| if (!std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
-                continue;
+            if (cross) |c| if (c.picked(imp.leaf(), src, null)) |info| {
+                if (info.kind == .record or info.kind == .@"enum") {
+                    // Decision 310 — a type kept under its alias (two
+                    // modules' same-named types meet in this module) names
+                    // the linked declaration: the mangled one, or the
+                    // declared name the first declaration kept.
+                    const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse {
+                        if (imp.alias) |al| if (!std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
+                        continue;
+                    };
+                    try out.put(arena, imp.alias orelse imp.leaf(), m);
+                    continue;
+                }
             };
+            // A behavior is a type reference too (a parameter's, a return's),
+            // but the cross-module export table tracks a `behavior` only
+            // when it carries an associated `default fn`
+            // (`crossModule.zig`'s gate, read by `importsBehavior`) — a
+            // plain interface, with none, is never `cross.picked`'s, so a
+            // mangled one (its own module's `behavior` arm above) is found
+            // directly: `leafSource` answers the same module key the
+            // mangling was keyed under (`emitWat`'s link step, `linkKey`).
+            // Without this, `gcReprOfType`'s bare-name lookup for the
+            // import's unmangled name read whatever else held it (a std
+            // `compiler` reflection record of the same public name, `Field`),
+            // landing on the wrong declaration's representation.
+            const wm: ?[]const u8 = switch (src) {
+                .module, .key => |mm| mm,
+                .root => null,
+            };
+            const w = wm orelse continue;
+            const m = mangled.get(try linkKey(arena, w, imp.leaf())) orelse continue;
             try out.put(arena, imp.alias orelse imp.leaf(), m);
         },
         else => {},
