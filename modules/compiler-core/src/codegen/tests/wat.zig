@@ -2405,6 +2405,179 @@ test "wat: gc ---- printing a value of a type with no GC printer panics by name"
     }
 }
 
+// Front 229 s2 — an enum or variant value's own `display()` was never
+// dispatched in GC mode (`gcDeclPrinter`'s display check ran only for a
+// record, `variant == null`; the `$__tinfo` display slot stopped at
+// `t == .record` and excluded a generic record too): a value answered its
+// derived text instead, silently wrong, generic or not, static print and
+// through `unknown` alike.
+test "wat: gc ---- an enum's own display is dispatched statically and through unknown, generic or not" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Status implement Display {
+        \\    Ok,
+        \\    Bad(code: i32),
+        \\
+        \\    pub fn display(self: Self) -> string {
+        \\        return case self {
+        \\            .Ok { "ok" }
+        \\            .Bad(code) { "bad(" + code.toString() + ")" }
+        \\        };
+        \\    }
+        \\}
+        \\type Maybe<T> implement Display {
+        \\    Some(value: T),
+        \\    None,
+        \\
+        \\    pub fn display(self: Self<T>) -> string {
+        \\        return case self {
+        \\            .Some(value) { "Some(" + shown(value) + ")" }
+        \\            .None { "None" }
+        \\        };
+        \\    }
+        \\}
+        \\fn shown<T>(x: T) -> string {
+        \\    return "" + x;
+        \\}
+        \\fn show(v: unknown) -> void {
+        \\    print(v);
+        \\}
+        \\pub fn main() -> void {
+        \\    print(Status.Ok);
+        \\    print(Status.Bad(code: 5));
+        \\    print(Maybe.Some(value: 1));
+        \\    print(Maybe.None);
+        \\    show(Status.Ok);
+        \\    show(Status.Bad(code: 5));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\ok
+        \\bad(5)
+        \\Some(1)
+        \\None
+        \\ok
+        \\bad(5)
+        \\
+    );
+}
+
+// Front 229 s2 — `gcEqValues` unconditionally refused comparing two values
+// typed `unknown` ("an equality over unknown"), falling the whole module to
+// `.linear` — `$__unk_eq` (decision 569) already compares a real `unknown`
+// value structurally everywhere else; nothing stopped it being used here.
+test "wat: gc ---- equality over a field typed unknown compares structurally, not a module-wide fallback" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box(v: unknown)
+        \\type Wrapped {
+        \\    Holds(v: unknown),
+        \\    Empty,
+        \\}
+        \\pub fn main() -> void {
+        \\    print(Box(v: 1) == Box(v: 1));
+        \\    print(Box(v: 1) == Box(v: 2));
+        \\    print(Box(v: "a") == Box(v: "a"));
+        \\    print(Box(v: [1, 2]) == Box(v: [1, 2]));
+        \\    print(Wrapped.Holds(v: 1) == Wrapped.Holds(v: 1));
+        \\    print(Wrapped.Holds(v: 1) == Wrapped.Holds(v: 2));
+        \\    print(Wrapped.Empty == Wrapped.Empty);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\true
+        \\false
+        \\true
+        \\true
+        \\true
+        \\false
+        \\true
+        \\
+    );
+}
+
+// Front 229 s2's third box — `$closure` and `$result` held in an `unknown`
+// slot (a generic field's erasure, the same mechanism B-207 fixed) used to
+// fall through `__print_tagged_raw` to its bare `unreachable`; they answer as
+// commonJS prints them (`fn/<arity>`; `Ok(x)` / `Error(y)` with the payload
+// printed through the same `unknown` path — nested, so a string payload
+// prints quoted, decision 1021 (10)).
+test "wat: gc ---- a closure and a @Result held unknown print as commonJS prints them" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box<T>(value: T) {}
+        \\fn addOne(x: i32) -> i32 { return x + 1; }
+        \\fn half(n: i32) -> Result<i32, string> {
+        \\    if (n % 2 == 0) {
+        \\        return n / 2;
+        \\    }
+        \\    throw "odd";
+        \\}
+        \\pub fn main() -> void {
+        \\    print(Box(value: addOne));
+        \\    print(Box(value: half(4)));
+        \\    print(Box(value: half(3)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Box(value: fn/1)
+        \\Box(value: Ok(2))
+        \\Box(value: Error("odd"))
+        \\
+    );
+}
+
+// ...and a `$task` / `$gen` held the same way has no commonJS answer to
+// match (even the static print of these two is already its own, separate
+// gap), so it panics by name instead of falling to the chain's final
+// `unreachable`.
+test "wat: gc ---- a Task or a generator held unknown panics by name" {
+    const allocator = std.testing.allocator;
+    const gen_src =
+        \\type Box<T>(value: T) {}
+        \\iter fn gen1() -> Iter<i32> { yield 1; yield 2; }
+        \\pub fn main() -> void {
+        \\    print(Box(value: gen1()));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ;
+    try expectWasmGcPanic(allocator, gen_src, "wasm cannot print a generator value dynamically yet");
+
+    const task_src =
+        \\type Box<T>(value: T) {}
+        \\async fn doubled(n: i32) -> Async<i32> { return n * 2; }
+        \\async fn run() -> Async<void> {
+        \\    print(Box(value: doubled(21)));
+        \\}
+        \\pub fn main() -> void {
+        \\    run();
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ;
+    try expectWasmGcPanic(allocator, task_src, "wasm cannot print a Task value dynamically yet");
+}
+
+/// Compiles `src` for wasm GC and asserts its RUN LOG contains a
+/// `panic: <want>` instead of a bare trap with none.
+fn expectWasmGcPanic(allocator: std.mem.Allocator, src: []const u8, want: []const u8) !void {
+    var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(type $str (array (mut i8)))") != null);
+    const got = o.result.run_output orelse "";
+    if (std.mem.indexOf(u8, got, want) == null) {
+        std.debug.print("\n=== RUN LOG ===\n{s}\n=== expected it to contain ===\npanic: {s}\n", .{ got, want });
+        return error.RunLogMismatch;
+    }
+}
+
 // Decision 238 — what a `#[@External.Wasm("…")]` binding names: `op:` one
 // numeric instruction over the declared parameters, `fn:` a private bodied fn
 // of the same module with the same signature, `wasi:` an adapter of

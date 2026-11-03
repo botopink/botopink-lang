@@ -11609,8 +11609,13 @@ const Emitter = struct {
         var c: Capture = .{};
         self.open(&c);
         const get_v: Instr = .{ .local_get = "v" };
-        // `display(self) -> string` answers its own text (decision 8 §7).
-        if (variant == null) {
+        // `display(self) -> string` answers its own text (decision 8 §7) —
+        // an enum's own `display()` is declared once on the whole type (its
+        // body `case`s over every variant), keyed by `rec` here too (front
+        // 229 s2: this used to run only for a record, `variant == null`,
+        // so a variant value's own custom `display()` was never looked up
+        // at all and the derived text printed instead, silently wrong).
+        {
             const dsym = try std.fmt.allocPrint(ar, "{s}_display", .{rec});
             // A generic record's `display` is its one body, called whether
             // the record is generic or not (decision 900 (3), B-207): its own
@@ -11898,10 +11903,16 @@ const Emitter = struct {
                 }
                 try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{ .name = tie, .params = &.{ wat.Builder.param("a", .anyref), wat.Builder.param("b", .anyref) }, .result = .i32, .body = self.seal(&c, .{ .value = .i32 }) }) });
             }
+            // The `$__tinfo.display` slot a value of this type carries (front
+            // 229 s2): keyed by `rec` either way (a record's own name, or the
+            // enum's for a variant — `display()` is declared once on the
+            // whole enum type). Used to stop at `t == .record` and exclude a
+            // generic record entirely (the guard-era caution B-207 removed
+            // from `gcDeclPrinter` — safe now the same way there).
             var tid: ?[]const u8 = null;
-            if (t == .record) {
+            {
                 const dsym = try std.fmt.allocPrint(ar, "{s}_display", .{rec});
-                if (self.fn_sigs.get(dsym)) |sig| if (sig.params.len == 1 and sig.result != null and sig.result.?.isStr() and !self.record_generics.contains(rec)) {
+                if (self.fn_sigs.get(dsym)) |sig| if (sig.params.len == 1 and sig.result != null and sig.result.?.isStr()) {
                     const name = try std.fmt.allocPrint(ar, "__tid{d}", .{k});
                     var c: Capture = .{};
                     self.open(&c);
@@ -12039,6 +12050,79 @@ const Emitter = struct {
         while (i < self.gc_types.items.len) : (i += 1) {
             const t = self.gc_types.items[i];
             const vt = ValType.def(@intCast(i + 1));
+            // Front 229 s2 — the prelude's own reference types, held in an
+            // `unknown` slot: a `$closure` and a `$result` answer as
+            // commonJS prints them (`fn/<arity>`, `Ok(x)` / `Error(y)` with
+            // the payload printed by what it holds, recursively, since its
+            // shape isn't known here); a `$task` / `$gen` have no commonJS
+            // answer to match even when the static print already knows the
+            // type (`Promise { … }`'s own resolved value, an eager array
+            // where commonJS stays lazy) — a named panic, not the bare
+            // `unreachable` this fell to before.
+            switch (t) {
+                .closure => {
+                    var hit: Capture = .{};
+                    self.open(&hit);
+                    try self.gcPutStr("fn/");
+                    try self.emit(.{ .local_get = "v" });
+                    try self.gcClosureArity();
+                    try self.emit(self.builder().helper(.print_i32_raw));
+                    try self.emit(.@"return");
+                    const hit_seq = self.seal(&hit, .terminated);
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_test = vt });
+                    try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+                    continue;
+                },
+                .result => {
+                    // Nested — like a tuple's or an array's element, decision
+                    // 1021 (10) — so a string payload prints quoted.
+                    const unk = try self.gcUnkPrint(true);
+                    const rti: u16 = @intCast(i + 1);
+                    var hit: Capture = .{};
+                    self.open(&hit);
+                    var is_err: Capture = .{};
+                    self.open(&is_err);
+                    try self.gcPutStr("Error(");
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .struct_get = .{ .ty = rti, .field = 1 } });
+                    try self.emit(.{ .call = unk });
+                    try self.gcPutStr(")");
+                    const err_seq = self.seal(&is_err, .none);
+                    var is_ok: Capture = .{};
+                    self.open(&is_ok);
+                    try self.gcPutStr("Ok(");
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .struct_get = .{ .ty = rti, .field = 1 } });
+                    try self.emit(.{ .call = unk });
+                    try self.gcPutStr(")");
+                    const ok_seq = self.seal(&is_ok, .none);
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_cast = vt });
+                    try self.emit(.{ .struct_get = .{ .ty = rti, .field = 0 } });
+                    try self.emit(.{ .@"if" = .{ .then = .{ .seq = err_seq }, .@"else" = .{ .seq = ok_seq } } });
+                    try self.emit(.@"return");
+                    const hit_seq = self.seal(&hit, .terminated);
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_test = vt });
+                    try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+                    continue;
+                },
+                .task, .gen => {
+                    const label: []const u8 = if (t == .task) "a Task" else "a generator";
+                    var hit: Capture = .{};
+                    self.open(&hit);
+                    try self.gcPrinterPanic(try std.fmt.allocPrint(self.arena(), "wasm cannot print {s} value dynamically yet", .{label}));
+                    const hit_seq = self.seal(&hit, .terminated);
+                    try self.emit(.{ .local_get = "v" });
+                    try self.emit(.{ .ref_test = vt });
+                    try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+                    continue;
+                },
+                else => {},
+            }
             // Decision 1031 (2) — a boxed `bigint` prints its digits.
             const big = t == .box and t.box == .big;
             const arm: TaggedArm = switch (t) {
@@ -32244,7 +32328,15 @@ const Emitter = struct {
             try self.emitStdCall("bigint.compare");
             return self.emit(opOf(.i32, "eqz"));
         }
-        if (std.mem.eql(u8, n, "unknown")) return self.gcFail("an equality over unknown");
+        // Front 229 s2 — structurally, the same comparison a real `unknown`
+        // value already gets anywhere else (decision 569, `$__unk_eq`):
+        // numbers, strings and bools by value, anything else by its own
+        // structure. This fell the whole module back before; nothing here
+        // needed it to.
+        if (std.mem.eql(u8, n, "unknown")) {
+            const sym = try self.gcUnkEq();
+            return self.emit(.{ .call = sym });
+        }
         if (fieldCellOf(n) == .i64) return self.emit(opOf(.i64, "eq"));
         if (isFloatTypeName(n)) return self.emit(.{ .call = self.floatEqSym() });
         if (self.eqComposite(t)) return self.emit(.{ .call = try self.eqFnFor(t) });

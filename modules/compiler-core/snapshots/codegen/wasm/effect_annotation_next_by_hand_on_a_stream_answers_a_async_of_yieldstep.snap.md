@@ -922,6 +922,15 @@ import {io.terminal.print} from "std";
   )
   (func $__print_tagged_raw (param $v anyref)
     local.get $v
+    ref.test (ref null $gen)
+    (if
+      (then
+    global.get $__s11
+    call $__panic_fail
+    unreachable
+      )
+    )
+    local.get $v
     ref.test (ref null $var_YieldStep_Yield)
     (if
       (then
@@ -939,6 +948,15 @@ import {io.terminal.print} from "std";
     ref.cast (ref null $var_YieldStep_Done)
     call $__pr2
     return
+      )
+    )
+    local.get $v
+    ref.test (ref null $task)
+    (if
+      (then
+    global.get $__s12
+    call $__panic_fail
+    unreachable
       )
     )
     local.get $v
@@ -2020,6 +2038,10 @@ import {io.terminal.print} from "std";
   (global $__s9 (mut (ref null $str)) (ref.null $str))
   (data $__d10 "test@main.YieldStep.Done")
   (global $__s10 (mut (ref null $str)) (ref.null $str))
+  (data $__d11 "wasm cannot print a generator value dynamically yet")
+  (global $__s11 (mut (ref null $str)) (ref.null $str))
+  (data $__d12 "wasm cannot print a Task value dynamically yet")
+  (global $__s12 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -2066,6 +2088,14 @@ import {io.terminal.print} from "std";
     i32.const 24
     array.new_data $str $__d10
     global.set $__s10
+    i32.const 0
+    i32.const 51
+    array.new_data $str $__d11
+    global.set $__s11
+    i32.const 0
+    i32.const 46
+    array.new_data $str $__d12
+    global.set $__s12
     call $__init_types
   )
   (func $__new_24 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))

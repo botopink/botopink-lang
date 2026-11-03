@@ -2376,6 +2376,12 @@ test "order case over Order" {
     local.get $b
     call $__unk_eq_ref
   )
+  (func $__tid2 (param $v anyref)
+    local.get $v
+    ref.cast (ref null $rec_Dict)
+    call $Dict_display
+    call $__print_str_raw
+  )
   (func $__tie11 (param $a anyref) (param $b anyref) (result i32)
     local.get $b
     ref.test (ref null $rec_Set)
@@ -2911,11 +2917,11 @@ test "order case over Order" {
     call $__print_str_raw
   )
   (func $__pr4 (param $v (ref null $rec_Set))
-    global.get $__s18
+    global.get $__s19
     call $__print_str_raw
     global.get $__s13
     call $__print_str_raw
-    global.get $__s19
+    global.get $__s20
     call $__print_str_raw
     local.get $v
     struct.get $rec_Set $f0
@@ -2924,11 +2930,11 @@ test "order case over Order" {
     call $__print_str_raw
   )
   (func $__pr6 (param $v (ref null $rec_Queue))
-    global.get $__s20
+    global.get $__s21
     call $__print_str_raw
     global.get $__s13
     call $__print_str_raw
-    global.get $__s19
+    global.get $__s20
     call $__print_str_raw
     local.get $v
     struct.get $rec_Queue $f0
@@ -2944,6 +2950,19 @@ test "order case over Order" {
     local.get $v
     ref.cast (ref null $rec_Dict)
     call $__pr0
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $closure)
+    (if
+      (then
+    global.get $__s18
+    call $__print_str_raw
+    local.get $v
+    ref.cast (ref null $closure)
+    struct.get $closure $arity
+    call $__print_i32_raw
     return
       )
     )
@@ -3853,12 +3872,14 @@ test "order case over Order" {
   (global $__s16 (mut (ref null $str)) (ref.null $str))
   (data $__d17 "]")
   (global $__s17 (mut (ref null $str)) (ref.null $str))
-  (data $__d18 "Set")
+  (data $__d18 "fn/")
   (global $__s18 (mut (ref null $str)) (ref.null $str))
-  (data $__d19 "items: ")
+  (data $__d19 "Set")
   (global $__s19 (mut (ref null $str)) (ref.null $str))
-  (data $__d20 "Queue")
+  (data $__d20 "items: ")
   (global $__s20 (mut (ref null $str)) (ref.null $str))
+  (data $__d21 "Queue")
+  (global $__s21 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -3938,13 +3959,17 @@ test "order case over Order" {
     array.new_data $str $__d18
     global.set $__s18
     i32.const 0
-    i32.const 7
+    i32.const 3
     array.new_data $str $__d19
     global.set $__s19
     i32.const 0
-    i32.const 5
+    i32.const 7
     array.new_data $str $__d20
     global.set $__s20
+    i32.const 0
+    i32.const 5
+    array.new_data $str $__d21
+    global.set $__s21
     call $__init_types
   )
   (func $__new_24 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -3965,12 +3990,12 @@ test "order case over Order" {
   (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (elem declare func $__tie2 $__tie11 $__tie12)
+  (elem declare func $__tie2 $__tid2 $__tie11 $__tie12)
   (func $__init_types
     global.get $__s9
     ref.null func
     ref.func $__tie2
-    ref.null func
+    ref.func $__tid2
     i32.const 0
     struct.new $__tinfo
     global.set $__ti_24

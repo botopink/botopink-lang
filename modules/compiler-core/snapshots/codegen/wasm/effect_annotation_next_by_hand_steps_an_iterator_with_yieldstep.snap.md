@@ -833,6 +833,15 @@ import {io.terminal.print} from "std";
   )
   (func $__print_tagged_raw (param $v anyref)
     local.get $v
+    ref.test (ref null $gen)
+    (if
+      (then
+    global.get $__s10
+    call $__panic_fail
+    unreachable
+      )
+    )
+    local.get $v
     ref.test (ref null $var_YieldStep_Yield)
     (if
       (then
@@ -1215,6 +1224,114 @@ import {io.terminal.print} from "std";
     )
     i32.const 1
   )
+  (func $__write_err (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 2
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__assert_fail (param $where i32) (param $msg i32)
+    local.get $where
+    i32.const 4
+    i32.add
+    local.get $where
+    i32.load
+    call $__write_err
+    i32.const 188
+    i64.const 8390880602276044858
+    i64.store
+    i32.const 196
+    i64.const 7811882119909502825
+    i64.store
+    i32.const 204
+    i32.const 101
+    i32.store8
+    i32.const 205
+    i32.const 100
+    i32.store8
+    i32.const 188
+    i32.const 18
+    call $__write_err
+    local.get $msg
+    (if
+      (then
+        i32.const 188
+        i32.const 8250
+        i32.store
+        i32.const 188
+        i32.const 2
+        call $__write_err
+        local.get $msg
+        i32.const 4
+        i32.add
+        local.get $msg
+        i32.load
+        call $__write_err
+      )
+    )
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+  )
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
+    i32.const 188
+    i64.const 9071397899755888
+    i64.store
+    i32.const 188
+    i32.const 7
+    call $__write_err
+    local.get $msg
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
+    call $__write_err
+    i32.const 188
+    i32.const 10
+    i32.store8
+    i32.const 188
+    i32.const 1
+    call $__write_err
+    local.get $top
+    global.set $__heap_ptr
+  )
   (func $__print_quoted_raw (param $s (ref null $str))
     (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
     i32.const 8
@@ -1372,6 +1489,8 @@ import {io.terminal.print} from "std";
   (global $__s8 (mut (ref null $str)) (ref.null $str))
   (data $__d9 "test@main.YieldStep.Done")
   (global $__s9 (mut (ref null $str)) (ref.null $str))
+  (data $__d10 "wasm cannot print a generator value dynamically yet")
+  (global $__s10 (mut (ref null $str)) (ref.null $str))
   (start $__init_strs)
   (func $__init_strs
     i32.const 0
@@ -1414,6 +1533,10 @@ import {io.terminal.print} from "std";
     i32.const 24
     array.new_data $str $__d9
     global.set $__s9
+    i32.const 0
+    i32.const 51
+    array.new_data $str $__d10
+    global.set $__s10
     call $__init_types
   )
   (func $__new_24 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
