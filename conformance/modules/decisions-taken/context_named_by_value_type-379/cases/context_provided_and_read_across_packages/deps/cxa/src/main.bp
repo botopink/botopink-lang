@@ -1,0 +1,13 @@
+//// `cxa` declares `Th` and its context's default, and reads it through
+//// `reader()` — a hook its importer calls without naming the context.
+
+import {context.createContext, context.context} from "std";
+
+pub type Th(mode: string)
+
+pub val thContext = comptime createContext(Th(mode: "light"));
+
+pub component fn reader() -> Component<string> {
+    val t = use context(thContext);
+    return t.mode;
+}

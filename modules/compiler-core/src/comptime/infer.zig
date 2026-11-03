@@ -23156,15 +23156,47 @@ fn stdImportsContextModule(env: *Env) bool {
 ///
 /// 144 B-215 — the name alone is not the type's identity: a module is its
 /// package plus its path (decisions 170, 337, 603, 635), so the key carries
-/// `env.package` too — two packages' own `Theme` are two identities, never
-/// one, exactly as two packages' own `theme` module are two modules. The root
+/// a package too — two packages' own `Theme` are two identities, never one,
+/// exactly as two packages' own `theme` module are two modules. The root
 /// package is told no name of its own here (`declIdentity`'s same carve-out),
 /// so its contexts keep the bare type name, unprefixed, as before.
+///
+/// 144 B-218 — the package is the type's DECLARING package
+/// (`contextTypePackage`), never the package of whichever module happens to
+/// be read or provided it: `use provide(createContext(Th(…)))` written in a
+/// package that imports `Th`, and `use context(thContext)` written in `Th`'s
+/// own package, must agree on one key. B-215 keyed by `env.package` — the
+/// package of the referencing module — which held only because its own
+/// regression cases never read or provided a context across a package
+/// boundary; a provider in one package and a reader in another, of the same
+/// imported type, computed two different keys and never found each other
+/// (measured on a library's own styled-context cross-module suite, 144 B-218).
 fn contextTypeKey(env: *Env, t: *T.Type) InferError!?[]const u8 {
     const d = t.deref();
     if (d.* != .named) return null;
-    if (env.package.len == 0) return d.named.name;
-    return try std.fmt.allocPrint(env.arena, "{s}@@{s}", .{ env.package, d.named.name });
+    const pkg = contextTypePackage(env, d.named.name);
+    if (pkg.len == 0) return d.named.name;
+    return try std.fmt.allocPrint(env.arena, "{s}@@{s}", .{ pkg, d.named.name });
+}
+
+/// The package that declares `name`: an imported type's owner, when the
+/// import crosses a PACKAGE boundary — its module path's first segment, up
+/// to the `/` every dependency's module path starts with (decision 109).
+/// `name` imported from a sibling module of this same package (no `/` in the
+/// module path: a root-package module's path carries no package, `declIdentity`'s
+/// same carve-out) is this module's own package, exactly as a type declared
+/// here is — same package, one identity, whichever of its modules reads or
+/// writes it. Falls to `""` (no package, the bare name stands) for a
+/// primitive, a std type, or a name this module neither declares nor
+/// imports — the same three-way split `hookTypeArg` reads a type argument's
+/// owner by.
+fn contextTypePackage(env: *Env, name: []const u8) []const u8 {
+    if (env.importedTypeDecls.get(name)) |it| {
+        if (std.mem.indexOfScalar(u8, it.module, '/')) |slash| return it.module[0..slash];
+        return env.package;
+    }
+    if (env.ownDecls.contains(name)) return env.package;
+    return "";
 }
 
 /// Decisions 378, 379 — a `use` of std's `provide` / `context`: `provide`

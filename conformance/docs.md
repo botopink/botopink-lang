@@ -2998,6 +2998,8 @@ hooks of std's `context` module work it, `use`d and nothing else
 
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_declared_twice_across_modules -->
 
+<!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_provided_and_read_across_packages -->
+
 <!-- example: modules/decisions-taken/context_named_by_value_type-379/cases/context_enum_default -->
 
 <!-- example: modules/decisions-taken/context_provide_made_at_run_time-755/cases/context_provide_made_at_run_time -->

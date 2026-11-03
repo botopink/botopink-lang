@@ -1,0 +1,18 @@
+//// 144 B-218 — a context's identity is its value's type (decision 379),
+//// whichever package reads or provides it: `cxa` declares `Th` and
+//// `Th`'s context default, and reads it through `reader()`; this package
+//// imports `Th`, provides a new one around the call, and the two packages
+//// name the same context — `dark`, never `cxa`'s own default, `light`.
+
+import {context.createContext, context.provide, context.run, io.terminal.print} from "std";
+import {Th, reader} from "cxa";
+
+component fn App() -> Component<string> {
+    use provide(createContext(Th(mode: "dark")));
+    val v = use reader();
+    return v;
+}
+
+pub async fn main() -> Async<void> {
+    print(await run(App()));
+}

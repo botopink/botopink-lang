@@ -21,3 +21,5 @@ out light
 out dark
 == context_nearest_wins
 out outer=10 inner=20 sibling=10
+== context_provided_and_read_across_packages
+out dark
