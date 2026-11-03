@@ -13,30 +13,49 @@ fn sumEvens(arr: i32[]) -> i32[] {
 ----- WASM TEXT -- main.wat
 ```wasm
 (module
+  (rec
+    (type $str (array (mut i8)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
+    (type $arr_f64 (array (mut f64)))
+    (type $arr_any (sub (array (mut anyref))))
+    (type $tuple (sub final $arr_any (array (mut anyref))))
+    (type $box_i32 (sub (struct (field $v i32))))
+    (type $box_i64 (struct (field $v i64)))
+    (type $box_f64 (struct (field $v f64)))
+    (type $box_bool (sub final $box_i32 (struct (field $v i32))))
+    (type $box_big (struct (field $v (ref null $str))))
+    (type $closure (sub (struct (field $fn funcref) (field $arity i32) (field $mark i32))))
+    (type $result (struct (field $tag (mut i32)) (field $payload (mut anyref))))
+    (type $exn (struct (field $msg (ref null $str)) (field $print i32)))
+    (type $task (struct (field $state (mut i32)) (field $waiters (mut (ref null $waiter))) (field $value (mut anyref)) (field $frame (mut structref)) (field $kind i32) (field $next (mut (ref null $task))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $waiter (struct (field $next (mut (ref null $waiter))) (field $kind i32) (field $target (ref null $task)) (field $slot i32)))
+    (type $hostn (struct (field $next (mut (ref null $hostn))) (field $h i32) (field $t (ref null $task))))
+    (type $gen (struct (field $state (mut i32)) (field $kind i32) (field $frame (mut structref)) (field $value (mut anyref)) (field $src (mut (ref null $gen))) (field $aux (mut anyref)) (field $left (mut i32))))
+    (type $cell (struct (field $filled (mut i32)) (field $value (mut anyref))))
+    (type $__decl (sub (struct (field $ti (ref null $__tinfo)))))
+    (type $__tinfo (struct (field $name (ref null $str)) (field $print funcref) (field $eq funcref) (field $display funcref) (field $kind i32)))
+    (type $__print_sig (func (param anyref)))
+    (type $__eq_sig (func (param anyref anyref) (result i32)))
+  )
+  (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
-  (data $__bp_seg0 "\32\00\00\00integer division by zero: % on i32 at main.bp:4:15")
-  (func $sumEvens (param $arr i32) (result i32)
+  (func $sumEvens (param $arr (ref null $arr_i32)) (result (ref null $arr_i32))
     (local $__mem0 i32)
-    (local $out i32)
+    (local $out (ref null $arr_i32))
     (local $x i32)
-    (local $__iter0 i32)
+    (local $__iter0 (ref null $arr_i32))
     (local $__idx0 i32)
     (local $__len0 i32)
-    i32.const 4
-    call $__alloc
-    local.set $__mem0
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
+    array.new_fixed $arr_i32 0
     local.set $out
     local.get $arr
     local.set $__iter0
     local.get $__iter0
-    i32.load ;; element count
+    array.len
     local.set $__len0
     i32.const 0
     local.set $__idx0
@@ -48,31 +67,28 @@ fn sumEvens(arr: i32[]) -> i32[] {
         br_if $__break
         local.get $__iter0
         local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
+        array.get $arr_i32
         local.set $x
         (block $__next
     local.get $x
     i32.const 2
-    i32.const 11680
+    global.get $__s0
     call $__i32_nz
     i32.rem_s
     i32.const 0
     i32.ne
-    (if (result i32)
+    (if (result (ref null $arr_i32))
       (then
     br $__next
       )
       (else
-        i32.const 0
+        ref.null $arr_i32
       )
     )
     drop
     local.get $out
     local.get $x
-    call $__arr_push
+    call $__arr_push_i32
     local.set $out
         )
         local.get $__idx0
@@ -87,23 +103,32 @@ fn sumEvens(arr: i32[]) -> i32[] {
     local.get $out
     return
   )
+  (func $__arr_push_i32 (param $xs (ref null $arr_i32)) (param $x i32) (result (ref null $arr_i32))
+    (local $n i32)
+    (local $r (ref null $arr_i32))
+    local.get $xs
+    array.len
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    array.new_default $arr_i32
+    local.set $r
+    local.get $r
+    i32.const 0
+    local.get $xs
+    i32.const 0
+    local.get $n
+    array.copy $arr_i32 $arr_i32
+    local.get $r
+    local.get $n
+    local.get $x
+    array.set $arr_i32
+    local.get $r
+  )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
   ;;  16..32 bool text   64..128 i32 digits
-  (func $__write_bytes (param $p i32) (param $n i32)
-    i32.const 0
-    local.get $p
-    i32.store
-    i32.const 4
-    local.get $n
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-  )
   (func $__print_nl
     i32.const 8
     i32.const 10
@@ -267,51 +292,6 @@ fn sumEvens(arr: i32[]) -> i32[] {
       )
     )
   )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_push (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $x
-    i32.store
-    local.get $p
-  )
   (func $__write_err (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -372,7 +352,8 @@ fn sumEvens(arr: i32[]) -> i32[] {
     i32.const 1
     call $__write_err
   )
-  (func $__panic_fail (param $msg i32)
+  (func $__panic_fail (param $msg (ref null $str))
+    (local $n i32) (local $p i32) (local $i i32) (local $top i32)
     i32.const 188
     i64.const 9071397899755888
     i64.store
@@ -380,10 +361,35 @@ fn sumEvens(arr: i32[]) -> i32[] {
     i32.const 7
     call $__write_err
     local.get $msg
-    i32.const 4
-    i32.add
-    local.get $msg
-    i32.load
+    array.len
+    local.set $n
+    global.get $__heap_ptr
+    local.set $top
+    local.get $n
+    call $__alloc
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $p
+        local.get $i
+        i32.add
+        local.get $msg
+        local.get $i
+        array.get_u $str
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+    local.get $n
     call $__write_err
     i32.const 188
     i32.const 10
@@ -391,13 +397,15 @@ fn sumEvens(arr: i32[]) -> i32[] {
     i32.const 188
     i32.const 1
     call $__write_err
+    local.get $top
+    global.set $__heap_ptr
   )
-  (func $__chk_fail (param $site i32)
+  (func $__chk_fail (param $site (ref null $str))
     local.get $site
     call $__panic_fail
     unreachable
   )
-  (func $__i32_divs (param $a i32) (param $b i32) (param $site i32) (param $osite i32) (result i32)
+  (func $__i32_divs (param $a i32) (param $b i32) (param $site (ref null $str)) (param $osite (ref null $str)) (result i32)
     local.get $b
     i32.eqz
     (if
@@ -425,7 +433,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
     local.get $b
     i32.div_s
   )
-  (func $__i64_divs (param $a i64) (param $b i64) (param $site i32) (param $osite i32) (result i64)
+  (func $__i64_divs (param $a i64) (param $b i64) (param $site (ref null $str)) (param $osite (ref null $str)) (result i64)
     local.get $b
     i64.eqz
     (if
@@ -453,7 +461,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
     local.get $b
     i64.div_s
   )
-  (func $__i32_nz (param $b i32) (param $site i32) (result i32)
+  (func $__i32_nz (param $b i32) (param $site (ref null $str)) (result i32)
     local.get $b
     i32.eqz
     (if
@@ -465,7 +473,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
     )
     local.get $b
   )
-  (func $__i64_nz (param $b i64) (param $site i32) (result i64)
+  (func $__i64_nz (param $b i64) (param $site (ref null $str)) (result i64)
     local.get $b
     i64.eqz
     (if
@@ -477,35 +485,16 @@ fn sumEvens(arr: i32[]) -> i32[] {
     )
     local.get $b
   )
-  (start $__bp_reserve)
-  (func $__bp_reserve
-    memory.size
-    i32.const 1
-    i32.lt_u
-    (if
-      (then
-      i32.const 1
-      memory.size
-      i32.sub
-      memory.grow
-      drop
-      )
-    )
-    i32.const 11680
+  (data $__d0 "integer division by zero: % on i32 at main.bp:4:15")
+  (global $__s0 (mut (ref null $str)) (ref.null $str))
+  (start $__init_strs)
+  (func $__init_strs
     i32.const 0
-    i32.const 54
-    memory.init $__bp_seg0
-    data.drop $__bp_seg0
-    global.get $__heap_ptr
-    i32.const 11736
-    i32.lt_u
-    (if
-      (then
-      i32.const 11736
-      global.set $__heap_ptr
-      )
-    )
+    i32.const 50
+    array.new_data $str $__d0
+    global.set $__s0
   )
+  (@custom "botopink.needs" "gc\0a")
 )
 ```
 

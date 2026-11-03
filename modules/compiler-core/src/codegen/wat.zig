@@ -8549,6 +8549,14 @@ const Emitter = struct {
             '(' => .{ .ref = .tuple },
             'R' => .{ .ref = .result },
             'U' => .{ .ref = .unknown },
+            // Front 170 s7 P5-d, reason "a tuple element of a value of no
+            // known tuple type" — `T` names a value that carries its own
+            // declaration (a record or a tagged enum, `isTaggedValue`): the
+            // shape names no specific type, only that the slot holds a
+            // self-describing reference, so it reads back as the same
+            // `unknown` decision 150's union boxing already gives such a
+            // value — a `ref.test` elsewhere tells its concrete shape apart.
+            'T' => .{ .ref = .unknown },
             else => null,
         };
     }
@@ -14265,7 +14273,7 @@ const Emitter = struct {
     /// bound inside one of those is still a function-level WAT local, and
     /// missing it used to produce a `local.set` against an undeclared name.
     fn emitLocalDecls(self: *Emitter, body: []const ast.Stmt) anyerror!void {
-        for (body) |stmt| {
+        for (body, 0..) |stmt, stmt_i| {
             switch (stmt.expr) {
                 .binding => |b| switch (b.kind) {
                     .localBind => |lb| {
@@ -14288,7 +14296,18 @@ const Emitter = struct {
                             try self.declareNestedLocals(lb.value.*);
                             continue;
                         };
-                        const t = self.bindingLocalType(lb.typeAnnotation, lb.value.*);
+                        var t = self.bindingLocalType(lb.typeAnnotation, lb.value.*);
+                        // Front 170 s7 P5-d, reason "an empty array literal of
+                        // no known type" — `var xs = []` with no annotation:
+                        // nothing at the literal site says its element, but a
+                        // later `xs.push(v)` in the rest of this body is the
+                        // same fact the checker's own unification used to
+                        // settle `xs`'s type (`00 · untyped_array_float_push`).
+                        // Read it from there instead of guessing `.i32` and
+                        // falling back to the deleted linear lowering.
+                        if (self.mode == .gc and lb.typeAnnotation == null and isEmptyArrayLit(lb.value.*) and !t.isArrRef()) {
+                            if (self.gcPushElemRepr(lb.name, body[stmt_i + 1 ..])) |pt| t = pt;
+                        }
                         // A cell optional (`?f64`, `?i64`) is known before the
                         // body is lowered, so a binder over it is declared
                         // the cell's width.
@@ -14505,6 +14524,78 @@ const Emitter = struct {
             else => {},
         };
         return self.inferExprType(value);
+    }
+
+    /// Front 170 s7 P5-d, reason "an empty array literal of no known type" —
+    /// an unannotated `var xs = []` whose element only a later `xs.push(v)`
+    /// in the rest of this body says. The checker's own unification already
+    /// settles `xs`'s type there (decision 434's HM pass unifies `v`'s type
+    /// through the push); this reads the same fact by walking forward to
+    /// that push instead of guessing `.i32` at the empty literal and falling
+    /// back to the deleted linear lowering. Null when the rest of the body
+    /// never pushes onto `name`.
+    fn gcPushElemRepr(self: *Emitter, name: []const u8, rest: []const ast.Stmt) ?Repr {
+        for (rest) |stmt| if (self.gcPushElemReprIn(name, stmt.expr)) |r| return r;
+        return null;
+    }
+
+    fn gcPushElemReprIn(self: *Emitter, name: []const u8, e: ast.Expr) ?Repr {
+        switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (cc.receiver) |recv| switch (recv.*) {
+                        .identifier => |id| switch (id.kind) {
+                            .ident => |n| if (std.mem.eql(u8, self.resolveName(n), name) and std.mem.eql(u8, cc.callee, "push")) {
+                                const arg = callArg(cc, 0) orelse return null;
+                                return .{ .ref = .{ .arr = gcElemClassOf(self.gcElemValRepr(arg)) } };
+                            },
+                            else => {},
+                        },
+                        else => {},
+                    };
+                    for (cc.args) |a| if (self.gcPushElemReprIn(name, a.value.*)) |r| return r;
+                    for (cc.trailing) |t| if (self.gcPushElemRepr(name, t.body)) |r| return r;
+                },
+                .pipeline => |pl| {
+                    if (self.gcPushElemReprIn(name, pl.lhs.*)) |r| return r;
+                    return self.gcPushElemReprIn(name, pl.rhs.*);
+                },
+            },
+            .loop => |lp| return self.gcPushElemRepr(name, lp.body),
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    if (self.gcPushElemRepr(name, i.then_)) |r| return r;
+                    if (i.else_) |els| return self.gcPushElemRepr(name, els);
+                },
+                .tryCatch => |tc| {
+                    if (self.gcPushElemReprIn(name, tc.expr.*)) |r| return r;
+                    return self.gcPushElemReprIn(name, tc.handler.*);
+                },
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.gcPushElemReprIn(name, inner.*),
+                .case => |cse| for (cse.arms) |arm| if (self.gcPushElemReprIn(name, arm.body)) |r| return r,
+                else => {},
+            },
+            .binding => |b| switch (b.kind) {
+                .assign => |a| return self.gcPushElemReprIn(name, a.value.*),
+                .localBind => |lb| return self.gcPushElemReprIn(name, lb.value.*),
+                else => {},
+            },
+            .binaryOp => |bin| {
+                if (self.gcPushElemReprIn(name, bin.lhs.*)) |r| return r;
+                return self.gcPushElemReprIn(name, bin.rhs.*);
+            },
+            .jump => |j| switch (j.kind) {
+                .@"return", .throw_, .try_ => |v| if (v) |i| return self.gcPushElemReprIn(name, i.*),
+                inline .@"break", .yield => |jl| if (jl.value) |i| return self.gcPushElemReprIn(name, i.*),
+                .await_ => |a| return self.gcPushElemReprIn(name, a.*),
+                else => {},
+            },
+            .useHook => |uh| return self.gcPushElemReprIn(name, uh.kind.inner.*),
+            else => {},
+        }
+        return null;
     }
 
     fn emitGlobalVal(self: *Emitter, v: ast.ValDecl) !void {
@@ -15523,7 +15614,20 @@ const Emitter = struct {
                     // outer `x` (decision 152 keeps that legal: a new scope)
                     // — is a fresh local, aliased until the block ends.
                     var lb = lb0;
-                    lb.name = try self.bindTargetAs(lb0.name, self.bindingLocalType(lb0.typeAnnotation, lb0.value.*));
+                    // Front 170 s7 P5-d, reason "an empty array literal of no
+                    // known type" — an unannotated `var xs = []` whose element
+                    // only a later push says: `emitLocalDecls`'s earlier pass
+                    // already read it (`gcPushElemRepr`) and declared `xs` the
+                    // array it is. Recomputing fresh here, with no visibility
+                    // into the rest of the body, re-guesses `.i32` and
+                    // `bindTargetAs` reads the mismatch as two widths of one
+                    // name, shadowing `xs` into a second local nothing ever
+                    // declares the array type of. Reuse what is already known.
+                    const bt: Repr = if (self.mode == .gc and lb0.typeAnnotation == null and isEmptyArrayLit(lb0.value.*))
+                        (self.locals.get(lb0.name) orelse self.bindingLocalType(lb0.typeAnnotation, lb0.value.*))
+                    else
+                        self.bindingLocalType(lb0.typeAnnotation, lb0.value.*);
+                    lb.name = try self.bindTargetAs(lb0.name, bt);
                     defer self.installShadow(lb0.name, lb.name);
                     // `val v = if (c) 2 else "two"` / `val v = case s { … }`
                     // whose arms disagree is the union of its arms (decision
@@ -22413,6 +22517,10 @@ const Emitter = struct {
                 if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) return self.resultTypeShape(g.args[0], g.args[1]);
                 // A generic record (`Queue<i32>`) carries its declaration too.
                 if (self.records.contains(g.name)) return "T";
+                // Front 170 s7 P5-d, reason "a tuple element of a value of no
+                // known tuple type" — a generic enum with a payload variant
+                // (`Declared<T>`) is its own pointer too.
+                if (self.enums.get(g.name)) |variants| if (enumHasPayload(variants)) return "T";
             },
             // A written record type: the element carries its own declaration.
             .named => |n| {
@@ -22425,6 +22533,20 @@ const Emitter = struct {
                 }
                 if (self.records.contains(n)) return "T";
                 if (self.isAllUnitEnum(n)) return try self.unitEnumShape(n);
+                // Front 170 s7 P5-d, reason "a tuple element of a value of no
+                // known tuple type" — a tuple whose element names an enum WITH
+                // a payload variant (`#(string, Json)`, Json's `Str(value:…)`):
+                // the slot is that value's own pointer, as `isTaggedValue`
+                // already reads a runtime value of one. Without this, the
+                // declared-type shape (`typeRefShape`, used to find a local's
+                // or a method's array-of-tuple shape ahead of lowering it)
+                // aborted the whole tuple's shape at this element and the
+                // caller fell back to guessing the array held plain `i32`s —
+                // `std/json.bp`'s `field` read `Obj`'s `array<#(string, Json)>`
+                // this way and a tuple element read off it refused the GC
+                // lowering (`gcTupleGet`'s receiver was no longer known a
+                // tuple at all).
+                if (self.enums.get(n)) |variants| if (enumHasPayload(variants)) return "T";
             },
             else => {},
         }
@@ -27232,6 +27354,18 @@ const Emitter = struct {
                     // parameter, so unboxed here — while the reader guessed
                     // "boxed" and loaded through the payload as an address.
                     if (cc.receiver != null) {
+                        // Front 170 s7 P5-d, reason "a tuple element of a
+                        // value of no known tuple type" — `xs.filter(…)` /
+                        // `.slice(…)` / … keep the receiver's own element
+                        // type, as `printShapeOf`'s and `elemRecordOf`'s own
+                        // `keepsElements` reading already does: a `val hit =
+                        // self.members().filter(…)` otherwise answered no
+                        // type here, so a later tuple-element read off `hit`
+                        // (`hit.at(0)._1`) could not resolve its declared
+                        // element either (`arrayElemOpt`'s `elemTypeRefOf`).
+                        if (keepsElements(cc.callee)) if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
+                            if (self.typeRefOf(cc.receiver.?.*)) |t| break :blk t;
+                        };
                         // A generic function reached through its module's
                         // namespace (`failure.attempt(…)`): its return with
                         // what the arguments bind written in.
@@ -27392,6 +27526,25 @@ const Emitter = struct {
         // ?? Shape.Dot` answers a `Shape`, not the boxed word it was typed.
         if (self.mode == .gc) if (self.gcElemRepr(recv)) |er| if (er == .ref and er.ref == .enum_) {
             return .{ .boxed = false, .inner = .{ .named = er.ref.enum_ } };
+        };
+        // Front 170 s7 P5-d, reason "a tuple element of a value of no known
+        // tuple type" — an array of tuples (`array<#(string, Json)>`, an
+        // object's members): the checker's own declared element type is
+        // read here through `elemTypeRefOf` (the same type a local's
+        // `local_typerefs` entry already carries) and kept whole as `.inner`,
+        // so a later read of one of ITS elements (`t._1` of `xs.at(0) ?? d`)
+        // still resolves the named record or enum the checker wrote. The
+        // print shape alone (`elemIsPointer`'s path below) only says the
+        // slot is SOME self-describing value (`T`), with no name `gcUnbox`
+        // or a `case` over it could dispatch by.
+        if (self.elemTypeRefOf(recv)) |et| switch (et) {
+            // `.shape` too: `optTupleElemShapeOf` (a `?.1` read of ONE
+            // element) reads it directly, never `.inner` — without it,
+            // `pairs.find(…)?.1` lost the print shape `elemIsPointer`'s own
+            // path below used to give it from `pairs`' own shape, and could
+            // not tell what `.1` itself was shaped like.
+            .tuple_, .labeledTuple => return .{ .boxed = false, .inner = et, .shape = self.typeRefShape(et) catch null },
+            else => {},
         };
         if (self.elemIsPointer(recv)) {
             const sh = (self.printShapeOf(recv) catch null).?;

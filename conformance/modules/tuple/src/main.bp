@@ -39,6 +39,7 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("tuple_label_from_variable");
+    runCase("tuple_element_of_array_at_default");
     runCase("tuple_optional_element");
     runCase("tuple_print");
     runCase("tuple_to_string");

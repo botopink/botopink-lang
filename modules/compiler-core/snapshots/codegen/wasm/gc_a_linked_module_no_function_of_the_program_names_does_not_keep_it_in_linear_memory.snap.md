@@ -845,6 +845,7 @@ test "order case over Order" {
     call $__arr_slice_any
     i32.const 0
     call $__arr_at_opt_any
+    ref.cast (ref null $arr_any)
     ref.is_null
     i32.eqz
     return

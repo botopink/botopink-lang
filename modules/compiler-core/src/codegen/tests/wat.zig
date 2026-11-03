@@ -7247,3 +7247,81 @@ test "wat: gc ---- the fallback note names the attempt whose refusal is returned
     try std.testing.expect(std.mem.endsWith(u8, note, ":2:16"));
     try std.testing.expect(std.mem.indexOf(u8, note, ":10:") == null);
 }
+
+// Front 170 s7 P5-d — P5-a's measurement table's single biggest GC-gap
+// reason, 301 occurrences across 24 members: "an empty array literal of no
+// known type". `var taxed = [];` has no annotation and no element visible at
+// the literal site, but the checker's own unification already settles
+// `taxed`'s element from the `taxed.push(v * 1.5)` later in this same body —
+// the same fact `modules/untyped/cases/untyped_array_float_push` names. The
+// GC backend now reads it from there (`Emitter.gcPushElemRepr`) instead of
+// guessing `.i32` and falling back to the deleted linear lowering, where a
+// float pushed into a word array printed its cell's address.
+test "wat: gc ---- an empty array literal with no annotation reads the element a later push establishes (front 170 s7 P5-d)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub fn main() -> void {
+        \\    val base = [100, 250];
+        \\    var taxed = [];
+        \\    for (base) { v ->
+        \\        taxed.push(v * 1.5);
+        \\    }
+        \\    print(taxed.length);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\2
+        \\
+    );
+}
+
+// Front 170 s7 P5-d — P5-a's measurement table's second-biggest GC-gap
+// reason, 73 occurrences across 25 members: "a tuple element of a value of
+// no known tuple type", from `libraries/validation`'s own use of
+// `libs/std/src/json.bp`'s `Json.field`: `(hit.at(0) ?? #("", Json.Null))._1`
+// reads an element off a tuple an array method (`.at`) answered, wrapped in a
+// `??` default. The checker already types `members(): array<#(string,
+// Thing)>`'s elements; the GC backend now reads that declared element type
+// through the array (`Emitter.arrayElemOpt`'s `elemTypeRefOf` reading, and
+// `typeRefOf`'s own `keepsElements` pass-through for `.filter()` and its
+// kin) instead of falling back to a print shape with no name to cast to.
+test "wat: gc ---- a tuple element read off an array-of-tuples' `.at() ?? default` resolves the checker's declared element (front 170 s7 P5-d)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub type Thing {
+        \\    A,
+        \\    B(value: i32),
+        \\
+        \\    pub fn members(self: Self) -> array<#(string, Thing)> {
+        \\        return case self {
+        \\            A -> [];
+        \\            B(value: _) -> [#("a", Thing.A), #("b", self)];
+        \\        };
+        \\    }
+        \\
+        \\    pub fn field(self: Self, key: string) -> ?Thing {
+        \\        val hit = self.members().filter({ m -> m._0 == key });
+        \\        if (hit.length == 0)
+        \\            return null
+        \\        else
+        \\            return (hit.at(0) ?? #("", Thing.A))._1;
+        \\    }
+        \\}
+        \\pub fn main() -> void {
+        \\    val s = Thing.B(value: 5);
+        \\    val f = s.field("b");
+        \\    if (f) { v ->
+        \\        case v {
+        \\            A -> print("a");
+        \\            B(value: n) -> print(n);
+        \\        }
+        \\    } else {
+        \\        print("none");
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\5
+        \\
+    );
+}

@@ -1,6 +1,8 @@
 botopink-cell 2
 == tuple_label_from_variable
 out 1
+== tuple_element_of_array_at_default
+out 5
 == tuple_optional_element
 out #(1, null)
 out null

@@ -1,0 +1,39 @@
+//// Front 170 s7 P5-d — a tuple element read off `xs.at(i) ?? default`,
+//// where `xs` is an array of tuples whose second element names an enum with
+//// a payload variant (`libs/std/src/json.bp`'s `Json.field` reads its
+//// `Obj`'s `array<#(string, Json)>` the same way): the element's type is
+//// the checker's own declared one, on every backend.
+
+import {io.terminal.print} from "std";
+
+pub type Thing {
+    A,
+    B(value: i32),
+
+    pub fn members(self: Self) -> array<#(string, Thing)> {
+        return case self {
+            A -> [];
+            B(value: _) -> [#("a", Thing.A), #("b", self)];
+        };
+    }
+
+    pub fn field(self: Self, key: string) -> ?Thing {
+        val hit = self.members().filter({ m -> m._0 == key });
+        if (hit.length == 0)
+            return null
+        else
+            return (hit.at(0) ?? #("", Thing.A))._1;
+    }
+}
+
+pub fn main() -> void {
+    val s = Thing.B(value: 5);
+    val f = s.field("b");
+    if (f) {
+        v ->
+        case v {
+            A -> print("a");
+            B(value: n) -> print(n);
+        }
+    } else print("none");
+}
