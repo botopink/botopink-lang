@@ -2677,6 +2677,12 @@ fn emitWatPass(
     if (plan.mode == .gc) try em.gcKeyTypes(decls.items, owner.items, linked, module_name, &spliced);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
+    // Each declared type's own file and location, for the build note of a
+    // type `__print_tagged_raw` has no printer for (`gcTaggedArm`).
+    for (decls.items, 0..) |d, k| if (d == .type_) {
+        const from = if (k < owner.items.len) owner.items[k] else linked.len;
+        try em.type_decl_sites.put(em.alloc, d.type_.name, .{ .file = srcPathOf(linked, from, src_path), .loc = d.type_.loc });
+    };
     try em.collectExtensions(program);
 
     var has_main_0 = false;
@@ -3297,7 +3303,11 @@ fn emitWatPass(
     }
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
-    return .{ .text = try aw.toOwnedSlice(), .binary = binary, .std_funcs = std_funcs };
+    const text = try aw.toOwnedSlice();
+    // The module stays `.gc`: each declared type its tagged printer has no
+    // arm for is a build note on stderr only (`gcTaggedArm`).
+    if (em.mode == .gc) for (em.gc_degraded_notes.items) |n| std.debug.print("{s}\n", .{n});
+    return .{ .text = text, .binary = binary, .std_funcs = std_funcs };
 }
 
 /// The entry's unit stem (decision 1032): `<pkg>@<path>`, the module's atom
@@ -3816,6 +3826,13 @@ const Tail = enum { value, none, terminated };
 /// here and `funcNode` hands the list to the model.
 const LocalDecl = struct { name: []const u8, ty: Repr };
 
+/// Where a type declaration is written (`Emitter.type_decl_sites`): its
+/// module's package-relative source path (empty when unknown) and the loc.
+const TypeDeclSite = struct {
+    file: []const u8,
+    loc: ast.Loc,
+};
+
 /// A detached instruction sink. Lowering a nested body (a function body, an
 /// `if` arm, a `loop` body) redirects `Emitter.cur` into one of these and
 /// `seal`s it into a `wat_ast.Seq` with the stack effect the context expects —
@@ -4030,6 +4047,17 @@ const Emitter = struct {
     /// `__pr<position>` — and the functions written for them.
     gc_printers: std.StringArrayHashMapUnmanaged(void) = .empty,
     gc_pr_funcs: std.ArrayListUnmanaged(Item) = .empty,
+    /// The `gc_printers` keys whose printer failed to build inside
+    /// `__print_tagged_raw`'s walk (`gcTaggedArm`), each with its gap: the
+    /// symbol was never defined, so a later request for the key fails again
+    /// with that gap instead of answering it.
+    gc_printer_gaps: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The build notes of the declared types `__print_tagged_raw` has no
+    /// printer for (`gcTaggedArm`), printed once the module stays `.gc`.
+    gc_degraded_notes: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Where each type declaration of the lowered program is written: its
+    /// module's source path and its location (`gcTaggedArm`'s build note).
+    type_decl_sites: std.StringHashMapUnmanaged(TypeDeclSite) = .empty,
     /// Whether `__print_tagged_raw` (the dispatch over the declared types) is called.
     gc_tagged_used: bool = false,
     /// Front 164 s2 P2b — `$__print_ebox` (the printer of an all-unit enum's
@@ -4896,6 +4924,9 @@ const Emitter = struct {
         self.gc_printers.deinit(self.alloc);
         self.gc_pr_funcs.deinit(self.alloc);
         self.gc_mem_sites.deinit(self.alloc);
+        self.gc_printer_gaps.deinit(self.alloc);
+        self.gc_degraded_notes.deinit(self.alloc);
+        self.type_decl_sites.deinit(self.alloc);
         self.gc_helpers.deinit(self.alloc);
         self.gc_marshal_funcs.deinit(self.alloc);
         self.enums.deinit();
@@ -11380,7 +11411,10 @@ const Emitter = struct {
         if (sh.len == 0) return self.gcFail("an empty print shape");
         const gop = try self.gc_printers.getOrPut(self.alloc, sh);
         const sym = try std.fmt.allocPrint(self.arena(), "__pr{d}", .{gop.index});
-        if (gop.found_existing) return sym;
+        if (gop.found_existing) {
+            if (self.gc_printer_gaps.get(sh)) |why| return self.gcFail(why);
+            return sym;
+        }
         const key = try self.arena().dupe(u8, sh);
         gop.key_ptr.* = key;
         try self.gcGenShapePrinter(sym, key);
@@ -11593,7 +11627,10 @@ const Emitter = struct {
         const key = if (variant) |v| try std.fmt.allocPrint(self.arena(), "@V {s} {s}", .{ rec, v }) else try std.fmt.allocPrint(self.arena(), "@R {s}", .{rec});
         const gop = try self.gc_printers.getOrPut(self.alloc, key);
         const sym = try std.fmt.allocPrint(self.arena(), "__pr{d}", .{gop.index});
-        if (gop.found_existing) return sym;
+        if (gop.found_existing) {
+            if (self.gc_printer_gaps.get(key)) |why| return self.gcFail(why);
+            return sym;
+        }
         gop.key_ptr.* = key;
         const ar = self.arena();
         // The type of the value, the fields to print and the name shown.
@@ -11867,16 +11904,24 @@ const Emitter = struct {
             } else true;
             const tip: ?[]const u8 = if (printable) try std.fmt.allocPrint(ar, "__tip{d}", .{k}) else null;
             if (tip) |name| {
-                const sym = switch (t) {
-                    .record => |n| try self.gcDeclPrinter(n, null),
-                    .variant => |v| try self.gcDeclPrinter(v.en, v.name),
+                // The same walk over every declared type as
+                // `__print_tagged_raw`'s: a type with no GC printer degrades
+                // alone (`gcTaggedArm`), its `$__tip` a named panic.
+                const arm = switch (t) {
+                    .record => |n| try self.gcTaggedArm(n, null),
+                    .variant => |v| try self.gcTaggedArm(v.en, v.name),
                     else => unreachable,
                 };
                 var c: Capture = .{};
                 self.open(&c);
-                try self.emit(.{ .local_get = "v" });
-                try self.emit(.{ .ref_cast = vt });
-                try self.emit(.{ .call = sym });
+                switch (arm) {
+                    .call => |sym| {
+                        try self.emit(.{ .local_get = "v" });
+                        try self.emit(.{ .ref_cast = vt });
+                        try self.emit(.{ .call = sym });
+                    },
+                    .panic => |msg| try self.gcPrinterPanic(msg),
+                }
                 try self.gc_pr_funcs.append(self.alloc, .{ .func = try self.builder().func(.{ .name = name, .params = &.{wat.Builder.param("v", .anyref)}, .body = self.seal(&c, .none) }) });
             }
             const tie = try std.fmt.allocPrint(ar, "__tie{d}", .{k});
@@ -11964,6 +12009,82 @@ const Emitter = struct {
         };
     }
 
+    /// One arm of `__print_tagged_raw`: the printer called, or the message of
+    /// the panic a type with no GC printer raises.
+    const TaggedArm = union(enum) {
+        call: []const u8,
+        panic: []const u8,
+    };
+
+    /// The arm of `__print_tagged_raw` (and the `$__tip` printer of
+    /// `gcTypeInfos`) for record `rec` (or variant `variant` of enum `rec`).
+    /// Both walks cover every type the module declared, printed dynamically
+    /// or not, so a type whose printer has no GC form is
+    /// degraded alone (front 229): its arm is a named panic and a build note
+    /// names it, the module staying `.gc`. A static `print` of such a value
+    /// (`gcPrintArg`) still sends the module to `.linear`.
+    ///
+    /// A failed `gcDeclPrinter` left state behind, put back here: `self.cur`
+    /// still points into its unsealed capture, `gc_gap` (with `gc_gap_site`
+    /// and `gc_gap_fn`, decision 1097's own attribution) names its gap, and
+    /// each `gc_printers` key it added without writing the function is
+    /// poisoned in `gc_printer_gaps`, so a later request fails again rather
+    /// than call an undefined symbol.
+    fn gcTaggedArm(self: *Emitter, rec: []const u8, variant: ?[]const u8) anyerror!TaggedArm {
+        const saved_cur = self.cur;
+        const saved_gap = self.gc_gap;
+        const saved_gap_site = self.gc_gap_site;
+        const saved_gap_fn = self.gc_gap_fn;
+        const keys_before = self.gc_printers.count();
+        const funcs_before = self.gc_pr_funcs.items.len;
+        self.gc_gap = null;
+        if (self.gcDeclPrinter(rec, variant)) |sym| {
+            // A soft gap met on the way stays the module's (as before).
+            if (self.gc_gap == null) {
+                self.gc_gap = saved_gap;
+                self.gc_gap_site = saved_gap_site;
+                self.gc_gap_fn = saved_gap_fn;
+            }
+            return .{ .call = sym };
+        } else |err| if (err != error.GcFallback) return err;
+        const why = self.gc_gap orelse "a printer with no GC form";
+        self.cur = saved_cur;
+        self.gc_gap = saved_gap;
+        self.gc_gap_site = saved_gap_site;
+        self.gc_gap_fn = saved_gap_fn;
+        const ar = self.arena();
+        var written: std.StringHashMapUnmanaged(void) = .empty;
+        defer written.deinit(self.alloc);
+        for (self.gc_pr_funcs.items[funcs_before..]) |it| if (it == .func) try written.put(self.alloc, it.func.name, {});
+        const keys = self.gc_printers.keys();
+        for (keys_before..keys.len) |k| {
+            const name = try std.fmt.allocPrint(ar, "__pr{d}", .{k});
+            if (!written.contains(name)) try self.gc_printer_gaps.put(self.alloc, keys[k], why);
+        }
+        // The type's name as a value of it prints, and where it is declared.
+        const en_shown = self.printed_names.get(rec) orelse displayTypeName(rec);
+        const shown = if (variant) |vn| try std.fmt.allocPrint(ar, "{s}.{s}", .{ en_shown, vn }) else en_shown;
+        const site: TypeDeclSite = self.type_decl_sites.get(rec) orelse .{ .file = "", .loc = .{ .line = 0, .col = 0 } };
+        const file = if (site.file.len > 0) site.file else if (self.src_path.len > 0) self.src_path else self.module_name;
+        const build_note = try std.fmt.allocPrint(ar, "wasm: {s}: {s} has no GC printer ({s}) at {s}:{d}:{d} of its declaration; printing one panics", .{ self.module_name, shown, why, file, site.loc.line, site.loc.col });
+        // `gcTypeInfos` and `gcTaggedPrinter` both walk the type: one note.
+        for (self.gc_degraded_notes.items) |seen| {
+            if (std.mem.eql(u8, seen, build_note)) break;
+        } else try self.gc_degraded_notes.append(self.alloc, build_note);
+        return .{ .panic = try std.fmt.allocPrint(ar, "wasm cannot print a {s} value: {s}", .{ shown, why }) };
+    }
+
+    /// The fall-through of a printer a type has no GC form for (`gcTaggedArm`):
+    /// `panic: <msg>` written, then a trap — `@panic(msg)`'s lowering.
+    fn gcPrinterPanic(self: *Emitter, msg: []const u8) !void {
+        try self.emitStrLit(msg);
+        if (self.exceptions) {
+            try self.emit(one);
+            try self.emit(self.builder().helper(.panic_raise));
+        } else try self.emit(self.builder().helper(.panic_fail));
+        try self.emit(.@"unreachable");
+    }
+
     fn gcTaggedPrinter(self: *Emitter) anyerror!void {
         var c: Capture = .{};
         self.open(&c);
@@ -11974,14 +12095,23 @@ const Emitter = struct {
             const vt = ValType.def(@intCast(i + 1));
             // Decision 1031 (2) — a boxed `bigint` prints its digits.
             const big = t == .box and t.box == .big;
-            const sym = switch (t) {
-                .record => |n| try self.gcDeclPrinter(n, null),
-                .variant => |v| try self.gcDeclPrinter(v.en, v.name),
-                .box => |b| if (b == .big) "" else continue,
+            const arm: TaggedArm = switch (t) {
+                .record => |n| try self.gcTaggedArm(n, null),
+                .variant => |v| try self.gcTaggedArm(v.en, v.name),
+                .box => |b| if (b == .big) .{ .call = "" } else continue,
                 else => continue,
             };
             var hit: Capture = .{};
             self.open(&hit);
+            if (arm == .panic) {
+                try self.gcPrinterPanic(arm.panic);
+                const panic_seq = self.seal(&hit, .terminated);
+                try self.emit(.{ .local_get = "v" });
+                try self.emit(.{ .ref_test = vt });
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = panic_seq } } });
+                continue;
+            }
+            const sym = arm.call;
             try self.emit(.{ .local_get = "v" });
             try self.emit(.{ .ref_cast = vt });
             if (big) {

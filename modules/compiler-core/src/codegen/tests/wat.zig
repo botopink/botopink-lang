@@ -2341,6 +2341,67 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
     , "cannot call the generic `Box.display` here", 11, 11);
 }
 
+// Front 229 — `__print_tagged_raw` walks every declared type, printed
+// dynamically or not. A type whose printer has no GC form (here a generic
+// record's own `display`, which the GC printer does not build) degrades alone:
+// the module stays `.gc`, another type printed through an `unknown` prints,
+// and the build note names the gapped type on stderr. It sent the whole
+// module to `.linear`.
+const tagged_printer_degraded_src =
+    \\type Box<T>(value: T) implement Display {
+    \\    pub fn display(self: Self<T>) -> string {
+    \\        return "Box";
+    \\    }
+    \\}
+    \\type Point(x: i32, y: i32)
+    \\fn show(v: unknown) -> void {
+    \\    print(v);
+    \\}
+    \\pub fn main() -> void {
+    \\    val b = Box(value: 7);
+    \\    print(b.value);
+    \\    show(Point(x: 1, y: 2));
+    \\    show(3);
+    \\    {tail}
+    \\}
+    \\
+    \\import {io.terminal.print} from "std";
+;
+
+test "wat: gc ---- a declared type with no GC printer degrades alone in the tagged printer" {
+    const src = try std.mem.replaceOwned(u8, std.testing.allocator, tagged_printer_degraded_src, "{tail}", "");
+    defer std.testing.allocator.free(src);
+    try h.assertWasmGcRunLog(std.testing.allocator, src,
+        \\7
+        \\Point(x: 1, y: 2)
+        \\3
+        \\
+    );
+}
+
+// ...and printing the gapped type's value through an `unknown` is a named
+// panic, not a bare trap.
+test "wat: gc ---- printing a value of a type with no GC printer panics by name" {
+    const allocator = std.testing.allocator;
+    const src = try std.mem.replaceOwned(u8, allocator, tagged_printer_degraded_src, "{tail}", "show(b);");
+    defer allocator.free(src);
+    var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(type $str (array (mut i8)))") != null);
+    const got = o.result.run_output orelse "";
+    const want = "panic: wasm cannot print a Box value: a generic record's display";
+    if (std.mem.indexOf(u8, got, "7\nPoint(x: 1, y: 2)\n3\n") == null or std.mem.indexOf(u8, got, want) == null) {
+        std.debug.print("\n=== RUN LOG ===\n{s}\n=== expected it to contain ===\n{s}\n", .{ got, want });
+        return error.RunLogMismatch;
+    }
+}
+
 // Decision 238 — what a `#[@External.Wasm("…")]` binding names: `op:` one
 // numeric instruction over the declared parameters, `fn:` a private bodied fn
 // of the same module with the same signature, `wasi:` an adapter of
