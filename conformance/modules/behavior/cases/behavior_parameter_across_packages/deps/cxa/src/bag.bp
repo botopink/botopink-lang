@@ -1,0 +1,11 @@
+//// The behavior, and a type whose method is typed by it.
+
+pub behavior Styleable {
+    fn tag(self: Self) -> string;
+}
+
+pub type Bag(tag: string) {
+    pub fn add(self: Self, item: Styleable) -> Bag {
+        return Bag(tag: "added");
+    }
+}

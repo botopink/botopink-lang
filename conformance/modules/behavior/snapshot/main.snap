@@ -95,3 +95,5 @@ out m:a
 out m:b
 out /d/c
 out m:d
+== behavior_parameter_across_packages
+out added

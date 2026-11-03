@@ -59,5 +59,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("behavior_method_result_chained");
     runCase("behavior_named_like_prelude_value");
     runCase("behavior_value_from_implementer");
+    runCase("behavior_parameter_across_packages");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

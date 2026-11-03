@@ -1,0 +1,21 @@
+//// 144 B-221 — a foreign method's behavior-typed parameter: `Bag` is
+//// imported from `cxa`, but `Styleable`, the behavior `Bag.add`'s own
+//// parameter is typed by, never is — reached only through `Bag`'s method
+//// signature. `Styleable` still resolves against `cxa`'s own declaration
+//// (where `add` is written), not against this module's names (which name
+//// no `Styleable` at all); `Item`, implementing it here, satisfies the
+//// parameter across the package boundary. On all four targets.
+
+import {bag.Bag} from "cxa";
+import {io.terminal.print} from "std";
+
+type Item(name: string) implement Styleable {
+    fn tag(self: Self) -> string {
+        return self.name;
+    }
+}
+
+pub fn main() -> void {
+    val bag = Bag(tag: "").add(Item(name: "a"));
+    print(bag.tag);
+}

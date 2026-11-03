@@ -2358,10 +2358,21 @@ where `Outline` and its `Point` live in two other modules of the package). A std
 imports (`import {collections.Dict} from "std"`) is recorded there too, so `RouteMatch(params:
 Dict<…>)` imported from another package gives its importer `Dict`'s methods — a method chain on the
 field (`found.params.at(k).unwrapOr("")`) used to lower as a bare `unwrapOr/2` on erlang. A name
-found in neither is left to the ordinary unknown-type diagnostic. Cells:
+found in neither is left to the ordinary unknown-type diagnostic. A name the closure walk finds is a
+`behavior`, not a `type_`/`typeAlias`, when the method signature it came from is typed by one `Bag.add(item:
+Styleable)` reached only through `Bag`, `Styleable` never named: `registerTypesOnly` registers it the
+same way an explicit `import {Styleable}` does, `Env.importedBehaviorDecls` (144 B-221; before, this
+branch fell through `dep != .type_` and left `Styleable` unregistered, so `Bag.add`'s own annotation
+reread `unknown type 'Styleable'` against the IMPORTING module's names, cross-package only — a single
+package infers every module's declarations in one pass, where the behavior is already in scope).
+`appendBehaviorMarksOf` (decision 831's marks, read by `is` and `type_token.zig`) falls back the same
+way `comptime.appendBehaviorMarks` resolves an unnamed `extends` parent — the one module of the
+program declaring a behavior of that name — since this path records no entry in
+`Env.importedBehaviorMarks`, which only an explicit import writes. Cells:
 `conformance/modules/import/run/src/cases/import_type_closure`,
 `conformance/modules/import/cases/import_type_closure_across_modules`,
-`conformance/modules/narrowed/cases/narrowed_optional_std_field_across_packages`. An imported FUNCTION brings the
+`conformance/modules/narrowed/cases/narrowed_optional_std_field_across_packages`,
+`conformance/modules/behavior/cases/behavior_parameter_across_packages`. An imported FUNCTION brings the
 types its signature names the same way (`registerImportedSignatureClosure`, from the module that
 exports it): `import {matchPath}` alone gives `?RouteMatch`'s fields and methods to the value it
 returns, through a narrowing or an optional binder. A package handle's template (`import shelf from "shelf"`, `shelf "x"`)

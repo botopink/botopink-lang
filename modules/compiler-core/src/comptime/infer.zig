@@ -10575,6 +10575,22 @@ fn registerTypesOnly(
             try registerAliasClosure(env, moduleDecls, dep.typeAlias, depth + 1);
             continue;
         }
+        if (dep == .behavior) {
+            // 144 B-221 — a behavior named only in a foreign method's own
+            // signature (never imported by name here) is registered the
+            // same way an explicit `import {Styleable}` is
+            // (`comptime.resolveImports`, decision 831 (2)):
+            // `Env.importedBehaviorDecls`, which `resolveTypeName` reads
+            // ahead of the pending-name fallback. Without this, `item:
+            // Styleable` in `Bag.add`'s OWN signature resolved the name
+            // against the IMPORTING module's names instead of `Bag`'s own
+            // module's — `unknown type 'Styleable'`, at `Bag.add`'s
+            // annotation, cross-package only (a single package infers every
+            // module's own declarations in one pass, where the behavior is
+            // always in scope already).
+            if (!env.importedBehaviorDecls.contains(n)) try env.importedBehaviorDecls.put(env.arena, n, dep.behavior);
+            continue;
+        }
         if (dep != .type_) continue;
         try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
         if (env.lookupTypeDef(n) != null) continue;
@@ -16413,7 +16429,25 @@ fn appendBehaviorMarksOf(env: *const Env, name: []const u8, out: *std.ArrayListU
     const own: ?ast.BehaviorDecl = for (env.moduleDecls) |d| {
         if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) break d.behavior;
     } else null;
-    const decl, const path = if (own) |b| .{ b, env.modulePath } else if (env.ambientBehaviorDecls.get(name)) |b| .{ b, ast.ambient_behavior_module } else if (env.ruleReadBehaviorDecls.get(name)) |b| (if (std.mem.eql(u8, b.name, "Composable")) .{ b, ast.ambient_behavior_module } else return) else return;
+    const decl, const path = if (own) |b| .{ b, env.modulePath } else if (env.ambientBehaviorDecls.get(name)) |b| .{ b, ast.ambient_behavior_module } else if (env.ruleReadBehaviorDecls.get(name)) |b| (if (std.mem.eql(u8, b.name, "Composable")) .{ b, ast.ambient_behavior_module } else return) else if (env.importedBehaviorDecls.get(name)) |b| blk: {
+        // 144 B-221 — a behavior reached only through a foreign method's
+        // signature (`infer.registerTypesOnly`) carries no precomputed
+        // entry in `Env.importedBehaviorMarks` (that map is an explicit
+        // `import {Styleable}`'s own, `comptime.resolveImports`): find its
+        // one declaring module the same way `comptime.appendBehaviorMarks`
+        // resolves an `extends` parent nothing here named — the one module
+        // of the program declaring a behavior of this name.
+        const registry = env.typeDeclRegistry orelse return;
+        var owner: ?[]const u8 = null;
+        var count: usize = 0;
+        var it = registry.iterator();
+        while (it.next()) |e| if (e.value_ptr.get(name)) |d| if (d == .behavior) {
+            count += 1;
+            owner = e.key_ptr.*;
+        };
+        if (count != 1) return;
+        break :blk .{ b, owner.? };
+    } else return;
     const id = try ast.behaviorIdentity(env.arena, path, decl.name);
     for (out.items) |seen| if (std.mem.eql(u8, seen, id)) return;
     try out.append(env.arena, id);
