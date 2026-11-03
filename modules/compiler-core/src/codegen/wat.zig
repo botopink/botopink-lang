@@ -14383,6 +14383,25 @@ const Emitter = struct {
                     const float_elem = i == 0 and !is_range and self.isArrayExpr(lp.iter.*) and self.elemKindOf(lp.iter.*) == .f64;
                     try self.declareLocal(p, if (float_elem) .f64 else .i32);
                 }
+                // Decision 1105, front 170 s7 P5-d — the element's own
+                // declared type, the same `elemTypeRefOf` the real loop
+                // lowering reads (`gcCollectionLoop`'s own `noteTypedBinder`):
+                // without it, a nested `val` over a field of the element
+                // (`e._3`, the test harness's own shape, `comptime/load.zig`
+                // `testRunSrc`) awaiting a generic call could not resolve its
+                // `T` structurally during this early declare pass, and
+                // `gcFail`'s side effect (`self.gc_gap`, first-gap-wins) sent
+                // the whole module to `.linear` even though the real pass
+                // over the loop binds the very same type. Skipped when the
+                // element's own type still names the CURRENT body's own type
+                // parameter (`async.runAll`'s own `for (tasks) { f -> … }`,
+                // unspecialised): there it is `gcCollectionLoop`'s erased
+                // `arr_any` element, not this concrete type, and noting it
+                // here changed a generic body already lowered correctly
+                // (`gc_spawn_all_over_thunks_answering_scalars_i32_and_f64`).
+                if (lp.params.len > 0) if (self.elemTypeRefOf(lp.iter.*)) |et|
+                    if (!typeRefMentionsParam(et, self.fn_tparams) and !typeRefMentionsParam(et, self.owner_tparams))
+                        try self.noteTypedBinder(lp.params[0], et);
                 try self.emitLocalDecls(lp.body);
             },
             .collection => |col| switch (col.kind) {
@@ -23392,6 +23411,18 @@ const Emitter = struct {
             if (self.bindAwaitedGeneric(e, inner)) |b| {
                 inner = b;
                 generic_bound = true;
+            } else if (e == .call and e.call.kind == .call) {
+                // `bindAwaitedGeneric` only binds `T` from a plainly-named
+                // parameter or an array-of-thunks shape (`runAll`'s own
+                // `tasks`); a single thunk parameter (`attemptTask<T>(f: fn()
+                // -> Async<T>)` — a host-declared generic exactly as much as
+                // a bodied one) is `genericRetByFnArg`'s own shape, the same
+                // substitution an ordinary (non-task) generic call's return
+                // already reuses elsewhere in this file — applied here to
+                // the awaited call's own declared return, never a new path.
+                if (self.genericRetByFnArg(e.call.kind.call) catch null) |rt| if (taskValueTypeRef(rt)) |v| {
+                    inner = v;
+                };
             }
         }
         if (!self.typeConcrete(inner)) {

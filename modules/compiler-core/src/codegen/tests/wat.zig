@@ -4527,6 +4527,54 @@ test "wat: gc ---- spawn_all over thunks answering scalars, i32 and f64" {
     );
 }
 
+// Decision 1105, front 170 s7 P5-d — the single largest non-cascading
+// `.linear` fallback a wasm compile of every conformance module and every
+// library hit at least once, every package's own `` `test`() `` once a test
+// is `async` (`comptime/load.zig` `testRunSrc`'s own `run_one`): `val ran =
+// await failure.attemptTask(e._3);` inside a `for` over the registered
+// tests, `e._3` a tuple field typed `fn() -> Async<T>`. Two gaps, both met
+// here:
+//   - `bindAwaitedGeneric` only binds a generic call's `T` from a plainly-
+//     named parameter or an array-of-thunks shape (`runAll`'s own `tasks`,
+//     `arrayThunkAsyncParam`) — never a single thunk parameter; that shape is
+//     `genericRetByFnArg`'s (the same substitution an ordinary, non-task
+//     generic call's return already takes elsewhere in this file,
+//     `fnArgReturnTyped`'s `want == .function` branch), reused here for the
+//     awaited call's own return. `attemptTask<T>(f: fn() -> Async<T>)`, a
+//     host-declared generic, is exactly as unreadable to `bindAwaitedGeneric`
+//     as a bodied one — `genericRetByFnArg` already falls back to
+//     `host_generic_decls` for it.
+//   - even with that, the element's own declared type (`e`'s, a `for`
+//     binder) was never read during `declareNestedLocals`'s early pre-pass
+//     (unlike the real loop lowering, `gcCollectionLoop`'s own
+//     `noteTypedBinder`): `typeRefOf(e._3)` found nothing, `gcFail`'s side
+//     effect (`self.gc_gap`, first-gap-wins) sent the WHOLE module to
+//     `.linear` even though the real pass over the loop binds the very same
+//     type. `declareNestedLocals`'s `.loop` case now reads it too
+//     (`elemTypeRefOf` + `noteTypedBinder`, mirroring `gcCollectionLoop`).
+test "wat: gc ---- a for-loop element's field awaited through a generic host call binds T" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\async fn doubled(n: i32) -> Async<i32> {
+        \\    return n * 2;
+        \\}
+        \\fn mainEntries() -> #(string, fn() -> Async<i32>)[] {
+        \\    return [#("a", { -> doubled(5) }), #("b", { -> doubled(10) })];
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    for (mainEntries()) { e ->
+        \\        val ran = await attemptTask(e._1);
+        \\        print(ran.unwrapOr(-1).toString());
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print, failure.attemptTask} from "std";
+    ,
+        \\10
+        \\20
+        \\
+    );
+}
+
 // Front 229 s4 — decision 985's wasm half: a lambda argument of a method's
 // specialisation is written against the copy's substituted parameter types,
 // the method's own type parameter included (`fold<A>`'s `A` bound to `f64`
