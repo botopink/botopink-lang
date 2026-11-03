@@ -8336,6 +8336,57 @@ const Emitter = struct {
         if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
     }
 
+    /// `__unbox_arr_<cls>(xs)`: an `arr_any` of boxed scalars (front 229 s3 —
+    /// a generic function's own erased slot, `spawnAll`'s runtime answer
+    /// read through `runAll`) copied into a concrete `arr_i32` / `arr_f64`,
+    /// each element through `gcUnbox`.
+    fn gcUnboxArr(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
+        const name: []const u8 = switch (cls) {
+            .i32 => "__unbox_arr_i32",
+            .f64 => "__unbox_arr_f64",
+            .any => return self.gcFail("an array of no known scalar class to unbox"),
+        };
+        if (!try self.gcHelperOnce(name)) return name;
+        const er: Repr = if (cls == .f64) .f64 else .i32;
+        const src_ti = self.gcTyIndex(.{ .arr = .any });
+        const src_at = ValType.def(src_ti);
+        const dst_ti = self.gcTyIndex(.{ .arr = cls });
+        const dst_at = ValType.def(dst_ti);
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(lget("xs"));
+        try self.emit(.array_len);
+        try self.emit(lset("n"));
+        try self.emit(lget("n"));
+        try self.emit(.{ .array_new_default = dst_ti });
+        try self.emit(lset("r"));
+        var body: Capture = .{};
+        self.open(&body);
+        try self.emit(lget("i"));
+        try self.emit(lget("n"));
+        try self.emit(opOf(.i32, "ge_u"));
+        try self.emit(.{ .br_if = "brk" });
+        try self.emit(lget("r"));
+        try self.emit(lget("i"));
+        try self.emit(lget("xs"));
+        try self.emit(lget("i"));
+        try self.emit(.{ .array_get = .{ .ty = src_ti } });
+        try self.gcUnbox(er);
+        try self.emit(.{ .array_set = dst_ti });
+        try self.emit(lget("i"));
+        try self.emit(one);
+        try self.emit(opOf(.i32, "add"));
+        try self.emit(lset("i"));
+        try self.emit(.{ .br = "cont" });
+        const loop_seq = self.seal(&body, .terminated);
+        try self.gcLoop(loop_seq);
+        try self.emit(lget("r"));
+        try self.gcFinishFn(name, &.{wat.Builder.param("xs", src_at)}, dst_at, &.{
+            .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "r", .ty = dst_at },
+        }, &c);
+        return name;
+    }
+
     fn gcElemClassOf(r: Repr) Repr.Elem {
         return switch (r) {
             .f64 => .f64,
@@ -21951,6 +22002,15 @@ const Emitter = struct {
     /// `X`, `(XY…)` a tuple. Null when `e` is not known to be an array or a
     /// tuple.
     fn printShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
+        // Front 229 s3 — same early check as `isArrayExpr`'s and
+        // `elemKindOf`'s: before `genericResultOf` (below) unwraps the
+        // `await` to its operand, which for a call behind a hidden
+        // temporary is an identifier this function reads no shape for.
+        if (self.mode == .gc) if (self.gcPeekAwaitedArr(e)) |r| return switch (r.ref.arr) {
+            .i32 => "[i",
+            .f64 => "[f",
+            .any => null,
+        };
         // 144 B-142 — a generator's `toArray()` is the array of its items.
         if (self.genMethodOf(e)) |m| if (m == .to_array) {
             const yitem = (try self.genItemOf(e.call.kind.call.receiver.?.*)) orelse return null;
@@ -22345,6 +22405,12 @@ const Emitter = struct {
     /// Best-effort element shape of an array-valued expression. `i32` covers
     /// integers, bools and pointers alike.
     fn elemKindOf(self: *Emitter, e: ast.Expr) ElemKind {
+        // Front 229 s3 — same early check as `isArrayExpr`'s: before
+        // `genericResultOf` unwraps the `await` past what `gcAwaitedRead`
+        // alone resolves.
+        if (self.mode == .gc) if (self.gcPeekAwaitedArr(e)) |r| {
+            if (r.ref.arr == .f64) return .f64;
+        };
         if (self.genericResultOf(e)) |a| return self.elemKindOf(a);
         // `o ?? d` over an optional array: the elements are the optional's
         // (`(m?.list ?? []).join(",")`); an empty default says nothing.
@@ -23052,7 +23118,7 @@ const Emitter = struct {
         load: Instr,
         gc: GcSettled,
     };
-    const GcSettled = struct { repr: Repr, void_: bool = false, raw: bool = false };
+    const GcSettled = struct { repr: Repr, void_: bool = false, raw: bool = false, boxed_arr: bool = false };
 
     /// The settled task on the stack read as `read` says.
     fn emitSettledRead(self: *Emitter, read: Settled) anyerror!void {
@@ -23065,7 +23131,21 @@ const Emitter = struct {
                     return;
                 }
                 try self.emitC(.{ .struct_get = .{ .ty = self.gcTyIndex(.task), .field = 2 } }, "the settled value");
-                if (!g.raw) try self.gcUnbox(g.repr);
+                if (g.raw) return;
+                if (g.boxed_arr) {
+                    // Front 229 s3 — `spawnAll`'s own runtime answers one
+                    // `arr_any` of boxed elements whatever its tasks settle
+                    // with (`__task_spawn_all`); through `runAll`'s generic
+                    // body (type-erased) that is what reaches here even once
+                    // `bindAwaitedGeneric` resolves `T` concretely — the
+                    // value itself is still the erased `arr_any`, so it
+                    // unboxes element-wise into the concrete array instead
+                    // of `gcUnbox`'s plain `ref_cast` (which would trap).
+                    try self.emit(.{ .ref_cast = ValType.def(self.gcTyIndex(.{ .arr = .any })) });
+                    try self.emit(.{ .call = try self.gcUnboxArr(g.repr.ref.arr) });
+                    return;
+                }
+                try self.gcUnbox(g.repr);
             },
         }
     }
@@ -23080,11 +23160,15 @@ const Emitter = struct {
         if (plainIdentName(e)) |n| if (self.gc_block_locals.get(self.resolveName(n))) |r| return .{ .repr = r };
         const t: ast.TypeRef = self.typeRefOf(e) orelse return self.gcFail("an awaited task of no known type");
         var inner = taskValueTypeRef(t) orelse return self.gcFail("an awaited task of no known type");
+        var generic_bound = false;
         if (!self.typeConcrete(inner)) {
             // A generic task's `T`: bound by the call's arguments, or read off
             // the expression the shape readers see the task's value as
             // (`delay`'s value argument, `race`'s first task, …).
-            if (self.bindAwaitedGeneric(e, inner)) |b| inner = b;
+            if (self.bindAwaitedGeneric(e, inner)) |b| {
+                inner = b;
+                generic_bound = true;
+            }
         }
         if (!self.typeConcrete(inner)) {
             if (e == .call and e.call.kind == .call) if (self.genericResultArg(e.call.kind.call)) |v| {
@@ -23096,7 +23180,34 @@ const Emitter = struct {
             return self.gcFail("an awaited task of a type parameter");
         }
         if (inner == .named and std.mem.eql(u8, inner.named, "void")) return .{ .repr = .i32, .void_ = true };
-        return .{ .repr = self.reprOf(inner) };
+        const r = self.reprOf(inner);
+        // Front 229 s3 — `T` only resolved through a generic call's own
+        // substitution (never a type the task's own declared signature
+        // already named concretely): when it is an array of scalars, the
+        // task's value is still the generic body's erased `arr_any`.
+        if (generic_bound and r.isArrRef() and r.ref.arr != .any) return .{ .repr = r, .boxed_arr = true };
+        return .{ .repr = r };
+    }
+
+    /// `gcAwaitedRead` for a best-effort caller (`isArrayExpr`, `elemKindOf`)
+    /// that only wants to know when an awaited expression is an array:
+    /// `gcFail` records `self.gc_gap` as a side effect even when the caller
+    /// means to ignore the error, which would poison the module over a
+    /// speculative peek never meant to lower anything — saved and restored
+    /// around the read either way.
+    fn gcPeekAwaitedArr(self: *Emitter, e: ast.Expr) ?Repr {
+        if (!(e == .jump and e.jump.kind == .await_)) return null;
+        const saved_gap = self.gc_gap;
+        const saved_site = self.gc_gap_site;
+        const saved_fn = self.gc_gap_fn;
+        defer {
+            self.gc_gap = saved_gap;
+            self.gc_gap_site = saved_site;
+            self.gc_gap_fn = saved_fn;
+        }
+        const op = innerClosureBlock(e.jump.kind.await_.*) orelse e.jump.kind.await_.*;
+        const g = self.gcAwaitedRead(op) catch return null;
+        return if (g.repr.isArrRef()) g.repr else null;
     }
 
     /// The repr an `async { }` block settles with, as its lifted body
@@ -25919,10 +26030,42 @@ const Emitter = struct {
         return try substTypeParams(ast.TypeRef, ar, rt, subs.items);
     }
 
+    /// `array<fn() -> Async<T>>` — `spawnAll`'s own `tasks` parameter shape —
+    /// the generic param name it carries, nested two levels in: the array's
+    /// element, that element's return, `Async`'s one argument.
+    fn arrayThunkAsyncParam(declared: ast.TypeRef) ?[]const u8 {
+        const el = arrayElemRef(declared) orelse return null;
+        if (el != .function) return null;
+        const ret = el.function.returnType.*;
+        if (ret != .generic or !std.mem.eql(u8, ret.generic.name, "Async") or ret.generic.args.len != 1) return null;
+        const inner = ret.generic.args[0];
+        return if (inner == .named) inner.named else null;
+    }
+
+    /// The task value type an array literal of thunks (`[{ -> f() }, …]`, the
+    /// argument `runAll`'s `tasks` parameter takes) answers — its first
+    /// element's tail call's task value, the same thunk-tail read
+    /// `refuseWideTaskValues` uses to find what a thunk answers.
+    fn arrayLitThunkTaskValue(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
+        if (arg != .collection or arg.collection.kind != .arrayLit) return null;
+        const elems = arg.collection.kind.arrayLit.elems;
+        if (elems.len == 0) return null;
+        const el = elems[0];
+        const tail: ast.Expr = if (el == .function and el.function.kind.syntax == .lambda and el.function.kind.body.len > 0)
+            el.function.kind.body[ast.lastRealIndex(el.function.kind.body)].expr
+        else
+            el;
+        const t = self.typeRefOf(tail) orelse return null;
+        return taskValueTypeRef(t) orelse t;
+    }
+
     /// `await f(args)` of a generic `f` whose declared answer `v` names a
     /// type parameter inside a generic type (`@Result<T, string>`): `v` with
-    /// each parameter a plain-`T` argument binds written in. Null when the
-    /// call is no generic call, or nothing binds.
+    /// each parameter a plain-`T` argument binds written in, or — front 229
+    /// s3 — a parameter declared `array<fn() -> Async<T>>` (`runAll`'s own
+    /// `tasks`) binds `T` from the argument's own array-of-thunks shape, the
+    /// same walk `gcSpawnAllAnswers` applies to the callee's own tasks. Null
+    /// when the call is no generic call, or nothing binds.
     fn bindAwaitedGeneric(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
         const cc = switch (call) {
             .call => |c| switch (c.kind) {
@@ -25931,7 +26074,11 @@ const Emitter = struct {
             },
             else => return null,
         };
-        if (cc.is_builtin or cc.calleeExpr != null or cc.receiver != null) return null;
+        if (cc.is_builtin or cc.calleeExpr != null) return null;
+        // A call through a namespace item (`async.runAll(…)` after `import
+        // {async} from "std"`) reaches here with the namespace as its
+        // receiver (`genericResultArg`'s own rule, just above).
+        if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
         const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
         const f = if (self.generic_fns.get(callee)) |g| g.decl else return null;
         const ar = self.reg_arena.allocator();
@@ -25941,10 +26088,16 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
             const arg = cc.args[pi].value.*;
-            const to: ast.TypeRef = if (self.concreteTypeOf(arg)) |c| .{ .named = c } else (self.typeRefOf(arg) orelse continue);
-            subs.append(ar, .{ .name = p.typeRef.named, .to = to }) catch return null;
+            if (p.typeRef == .named and isGenericParamName(p.typeRef.named, f.genericParams, &.{})) {
+                const to: ast.TypeRef = if (self.concreteTypeOf(arg)) |c| .{ .named = c } else (self.typeRefOf(arg) orelse continue);
+                subs.append(ar, .{ .name = p.typeRef.named, .to = to }) catch return null;
+                continue;
+            }
+            const pname = arrayThunkAsyncParam(p.typeRef) orelse continue;
+            if (!isGenericParamName(pname, f.genericParams, &.{})) continue;
+            const tv = self.arrayLitThunkTaskValue(arg) orelse continue;
+            subs.append(ar, .{ .name = pname, .to = tv }) catch return null;
         }
         if (subs.items.len == 0) return null;
         return substTypeParams(ast.TypeRef, ar, v, subs.items) catch null;
@@ -31066,6 +31219,12 @@ const Emitter = struct {
     /// one. Deliberately narrow — walking the layout of something else would
     /// read its first word as an element count and trap.
     fn isArrayExpr(self: *Emitter, e: ast.Expr) bool {
+        // Front 229 s3 — `await spawnAll(…)` through `runAll` answers an
+        // array whose element class only `gcAwaitedRead`'s generic
+        // substitution knows; checked before `genericResultOf` unwraps the
+        // `await` to its operand (decision 392), which for a call behind a
+        // hidden temporary is an identifier `arr_locals` never named.
+        if (self.mode == .gc) if (self.gcPeekAwaitedArr(e)) |_| return true;
         // Decision 105 (144 B-128) — a generator is a handle in a GC module.
         if (self.isGenExpr(e)) return false;
         if (self.genericResultOf(e)) |a| return self.isArrayExpr(a);

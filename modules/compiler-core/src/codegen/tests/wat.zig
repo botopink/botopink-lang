@@ -4384,6 +4384,47 @@ test "wat: gc ---- a try … catch region: multiple tries, a defer, a binder and
     );
 }
 
+// Front 229 s3 — `spawn_all` over thunks answering scalars (`gcSpawnAllAnswers`'s
+// own scalar refusal lifted) — through `async.runAll`'s generic wrapper, the
+// only way in (`spawnAll` itself is not `pub`). `bindAwaitedGeneric` resolves
+// a generic parameter nested inside a declared parameter's type
+// (`array<fn() -> Async<T>>`, found scoping this box — `arrayThunkAsyncParam`,
+// `arrayLitThunkTaskValue`); the task's own runtime answer stays the generic
+// body's erased `arr_any` even once `T` is known, unboxed element-wise into
+// the concrete array (`gcUnboxArr`, `GcSettled.boxed_arr`). The same erasure
+// also reaches `isArrayExpr` / `elemKindOf` / `printShapeOf`'s own shape
+// reads (`gcPeekAwaitedArr`, saving and restoring `gc_gap` around the
+// speculative read — `gcFail`'s side effect would otherwise poison the
+// module even on a caught, ignored failure elsewhere in the same scan).
+test "wat: gc ---- spawn_all over thunks answering scalars, i32 and f64" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\async fn doubled(n: i32) -> Async<i32> {
+        \\    return n * 2;
+        \\}
+        \\async fn doubledF(n: f64) -> Async<f64> {
+        \\    return n * 2.0;
+        \\}
+        \\async fn run() -> Async<void> {
+        \\    val ints = await async.runAll([
+        \\        { -> doubled(1) },
+        \\        { -> doubled(2) },
+        \\        { -> doubled(3) },
+        \\    ]);
+        \\    print(ints);
+        \\    val floats = await async.runAll([
+        \\        { -> doubledF(1.5) },
+        \\        { -> doubledF(2.5) },
+        \\    ]);
+        \\    print(floats);
+        \\}
+        \\pub fn main() -> void {
+        \\    run();
+        \\}
+        \\
+        \\import {io.terminal.print, async} from "std";
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {
